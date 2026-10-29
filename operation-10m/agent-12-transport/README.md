@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 36
+
+- Schema **`agent12/37`**: offshore wind cable export throughput, medevac helicopter staging readiness, reef restoration logistics share (`offshoreWindCableExportPolicy`, `medevacHelicopterStagingPolicy`, `reefRestorationLogisticsPolicy`)
+- Catalog: **497** assets, **122** corridors, **198** scenarios
+- Systems: `network/offshore-wind-cable-export-index.ts`, `operations/medevac-helicopter-staging-index.ts`, `productivity/reef-restoration-logistics-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 35
 
 - Schema **`agent12/36`**: silicon solar wafer export throughput, rail coal phase-out staging readiness, airport baggage robot logistics share (`siliconSolarWaferExportPolicy`, `railCoalPhaseoutStagingPolicy`, `airportBaggageRobotLogisticsPolicy`)

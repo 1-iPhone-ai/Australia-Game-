@@ -550,6 +550,23 @@ import {
   computeAirportBaggageRobotLogisticsThroughputByRegion,
   nationalAirportBaggageRobotLogisticsThroughputIndex,
 } from './airport-baggage-robot-logistics-index.ts';
+import {
+  computeOffshoreWindCableExportByRegion,
+  nationalOffshoreWindCableExportIndex,
+  offshoreWindCableExportProductivityMultiplier,
+} from '../network/offshore-wind-cable-export-index.ts';
+import {
+  computeMedevacHelicopterStagingByRegion,
+  computeMedevacHelicopterStagingShare,
+  medevacHelicopterStagingProductivityMultiplier,
+  nationalMedevacHelicopterStagingIndex,
+} from '../operations/medevac-helicopter-staging-index.ts';
+import {
+  computeReefRestorationLogisticsShare,
+  computeReefRestorationLogisticsThroughputByRegion,
+  nationalReefRestorationLogisticsThroughputIndex,
+  reefRestorationLogisticsProductivityMultiplier,
+} from './reef-restoration-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1732,6 +1749,35 @@ export function computeTransportInfrastructureState(
     airportBaggageRobotLogisticsShare,
     options?.airportBaggageRobotLogisticsPolicy ?? 'baseline',
   );
+  const offshoreWindCableExportByRegion = computeOffshoreWindCableExportByRegion(ops);
+  const nationalWindCable = nationalOffshoreWindCableExportIndex(offshoreWindCableExportByRegion);
+  const windCableMult = offshoreWindCableExportProductivityMultiplier(
+    nationalWindCable,
+    options?.offshoreWindCableExportPolicy ?? 'baseline',
+  );
+  const medevacHelicopterStagingByRegion = computeMedevacHelicopterStagingByRegion(ops, networkStress);
+  const nationalMedevacHeli = nationalMedevacHelicopterStagingIndex(medevacHelicopterStagingByRegion);
+  const medevacHelicopterStagingShare = computeMedevacHelicopterStagingShare(
+    ops,
+    options?.medevacHelicopterStagingPolicy ?? 'baseline',
+  );
+  const medevacHeliMult = medevacHelicopterStagingProductivityMultiplier(
+    medevacHelicopterStagingShare,
+    options?.medevacHelicopterStagingPolicy ?? 'baseline',
+  );
+  const reefRestorationLogisticsThroughputByRegion =
+    computeReefRestorationLogisticsThroughputByRegion(ops);
+  const nationalReefLogistics = nationalReefRestorationLogisticsThroughputIndex(
+    reefRestorationLogisticsThroughputByRegion,
+  );
+  const reefRestorationLogisticsShare = computeReefRestorationLogisticsShare(
+    ops,
+    options?.reefRestorationLogisticsPolicy ?? 'baseline',
+  );
+  const reefLogisticsMult = reefRestorationLogisticsProductivityMultiplier(
+    reefRestorationLogisticsShare,
+    options?.reefRestorationLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1794,6 +1840,9 @@ export function computeTransportInfrastructureState(
     const siliconWaferBoost = (siliconSolarWaferExportByRegion[code] - 5) * 0.0033;
     const coalPhaseoutBoost = (railCoalPhaseoutStagingByRegion[code] - 6) * 0.0029;
     const baggageRobotBoost = (airportBaggageRobotLogisticsThroughputByRegion[code] - 2) * 0.0025;
+    const windCableBoost = (offshoreWindCableExportByRegion[code] - 5) * 0.0032;
+    const medevacHeliBoost = (medevacHelicopterStagingByRegion[code] - 6) * 0.0028;
+    const reefLogisticsBoost = (reefRestorationLogisticsThroughputByRegion[code] - 2) * 0.0024;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -1855,7 +1904,10 @@ export function computeTransportInfrastructureState(
         livestockYardBoost +
         siliconWaferBoost +
         coalPhaseoutBoost +
-        baggageRobotBoost) *
+        baggageRobotBoost +
+        windCableBoost +
+        medevacHeliBoost +
+        reefLogisticsBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -1915,7 +1967,10 @@ export function computeTransportInfrastructureState(
       livestockYardMult *
       siliconWaferMult *
       coalPhaseoutMult *
-      baggageRobotMult;
+      baggageRobotMult *
+      windCableMult *
+      medevacHeliMult *
+      reefLogisticsMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -1998,7 +2053,10 @@ export function computeTransportInfrastructureState(
     nationalLivestockYard * 0.003 +
     nationalSiliconWafer * 0.003 +
     nationalCoalPhaseout * 0.003 +
-    nationalBaggageRobot * 0.003;
+    nationalBaggageRobot * 0.003 +
+    nationalWindCable * 0.003 +
+    nationalMedevacHeli * 0.003 +
+    nationalReefLogistics * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -2013,7 +2071,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/36',
+    schemaVersion: 'agent12/37',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -2267,6 +2325,14 @@ export function computeTransportInfrastructureState(
     airportBaggageRobotLogisticsShare,
     nationalAirportBaggageRobotLogisticsThroughputIndex: nationalBaggageRobot,
     airportBaggageRobotLogisticsThroughputByRegion,
+    nationalOffshoreWindCableExportIndex: nationalWindCable,
+    offshoreWindCableExportByRegion,
+    medevacHelicopterStagingShare,
+    nationalMedevacHelicopterStagingIndex: nationalMedevacHeli,
+    medevacHelicopterStagingByRegion,
+    reefRestorationLogisticsShare,
+    nationalReefRestorationLogisticsThroughputIndex: nationalReefLogistics,
+    reefRestorationLogisticsThroughputByRegion,
     computeMs,
   };
 }

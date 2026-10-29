@@ -363,8 +363,14 @@ export type RailCoalPhaseoutStagingPolicy = 'baseline' | 'accelerate';
 
 export type AirportBaggageRobotLogisticsPolicy = 'baseline' | 'deploy';
 
+export type OffshoreWindCableExportPolicy = 'baseline' | 'accelerate';
+
+export type MedevacHelicopterStagingPolicy = 'baseline' | 'surge';
+
+export type ReefRestorationLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/36';
+  schemaVersion: 'agent12/37';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -618,6 +624,14 @@ export interface TransportInfrastructureState {
   airportBaggageRobotLogisticsShare: number;
   nationalAirportBaggageRobotLogisticsThroughputIndex: number;
   airportBaggageRobotLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalOffshoreWindCableExportIndex: number;
+  offshoreWindCableExportByRegion: Record<AuRegionCode, number>;
+  medevacHelicopterStagingShare: number;
+  nationalMedevacHelicopterStagingIndex: number;
+  medevacHelicopterStagingByRegion: Record<AuRegionCode, number>;
+  reefRestorationLogisticsShare: number;
+  nationalReefRestorationLogisticsThroughputIndex: number;
+  reefRestorationLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -716,6 +730,9 @@ export interface TransportInfrastructureOptions {
   siliconSolarWaferExportPolicy?: SiliconSolarWaferExportPolicy;
   railCoalPhaseoutStagingPolicy?: RailCoalPhaseoutStagingPolicy;
   airportBaggageRobotLogisticsPolicy?: AirportBaggageRobotLogisticsPolicy;
+  offshoreWindCableExportPolicy?: OffshoreWindCableExportPolicy;
+  medevacHelicopterStagingPolicy?: MedevacHelicopterStagingPolicy;
+  reefRestorationLogisticsPolicy?: ReefRestorationLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {

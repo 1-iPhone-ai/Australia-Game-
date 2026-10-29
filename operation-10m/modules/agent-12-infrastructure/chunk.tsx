@@ -367,8 +367,14 @@ export type RailCoalPhaseoutStagingPolicy = 'baseline' | 'accelerate';
 
 export type AirportBaggageRobotLogisticsPolicy = 'baseline' | 'deploy';
 
+export type OffshoreWindCableExportPolicy = 'baseline' | 'accelerate';
+
+export type MedevacHelicopterStagingPolicy = 'baseline' | 'surge';
+
+export type ReefRestorationLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/36';
+  schemaVersion: 'agent12/37';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -622,6 +628,14 @@ export interface TransportInfrastructureState {
   airportBaggageRobotLogisticsShare: number;
   nationalAirportBaggageRobotLogisticsThroughputIndex: number;
   airportBaggageRobotLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalOffshoreWindCableExportIndex: number;
+  offshoreWindCableExportByRegion: Record<AuRegionCode, number>;
+  medevacHelicopterStagingShare: number;
+  nationalMedevacHelicopterStagingIndex: number;
+  medevacHelicopterStagingByRegion: Record<AuRegionCode, number>;
+  reefRestorationLogisticsShare: number;
+  nationalReefRestorationLogisticsThroughputIndex: number;
+  reefRestorationLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -720,6 +734,9 @@ export interface TransportInfrastructureOptions {
   siliconSolarWaferExportPolicy?: SiliconSolarWaferExportPolicy;
   railCoalPhaseoutStagingPolicy?: RailCoalPhaseoutStagingPolicy;
   airportBaggageRobotLogisticsPolicy?: AirportBaggageRobotLogisticsPolicy;
+  offshoreWindCableExportPolicy?: OffshoreWindCableExportPolicy;
+  medevacHelicopterStagingPolicy?: MedevacHelicopterStagingPolicy;
+  reefRestorationLogisticsPolicy?: ReefRestorationLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -2207,6 +2224,90 @@ export const TRANSPORT_CORRIDORS_ROUND34: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round35.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND35: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_nsw_vic_silicon_wafer',
+    name: 'NSW–VIC Silicon Wafer',
+    networkKind: 'trade',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['silicon_wafer_export', 'pv_supply_chain', 'clean_energy_rail'],
+      VIC: ['silicon_wafer_export', 'pv_supply_chain', 'clean_energy_rail'],
+    },
+    productivitySynergyPoints: 6.1,
+    logisticsRelief: 0.036,
+  },
+  {
+    id: 'corr_nsw_qld_coal_phaseout',
+    name: 'NSW–QLD Coal Phaseout',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'QLD'],
+    requiredTagsByRegion: {
+      NSW: ['coal_phaseout_rail', 'thermal_retirement_logistics', 'transition_freight'],
+      QLD: ['coal_phaseout_rail', 'thermal_retirement_logistics', 'transition_freight'],
+    },
+    productivitySynergyPoints: 5.8,
+    logisticsRelief: 0.032,
+  },
+  {
+    id: 'corr_nsw_vic_baggage_robot',
+    name: 'NSW–VIC Baggage Robot',
+    networkKind: 'mobility',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['baggage_robot_logistics', 'airport_sortation_auto', 'terminal_robot_staging'],
+      VIC: ['baggage_robot_logistics', 'airport_sortation_auto', 'terminal_robot_staging'],
+    },
+    productivitySynergyPoints: 5.6,
+    logisticsRelief: 0.029,
+  },
+];
+
+
+// --- source: catalog/corridors-round36.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND36: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_tas_vic_offshore_wind_cable',
+    name: 'TAS–VIC Offshore Wind Cable',
+    networkKind: 'trade',
+    regionSequence: ['TAS', 'VIC'],
+    requiredTagsByRegion: {
+      TAS: ['offshore_wind_cable_export', 'subsea_hvdc_feed', 'renewable_export_rail'],
+      VIC: ['offshore_wind_cable_export', 'subsea_hvdc_feed', 'renewable_export_rail'],
+    },
+    productivitySynergyPoints: 6.0,
+    logisticsRelief: 0.037,
+  },
+  {
+    id: 'corr_nt_wa_medevac_heli',
+    name: 'NT–WA Medevac Heli',
+    networkKind: 'mobility',
+    regionSequence: ['NT', 'WA'],
+    requiredTagsByRegion: {
+      NT: ['medevac_heli_staging', 'remote_clinic_airlift', 'emergency_rotary_logistics'],
+      WA: ['medevac_heli_staging', 'remote_clinic_airlift', 'emergency_rotary_logistics'],
+    },
+    productivitySynergyPoints: 5.7,
+    logisticsRelief: 0.03,
+  },
+  {
+    id: 'corr_qld_tas_reef_restoration',
+    name: 'QLD–TAS Reef Restoration',
+    networkKind: 'trade',
+    regionSequence: ['QLD', 'TAS'],
+    requiredTagsByRegion: {
+      QLD: ['reef_restoration_logistics', 'marine_reef_supply', 'coastal_eco_staging'],
+      TAS: ['reef_restoration_logistics', 'marine_reef_supply', 'coastal_eco_staging'],
+    },
+    productivitySynergyPoints: 5.8,
+    logisticsRelief: 0.031,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -2389,6 +2490,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND33,
   ...TRANSPORT_CORRIDORS_ROUND34,
   ...TRANSPORT_CORRIDORS_ROUND35,
+  ...TRANSPORT_CORRIDORS_ROUND36,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -4325,6 +4427,62 @@ export const TRANSPORT_SCENARIOS_ROUND34: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round35.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND35: TransportStressScenario[] = [
+  {
+    id: 'scn_nsw_wafer_export_surge',
+    label: 'NSW Wafer Export Surge',
+    description: 'Solar demand overloads Newcastle wafer berths.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'trade',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_vic_pv_supply_delay',
+    label: 'Victoria PV Supply Delay',
+    description: 'Component shortage delays Dandenong wafer DC.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_qld_coal_transition_surge',
+    label: 'Queensland Coal Transition Surge',
+    description: 'Retirement schedule strains Abbot Point staging.',
+    targetRegions: ['QLD', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_nsw_coal_rail_possession',
+    label: 'NSW Coal Rail Possession',
+    description: 'Track work cuts Hunter transition slots.',
+    targetRegions: ['NSW', 'QLD'],
+    networkKind: 'freight',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail'],
+  },
+  {
+    id: 'scn_vic_airport_robot_fault',
+    label: 'Melbourne Airport Robot Fault',
+    description: 'Sortation fault backs up Tullamarine baggage.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.2,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -4521,6 +4679,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND33,
   ...TRANSPORT_SCENARIOS_ROUND34,
   ...TRANSPORT_SCENARIOS_ROUND35,
+  ...TRANSPORT_SCENARIOS_ROUND36,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -13002,6 +13161,233 @@ export const SCALE_WAVE_ROUND34_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round35-assets.ts ---
+
+export const ROUND35_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_nsw_newcastle_wafer_haul',
+    category: 'road',
+    name: 'Newcastle Wafer Haul',
+    description: 'NSW PV supply chain road feed.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['silicon_wafer_export', 'pv_supply_chain', 'clean_energy_rail'],
+    laneKilometres: 24,
+    designSpeedKmh: 82,
+    freightShare: 0.32,
+    urbanShare: 0.15,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_gunnedah_coal_transition',
+    category: 'road',
+    name: 'Gunnedah Coal Transition Road',
+    description: 'NSW thermal retirement logistics connector.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['freight'],
+    tags: ['coal_phaseout_rail', 'thermal_retirement_logistics', 'transition_freight'],
+    laneKilometres: 38,
+    designSpeedKmh: 84,
+    freightShare: 0.34,
+    urbanShare: 0.07,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_bowen_coal_transition',
+    category: 'road',
+    name: 'Bowen Coal Transition Road',
+    description: 'QLD thermal retirement logistics access.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['coal_phaseout_rail', 'thermal_retirement_logistics', 'transition_freight'],
+    laneKilometres: 34,
+    designSpeedKmh: 83,
+    freightShare: 0.36,
+    urbanShare: 0.08,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_mascot_baggage_feed',
+    category: 'road',
+    name: 'Mascot Baggage Robot Feed',
+    description: 'Sydney airport terminal robot staging road.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['baggage_robot_logistics', 'airport_sortation_auto', 'terminal_robot_staging'],
+    laneKilometres: 8,
+    designSpeedKmh: 65,
+    freightShare: 0.08,
+    urbanShare: 0.72,
+    tollRoad: false,
+  },
+];
+
+export const ROUND35_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_nsw_hunter_wafer_rail',
+    category: 'rail',
+    name: 'Hunter Wafer Export Rail',
+    description: 'NSW silicon solar wafer export line.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['silicon_wafer_export', 'pv_supply_chain', 'clean_energy_rail'],
+    trackKilometres: 48,
+    dualTrackShare: 0.53,
+    electrifiedShare: 0.64,
+    designFreightTonnesPerYear: 4_100_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_qld_central_coal_transition',
+    category: 'rail',
+    name: 'Central QLD Coal Transition Rail',
+    description: 'Coal phase-out staging and transition freight.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['freight'],
+    tags: ['coal_phaseout_rail', 'thermal_retirement_logistics', 'transition_freight'],
+    trackKilometres: 92,
+    dualTrackShare: 0.44,
+    electrifiedShare: 0.24,
+    designFreightTonnesPerYear: 6_900_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_vic_tullamarine_baggage_link',
+    category: 'rail',
+    name: 'Tullamarine Baggage Link',
+    description: 'Melbourne airport robot sortation rail feed.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['baggage_robot_logistics', 'airport_sortation_auto', 'terminal_robot_staging'],
+    trackKilometres: 14,
+    dualTrackShare: 0.56,
+    electrifiedShare: 0.68,
+    designFreightTonnesPerYear: 1_800_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND35_PORTS: PortAsset[] = [
+  {
+    id: 'port_nsw_newcastle_wafer_export',
+    category: 'port',
+    name: 'Newcastle Wafer Export',
+    description: 'NSW PV supply chain container export.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['trade'],
+    tags: ['silicon_wafer_export', 'pv_supply_chain', 'clean_energy_rail'],
+    berthCount: 3,
+    maxDraftMetres: 13.5,
+    teuCapacityPerYear: 210_000,
+    automationLevel: 2,
+    bulkShare: 0.18,
+  },
+  {
+    id: 'port_qld_abbott_point_transition',
+    category: 'port',
+    name: 'Abbot Point Transition',
+    description: 'QLD thermal retirement logistics staging port.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['coal_phaseout_rail', 'thermal_retirement_logistics', 'transition_freight'],
+    berthCount: 2,
+    maxDraftMetres: 14.8,
+    teuCapacityPerYear: 88_000,
+    automationLevel: 1,
+    bulkShare: 0.58,
+  },
+  {
+    id: 'port_vic_melbourne_air_cargo_robot',
+    category: 'port',
+    name: 'Melbourne Air Cargo Robot',
+    description: 'Victorian airport baggage robot logistics berth.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['baggage_robot_logistics', 'airport_sortation_auto', 'terminal_robot_staging'],
+    berthCount: 2,
+    maxDraftMetres: 11.5,
+    teuCapacityPerYear: 165_000,
+    automationLevel: 3,
+    bulkShare: 0.05,
+  },
+];
+
+export const ROUND35_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_vic_dandenong_wafer_dc',
+    category: 'logistics',
+    name: 'Dandenong Wafer DC',
+    description: 'Victorian PV supply chain consolidation.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['trade'],
+    tags: ['silicon_wafer_export', 'pv_supply_chain', 'clean_energy_rail'],
+    warehouseSqm: 66_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 58,
+  },
+  {
+    id: 'log_qld_mackay_coal_transition_yard',
+    category: 'logistics',
+    name: 'Mackay Coal Transition Yard',
+    description: 'QLD transition freight staging yard.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['freight'],
+    tags: ['coal_phaseout_rail', 'thermal_retirement_logistics', 'transition_freight'],
+    warehouseSqm: 70_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 43,
+  },
+  {
+    id: 'log_nsw_sydney_airport_robot_sort',
+    category: 'logistics',
+    name: 'Sydney Airport Robot Sort',
+    description: 'NSW terminal robot baggage staging hub.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['mobility'],
+    tags: ['baggage_robot_logistics', 'airport_sortation_auto', 'terminal_robot_staging'],
+    warehouseSqm: 44_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'air'],
+    lastMileCoveragePct: 81,
+  },
+];
+
+export const SCALE_WAVE_ROUND35_ASSETS = [
+  ...ROUND35_ROADS,
+  ...ROUND35_RAIL,
+  ...ROUND35_PORTS,
+  ...ROUND35_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -13045,6 +13431,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND33_ASSETS,
     ...SCALE_WAVE_ROUND34_ASSETS,
     ...SCALE_WAVE_ROUND35_ASSETS,
+    ...SCALE_WAVE_ROUND36_ASSETS,
   ];
 }
 
@@ -14956,6 +15343,64 @@ export function nationalTitaniumSpongeExportIndex(
 export function titaniumSpongeExportProductivityMultiplier(
   index: number,
   policy: TitaniumSpongeExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.035 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.04 + policyBoost, 0.93, 1.1);
+}
+
+
+// --- source: network/silicon-solar-wafer-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type SiliconSolarWaferExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 silicon solar wafer export throughput by region. */
+export function computeSiliconSolarWaferExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) => t === 'silicon_wafer_export' || t === 'pv_supply_chain' || t === 'clean_energy_rail',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.0 + asset.teuCapacityPerYear / 320_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 79_000 + asset.intermodalLinks.length * 0.75;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 520;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 9_500_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalSiliconSolarWaferExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.48 + max * 0.52, 5, 74) * 10) / 10;
+}
+
+export function siliconSolarWaferExportProductivityMultiplier(
+  index: number,
+  policy: SiliconSolarWaferExportPolicy = 'baseline',
 ): number {
   const policyBoost = policy === 'accelerate' ? 0.035 : 0;
   const normalized = (index - 5) / 100;
@@ -17388,6 +17833,90 @@ export function heatwaveRailSpeedRestrictionProductivityMultiplier(
   policy: HeatwaveRailSpeedRestrictionPolicy,
 ): number {
   const bias = policy === 'relax' ? 1.02 : 1;
+  return (1 + (share - 0.052) * 0.026) * bias;
+}
+
+
+// --- source: operations/rail-coal-phaseout-staging-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RailCoalPhaseoutStagingPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 rail coal phase-out staging readiness by region. */
+export function computeRailCoalPhaseoutStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'coal_phaseout_rail' || t === 'thermal_retirement_logistics' || t === 'transition_freight',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 13_500_000 + asset.dualTrackShare * 2.8;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 75_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 550;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.039 - stress * 0.026), 5, 78) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRailCoalPhaseoutStagingIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.49 + max * 0.51, 6, 76) * 10) / 10;
+}
+
+export function computeRailCoalPhaseoutStagingShare(
+  operationalAssets: TransportAsset[],
+  policy: RailCoalPhaseoutStagingPolicy = 'baseline',
+): number {
+  let transitionUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('coal_phaseout_rail') || asset.tags.includes('transition_freight')) {
+      if (asset.category === 'rail' && 'trackKilometres' in asset) {
+        totalUnits += asset.trackKilometres / 90;
+        transitionUnits += (asset.trackKilometres / 90) * 0.59;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 68_000;
+        transitionUnits += (asset.warehouseSqm / 68_000) * 0.53;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.037;
+  const policyBoost = policy === 'accelerate' ? 0.028 : 0;
+  return Math.round(clamp(transitionUnits / totalUnits + policyBoost, 0.036, 0.26) * 1000) / 1000;
+}
+
+export function railCoalPhaseoutStagingProductivityMultiplier(
+  share: number,
+  policy: RailCoalPhaseoutStagingPolicy,
+): number {
+  const bias = policy === 'accelerate' ? 1.022 : 1;
   return (1 + (share - 0.052) * 0.026) * bias;
 }
 
@@ -20064,6 +20593,89 @@ export function nationalAutomatedLivestockExportYardThroughputIndex(
 }
 
 
+// --- source: productivity/airport-baggage-robot-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type AirportBaggageRobotLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of airport baggage using robot sortation logistics. */
+export function computeAirportBaggageRobotLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: AirportBaggageRobotLogisticsPolicy = 'baseline',
+): number {
+  let robotUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) => t === 'baggage_robot_logistics' || t === 'airport_sortation_auto' || t === 'terminal_robot_staging',
+      )
+    ) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 58_000 + (asset.intermodalLinks.includes('air') ? 1.2 : 0.6);
+        robotUnits += (asset.warehouseSqm / 58_000) * 0.61;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 380;
+        robotUnits += (asset.laneKilometres / 380) * 0.5;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.038;
+  const policyBoost = policy === 'deploy' ? 0.03 : 0;
+  return Math.round(clamp(robotUnits / totalUnits + policyBoost, 0.037, 0.29) * 1000) / 1000;
+}
+
+export function airportBaggageRobotLogisticsProductivityMultiplier(
+  share: number,
+  policy: AirportBaggageRobotLogisticsPolicy,
+): number {
+  const bias = policy === 'deploy' ? 1.024 : 1;
+  return (1 + (share - 0.059) * 0.027) * bias;
+}
+
+export function computeAirportBaggageRobotLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'baggage_robot_logistics' || t === 'airport_sortation_auto' || t === 'terminal_robot_staging',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 61_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 390;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalAirportBaggageRobotLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 2, 54) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -20679,6 +21291,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   computeAirportBaggageRobotLogisticsThroughputByRegion,
   nationalAirportBaggageRobotLogisticsThroughputIndex,
 } from './airport-baggage-robot-logistics-index.ts';
+  computeOffshoreWindCableExportByRegion,
+  nationalOffshoreWindCableExportIndex,
+  offshoreWindCableExportProductivityMultiplier,
+} from '../network/offshore-wind-cable-export-index.ts';
+  computeMedevacHelicopterStagingByRegion,
+  computeMedevacHelicopterStagingShare,
+  medevacHelicopterStagingProductivityMultiplier,
+  nationalMedevacHelicopterStagingIndex,
+} from '../operations/medevac-helicopter-staging-index.ts';
+  computeReefRestorationLogisticsShare,
+  computeReefRestorationLogisticsThroughputByRegion,
+  nationalReefRestorationLogisticsThroughputIndex,
+  reefRestorationLogisticsProductivityMultiplier,
+} from './reef-restoration-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -21860,6 +22486,35 @@ export function computeTransportInfrastructureState(
     airportBaggageRobotLogisticsShare,
     options?.airportBaggageRobotLogisticsPolicy ?? 'baseline',
   );
+  const offshoreWindCableExportByRegion = computeOffshoreWindCableExportByRegion(ops);
+  const nationalWindCable = nationalOffshoreWindCableExportIndex(offshoreWindCableExportByRegion);
+  const windCableMult = offshoreWindCableExportProductivityMultiplier(
+    nationalWindCable,
+    options?.offshoreWindCableExportPolicy ?? 'baseline',
+  );
+  const medevacHelicopterStagingByRegion = computeMedevacHelicopterStagingByRegion(ops, networkStress);
+  const nationalMedevacHeli = nationalMedevacHelicopterStagingIndex(medevacHelicopterStagingByRegion);
+  const medevacHelicopterStagingShare = computeMedevacHelicopterStagingShare(
+    ops,
+    options?.medevacHelicopterStagingPolicy ?? 'baseline',
+  );
+  const medevacHeliMult = medevacHelicopterStagingProductivityMultiplier(
+    medevacHelicopterStagingShare,
+    options?.medevacHelicopterStagingPolicy ?? 'baseline',
+  );
+  const reefRestorationLogisticsThroughputByRegion =
+    computeReefRestorationLogisticsThroughputByRegion(ops);
+  const nationalReefLogistics = nationalReefRestorationLogisticsThroughputIndex(
+    reefRestorationLogisticsThroughputByRegion,
+  );
+  const reefRestorationLogisticsShare = computeReefRestorationLogisticsShare(
+    ops,
+    options?.reefRestorationLogisticsPolicy ?? 'baseline',
+  );
+  const reefLogisticsMult = reefRestorationLogisticsProductivityMultiplier(
+    reefRestorationLogisticsShare,
+    options?.reefRestorationLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -21922,6 +22577,9 @@ export function computeTransportInfrastructureState(
     const siliconWaferBoost = (siliconSolarWaferExportByRegion[code] - 5) * 0.0033;
     const coalPhaseoutBoost = (railCoalPhaseoutStagingByRegion[code] - 6) * 0.0029;
     const baggageRobotBoost = (airportBaggageRobotLogisticsThroughputByRegion[code] - 2) * 0.0025;
+    const windCableBoost = (offshoreWindCableExportByRegion[code] - 5) * 0.0032;
+    const medevacHeliBoost = (medevacHelicopterStagingByRegion[code] - 6) * 0.0028;
+    const reefLogisticsBoost = (reefRestorationLogisticsThroughputByRegion[code] - 2) * 0.0024;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -22477,7 +23135,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/35' &&
+      infra.schemaVersion === 'agent12/37' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -22599,8 +23257,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalTitaniumSpongeExportIndex >= 5 &&
       infra.nationalHeatwaveRailSpeedRestrictionIndex >= 6 &&
       infra.automatedLivestockExportYardShare >= 0.03 &&
-      infra.nationalAutomatedLivestockExportYardThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} titanium=${infra.nationalTitaniumSpongeExportIndex.toFixed(1)} heatwave=${infra.nationalHeatwaveRailSpeedRestrictionIndex.toFixed(1)} livestock=${infra.nationalAutomatedLivestockExportYardThroughputIndex.toFixed(1)}`,
+      infra.nationalAutomatedLivestockExportYardThroughputIndex >= 2 &&
+      infra.nationalSiliconSolarWaferExportIndex >= 5 &&
+      infra.nationalRailCoalPhaseoutStagingIndex >= 6 &&
+      infra.airportBaggageRobotLogisticsShare >= 0.03 &&
+      infra.nationalAirportBaggageRobotLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} wafer=${infra.nationalSiliconSolarWaferExportIndex.toFixed(1)} coal=${infra.nationalRailCoalPhaseoutStagingIndex.toFixed(1)} baggage=${infra.nationalAirportBaggageRobotLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;

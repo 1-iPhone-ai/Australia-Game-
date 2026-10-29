@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/36' &&
+      infra.schemaVersion === 'agent12/37' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -190,8 +190,16 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalTitaniumSpongeExportIndex >= 5 &&
       infra.nationalHeatwaveRailSpeedRestrictionIndex >= 6 &&
       infra.automatedLivestockExportYardShare >= 0.03 &&
-      infra.nationalAutomatedLivestockExportYardThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} titanium=${infra.nationalTitaniumSpongeExportIndex.toFixed(1)} heatwave=${infra.nationalHeatwaveRailSpeedRestrictionIndex.toFixed(1)} livestock=${infra.nationalAutomatedLivestockExportYardThroughputIndex.toFixed(1)}`,
+      infra.nationalAutomatedLivestockExportYardThroughputIndex >= 2 &&
+      infra.nationalSiliconSolarWaferExportIndex >= 5 &&
+      infra.nationalRailCoalPhaseoutStagingIndex >= 6 &&
+      infra.airportBaggageRobotLogisticsShare >= 0.03 &&
+      infra.nationalAirportBaggageRobotLogisticsThroughputIndex >= 2 &&
+      infra.nationalOffshoreWindCableExportIndex >= 5 &&
+      infra.nationalMedevacHelicopterStagingIndex >= 6 &&
+      infra.reefRestorationLogisticsShare >= 0.03 &&
+      infra.nationalReefRestorationLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} cable=${infra.nationalOffshoreWindCableExportIndex.toFixed(1)} medevac=${infra.nationalMedevacHelicopterStagingIndex.toFixed(1)} reef=${infra.nationalReefRestorationLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;
