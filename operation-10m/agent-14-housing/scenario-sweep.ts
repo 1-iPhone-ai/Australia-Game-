@@ -1,5 +1,5 @@
-import { AGENT14_ALL_PROGRAM_STUBS, AGENT14_HOUSING_PROGRAM_STUBS, AGENT14_LIMITS } from './constants.ts';
-import { makeSpendingCommitment } from './delayed-spending-effects.ts';
+import { AGENT14_HOUSING_PROGRAM_STUBS, AGENT14_LIMITS } from './constants.ts';
+import { commitmentFromProgramStub } from './program-stub-commitments.ts';
 import { advancePublicServicesTurn } from './turn-advance.ts';
 import type {
   CapacityAndSpendingInputs,
@@ -22,7 +22,9 @@ export type Agent14HousingScenarioId =
   | 'coupling_stress_escalation'
   | 'equity_rebalance_push'
   | 'accountability_slip_arc'
-  | 'intervention_priority_stress';
+  | 'intervention_priority_stress'
+  | 'resilience_recovery_arc'
+  | 'capacity_relief_governance_stress';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -141,28 +143,30 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
       'ps_he_QLD_remote_clinic',
     ],
   },
+  {
+    id: 'resilience_recovery_arc',
+    label: 'Resilience recovery arc',
+    baseInputs: { fiscalHeadroom: 48, stateCapacityLoad: 52, workforceReadiness: 'balanced' },
+    launchProgramIds: [
+      'ps_xp_SA_integrated_housing_health',
+      'ps_h_SA_modular',
+      'ps_he_NSW_primary_care',
+    ],
+  },
+  {
+    id: 'capacity_relief_governance_stress',
+    label: 'Capacity relief governance stress',
+    baseInputs: { fiscalHeadroom: 26, stateCapacityLoad: 86, workforceReadiness: 'blocking', workforceSpecialistGap: 70 },
+    launchProgramIds: [
+      'ps_xp_ACT_wellbeing_coordination',
+      'ps_h_ACT_density',
+      'ps_ed_NSW_skills',
+      'ps_he_VIC_hospital_backlog',
+    ],
+  },
 ];
 
-export function commitmentFromProgramStub(
-  stubId: string,
-  committedTurn: number,
-  seq: number
-): SpendingCommitment | null {
-  const stub = AGENT14_ALL_PROGRAM_STUBS.find((p) => p.id === stubId);
-  if (!stub) return null;
-  return makeSpendingCommitment({
-    id: `${stub.id}_c${seq}`,
-    programId: stub.id,
-    pillar: stub.pillar,
-    regionId: stub.regionId,
-    committedTurn,
-    fiscalLoadPoints: stub.fiscalLoadPoints,
-    durationTurns: stub.durationTurns,
-    baseImpact: stub.baseImpact,
-    effectLagTurns: stub.effectLagTurns,
-    rampTurns: 3,
-  });
-}
+export { commitmentFromProgramStub } from './program-stub-commitments.ts';
 
 export function simulateAgent14HousingScenario(
   scenarioId: Agent14HousingScenarioId,
@@ -178,6 +182,7 @@ export function simulateAgent14HousingScenario(
   let wellbeingMemoryPersisted = null;
   let couplingTrajectoryPersisted = null;
   let accountabilityTrajectoryPersisted = null;
+  let resilienceTrajectoryPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -194,6 +199,7 @@ export function simulateAgent14HousingScenario(
       wellbeingMemoryPersisted,
       couplingTrajectoryPersisted,
       accountabilityTrajectoryPersisted,
+      resilienceTrajectoryPersisted,
       newCommitments,
       enforceCapacity: true,
     });
@@ -201,6 +207,7 @@ export function simulateAgent14HousingScenario(
     wellbeingMemoryPersisted = result.wellbeingMemoryPersisted;
     couplingTrajectoryPersisted = result.couplingTrajectoryPersisted;
     accountabilityTrajectoryPersisted = result.accountabilityTrajectoryPersisted;
+    resilienceTrajectoryPersisted = result.resilienceTrajectoryPersisted;
     turns.push(result.inputs);
   }
 

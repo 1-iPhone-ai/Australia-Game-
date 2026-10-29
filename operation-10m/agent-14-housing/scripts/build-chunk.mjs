@@ -12,6 +12,7 @@ const srcRoot = path.join(repoRoot, 'operation-10m/agent-14-housing');
 const outDir = path.join(repoRoot, 'operation-10m/modules/agent-14-housing');
 const outFile = path.join(outDir, 'chunk.tsx');
 
+/** Dependency-safe order (imports stripped; no cross-file refs at runtime). */
 const FILES = [
   'types.ts',
   'constants.ts',
@@ -19,18 +20,32 @@ const FILES = [
   'national-wellbeing-snapshot.ts',
   'public-service-capacity.ts',
   'delayed-spending-effects.ts',
-  'turn-advance.ts',
-  'scenario-sweep.ts',
+  'program-stub-commitments.ts',
   'service-access-lens.ts',
   'wellbeing-guardian-warnings.ts',
   'program-sequencing.ts',
   'wellbeing-forecast.ts',
+  'cross-pillar-coupling.ts',
+  'regional-wellbeing-memory.ts',
+  'coupling-trajectory.ts',
+  'wellbeing-accountability-scorecard.ts',
+  'equity-rebalancing-advisor.ts',
+  'accountability-trajectory.ts',
+  'wellbeing-resilience-index.ts',
+  'resilience-trajectory.ts',
+  'intervention-priority-queue.ts',
+  'capacity-relief-scheduler.ts',
+  'wellbeing-governance-panel.ts',
+  'wellbeing-executive-brief.ts',
+  'turn-advance.ts',
+  'scenario-sweep.ts',
   'self-tests.ts',
 ];
 
 function stripModulePreamble(source) {
   let out = source.replace(/^import\s+(?:type\s+)?[\s\S]*?from\s+['"][^'"]+['"];?\s*\n/gm, '');
   out = out.replace(/^export \* from\s+['"][^'"]+['"];?\s*\n/gm, '');
+  out = out.replace(/^export \{[\s\S]*?\} from\s+['"][^'"]+['"];?\s*\n/gm, '');
   return out;
 }
 

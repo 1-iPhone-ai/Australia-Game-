@@ -1,6 +1,6 @@
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.6-scale-wave-6' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.7-scale-wave-7' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -101,6 +101,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   accountabilityTrajectory?: AccountabilityTrajectorySnapshot;
   interventionPriorityQueue?: WellbeingInterventionPriorityQueue;
   wellbeingResilience?: WellbeingResilienceSnapshot;
+  resilienceTrajectory?: ResilienceTrajectorySnapshot;
+  capacityReliefSchedule?: CapacityReliefSchedule;
+  wellbeingGovernancePanel?: WellbeingGovernancePanel;
 }
 
 export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
@@ -201,6 +204,55 @@ export interface WellbeingResilienceSnapshot {
   band: WellbeingResilienceBand;
   stressLoad: number;
   drivers: string[];
+}
+
+export type ResilienceTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
+
+export interface ResilienceTrajectorySnapshot {
+  turn: number;
+  resilienceIndexEma: number;
+  instantaneousIndex: number;
+  band: WellbeingResilienceBand;
+  trajectory: ResilienceTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface ResilienceTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  resilienceIndexEma: number;
+  priorEma?: number;
+}
+
+export interface CapacityReliefScheduleItem {
+  turn: number;
+  regionId: string;
+  pillar: PublicServicePillar;
+  programId: string;
+  reliefTurnOffset: number;
+  bindingConstraint: CapacityBindingConstraint;
+  rationale: string;
+}
+
+export interface CapacityReliefSchedule {
+  turn: number;
+  bindingConstraint: CapacityBindingConstraint;
+  shouldDeferNewCommits: boolean;
+  items: CapacityReliefScheduleItem[];
+  summary: string;
+}
+
+export type WellbeingGovernanceBand = 'aligned' | 'watch' | 'misaligned' | 'crisis';
+
+export interface WellbeingGovernancePanel {
+  turn: number;
+  accountabilityBand: AccountabilityBand;
+  resilienceBand: WellbeingResilienceBand;
+  governanceScore: number;
+  band: WellbeingGovernanceBand;
+  headlines: string[];
+  summary: string;
 }
 
 export type CouplingStressBand = 'stable' | 'watch' | 'strained' | 'critical';

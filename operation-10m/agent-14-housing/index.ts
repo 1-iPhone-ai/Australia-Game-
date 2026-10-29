@@ -19,4 +19,8 @@ export * from './equity-rebalancing-advisor.ts';
 export * from './accountability-trajectory.ts';
 export * from './intervention-priority-queue.ts';
 export * from './wellbeing-resilience-index.ts';
+export * from './program-stub-commitments.ts';
+export * from './resilience-trajectory.ts';
+export * from './capacity-relief-scheduler.ts';
+export * from './wellbeing-governance-panel.ts';
 export { runAgent14WellbeingSelfTests } from './self-tests.ts';

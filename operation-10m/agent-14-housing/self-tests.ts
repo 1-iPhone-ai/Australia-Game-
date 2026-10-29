@@ -42,6 +42,13 @@ import {
 } from './accountability-trajectory.ts';
 import { buildWellbeingInterventionPriorityQueue } from './intervention-priority-queue.ts';
 import { computeWellbeingResilienceIndex } from './wellbeing-resilience-index.ts';
+import {
+  advanceResilienceTrajectory,
+  createInitialResilienceTrajectory,
+  sanitizeResilienceTrajectory,
+} from './resilience-trajectory.ts';
+import { buildCapacityReliefSchedule } from './capacity-relief-scheduler.ts';
+import { composeWellbeingGovernancePanel } from './wellbeing-governance-panel.ts';
 import { AGENT14_WELLBEING_SCHEMA_VERSION } from './types.ts';
 
 export interface Agent14SelfTestResult {
@@ -543,8 +550,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Twelve housing scenarios registered',
-    listAgent14ScenarioIds().length === 14,
+    'Sixteen housing scenarios registered',
+    listAgent14ScenarioIds().length === 16,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -772,8 +779,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave5_schema_version',
-    'Wellbeing schema version is wave 6',
-    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.6-scale-wave-6',
+    'Wellbeing schema version is wave 7',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.7-scale-wave-7',
     AGENT14_WELLBEING_SCHEMA_VERSION
   );
 
@@ -1009,6 +1016,179 @@ export function runAgent14WellbeingSelfTests(): {
       listAgent14ScenarioIds().includes('intervention_priority_stress'),
     `count=${listAgent14ScenarioIds().length}`
   );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 6, fiscalHeadroom: 50, stateCapacityLoad: 58 },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      resilienceTrajectoryPersisted: createInitialResilienceTrajectory(),
+    });
+    check(
+      results,
+      'wave7_resilience_trajectory',
+      'Turn advance attaches resilience trajectory',
+      adv.inputs.resilienceTrajectory !== undefined &&
+        adv.resilienceTrajectoryPersisted.lastTurn === 6 &&
+        adv.inputs.resilienceTrajectory!.resilienceIndexEma > 0,
+      `trajectory=${adv.inputs.resilienceTrajectory?.trajectory} ema=${adv.inputs.resilienceTrajectory?.resilienceIndexEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 24, stateCapacityLoad: 88, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave7_capacity_relief_schedule',
+      'Capacity relief schedule populated under binding',
+      adv.inputs.capacityReliefSchedule !== undefined &&
+        adv.inputs.capacityReliefSchedule!.summary.length > 8,
+      adv.inputs.capacityReliefSchedule?.summary.slice(0, 72)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 5, fiscalHeadroom: 40, stateCapacityLoad: 70, workforceReadiness: 'strained' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave7_governance_panel',
+      'Governance panel includes band and score',
+      adv.inputs.wellbeingGovernancePanel !== undefined &&
+        adv.inputs.wellbeingGovernancePanel!.governanceScore > 0 &&
+        adv.inputs.wellbeingGovernancePanel!.band.length > 0,
+      `band=${adv.inputs.wellbeingGovernancePanel?.band} score=${adv.inputs.wellbeingGovernancePanel?.governanceScore}`
+    );
+  }
+
+  {
+    const raw = sanitizeResilienceTrajectory({
+      schemaVersion: '10.14.6-scale-wave-6' as any,
+      lastTurn: 2,
+      emaAlpha: 0.32,
+      resilienceIndexEma: 41,
+    });
+    check(
+      results,
+      'wave7_resilience_sanitize',
+      'Resilience trajectory sanitize upgrades schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.resilienceIndexEma === 41,
+      `schema=${raw.schemaVersion}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('resilience_recovery_arc', 10);
+    const last = sim.turns[9];
+    check(
+      results,
+      'wave7_resilience_recovery_scenario',
+      'Resilience recovery arc shows trajectory or steady band',
+      last.resilienceTrajectory !== undefined &&
+        (last.resilienceTrajectory!.trajectory === 'improving' ||
+          last.wellbeingResilience!.band === 'steady' ||
+          last.wellbeingResilience!.band === 'robust'),
+      `traj=${last.resilienceTrajectory?.trajectory} band=${last.wellbeingResilience?.band}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('capacity_relief_governance_stress', 8);
+    const last = sim.turns[7];
+    check(
+      results,
+      'wave7_capacity_governance_scenario',
+      'Capacity governance stress surfaces relief or misaligned panel',
+      last.capacityReliefSchedule !== undefined &&
+        (last.capacityReliefSchedule!.shouldDeferNewCommits ||
+          last.capacityReliefSchedule!.items.length > 0 ||
+          last.interventionPriorityQueue!.shouldExpedite ||
+          last.wellbeingGovernancePanel!.band !== 'aligned'),
+      `defer=${last.capacityReliefSchedule?.shouldDeferNewCommits} gov=${last.wellbeingGovernancePanel?.band}`
+    );
+  }
+
+  check(
+    results,
+    'wave7_cross_pillar_stub_catalog',
+    'Wave 7 coordination stubs present',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_SA_integrated_housing_health') &&
+      AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_ACT_wellbeing_coordination'),
+    `n=${AGENT14_HEALTH_ED_PROGRAM_STUBS.length}`
+  );
+
+  check(
+    results,
+    'wave7_scenario_catalog',
+    'Scenario catalog includes wave 7 scenarios',
+    listAgent14ScenarioIds().includes('resilience_recovery_arc') &&
+      listAgent14ScenarioIds().includes('capacity_relief_governance_stress'),
+    `count=${listAgent14ScenarioIds().length}`
+  );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 3, fiscalHeadroom: 30, stateCapacityLoad: 80, workforceReadiness: 'weak' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const panel = composeWellbeingGovernancePanel({
+      turn: 3,
+      accountabilityScorecard: adv.inputs.accountabilityScorecard,
+      wellbeingResilience: adv.inputs.wellbeingResilience,
+      accountabilityTrajectory: adv.inputs.accountabilityTrajectory,
+      resilienceTrajectory: adv.inputs.resilienceTrajectory,
+    });
+    check(
+      results,
+      'wave7_governance_composer',
+      'Standalone governance composer returns headlines',
+      panel.headlines.length > 0 && panel.summary.length > 10,
+      panel.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 9, fiscalHeadroom: 18, stateCapacityLoad: 90, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const schedule = buildCapacityReliefSchedule({
+      turn: 9,
+      capacity: adv.inputs.capacity,
+      interventionQueue: adv.inputs.interventionPriorityQueue!,
+    });
+    check(
+      results,
+      'wave7_relief_scheduler',
+      'Relief scheduler reflects binding constraint',
+      schedule.bindingConstraint === adv.inputs.capacity.bindingConstraint,
+      `binding=${schedule.bindingConstraint}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 35, stateCapacityLoad: 75, workforceReadiness: 'weak' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      resilienceTrajectoryPersisted: createInitialResilienceTrajectory(),
+    });
+    const snap = advanceResilienceTrajectory(
+      4,
+      adv.inputs.wellbeingResilience!,
+      createInitialResilienceTrajectory()
+    );
+    check(
+      results,
+      'wave7_resilience_advance_unit',
+      'Resilience trajectory advance updates persisted turn',
+      snap.persisted.lastTurn === 4 && snap.snapshot.resilienceIndexEma > 0,
+      `ema=${snap.snapshot.resilienceIndexEma}`
+    );
+  }
 
   const passed = results.filter((r) => r.passed).length;
   return { passed, failed: results.length - passed, total: results.length, results };

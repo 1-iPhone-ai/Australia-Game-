@@ -1,4 +1,4 @@
-import { commitmentFromProgramStub } from './scenario-sweep.ts';
+import { commitmentFromProgramStub } from './program-stub-commitments.ts';
 import { canAcceptSpendingCommitment } from './public-service-capacity.ts';
 import type {
   EquityRebalancingAdvice,

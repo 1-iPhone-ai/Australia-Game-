@@ -5,7 +5,7 @@
 // --- source: types.ts ---
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.6-scale-wave-6' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.7-scale-wave-7' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -106,6 +106,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   accountabilityTrajectory?: AccountabilityTrajectorySnapshot;
   interventionPriorityQueue?: WellbeingInterventionPriorityQueue;
   wellbeingResilience?: WellbeingResilienceSnapshot;
+  resilienceTrajectory?: ResilienceTrajectorySnapshot;
+  capacityReliefSchedule?: CapacityReliefSchedule;
+  wellbeingGovernancePanel?: WellbeingGovernancePanel;
 }
 
 export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
@@ -206,6 +209,55 @@ export interface WellbeingResilienceSnapshot {
   band: WellbeingResilienceBand;
   stressLoad: number;
   drivers: string[];
+}
+
+export type ResilienceTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
+
+export interface ResilienceTrajectorySnapshot {
+  turn: number;
+  resilienceIndexEma: number;
+  instantaneousIndex: number;
+  band: WellbeingResilienceBand;
+  trajectory: ResilienceTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface ResilienceTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  resilienceIndexEma: number;
+  priorEma?: number;
+}
+
+export interface CapacityReliefScheduleItem {
+  turn: number;
+  regionId: string;
+  pillar: PublicServicePillar;
+  programId: string;
+  reliefTurnOffset: number;
+  bindingConstraint: CapacityBindingConstraint;
+  rationale: string;
+}
+
+export interface CapacityReliefSchedule {
+  turn: number;
+  bindingConstraint: CapacityBindingConstraint;
+  shouldDeferNewCommits: boolean;
+  items: CapacityReliefScheduleItem[];
+  summary: string;
+}
+
+export type WellbeingGovernanceBand = 'aligned' | 'watch' | 'misaligned' | 'crisis';
+
+export interface WellbeingGovernancePanel {
+  turn: number;
+  accountabilityBand: AccountabilityBand;
+  resilienceBand: WellbeingResilienceBand;
+  governanceScore: number;
+  band: WellbeingGovernanceBand;
+  headlines: string[];
+  summary: string;
 }
 
 export type CouplingStressBand = 'stable' | 'watch' | 'strained' | 'critical';
@@ -453,6 +505,8 @@ export const AGENT14_HEALTH_ED_PROGRAM_STUBS: readonly {
   { id: 'ps_xp_NT_integrated_services', pillar: 'education', regionId: 'NT', fiscalLoadPoints: 25, durationTurns: 7, baseImpact: 11, effectLagTurns: 3 },
   { id: 'ps_xp_TAS_community_wellbeing', pillar: 'healthcare', regionId: 'TAS', fiscalLoadPoints: 17, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
   { id: 'ps_xp_WA_remote_lifecycle', pillar: 'education', regionId: 'WA', fiscalLoadPoints: 22, durationTurns: 6, baseImpact: 9, effectLagTurns: 3 },
+  { id: 'ps_xp_SA_integrated_housing_health', pillar: 'healthcare', regionId: 'SA', fiscalLoadPoints: 21, durationTurns: 6, baseImpact: 10, effectLagTurns: 2 },
+  { id: 'ps_xp_ACT_wellbeing_coordination', pillar: 'education', regionId: 'ACT', fiscalLoadPoints: 15, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
 ];
 
 export const AGENT14_ALL_PROGRAM_STUBS = [
@@ -796,7 +850,7 @@ export function canAcceptSpendingCommitment(
 // --- source: delayed-spending-effects.ts ---
 export function createInitialDelayedSpendingPersisted(): DelayedSpendingPersisted {
   return {
-    schemaVersion: '10.14.6-scale-wave-6' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     active: [],
     history: [],
   };
@@ -818,7 +872,7 @@ export function sanitizeDelayedSpendingPersisted(
         .slice(0, AGENT14_LIMITS.maxActiveCommitments)
     : [];
   return {
-    schemaVersion: '10.14.6-scale-wave-6' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     active,
     history: Array.isArray(raw.history) ? raw.history.slice(-AGENT14_LIMITS.maxHistory) : [],
   };
@@ -932,331 +986,7 @@ export function commitSpendingProgram(
 }
 
 
-// --- source: turn-advance.ts ---
-export interface AdvancePublicServicesTurnArgs {
-  inputs: CapacityAndSpendingInputs;
-  spendingPersisted?: DelayedSpendingPersisted | null;
-  wellbeingMemoryPersisted?: RegionalWellbeingMemoryPersisted | null;
-  couplingTrajectoryPersisted?: CouplingTrajectoryPersisted | null;
-  accountabilityTrajectoryPersisted?: AccountabilityTrajectoryPersisted | null;
-  /** New commitments queued this turn (already validated or not). */
-  newCommitments?: SpendingCommitment[];
-  /** When true, reject commitments that fail capacity gate. */
-  enforceCapacity?: boolean;
-}
-
-export interface AdvancePublicServicesTurnResult {
-  inputs: EnrichedPublicServiceTurnInputs;
-  spendingPersisted: DelayedSpendingPersisted;
-  wellbeingMemoryPersisted: RegionalWellbeingMemoryPersisted;
-  couplingTrajectoryPersisted: CouplingTrajectoryPersisted;
-  accountabilityTrajectoryPersisted: AccountabilityTrajectoryPersisted;
-  rejectedCommitments: Array<{ commitment: SpendingCommitment; reason: string }>;
-}
-
-export function advancePublicServicesTurn(
-  args: AdvancePublicServicesTurnArgs
-): AdvancePublicServicesTurnResult {
-  const turn = Math.max(1, Math.floor(args.inputs.turn || 1));
-  let spendingPersisted = args.spendingPersisted ?? null;
-  const rejectedCommitments: AdvancePublicServicesTurnResult['rejectedCommitments'] = [];
-
-  for (const c of args.newCommitments ?? []) {
-    const capacityNow = computePublicServiceCapacity(
-      args.inputs,
-      spendingPersisted?.active ?? []
-    );
-    const gate = canAcceptSpendingCommitment(capacityNow, c);
-    if (!gate.allowed && args.enforceCapacity !== false) {
-      rejectedCommitments.push({ commitment: c, reason: gate.reason });
-      continue;
-    }
-    spendingPersisted = commitSpendingProgram(spendingPersisted, c);
-  }
-
-  const { effects, persisted: afterTick } = advanceDelayedSpendingEffects(turn, spendingPersisted);
-  spendingPersisted = afterTick;
-
-  const capacity = computePublicServiceCapacity(args.inputs, spendingPersisted.active);
-
-  const fiscalHeadroom = args.inputs.fiscalHeadroom ?? 55;
-  const regionalPipelines = computeAllRegionalHousingPipelines(
-    turn,
-    capacity,
-    effects,
-    fiscalHeadroom
-  );
-  const housingWellbeing = computeNationalHousingWellbeingSnapshot(turn, regionalPipelines);
-
-  const remoteShareByRegion = Object.fromEntries(
-    AGENT14_CORE_REGIONS.map((r) => [r, AGENT14_HOUSING_REGION_BASELINE[r].remoteShare])
-  );
-  const serviceAccessLens = computeNationalServiceAccessLens(
-    turn,
-    capacity,
-    effects,
-    remoteShareByRegion
-  );
-  const wellbeingWarnings = evaluateAgent14WellbeingWarnings(
-    capacity,
-    housingWellbeing,
-    serviceAccessLens
-  );
-  const programRecommendations = recommendAgent14ProgramSequence(
-    turn,
-    capacity,
-    housingWellbeing,
-    serviceAccessLens,
-    6
-  );
-
-  const crossPillarCoupling = computeCrossPillarCoupling(
-    turn,
-    capacity,
-    housingWellbeing,
-    serviceAccessLens
-  );
-
-  const memoryAdvance = advanceRegionalWellbeingMemory(
-    turn,
-    housingWellbeing,
-    serviceAccessLens,
-    args.wellbeingMemoryPersisted
-  );
-
-  const couplingTrajectoryAdvance = advanceCouplingTrajectory(
-    turn,
-    crossPillarCoupling,
-    args.couplingTrajectoryPersisted
-  );
-
-  const equityRebalancing = adviseEquityRebalancing({
-    turn,
-    housing: housingWellbeing,
-    access: serviceAccessLens,
-    memory: memoryAdvance.snapshot,
-  });
-
-  const accountabilityScorecard = composeWellbeingAccountabilityScorecard({
-    turn,
-    capacity,
-    housing: housingWellbeing,
-    warnings: wellbeingWarnings,
-    coupling: crossPillarCoupling,
-    couplingTrajectory: couplingTrajectoryAdvance.snapshot,
-    memory: memoryAdvance.snapshot,
-    spendingPersisted,
-  });
-
-  const accountabilityTrajectoryAdvance = advanceAccountabilityTrajectory(
-    turn,
-    accountabilityScorecard,
-    args.accountabilityTrajectoryPersisted
-  );
-
-  const interventionPriorityQueue = buildWellbeingInterventionPriorityQueue({
-    turn,
-    capacity,
-    recommendations: programRecommendations,
-    equityRebalancing,
-  });
-
-  const wellbeingResilience = computeWellbeingResilienceIndex({
-    turn,
-    capacity,
-    housing: housingWellbeing,
-    warnings: wellbeingWarnings,
-    coupling: crossPillarCoupling,
-    couplingTrajectory: couplingTrajectoryAdvance.snapshot,
-    accountabilityScorecard,
-  });
-
-  const executiveBrief = composeAgent14WellbeingExecutiveBrief({
-    turn,
-    warnings: wellbeingWarnings,
-    coupling: crossPillarCoupling,
-    recommendations: programRecommendations,
-    accountabilityScorecard,
-    equityRebalancing,
-    accountabilityTrajectory: accountabilityTrajectoryAdvance.snapshot,
-    interventionPriorityQueue,
-    wellbeingResilience,
-  });
-
-  const enriched: EnrichedPublicServiceTurnInputs = {
-    ...args.inputs,
-    turn,
-    fiscalLoadFromActivePrograms: Math.round(
-      (effects.fiscalLoadThisTurn + (args.inputs.activeProgramCount ?? 0) * 0.5) * 10
-    ) / 10,
-    completedHousingProjects: effects.completedProjectBoost.housing,
-    completedHealthProjects: effects.completedProjectBoost.healthcare,
-    completedEducationProjects: effects.completedProjectBoost.education,
-    activeProgramCount: spendingPersisted.active.length,
-    capacity,
-    spending: effects,
-    housingWellbeing,
-    serviceAccessLens,
-    wellbeingWarnings,
-    programRecommendations,
-    crossPillarCoupling,
-    regionalWellbeingMemory: memoryAdvance.snapshot,
-    executiveBrief,
-    couplingTrajectory: couplingTrajectoryAdvance.snapshot,
-    accountabilityScorecard,
-    equityRebalancing,
-    accountabilityTrajectory: accountabilityTrajectoryAdvance.snapshot,
-    interventionPriorityQueue,
-    wellbeingResilience,
-  };
-
-  return {
-    inputs: enriched,
-    spendingPersisted,
-    wellbeingMemoryPersisted: memoryAdvance.persisted,
-    couplingTrajectoryPersisted: couplingTrajectoryAdvance.persisted,
-    accountabilityTrajectoryPersisted: accountabilityTrajectoryAdvance.persisted,
-    rejectedCommitments,
-  };
-}
-
-
-// --- source: scenario-sweep.ts ---
-export type Agent14HousingScenarioId =
-  | 'baseline_steady'
-  | 'fiscal_austerity'
-  | 'remote_equity_stress'
-  | 'housing_acceleration'
-  | 'workforce_blocking'
-  | 'crisis_recovery'
-  | 'mixed_pillar_push'
-  | 'capacity_saturated'
-  | 'health_education_surge'
-  | 'persisted_recovery_arc'
-  | 'coupling_stress_escalation'
-  | 'equity_rebalance_push'
-  | 'accountability_slip_arc'
-  | 'intervention_priority_stress';
-
-export interface Agent14HousingScenarioDefinition {
-  id: Agent14HousingScenarioId;
-  label: string;
-  baseInputs: Partial<CapacityAndSpendingInputs>;
-  /** Program stub ids committed on turn 1 (from AGENT14_HOUSING_PROGRAM_STUBS). */
-  launchProgramIds: string[];
-}
-
-export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinition[] = [
-  {
-    id: 'baseline_steady',
-    label: 'Steady baseline',
-    baseInputs: { fiscalHeadroom: 58, stateCapacityLoad: 42, workforceReadiness: 'balanced' },
-    launchProgramIds: ['ps_h_NSW_social_accel', 'ps_h_VIC_planning_reform'],
-  },
-  {
-    id: 'fiscal_austerity',
-    label: 'Fiscal austerity',
-    baseInputs: { fiscalHeadroom: 28, stateCapacityLoad: 62, workforceReadiness: 'strained' },
-    launchProgramIds: ['ps_h_SA_modular'],
-  },
-  {
-    id: 'remote_equity_stress',
-    label: 'Remote equity stress',
-    baseInputs: { fiscalHeadroom: 45, stateCapacityLoad: 55, workforceSpecialistGap: 48 },
-    launchProgramIds: ['ps_h_NT_remote_housing', 'ps_h_WA_remote_housing'],
-  },
-  {
-    id: 'housing_acceleration',
-    label: 'Housing acceleration',
-    baseInputs: { fiscalHeadroom: 78, stateCapacityLoad: 30, workforceReadiness: 'strong' },
-    launchProgramIds: ['ps_h_QLD_regional_release', 'ps_h_ACT_density', 'ps_h_NSW_social_accel'],
-  },
-  {
-    id: 'workforce_blocking',
-    label: 'Workforce blocking',
-    baseInputs: { fiscalHeadroom: 52, stateCapacityLoad: 50, workforceReadiness: 'blocking', workforceSpecialistGap: 72 },
-    launchProgramIds: ['ps_h_TAS_affordable'],
-  },
-  {
-    id: 'crisis_recovery',
-    label: 'Crisis recovery',
-    baseInputs: { fiscalHeadroom: 32, stateCapacityLoad: 78, workforceReadiness: 'weak', workforceSpecialistGap: 55 },
-    launchProgramIds: ['ps_h_QLD_regional_release', 'ps_h_SA_modular'],
-  },
-  {
-    id: 'mixed_pillar_push',
-    label: 'Mixed pillar push',
-    baseInputs: { fiscalHeadroom: 62, stateCapacityLoad: 38, workforceReadiness: 'balanced' },
-    launchProgramIds: ['ps_h_NSW_social_accel', 'ps_h_WA_remote_housing', 'ps_h_ACT_density'],
-  },
-  {
-    id: 'capacity_saturated',
-    label: 'Capacity saturated',
-    baseInputs: { fiscalHeadroom: 35, stateCapacityLoad: 80, workforceReadiness: 'strained', workforceSpecialistGap: 60 },
-    launchProgramIds: [
-      'ps_h_NSW_social_accel',
-      'ps_h_VIC_planning_reform',
-      'ps_h_QLD_regional_release',
-      'ps_h_WA_remote_housing',
-      'ps_h_NT_remote_housing',
-      'ps_h_TAS_affordable',
-      'ps_h_SA_modular',
-      'ps_h_ACT_density',
-    ],
-  },
-  {
-    id: 'health_education_surge',
-    label: 'Health and education surge',
-    baseInputs: { fiscalHeadroom: 68, stateCapacityLoad: 35, workforceReadiness: 'strong' },
-    launchProgramIds: [
-      'ps_he_NSW_primary_care',
-      'ps_he_VIC_hospital_backlog',
-      'ps_ed_NSW_skills',
-      'ps_ed_WA_regional_schools',
-    ],
-  },
-  {
-    id: 'persisted_recovery_arc',
-    label: 'Persisted recovery arc',
-    baseInputs: { fiscalHeadroom: 38, stateCapacityLoad: 65, workforceReadiness: 'weak' },
-    launchProgramIds: ['ps_h_SA_modular', 'ps_he_QLD_remote_clinic', 'ps_ed_TAS_rural_connect'],
-  },
-  {
-    id: 'coupling_stress_escalation',
-    label: 'Coupling stress escalation',
-    baseInputs: { fiscalHeadroom: 18, stateCapacityLoad: 88, workforceReadiness: 'blocking', workforceSpecialistGap: 75 },
-    launchProgramIds: ['ps_h_NT_remote_housing', 'ps_h_TAS_affordable', 'ps_he_NT_remote_clinic'],
-  },
-  {
-    id: 'equity_rebalance_push',
-    label: 'Equity rebalance push',
-    baseInputs: { fiscalHeadroom: 55, stateCapacityLoad: 48, workforceReadiness: 'balanced' },
-    launchProgramIds: [
-      'ps_xp_QLD_wellness_hub',
-      'ps_xp_NT_integrated_services',
-      'ps_h_WA_remote_housing',
-      'ps_ed_WA_regional_schools',
-    ],
-  },
-  {
-    id: 'accountability_slip_arc',
-    label: 'Accountability slip arc',
-    baseInputs: { fiscalHeadroom: 22, stateCapacityLoad: 82, workforceReadiness: 'blocking', workforceSpecialistGap: 68 },
-    launchProgramIds: ['ps_h_NT_remote_housing', 'ps_he_VIC_hospital_backlog', 'ps_ed_NSW_skills'],
-  },
-  {
-    id: 'intervention_priority_stress',
-    label: 'Intervention priority stress',
-    baseInputs: { fiscalHeadroom: 42, stateCapacityLoad: 72, workforceReadiness: 'strained', workforceSpecialistGap: 58 },
-    launchProgramIds: [
-      'ps_xp_TAS_community_wellbeing',
-      'ps_xp_WA_remote_lifecycle',
-      'ps_h_WA_remote_housing',
-      'ps_he_QLD_remote_clinic',
-    ],
-  },
-];
-
+// --- source: program-stub-commitments.ts ---
 export function commitmentFromProgramStub(
   stubId: string,
   committedTurn: number,
@@ -1276,75 +1006,6 @@ export function commitmentFromProgramStub(
     effectLagTurns: stub.effectLagTurns,
     rampTurns: 3,
   });
-}
-
-export function simulateAgent14HousingScenario(
-  scenarioId: Agent14HousingScenarioId,
-  turnCount: number
-): {
-  scenario: Agent14HousingScenarioDefinition;
-  turns: EnrichedPublicServiceTurnInputs[];
-  spendingPersisted: DelayedSpendingPersisted;
-} {
-  const scenario = AGENT14_HOUSING_SCENARIOS.find((s) => s.id === scenarioId)!;
-  const maxTurns = Math.min(Math.max(1, turnCount), AGENT14_LIMITS.maxSimulationTurns);
-  let spendingPersisted: DelayedSpendingPersisted | null = null;
-  let wellbeingMemoryPersisted = null;
-  let couplingTrajectoryPersisted = null;
-  let accountabilityTrajectoryPersisted = null;
-  const turns: EnrichedPublicServiceTurnInputs[] = [];
-
-  for (let t = 1; t <= maxTurns; t += 1) {
-    const newCommitments: SpendingCommitment[] = [];
-    if (t === 1) {
-      scenario.launchProgramIds.forEach((pid, i) => {
-        const c = commitmentFromProgramStub(pid, 1, i);
-        if (c) newCommitments.push(c);
-      });
-    }
-    const result = advancePublicServicesTurn({
-      inputs: { turn: t, ...scenario.baseInputs },
-      spendingPersisted,
-      wellbeingMemoryPersisted,
-      couplingTrajectoryPersisted,
-      accountabilityTrajectoryPersisted,
-      newCommitments,
-      enforceCapacity: true,
-    });
-    spendingPersisted = result.spendingPersisted;
-    wellbeingMemoryPersisted = result.wellbeingMemoryPersisted;
-    couplingTrajectoryPersisted = result.couplingTrajectoryPersisted;
-    accountabilityTrajectoryPersisted = result.accountabilityTrajectoryPersisted;
-    turns.push(result.inputs);
-  }
-
-  return { scenario, turns, spendingPersisted: spendingPersisted! };
-}
-
-export function runAgent14HousingScenarioSweep(): Array<{
-  scenarioId: Agent14HousingScenarioId;
-  passed: boolean;
-  detail: string;
-}> {
-  const out: Array<{ scenarioId: Agent14HousingScenarioId; passed: boolean; detail: string }> = [];
-  for (const sc of AGENT14_HOUSING_SCENARIOS) {
-    const sim = simulateAgent14HousingScenario(sc.id, 12);
-    const last = sim.turns[sim.turns.length - 1];
-    const wb = last.housingWellbeing;
-    const ok =
-      Boolean(wb) &&
-      last.capacity.deliveryCapacityIndex > 0 &&
-      wb!.totalDwellingsInPipeline > 0 &&
-      wb!.narrativeSummary.length > 20;
-    out.push({
-      scenarioId: sc.id,
-      passed: ok,
-      detail: ok
-        ? `aff=${wb!.nationalAffordabilityIndex} gap=${wb!.regionalEquityGap}`
-        : 'missing wellbeing snapshot',
-    });
-  }
-  return out;
 }
 
 
@@ -1671,6 +1332,1502 @@ export function forecastFromInputs(
 
 export function listAgent14ScenarioIds(): Agent14HousingScenarioId[] {
   return AGENT14_HOUSING_SCENARIOS.map((s) => s.id);
+}
+
+
+// --- source: cross-pillar-coupling.ts ---
+function clamp(n: number, lo = 0, hi = 100): number {
+  if (!Number.isFinite(n)) return lo;
+  return Math.max(lo, Math.min(hi, Math.round(n * 10) / 10));
+}
+
+function bandFromCoupling(index: number): CouplingStressBand {
+  if (index >= 72) return 'stable';
+  if (index >= 55) return 'watch';
+  if (index >= 38) return 'strained';
+  return 'critical';
+}
+
+function housingSpillover(
+  pillar: PublicServicePillar,
+  housing: NationalHousingWellbeingSnapshot,
+  capacity: PublicServiceCapacitySnapshot
+): number {
+  const backlog = housing.averagePlanningBacklogMonths;
+  const equity = housing.regionalEquityGap;
+  const delivery = capacity.deliveryCapacityIndex;
+  let spill = 0;
+  if (pillar === 'healthcare') {
+    spill -= backlog * 0.35;
+    spill -= equity * 0.12;
+    spill += (delivery - 50) * 0.15;
+  } else if (pillar === 'education') {
+    spill -= backlog * 0.28;
+    spill -= equity * 0.1;
+    spill += (delivery - 50) * 0.12;
+  } else {
+    spill += (100 - housing.nationalAffordabilityIndex) * 0.08;
+  }
+  return spill;
+}
+
+function capacitySpillover(pillar: PublicServicePillar, capacity: PublicServiceCapacitySnapshot): number {
+  const slice = capacity.byPillar[pillar];
+  let spill = (slice.capacityIndex - 50) * 0.2;
+  if (capacity.bindingConstraint === 'workforce') spill -= 8;
+  if (capacity.bindingConstraint === 'fiscal_absorption') spill -= 6;
+  if (slice.loadRatio > 1) spill -= (slice.loadRatio - 1) * 10;
+  return spill;
+}
+
+export function computeCrossPillarCoupling(
+  turn: number,
+  capacity: PublicServiceCapacitySnapshot,
+  housing: NationalHousingWellbeingSnapshot,
+  access: NationalServiceAccessLens
+): CrossPillarCouplingSnapshot {
+  const evidence: string[] = [];
+  const byPillar = {} as CrossPillarCouplingSnapshot['byPillar'];
+
+  for (const pillar of ['housing', 'healthcare', 'education'] as const) {
+    const fromHousing = housingSpillover(pillar, housing, capacity);
+    const fromCapacity = capacitySpillover(pillar, capacity);
+    const accessDrag = 50 - access.pillarNational[pillar].accessIndex;
+    const net = clamp(58 + fromHousing + fromCapacity - accessDrag * 0.25);
+    byPillar[pillar] = {
+      pillar,
+      spilloverFromHousing: Math.round(fromHousing * 10) / 10,
+      spilloverFromCapacity: Math.round(fromCapacity * 10) / 10,
+      netCouplingIndex: net,
+      band: bandFromCoupling(net),
+    };
+    if (byPillar[pillar].band === 'strained' || byPillar[pillar].band === 'critical') {
+      evidence.push(`${pillar} coupling ${net} (${byPillar[pillar].band})`);
+    }
+  }
+
+  const nationalCouplingIndex = clamp(
+    (byPillar.housing.netCouplingIndex +
+      byPillar.healthcare.netCouplingIndex +
+      byPillar.education.netCouplingIndex) /
+      3
+  );
+
+  if (housing.affordabilityStress === 'severe' || housing.affordabilityStress === 'elevated') {
+    evidence.push(`Affordability ${housing.affordabilityStress} amplifies cross-pillar spillover`);
+  }
+
+  return {
+    turn,
+    nationalCouplingIndex,
+    band: bandFromCoupling(nationalCouplingIndex),
+    byPillar,
+    evidence,
+  };
+}
+
+
+// --- source: regional-wellbeing-memory.ts ---
+const DEFAULT_EMA_ALPHA = 0.35;
+
+export function createInitialRegionalWellbeingMemory(): RegionalWellbeingMemoryPersisted {
+  return {
+    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    lastTurn: 0,
+    emaAlpha: DEFAULT_EMA_ALPHA,
+    affordabilityEma: {},
+    accessEma: {},
+  };
+}
+
+export function sanitizeRegionalWellbeingMemory(
+  raw?: RegionalWellbeingMemoryPersisted | null
+): RegionalWellbeingMemoryPersisted {
+  if (!raw || typeof raw !== 'object') return createInitialRegionalWellbeingMemory();
+  const alpha =
+    typeof raw.emaAlpha === 'number' && raw.emaAlpha > 0 && raw.emaAlpha <= 1
+      ? raw.emaAlpha
+      : DEFAULT_EMA_ALPHA;
+  return {
+    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
+    emaAlpha: alpha,
+    affordabilityEma:
+      raw.affordabilityEma && typeof raw.affordabilityEma === 'object' ? { ...raw.affordabilityEma } : {},
+    accessEma: raw.accessEma && typeof raw.accessEma === 'object' ? { ...raw.accessEma } : {},
+  };
+}
+
+function trend(current: number, previous: number, epsilon = 0.4): 'improving' | 'flat' | 'deteriorating' {
+  if (current - previous > epsilon) return 'improving';
+  if (previous - current > epsilon) return 'deteriorating';
+  return 'flat';
+}
+
+function emaUpdate(prev: number | undefined, sample: number, alpha: number): number {
+  if (prev === undefined) return sample;
+  return Math.round((alpha * sample + (1 - alpha) * prev) * 10) / 10;
+}
+
+export function advanceRegionalWellbeingMemory(
+  turn: number,
+  housing: NationalHousingWellbeingSnapshot,
+  access: NationalServiceAccessLens,
+  persisted?: RegionalWellbeingMemoryPersisted | null
+): { snapshot: RegionalWellbeingMemorySnapshot; persisted: RegionalWellbeingMemoryPersisted } {
+  const base = sanitizeRegionalWellbeingMemory(persisted);
+  const alpha = base.emaAlpha;
+  const regions: Record<string, RegionalWellbeingMemoryRow> = {};
+  const affordabilityEma = { ...base.affordabilityEma };
+  const accessEma = { ...base.accessEma };
+
+  for (const regionId of AGENT14_CORE_REGIONS) {
+    const h = housing.regions[regionId];
+    const a = access.regions[regionId];
+    const affSample = h?.affordabilityIndex ?? housing.nationalAffordabilityIndex;
+    const accessSample = a?.compositeIndex ?? access.nationalComposite;
+    const prevAff = affordabilityEma[regionId];
+    const prevAccess = accessEma[regionId];
+    affordabilityEma[regionId] = emaUpdate(prevAff, affSample, alpha);
+    accessEma[regionId] = emaUpdate(prevAccess, accessSample, alpha);
+    regions[regionId] = {
+      regionId,
+      turnsRecorded: (prevAff !== undefined ? 1 : 0) + (base.lastTurn > 0 ? 1 : 0) + turn,
+      rollingAffordability: affordabilityEma[regionId]!,
+      rollingAccessComposite: accessEma[regionId]!,
+      affordabilityTrend: trend(affordabilityEma[regionId]!, prevAff ?? affSample),
+      accessTrend: trend(accessEma[regionId]!, prevAccess ?? accessSample),
+    };
+  }
+
+  return {
+    snapshot: { turn, regions },
+    persisted: {
+      ...base,
+      lastTurn: turn,
+      affordabilityEma,
+      accessEma,
+    },
+  };
+}
+
+
+// --- source: coupling-trajectory.ts ---
+const DEFAULT_EMA_ALPHA = 0.4;
+
+export function createInitialCouplingTrajectory(): CouplingTrajectoryPersisted {
+  return {
+    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    lastTurn: 0,
+    emaAlpha: DEFAULT_EMA_ALPHA,
+    nationalCouplingEma: 58,
+    priorEma: undefined,
+  };
+}
+
+export function sanitizeCouplingTrajectory(
+  raw?: CouplingTrajectoryPersisted | null
+): CouplingTrajectoryPersisted {
+  if (!raw || typeof raw !== 'object') return createInitialCouplingTrajectory();
+  const alpha =
+    typeof raw.emaAlpha === 'number' && raw.emaAlpha > 0 && raw.emaAlpha <= 1
+      ? raw.emaAlpha
+      : DEFAULT_EMA_ALPHA;
+  const nationalCouplingEma =
+    typeof raw.nationalCouplingEma === 'number' && Number.isFinite(raw.nationalCouplingEma)
+      ? Math.max(0, Math.min(100, raw.nationalCouplingEma))
+      : 58;
+  return {
+    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
+    emaAlpha: alpha,
+    nationalCouplingEma,
+    priorEma:
+      typeof raw.priorEma === 'number' && Number.isFinite(raw.priorEma)
+        ? Math.max(0, Math.min(100, raw.priorEma))
+        : undefined,
+  };
+}
+
+function trajectoryFromDelta(
+  current: number,
+  previous: number | undefined,
+  epsilon = 0.6
+): CouplingTrajectorySnapshot['trajectory'] {
+  if (previous === undefined) return 'flat';
+  if (current - previous > epsilon) return 'improving';
+  if (previous - current > epsilon) return 'deteriorating';
+  return 'flat';
+}
+
+function bandFromCoupling(index: number): CouplingStressBand {
+  if (index >= 72) return 'stable';
+  if (index >= 55) return 'watch';
+  if (index >= 38) return 'strained';
+  return 'critical';
+}
+
+export function advanceCouplingTrajectory(
+  turn: number,
+  coupling: CrossPillarCouplingSnapshot,
+  persisted?: CouplingTrajectoryPersisted | null
+): { snapshot: CouplingTrajectorySnapshot; persisted: CouplingTrajectoryPersisted } {
+  const base = sanitizeCouplingTrajectory(persisted);
+  const alpha = base.emaAlpha;
+  const sample = coupling.nationalCouplingIndex;
+  const priorEma = base.nationalCouplingEma;
+  const nationalCouplingEma =
+    Math.round((alpha * sample + (1 - alpha) * priorEma) * 10) / 10;
+  const trajectory = trajectoryFromDelta(nationalCouplingEma, base.priorEma ?? priorEma);
+  const evidence: string[] = [];
+  if (trajectory === 'deteriorating') {
+    evidence.push(`Coupling EMA slipping (${priorEma} → ${nationalCouplingEma})`);
+  } else if (trajectory === 'improving') {
+    evidence.push(`Coupling EMA recovering (${priorEma} → ${nationalCouplingEma})`);
+  }
+  if (coupling.band === 'critical' || coupling.band === 'strained') {
+    evidence.push(`Instantaneous coupling ${coupling.band} at ${sample}`);
+  }
+
+  return {
+    snapshot: {
+      turn,
+      nationalCouplingEma,
+      instantaneousIndex: sample,
+      band: bandFromCoupling(nationalCouplingEma),
+      trajectory,
+      evidence,
+    },
+    persisted: {
+      ...base,
+      lastTurn: turn,
+      priorEma: priorEma,
+      nationalCouplingEma,
+    },
+  };
+}
+
+
+// --- source: wellbeing-accountability-scorecard.ts ---
+function clamp(n: number, lo = 0, hi = 100): number {
+  if (!Number.isFinite(n)) return lo;
+  return Math.max(lo, Math.min(hi, Math.round(n * 10) / 10));
+}
+
+function scoreBand(score: number): Agent14WellbeingAccountabilityScorecard['band'] {
+  if (score >= 78) return 'strong';
+  if (score >= 58) return 'adequate';
+  if (score >= 38) return 'at_risk';
+  return 'failing';
+}
+
+function pillarPortfolioBalance(
+  spending: DelayedSpendingPersisted
+): { score: number; note: string } {
+  const counts = { housing: 0, healthcare: 0, education: 0 };
+  for (const c of spending.active) counts[c.pillar] += 1;
+  const total = counts.housing + counts.healthcare + counts.education;
+  if (total === 0) return { score: 55, note: 'No active commitments — portfolio idle' };
+  const ideal = total / 3;
+  const variance =
+    (Math.abs(counts.housing - ideal) +
+      Math.abs(counts.healthcare - ideal) +
+      Math.abs(counts.education - ideal)) /
+    Math.max(1, total);
+  const score = clamp(72 - variance * 28);
+  return {
+    score,
+    note: `Portfolio mix H${counts.housing}/He${counts.healthcare}/E${counts.education}`,
+  };
+}
+
+export function composeWellbeingAccountabilityScorecard(args: {
+  turn: number;
+  capacity: PublicServiceCapacitySnapshot;
+  housing: NationalHousingWellbeingSnapshot;
+  warnings: Agent14WellbeingWarningBundle;
+  coupling: CrossPillarCouplingSnapshot;
+  couplingTrajectory?: CouplingTrajectorySnapshot;
+  memory?: RegionalWellbeingMemorySnapshot;
+  spendingPersisted: DelayedSpendingPersisted;
+}): Agent14WellbeingAccountabilityScorecard {
+  const evidence: string[] = [];
+  let deliveryScore = clamp(args.capacity.deliveryCapacityIndex);
+  if (args.capacity.bindingConstraint !== 'none') {
+    deliveryScore -= 8;
+    evidence.push(`Delivery bound by ${args.capacity.bindingConstraint}`);
+  }
+
+  let equityScore = clamp(100 - args.housing.regionalEquityGap * 1.4);
+  if (args.housing.affordabilityStress === 'severe') equityScore -= 12;
+  else if (args.housing.affordabilityStress === 'elevated') equityScore -= 6;
+
+  const criticalWarnings = args.warnings.warnings.filter((w) => w.severity === 'critical').length;
+  const elevatedWarnings = args.warnings.warnings.filter((w) => w.severity === 'elevated').length;
+  let warningScore = clamp(88 - criticalWarnings * 14 - elevatedWarnings * 6);
+  if (criticalWarnings > 0) {
+    evidence.push(`${criticalWarnings} critical wellbeing warning(s)`);
+  }
+
+  let couplingScore = clamp(args.coupling.nationalCouplingIndex);
+  if (args.couplingTrajectory?.trajectory === 'deteriorating') couplingScore -= 10;
+  if (args.couplingTrajectory?.trajectory === 'improving') couplingScore += 4;
+
+  const portfolio = pillarPortfolioBalance(args.spendingPersisted);
+  evidence.push(portfolio.note);
+
+  let memoryScore = 60;
+  if (args.memory) {
+    const rows = Object.values(args.memory.regions);
+    const deteriorating = rows.filter((r) => r.affordabilityTrend === 'deteriorating').length;
+    const improving = rows.filter((r) => r.affordabilityTrend === 'improving').length;
+    memoryScore = clamp(62 + improving * 3 - deteriorating * 5);
+    if (deteriorating >= 3) evidence.push(`${deteriorating} regions with deteriorating affordability EMA`);
+  }
+
+  const overallScore = clamp(
+    deliveryScore * 0.22 +
+      equityScore * 0.24 +
+      warningScore * 0.18 +
+      couplingScore * 0.2 +
+      portfolio.score * 0.08 +
+      memoryScore * 0.08
+  );
+
+  return {
+    turn: args.turn,
+    overallScore,
+    band: scoreBand(overallScore),
+    dimensions: {
+      delivery: deliveryScore,
+      equity: equityScore,
+      warnings: warningScore,
+      coupling: couplingScore,
+      portfolioBalance: portfolio.score,
+      memoryTrend: memoryScore,
+    },
+    evidence,
+  };
+}
+
+
+// --- source: equity-rebalancing-advisor.ts ---
+function clamp(n: number, lo = 0, hi = 100): number {
+  if (!Number.isFinite(n)) return lo;
+  return Math.max(lo, Math.min(hi, Math.round(n * 10) / 10));
+}
+
+function programsForRegion(regionId: string, pillar?: 'housing' | 'healthcare' | 'education'): string[] {
+  return AGENT14_ALL_PROGRAM_STUBS.filter(
+    (s) => s.regionId === regionId && (pillar ? s.pillar === pillar : true)
+  ).map((s) => s.id);
+}
+
+export function adviseEquityRebalancing(args: {
+  turn: number;
+  housing: NationalHousingWellbeingSnapshot;
+  access: NationalServiceAccessLens;
+  memory?: RegionalWellbeingMemorySnapshot;
+  maxRegions?: number;
+}): EquityRebalancingAdvice {
+  const maxRegions = args.maxRegions ?? 4;
+  const lagging: EquityRebalancingAdvice['laggingRegions'] = [];
+
+  for (const regionId of AGENT14_CORE_REGIONS) {
+    const h = args.housing.regions[regionId];
+    const a = args.access.regions[regionId];
+    const mem = args.memory?.regions[regionId];
+    const affordability = h?.affordabilityIndex ?? args.housing.nationalAffordabilityIndex;
+    const accessIdx = a?.compositeIndex ?? args.access.nationalComposite;
+    const nationalAff = args.housing.nationalAffordabilityIndex;
+    const deficitIndex = clamp(
+      (nationalAff - affordability) * 0.55 + (args.access.nationalComposite - accessIdx) * 0.45
+    );
+    let urgency = deficitIndex;
+    if (mem?.affordabilityTrend === 'deteriorating') urgency += 8;
+    if (h?.affordabilityStress === 'severe') urgency += 10;
+    if (accessIdx < 42) urgency += 6;
+
+    if (urgency < 12) continue;
+
+    const weakestPillar = (['housing', 'healthcare', 'education'] as const).sort(
+      (p1, p2) => (a?.pillars[p1].accessIndex ?? 50) - (a?.pillars[p2].accessIndex ?? 50)
+    )[0];
+
+    lagging.push({
+      regionId,
+      deficitIndex: Math.round(deficitIndex * 10) / 10,
+      urgencyScore: Math.round(urgency * 10) / 10,
+      weakestPillar,
+      suggestedProgramIds: programsForRegion(regionId, weakestPillar).slice(0, 3),
+      rationale: `Affordability ${affordability} vs national ${nationalAff}; access ${accessIdx}`,
+    });
+  }
+
+  lagging.sort((a, b) => b.urgencyScore - a.urgencyScore);
+  const top = lagging.slice(0, maxRegions);
+  const equityGap = args.housing.regionalEquityGap;
+  const shouldEscalate =
+    equityGap >= 18 || top.some((r) => r.urgencyScore >= 28) || top.length >= 3;
+
+  return {
+    turn: args.turn,
+    equityGap,
+    shouldEscalate,
+    laggingRegions: top,
+    summary:
+      top.length === 0
+        ? 'Regional equity within tolerance — no rebalance push'
+        : `Prioritize ${top.map((r) => r.regionId).join(', ')} (gap ${equityGap})`,
+  };
+}
+
+
+// --- source: accountability-trajectory.ts ---
+const DEFAULT_EMA_ALPHA = 0.35;
+
+export function createInitialAccountabilityTrajectory(): AccountabilityTrajectoryPersisted {
+  return {
+    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    lastTurn: 0,
+    emaAlpha: DEFAULT_EMA_ALPHA,
+    overallScoreEma: 62,
+    priorEma: undefined,
+  };
+}
+
+export function sanitizeAccountabilityTrajectory(
+  raw?: AccountabilityTrajectoryPersisted | null
+): AccountabilityTrajectoryPersisted {
+  if (!raw || typeof raw !== 'object') return createInitialAccountabilityTrajectory();
+  const alpha =
+    typeof raw.emaAlpha === 'number' && raw.emaAlpha > 0 && raw.emaAlpha <= 1
+      ? raw.emaAlpha
+      : DEFAULT_EMA_ALPHA;
+  const overallScoreEma =
+    typeof raw.overallScoreEma === 'number' && Number.isFinite(raw.overallScoreEma)
+      ? Math.max(0, Math.min(100, raw.overallScoreEma))
+      : 62;
+  return {
+    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
+    emaAlpha: alpha,
+    overallScoreEma,
+    priorEma:
+      typeof raw.priorEma === 'number' && Number.isFinite(raw.priorEma)
+        ? Math.max(0, Math.min(100, raw.priorEma))
+        : undefined,
+  };
+}
+
+function trajectoryFromDelta(
+  current: number,
+  previous: number | undefined,
+  epsilon = 0.8
+): AccountabilityTrajectorySnapshot['trajectory'] {
+  if (previous === undefined) return 'flat';
+  if (current - previous > epsilon) return 'improving';
+  if (previous - current > epsilon) return 'deteriorating';
+  return 'flat';
+}
+
+function bandFromScore(score: number): AccountabilityBand {
+  if (score >= 78) return 'strong';
+  if (score >= 58) return 'adequate';
+  if (score >= 38) return 'at_risk';
+  return 'failing';
+}
+
+export function advanceAccountabilityTrajectory(
+  turn: number,
+  scorecard: Agent14WellbeingAccountabilityScorecard,
+  persisted?: AccountabilityTrajectoryPersisted | null
+): { snapshot: AccountabilityTrajectorySnapshot; persisted: AccountabilityTrajectoryPersisted } {
+  const base = sanitizeAccountabilityTrajectory(persisted);
+  const alpha = base.emaAlpha;
+  const sample = scorecard.overallScore;
+  const priorEma = base.overallScoreEma;
+  const overallScoreEma = Math.round((alpha * sample + (1 - alpha) * priorEma) * 10) / 10;
+  const trajectory = trajectoryFromDelta(overallScoreEma, base.priorEma ?? priorEma);
+  const evidence: string[] = [];
+  if (trajectory === 'deteriorating') {
+    evidence.push(`Accountability EMA slipping (${priorEma} → ${overallScoreEma})`);
+  } else if (trajectory === 'improving') {
+    evidence.push(`Accountability EMA recovering (${priorEma} → ${overallScoreEma})`);
+  }
+  if (scorecard.band === 'failing' || scorecard.band === 'at_risk') {
+    evidence.push(`Instantaneous accountability ${scorecard.band} at ${sample}`);
+  }
+
+  return {
+    snapshot: {
+      turn,
+      overallScoreEma,
+      instantaneousScore: sample,
+      band: bandFromScore(overallScoreEma),
+      trajectory,
+      evidence,
+    },
+    persisted: {
+      ...base,
+      lastTurn: turn,
+      priorEma: priorEma,
+      overallScoreEma,
+    },
+  };
+}
+
+
+// --- source: wellbeing-resilience-index.ts ---
+function clamp(n: number, lo = 0, hi = 100): number {
+  if (!Number.isFinite(n)) return lo;
+  return Math.max(lo, Math.min(hi, Math.round(n * 10) / 10));
+}
+
+function bandFromIndex(index: number): WellbeingResilienceBand {
+  if (index >= 72) return 'robust';
+  if (index >= 55) return 'steady';
+  if (index >= 38) return 'fragile';
+  return 'critical';
+}
+
+export function computeWellbeingResilienceIndex(args: {
+  turn: number;
+  capacity: PublicServiceCapacitySnapshot;
+  housing: NationalHousingWellbeingSnapshot;
+  warnings: Agent14WellbeingWarningBundle;
+  coupling: CrossPillarCouplingSnapshot;
+  couplingTrajectory?: CouplingTrajectorySnapshot;
+  accountabilityScorecard?: Agent14WellbeingAccountabilityScorecard;
+}): WellbeingResilienceSnapshot {
+  const drivers: string[] = [];
+  let stressLoad = 0;
+
+  stressLoad += Math.max(0, 100 - args.capacity.deliveryCapacityIndex) * 0.35;
+  if (args.capacity.bindingConstraint !== 'none') {
+    stressLoad += 8;
+    drivers.push(`Delivery bound by ${args.capacity.bindingConstraint}`);
+  }
+
+  if (args.housing.affordabilityStress === 'severe') stressLoad += 18;
+  else if (args.housing.affordabilityStress === 'elevated') stressLoad += 10;
+  stressLoad += args.housing.regionalEquityGap * 0.45;
+
+  const critical = args.warnings.warnings.filter((w) => w.severity === 'critical').length;
+  const elevated = args.warnings.warnings.filter((w) => w.severity === 'elevated').length;
+  stressLoad += critical * 12 + elevated * 5;
+  if (critical > 0) drivers.push(`${critical} critical wellbeing warning(s)`);
+
+  stressLoad += Math.max(0, 68 - args.coupling.nationalCouplingIndex) * 0.4;
+  if (args.coupling.band === 'critical' || args.coupling.band === 'strained') {
+    drivers.push(`Coupling ${args.coupling.band}`);
+  }
+  if (args.couplingTrajectory?.trajectory === 'deteriorating') {
+    stressLoad += 10;
+    drivers.push('Coupling trajectory deteriorating');
+  }
+
+  if (args.accountabilityScorecard?.band === 'failing') stressLoad += 14;
+  else if (args.accountabilityScorecard?.band === 'at_risk') stressLoad += 8;
+
+  stressLoad = clamp(stressLoad);
+  const resilienceIndex = clamp(100 - stressLoad * 0.92);
+  const band = bandFromIndex(resilienceIndex);
+  if (band === 'critical' || band === 'fragile') {
+    drivers.push(`Resilience ${band} (${resilienceIndex})`);
+  }
+
+  return {
+    turn: args.turn,
+    resilienceIndex,
+    band,
+    stressLoad,
+    drivers: drivers.slice(0, 5),
+  };
+}
+
+
+// --- source: resilience-trajectory.ts ---
+const DEFAULT_EMA_ALPHA = 0.32;
+
+export function createInitialResilienceTrajectory(): ResilienceTrajectoryPersisted {
+  return {
+    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    lastTurn: 0,
+    emaAlpha: DEFAULT_EMA_ALPHA,
+    resilienceIndexEma: 58,
+    priorEma: undefined,
+  };
+}
+
+export function sanitizeResilienceTrajectory(
+  raw?: ResilienceTrajectoryPersisted | null
+): ResilienceTrajectoryPersisted {
+  if (!raw || typeof raw !== 'object') return createInitialResilienceTrajectory();
+  const alpha =
+    typeof raw.emaAlpha === 'number' && raw.emaAlpha > 0 && raw.emaAlpha <= 1
+      ? raw.emaAlpha
+      : DEFAULT_EMA_ALPHA;
+  const resilienceIndexEma =
+    typeof raw.resilienceIndexEma === 'number' && Number.isFinite(raw.resilienceIndexEma)
+      ? Math.max(0, Math.min(100, raw.resilienceIndexEma))
+      : 58;
+  return {
+    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
+    emaAlpha: alpha,
+    resilienceIndexEma,
+    priorEma:
+      typeof raw.priorEma === 'number' && Number.isFinite(raw.priorEma)
+        ? Math.max(0, Math.min(100, raw.priorEma))
+        : undefined,
+  };
+}
+
+function trajectoryFromDelta(
+  current: number,
+  previous: number | undefined,
+  epsilon = 0.9
+): ResilienceTrajectorySnapshot['trajectory'] {
+  if (previous === undefined) return 'flat';
+  if (current - previous > epsilon) return 'improving';
+  if (previous - current > epsilon) return 'deteriorating';
+  return 'flat';
+}
+
+function bandFromIndex(index: number): WellbeingResilienceBand {
+  if (index >= 72) return 'robust';
+  if (index >= 55) return 'steady';
+  if (index >= 38) return 'fragile';
+  return 'critical';
+}
+
+export function advanceResilienceTrajectory(
+  turn: number,
+  resilience: WellbeingResilienceSnapshot,
+  persisted?: ResilienceTrajectoryPersisted | null
+): { snapshot: ResilienceTrajectorySnapshot; persisted: ResilienceTrajectoryPersisted } {
+  const base = sanitizeResilienceTrajectory(persisted);
+  const alpha = base.emaAlpha;
+  const sample = resilience.resilienceIndex;
+  const priorEma = base.resilienceIndexEma;
+  const resilienceIndexEma = Math.round((alpha * sample + (1 - alpha) * priorEma) * 10) / 10;
+  const trajectory = trajectoryFromDelta(resilienceIndexEma, base.priorEma ?? priorEma);
+  const evidence: string[] = [];
+  if (trajectory === 'deteriorating') {
+    evidence.push(`Resilience EMA softening (${priorEma} → ${resilienceIndexEma})`);
+  } else if (trajectory === 'improving') {
+    evidence.push(`Resilience EMA recovering (${priorEma} → ${resilienceIndexEma})`);
+  }
+  if (resilience.band === 'critical' || resilience.band === 'fragile') {
+    evidence.push(`Instantaneous resilience ${resilience.band} at ${sample}`);
+  }
+
+  return {
+    snapshot: {
+      turn,
+      resilienceIndexEma,
+      instantaneousIndex: sample,
+      band: bandFromIndex(resilienceIndexEma),
+      trajectory,
+      evidence,
+    },
+    persisted: {
+      ...base,
+      lastTurn: turn,
+      priorEma: priorEma,
+      resilienceIndexEma,
+    },
+  };
+}
+
+
+// --- source: intervention-priority-queue.ts ---
+function clamp(n: number, lo = 0, hi = 100): number {
+  if (!Number.isFinite(n)) return lo;
+  return Math.max(lo, Math.min(hi, Math.round(n * 10) / 10));
+}
+
+export function buildWellbeingInterventionPriorityQueue(args: {
+  turn: number;
+  capacity: PublicServiceCapacitySnapshot;
+  recommendations: ProgramSequencingRecommendation[];
+  equityRebalancing: EquityRebalancingAdvice;
+  limit?: number;
+}): WellbeingInterventionPriorityQueue {
+  const limit = args.limit ?? 6;
+  const byProgram = new Map<string, WellbeingInterventionPriorityItem>();
+
+  for (const region of args.equityRebalancing.laggingRegions) {
+    for (const programId of region.suggestedProgramIds) {
+      const commitment = commitmentFromProgramStub(programId, args.turn, byProgram.size + 1);
+      const fitsCapacity = commitment
+        ? canAcceptSpendingCommitment(args.capacity, commitment).allowed
+        : false;
+      const priorityScore = clamp(region.urgencyScore + (fitsCapacity ? 6 : 0));
+      const existing = byProgram.get(programId);
+      if (!existing || priorityScore > existing.priorityScore) {
+        byProgram.set(programId, {
+          rank: 0,
+          programId,
+          regionId: region.regionId,
+          pillar: region.weakestPillar,
+          priorityScore,
+          source: 'equity',
+          fitsCapacity,
+          rationale: region.rationale,
+        });
+      }
+    }
+  }
+
+  for (const rec of args.recommendations) {
+    const commitment = commitmentFromProgramStub(rec.programId, args.turn, byProgram.size + 1);
+    const fitsCapacity =
+      rec.fitsCapacity ||
+      (commitment ? canAcceptSpendingCommitment(args.capacity, commitment).allowed : false);
+    const priorityScore = clamp(48 - rec.rank * 4 + (fitsCapacity ? 8 : 0));
+    const existing = byProgram.get(rec.programId);
+    if (!existing || priorityScore > existing.priorityScore) {
+      byProgram.set(rec.programId, {
+        rank: 0,
+        programId: rec.programId,
+        regionId: rec.regionId,
+        pillar: rec.pillar,
+        priorityScore,
+        source: 'sequencing',
+        fitsCapacity,
+        rationale: rec.rationale,
+      });
+    }
+  }
+
+  if (args.capacity.bindingConstraint !== 'none' && args.capacity.slotsFree <= 1) {
+    const relief = args.recommendations.find((r) => r.fitsCapacity);
+    if (relief) {
+      const existing = byProgram.get(relief.programId);
+      const boosted = clamp((existing?.priorityScore ?? 40) + 12);
+      byProgram.set(relief.programId, {
+        rank: 0,
+        programId: relief.programId,
+        regionId: relief.regionId,
+        pillar: relief.pillar,
+        priorityScore: boosted,
+        source: 'capacity_relief',
+        fitsCapacity: true,
+        rationale: `Capacity relief while ${args.capacity.bindingConstraint} binds`,
+      });
+    }
+  }
+
+  const items = [...byProgram.values()]
+    .sort((a, b) => b.priorityScore - a.priorityScore)
+    .slice(0, limit)
+    .map((item, i) => ({ ...item, rank: i + 1 }));
+
+  const shouldExpedite =
+    args.equityRebalancing.shouldEscalate ||
+    items.some((i) => i.priorityScore >= 32 && i.fitsCapacity) ||
+    (args.capacity.bindingConstraint !== 'none' && items.some((i) => i.source === 'capacity_relief'));
+
+  const summary =
+    items.length === 0
+      ? 'No ranked interventions — monitor capacity and equity'
+      : `Queue ${items.slice(0, 3).map((i) => i.programId).join(', ')}${shouldExpedite ? ' (expedite)' : ''}`;
+
+  return {
+    turn: args.turn,
+    shouldExpedite,
+    items,
+    summary,
+  };
+}
+
+
+// --- source: capacity-relief-scheduler.ts ---
+export function buildCapacityReliefSchedule(args: {
+  turn: number;
+  capacity: PublicServiceCapacitySnapshot;
+  interventionQueue: WellbeingInterventionPriorityQueue;
+  limit?: number;
+}): CapacityReliefSchedule {
+  const limit = args.limit ?? 4;
+  const binding = args.capacity.bindingConstraint;
+  const items: CapacityReliefScheduleItem[] = [];
+
+  let offset = 1;
+  for (const item of args.interventionQueue.items) {
+    if (!item.fitsCapacity && binding !== 'none') {
+      items.push({
+        turn: args.turn,
+        regionId: item.regionId,
+        pillar: item.pillar,
+        programId: item.programId,
+        reliefTurnOffset: offset,
+        bindingConstraint: binding,
+        rationale: `Defer until ${binding} eases — ${item.rationale}`,
+      });
+      offset += 1;
+    } else if (item.source === 'capacity_relief') {
+      items.push({
+        turn: args.turn,
+        regionId: item.regionId,
+        pillar: item.pillar,
+        programId: item.programId,
+        reliefTurnOffset: 0,
+        bindingConstraint: binding,
+        rationale: item.rationale,
+      });
+    }
+    if (items.length >= limit) break;
+  }
+
+  const shouldDeferNewCommits =
+    binding === 'fiscal_absorption' ||
+    binding === 'workforce' ||
+    (binding === 'program_slots' && args.capacity.slotsFree <= 0);
+
+  const summary =
+    items.length === 0
+      ? shouldDeferNewCommits
+        ? `Capacity relief: defer new commits (${binding})`
+        : 'Capacity relief schedule clear'
+      : `Relief window for ${items.map((i) => i.programId).join(', ')}`;
+
+  return {
+    turn: args.turn,
+    bindingConstraint: binding,
+    shouldDeferNewCommits,
+    items: items.slice(0, limit),
+    summary,
+  };
+}
+
+
+// --- source: wellbeing-governance-panel.ts ---
+function clamp(n: number, lo = 0, hi = 100): number {
+  if (!Number.isFinite(n)) return lo;
+  return Math.max(lo, Math.min(hi, Math.round(n * 10) / 10));
+}
+
+function governanceBandFromSignals(args: {
+  accountabilityBand: AccountabilityBand;
+  resilienceBand: WellbeingResilienceBand;
+  accountabilityTrajectory?: AccountabilityTrajectorySnapshot;
+  resilienceTrajectory?: ResilienceTrajectorySnapshot;
+}): WellbeingGovernanceBand {
+  const accFail = args.accountabilityBand === 'failing' || args.accountabilityBand === 'at_risk';
+  const resFragile = args.resilienceBand === 'fragile' || args.resilienceBand === 'critical';
+  const bothSlipping =
+    args.accountabilityTrajectory?.trajectory === 'deteriorating' &&
+    args.resilienceTrajectory?.trajectory === 'deteriorating';
+
+  if (accFail && resFragile) return 'crisis';
+  if (accFail || resFragile || bothSlipping) return 'misaligned';
+  if (
+    args.accountabilityTrajectory?.trajectory === 'deteriorating' ||
+    args.resilienceTrajectory?.trajectory === 'deteriorating'
+  ) {
+    return 'watch';
+  }
+  return 'aligned';
+}
+
+export function composeWellbeingGovernancePanel(args: {
+  turn: number;
+  accountabilityScorecard?: Agent14WellbeingAccountabilityScorecard;
+  wellbeingResilience?: WellbeingResilienceSnapshot;
+  accountabilityTrajectory?: AccountabilityTrajectorySnapshot;
+  resilienceTrajectory?: ResilienceTrajectorySnapshot;
+}): WellbeingGovernancePanel {
+  const accountabilityBand = args.accountabilityScorecard?.band ?? 'adequate';
+  const resilienceBand = args.wellbeingResilience?.band ?? 'steady';
+  const governanceScore = clamp(
+    (args.accountabilityScorecard?.overallScore ?? 55) * 0.52 +
+      (args.wellbeingResilience?.resilienceIndex ?? 55) * 0.48
+  );
+  const band = governanceBandFromSignals({
+    accountabilityBand,
+    resilienceBand,
+    accountabilityTrajectory: args.accountabilityTrajectory,
+    resilienceTrajectory: args.resilienceTrajectory,
+  });
+
+  const headlines: string[] = [];
+  if (band === 'crisis') headlines.push('Governance crisis — accountability and resilience both stressed');
+  else if (band === 'misaligned') headlines.push('Governance misaligned — rebalance portfolio and capacity');
+  else if (band === 'watch') headlines.push('Governance watch — one trajectory slipping');
+  else headlines.push('Governance aligned across accountability and resilience');
+
+  if (args.resilienceTrajectory?.trajectory === 'improving') {
+    headlines.push('Resilience trajectory improving');
+  }
+
+  const summary = `${band} governance (${governanceScore}) — accountability ${accountabilityBand}, resilience ${resilienceBand}`;
+
+  return {
+    turn: args.turn,
+    accountabilityBand,
+    resilienceBand,
+    governanceScore,
+    band,
+    headlines: headlines.slice(0, 3),
+    summary,
+  };
+}
+
+
+// --- source: wellbeing-executive-brief.ts ---
+export function composeAgent14WellbeingExecutiveBrief(args: {
+  turn: number;
+  warnings: Agent14WellbeingWarningBundle;
+  coupling: CrossPillarCouplingSnapshot;
+  recommendations: ProgramSequencingRecommendation[];
+  forecastPoints?: WellbeingTurnForecastPoint[];
+  accountabilityScorecard?: Agent14WellbeingAccountabilityScorecard;
+  equityRebalancing?: EquityRebalancingAdvice;
+  accountabilityTrajectory?: AccountabilityTrajectorySnapshot;
+  interventionPriorityQueue?: WellbeingInterventionPriorityQueue;
+  wellbeingResilience?: WellbeingResilienceSnapshot;
+  resilienceTrajectory?: ResilienceTrajectorySnapshot;
+  capacityReliefSchedule?: CapacityReliefSchedule;
+  wellbeingGovernancePanel?: WellbeingGovernancePanel;
+}): Agent14WellbeingExecutiveBrief {
+  const giNotes: string[] = [];
+  const topWarning = args.warnings.warnings.sort((a, b) => {
+    const rank = (s: string) =>
+      s === 'critical' ? 4 : s === 'elevated' ? 3 : s === 'watch' ? 2 : 1;
+    return rank(b.severity) - rank(a.severity);
+  })[0];
+
+  let forecastDeltaAffordability: number | undefined;
+  if (args.forecastPoints && args.forecastPoints.length >= 2) {
+    const first = args.forecastPoints[0]!;
+    const last = args.forecastPoints[args.forecastPoints.length - 1]!;
+    forecastDeltaAffordability =
+      Math.round((last.affordabilityIndex - first.affordabilityIndex) * 10) / 10;
+    giNotes.push(
+      `Forecast horizon Δ affordability ${forecastDeltaAffordability} over ${args.forecastPoints.length} turns`
+    );
+  }
+
+  const topRec = args.recommendations.find((r) => r.fitsCapacity) ?? args.recommendations[0];
+  if (topRec) {
+    giNotes.push(`Top sequenced program ${topRec.programId} (${topRec.pillar}, ${topRec.regionId})`);
+  }
+
+  if (args.coupling.evidence.length > 0) {
+    giNotes.push(...args.coupling.evidence.slice(0, 2));
+  }
+
+  if (args.accountabilityScorecard) {
+    giNotes.push(
+      `Accountability ${args.accountabilityScorecard.band} (${args.accountabilityScorecard.overallScore})`
+    );
+  }
+  if (args.equityRebalancing?.shouldEscalate) {
+    giNotes.push(`Equity rebalance: ${args.equityRebalancing.summary}`);
+  }
+  if (args.accountabilityTrajectory?.trajectory === 'deteriorating') {
+    giNotes.push(
+      `Accountability trajectory ${args.accountabilityTrajectory.trajectory} (EMA ${args.accountabilityTrajectory.overallScoreEma})`
+    );
+  }
+  if (args.interventionPriorityQueue?.shouldExpedite) {
+    giNotes.push(`Intervention queue: ${args.interventionPriorityQueue.summary}`);
+  }
+  if (args.wellbeingResilience && (args.wellbeingResilience.band === 'fragile' || args.wellbeingResilience.band === 'critical')) {
+    giNotes.push(`Wellbeing resilience ${args.wellbeingResilience.band} (${args.wellbeingResilience.resilienceIndex})`);
+  }
+  if (args.resilienceTrajectory?.trajectory === 'deteriorating') {
+    giNotes.push(
+      `Resilience trajectory ${args.resilienceTrajectory.trajectory} (EMA ${args.resilienceTrajectory.resilienceIndexEma})`
+    );
+  }
+  if (args.capacityReliefSchedule?.shouldDeferNewCommits) {
+    giNotes.push(`Capacity relief: ${args.capacityReliefSchedule.summary}`);
+  }
+  if (args.wellbeingGovernancePanel && args.wellbeingGovernancePanel.band !== 'aligned') {
+    giNotes.push(args.wellbeingGovernancePanel.summary);
+  }
+
+  const headlineParts: string[] = [];
+  if (args.coupling.band === 'critical' || args.coupling.band === 'strained') {
+    headlineParts.push(`Cross-pillar coupling ${args.coupling.band}`);
+  } else if (topWarning) {
+    headlineParts.push(topWarning.title);
+  } else {
+    headlineParts.push('Public services delivery within expected bands');
+  }
+
+  if (forecastDeltaAffordability !== undefined && forecastDeltaAffordability < -2) {
+    headlineParts.push('affordability trajectory softening');
+  }
+  if (args.wellbeingGovernancePanel?.band === 'crisis') {
+    headlineParts.push('governance crisis');
+  } else if (args.wellbeingResilience?.band === 'critical') {
+    headlineParts.push('wellbeing resilience critical');
+  }
+
+  return {
+    turn: args.turn,
+    headline: headlineParts.join('; '),
+    topWarningId: topWarning?.id,
+    forecastDeltaAffordability,
+    couplingBand: args.coupling.band,
+    recommendedProgramId: topRec?.programId,
+    giNotes,
+  };
+}
+
+
+// --- source: turn-advance.ts ---
+export interface AdvancePublicServicesTurnArgs {
+  inputs: CapacityAndSpendingInputs;
+  spendingPersisted?: DelayedSpendingPersisted | null;
+  wellbeingMemoryPersisted?: RegionalWellbeingMemoryPersisted | null;
+  couplingTrajectoryPersisted?: CouplingTrajectoryPersisted | null;
+  accountabilityTrajectoryPersisted?: AccountabilityTrajectoryPersisted | null;
+  resilienceTrajectoryPersisted?: ResilienceTrajectoryPersisted | null;
+  /** New commitments queued this turn (already validated or not). */
+  newCommitments?: SpendingCommitment[];
+  /** When true, reject commitments that fail capacity gate. */
+  enforceCapacity?: boolean;
+}
+
+export interface AdvancePublicServicesTurnResult {
+  inputs: EnrichedPublicServiceTurnInputs;
+  spendingPersisted: DelayedSpendingPersisted;
+  wellbeingMemoryPersisted: RegionalWellbeingMemoryPersisted;
+  couplingTrajectoryPersisted: CouplingTrajectoryPersisted;
+  accountabilityTrajectoryPersisted: AccountabilityTrajectoryPersisted;
+  resilienceTrajectoryPersisted: ResilienceTrajectoryPersisted;
+  rejectedCommitments: Array<{ commitment: SpendingCommitment; reason: string }>;
+}
+
+export function advancePublicServicesTurn(
+  args: AdvancePublicServicesTurnArgs
+): AdvancePublicServicesTurnResult {
+  const turn = Math.max(1, Math.floor(args.inputs.turn || 1));
+  let spendingPersisted = args.spendingPersisted ?? null;
+  const rejectedCommitments: AdvancePublicServicesTurnResult['rejectedCommitments'] = [];
+
+  for (const c of args.newCommitments ?? []) {
+    const capacityNow = computePublicServiceCapacity(
+      args.inputs,
+      spendingPersisted?.active ?? []
+    );
+    const gate = canAcceptSpendingCommitment(capacityNow, c);
+    if (!gate.allowed && args.enforceCapacity !== false) {
+      rejectedCommitments.push({ commitment: c, reason: gate.reason });
+      continue;
+    }
+    spendingPersisted = commitSpendingProgram(spendingPersisted, c);
+  }
+
+  const { effects, persisted: afterTick } = advanceDelayedSpendingEffects(turn, spendingPersisted);
+  spendingPersisted = afterTick;
+
+  const capacity = computePublicServiceCapacity(args.inputs, spendingPersisted.active);
+
+  const fiscalHeadroom = args.inputs.fiscalHeadroom ?? 55;
+  const regionalPipelines = computeAllRegionalHousingPipelines(
+    turn,
+    capacity,
+    effects,
+    fiscalHeadroom
+  );
+  const housingWellbeing = computeNationalHousingWellbeingSnapshot(turn, regionalPipelines);
+
+  const remoteShareByRegion = Object.fromEntries(
+    AGENT14_CORE_REGIONS.map((r) => [r, AGENT14_HOUSING_REGION_BASELINE[r].remoteShare])
+  );
+  const serviceAccessLens = computeNationalServiceAccessLens(
+    turn,
+    capacity,
+    effects,
+    remoteShareByRegion
+  );
+  const wellbeingWarnings = evaluateAgent14WellbeingWarnings(
+    capacity,
+    housingWellbeing,
+    serviceAccessLens
+  );
+  const programRecommendations = recommendAgent14ProgramSequence(
+    turn,
+    capacity,
+    housingWellbeing,
+    serviceAccessLens,
+    6
+  );
+
+  const crossPillarCoupling = computeCrossPillarCoupling(
+    turn,
+    capacity,
+    housingWellbeing,
+    serviceAccessLens
+  );
+
+  const memoryAdvance = advanceRegionalWellbeingMemory(
+    turn,
+    housingWellbeing,
+    serviceAccessLens,
+    args.wellbeingMemoryPersisted
+  );
+
+  const couplingTrajectoryAdvance = advanceCouplingTrajectory(
+    turn,
+    crossPillarCoupling,
+    args.couplingTrajectoryPersisted
+  );
+
+  const equityRebalancing = adviseEquityRebalancing({
+    turn,
+    housing: housingWellbeing,
+    access: serviceAccessLens,
+    memory: memoryAdvance.snapshot,
+  });
+
+  const accountabilityScorecard = composeWellbeingAccountabilityScorecard({
+    turn,
+    capacity,
+    housing: housingWellbeing,
+    warnings: wellbeingWarnings,
+    coupling: crossPillarCoupling,
+    couplingTrajectory: couplingTrajectoryAdvance.snapshot,
+    memory: memoryAdvance.snapshot,
+    spendingPersisted,
+  });
+
+  const accountabilityTrajectoryAdvance = advanceAccountabilityTrajectory(
+    turn,
+    accountabilityScorecard,
+    args.accountabilityTrajectoryPersisted
+  );
+
+  const interventionPriorityQueue = buildWellbeingInterventionPriorityQueue({
+    turn,
+    capacity,
+    recommendations: programRecommendations,
+    equityRebalancing,
+  });
+
+  const wellbeingResilience = computeWellbeingResilienceIndex({
+    turn,
+    capacity,
+    housing: housingWellbeing,
+    warnings: wellbeingWarnings,
+    coupling: crossPillarCoupling,
+    couplingTrajectory: couplingTrajectoryAdvance.snapshot,
+    accountabilityScorecard,
+  });
+
+  const resilienceTrajectoryAdvance = advanceResilienceTrajectory(
+    turn,
+    wellbeingResilience,
+    args.resilienceTrajectoryPersisted
+  );
+
+  const capacityReliefSchedule = buildCapacityReliefSchedule({
+    turn,
+    capacity,
+    interventionQueue: interventionPriorityQueue,
+  });
+
+  const wellbeingGovernancePanel = composeWellbeingGovernancePanel({
+    turn,
+    accountabilityScorecard,
+    wellbeingResilience,
+    accountabilityTrajectory: accountabilityTrajectoryAdvance.snapshot,
+    resilienceTrajectory: resilienceTrajectoryAdvance.snapshot,
+  });
+
+  const executiveBrief = composeAgent14WellbeingExecutiveBrief({
+    turn,
+    warnings: wellbeingWarnings,
+    coupling: crossPillarCoupling,
+    recommendations: programRecommendations,
+    accountabilityScorecard,
+    equityRebalancing,
+    accountabilityTrajectory: accountabilityTrajectoryAdvance.snapshot,
+    interventionPriorityQueue,
+    wellbeingResilience,
+    resilienceTrajectory: resilienceTrajectoryAdvance.snapshot,
+    capacityReliefSchedule,
+    wellbeingGovernancePanel,
+  });
+
+  const enriched: EnrichedPublicServiceTurnInputs = {
+    ...args.inputs,
+    turn,
+    fiscalLoadFromActivePrograms: Math.round(
+      (effects.fiscalLoadThisTurn + (args.inputs.activeProgramCount ?? 0) * 0.5) * 10
+    ) / 10,
+    completedHousingProjects: effects.completedProjectBoost.housing,
+    completedHealthProjects: effects.completedProjectBoost.healthcare,
+    completedEducationProjects: effects.completedProjectBoost.education,
+    activeProgramCount: spendingPersisted.active.length,
+    capacity,
+    spending: effects,
+    housingWellbeing,
+    serviceAccessLens,
+    wellbeingWarnings,
+    programRecommendations,
+    crossPillarCoupling,
+    regionalWellbeingMemory: memoryAdvance.snapshot,
+    executiveBrief,
+    couplingTrajectory: couplingTrajectoryAdvance.snapshot,
+    accountabilityScorecard,
+    equityRebalancing,
+    accountabilityTrajectory: accountabilityTrajectoryAdvance.snapshot,
+    interventionPriorityQueue,
+    wellbeingResilience,
+    resilienceTrajectory: resilienceTrajectoryAdvance.snapshot,
+    capacityReliefSchedule,
+    wellbeingGovernancePanel,
+  };
+
+  return {
+    inputs: enriched,
+    spendingPersisted,
+    wellbeingMemoryPersisted: memoryAdvance.persisted,
+    couplingTrajectoryPersisted: couplingTrajectoryAdvance.persisted,
+    accountabilityTrajectoryPersisted: accountabilityTrajectoryAdvance.persisted,
+    resilienceTrajectoryPersisted: resilienceTrajectoryAdvance.persisted,
+    rejectedCommitments,
+  };
+}
+
+
+// --- source: scenario-sweep.ts ---
+export type Agent14HousingScenarioId =
+  | 'baseline_steady'
+  | 'fiscal_austerity'
+  | 'remote_equity_stress'
+  | 'housing_acceleration'
+  | 'workforce_blocking'
+  | 'crisis_recovery'
+  | 'mixed_pillar_push'
+  | 'capacity_saturated'
+  | 'health_education_surge'
+  | 'persisted_recovery_arc'
+  | 'coupling_stress_escalation'
+  | 'equity_rebalance_push'
+  | 'accountability_slip_arc'
+  | 'intervention_priority_stress'
+  | 'resilience_recovery_arc'
+  | 'capacity_relief_governance_stress';
+
+export interface Agent14HousingScenarioDefinition {
+  id: Agent14HousingScenarioId;
+  label: string;
+  baseInputs: Partial<CapacityAndSpendingInputs>;
+  /** Program stub ids committed on turn 1 (from AGENT14_HOUSING_PROGRAM_STUBS). */
+  launchProgramIds: string[];
+}
+
+export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinition[] = [
+  {
+    id: 'baseline_steady',
+    label: 'Steady baseline',
+    baseInputs: { fiscalHeadroom: 58, stateCapacityLoad: 42, workforceReadiness: 'balanced' },
+    launchProgramIds: ['ps_h_NSW_social_accel', 'ps_h_VIC_planning_reform'],
+  },
+  {
+    id: 'fiscal_austerity',
+    label: 'Fiscal austerity',
+    baseInputs: { fiscalHeadroom: 28, stateCapacityLoad: 62, workforceReadiness: 'strained' },
+    launchProgramIds: ['ps_h_SA_modular'],
+  },
+  {
+    id: 'remote_equity_stress',
+    label: 'Remote equity stress',
+    baseInputs: { fiscalHeadroom: 45, stateCapacityLoad: 55, workforceSpecialistGap: 48 },
+    launchProgramIds: ['ps_h_NT_remote_housing', 'ps_h_WA_remote_housing'],
+  },
+  {
+    id: 'housing_acceleration',
+    label: 'Housing acceleration',
+    baseInputs: { fiscalHeadroom: 78, stateCapacityLoad: 30, workforceReadiness: 'strong' },
+    launchProgramIds: ['ps_h_QLD_regional_release', 'ps_h_ACT_density', 'ps_h_NSW_social_accel'],
+  },
+  {
+    id: 'workforce_blocking',
+    label: 'Workforce blocking',
+    baseInputs: { fiscalHeadroom: 52, stateCapacityLoad: 50, workforceReadiness: 'blocking', workforceSpecialistGap: 72 },
+    launchProgramIds: ['ps_h_TAS_affordable'],
+  },
+  {
+    id: 'crisis_recovery',
+    label: 'Crisis recovery',
+    baseInputs: { fiscalHeadroom: 32, stateCapacityLoad: 78, workforceReadiness: 'weak', workforceSpecialistGap: 55 },
+    launchProgramIds: ['ps_h_QLD_regional_release', 'ps_h_SA_modular'],
+  },
+  {
+    id: 'mixed_pillar_push',
+    label: 'Mixed pillar push',
+    baseInputs: { fiscalHeadroom: 62, stateCapacityLoad: 38, workforceReadiness: 'balanced' },
+    launchProgramIds: ['ps_h_NSW_social_accel', 'ps_h_WA_remote_housing', 'ps_h_ACT_density'],
+  },
+  {
+    id: 'capacity_saturated',
+    label: 'Capacity saturated',
+    baseInputs: { fiscalHeadroom: 35, stateCapacityLoad: 80, workforceReadiness: 'strained', workforceSpecialistGap: 60 },
+    launchProgramIds: [
+      'ps_h_NSW_social_accel',
+      'ps_h_VIC_planning_reform',
+      'ps_h_QLD_regional_release',
+      'ps_h_WA_remote_housing',
+      'ps_h_NT_remote_housing',
+      'ps_h_TAS_affordable',
+      'ps_h_SA_modular',
+      'ps_h_ACT_density',
+    ],
+  },
+  {
+    id: 'health_education_surge',
+    label: 'Health and education surge',
+    baseInputs: { fiscalHeadroom: 68, stateCapacityLoad: 35, workforceReadiness: 'strong' },
+    launchProgramIds: [
+      'ps_he_NSW_primary_care',
+      'ps_he_VIC_hospital_backlog',
+      'ps_ed_NSW_skills',
+      'ps_ed_WA_regional_schools',
+    ],
+  },
+  {
+    id: 'persisted_recovery_arc',
+    label: 'Persisted recovery arc',
+    baseInputs: { fiscalHeadroom: 38, stateCapacityLoad: 65, workforceReadiness: 'weak' },
+    launchProgramIds: ['ps_h_SA_modular', 'ps_he_QLD_remote_clinic', 'ps_ed_TAS_rural_connect'],
+  },
+  {
+    id: 'coupling_stress_escalation',
+    label: 'Coupling stress escalation',
+    baseInputs: { fiscalHeadroom: 18, stateCapacityLoad: 88, workforceReadiness: 'blocking', workforceSpecialistGap: 75 },
+    launchProgramIds: ['ps_h_NT_remote_housing', 'ps_h_TAS_affordable', 'ps_he_NT_remote_clinic'],
+  },
+  {
+    id: 'equity_rebalance_push',
+    label: 'Equity rebalance push',
+    baseInputs: { fiscalHeadroom: 55, stateCapacityLoad: 48, workforceReadiness: 'balanced' },
+    launchProgramIds: [
+      'ps_xp_QLD_wellness_hub',
+      'ps_xp_NT_integrated_services',
+      'ps_h_WA_remote_housing',
+      'ps_ed_WA_regional_schools',
+    ],
+  },
+  {
+    id: 'accountability_slip_arc',
+    label: 'Accountability slip arc',
+    baseInputs: { fiscalHeadroom: 22, stateCapacityLoad: 82, workforceReadiness: 'blocking', workforceSpecialistGap: 68 },
+    launchProgramIds: ['ps_h_NT_remote_housing', 'ps_he_VIC_hospital_backlog', 'ps_ed_NSW_skills'],
+  },
+  {
+    id: 'intervention_priority_stress',
+    label: 'Intervention priority stress',
+    baseInputs: { fiscalHeadroom: 42, stateCapacityLoad: 72, workforceReadiness: 'strained', workforceSpecialistGap: 58 },
+    launchProgramIds: [
+      'ps_xp_TAS_community_wellbeing',
+      'ps_xp_WA_remote_lifecycle',
+      'ps_h_WA_remote_housing',
+      'ps_he_QLD_remote_clinic',
+    ],
+  },
+  {
+    id: 'resilience_recovery_arc',
+    label: 'Resilience recovery arc',
+    baseInputs: { fiscalHeadroom: 48, stateCapacityLoad: 52, workforceReadiness: 'balanced' },
+    launchProgramIds: [
+      'ps_xp_SA_integrated_housing_health',
+      'ps_h_SA_modular',
+      'ps_he_NSW_primary_care',
+    ],
+  },
+  {
+    id: 'capacity_relief_governance_stress',
+    label: 'Capacity relief governance stress',
+    baseInputs: { fiscalHeadroom: 26, stateCapacityLoad: 86, workforceReadiness: 'blocking', workforceSpecialistGap: 70 },
+    launchProgramIds: [
+      'ps_xp_ACT_wellbeing_coordination',
+      'ps_h_ACT_density',
+      'ps_ed_NSW_skills',
+      'ps_he_VIC_hospital_backlog',
+    ],
+  },
+];
+
+export function simulateAgent14HousingScenario(
+  scenarioId: Agent14HousingScenarioId,
+  turnCount: number
+): {
+  scenario: Agent14HousingScenarioDefinition;
+  turns: EnrichedPublicServiceTurnInputs[];
+  spendingPersisted: DelayedSpendingPersisted;
+} {
+  const scenario = AGENT14_HOUSING_SCENARIOS.find((s) => s.id === scenarioId)!;
+  const maxTurns = Math.min(Math.max(1, turnCount), AGENT14_LIMITS.maxSimulationTurns);
+  let spendingPersisted: DelayedSpendingPersisted | null = null;
+  let wellbeingMemoryPersisted = null;
+  let couplingTrajectoryPersisted = null;
+  let accountabilityTrajectoryPersisted = null;
+  let resilienceTrajectoryPersisted = null;
+  const turns: EnrichedPublicServiceTurnInputs[] = [];
+
+  for (let t = 1; t <= maxTurns; t += 1) {
+    const newCommitments: SpendingCommitment[] = [];
+    if (t === 1) {
+      scenario.launchProgramIds.forEach((pid, i) => {
+        const c = commitmentFromProgramStub(pid, 1, i);
+        if (c) newCommitments.push(c);
+      });
+    }
+    const result = advancePublicServicesTurn({
+      inputs: { turn: t, ...scenario.baseInputs },
+      spendingPersisted,
+      wellbeingMemoryPersisted,
+      couplingTrajectoryPersisted,
+      accountabilityTrajectoryPersisted,
+      resilienceTrajectoryPersisted,
+      newCommitments,
+      enforceCapacity: true,
+    });
+    spendingPersisted = result.spendingPersisted;
+    wellbeingMemoryPersisted = result.wellbeingMemoryPersisted;
+    couplingTrajectoryPersisted = result.couplingTrajectoryPersisted;
+    accountabilityTrajectoryPersisted = result.accountabilityTrajectoryPersisted;
+    resilienceTrajectoryPersisted = result.resilienceTrajectoryPersisted;
+    turns.push(result.inputs);
+  }
+
+  return { scenario, turns, spendingPersisted: spendingPersisted! };
+}
+
+export function runAgent14HousingScenarioSweep(): Array<{
+  scenarioId: Agent14HousingScenarioId;
+  passed: boolean;
+  detail: string;
+}> {
+  const out: Array<{ scenarioId: Agent14HousingScenarioId; passed: boolean; detail: string }> = [];
+  for (const sc of AGENT14_HOUSING_SCENARIOS) {
+    const sim = simulateAgent14HousingScenario(sc.id, 12);
+    const last = sim.turns[sim.turns.length - 1];
+    const wb = last.housingWellbeing;
+    const ok =
+      Boolean(wb) &&
+      last.capacity.deliveryCapacityIndex > 0 &&
+      wb!.totalDwellingsInPipeline > 0 &&
+      wb!.narrativeSummary.length > 20;
+    out.push({
+      scenarioId: sc.id,
+      passed: ok,
+      detail: ok
+        ? `aff=${wb!.nationalAffordabilityIndex} gap=${wb!.regionalEquityGap}`
+        : 'missing wellbeing snapshot',
+    });
+  }
+  return out;
 }
 
 
@@ -2174,8 +3331,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Twelve housing scenarios registered',
-    listAgent14ScenarioIds().length === 14,
+    'Sixteen housing scenarios registered',
+    listAgent14ScenarioIds().length === 16,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -2403,8 +3560,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave5_schema_version',
-    'Wellbeing schema version is wave 6',
-    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.6-scale-wave-6',
+    'Wellbeing schema version is wave 7',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.7-scale-wave-7',
     AGENT14_WELLBEING_SCHEMA_VERSION
   );
 
@@ -2640,6 +3797,179 @@ export function runAgent14WellbeingSelfTests(): {
       listAgent14ScenarioIds().includes('intervention_priority_stress'),
     `count=${listAgent14ScenarioIds().length}`
   );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 6, fiscalHeadroom: 50, stateCapacityLoad: 58 },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      resilienceTrajectoryPersisted: createInitialResilienceTrajectory(),
+    });
+    check(
+      results,
+      'wave7_resilience_trajectory',
+      'Turn advance attaches resilience trajectory',
+      adv.inputs.resilienceTrajectory !== undefined &&
+        adv.resilienceTrajectoryPersisted.lastTurn === 6 &&
+        adv.inputs.resilienceTrajectory!.resilienceIndexEma > 0,
+      `trajectory=${adv.inputs.resilienceTrajectory?.trajectory} ema=${adv.inputs.resilienceTrajectory?.resilienceIndexEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 24, stateCapacityLoad: 88, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave7_capacity_relief_schedule',
+      'Capacity relief schedule populated under binding',
+      adv.inputs.capacityReliefSchedule !== undefined &&
+        adv.inputs.capacityReliefSchedule!.summary.length > 8,
+      adv.inputs.capacityReliefSchedule?.summary.slice(0, 72)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 5, fiscalHeadroom: 40, stateCapacityLoad: 70, workforceReadiness: 'strained' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave7_governance_panel',
+      'Governance panel includes band and score',
+      adv.inputs.wellbeingGovernancePanel !== undefined &&
+        adv.inputs.wellbeingGovernancePanel!.governanceScore > 0 &&
+        adv.inputs.wellbeingGovernancePanel!.band.length > 0,
+      `band=${adv.inputs.wellbeingGovernancePanel?.band} score=${adv.inputs.wellbeingGovernancePanel?.governanceScore}`
+    );
+  }
+
+  {
+    const raw = sanitizeResilienceTrajectory({
+      schemaVersion: '10.14.6-scale-wave-6' as any,
+      lastTurn: 2,
+      emaAlpha: 0.32,
+      resilienceIndexEma: 41,
+    });
+    check(
+      results,
+      'wave7_resilience_sanitize',
+      'Resilience trajectory sanitize upgrades schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.resilienceIndexEma === 41,
+      `schema=${raw.schemaVersion}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('resilience_recovery_arc', 10);
+    const last = sim.turns[9];
+    check(
+      results,
+      'wave7_resilience_recovery_scenario',
+      'Resilience recovery arc shows trajectory or steady band',
+      last.resilienceTrajectory !== undefined &&
+        (last.resilienceTrajectory!.trajectory === 'improving' ||
+          last.wellbeingResilience!.band === 'steady' ||
+          last.wellbeingResilience!.band === 'robust'),
+      `traj=${last.resilienceTrajectory?.trajectory} band=${last.wellbeingResilience?.band}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('capacity_relief_governance_stress', 8);
+    const last = sim.turns[7];
+    check(
+      results,
+      'wave7_capacity_governance_scenario',
+      'Capacity governance stress surfaces relief or misaligned panel',
+      last.capacityReliefSchedule !== undefined &&
+        (last.capacityReliefSchedule!.shouldDeferNewCommits ||
+          last.capacityReliefSchedule!.items.length > 0 ||
+          last.interventionPriorityQueue!.shouldExpedite ||
+          last.wellbeingGovernancePanel!.band !== 'aligned'),
+      `defer=${last.capacityReliefSchedule?.shouldDeferNewCommits} gov=${last.wellbeingGovernancePanel?.band}`
+    );
+  }
+
+  check(
+    results,
+    'wave7_cross_pillar_stub_catalog',
+    'Wave 7 coordination stubs present',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_SA_integrated_housing_health') &&
+      AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_ACT_wellbeing_coordination'),
+    `n=${AGENT14_HEALTH_ED_PROGRAM_STUBS.length}`
+  );
+
+  check(
+    results,
+    'wave7_scenario_catalog',
+    'Scenario catalog includes wave 7 scenarios',
+    listAgent14ScenarioIds().includes('resilience_recovery_arc') &&
+      listAgent14ScenarioIds().includes('capacity_relief_governance_stress'),
+    `count=${listAgent14ScenarioIds().length}`
+  );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 3, fiscalHeadroom: 30, stateCapacityLoad: 80, workforceReadiness: 'weak' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const panel = composeWellbeingGovernancePanel({
+      turn: 3,
+      accountabilityScorecard: adv.inputs.accountabilityScorecard,
+      wellbeingResilience: adv.inputs.wellbeingResilience,
+      accountabilityTrajectory: adv.inputs.accountabilityTrajectory,
+      resilienceTrajectory: adv.inputs.resilienceTrajectory,
+    });
+    check(
+      results,
+      'wave7_governance_composer',
+      'Standalone governance composer returns headlines',
+      panel.headlines.length > 0 && panel.summary.length > 10,
+      panel.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 9, fiscalHeadroom: 18, stateCapacityLoad: 90, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const schedule = buildCapacityReliefSchedule({
+      turn: 9,
+      capacity: adv.inputs.capacity,
+      interventionQueue: adv.inputs.interventionPriorityQueue!,
+    });
+    check(
+      results,
+      'wave7_relief_scheduler',
+      'Relief scheduler reflects binding constraint',
+      schedule.bindingConstraint === adv.inputs.capacity.bindingConstraint,
+      `binding=${schedule.bindingConstraint}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 35, stateCapacityLoad: 75, workforceReadiness: 'weak' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      resilienceTrajectoryPersisted: createInitialResilienceTrajectory(),
+    });
+    const snap = advanceResilienceTrajectory(
+      4,
+      adv.inputs.wellbeingResilience!,
+      createInitialResilienceTrajectory()
+    );
+    check(
+      results,
+      'wave7_resilience_advance_unit',
+      'Resilience trajectory advance updates persisted turn',
+      snap.persisted.lastTurn === 4 && snap.snapshot.resilienceIndexEma > 0,
+      `ema=${snap.snapshot.resilienceIndexEma}`
+    );
+  }
 
   const passed = results.filter((r) => r.passed).length;
   return { passed, failed: results.length - passed, total: results.length, results };

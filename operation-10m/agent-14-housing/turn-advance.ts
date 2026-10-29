@@ -12,7 +12,10 @@ import { adviseEquityRebalancing } from './equity-rebalancing-advisor.ts';
 import { composeWellbeingAccountabilityScorecard } from './wellbeing-accountability-scorecard.ts';
 import { advanceAccountabilityTrajectory } from './accountability-trajectory.ts';
 import { buildWellbeingInterventionPriorityQueue } from './intervention-priority-queue.ts';
+import { buildCapacityReliefSchedule } from './capacity-relief-scheduler.ts';
 import { computeWellbeingResilienceIndex } from './wellbeing-resilience-index.ts';
+import { advanceResilienceTrajectory } from './resilience-trajectory.ts';
+import { composeWellbeingGovernancePanel } from './wellbeing-governance-panel.ts';
 import { composeAgent14WellbeingExecutiveBrief } from './wellbeing-executive-brief.ts';
 import {
   canAcceptSpendingCommitment,
@@ -25,6 +28,7 @@ import type {
   DelayedSpendingPersisted,
   EnrichedPublicServiceTurnInputs,
   RegionalWellbeingMemoryPersisted,
+  ResilienceTrajectoryPersisted,
   SpendingCommitment,
 } from './types.ts';
 
@@ -34,6 +38,7 @@ export interface AdvancePublicServicesTurnArgs {
   wellbeingMemoryPersisted?: RegionalWellbeingMemoryPersisted | null;
   couplingTrajectoryPersisted?: CouplingTrajectoryPersisted | null;
   accountabilityTrajectoryPersisted?: AccountabilityTrajectoryPersisted | null;
+  resilienceTrajectoryPersisted?: ResilienceTrajectoryPersisted | null;
   /** New commitments queued this turn (already validated or not). */
   newCommitments?: SpendingCommitment[];
   /** When true, reject commitments that fail capacity gate. */
@@ -46,6 +51,7 @@ export interface AdvancePublicServicesTurnResult {
   wellbeingMemoryPersisted: RegionalWellbeingMemoryPersisted;
   couplingTrajectoryPersisted: CouplingTrajectoryPersisted;
   accountabilityTrajectoryPersisted: AccountabilityTrajectoryPersisted;
+  resilienceTrajectoryPersisted: ResilienceTrajectoryPersisted;
   rejectedCommitments: Array<{ commitment: SpendingCommitment; reason: string }>;
 }
 
@@ -166,6 +172,26 @@ export function advancePublicServicesTurn(
     accountabilityScorecard,
   });
 
+  const resilienceTrajectoryAdvance = advanceResilienceTrajectory(
+    turn,
+    wellbeingResilience,
+    args.resilienceTrajectoryPersisted
+  );
+
+  const capacityReliefSchedule = buildCapacityReliefSchedule({
+    turn,
+    capacity,
+    interventionQueue: interventionPriorityQueue,
+  });
+
+  const wellbeingGovernancePanel = composeWellbeingGovernancePanel({
+    turn,
+    accountabilityScorecard,
+    wellbeingResilience,
+    accountabilityTrajectory: accountabilityTrajectoryAdvance.snapshot,
+    resilienceTrajectory: resilienceTrajectoryAdvance.snapshot,
+  });
+
   const executiveBrief = composeAgent14WellbeingExecutiveBrief({
     turn,
     warnings: wellbeingWarnings,
@@ -176,6 +202,9 @@ export function advancePublicServicesTurn(
     accountabilityTrajectory: accountabilityTrajectoryAdvance.snapshot,
     interventionPriorityQueue,
     wellbeingResilience,
+    resilienceTrajectory: resilienceTrajectoryAdvance.snapshot,
+    capacityReliefSchedule,
+    wellbeingGovernancePanel,
   });
 
   const enriched: EnrichedPublicServiceTurnInputs = {
@@ -203,6 +232,9 @@ export function advancePublicServicesTurn(
     accountabilityTrajectory: accountabilityTrajectoryAdvance.snapshot,
     interventionPriorityQueue,
     wellbeingResilience,
+    resilienceTrajectory: resilienceTrajectoryAdvance.snapshot,
+    capacityReliefSchedule,
+    wellbeingGovernancePanel,
   };
 
   return {
@@ -211,6 +243,7 @@ export function advancePublicServicesTurn(
     wellbeingMemoryPersisted: memoryAdvance.persisted,
     couplingTrajectoryPersisted: couplingTrajectoryAdvance.persisted,
     accountabilityTrajectoryPersisted: accountabilityTrajectoryAdvance.persisted,
+    resilienceTrajectoryPersisted: resilienceTrajectoryAdvance.persisted,
     rejectedCommitments,
   };
 }

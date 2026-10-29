@@ -8,6 +8,9 @@ import type {
   ProgramSequencingRecommendation,
   WellbeingInterventionPriorityQueue,
   WellbeingResilienceSnapshot,
+  WellbeingGovernancePanel,
+  CapacityReliefSchedule,
+  ResilienceTrajectorySnapshot,
   WellbeingTurnForecastPoint,
 } from './types.ts';
 
@@ -22,6 +25,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   accountabilityTrajectory?: AccountabilityTrajectorySnapshot;
   interventionPriorityQueue?: WellbeingInterventionPriorityQueue;
   wellbeingResilience?: WellbeingResilienceSnapshot;
+  resilienceTrajectory?: ResilienceTrajectorySnapshot;
+  capacityReliefSchedule?: CapacityReliefSchedule;
+  wellbeingGovernancePanel?: WellbeingGovernancePanel;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -69,6 +75,17 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   if (args.wellbeingResilience && (args.wellbeingResilience.band === 'fragile' || args.wellbeingResilience.band === 'critical')) {
     giNotes.push(`Wellbeing resilience ${args.wellbeingResilience.band} (${args.wellbeingResilience.resilienceIndex})`);
   }
+  if (args.resilienceTrajectory?.trajectory === 'deteriorating') {
+    giNotes.push(
+      `Resilience trajectory ${args.resilienceTrajectory.trajectory} (EMA ${args.resilienceTrajectory.resilienceIndexEma})`
+    );
+  }
+  if (args.capacityReliefSchedule?.shouldDeferNewCommits) {
+    giNotes.push(`Capacity relief: ${args.capacityReliefSchedule.summary}`);
+  }
+  if (args.wellbeingGovernancePanel && args.wellbeingGovernancePanel.band !== 'aligned') {
+    giNotes.push(args.wellbeingGovernancePanel.summary);
+  }
 
   const headlineParts: string[] = [];
   if (args.coupling.band === 'critical' || args.coupling.band === 'strained') {
@@ -82,7 +99,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   if (forecastDeltaAffordability !== undefined && forecastDeltaAffordability < -2) {
     headlineParts.push('affordability trajectory softening');
   }
-  if (args.wellbeingResilience?.band === 'critical') {
+  if (args.wellbeingGovernancePanel?.band === 'crisis') {
+    headlineParts.push('governance crisis');
+  } else if (args.wellbeingResilience?.band === 'critical') {
     headlineParts.push('wellbeing resilience critical');
   }
 
