@@ -57,7 +57,7 @@ export function runTaxExpenditureForwardCoherenceSelfTests(): {
   const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
   const taxSensitivity = buildTaxPolicySensitivityReport(9, v, ledger);
   const revenueAudit = buildRevenueIntegrityAuditReport(9, v, ledger, taxSensitivity);
-  const revenueAnchor = buildMediumTermRevenueAnchorReport(9, v, ledger, myefo, outlook);
+  const revenueAnchor = buildMediumTermRevenueAnchorReport(9, v, outlook, revenueForward, growth);
   const integrityForward = buildRevenueIntegrityForwardBridgeReport(
     9,
     v,
