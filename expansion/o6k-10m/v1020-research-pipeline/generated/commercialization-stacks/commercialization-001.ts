@@ -1,0 +1,31 @@
+import type { V1020RpipeGrantStackEdge } from '../../types/core.ts';
+
+/** Commercialization stack graph shard 001 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_001: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.232, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.239, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.246, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.253, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.155, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.162, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.169, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.176, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.183, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.19, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.197, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.204, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.211, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.218, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.225, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.232, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.239, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.246, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.253, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.155, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.162, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.169, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.176, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.183, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.19, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.197, lagTurns: 5, nodeId: 'lab_transfer_01' },
+];
