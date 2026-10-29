@@ -1051,6 +1051,64 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  createEmptyV1036IiresPersisted,\n  v1036IiresInputHash,\n  sanitizeV1036IiresPersisted,\n} from '../engine/information-integrity-resilience-orchestrator';",
             "  v1036IiresInputHash,\n} from '../engine/information-integrity-resilience-orchestrator';\nimport {\n  createEmptyV1036IiresPersisted,\n  sanitizeV1036IiresPersisted,\n} from '../persistence/migrations';",
         )
+    if "v1037-provenance-chain-resilience" in name.replace("\\", "/"):
+        for sec in ("20CA", "20CB", "20CD", "20CE", "20CF", "20CG", "20CH", "20CI", "20CJ", "20BZ", "20BY", "20BX", "20BW", "20BV", "20BU", "20BT", "20BR", "20CC"):
+            src = src.replace(f"SECTION {sec}", "SECTION 20CK")
+    if "provenance-chain-resilience/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1037PcresClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1037PcresClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1037_PCRS_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1037_PCRS_MIG_REGIONS", src)
+    if "provenance-chain-resilience-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1037PcresPersisted, sanitizeV1037PcresPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1037_PCRS_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1037_PCRS_ORCH_REGIONS.forEach", src)
+    if "provenance-chain-resilience-utils.ts" in name:
+        src = re.sub(
+            r"export function V1037_PCRS_custodyChainMeshGraphHash",
+            "export function V1037_PCRS_utilCustodyChainMeshGraphHash",
+            src,
+        )
+        src = re.sub(
+            r"export function V1037_PCRS_segmentBufferGraphHash",
+            "export function V1037_PCRS_utilCustodyChainMeshGraphHash",
+            src,
+        )
+    if "v1037-provenance-chain-resilience/custody-chain-mesh-stacks/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"V1037_PCRS_custodyChainMeshGraphHash as dgovGraphHashCore",
+            "V1037_PCRS_utilCustodyChainMeshGraphHash as dgovGraphHashCore",
+            src,
+        )
+        src = re.sub(
+            r"V1037_PCRS_segmentBufferGraphHash as dgovGraphHashCore",
+            "V1037_PCRS_utilCustodyChainMeshGraphHash as dgovGraphHashCore",
+            src,
+        )
+    if "custody-scenarios/scenario-" in name.replace("\\", "/"):
+        src = re.sub(
+            r"\n    provenanceChainResilienceBand: V1037_PCRS_CUSTODY_SCENARIO_\d+_META\.provenanceChainResilienceBand,",
+            "",
+            src,
+        )
+    if "run-v1037-pcres-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1037PcresSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1037PcresSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1037PcresBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1037PcresBaseInput(", src)
+        src = src.replace(
+            "  runV1037PcresTurn,\n  createEmptyV1037PcresPersisted,\n  v1037PcresInputHash,\n  sanitizeV1037PcresPersisted,\n} from '../engine/provenance-chain-resilience-orchestrator';",
+            "  runV1037PcresTurn,\n  v1037PcresInputHash,\n} from '../engine/provenance-chain-resilience-orchestrator';\nimport {\n  createEmptyV1037PcresPersisted,\n  sanitizeV1037PcresPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1037PcresPersisted,\n  v1037PcresInputHash,\n  sanitizeV1037PcresPersisted,\n} from '../engine/provenance-chain-resilience-orchestrator';",
+            "  v1037PcresInputHash,\n} from '../engine/provenance-chain-resilience-orchestrator';\nimport {\n  createEmptyV1037PcresPersisted,\n  sanitizeV1037PcresPersisted,\n} from '../persistence/migrations';",
+        )
     return src
 
 
@@ -2598,6 +2656,59 @@ def information_integrity_resilience_paths() -> list[str]:
             and not (p.parent.name == "generated" and p.name == "index.ts")
             and "segment-buffer-stacks" not in str(p)
             and "intrusion-scenarios" not in str(p)
+            and "biodiversity-stewardship-20bu" not in str(p)
+            and (
+                "/facility-zone-nodes/" not in str(p)
+                or re.match(r"facility-zone-\d+\.ts$", p.name)
+            )
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def provenance_chain_resilience_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1037-provenance-chain-resilience"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/custody-chain-mesh-stacks/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/custody-scenarios/" in s:
+            return (3, s)
+        if "/generated/custody-chain-mesh-stacks/" in s:
+            return (4, s)
+        if "custody-registry" in s or "custody-chain-mesh-bundle" in s:
+            return (5, s)
+        if "/facility-zone-nodes/" in s:
+            return (6, s)
+        if "provenance-chain-resilience-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "provenance-chain-resilience-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+            and not (p.parent.name == "generated" and p.name == "index.ts")
+            and "segment-buffer-stacks" not in str(p)
+            and "intrusion-scenarios" not in str(p)
+            and "attestation-mesh-stacks" not in str(p)
+            and "attestation-scenarios" not in str(p)
             and "biodiversity-stewardship-20bu" not in str(p)
             and (
                 "/facility-zone-nodes/" not in str(p)
