@@ -41,3 +41,10 @@ Round 25 parent on branch: **`c0008123`**.
 - Harness `run-throne-depth-tests.ts`
 
 Project store mirror: `internal/operation-10m/agent-17-scale-wave-round26.md` (agent run store).
+
+## Handoff document (this file)
+
+| Field | Value |
+|-------|-------|
+| Commit | **`623b8496`** (`623b8496…` on `op10m/agent-17-command-center`) |
+| Subject | `docs(op10m): O10-183 scale wave round 26 origin handoff` |
