@@ -9,6 +9,7 @@ import {
   computeRegionalExtractionEfficiency,
   computeRegionalGridRecovery,
 } from '../modules/grid-recovery-extraction-efficiency.ts';
+import { runV1014RegionalGridClimateScaleSelfTests } from '../modules/regional-grid-scenarios-climate-transition.ts';
 import { buildHouseholdEnergyHints } from '../modules/household-industry-links.ts';
 
 export function runAgent13SupplementTests(): { passed: number; failed: number; total: number } {
@@ -68,6 +69,9 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
     renewableShareScore: 45,
   });
   ok(efficiency.score >= 50 && efficiency.band !== 'poor');
+
+  const scale = runV1014RegionalGridClimateScaleSelfTests();
+  ok(scale.failed === 0 && scale.passed >= 5);
 
   return { passed, failed, total: passed + failed };
 }

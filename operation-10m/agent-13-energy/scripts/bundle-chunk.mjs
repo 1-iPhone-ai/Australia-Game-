@@ -20,12 +20,14 @@ const FILES = [
   'climate-hazards.ts',
   'household-industry-links.ts',
   'grid-recovery-extraction-efficiency.ts',
+  'regional-grid-scenarios-climate-transition.ts',
   'industrial-energy-environmental.tsx',
 ];
 
 const EXPORT_MANIFEST = [
   'V1014_INDUSTRIAL_ENERGY_SCHEMA_VERSION',
   'V1014_INDUSTRIAL_ENERGY_AGENT',
+  'V1014_REGIONAL_GRID_SCENARIOS',
   'V1014_EXTRACTION_SITES',
   'V1014_RENEWABLE_ASSETS',
   'V1014_ENVIRONMENTAL_RULES',
@@ -37,6 +39,7 @@ const EXPORT_MANIFEST = [
   'sanitizeIndustrialEnergyEnvironmentalPersisted',
   'createInitialIndustrialEnergyEnvironmentalPersisted',
   'runV1014IndustrialEnergyEnvironmentalSelfTests',
+  'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];
 

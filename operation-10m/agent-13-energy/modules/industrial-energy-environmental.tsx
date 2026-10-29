@@ -17,6 +17,11 @@ import {
   type V1014RegionalGridRecovery,
 } from './grid-recovery-extraction-efficiency';
 import {
+  computeClimateTransitionProfile,
+  selectRegionalGridScenario,
+  type V1014ClimateTransitionProfile,
+} from './regional-grid-scenarios-climate-transition';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25476,6 +25481,9 @@ export interface V1014RegionalEnergyProfile {
   gridRecoveryPoints: number;
   extractionEfficiencyScore: number;
   extractionEfficiencyBand: V1014RegionalExtractionEfficiency['band'];
+  activeGridScenarioId: string;
+  climateTransitionStage: V1014ClimateTransitionProfile['stage'];
+  climateTransitionDepth: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25725,6 +25733,13 @@ export function computeIndustrialEnergyEnvironmentalState(
       renewableShareScore,
     });
 
+    const gridScenario = selectRegionalGridScenario({
+      regionId,
+      gridStressBand: gridStress.band,
+      renewableShareScore,
+      extractionScore,
+    });
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -25732,6 +25747,7 @@ export function computeIndustrialEnergyEnvironmentalState(
     }).slice(0, V1014_LIMITS.maxActiveConstraints);
 
     let pressure = activeRules.reduce((a, r) => a + r.constraintLoss * 100, 0) + energyStress + climatePressure;
+    pressure += gridScenario.stressModifier;
     pressure -= gridRecovery.pressureRelief;
     pressure -= activeRules.reduce((a, r) => a + r.renewableRelief * Math.min(1, renewableShareScore / 55), 0) * 12;
     pressure += sites.filter(s => s.environmentalRisk === 'high').length * 4;
@@ -25741,6 +25757,17 @@ export function computeIndustrialEnergyEnvironmentalState(
 
     const extractionBand = v1014BandExtraction(extractionScore);
     const renewableBand = v1014BandRenewable(renewableShareScore / 100);
+
+    const climateTransition = computeClimateTransitionProfile({
+      renewableShareScore,
+      extractionScore,
+      environmentalPressure: pressure,
+      gridStressPoints: gridStress.stressPoints,
+      renewableBand,
+    });
+    pressure -= climateTransition.momentum > 0 ? climateTransition.momentum * 3 : 0;
+    pressure = v1014Clamp(pressure, 0, 100);
+
     const constraintBand = v1014BandConstraint(pressure);
 
     const evidence = [
@@ -25749,6 +25776,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       gridStress.summary,
       gridRecovery.summary,
       extractionEfficiency.summary,
+      `Grid scenario ${gridScenario.label}`,
+      climateTransition.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -25777,6 +25806,17 @@ export function computeIndustrialEnergyEnvironmentalState(
         provenance: 'v1014_renewable_lift',
         ruleId: `ren_lift_${regionId}`,
         explanation: 'Leading renewable share supports cleaner energy industry output.',
+      });
+    }
+
+    if (climateTransition.stage === 'net_zero_pathway' && energyStr > 30) {
+      modifiers.push({
+        regionId,
+        industry: 'energy',
+        delta: v1014Clamp(2 + climateTransition.depth / 40, 0, V1014_LIMITS.modifierCap),
+        provenance: 'v1014_climate_transition_depth',
+        ruleId: `clim_tr_${regionId}`,
+        explanation: climateTransition.summary,
       });
     }
 
@@ -25817,6 +25857,9 @@ export function computeIndustrialEnergyEnvironmentalState(
       gridRecoveryPoints: gridRecovery.recoveryPoints,
       extractionEfficiencyScore: extractionEfficiency.score,
       extractionEfficiencyBand: extractionEfficiency.band,
+      activeGridScenarioId: gridScenario.id,
+      climateTransitionStage: climateTransition.stage,
+      climateTransitionDepth: climateTransition.depth,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -26007,6 +26050,10 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     (rr.state.regions.WA?.gridRecoveryPoints || 0) > (rg.state.regions.WA?.gridRecoveryPoints || 0),
     `recPts=${rr.state.regions.WA?.gridRecoveryPoints} vs critPts=${rg.state.regions.WA?.gridRecoveryPoints}`,
   );
+
+  check('GRID scenario id', !!r1.state.regions.NSW?.activeGridScenarioId?.startsWith('grid_sc_'), r1.state.regions.NSW?.activeGridScenarioId || '');
+  check('CLIMATE transition depth', (r1.state.regions.SA?.climateTransitionDepth || 0) >= 0, `depth=${r1.state.regions.SA?.climateTransitionDepth}`);
+  check('CLIMATE transition stage set', !!r1.state.regions.VIC?.climateTransitionStage, String(r1.state.regions.VIC?.climateTransitionStage));
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

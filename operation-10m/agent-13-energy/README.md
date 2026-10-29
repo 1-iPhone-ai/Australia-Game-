@@ -8,6 +8,7 @@ Modular **V10.14 SECTION 20AL** slice: extraction sites, renewable assets, envir
 | Core module | `modules/industrial-energy-environmental.tsx` |
 | Grid coupling | `modules/grid-coupling.ts` |
 | Grid recovery & extraction efficiency (slice 2) | `modules/grid-recovery-extraction-efficiency.ts` |
+| Regional grid scenarios & climate transition (scale wave) | `modules/regional-grid-scenarios-climate-transition.ts` |
 | Climate hazards | `modules/climate-hazards.ts` |
 | Household links | `modules/household-industry-links.ts` |
 | Generator (catalog) | `../../scripts/generate-v1014-agent13.py` |

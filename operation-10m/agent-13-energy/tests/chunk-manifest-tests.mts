@@ -9,6 +9,8 @@ const REQUIRED_EXPORTS = [
   'computeIndustrialEnergyEnvironmentalState',
   'runV1014IndustrialEnergyEnvironmentalSelfTests',
   'V1014_INDUSTRIAL_ENERGY_AGENT',
+  'V1014_REGIONAL_GRID_SCENARIOS',
+  'runV1014RegionalGridClimateScaleSelfTests',
   'OP10M_MODULE_BEGIN agent-13-energy',
   'OP10M_MODULE_END agent-13-energy',
 ];
