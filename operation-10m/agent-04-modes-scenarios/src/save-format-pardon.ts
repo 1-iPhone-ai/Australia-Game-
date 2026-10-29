@@ -127,6 +127,7 @@ export function attachPardonSessionToState(
     pardonSession: sanitized,
     amnestySession: null,
     reprieveSession: null,
+    paroleSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,

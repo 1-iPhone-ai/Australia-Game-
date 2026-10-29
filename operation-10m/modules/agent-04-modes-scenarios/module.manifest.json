@@ -6,7 +6,7 @@
     "o10mModesProgress"
   ],
   "saveFormat": {
-    "schemaVersion": 26,
+    "schemaVersion": 27,
     "gameStateKey": "o10mModesProgress",
     "nestedFields": [
       "chainProgress",
@@ -42,10 +42,11 @@
       "clemencySession",
       "pardonSession",
       "amnestySession",
-      "reprieveSession"
+      "reprieveSession",
+      "paroleSession"
     ]
   },
-  "contentSha256": "2ec986732632ed77b33114ab4361beef800dfa1ff0c6ff7189a8cca059e4b12d",
+  "contentSha256": "64e47c5f3cd21e15cc308410cd111ede23eb655aa53c9681170f7595d745b226",
   "chunkPath": "operation-10m/modules/agent-04-modes-scenarios/chunk.tsx",
   "regenerate": "cd operation-10m/agent-04-modes-scenarios && npm run bundle:agent-04-chunk"
 }

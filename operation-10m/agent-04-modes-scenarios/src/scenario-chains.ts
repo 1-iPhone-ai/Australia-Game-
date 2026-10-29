@@ -926,6 +926,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_parole_route',
+    title: 'Parole Route',
+    description:
+      'Three-phase parole arc with trust accrual between legs — round-27 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_parole_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_parole_intake_docket',
+        title: 'Intake Docket',
+        narrativeBridge: 'File intake before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 370 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_parole_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 6, NSW: 5 },
+          forcedSettingsPatch: { o10mParoleMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_parole_release_finale',
+        title: 'Release Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainParoleRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

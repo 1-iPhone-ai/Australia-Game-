@@ -138,6 +138,7 @@ export function attachPilgrimageSessionToState(
     pardonSession: null,
     amnestySession: null,
     reprieveSession: null,
+    paroleSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,

@@ -125,6 +125,7 @@ export function attachReprieveSessionToState(
   return {
     ...state,
     reprieveSession: sanitized,
+    paroleSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,

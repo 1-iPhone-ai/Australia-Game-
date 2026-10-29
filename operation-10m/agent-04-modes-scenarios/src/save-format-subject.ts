@@ -133,6 +133,7 @@ export function attachSubjectSessionToState(
     pardonSession: null,
     amnestySession: null,
     reprieveSession: null,
+    paroleSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,

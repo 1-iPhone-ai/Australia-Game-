@@ -134,6 +134,7 @@ export function attachCircuitSessionToState(
     pardonSession: null,
     amnestySession: null,
     reprieveSession: null,
+    paroleSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,

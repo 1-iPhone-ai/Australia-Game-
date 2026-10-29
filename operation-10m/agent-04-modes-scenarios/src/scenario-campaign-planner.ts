@@ -97,6 +97,11 @@ import {
   sanitizeAmnestySession,
 } from './save-format-amnesty.js';
 import {
+  getParoleScenarioAtCursor,
+  paroleSessionSummary,
+  sanitizeParoleSession,
+} from './save-format-parole.js';
+import {
   getReprieveScenarioAtCursor,
   reprieveSessionSummary,
   sanitizeReprieveSession,
@@ -131,6 +136,7 @@ import type {
   O10mPardonPhase,
   O10mAmnestyPhase,
   O10mReprievePhase,
+  O10mParolePhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -221,9 +227,31 @@ const emptyQueuePlan = {
   reprieveCursor: null as number | null,
   reprievePhase: null as O10mReprievePhase | null,
   reprieveRelief: null as number | null,
+  paroleId: null as string | null,
+  paroleCursor: null as number | null,
+  parolePhase: null as O10mParolePhase | null,
+  paroleTrust: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const parole = sanitizeParoleSession(state.paroleSession);
+  const paroleScenario = getParoleScenarioAtCursor(parole);
+  if (parole && parole.active && paroleScenario) {
+    return {
+      kind: 'parole_step',
+      scenarioId: paroleScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      paroleId: parole.paroleId,
+      paroleCursor: parole.cursor,
+      parolePhase: parole.phaseTag,
+      paroleTrust: parole.trustScore,
+      reason: `Parole "${parole.label}" ${parole.phaseTag} phase ${parole.cursor + 1}/${parole.scenarioIds.length} (trust ${parole.trustScore}).`,
+    };
+  }
+
   const reprieve = sanitizeReprieveSession(state.reprieveSession);
   const reprieveScenario = getReprieveScenarioAtCursor(reprieve);
   if (reprieve && reprieve.active && reprieveScenario) {
@@ -707,6 +735,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   pardonActive: boolean;
   amnestyActive: boolean;
   reprieveActive: boolean;
+  paroleActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -736,6 +765,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const pardon = pardonSessionSummary(state);
   const amnesty = amnestySessionSummary(state);
   const reprieve = reprieveSessionSummary(state);
+  const parole = paroleSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -763,6 +793,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     pardonActive: pardon.active,
     amnestyActive: amnesty.active,
     reprieveActive: reprieve.active,
+    paroleActive: parole.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
