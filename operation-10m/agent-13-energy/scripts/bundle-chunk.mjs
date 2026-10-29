@@ -57,6 +57,7 @@ const FILES = [
   'renewable-attribute-carbon-market-integrity-ledger.ts',
   'industrial-electrification-interconnection-orchestration-ledger.ts',
   'community-energy-resilience-distributed-backup-ledger.ts',
+  'export-hydrogen-maritime-shore-power-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 

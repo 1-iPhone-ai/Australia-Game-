@@ -170,6 +170,11 @@ import {
   V1014_RESILIENCE_BACKUP_TURN_SCENARIOS,
 } from '../modules/community-energy-resilience-distributed-backup-ledger.ts';
 import {
+  runAgent13H2MaritimeScaleSelfTests,
+  runAgent13H2MaritimeTurnScenario,
+  V1014_H2_MARITIME_TURN_SCENARIOS,
+} from '../modules/export-hydrogen-maritime-shore-power-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
