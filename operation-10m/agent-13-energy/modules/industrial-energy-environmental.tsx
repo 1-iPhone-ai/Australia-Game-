@@ -282,6 +282,13 @@ import {
   type V1014RegionalSymbiosisFederationLedger,
 } from './circular-stewardship-symbiosis-federation-ledger';
 import {
+  advanceRegionalIndustrialThermalFederationOrchestration,
+  computeRegionalGeothermalBasinHeatLedger,
+  scoreAgent13GeothermalThermalGIAlignment,
+  type V1014RegionalGeothermalBasinHeatLedger,
+  type V1014RegionalIndustrialThermalFederationLedger,
+} from './geothermal-basin-industrial-thermal-federation-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25890,6 +25897,10 @@ export interface V1014RegionalEnergyProfile {
   circularStewardshipRelief: number;
   symbiosisFederationBand: string;
   symbiosisFederationRelief: number;
+  geothermalBasinHeatBand: string;
+  geothermalBasinHeatRelief: number;
+  industrialThermalFederationBand: string;
+  industrialThermalFederationRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -26002,6 +26013,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalMaritimeShorePowerLedgers: Record<string, V1014RegionalMaritimeShorePowerLedger>;
   regionalCircularStewardshipLedgers: Record<string, V1014RegionalCircularStewardshipLedger>;
   regionalSymbiosisFederationLedgers: Record<string, V1014RegionalSymbiosisFederationLedger>;
+  regionalGeothermalBasinHeatLedgers: Record<string, V1014RegionalGeothermalBasinHeatLedger>;
+  regionalIndustrialThermalFederationLedgers: Record<string, V1014RegionalIndustrialThermalFederationLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -26085,6 +26098,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalMaritimeShorePowerMemory: Record<string, { shoreIndex: number }>;
   regionalCircularStewardshipMemory: Record<string, { stewardshipBalance: number; stewardshipIndex: number }>;
   regionalSymbiosisFederationMemory: Record<string, { symbiosisIndex: number }>;
+  regionalGeothermalBasinHeatMemory: Record<string, { basinHeatBalance: number; basinHeatIndex: number }>;
+  regionalIndustrialThermalFederationMemory: Record<string, { thermalIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -26180,6 +26195,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalMaritimeShorePowerMemory: {},
     regionalCircularStewardshipMemory: {},
     regionalSymbiosisFederationMemory: {},
+    regionalGeothermalBasinHeatMemory: {},
+    regionalIndustrialThermalFederationMemory: {},
     history: [],
   };
 }
@@ -26409,6 +26426,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalSymbiosisFederationMemory === 'object' && raw.regionalSymbiosisFederationMemory
         ? raw.regionalSymbiosisFederationMemory
         : {},
+    regionalGeothermalBasinHeatMemory:
+      typeof raw.regionalGeothermalBasinHeatMemory === 'object' && raw.regionalGeothermalBasinHeatMemory
+        ? raw.regionalGeothermalBasinHeatMemory
+        : {},
+    regionalIndustrialThermalFederationMemory:
+      typeof raw.regionalIndustrialThermalFederationMemory === 'object' && raw.regionalIndustrialThermalFederationMemory
+        ? raw.regionalIndustrialThermalFederationMemory
+        : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -26591,6 +26616,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalMaritimeShorePowerLedgers: {},
       regionalCircularStewardshipLedgers: {},
       regionalSymbiosisFederationLedgers: {},
+      regionalGeothermalBasinHeatLedgers: {},
+      regionalIndustrialThermalFederationLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26677,6 +26704,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const maritimeShorePowerLedgers: Record<string, V1014RegionalMaritimeShorePowerLedger> = {};
   const circularStewardshipLedgers: Record<string, V1014RegionalCircularStewardshipLedger> = {};
   const symbiosisFederationLedgers: Record<string, V1014RegionalSymbiosisFederationLedger> = {};
+  const geothermalBasinHeatLedgers: Record<string, V1014RegionalGeothermalBasinHeatLedger> = {};
+  const industrialThermalFederationLedgers: Record<string, V1014RegionalIndustrialThermalFederationLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26859,6 +26888,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextSymbiosisFederationMemory: Record<string, { symbiosisIndex: number }> = {
     ...persisted.regionalSymbiosisFederationMemory,
+  };
+  const nextGeothermalBasinHeatMemory: Record<string, { basinHeatBalance: number; basinHeatIndex: number }> = {
+    ...persisted.regionalGeothermalBasinHeatMemory,
+  };
+  const nextIndustrialThermalFederationMemory: Record<string, { thermalIndex: number }> = {
+    ...persisted.regionalIndustrialThermalFederationMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -27891,6 +27926,33 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextSymbiosisFederationMemory[regionId] = symbiosisFederationStep.next;
     symbiosisFederationLedgers[regionId] = symbiosisFederationStep.ledger;
     pressure -= symbiosisFederationStep.ledger.symbiosisFederationRelief;
+
+    const geothermalBasinHeatStep = computeRegionalGeothermalBasinHeatLedger({
+      regionId,
+      geothermalHeatRelief: geoStep.ledger.geothermalHeatRelief,
+      symbiosisFederationRelief: symbiosisFederationStep.ledger.symbiosisFederationRelief,
+      circularStewardshipRelief: circularStewardshipStep.ledger.circularStewardshipRelief,
+      wasteHeatRecoveryRelief: wasteHeatRecoveryStep.ledger.wasteHeatRecoveryRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextGeothermalBasinHeatMemory[regionId] || null,
+    });
+    nextGeothermalBasinHeatMemory[regionId] = geothermalBasinHeatStep.next;
+    geothermalBasinHeatLedgers[regionId] = geothermalBasinHeatStep.ledger;
+    pressure -= geothermalBasinHeatStep.ledger.geothermalBasinHeatRelief;
+
+    const industrialThermalFederationStep = advanceRegionalIndustrialThermalFederationOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      basinHeatBand: geothermalBasinHeatStep.ledger.band,
+      cspThermalDispatchRelief: cspStep.ledger.cspThermalRelief,
+      districtHeatRelief: districtHeatStep.ledger.districtHeatRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextIndustrialThermalFederationMemory[regionId] || null,
+    });
+    nextIndustrialThermalFederationMemory[regionId] = industrialThermalFederationStep.next;
+    industrialThermalFederationLedgers[regionId] = industrialThermalFederationStep.ledger;
+    pressure -= industrialThermalFederationStep.ledger.industrialThermalFederationRelief;
     pressure = v1014Clamp(pressure, 0, 100);
 
     nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
@@ -27977,6 +28039,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       distributedBackupStep.ledger.summary,
       exportHydrogenCorridorStep.ledger.summary,
       maritimeShorePowerStep.ledger.summary,
+      circularStewardshipStep.ledger.summary,
+      symbiosisFederationStep.ledger.summary,
+      geothermalBasinHeatStep.ledger.summary,
+      industrialThermalFederationStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -28201,6 +28267,14 @@ export function computeIndustrialEnergyEnvironmentalState(
       exportHydrogenCorridorRelief: exportHydrogenCorridorStep.ledger.exportHydrogenCorridorRelief,
       maritimeShorePowerBand: maritimeShorePowerStep.ledger.band,
       maritimeShorePowerRelief: maritimeShorePowerStep.ledger.maritimeShorePowerRelief,
+      circularStewardshipBand: circularStewardshipStep.ledger.band,
+      circularStewardshipRelief: circularStewardshipStep.ledger.circularStewardshipRelief,
+      symbiosisFederationBand: symbiosisFederationStep.ledger.band,
+      symbiosisFederationRelief: symbiosisFederationStep.ledger.symbiosisFederationRelief,
+      geothermalBasinHeatBand: geothermalBasinHeatStep.ledger.band,
+      geothermalBasinHeatRelief: geothermalBasinHeatStep.ledger.geothermalBasinHeatRelief,
+      industrialThermalFederationBand: industrialThermalFederationStep.ledger.band,
+      industrialThermalFederationRelief: industrialThermalFederationStep.ledger.industrialThermalFederationRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -28340,6 +28414,10 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalDistributedBackupLedgers: distributedBackupLedgers,
     regionalExportHydrogenCorridorLedgers: exportHydrogenCorridorLedgers,
     regionalMaritimeShorePowerLedgers: maritimeShorePowerLedgers,
+    regionalCircularStewardshipLedgers: circularStewardshipLedgers,
+    regionalSymbiosisFederationLedgers: symbiosisFederationLedgers,
+    regionalGeothermalBasinHeatLedgers: geothermalBasinHeatLedgers,
+    regionalIndustrialThermalFederationLedgers: industrialThermalFederationLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -28421,6 +28499,10 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalDistributedBackupMemory: nextDistributedBackupMemory,
     regionalExportHydrogenCorridorMemory: nextExportHydrogenCorridorMemory,
     regionalMaritimeShorePowerMemory: nextMaritimeShorePowerMemory,
+    regionalCircularStewardshipMemory: nextCircularStewardshipMemory,
+    regionalSymbiosisFederationMemory: nextSymbiosisFederationMemory,
+    regionalGeothermalBasinHeatMemory: nextGeothermalBasinHeatMemory,
+    regionalIndustrialThermalFederationMemory: nextIndustrialThermalFederationMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -29841,6 +29923,91 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     shoreBand: rr38.state.regions.QLD?.maritimeShorePowerBand,
   });
   check('H2 MARITIME GI alignment', giH2Maritime.relevanceDelta > 0.5, giH2Maritime.reason || '');
+
+  const stewardshipSymbiosisInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'extended_producer_responsibility_hub',
+      'federation_circular_stewardship_tie',
+      'byproduct_federation_symbiosis_mesh',
+      'waste_heat_symbiosis_federation_stack',
+      'export_h2_federation_orchestration_hub',
+      'digital_product_passport_hub',
+      'cathode_recycling_loop_hub',
+      'industrial_park_symbiosis_hub',
+      'byproduct_exchange_symbiosis_loop',
+      'renewable_grid',
+      'battery_grid',
+    ],
+  };
+  const rr39 = computeIndustrialEnergyEnvironmentalState(
+    stewardshipSymbiosisInp,
+    createInitialIndustrialEnergyEnvironmentalPersisted(),
+    null,
+  );
+  check(
+    'CIRCULAR stewardship tracked',
+    !!rr39.state.regionalCircularStewardshipLedgers.VIC?.band,
+    rr39.state.regionalCircularStewardshipLedgers.VIC?.band || '',
+  );
+  check(
+    'SYMBIOSIS federation relief',
+    (rr39.state.regions.VIC?.symbiosisFederationRelief || 0) > 0,
+    String(rr39.state.regions.VIC?.symbiosisFederationRelief),
+  );
+  check(
+    'STEWARDSHIP memory persisted',
+    !!rr39.persisted.regionalCircularStewardshipMemory.VIC,
+    String(rr39.persisted.regionalCircularStewardshipMemory.VIC?.stewardshipIndex),
+  );
+  const giStewardshipSymbiosis = scoreAgent13StewardshipSymbiosisGIAlignment({
+    actionText: 'Extended producer responsibility hub with byproduct federation symbiosis mesh and waste-heat symbiosis stack',
+    stewardshipBand: rr39.state.regions.VIC?.circularStewardshipBand,
+    symbiosisBand: rr39.state.regions.VIC?.symbiosisFederationBand,
+  });
+  check('STEWARDSHIP SYMBIOSIS GI alignment', giStewardshipSymbiosis.relevanceDelta > 0.5, giStewardshipSymbiosis.reason || '');
+
+  const geothermalThermalInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'geothermal_basin_heat_federation_hub',
+      'federation_geothermal_basin_tie',
+      'process_heat_orchestration_hub',
+      'csp_geothermal_hybrid_federation_mesh',
+      'thermal_storage_dispatch_federation_stack',
+      'extended_producer_responsibility_hub',
+      'byproduct_federation_symbiosis_mesh',
+      'process_heat_recovery_loop',
+      'renewable_grid',
+      'battery_grid',
+    ],
+  };
+  const rr40 = computeIndustrialEnergyEnvironmentalState(
+    geothermalThermalInp,
+    createInitialIndustrialEnergyEnvironmentalPersisted(),
+    null,
+  );
+  check(
+    'GEOTHERMAL basin heat tracked',
+    !!rr40.state.regionalGeothermalBasinHeatLedgers.QLD?.band,
+    rr40.state.regionalGeothermalBasinHeatLedgers.QLD?.band || '',
+  );
+  check(
+    'THERMAL federation relief',
+    (rr40.state.regions.QLD?.industrialThermalFederationRelief || 0) > 0,
+    String(rr40.state.regions.QLD?.industrialThermalFederationRelief),
+  );
+  check(
+    'GEOTHERMAL basin memory persisted',
+    !!rr40.persisted.regionalGeothermalBasinHeatMemory.QLD,
+    String(rr40.persisted.regionalGeothermalBasinHeatMemory.QLD?.basinHeatIndex),
+  );
+  const giGeothermalThermal = scoreAgent13GeothermalThermalGIAlignment({
+    actionText: 'Geothermal basin heat federation hub with CSP geothermal hybrid mesh and thermal storage dispatch stack',
+    basinHeatBand: rr40.state.regions.QLD?.geothermalBasinHeatBand,
+    thermalBand: rr40.state.regions.QLD?.industrialThermalFederationBand,
+  });
+  check('GEOTHERMAL THERMAL GI alignment', giGeothermalThermal.relevanceDelta > 0.5, giGeothermalThermal.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

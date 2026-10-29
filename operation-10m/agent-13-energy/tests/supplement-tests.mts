@@ -180,6 +180,11 @@ import {
   V1014_STEWARDSHIP_SYMBIOSIS_TURN_SCENARIOS,
 } from '../modules/circular-stewardship-symbiosis-federation-ledger.ts';
 import {
+  runAgent13GeothermalThermalScaleSelfTests,
+  runAgent13GeothermalThermalTurnScenario,
+  V1014_GEOTHERMAL_THERMAL_TURN_SCENARIOS,
+} from '../modules/geothermal-basin-industrial-thermal-federation-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -497,6 +502,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const hmTurn = runAgent13H2MaritimeTurnScenario(V1014_H2_MARITIME_TURN_SCENARIOS[0]);
   ok(hmTurn.passed);
+
+  const stewardshipSymbiosis = runAgent13StewardshipSymbiosisScaleSelfTests();
+  ok(stewardshipSymbiosis.failed === 0 && stewardshipSymbiosis.passed >= 5);
+
+  const ssTurn = runAgent13StewardshipSymbiosisTurnScenario(V1014_STEWARDSHIP_SYMBIOSIS_TURN_SCENARIOS[0]);
+  ok(ssTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
