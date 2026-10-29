@@ -45,9 +45,9 @@ Suggested marker:
 ## Wire-in steps
 
 1. Inline `operation-10m/modules/agent-14-housing/chunk.tsx` at the anchor (or merge exports from source tree).
-2. Extend `PublicServicesPersisted` (or parallel persisted blob on game state) with `delayedSpending: DelayedSpendingPersisted`.
+2. Extend `PublicServicesPersisted` (or parallel persisted blob on game state) with `delayedSpending: DelayedSpendingPersisted` and optional `regionalWellbeingMemory: RegionalWellbeingMemoryPersisted`.
 3. At national turn boundary **before** `computeNationalPublicServices`:
-   - Call `advancePublicServicesTurn({ inputs, spendingPersisted, newCommitments })`.
+   - Call `advancePublicServicesTurn({ inputs, spendingPersisted, wellbeingMemoryPersisted, newCommitments })`.
    - Spread `result.inputs` fields into `V1014PublicServicesInputs` (`fiscalLoadFromActivePrograms`, `completed*Projects`, `activeProgramCount`, optional `stateCapacityLoad` from V10.11).
 4. Register `runAgent14WellbeingSelfTests` in dev lab quick tier (`id: v1014_agent14_capacity_delay`).
 
