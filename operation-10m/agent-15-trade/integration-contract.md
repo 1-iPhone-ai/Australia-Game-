@@ -9,6 +9,8 @@ Deterministic **global trade economy linkage (GTEL)** between:
 - Partner market access bands and commodity export indices
 - **Structured trade agreements** (tariff / quota schedules independent of one-off deals)
 - **World economy shocks** (embargo, shipping, commodity swings)
+- **Commodity shock scenarios** (multi-shock bundles, deduped schedule)
+- **Partner sanctions depth** (tiered escalation / de-escalation tied to diplomacy)
 - **Domestic consequences** (regional employment / price / stability spillover)
 
 ## Merge targets (Agent 25)
@@ -21,6 +23,8 @@ Deterministic **global trade economy linkage (GTEL)** between:
 | `buildGlobalTradeGi3Notes` | Co-pilot / GI evidence strings |
 | `GlobalTradeEconomyPanel` | Trade / economy UI section |
 | `runAgent15GlobalTradeLinkageSelfTests` | Master self-test registry |
+| `advancePartnerSanctions` / `deriveSanctionModifiers` | Sanctions tier tick |
+| `triggerCommodityShockScenario` | Scenario tooling / events |
 
 Persisted schema: `GTELPersisted.schemaVersion === 1`.
 
@@ -44,3 +48,11 @@ npm run test:agent15
 ```
 
 Must pass before merge. No PR close/triage by workers.
+
+## Assembly chunk (Agent 25)
+
+```bash
+npm run build:agent15-chunk
+```
+
+Output: `operation-10m/modules/agent-15-trade/chunk.tsx` (`OP10M_MODULE_BEGIN agent-15-trade` … `OP10M_MODULE_END`).
