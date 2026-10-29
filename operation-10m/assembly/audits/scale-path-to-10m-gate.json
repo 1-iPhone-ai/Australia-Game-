@@ -1,17 +1,17 @@
 {
-  "analyzedAt": "2026-10-29T06:23:15.054Z",
+  "analyzedAt": "2026-10-29T06:23:56.733Z",
   "gateAuditedFunctional": 10000000,
   "baselineCommit": "bc1adf3",
   "baselineAuditedFunctional": 389566,
-  "fullChunksProjectedAudited": 679113,
-  "netAuditedFunctionalToGate": 9320887,
-  "workerWaveDeltaAudited": 289547,
+  "fullChunksProjectedAudited": 684678,
+  "netAuditedFunctionalToGate": 9315322,
+  "workerWaveDeltaAudited": 295112,
   "modulesInFullDryRun": 25,
   "assemblyReadyRemote": 24,
   "trancheEstimate": {
     "method": "equal worker-wave increments from full-chunks dry-run",
-    "auditedFunctionalPerWave": 289547,
-    "estimatedWavesToGate": 33,
+    "auditedFunctionalPerWave": 295112,
+    "estimatedWavesToGate": 32,
     "note": "Assumes each future wave adds ~same audited functional as current 24/25 module splice; real tranches vary."
   },
   "duplicationAuditRequirements": [
@@ -23,12 +23,12 @@
   "buildRuntimeRisks": [
     {
       "risk": "Single-file bundle size",
-      "signal": "Projected ~57,117,860 bytes / 718,534 lines after worker wave",
+      "signal": "Projected ~57,339,148 bytes / 724,794 lines after worker wave",
       "at10M": "Linear ~27× current projection bytes if structure unchanged (feasibility unknown for Vite/tsc)"
     },
     {
       "risk": "Typecheck / IDE parse",
-      "signal": "Export declarations ~12360 after wave",
+      "signal": "Export declarations ~12616 after wave",
       "at10M": "Editor and tsc memory limits likely binding before raw line count"
     },
     {
@@ -49,17 +49,17 @@
       "lines": 419353,
       "exportLines": 10082,
       "readMs": 20,
-      "hashMs": 21,
+      "hashMs": 20,
       "sha256": "15321b841ead9bdf"
     },
     "fullChunksProjection": {
       "path": "build/tranche-full-chunks-projection.tsx",
-      "bytes": 57117860,
-      "lines": 718534,
-      "exportLines": 12360,
-      "readMs": 31,
+      "bytes": 57339148,
+      "lines": 724794,
+      "exportLines": 12616,
+      "readMs": 30,
       "hashMs": 31,
-      "sha256": "324acfe0cfe664ef"
+      "sha256": "ea0c5f8b42784e37"
     },
     "extrapolatedScanMsAt10M": 477
   },
