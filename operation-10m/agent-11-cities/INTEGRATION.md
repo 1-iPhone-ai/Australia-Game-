@@ -40,12 +40,26 @@ All symbols are prefixed `OP10M_A11_` for grep-safe assembly.
 - **Settlement existential absolute nullity beatification** — consecration × panpsychism × nullity sentence (`op10mA11ComputeSettlementExistentialAbsoluteNullityBeatification`)
 - Derived events: `collapse_omni_singularity_panidealism`, `void_total_erosion_dissipation`, `existential_absolute_nullity_beatification`
 
+### Scale wave round 52 (O10-235, schema `10m.a11.composite.51`)
+
+- **Regional collapse omni singularity pansophism** — panmonism × ionization × deification (`op10mA11ComputeRegionalCollapseOmniSingularityPansophism`)
+- **Interregional void total erosion dissociation** — ionization × panmonism × void front (`op10mA11ComputeInterregionalVoidTotalErosionDissociation`)
+- **Settlement existential absolute nullity apotheosis** — deification × panmonism × nullity sentence (`op10mA11ComputeSettlementExistentialAbsoluteNullityApotheosis`)
+- Derived events: `collapse_omni_singularity_pansophism`, `void_total_erosion_dissociation`, `existential_absolute_nullity_apotheosis`
+
 ### Scale wave round 51 (O10-233, schema `10m.a11.composite.50`)
 
 - **Regional collapse omni singularity panmonism** — pantheosis × evaporation × glorification (`op10mA11ComputeRegionalCollapseOmniSingularityPanmonism`)
 - **Interregional void total erosion sublimation** — evaporation × pantheosis × void front (`op10mA11ComputeInterregionalVoidTotalErosionSublimation`)
 - **Settlement existential absolute nullity deification** — glorification × pantheosis × nullity sentence (`op10mA11ComputeSettlementExistentialAbsoluteNullityDeification`)
 - Derived events: `collapse_omni_singularity_panmonism`, `void_total_erosion_sublimation`, `existential_absolute_nullity_deification`
+
+### Scale wave round 52 (O10-235, schema `10m.a11.composite.51`)
+
+- **Regional collapse omni singularity pansophism** — pantheosis × evaporation × glorification (`op10mA11ComputeRegionalCollapseOmniSingularityPansophism`)
+- **Interregional void total erosion dissociation** — evaporation × pantheosis × void front (`op10mA11ComputeInterregionalVoidTotalErosionDissociation`)
+- **Settlement existential absolute nullity apotheosis** — glorification × pantheosis × nullity sentence (`op10mA11ComputeSettlementExistentialAbsoluteNullityApotheosis`)
+- Derived events: `collapse_omni_singularity_pansophism`, `void_total_erosion_dissociation`, `existential_absolute_nullity_apotheosis`
 
 ### Scale wave round 50 (O10-231, schema `10m.a11.composite.48`)
 
