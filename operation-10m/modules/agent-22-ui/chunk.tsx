@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 5084b780a2ad3201
+// content-sha256-prefix: 772367c0f8db33d1
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -849,6 +849,8 @@ export interface EvolvingUiPersistedState {
   focusSessionSnoozedUntilDay?: number;
   cognitiveLoadCoachSnoozedUntilDay?: number;
   calmRecoveryUntilDay?: number;
+  coachDismissalStreak?: number;
+  coachDismissalQuietUntilDay?: number;
 }
 
 export interface DayAdvanceUiEvolutionResult {
@@ -2302,6 +2304,208 @@ export function meetsMinimumTouchTarget(profile: TouchTargetProfile, requestedPx
   return requestedPx >= profile.minHeightPx - profile.hitSlopPx;
 }
 
+// --- source: engine/coach-dismissal-backoff.ts ---
+export interface CoachDismissalBackoffState {
+  coachDismissalStreak?: number;
+  coachDismissalQuietUntilDay?: number;
+}
+
+export interface CoachDismissalRecordResult {
+  streak: number;
+  quietUntilDay: number;
+  snoozeDays: number;
+}
+
+const MAX_SNOOZE_DAYS = 7;
+const BASE_SNOOZE_DAYS = 2;
+
+export function resolveCoachDismissalSnoozeDays(streak: number): number {
+  const safe = Math.max(1, Math.floor(streak));
+  return Math.min(MAX_SNOOZE_DAYS, BASE_SNOOZE_DAYS + safe - 1);
+}
+
+export function isCoachDismissalQuiet(
+  persisted: CoachDismissalBackoffState,
+  gameDay: number
+): boolean {
+  return persisted.coachDismissalQuietUntilDay != null && gameDay < persisted.coachDismissalQuietUntilDay;
+}
+
+export function recordCoachDismissal(
+  persisted: CoachDismissalBackoffState,
+  gameDay: number
+): CoachDismissalRecordResult {
+  const priorStreak = persisted.coachDismissalStreak ?? 0;
+  const streak = priorStreak + 1;
+  const snoozeDays = resolveCoachDismissalSnoozeDays(streak);
+  const quietUntilDay = Math.max(gameDay + snoozeDays, gameDay + 1);
+  return { streak, quietUntilDay, snoozeDays };
+}
+
+export function mergeCoachDismissalIntoPersisted(
+  persisted: EvolvingUiPersistedState,
+  record: CoachDismissalRecordResult
+): EvolvingUiPersistedState {
+  return {
+    ...persisted,
+    coachDismissalStreak: record.streak,
+    coachDismissalQuietUntilDay: Math.max(
+      persisted.coachDismissalQuietUntilDay ?? 0,
+      record.quietUntilDay
+    ),
+  };
+}
+
+export function coachDismissalQuietCopy(quietUntilDay: number, gameDay: number): string {
+  const remaining = Math.max(0, quietUntilDay - gameDay);
+  if (remaining <= 0) return '';
+  return remaining === 1
+    ? 'Coaching stays quiet for the rest of today after repeated dismissals.'
+    : `Coaching stays quiet for ${remaining} more days after repeated dismissals.`;
+}
+
+export function shouldAllowCoachSurface(
+  gameDay: number,
+  persisted: CoachDismissalBackoffState,
+  snoozedUntilDay?: number
+): boolean {
+  if (snoozedUntilDay != null && gameDay < snoozedUntilDay) return false;
+  if (isCoachDismissalQuiet(persisted, gameDay)) return false;
+  return true;
+}
+
+// --- source: engine/landmark-reading-order.ts ---
+export type UiLandmarkRole =
+  | 'status'
+  | 'navigation'
+  | 'main'
+  | 'complementary'
+  | 'banner';
+
+export interface UiLandmarkTarget {
+  id: string;
+  role: UiLandmarkRole;
+  label: string;
+  visible: boolean;
+  /** Lower sorts earlier within the same role band. */
+  priority: number;
+}
+
+export interface LandmarkReadingOrderPlan {
+  ordered: UiLandmarkTarget[];
+  skipLinkLabels: string[];
+  phaseHint: V94StandardizedGamePhase;
+}
+
+const ROLE_BAND: Record<UiLandmarkRole, number> = {
+  status: 0,
+  banner: 1,
+  navigation: 2,
+  main: 3,
+  complementary: 4,
+};
+
+export function compareLandmarkReadingOrder(a: UiLandmarkTarget, b: UiLandmarkTarget): number {
+  const bandDiff = ROLE_BAND[a.role] - ROLE_BAND[b.role];
+  if (bandDiff !== 0) return bandDiff;
+  return a.priority - b.priority;
+}
+
+export function planLandmarkReadingOrder(input: {
+  phase: V94StandardizedGamePhase;
+  landmarks: UiLandmarkTarget[];
+}): LandmarkReadingOrderPlan {
+  const visible = input.landmarks.filter(l => l.visible);
+  const ordered = [...visible].sort(compareLandmarkReadingOrder);
+
+  if (input.phase === 'main_menu') {
+    const navFirst = ordered.filter(l => l.role === 'navigation' || l.role === 'banner');
+    const rest = ordered.filter(l => l.role !== 'navigation' && l.role !== 'banner');
+    ordered.splice(0, ordered.length, ...navFirst, ...rest);
+  }
+
+  const skipLinkLabels = ordered
+    .filter(l => l.role === 'navigation' || l.role === 'main')
+    .slice(0, 4)
+    .map(l => `Skip to ${l.label}`);
+
+  return {
+    ordered,
+    skipLinkLabels,
+    phaseHint: input.phase,
+  };
+}
+
+export function landmarkTargetForSurface(
+  surfaceId: string,
+  label: string,
+  visible: boolean,
+  priority: number
+): UiLandmarkTarget {
+  const role: UiLandmarkRole =
+    surfaceId.includes('nav') || surfaceId.includes('rail')
+      ? 'navigation'
+      : surfaceId.includes('coach') || surfaceId.includes('banner') || surfaceId.includes('status')
+        ? 'status'
+        : surfaceId.includes('quick') || surfaceId.includes('widget')
+          ? 'complementary'
+          : 'main';
+  return { id: surfaceId, role, label, visible, priority };
+}
+
+// --- source: engine/high-contrast-chrome-policy.ts ---
+export interface HighContrastChromeProfile {
+  elevated: boolean;
+  borderWidthPx: number;
+  separatorOpacity: number;
+  focusOffsetPx: number;
+  dataAttributes: Record<string, string>;
+}
+
+export function resolveHighContrastChromeProfile(
+  accessibility: AccessibilitySettingsSnapshot
+): HighContrastChromeProfile {
+  const elevated =
+    accessibility.highContrastFocusRings ||
+    accessibility.textScaleMultiplier >= 1.15 ||
+    accessibility.announceVerbosity === 'assertive';
+
+  const scaleBoost = accessibility.textScaleMultiplier > 1 ? 1 : 0;
+  const borderWidthPx = elevated ? 2 + scaleBoost : 1;
+  const separatorOpacity = elevated ? 0.55 : 0.28;
+  const focusOffsetPx = elevated ? 4 : 2;
+
+  return {
+    elevated,
+    borderWidthPx,
+    separatorOpacity,
+    focusOffsetPx,
+    dataAttributes: {
+      'data-hc-chrome': elevated ? 'elevated' : 'standard',
+      'data-hc-border-px': String(borderWidthPx),
+    },
+  };
+}
+
+export function highContrastChromeCssVars(profile: HighContrastChromeProfile): Record<string, string> {
+  return {
+    '--evolving-ui-chrome-border-px': String(profile.borderWidthPx),
+    '--evolving-ui-chrome-separator-opacity': String(profile.separatorOpacity),
+    '--evolving-ui-chrome-focus-offset-px': String(profile.focusOffsetPx),
+  };
+}
+
+export function mergeHighContrastChromeStyle(
+  accessibility: AccessibilitySettingsSnapshot,
+  baseStyle?: Record<string, string>
+): Record<string, string> {
+  const profile = resolveHighContrastChromeProfile(accessibility);
+  return {
+    ...(baseStyle ?? {}),
+    ...highContrastChromeCssVars(profile),
+  };
+}
+
 // --- source: engine/legacy-access.ts ---
 /** Mirrors V9.4 resolveIntentNavToUiPatch targets (standalone copy for module tests). */
 export function resolveIntentNavToUiPatch(target: string): Record<string, boolean | string> {
@@ -3119,6 +3323,137 @@ export function runAgent22Round6SelfTests(): {
       });
       return plan.allowedIds.length === 0 && plan.deferredIds.length === 0;
     })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
+}
+
+// --- source: engine/round7-self-tests.ts ---
+export function runAgent22Round7SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r7_snooze_grows',
+    'dismissal snooze grows with streak',
+    resolveCoachDismissalSnoozeDays(1) < resolveCoachDismissalSnoozeDays(4)
+  );
+
+  check(
+    'r7_snooze_cap',
+    'snooze days capped at seven',
+    resolveCoachDismissalSnoozeDays(99) === 7
+  );
+
+  check(
+    'r7_quiet_blocks_coach',
+    'quiet window blocks coach surfaces',
+    (() => {
+      const persisted = { coachDismissalQuietUntilDay: 8 };
+      return !shouldAllowCoachSurface(5, persisted) && isCoachDismissalQuiet(persisted, 5);
+    })()
+  );
+
+  check(
+    'r7_record_merge',
+    'record dismissal merges into persisted',
+    (() => {
+      const base = createDefaultEvolvingUiPersistedState();
+      const record = recordCoachDismissal(base, 10);
+      const merged = mergeCoachDismissalIntoPersisted(base, record);
+      return merged.coachDismissalStreak === 1 && (merged.coachDismissalQuietUntilDay ?? 0) > 10;
+    })()
+  );
+
+  check(
+    'r7_quiet_copy',
+    'quiet copy mentions remaining days',
+    coachDismissalQuietCopy(12, 10).includes('2')
+  );
+
+  check(
+    'r7_landmark_role_order',
+    'status landmarks sort before navigation',
+    compareLandmarkReadingOrder(
+      landmarkTargetForSurface('coach_banner', 'Coach', true, 1),
+      landmarkTargetForSurface('nav_rail', 'Nav', true, 1)
+    ) < 0
+  );
+
+  check(
+    'r7_landmark_plan_skip',
+    'reading plan exposes skip labels for nav/main',
+    (() => {
+      const plan = planLandmarkReadingOrder({
+        phase: 'human_turn',
+        landmarks: [
+          landmarkTargetForSurface('nav_primary', 'Primary nav', true, 1),
+          landmarkTargetForSurface('main_map', 'Map', true, 2),
+          landmarkTargetForSurface('widget_lane', 'Widgets', true, 3),
+        ],
+      });
+      return plan.skipLinkLabels.length >= 2 && plan.skipLinkLabels[0].startsWith('Skip to');
+    })()
+  );
+
+  check(
+    'r7_main_menu_nav_first',
+    'main menu phase pulls navigation earlier',
+    (() => {
+      const plan = planLandmarkReadingOrder({
+        phase: 'main_menu',
+        landmarks: [
+          landmarkTargetForSurface('main_title', 'Title', true, 1),
+          landmarkTargetForSurface('nav_menu', 'Menu', true, 2),
+        ],
+      });
+      return plan.ordered[0]?.role === 'navigation';
+    })()
+  );
+
+  check(
+    'r7_hc_elevated_border',
+    'high contrast elevates border width',
+    (() => {
+      const standard = resolveHighContrastChromeProfile({
+        ...DEFAULT_ACCESSIBILITY_SNAPSHOT,
+        highContrastFocusRings: false,
+        textScaleMultiplier: 1,
+      });
+      const elevated = resolveHighContrastChromeProfile({
+        ...DEFAULT_ACCESSIBILITY_SNAPSHOT,
+        highContrastFocusRings: true,
+      });
+      return elevated.borderWidthPx > standard.borderWidthPx && elevated.elevated;
+    })()
+  );
+
+  check(
+    'r7_hc_css_vars',
+    'chrome css vars exported',
+    Object.keys(highContrastChromeCssVars(resolveHighContrastChromeProfile(DEFAULT_ACCESSIBILITY_SNAPSHOT))).length >= 3
+  );
+
+  check(
+    'r7_hc_merge_style',
+    'merge chrome style preserves base keys',
+    (() => {
+      const merged = mergeHighContrastChromeStyle(DEFAULT_ACCESSIBILITY_SNAPSHOT, { color: 'inherit' });
+      return merged.color === 'inherit' && merged['--evolving-ui-chrome-border-px'] != null;
+    })()
+  );
+
+  check(
+    'r7_allow_after_quiet',
+    'coach allowed after quiet window ends',
+    shouldAllowCoachSurface(10, { coachDismissalQuietUntilDay: 10 })
   );
 
   const failed = results.filter(r => !r.passed).length;
@@ -3953,6 +4288,7 @@ export interface CognitiveLoadCoachBannerProps {
   policy: EvolvingUiAccessPolicy;
   accessibility: AccessibilitySettingsSnapshot;
   cognitiveLoadCoachSnoozedUntilDay?: number;
+  coachDismissalBackoff?: CoachDismissalBackoffState;
   focusSessionSnoozedUntilDay?: number;
   pendingCoachAnnouncements?: number;
   onboardingEnabled?: boolean;
@@ -3965,6 +4301,7 @@ export function CognitiveLoadCoachBanner({
   policy,
   accessibility,
   cognitiveLoadCoachSnoozedUntilDay,
+  coachDismissalBackoff,
   focusSessionSnoozedUntilDay,
   pendingCoachAnnouncements = 0,
   onboardingEnabled = true,
@@ -3986,7 +4323,8 @@ export function CognitiveLoadCoachBanner({
   });
 
   if (
-    !shouldShowCognitiveLoadCoach(assessment, signals.gameDay, cognitiveLoadCoachSnoozedUntilDay)
+    !shouldShowCognitiveLoadCoach(assessment, signals.gameDay, cognitiveLoadCoachSnoozedUntilDay) ||
+    !shouldAllowCoachSurface(signals.gameDay, coachDismissalBackoff ?? {}, cognitiveLoadCoachSnoozedUntilDay)
   ) {
     return null;
   }
@@ -4114,8 +4452,104 @@ export function UiCalmRecoveryBanner({
   );
 }
 
+// --- source: react/CoachDismissalBackoffBanner.tsx ---
+export interface CoachDismissalBackoffBannerProps {
+  signals: ProgressionSignalSnapshot;
+  persisted: EvolvingUiPersistedState;
+  accessibility: AccessibilitySettingsSnapshot;
+  onPersist?: (next: EvolvingUiPersistedState) => void;
+}
+
+export function CoachDismissalBackoffBanner({
+  signals,
+  persisted,
+  accessibility,
+  onPersist,
+}: CoachDismissalBackoffBannerProps): React.ReactElement | null {
+  const quiet = isCoachDismissalQuiet(persisted, signals.gameDay);
+  const quietUntil = persisted.coachDismissalQuietUntilDay;
+  if (!quiet || quietUntil == null) return null;
+
+  const copy = coachDismissalQuietCopy(quietUntil, signals.gameDay);
+  if (!copy) return null;
+
+  const focusClass = buildFocusRingClassName({
+    highContrast: accessibility.highContrastFocusRings,
+    style: accessibility.focusRingStyle,
+  });
+
+  return (
+    <div
+      data-testid="coach-dismissal-backoff-banner"
+      data-dismissal-streak={persisted.coachDismissalStreak ?? 0}
+      role="status"
+      aria-live="polite"
+      className="text-xs border rounded p-2 opacity-90"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      <p>{copy}</p>
+      {onPersist ? (
+        <button
+          type="button"
+          className={`underline ${focusClass}`}
+          data-testid="coach-dismissal-extend-quiet"
+          onClick={() =>
+            onPersist(mergeCoachDismissalIntoPersisted(persisted, recordCoachDismissal(persisted, signals.gameDay)))
+          }
+        >
+          Keep coaching quiet longer
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+// --- source: react/LandmarkSkipLinksStrip.tsx ---
+export interface LandmarkSkipLinksStripProps {
+  phase: V94StandardizedGamePhase;
+  accessibility: AccessibilitySettingsSnapshot;
+  /** id/label pairs for primary shells currently mounted. */
+  surfaces: Array<{ id: string; label: string; visible?: boolean }>;
+}
+
+export function LandmarkSkipLinksStrip({
+  phase,
+  accessibility,
+  surfaces,
+}: LandmarkSkipLinksStripProps): React.ReactElement | null {
+  if (!accessibility.screenReaderAnnouncements && !accessibility.keyboardNavigationHints) {
+    return null;
+  }
+
+  const landmarks = surfaces.map((s, index) =>
+    landmarkTargetForSurface(s.id, s.label, s.visible !== false, index + 1)
+  );
+  const plan = planLandmarkReadingOrder({ phase, landmarks });
+  if (plan.skipLinkLabels.length === 0) return null;
+
+  const focusClass = buildFocusRingClassName({
+    highContrast: accessibility.highContrastFocusRings,
+    style: accessibility.focusRingStyle,
+  });
+
+  return (
+    <nav
+      data-testid="landmark-skip-links"
+      aria-label="Skip links"
+      className="flex flex-wrap gap-2 text-xs sr-only focus-within:not-sr-only"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {plan.skipLinkLabels.map(label => (
+        <a key={label} href={`#${label.replace(/\s+/g, '-').toLowerCase()}`} className={focusClass}>
+          {label}
+        </a>
+      ))}
+    </nav>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.6.0';
+export const AGENT_22_MODULE_VERSION = '1.7.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -4186,6 +4620,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round6 = runAgent22Round6SelfTests();
   for (const r of round6.results) {
     check(`agent22_round6_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round7 = runAgent22Round7SelfTests();
+  for (const r of round7.results) {
+    check(`agent22_round7_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;

@@ -42,6 +42,9 @@ const FILES = [
   'engine/attention-budget-scheduler.ts',
   'engine/ui-calm-recovery-policy.ts',
   'engine/touch-target-scaling.ts',
+  'engine/coach-dismissal-backoff.ts',
+  'engine/landmark-reading-order.ts',
+  'engine/high-contrast-chrome-policy.ts',
   'engine/legacy-access.ts',
   'engine/merge-with-v94-contextual-hiding.ts',
   'engine/progression-coach.ts',
@@ -50,6 +53,7 @@ const FILES = [
   'engine/round4-self-tests.ts',
   'engine/round5-self-tests.ts',
   'engine/round6-self-tests.ts',
+  'engine/round7-self-tests.ts',
   'a11y/aria-builders.ts',
   'a11y/focus-management.ts',
   'a11y/live-region-controller.ts',
@@ -69,6 +73,8 @@ const FILES = [
   'react/FocusSessionBanner.tsx',
   'react/CognitiveLoadCoachBanner.tsx',
   'react/UiCalmRecoveryBanner.tsx',
+  'react/CoachDismissalBackoffBanner.tsx',
+  'react/LandmarkSkipLinksStrip.tsx',
 ];
 
 function stripModulePreamble(source) {
@@ -110,7 +116,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.6.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.7.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -183,6 +189,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
     check(\`agent22_round6_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
+  const round7 = runAgent22Round7SelfTests();
+  for (const r of round7.results) {
+    check(\`agent22_round7_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
   const failed = results.filter(r => !r.passed).length;
   return {
     passed: results.length - failed,
@@ -209,7 +220,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.6.0',
+  moduleVersion: '1.7.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),

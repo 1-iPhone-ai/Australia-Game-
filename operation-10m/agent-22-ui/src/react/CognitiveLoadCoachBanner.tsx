@@ -10,6 +10,8 @@ import {
 import { buildFocusRingClassName } from '../a11y/aria-builders.js';
 import { shouldActivateFocusSession } from '../engine/focus-session-policy.js';
 import type { V94StandardizedGamePhase } from '../adapters/v94-phase-bridge.js';
+import { shouldAllowCoachSurface } from '../engine/coach-dismissal-backoff.js';
+import type { CoachDismissalBackoffState } from '../engine/coach-dismissal-backoff.js';
 
 export interface CognitiveLoadCoachBannerProps {
   phase: V94StandardizedGamePhase;
@@ -17,6 +19,7 @@ export interface CognitiveLoadCoachBannerProps {
   policy: EvolvingUiAccessPolicy;
   accessibility: AccessibilitySettingsSnapshot;
   cognitiveLoadCoachSnoozedUntilDay?: number;
+  coachDismissalBackoff?: CoachDismissalBackoffState;
   focusSessionSnoozedUntilDay?: number;
   pendingCoachAnnouncements?: number;
   onboardingEnabled?: boolean;
@@ -29,6 +32,7 @@ export function CognitiveLoadCoachBanner({
   policy,
   accessibility,
   cognitiveLoadCoachSnoozedUntilDay,
+  coachDismissalBackoff,
   focusSessionSnoozedUntilDay,
   pendingCoachAnnouncements = 0,
   onboardingEnabled = true,
@@ -50,7 +54,8 @@ export function CognitiveLoadCoachBanner({
   });
 
   if (
-    !shouldShowCognitiveLoadCoach(assessment, signals.gameDay, cognitiveLoadCoachSnoozedUntilDay)
+    !shouldShowCognitiveLoadCoach(assessment, signals.gameDay, cognitiveLoadCoachSnoozedUntilDay) ||
+    !shouldAllowCoachSurface(signals.gameDay, coachDismissalBackoff ?? {}, cognitiveLoadCoachSnoozedUntilDay)
   ) {
     return null;
   }

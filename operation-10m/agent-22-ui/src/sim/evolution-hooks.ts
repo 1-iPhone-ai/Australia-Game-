@@ -18,6 +18,8 @@ export interface EvolvingUiPersistedState {
   focusSessionSnoozedUntilDay?: number;
   cognitiveLoadCoachSnoozedUntilDay?: number;
   calmRecoveryUntilDay?: number;
+  coachDismissalStreak?: number;
+  coachDismissalQuietUntilDay?: number;
 }
 
 export interface DayAdvanceUiEvolutionResult {
