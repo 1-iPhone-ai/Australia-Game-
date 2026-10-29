@@ -34,12 +34,12 @@ describe('Agent 12 round 8 catalog', () => {
 });
 
 describe('Agent 12 round 8 systems', () => {
-  it('returns agent12/13 with aviation cargo, customs clearance, and hydrogen corridors', () => {
+  it('returns agent12/14 with aviation cargo, customs clearance, and hydrogen corridors', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(50), {
       hydrogenFreightPolicy: 'pipeline',
       customsModernizationPolicy: 'digitize',
     });
-    assert.equal(state.schemaVersion, 'agent12/13');
+    assert.equal(state.schemaVersion, 'agent12/14');
     assert.ok(state.nationalAviationCargoThroughputIndex >= 9);
     assert.ok(state.nationalCustomsClearanceIndex >= 38);
     assert.ok(state.hydrogenFreightShare >= 0.04);

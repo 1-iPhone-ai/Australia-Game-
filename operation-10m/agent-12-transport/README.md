@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 13
+
+- Schema **`agent12/14`**: gauge interoperability, disaster recovery staging, circular freight share (`gaugeInteroperabilityPolicy`, `disasterRecoveryStagingPolicy`, `circularFreightPolicy`)
+- Catalog: **194** assets, **53** corridors, **83** scenarios
+- Systems: `network/gauge-interoperability-index.ts`, `operations/disaster-recovery-staging-index.ts`, `productivity/circular-freight-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 12
 
 - Schema **`agent12/13`**: critical-minerals export throughput, channel maintenance readiness, indigenous remote supply share (`criticalMineralsPolicy`, `channelMaintenancePolicy`, `indigenousRemoteSupplyPolicy`)

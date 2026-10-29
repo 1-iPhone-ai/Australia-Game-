@@ -225,8 +225,14 @@ export type ChannelMaintenancePolicy = 'baseline' | 'dredge';
 
 export type IndigenousRemoteSupplyPolicy = 'baseline' | 'strengthen';
 
+export type GaugeInteroperabilityPolicy = 'baseline' | 'harmonize';
+
+export type DisasterRecoveryStagingPolicy = 'baseline' | 'surge';
+
+export type CircularFreightPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/13';
+  schemaVersion: 'agent12/14';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -302,6 +308,13 @@ export interface TransportInfrastructureState {
   indigenousRemoteSupplyShare: number;
   nationalIndigenousRemoteSupplyThroughputIndex: number;
   indigenousRemoteSupplyThroughputByRegion: Record<AuRegionCode, number>;
+  nationalGaugeInteroperabilityIndex: number;
+  gaugeInteroperabilityByRegion: Record<AuRegionCode, number>;
+  nationalDisasterRecoveryStagingIndex: number;
+  disasterRecoveryStagingByRegion: Record<AuRegionCode, number>;
+  circularFreightShare: number;
+  nationalCircularFreightThroughputIndex: number;
+  circularFreightThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -331,6 +344,9 @@ export interface TransportInfrastructureOptions {
   criticalMineralsPolicy?: CriticalMineralsPolicy;
   channelMaintenancePolicy?: ChannelMaintenancePolicy;
   indigenousRemoteSupplyPolicy?: IndigenousRemoteSupplyPolicy;
+  gaugeInteroperabilityPolicy?: GaugeInteroperabilityPolicy;
+  disasterRecoveryStagingPolicy?: DisasterRecoveryStagingPolicy;
+  circularFreightPolicy?: CircularFreightPolicy;
 }
 
 export interface V94ProjectSnapshot {

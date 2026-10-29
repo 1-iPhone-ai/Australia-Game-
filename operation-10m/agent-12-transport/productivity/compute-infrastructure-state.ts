@@ -165,6 +165,22 @@ import {
   indigenousRemoteSupplyProductivityMultiplier,
   nationalIndigenousRemoteSupplyThroughputIndex,
 } from './indigenous-remote-supply-index.ts';
+import {
+  computeGaugeInteroperabilityByRegion,
+  gaugeInteroperabilityProductivityMultiplier,
+  nationalGaugeInteroperabilityIndex,
+} from '../network/gauge-interoperability-index.ts';
+import {
+  computeDisasterRecoveryStagingByRegion,
+  disasterRecoveryStagingProductivityMultiplier,
+  nationalDisasterRecoveryStagingIndex,
+} from '../operations/disaster-recovery-staging-index.ts';
+import {
+  circularFreightProductivityMultiplier,
+  computeCircularFreightShare,
+  computeCircularFreightThroughputByRegion,
+  nationalCircularFreightThroughputIndex,
+} from './circular-freight-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -642,6 +658,55 @@ export function computeTransportInfrastructureState(
     nationalCriticalMinerals * 0.024 +
     nationalIndigenousRemoteSupply * 0.019;
 
+  const gaugeInteroperabilityByRegion = computeGaugeInteroperabilityByRegion(ops);
+  const nationalGaugeInteroperability = nationalGaugeInteroperabilityIndex(gaugeInteroperabilityByRegion);
+  const gaugeMult = gaugeInteroperabilityProductivityMultiplier(
+    nationalGaugeInteroperability,
+    options?.gaugeInteroperabilityPolicy ?? 'baseline',
+  );
+  const disasterRecoveryStagingByRegion = computeDisasterRecoveryStagingByRegion(ops, networkStress);
+  const nationalDisasterRecoveryStaging = nationalDisasterRecoveryStagingIndex(disasterRecoveryStagingByRegion);
+  const disasterMult = disasterRecoveryStagingProductivityMultiplier(
+    nationalDisasterRecoveryStaging,
+    options?.disasterRecoveryStagingPolicy ?? 'baseline',
+  );
+  const circularFreightThroughputByRegion = computeCircularFreightThroughputByRegion(ops);
+  const nationalCircularFreight = nationalCircularFreightThroughputIndex(circularFreightThroughputByRegion);
+  const circularFreightShare = computeCircularFreightShare(ops, options?.circularFreightPolicy ?? 'baseline');
+  const circularMult = circularFreightProductivityMultiplier(
+    circularFreightShare,
+    options?.circularFreightPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const gaugeBoost = (gaugeInteroperabilityByRegion[code] - 12) * 0.005;
+    const disasterBoost = (disasterRecoveryStagingByRegion[code] - 36) * 0.0043;
+    const circularBoost = (circularFreightThroughputByRegion[code] - 3) * 0.0055;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + gaugeBoost + disasterBoost + circularBoost) *
+      gaugeMult *
+      disasterMult *
+      circularMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035 +
+    nationalAviationCargo * 0.03 +
+    nationalHydrogenCorridor * 0.028 +
+    nationalCoastalShipping * 0.026 +
+    nationalAutonomousCorridor * 0.024 +
+    nationalDeepSeaGateway * 0.027 +
+    nationalElectricCorridor * 0.023 +
+    nationalDefenceLogistics * 0.022 +
+    nationalDigitalFreight * 0.021 +
+    nationalCriticalMinerals * 0.024 +
+    nationalIndigenousRemoteSupply * 0.019 +
+    nationalGaugeInteroperability * 0.02 +
+    nationalCircularFreight * 0.018;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -655,7 +720,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/13',
+    schemaVersion: 'agent12/14',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -731,6 +796,13 @@ export function computeTransportInfrastructureState(
     indigenousRemoteSupplyShare,
     nationalIndigenousRemoteSupplyThroughputIndex: nationalIndigenousRemoteSupply,
     indigenousRemoteSupplyThroughputByRegion,
+    nationalGaugeInteroperabilityIndex: nationalGaugeInteroperability,
+    gaugeInteroperabilityByRegion,
+    nationalDisasterRecoveryStagingIndex: nationalDisasterRecoveryStaging,
+    disasterRecoveryStagingByRegion,
+    circularFreightShare,
+    nationalCircularFreightThroughputIndex: nationalCircularFreight,
+    circularFreightThroughputByRegion,
     computeMs,
   };
 }

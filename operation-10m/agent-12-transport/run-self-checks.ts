@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/13' &&
+      infra.schemaVersion === 'agent12/14' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -102,8 +102,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalCriticalMineralsExportIndex >= 10 &&
       infra.nationalChannelMaintenanceIndex > 40 &&
       infra.indigenousRemoteSupplyShare >= 0.08 &&
-      infra.nationalIndigenousRemoteSupplyThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} minerals=${infra.nationalCriticalMineralsExportIndex.toFixed(1)} channel=${infra.nationalChannelMaintenanceIndex.toFixed(1)} indigenous=${infra.nationalIndigenousRemoteSupplyThroughputIndex.toFixed(1)}`,
+      infra.nationalIndigenousRemoteSupplyThroughputIndex >= 2 &&
+      infra.nationalGaugeInteroperabilityIndex >= 12 &&
+      infra.nationalDisasterRecoveryStagingIndex > 37 &&
+      infra.circularFreightShare >= 0.06 &&
+      infra.nationalCircularFreightThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} gauge=${infra.nationalGaugeInteroperabilityIndex.toFixed(1)} disaster=${infra.nationalDisasterRecoveryStagingIndex.toFixed(1)} circular=${infra.nationalCircularFreightThroughputIndex.toFixed(1)}`,
   });
 
   return results;

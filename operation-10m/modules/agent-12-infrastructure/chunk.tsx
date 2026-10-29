@@ -229,8 +229,14 @@ export type ChannelMaintenancePolicy = 'baseline' | 'dredge';
 
 export type IndigenousRemoteSupplyPolicy = 'baseline' | 'strengthen';
 
+export type GaugeInteroperabilityPolicy = 'baseline' | 'harmonize';
+
+export type DisasterRecoveryStagingPolicy = 'baseline' | 'surge';
+
+export type CircularFreightPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/13';
+  schemaVersion: 'agent12/14';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -306,6 +312,13 @@ export interface TransportInfrastructureState {
   indigenousRemoteSupplyShare: number;
   nationalIndigenousRemoteSupplyThroughputIndex: number;
   indigenousRemoteSupplyThroughputByRegion: Record<AuRegionCode, number>;
+  nationalGaugeInteroperabilityIndex: number;
+  gaugeInteroperabilityByRegion: Record<AuRegionCode, number>;
+  nationalDisasterRecoveryStagingIndex: number;
+  disasterRecoveryStagingByRegion: Record<AuRegionCode, number>;
+  circularFreightShare: number;
+  nationalCircularFreightThroughputIndex: number;
+  circularFreightThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -335,6 +348,9 @@ export interface TransportInfrastructureOptions {
   criticalMineralsPolicy?: CriticalMineralsPolicy;
   channelMaintenancePolicy?: ChannelMaintenancePolicy;
   indigenousRemoteSupplyPolicy?: IndigenousRemoteSupplyPolicy;
+  gaugeInteroperabilityPolicy?: GaugeInteroperabilityPolicy;
+  disasterRecoveryStagingPolicy?: DisasterRecoveryStagingPolicy;
+  circularFreightPolicy?: CircularFreightPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -902,6 +918,48 @@ export const TRANSPORT_CORRIDORS_ROUND12: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round13.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND13: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_sa_adelaide_gauge_bridge',
+    name: 'Adelaide Gauge Interoperability Bridge',
+    networkKind: 'freight',
+    regionSequence: ['SA', 'VIC', 'NSW'],
+    requiredTagsByRegion: {
+      SA: ['gauge_standard', 'interoperability', 'intermodal'],
+      VIC: ['standard_gauge', 'freight_rail'],
+      NSW: ['gauge_break', 'interoperability'],
+    },
+    productivitySynergyPoints: 6.7,
+    logisticsRelief: 0.039,
+  },
+  {
+    id: 'corr_nsw_disaster_recovery_ring',
+    name: 'NSW Disaster Recovery Ring',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'ACT'],
+    requiredTagsByRegion: {
+      NSW: ['disaster_recovery', 'emergency_staging'],
+      ACT: ['emergency_relief', 'capital'],
+    },
+    productivitySynergyPoints: 5.7,
+    logisticsRelief: 0.033,
+  },
+  {
+    id: 'corr_vic_circular_freight_loop',
+    name: 'Victoria Circular Freight Loop',
+    networkKind: 'freight',
+    regionSequence: ['VIC'],
+    requiredTagsByRegion: {
+      VIC: ['circular_economy', 'waste_logistics', 'recycle_freight'],
+    },
+    productivitySynergyPoints: 5.5,
+    logisticsRelief: 0.031,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -1061,6 +1119,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND10,
   ...TRANSPORT_CORRIDORS_ROUND11,
   ...TRANSPORT_CORRIDORS_ROUND12,
+  ...TRANSPORT_CORRIDORS_ROUND13,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -1765,6 +1824,62 @@ export const TRANSPORT_SCENARIOS_ROUND12: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round13.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND13: TransportStressScenario[] = [
+  {
+    id: 'scn_sa_gauge_break_delay',
+    label: 'SA Gauge Break Delay',
+    description: 'Break-of-gauge transhipment backlog at Adelaide intermodal.',
+    targetRegions: ['SA', 'VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['rail', 'logistics'],
+  },
+  {
+    id: 'scn_nsw_flood_recovery_surge',
+    label: 'NSW Flood Recovery Surge',
+    description: 'Disaster recovery staging overwhelms emergency corridors.',
+    targetRegions: ['NSW', 'ACT'],
+    networkKind: 'freight',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['road', 'logistics'],
+  },
+  {
+    id: 'scn_vic_circular_waste_backlog',
+    label: 'Victoria Circular Waste Backlog',
+    description: 'Recycling freight loop congestion at Melbourne hubs.',
+    targetRegions: ['VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.2,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_qld_cyclone_recovery_lift',
+    label: 'Queensland Cyclone Recovery Lift',
+    description: 'Cyclone recovery diverts freight to emergency staging yards.',
+    targetRegions: ['QLD'],
+    networkKind: 'freight',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_nsw_interstate_gauge_fault',
+    label: 'NSW Interstate Gauge Fault',
+    description: 'Standard-gauge fault cuts Sydney–Melbourne interoperability.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -1938,6 +2053,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND10,
   ...TRANSPORT_SCENARIOS_ROUND11,
   ...TRANSPORT_SCENARIOS_ROUND12,
+  ...TRANSPORT_SCENARIOS_ROUND13,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -5361,6 +5477,232 @@ export const SCALE_WAVE_ROUND12_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round13-assets.ts ---
+
+export const ROUND13_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_vic_melbourne_recycle_loop',
+    category: 'road',
+    name: 'Melbourne Recycle Freight Loop',
+    description: 'Circular economy drayage between waste hubs and ports.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['freight'],
+    tags: ['circular_economy', 'recycle_freight', 'waste_logistics', 'motorway'],
+    laneKilometres: 58,
+    designSpeedKmh: 90,
+    freightShare: 0.4,
+    urbanShare: 0.22,
+    tollRoad: true,
+  },
+  {
+    id: 'road_nsw_blue_mountains_recovery',
+    category: 'road',
+    name: 'Blue Mountains Recovery Route',
+    description: 'Disaster recovery detour and emergency staging access.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'ACT'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['freight'],
+    tags: ['disaster_recovery', 'emergency_staging', 'national_highway'],
+    laneKilometres: 88,
+    designSpeedKmh: 100,
+    freightShare: 0.35,
+    urbanShare: 0.08,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_sturt_gauge_feed',
+    category: 'road',
+    name: 'Sturt Highway Gauge Feed',
+    description: 'Road feed to Adelaide gauge interoperability hub.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'VIC', 'NSW'],
+    baseProductivityPoints: 3.9,
+    strategicNetworks: ['freight'],
+    tags: ['gauge_break', 'interoperability', 'national_highway'],
+    laneKilometres: 210,
+    designSpeedKmh: 110,
+    freightShare: 0.37,
+    urbanShare: 0.06,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_recovery_coastal',
+    category: 'road',
+    name: 'Queensland Coastal Recovery Road',
+    description: 'Cyclone recovery and emergency relief coastal feed.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 3.7,
+    strategicNetworks: ['freight'],
+    tags: ['disaster_recovery', 'emergency_relief', 'coastal_shipping'],
+    laneKilometres: 145,
+    designSpeedKmh: 100,
+    freightShare: 0.32,
+    urbanShare: 0.07,
+    tollRoad: false,
+  },
+];
+
+export const ROUND13_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_sa_adelaide_gauge_hub',
+    category: 'rail',
+    name: 'Adelaide Gauge Interoperability Hub',
+    description: 'Standard-gauge transhipment and break-of-gauge relief.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'VIC', 'NSW'],
+    baseProductivityPoints: 5.7,
+    strategicNetworks: ['freight'],
+    tags: ['gauge_standard', 'interoperability', 'intermodal', 'freight_rail'],
+    trackKilometres: 165,
+    dualTrackShare: 0.72,
+    electrifiedShare: 0.45,
+    designFreightTonnesPerYear: 7_800_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_nsw_sydney_gauge_break',
+    category: 'rail',
+    name: 'Sydney Gauge Break Shuttle',
+    description: 'Interstate gauge break shuttle at Sydney intermodal.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['freight'],
+    tags: ['gauge_break', 'interoperability', 'standard_gauge', 'container'],
+    trackKilometres: 48,
+    dualTrackShare: 0.68,
+    electrifiedShare: 0.82,
+    designFreightTonnesPerYear: 5_200_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_vic_waste_logistics_loop',
+    category: 'rail',
+    name: 'Victoria Waste Logistics Loop',
+    description: 'Circular waste and recycling unit trains.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['freight'],
+    tags: ['waste_logistics', 'circular_economy', 'recycle_freight', 'freight_rail', 'standard_gauge'],
+    trackKilometres: 92,
+    dualTrackShare: 0.5,
+    electrifiedShare: 0.58,
+    designFreightTonnesPerYear: 3_400_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND13_PORTS: PortAsset[] = [
+  {
+    id: 'port_sa_adelaide_gauge_terminal',
+    category: 'port',
+    name: 'Adelaide Gauge Terminal',
+    description: 'Intermodal gauge handoff berths and staging.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'VIC'],
+    baseProductivityPoints: 5.8,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['gauge_standard', 'interoperability', 'intermodal', 'container'],
+    berthCount: 5,
+    maxDraftMetres: 12.8,
+    teuCapacityPerYear: 420_000,
+    automationLevel: 2,
+    bulkShare: 0.32,
+  },
+  {
+    id: 'port_qld_recovery_staging',
+    category: 'port',
+    name: 'Gladstone Recovery Staging Berths',
+    description: 'Cyclone disaster recovery sealift and relief staging.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['freight'],
+    tags: ['disaster_recovery', 'emergency_staging', 'emergency_relief', 'bulk'],
+    berthCount: 4,
+    maxDraftMetres: 13.5,
+    teuCapacityPerYear: 260_000,
+    automationLevel: 1,
+    bulkShare: 0.55,
+  },
+];
+
+export const ROUND13_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_vic_circular_freight_hub',
+    category: 'logistics',
+    name: 'Melbourne Circular Freight Hub',
+    description: 'Waste-to-resource and recycling logistics consolidation.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['freight'],
+    tags: ['circular_economy', 'waste_logistics', 'recycle_freight'],
+    warehouseSqm: 156_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 62,
+  },
+  {
+    id: 'log_nsw_emergency_staging_yard',
+    category: 'logistics',
+    name: 'NSW Emergency Staging Yard',
+    description: 'Disaster recovery freight and relief supply staging.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'ACT'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['freight'],
+    tags: ['disaster_recovery', 'emergency_staging', 'emergency_relief'],
+    warehouseSqm: 134_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 65,
+  },
+  {
+    id: 'log_sa_adelaide_gauge_yard',
+    category: 'logistics',
+    name: 'Adelaide Gauge Tranship Yard',
+    description: 'Break-of-gauge container tranship and interoperability staging.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'VIC', 'NSW'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['freight'],
+    tags: ['gauge_standard', 'interoperability', 'intermodal', 'gauge_break'],
+    warehouseSqm: 148_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 60,
+  },
+  {
+    id: 'log_act_capital_emergency_relief',
+    category: 'logistics',
+    name: 'Canberra Emergency Relief DC',
+    description: 'Capital region disaster relief and recovery staging.',
+    hostRegion: 'ACT',
+    servedRegions: ['ACT', 'NSW'],
+    baseProductivityPoints: 3.6,
+    strategicNetworks: ['freight', 'mobility'],
+    tags: ['emergency_relief', 'disaster_recovery', 'capital', 'emergency_staging'],
+    warehouseSqm: 52_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'air'],
+    lastMileCoveragePct: 78,
+  },
+];
+
+export const SCALE_WAVE_ROUND13_ASSETS = [
+  ...ROUND13_ROADS,
+  ...ROUND13_RAIL,
+  ...ROUND13_PORTS,
+  ...ROUND13_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -5381,6 +5723,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND10_ASSETS,
     ...SCALE_WAVE_ROUND11_ASSETS,
     ...SCALE_WAVE_ROUND12_ASSETS,
+    ...SCALE_WAVE_ROUND13_ASSETS,
   ];
 }
 
@@ -6056,6 +6399,59 @@ export function criticalMineralsProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.043 : 0;
   const normalized = (exportIndex - 11) / 100;
   return clamp(1 + normalized * 0.054 + policyBoost, 0.93, 1.11);
+}
+
+
+// --- source: network/gauge-interoperability-index.ts ---
+
+/** 0–100 rail gauge interoperability (standard gauge handoff, break-of-gauge relief). */
+export function computeGaugeInteroperabilityByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const gaugeTagged =
+      asset.tags.some(
+        (t) => t === 'gauge_break' || t === 'standard_gauge' || t === 'interoperability' || t === 'gauge_standard',
+      ) || (asset.category === 'rail' && asset.tags.includes('intermodal'));
+
+    if (!gaugeTagged) continue;
+
+    if (asset.category === 'rail' && 'dualTrackShare' in asset) {
+      byRegion[asset.hostRegion] +=
+        asset.dualTrackShare * 18 + asset.trackKilometres / 45 + asset.electrifiedShare * 6;
+    }
+    if (asset.category === 'logistics' && asset.intermodalLinks.includes('rail')) {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 110_000 + asset.intermodalLinks.length * 1.8;
+    }
+    if (asset.category === 'port' && asset.tags.includes('intermodal')) {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.5;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalGaugeInteroperabilityIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.52 + max * 0.48, 5, 88) * 10) / 10;
+}
+
+export function gaugeInteroperabilityProductivityMultiplier(
+  interoperabilityIndex: number,
+  policy: GaugeInteroperabilityPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'harmonize' ? 0.044 : 0;
+  const normalized = (interoperabilityIndex - 14) / 100;
+  return clamp(1 + normalized * 0.051 + policyBoost, 0.93, 1.11);
 }
 
 
@@ -6746,6 +7142,64 @@ export function channelMaintenanceProductivityMultiplier(
   const policyBoost = policy === 'dredge' ? 0.045 : 0;
   const normalized = (maintenanceIndex - 43) / 100;
   return clamp(1 + normalized * 0.05 + policyBoost, 0.92, 1.1);
+}
+
+
+// --- source: operations/disaster-recovery-staging-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type DisasterRecoveryStagingPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 disaster recovery staging readiness (emergency corridors, relief staging). */
+export function computeDisasterRecoveryStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 32])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.includes('disaster_recovery') ||
+      asset.tags.includes('emergency_staging') ||
+      asset.tags.includes('emergency_relief')
+    ) {
+      if (asset.category === 'logistics') {
+        byRegion[asset.hostRegion] += asset.warehouseSqm / 90_000 + (asset.coldChainCapable ? 2.5 : 0);
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        byRegion[asset.hostRegion] += asset.laneKilometres / 400;
+      }
+      if (asset.category === 'port') {
+        byRegion[asset.hostRegion] += asset.berthCount * 2.1;
+      }
+    }
+    if (asset.linkedProjectType === 'remote_logistics_base') {
+      byRegion[asset.hostRegion] += 3.2;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.15);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.05 - stress * 0.04), 18, 92) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalDisasterRecoveryStagingIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  return Math.round(clamp(avg, 22, 86) * 10) / 10;
+}
+
+export function disasterRecoveryStagingProductivityMultiplier(
+  stagingIndex: number,
+  policy: DisasterRecoveryStagingPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'surge' ? 0.046 : 0;
+  const normalized = (stagingIndex - 38) / 100;
+  return clamp(1 + normalized * 0.052 + policyBoost, 0.92, 1.1);
 }
 
 
@@ -7510,6 +7964,95 @@ export function nationalIndigenousRemoteSupplyThroughputIndex(
 }
 
 
+// --- source: productivity/circular-freight-index.ts ---
+
+/** 0–1 share of logistics capacity on circular / waste-to-resource freight loops. */
+export function computeCircularFreightShare(
+  operationalAssets: TransportAsset[],
+  policy: CircularFreightPolicy = 'baseline',
+): number {
+  let circularUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'logistics') {
+      const units = asset.warehouseSqm / 70_000;
+      totalUnits += units;
+      if (
+        asset.tags.includes('circular_economy') ||
+        asset.tags.includes('waste_logistics') ||
+        asset.tags.includes('recycle_freight')
+      ) {
+        circularUnits += units * 0.85;
+      }
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      const units = asset.laneKilometres * asset.freightShare;
+      totalUnits += units;
+      if (asset.tags.includes('circular_economy') || asset.tags.includes('recycle_freight')) {
+        circularUnits += units * 0.6;
+      }
+    }
+    if (asset.category === 'rail' && asset.tags.includes('waste_logistics')) {
+      totalUnits += asset.trackKilometres / 80;
+      circularUnits += asset.trackKilometres / 80;
+    }
+  }
+
+  if (totalUnits <= 0) return 0.07;
+  const policyBoost = policy === 'expand' ? 0.041 : 0;
+  return Math.round(clamp(circularUnits / totalUnits + policyBoost, 0.06, 0.52) * 1000) / 1000;
+}
+
+export function circularFreightProductivityMultiplier(
+  share: number,
+  policy: CircularFreightPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.024 : 1;
+  return (1 + (share - 0.1) * 0.037) * bias;
+}
+
+export function computeCircularFreightThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'circular_economy' || t === 'waste_logistics' || t === 'recycle_freight',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 88_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 640;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 9_000_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalCircularFreightThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.55 + max * 0.45, 2, 70) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -7809,6 +8352,19 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   indigenousRemoteSupplyProductivityMultiplier,
   nationalIndigenousRemoteSupplyThroughputIndex,
 } from './indigenous-remote-supply-index.ts';
+  computeGaugeInteroperabilityByRegion,
+  gaugeInteroperabilityProductivityMultiplier,
+  nationalGaugeInteroperabilityIndex,
+} from '../network/gauge-interoperability-index.ts';
+  computeDisasterRecoveryStagingByRegion,
+  disasterRecoveryStagingProductivityMultiplier,
+  nationalDisasterRecoveryStagingIndex,
+} from '../operations/disaster-recovery-staging-index.ts';
+  circularFreightProductivityMultiplier,
+  computeCircularFreightShare,
+  computeCircularFreightThroughputByRegion,
+  nationalCircularFreightThroughputIndex,
+} from './circular-freight-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -8285,6 +8841,55 @@ export function computeTransportInfrastructureState(
     nationalCriticalMinerals * 0.024 +
     nationalIndigenousRemoteSupply * 0.019;
 
+  const gaugeInteroperabilityByRegion = computeGaugeInteroperabilityByRegion(ops);
+  const nationalGaugeInteroperability = nationalGaugeInteroperabilityIndex(gaugeInteroperabilityByRegion);
+  const gaugeMult = gaugeInteroperabilityProductivityMultiplier(
+    nationalGaugeInteroperability,
+    options?.gaugeInteroperabilityPolicy ?? 'baseline',
+  );
+  const disasterRecoveryStagingByRegion = computeDisasterRecoveryStagingByRegion(ops, networkStress);
+  const nationalDisasterRecoveryStaging = nationalDisasterRecoveryStagingIndex(disasterRecoveryStagingByRegion);
+  const disasterMult = disasterRecoveryStagingProductivityMultiplier(
+    nationalDisasterRecoveryStaging,
+    options?.disasterRecoveryStagingPolicy ?? 'baseline',
+  );
+  const circularFreightThroughputByRegion = computeCircularFreightThroughputByRegion(ops);
+  const nationalCircularFreight = nationalCircularFreightThroughputIndex(circularFreightThroughputByRegion);
+  const circularFreightShare = computeCircularFreightShare(ops, options?.circularFreightPolicy ?? 'baseline');
+  const circularMult = circularFreightProductivityMultiplier(
+    circularFreightShare,
+    options?.circularFreightPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const gaugeBoost = (gaugeInteroperabilityByRegion[code] - 12) * 0.005;
+    const disasterBoost = (disasterRecoveryStagingByRegion[code] - 36) * 0.0043;
+    const circularBoost = (circularFreightThroughputByRegion[code] - 3) * 0.0055;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + gaugeBoost + disasterBoost + circularBoost) *
+      gaugeMult *
+      disasterMult *
+      circularMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035 +
+    nationalAviationCargo * 0.03 +
+    nationalHydrogenCorridor * 0.028 +
+    nationalCoastalShipping * 0.026 +
+    nationalAutonomousCorridor * 0.024 +
+    nationalDeepSeaGateway * 0.027 +
+    nationalElectricCorridor * 0.023 +
+    nationalDefenceLogistics * 0.022 +
+    nationalDigitalFreight * 0.021 +
+    nationalCriticalMinerals * 0.024 +
+    nationalIndigenousRemoteSupply * 0.019 +
+    nationalGaugeInteroperability * 0.02 +
+    nationalCircularFreight * 0.018;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -8298,7 +8903,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/13',
+    schemaVersion: 'agent12/14',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -8374,6 +8979,13 @@ export function computeTransportInfrastructureState(
     indigenousRemoteSupplyShare,
     nationalIndigenousRemoteSupplyThroughputIndex: nationalIndigenousRemoteSupply,
     indigenousRemoteSupplyThroughputByRegion,
+    nationalGaugeInteroperabilityIndex: nationalGaugeInteroperability,
+    gaugeInteroperabilityByRegion,
+    nationalDisasterRecoveryStagingIndex: nationalDisasterRecoveryStaging,
+    disasterRecoveryStagingByRegion,
+    circularFreightShare,
+    nationalCircularFreightThroughputIndex: nationalCircularFreight,
+    circularFreightThroughputByRegion,
     computeMs,
   };
 }
@@ -8456,7 +9068,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/13' &&
+      infra.schemaVersion === 'agent12/14' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -8490,8 +9102,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalCriticalMineralsExportIndex >= 10 &&
       infra.nationalChannelMaintenanceIndex > 40 &&
       infra.indigenousRemoteSupplyShare >= 0.08 &&
-      infra.nationalIndigenousRemoteSupplyThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} minerals=${infra.nationalCriticalMineralsExportIndex.toFixed(1)} channel=${infra.nationalChannelMaintenanceIndex.toFixed(1)} indigenous=${infra.nationalIndigenousRemoteSupplyThroughputIndex.toFixed(1)}`,
+      infra.nationalIndigenousRemoteSupplyThroughputIndex >= 2 &&
+      infra.nationalGaugeInteroperabilityIndex >= 12 &&
+      infra.nationalDisasterRecoveryStagingIndex > 37 &&
+      infra.circularFreightShare >= 0.06 &&
+      infra.nationalCircularFreightThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} gauge=${infra.nationalGaugeInteroperabilityIndex.toFixed(1)} disaster=${infra.nationalDisasterRecoveryStagingIndex.toFixed(1)} circular=${infra.nationalCircularFreightThroughputIndex.toFixed(1)}`,
   });
 
   return results;
