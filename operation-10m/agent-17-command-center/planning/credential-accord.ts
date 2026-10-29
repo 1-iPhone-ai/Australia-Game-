@@ -102,3 +102,7 @@ export function buildAgent17CredentialAccord(
 export function credentialAccordBlocksRegistry(snapshot: Agent17CredentialAccordSnapshot): boolean {
   return snapshot.band === 'void' || !snapshot.credentialIssued;
 }
+
+export function credentialAccordBlocksLedger(snapshot: Agent17CredentialAccordSnapshot): boolean {
+  return snapshot.band === 'void' || !snapshot.credentialIssued;
+}

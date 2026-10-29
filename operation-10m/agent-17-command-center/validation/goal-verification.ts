@@ -243,7 +243,16 @@ import {
 import {
   buildAgent17CredentialAccord,
   credentialAccordBlocksRegistry,
+  credentialAccordBlocksLedger,
 } from '../planning/credential-accord.ts';
+import {
+  buildAgent17LedgerIndex,
+  ledgerIndexBlocksEndorsement,
+} from '../planning/ledger-index.ts';
+import {
+  buildAgent17EndorsementAccord,
+  endorsementAccordBlocksLedger,
+} from '../planning/endorsement-accord.ts';
 import {
   Agent17RollbackController,
   createAgent17RollbackController,
@@ -1931,6 +1940,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const ledgerIndex = depthEval.snapshot.planningDepth?.ledgerIndex;
+  goalResults.push(
+    result(
+      'G17-112',
+      !!ledgerIndex &&
+        ledgerIndex.postings.length >= 5 &&
+        ledgerIndex.ledgerScore >= 0 &&
+        ledgerIndex.ledgerScore <= 100 &&
+        (ledgerIndex.band === 'balanced' ||
+          ledgerIndex.band === 'open' ||
+          ledgerIndex.band === 'closed'),
+      `postings=${ledgerIndex?.postings.length} score=${ledgerIndex?.ledgerScore}`
+    )
+  );
+
+  const endorsementAccord = depthEval.snapshot.planningDepth?.endorsementAccord;
+  goalResults.push(
+    result(
+      'G17-113',
+      !!endorsementAccord &&
+        endorsementAccord.endorsements.length >= 5 &&
+        endorsementAccord.endorsementScore >= 0 &&
+        endorsementAccord.endorsementScore <= 100,
+      `endorsements=${endorsementAccord?.endorsements.length} score=${endorsementAccord?.endorsementScore}`
+    )
+  );
+
+  const closedLedger = buildAgent17LedgerIndex({
+    credentialAccord: voidCredential,
+    registryIndex: corruptRegistry,
+    attestationAccord: revokedAttestation,
+  });
+  const withdrawnEndorsement = buildAgent17EndorsementAccord({
+    ledgerIndex: closedLedger,
+    credentialAccord: voidCredential,
+    registryIndex: corruptRegistry,
+  });
+  goalResults.push(
+    result(
+      'G17-114',
+      credentialAccordBlocksLedger(voidCredential) ||
+        ledgerIndexBlocksEndorsement(closedLedger) ||
+        endorsementAccordBlocksLedger(withdrawnEndorsement),
+      `${closedLedger.band}/${withdrawnEndorsement.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -2072,6 +2128,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-109',
     'G17-110',
     'G17-111',
+    'G17-112',
+    'G17-113',
+    'G17-114',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

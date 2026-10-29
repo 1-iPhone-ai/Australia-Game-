@@ -241,6 +241,8 @@ export interface Agent17PlanningDepthSnapshot {
   attestationAccord: Agent17AttestationAccordSnapshot;
   registryIndex: Agent17RegistryIndexSnapshot;
   credentialAccord: Agent17CredentialAccordSnapshot;
+  ledgerIndex: Agent17LedgerIndexSnapshot;
+  endorsementAccord: Agent17EndorsementAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1219,6 +1221,40 @@ export interface Agent17CredentialAccordSnapshot {
   registryBand: Agent17RegistryIndexSnapshot['band'];
   attestationBand: Agent17AttestationAccordSnapshot['band'];
   credentialIssued: boolean;
+  headline: string;
+}
+
+export interface Agent17LedgerPosting {
+  id: string;
+  label: string;
+  posted: boolean;
+  weight: number;
+}
+
+export interface Agent17LedgerIndexSnapshot {
+  ledgerScore: number;
+  band: 'balanced' | 'open' | 'closed';
+  postings: Agent17LedgerPosting[];
+  credentialBand: Agent17CredentialAccordSnapshot['band'];
+  registryBand: Agent17RegistryIndexSnapshot['band'];
+  ledgerBalanced: boolean;
+  headline: string;
+}
+
+export interface Agent17EndorsementLine {
+  id: string;
+  label: string;
+  signed: boolean;
+  weight: number;
+}
+
+export interface Agent17EndorsementAccordSnapshot {
+  endorsementScore: number;
+  band: 'signed' | 'draft' | 'withdrawn';
+  endorsements: Agent17EndorsementLine[];
+  ledgerBand: Agent17LedgerIndexSnapshot['band'];
+  credentialBand: Agent17CredentialAccordSnapshot['band'];
+  endorsementSigned: boolean;
   headline: string;
 }
 

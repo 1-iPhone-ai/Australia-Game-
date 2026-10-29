@@ -779,6 +779,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Corrupt registry or revoked attestation yields credentialAccordBlocksRegistry.',
     severity: 'major',
   },
+  {
+    id: 'G17-112',
+    title: 'Ledger index on planning depth',
+    category: 'telemetry',
+    acceptance: 'ledgerIndex reports ledgerScore 0–100 with balanced/open/closed band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-113',
+    title: 'Endorsement accord endorsements complete',
+    category: 'telemetry',
+    acceptance: 'endorsementAccord exposes ≥5 endorsements and endorsementScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-114',
+    title: 'Closed ledger withdraws endorsement accord',
+    category: 'integration',
+    acceptance: 'Closed ledger or void credential yields endorsementAccordBlocksLedger.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
