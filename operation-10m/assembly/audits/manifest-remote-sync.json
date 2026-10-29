@@ -1,5 +1,5 @@
 {
-  "scannedAt": "2026-10-29T09:04:50.319Z",
+  "scannedAt": "2026-10-29T09:09:33.667Z",
   "canonicalBase": "origin/australia-game-upgrade",
   "baselineCommit": "bc1adf3",
   "originOp10mHeadCount": 33,
@@ -55,7 +55,7 @@
       "chunkPath": "operation-10m/agent-05-events/chunk.tsx",
       "markerModuleId": "agent-05-events",
       "assemblyReady": true,
-      "contentSha256": "baced4c5f292e1049c59fa822c132f9bd2ce1ed043ec3394be526449a0cbd7f8",
+      "contentSha256": "5f248d4c5ed90849f640ecaa1958ced900dc353744c50020c068e08952e5e2c2",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -323,7 +323,7 @@
       "chunkPath": "operation-10m/modules/agent-24-history/chunk.tsx",
       "markerModuleId": "agent-24-history",
       "assemblyReady": false,
-      "contentSha256": "53c7cd07cb36977a0276f0656010fb0ec9054b918ecd0964421abf3f6e5577b2",
+      "contentSha256": "dac9677803bd57d20fb6465cb4c41c60be9f6521073ea8dc14692af27ab2424a",
       "defaultSlot": "pre-final-export",
       "duplicateModuleIdOf": "origin/op10m/agent-24-history",
       "skipReason": "duplicate moduleId (branch not primary)"
