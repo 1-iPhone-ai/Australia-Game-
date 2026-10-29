@@ -1,0 +1,16 @@
+{
+  "id": "tranche-projection-with-chunks",
+  "title": "Dry-run projection: Agent 25 registry + Agent 01/03/06 OP10M chunks",
+  "moduleIds": [
+    "agent-01-strategic-gameplay",
+    "agent-03-research-tech",
+    "agent-06-macroeconomy",
+    "agent-25-op10m-registry"
+  ],
+  "labEntry": {
+    "afterAnchorId": "v1015_orchestrator",
+    "id": "op10m_assembly_registry",
+    "label": "Operation 10M assembly registry",
+    "runExport": "runOp10mAssemblyRegistrySelfTests"
+  }
+}

@@ -1,0 +1,167 @@
+{
+  "generatedAt": "2026-10-29T05:58:43.536Z",
+  "canonicalBase": "origin/australia-game-upgrade",
+  "note": "Source-line sum is not audited functional LOC; assembly uses chunked TSX only.",
+  "rows": [
+    {
+      "moduleId": "agent-01-strategic-gameplay",
+      "pr": 311,
+      "branch": "origin/op10m/agent-01-strategic-gameplay",
+      "tsFiles": 19,
+      "estimatedSourceLines": 1477,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-02-turns-time",
+      "pr": 309,
+      "branch": "origin/op10m/agent-02-turns-time",
+      "tsFiles": 10,
+      "estimatedSourceLines": 1024,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-03-research-tech",
+      "pr": 314,
+      "branch": "origin/op10m/agent-03-research-tech",
+      "tsFiles": 10,
+      "estimatedSourceLines": 1745,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-04-modes-scenarios",
+      "pr": 308,
+      "branch": "origin/op10m/agent-04-modes-scenarios",
+      "tsFiles": 14,
+      "estimatedSourceLines": 2283,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-05-events",
+      "pr": 324,
+      "branch": "origin/op10m/agent-05-events",
+      "tsFiles": 7,
+      "estimatedSourceLines": 78989,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-06-macroeconomy",
+      "pr": 323,
+      "branch": "origin/op10m/agent-06-macroeconomy",
+      "tsFiles": 21,
+      "estimatedSourceLines": 1331,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-07-public-finance",
+      "pr": 313,
+      "branch": "origin/op10m/agent-07-public-finance",
+      "tsFiles": 30,
+      "estimatedSourceLines": 4364,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-08-companies",
+      "pr": 317,
+      "branch": "origin/op10m/agent-08-companies",
+      "tsFiles": 4,
+      "estimatedSourceLines": 5818,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-09-population",
+      "pr": 327,
+      "branch": "origin/op10m/agent-09-population",
+      "tsFiles": 16,
+      "estimatedSourceLines": 1256,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-10-finance",
+      "pr": 325,
+      "branch": "origin/op10m/agent-10-finance",
+      "tsFiles": 12,
+      "estimatedSourceLines": 1278,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-11-cities",
+      "pr": 315,
+      "branch": "origin/op10m/agent-11-cities",
+      "tsFiles": 9,
+      "estimatedSourceLines": 866,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-12-transport",
+      "pr": 322,
+      "branch": "origin/op10m/agent-12-transport",
+      "tsFiles": 12,
+      "estimatedSourceLines": 1508,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-13-energy",
+      "pr": 328,
+      "branch": "origin/op10m/agent-13-energy",
+      "tsFiles": 6,
+      "estimatedSourceLines": 26297,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-15-trade",
+      "pr": 320,
+      "branch": "origin/op10m/agent-15-trade",
+      "tsFiles": 13,
+      "estimatedSourceLines": 1471,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-16-guardian",
+      "pr": 312,
+      "branch": "origin/op10m/agent-16-guardian",
+      "tsFiles": 13,
+      "estimatedSourceLines": 1637,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-17-command-center",
+      "pr": 316,
+      "branch": "origin/op10m/agent-17-command-center",
+      "tsFiles": 11,
+      "estimatedSourceLines": 1593,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-18-team-ai",
+      "pr": 321,
+      "branch": "origin/op10m/agent-18-team-ai",
+      "tsFiles": 7,
+      "estimatedSourceLines": 1352,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-19-ai-memory",
+      "pr": 329,
+      "branch": "origin/op10m/agent-19-ai-memory",
+      "tsFiles": 8,
+      "estimatedSourceLines": 1530,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-21-forecasting",
+      "pr": 318,
+      "branch": "origin/op10m/agent-21-forecasting",
+      "tsFiles": 8,
+      "estimatedSourceLines": 717,
+      "inAssemblyManifest": false
+    },
+    {
+      "moduleId": "agent-24-replay",
+      "pr": 326,
+      "branch": "origin/op10m/agent-24-replay",
+      "tsFiles": 9,
+      "estimatedSourceLines": 20130,
+      "inAssemblyManifest": false
+    }
+  ]
+}
