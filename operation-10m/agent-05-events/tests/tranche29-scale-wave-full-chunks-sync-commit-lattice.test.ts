@@ -18,12 +18,12 @@ describe('Tranche 29 scale-wave-full-chunks-sync-commit lattice catalog', () => 
   it('adds 320 scale-wave-full-chunks-sync-commit lattice chains', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE29_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche29Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 20780);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 21000);
   });
 
   it('uses op10m_t29 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 20780);
+    assert.equal(ids.size, 21000);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE29) {
       assert.match(c.chainId, /^op10m_t29_/);
     }
