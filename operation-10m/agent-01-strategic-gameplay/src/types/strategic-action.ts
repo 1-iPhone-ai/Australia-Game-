@@ -93,6 +93,8 @@ export interface StrategicActionDefinition {
   minCoalitionCivilizationalEnduranceStreakDays?: number;
   /** Action requires transcendent legacy streak after civilizational endurance. */
   minCoalitionTranscendentLegacyStreakDays?: number;
+  /** Action requires sovereign continuum streak after transcendent legacy. */
+  minCoalitionSovereignContinuumStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -145,7 +147,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_institutional_permanence_streak'; minDays: number }
   | { kind: 'min_coalition_generational_continuity_streak'; minDays: number }
   | { kind: 'min_coalition_civilizational_endurance_streak'; minDays: number }
-  | { kind: 'min_coalition_transcendent_legacy_streak'; minDays: number };
+  | { kind: 'min_coalition_transcendent_legacy_streak'; minDays: number }
+  | { kind: 'min_coalition_sovereign_continuum_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -213,6 +216,8 @@ export interface StrategicGameplayState {
   coalitionCivilizationalEnduranceStreakDays?: number;
   /** Days civilizational endurance held transcendent legacy eligibility. */
   coalitionTranscendentLegacyStreakDays?: number;
+  /** Days transcendent legacy held sovereign continuum eligibility. */
+  coalitionSovereignContinuumStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;

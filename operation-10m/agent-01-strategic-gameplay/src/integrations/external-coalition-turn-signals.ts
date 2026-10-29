@@ -12,6 +12,7 @@ import { isInstitutionalCoalitionPermanence } from '../engine/coalition-institut
 import { isGenerationalCoalitionContinuity } from '../engine/coalition-generational-continuity.ts';
 import { isCivilizationalCoalitionEndurance } from '../engine/coalition-civilizational-endurance.ts';
 import { isTranscendentCoalitionLegacy } from '../engine/coalition-transcendent-legacy.ts';
+import { isSovereignCoalitionContinuum } from '../engine/coalition-sovereign-continuum.ts';
 
 /** Outbound coalition telemetry for Agent 02 / Agent 05 assembly hooks (round 10+). */
 export interface ExternalCoalitionTurnSignals {
@@ -36,6 +37,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionCivilizationalEnduranceStreakDays: number;
   transcendentCoalitionLegacy: boolean;
   coalitionTranscendentLegacyStreakDays: number;
+  sovereignCoalitionContinuum: boolean;
+  coalitionSovereignContinuumStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -64,6 +67,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionCivilizationalEnduranceStreakDays: state.coalitionCivilizationalEnduranceStreakDays ?? 0,
     transcendentCoalitionLegacy: isTranscendentCoalitionLegacy(state),
     coalitionTranscendentLegacyStreakDays: state.coalitionTranscendentLegacyStreakDays ?? 0,
+    sovereignCoalitionContinuum: isSovereignCoalitionContinuum(state),
+    coalitionSovereignContinuumStreakDays: state.coalitionSovereignContinuumStreakDays ?? 0,
   };
 }
 
@@ -92,5 +97,7 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionCivilizationalEnduranceStreakDays: raw?.coalitionCivilizationalEnduranceStreakDays ?? 0,
     transcendentCoalitionLegacy: raw?.transcendentCoalitionLegacy ?? false,
     coalitionTranscendentLegacyStreakDays: raw?.coalitionTranscendentLegacyStreakDays ?? 0,
+    sovereignCoalitionContinuum: raw?.sovereignCoalitionContinuum ?? false,
+    coalitionSovereignContinuumStreakDays: raw?.coalitionSovereignContinuumStreakDays ?? 0,
   };
 }

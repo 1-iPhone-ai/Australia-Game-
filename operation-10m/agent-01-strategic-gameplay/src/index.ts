@@ -105,6 +105,7 @@ export {
   generationalContinuityRankingBonus,
   civilizationalEnduranceRankingBonus,
   transcendentLegacyRankingBonus,
+  sovereignContinuumRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -270,6 +271,16 @@ export {
   applyTranscendentLegacyMandateBonus,
 } from './engine/coalition-transcendent-legacy.ts';
 
+export { coalitionSovereignContinuumStreakIssues } from './engine/coalition-sovereign-continuum-gates.ts';
+
+export {
+  SOVEREIGN_COALITION_CONTINUUM_THRESHOLD,
+  advanceCoalitionSovereignContinuumStreak,
+  resetCoalitionSovereignContinuumStreak,
+  isSovereignCoalitionContinuum,
+  applySovereignContinuumMandateBonus,
+} from './engine/coalition-sovereign-continuum.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '2.7.0';
+export const AGENT_01_MODULE_VERSION = '2.8.0';

@@ -38,6 +38,7 @@ import { resetCoalitionInstitutionalPermanenceStreak } from './coalition-institu
 import { resetCoalitionGenerationalContinuityStreak } from './coalition-generational-continuity.ts';
 import { resetCoalitionCivilizationalEnduranceStreak } from './coalition-civilizational-endurance.ts';
 import { resetCoalitionTranscendentLegacyStreak } from './coalition-transcendent-legacy.ts';
+import { resetCoalitionSovereignContinuumStreak } from './coalition-sovereign-continuum.ts';
 import {
   scoreNationalPriorityAlignment,
   validateAction,
@@ -71,6 +72,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     coalitionGenerationalContinuityStreakDays: 0,
     coalitionCivilizationalEnduranceStreakDays: 0,
     coalitionTranscendentLegacyStreakDays: 0,
+    coalitionSovereignContinuumStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -279,6 +281,12 @@ export function executeStrategicAction(
   }
   if (action.id === 'sga_coalition_transcendent_enduring_covenant') {
     nextState = resetCoalitionTranscendentLegacyStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_sovereign_continuum_charter') {
+    nextState = resetCoalitionSovereignContinuumStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_sovereign_continuity_endowment') {
+    nextState = resetCoalitionSovereignContinuumStreak(nextState);
   }
 
   contracts.ui.pushToast({
