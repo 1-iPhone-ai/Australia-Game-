@@ -254,6 +254,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Governance breach yields urgent band or escalationMatrixBlocksAutomation.',
     severity: 'major',
   },
+  {
+    id: 'G17-037',
+    title: 'Stabilization index on planning depth',
+    category: 'telemetry',
+    acceptance: 'stabilizationIndex reports stabilizationIndex 0–100 with stable/adjusting/volatile band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-038',
+    title: 'Command envelope signals complete',
+    category: 'telemetry',
+    acceptance: 'commandEnvelope exposes ≥5 capacity signals and horizonTurns ≥ 1.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-039',
+    title: 'Volatile stabilization throttles envelope',
+    category: 'integration',
+    acceptance: 'Volatile band or saturated envelope yields commandEnvelopeNeedsThrottle.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

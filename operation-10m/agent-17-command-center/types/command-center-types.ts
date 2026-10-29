@@ -191,6 +191,8 @@ export interface Agent17PlanningDepthSnapshot {
   governanceAudit: Agent17GovernanceAuditSnapshot;
   escalationMatrix: Agent17EscalationMatrixSnapshot;
   rollbackAssurance: Agent17RollbackAssuranceSnapshot;
+  stabilizationIndex: Agent17StabilizationIndexSnapshot;
+  commandEnvelope: Agent17CommandEnvelopeSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -335,6 +337,39 @@ export interface Agent17RollbackAssuranceSnapshot {
   band: 'protected' | 'at_risk' | 'exposed';
   checks: Agent17RollbackAssuranceCheck[];
   restoreRecommended: boolean;
+  headline: string;
+}
+
+export interface Agent17StabilizationFactor {
+  id: string;
+  label: string;
+  score: number;
+  weight: number;
+}
+
+export interface Agent17StabilizationIndexSnapshot {
+  stabilizationIndex: number;
+  band: 'stable' | 'adjusting' | 'volatile';
+  factors: Agent17StabilizationFactor[];
+  escalationBand: Agent17EscalationMatrixSnapshot['band'];
+  assuranceBand: Agent17RollbackAssuranceSnapshot['band'];
+  headline: string;
+}
+
+export interface Agent17CommandEnvelopeSignal {
+  id: string;
+  label: string;
+  value: number;
+  unit: 'percent' | 'steps' | 'turns' | 'index';
+}
+
+export interface Agent17CommandEnvelopeSnapshot {
+  capacityBand: 'nominal' | 'constrained' | 'saturated';
+  horizonTurns: number;
+  activeDelegationCount: number;
+  delegationCap: number;
+  automationAllowed: boolean;
+  signals: Agent17CommandEnvelopeSignal[];
   headline: string;
 }
 

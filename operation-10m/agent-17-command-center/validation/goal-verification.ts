@@ -38,6 +38,14 @@ import {
 } from '../planning/escalation-matrix.ts';
 import { buildAgent17RollbackAssurance } from '../planning/rollback-assurance.ts';
 import {
+  buildAgent17StabilizationIndex,
+  stabilizationIndexBlocksAutomation,
+} from '../planning/stabilization-index.ts';
+import {
+  buildAgent17CommandEnvelope,
+  commandEnvelopeNeedsThrottle,
+} from '../planning/command-envelope.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -538,10 +546,57 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
-  void buildAgent17RollbackAssurance(
-    depthEval.ops,
-    assessAgent17PlanHealth(depthEval.ops.activePlan, baseState, 'player'),
-    govAudit!
+  const stabilization = depthEval.snapshot.planningDepth?.stabilizationIndex;
+  goalResults.push(
+    result(
+      'G17-037',
+      !!stabilization &&
+        stabilization.stabilizationIndex >= 0 &&
+        stabilization.stabilizationIndex <= 100 &&
+        (stabilization.band === 'stable' ||
+          stabilization.band === 'adjusting' ||
+          stabilization.band === 'volatile'),
+      `${stabilization?.stabilizationIndex}/${stabilization?.band}`
+    )
+  );
+
+  const envelope = depthEval.snapshot.planningDepth?.commandEnvelope;
+  goalResults.push(
+    result(
+      'G17-038',
+      !!envelope &&
+        envelope.signals.length >= 5 &&
+        envelope.horizonTurns >= 1 &&
+        envelope.delegationCap >= 1,
+      `signals=${envelope?.signals.length} horizon=${envelope?.horizonTurns}`
+    )
+  );
+
+  const volatileStabilization = buildAgent17StabilizationIndex({
+    escalationMatrix: breachMatrix,
+    rollbackAssurance: buildAgent17RollbackAssurance(
+      breachOps,
+      assessAgent17PlanHealth(breachOps.activePlan, baseState, 'player'),
+      breachAudit
+    ),
+  });
+  const saturatedEnvelope = buildAgent17CommandEnvelope({
+    ops: breachOps,
+    executionPacing: buildAgent17ExecutionPacing(
+      breachOps,
+      baseState,
+      assessAgent17PlanHealth(breachOps.activePlan, baseState, 'player'),
+      buildAgent17VerificationPolicy(breachOps, baseState, 'player')
+    ),
+    stabilizationIndex: volatileStabilization,
+  });
+  goalResults.push(
+    result(
+      'G17-039',
+      stabilizationIndexBlocksAutomation(volatileStabilization) ||
+        commandEnvelopeNeedsThrottle(saturatedEnvelope),
+      `${volatileStabilization.band}/${saturatedEnvelope.capacityBand}`
+    )
   );
 
   void buildAgent17ResilienceScorecard(
@@ -610,6 +665,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-034',
     'G17-035',
     'G17-036',
+    'G17-037',
+    'G17-038',
+    'G17-039',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

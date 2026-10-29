@@ -13,7 +13,7 @@ Exit code `0` only when:
 1. ACC17 dev harness passes (6 checks).
 2. Recovery path harness passes (8 checks).
 3. Planning, delegation, coordination, and execution depth harnesses pass.
-4. All registered goals (`G17-001` … `G17-036`) pass measured checks.
+4. All registered goals (`G17-001` … `G17-039`) pass measured checks.
 5. Goal registry coverage is complete.
 
 ## Layout
