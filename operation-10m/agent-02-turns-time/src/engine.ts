@@ -86,6 +86,27 @@ import {
   type BatchAdvanceWithObservability,
 } from './batch-advance-observability.js';
 import {
+  buildPipelineCoverageGapReport,
+  type PipelineCoverageGapReport,
+} from './pipeline-coverage-gap-report.js';
+import { computeBatchObservabilityDigest } from './batch-observability-digest.js';
+import {
+  gateExternalDayPlanForBatch,
+  type ExternalDayPlanBatchGateResult,
+} from './external-day-plan-batch-gate.js';
+import {
+  buildAdvanceBudgetBatchReport,
+  type AdvanceBudgetBatchReport,
+} from './advance-budget-batch-report.js';
+import {
+  gateBatchAdvanceReadiness,
+  type BatchAdvanceReadinessGateResult,
+} from './batch-advance-readiness-gate.js';
+import {
+  stepTurnsWithBudgetReadinessGate,
+  type BatchAdvanceWithReadinessGate,
+} from './batch-advance-gated-step.js';
+import {
   buildBatchHorizonReconcileReport,
   type BatchHorizonReconcileReport,
 } from './batch-horizon-reconcile-report.js';
@@ -290,6 +311,40 @@ export class TurnTimeEngine {
     budget: TurnAdvanceBudgetState,
   ): BatchAdvanceWithObservability {
     return stepTurnsWithBudgetObservability(this, maxSteps, budget);
+  }
+
+  buildPipelineCoverageGapReport(): PipelineCoverageGapReport {
+    return buildPipelineCoverageGapReport(this.snapshot());
+  }
+
+  computeBatchObservabilityDigest(rollup: BatchAdvanceObservabilityRollup): string {
+    return computeBatchObservabilityDigest(rollup);
+  }
+
+  gateExternalDayPlanForBatch(
+    batch: BatchAdvanceResult,
+    externalByTurn: Readonly<Record<number, readonly string[]>>,
+  ): ExternalDayPlanBatchGateResult {
+    return gateExternalDayPlanForBatch(batch, externalByTurn);
+  }
+
+  buildAdvanceBudgetBatchReport(batch: BatchAdvanceResult): AdvanceBudgetBatchReport {
+    return buildAdvanceBudgetBatchReport(batch);
+  }
+
+  gateBatchAdvanceReadiness(
+    rollup: BatchAdvanceObservabilityRollup,
+    externalByTurn?: Readonly<Record<number, readonly string[]>>,
+  ): BatchAdvanceReadinessGateResult {
+    return gateBatchAdvanceReadiness(this.snapshot(), rollup, externalByTurn);
+  }
+
+  stepTurnsWithBudgetReadinessGate(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+    externalByTurn?: Readonly<Record<number, readonly string[]>>,
+  ): BatchAdvanceWithReadinessGate {
+    return stepTurnsWithBudgetReadinessGate(this, maxSteps, budget, externalByTurn);
   }
 
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {

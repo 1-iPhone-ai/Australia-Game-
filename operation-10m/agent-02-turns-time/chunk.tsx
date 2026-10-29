@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
 // @ts-nocheck
-// content-sha256-prefix: 3510724afc126ba3
+// content-sha256-prefix: 8bd2702b1816cc42
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -1932,6 +1932,40 @@ export class TurnTimeEngine {
     return stepTurnsWithBudgetObservability(this, maxSteps, budget);
   }
 
+  buildPipelineCoverageGapReport(): PipelineCoverageGapReport {
+    return buildPipelineCoverageGapReport(this.snapshot());
+  }
+
+  computeBatchObservabilityDigest(rollup: BatchAdvanceObservabilityRollup): string {
+    return computeBatchObservabilityDigest(rollup);
+  }
+
+  gateExternalDayPlanForBatch(
+    batch: BatchAdvanceResult,
+    externalByTurn: Readonly<Record<number, readonly string[]>>,
+  ): ExternalDayPlanBatchGateResult {
+    return gateExternalDayPlanForBatch(batch, externalByTurn);
+  }
+
+  buildAdvanceBudgetBatchReport(batch: BatchAdvanceResult): AdvanceBudgetBatchReport {
+    return buildAdvanceBudgetBatchReport(batch);
+  }
+
+  gateBatchAdvanceReadiness(
+    rollup: BatchAdvanceObservabilityRollup,
+    externalByTurn?: Readonly<Record<number, readonly string[]>>,
+  ): BatchAdvanceReadinessGateResult {
+    return gateBatchAdvanceReadiness(this.snapshot(), rollup, externalByTurn);
+  }
+
+  stepTurnsWithBudgetReadinessGate(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+    externalByTurn?: Readonly<Record<number, readonly string[]>>,
+  ): BatchAdvanceWithReadinessGate {
+    return stepTurnsWithBudgetReadinessGate(this, maxSteps, budget, externalByTurn);
+  }
+
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {
     return buildAgent02TurnPipelineReport(this.snapshot(), before);
   }
@@ -2447,6 +2481,181 @@ export function stepTurnsWithBudgetObservability(
   return { batch, rollup };
 }
 
+// --- src/pipeline-coverage-gap-report.ts ---
+
+export interface PipelineCoverageGapReport {
+  coverage: PipelineStageCoverageReport;
+  observedCount: number;
+  missingStageIds: Op10mAgent02PipelineStageId[];
+  coverageRatio: number;
+  ok: boolean;
+}
+
+/** Lists registered pipeline stages not yet seen in the snapshot trace (Agent 25 gap export). */
+export function buildPipelineCoverageGapReport(snapshot: TurnTimeSnapshot): PipelineCoverageGapReport {
+  const coverage = computePipelineStageCoverage(snapshot);
+  const observedCount = coverage.observedStageIds.length;
+  const coverageRatio =
+    coverage.registeredStageCount === 0 ? 1 : observedCount / coverage.registeredStageCount;
+  return {
+    coverage,
+    observedCount,
+    missingStageIds: coverage.missingStageIds,
+    coverageRatio,
+    ok: coverage.missingStageIds.length === 0,
+  };
+}
+
+// --- src/batch-observability-digest.ts ---
+
+export function computeBatchObservabilityDigest(rollup: BatchAdvanceObservabilityRollup): string {
+  const payload = JSON.stringify({
+    completed: rollup.batch.completed,
+    stoppedReason: rollup.batch.stoppedReason ?? null,
+    pipelineDigest: rollup.pipeline.finalPipelineDigest,
+    horizonOk: rollup.horizon.ok,
+    observabilityOk: rollup.ok,
+    stepDigests: rollup.stepRows.map((row) => row.report.pipelineDigest),
+    newStages: rollup.finalCoverageDelta.newlyObservedStageIds,
+  });
+  return fnv1a64Hex(payload);
+}
+
+// --- src/external-day-plan-batch-gate.ts ---
+
+export interface ExternalDayPlanBatchGateResult {
+  steppedTurns: number[];
+  mergeResults: ExternalDayPlanMergeResult[];
+  failingTurns: number[];
+  ok: boolean;
+}
+
+/**
+ * XS-02 batch gate: each stepped turn's narrative ids must match events dispatched during that step.
+ */
+export function gateExternalDayPlanForBatch(
+  batch: BatchAdvanceResult,
+  externalByTurn: Readonly<Record<number, readonly string[]>>,
+): ExternalDayPlanBatchGateResult {
+  const steppedTurns: number[] = [];
+  const mergeResults: ExternalDayPlanMergeResult[] = [];
+  const failingTurns: number[] = [];
+
+  for (const step of batch.steps) {
+    if (step.blockedByPause) continue;
+    const turn = step.clockBefore.turnIndex;
+    steppedTurns.push(turn);
+    const externalSorted = [...new Set(externalByTurn[turn] ?? [])].sort((a, b) => a.localeCompare(b));
+    const dispatchedSorted = [...step.dispatchedEventIds].sort((a, b) => a.localeCompare(b));
+    const externalSet = new Set(externalSorted);
+    const dispatchedSet = new Set(dispatchedSorted);
+    const externalOnly = externalSorted.filter((id) => !dispatchedSet.has(id));
+    const scheduledOnly = dispatchedSorted.filter((id) => !externalSet.has(id));
+    const ok = externalOnly.length === 0 && scheduledOnly.length === 0;
+    mergeResults.push({
+      turnIndex: turn,
+      scheduledDueIds: dispatchedSorted,
+      externalEventIds: externalSorted,
+      externalOnly,
+      scheduledOnly,
+      ok,
+    });
+    if (!ok) failingTurns.push(turn);
+  }
+
+  return {
+    steppedTurns,
+    mergeResults,
+    failingTurns,
+    ok: failingTurns.length === 0,
+  };
+}
+
+// --- src/advance-budget-batch-report.ts ---
+
+export interface AdvanceBudgetBatchReport {
+  limit: number;
+  consumed: number;
+  remaining: number;
+  exhausted: boolean;
+  stoppedForBudget: boolean;
+}
+
+export function buildAdvanceBudgetBatchReport(batch: BatchAdvanceResult): AdvanceBudgetBatchReport {
+  const budget: TurnAdvanceBudgetState = batch.budget;
+  const remaining = advanceBudgetRemaining(budget);
+  return {
+    limit: budget.limit,
+    consumed: budget.consumed,
+    remaining,
+    exhausted: remaining === 0,
+    stoppedForBudget: Boolean(batch.stoppedReason?.includes('budget')),
+  };
+}
+
+// --- src/batch-advance-readiness-gate.ts ---
+
+export interface BatchAdvanceReadinessGateResult {
+  observabilityOk: boolean;
+  externalBatchOk: boolean;
+  pipelineTurnsOk: boolean;
+  budgetOk: boolean;
+  coverageGap: PipelineCoverageGapReport;
+  externalBatch?: ExternalDayPlanBatchGateResult;
+  budget: AdvanceBudgetBatchReport;
+  digest: string;
+  ok: boolean;
+}
+
+export function gateBatchAdvanceReadiness(
+  finalSnapshot: TurnTimeSnapshot,
+  rollup: BatchAdvanceObservabilityRollup,
+  externalByTurn?: Readonly<Record<number, readonly string[]>>,
+): BatchAdvanceReadinessGateResult {
+  const coverageGap = buildPipelineCoverageGapReport(finalSnapshot);
+  const externalBatch = externalByTurn
+    ? gateExternalDayPlanForBatch(rollup.batch, externalByTurn)
+    : undefined;
+  const budget = buildAdvanceBudgetBatchReport(rollup.batch);
+  const digest = computeBatchObservabilityDigest(rollup);
+
+  const observabilityOk = rollup.ok;
+  const externalBatchOk = externalBatch?.ok ?? true;
+  const pipelineTurnsOk = rollup.pipeline.incompleteTurns.length === 0;
+  const budgetOk = !budget.stoppedForBudget || rollup.batch.completed > 0;
+
+  return {
+    observabilityOk,
+    externalBatchOk,
+    pipelineTurnsOk,
+    budgetOk,
+    coverageGap,
+    externalBatch,
+    budget,
+    digest,
+    ok: observabilityOk && externalBatchOk && pipelineTurnsOk && budgetOk,
+  };
+}
+
+// --- src/batch-advance-gated-step.ts ---
+
+export interface BatchAdvanceWithReadinessGate {
+  batch: BatchAdvanceResult;
+  rollup: BatchAdvanceObservabilityRollup;
+  readiness: BatchAdvanceReadinessGateResult;
+}
+
+export function stepTurnsWithBudgetReadinessGate(
+  engine: TurnTimeEngine,
+  maxSteps: number,
+  budget: TurnAdvanceBudgetState,
+  externalByTurn?: Readonly<Record<number, readonly string[]>>,
+): BatchAdvanceWithReadinessGate {
+  const { batch, rollup } = stepTurnsWithBudgetObservability(engine, maxSteps, budget);
+  const readiness = gateBatchAdvanceReadiness(engine.snapshot(), rollup, externalByTurn);
+  return { batch, rollup, readiness };
+}
+
 // --- src/fast-forward.ts ---
 
 export interface FastForwardResult {
@@ -2597,7 +2806,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '1.7.0';
+export const AGENT_02_MODULE_VERSION = '1.8.0';
 
 
 
@@ -2802,6 +3011,50 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
     name: 'batch observability rollup ok after one step',
 
     passed: obsRun.rollup.ok && obsRun.rollup.stepRows.length === 1,
+
+  });
+
+  const gap = new TurnTimeEngine();
+
+  gap.registerObligation({ id: 'gap1', dueTurn: 1, kind: 'k' });
+
+  gap.stepFullTurn();
+
+  results.push({
+
+    id: 'agent02_coverage_gap',
+
+    name: 'pipeline coverage gap report lists observed stages',
+
+    passed:
+
+      gap.buildPipelineCoverageGapReport().observedCount >= 1 &&
+
+      gap.buildPipelineCoverageGapReport().coverage.registeredStageCount === 9,
+
+  });
+
+  const ready = new TurnTimeEngine();
+
+  ready.scheduleEvent({ id: 'rb1', dueTurn: 1, kind: 'n' });
+
+  ready.registerObligation({ id: 'rb2', dueTurn: 1, kind: 'k' });
+
+  const readyRun = ready.stepTurnsWithBudgetReadinessGate(1, createTurnAdvanceBudget(2), { 1: ['rb1'] });
+
+  results.push({
+
+    id: 'agent02_batch_readiness_gate',
+
+    name: 'batch readiness gate ok with aligned XS-02 batch plan',
+
+    passed:
+
+      readyRun.readiness.ok &&
+
+      readyRun.readiness.digest.length === 16 &&
+
+      readyRun.readiness.externalBatch?.ok === true,
 
   });
 
