@@ -52,6 +52,8 @@ import { sanitizeResumedLoopContinuitySmoothing } from './resumed-loop-continuit
 import { sanitizeBilateralCycleRestartAcknowledgmentSmoothing } from './bilateral-cycle-restart-acknowledgment.ts';
 import { sanitizeAcknowledgedCyclePrimingSmoothing } from './acknowledged-cycle-priming.ts';
 import { sanitizeBilateralCommitmentArcOpeningSmoothing } from './bilateral-commitment-arc-opening.ts';
+import { sanitizeCommitmentArcContinuitySmoothing } from './commitment-arc-continuity.ts';
+import { sanitizeBilateralForwardCommitmentAdmissionSmoothing } from './bilateral-forward-commitment-admission.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -122,6 +124,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     bilateralCycleRestartAcknowledgmentSmoothing: 0.52,
     acknowledgedCyclePrimingSmoothing: 0.52,
     bilateralCommitmentArcOpeningSmoothing: 0.52,
+    commitmentArcContinuitySmoothing: 0.52,
+    bilateralForwardCommitmentAdmissionSmoothing: 0.52,
   };
 }
 
@@ -369,6 +373,12 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   );
   base.bilateralCommitmentArcOpeningSmoothing = sanitizeBilateralCommitmentArcOpeningSmoothing(
     r.bilateralCommitmentArcOpeningSmoothing,
+  );
+  base.commitmentArcContinuitySmoothing = sanitizeCommitmentArcContinuitySmoothing(
+    r.commitmentArcContinuitySmoothing,
+  );
+  base.bilateralForwardCommitmentAdmissionSmoothing = sanitizeBilateralForwardCommitmentAdmissionSmoothing(
+    r.bilateralForwardCommitmentAdmissionSmoothing,
   );
   return base;
 }

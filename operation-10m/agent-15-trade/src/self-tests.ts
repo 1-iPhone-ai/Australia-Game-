@@ -239,6 +239,16 @@ import {
   createEmptyBilateralCommitmentArcOpeningSnapshot,
   bilateralCommitmentArcOpeningExportScale,
 } from './bilateral-commitment-arc-opening.ts';
+import {
+  computeCommitmentArcContinuitySnapshot,
+  createEmptyCommitmentArcContinuitySnapshot,
+  commitmentArcContinuityExportScale,
+} from './commitment-arc-continuity.ts';
+import {
+  computeBilateralForwardCommitmentAdmissionSnapshot,
+  createEmptyBilateralForwardCommitmentAdmissionSnapshot,
+  bilateralForwardCommitmentAdmissionExportScale,
+} from './bilateral-forward-commitment-admission.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -1734,6 +1744,51 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       bilateralCommitmentArcOpeningExportScale(opened) >= bilateralCommitmentArcOpeningExportScale(sealed),
       'expected arc opening scale lift',
+    );
+  });
+
+  ok('commitment arc continuity improves when arc is opened and loop is continuous', () => {
+    const arc = { ...createEmptyBilateralCommitmentArcOpeningSnapshot(), score: 0.95, band: 'opened' as const };
+    const loop = { ...createEmptyResumedLoopContinuitySnapshot(), score: 0.94, band: 'continuous' as const };
+    const sustained = computeCommitmentArcContinuitySnapshot({
+      bilateralCommitmentArcOpening: arc,
+      resumedLoopContinuity: loop,
+      persisted: { ...createEmptyGTELPersisted(), commitmentArcContinuitySmoothing: 0.88 },
+    }).snapshot;
+    const lost = computeCommitmentArcContinuitySnapshot({
+      bilateralCommitmentArcOpening: { ...arc, score: 0.12, band: 'sealed' },
+      resumedLoopContinuity: { ...loop, score: 0.1, band: 'broken' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(sustained.score > lost.score, 'expected sustained arc continuity');
+    gtelAssert(
+      commitmentArcContinuityExportScale(sustained) >= commitmentArcContinuityExportScale(lost),
+      'expected arc continuity scale lift',
+    );
+  });
+
+  ok('bilateral forward commitment admission improves when continuity is sustained', () => {
+    const continuity = {
+      ...createEmptyCommitmentArcContinuitySnapshot(),
+      score: 0.96,
+      band: 'sustained' as const,
+    };
+    const arc = { ...createEmptyBilateralCommitmentArcOpeningSnapshot(), score: 0.94, band: 'opened' as const };
+    const admitted = computeBilateralForwardCommitmentAdmissionSnapshot({
+      commitmentArcContinuity: continuity,
+      bilateralCommitmentArcOpening: arc,
+      persisted: { ...createEmptyGTELPersisted(), bilateralForwardCommitmentAdmissionSmoothing: 0.9 },
+    }).snapshot;
+    const closed = computeBilateralForwardCommitmentAdmissionSnapshot({
+      commitmentArcContinuity: { ...continuity, score: 0.11, band: 'lost' },
+      bilateralCommitmentArcOpening: { ...arc, score: 0.08, band: 'sealed' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(admitted.score > closed.score, 'expected forward admission when sustained');
+    gtelAssert(
+      bilateralForwardCommitmentAdmissionExportScale(admitted) >=
+        bilateralForwardCommitmentAdmissionExportScale(closed),
+      'expected forward admission scale lift',
     );
   });
 

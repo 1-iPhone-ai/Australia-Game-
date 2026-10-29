@@ -200,6 +200,8 @@ export interface GTELPersisted {
   bilateralCycleRestartAcknowledgmentSmoothing?: number;
   acknowledgedCyclePrimingSmoothing?: number;
   bilateralCommitmentArcOpeningSmoothing?: number;
+  commitmentArcContinuitySmoothing?: number;
+  bilateralForwardCommitmentAdmissionSmoothing?: number;
 }
 
 export interface GTELState {
@@ -269,6 +271,8 @@ export interface GTELState {
   bilateralCycleRestartAcknowledgment: GTELBilateralCycleRestartAcknowledgmentSnapshot;
   acknowledgedCyclePriming: GTELAcknowledgedCyclePrimingSnapshot;
   bilateralCommitmentArcOpening: GTELBilateralCommitmentArcOpeningSnapshot;
+  commitmentArcContinuity: GTELCommitmentArcContinuitySnapshot;
+  bilateralForwardCommitmentAdmission: GTELBilateralForwardCommitmentAdmissionSnapshot;
   inputHash: string;
 }
 
@@ -953,6 +957,26 @@ export interface GTELBilateralCommitmentArcOpeningSnapshot {
   band: GTELBilateralCommitmentArcOpeningBand;
   primingSupport: number;
   readinessAnchor: number;
+  summary: string;
+}
+
+export type GTELCommitmentArcContinuityBand = 'sustained' | 'tracking' | 'drifting' | 'lost';
+
+export interface GTELCommitmentArcContinuitySnapshot {
+  score: number;
+  band: GTELCommitmentArcContinuityBand;
+  arcOpeningSupport: number;
+  loopAlignment: number;
+  summary: string;
+}
+
+export type GTELBilateralForwardCommitmentAdmissionBand = 'admitted' | 'staging' | 'throttled' | 'closed';
+
+export interface GTELBilateralForwardCommitmentAdmissionSnapshot {
+  score: number;
+  band: GTELBilateralForwardCommitmentAdmissionBand;
+  continuityFeed: number;
+  arcGateLift: number;
   summary: string;
 }
 

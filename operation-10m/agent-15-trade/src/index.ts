@@ -63,5 +63,7 @@ export * from './resumed-loop-continuity.ts';
 export * from './bilateral-cycle-restart-acknowledgment.ts';
 export * from './acknowledged-cycle-priming.ts';
 export * from './bilateral-commitment-arc-opening.ts';
+export * from './commitment-arc-continuity.ts';
+export * from './bilateral-forward-commitment-admission.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';
