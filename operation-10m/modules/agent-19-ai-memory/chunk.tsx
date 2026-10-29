@@ -9408,6 +9408,293 @@ export function realmRecoveryOrchestratorWithinCap(report: RealmRecoveryOrchestr
 }
 
 
+// --- source: match-explainability-sovereign-bundle.ts ---
+  auditMatchExplainabilitySovereignGate,
+  matchExplainabilitySovereignAllowed,
+} from './match-explainability-sovereign-gate.ts';
+  buildMatchExplainabilityRealmBundle,
+  matchExplainabilityRealmReady,
+} from './match-explainability-realm-bundle.ts';
+  buildSessionRealmExportBundle,
+  sessionRealmExportShipped,
+} from './session-realm-export-bundle.ts';
+
+export const AGENT19_SOVEREIGN_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilitySovereignBundle {
+  sovereignReady: boolean;
+  sovereignAllowed: boolean;
+  realmReady: boolean;
+  realmExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type SovereignParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Sovereign bundle: sovereign gate and realm export must both be green. */
+export function buildMatchExplainabilitySovereignBundle(
+  packs: TurnExplainabilityPack[],
+  params: SovereignParams,
+): MatchExplainabilitySovereignBundle {
+  const sovereign = auditMatchExplainabilitySovereignGate(packs, params);
+  const realm = buildMatchExplainabilityRealmBundle(packs, params);
+  const realmExport = buildSessionRealmExportBundle(packs, params);
+  const sovereignAllowed = matchExplainabilitySovereignAllowed(sovereign);
+  const realmReady = matchExplainabilityRealmReady(realm);
+  const realmExportShipped = sessionRealmExportShipped(realmExport);
+  const sovereignReady = sovereignAllowed && realmReady && realmExportShipped;
+  const narrativeLines = [
+    `Match explainability sovereign bundle: ${sovereignReady ? 'READY' : 'PENDING'} (gate ${sovereignAllowed ? 'ok' : 'fail'}, realm ${realmReady ? 'ok' : 'fail'}).`,
+    ...sovereign.narrativeLines.slice(0, 2),
+    ...realm.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_SOVEREIGN_NARRATIVE_CAP);
+  return {
+    sovereignReady,
+    sovereignAllowed,
+    realmReady,
+    realmExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilitySovereignReady(bundle: MatchExplainabilitySovereignBundle): boolean {
+  return bundle.sovereignReady;
+}
+
+
+// --- source: session-sovereign-export-bundle.ts ---
+  buildSessionRealmExportBundle,
+  type SessionRealmExportBundle,
+} from './session-realm-export-bundle.ts';
+  buildMatchExplainabilitySovereignBundle,
+  matchExplainabilitySovereignReady,
+} from './match-explainability-sovereign-bundle.ts';
+
+export interface SessionSovereignExportBundle extends SessionRealmExportBundle {
+  sovereignReady: boolean;
+  sovereignSchema: string;
+}
+
+/** Sovereign export wraps realm export when sovereign bundle is ready. */
+export function buildSessionSovereignExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionSovereignExportBundle {
+  const base = buildSessionRealmExportBundle(packs, params);
+  const sovereign = buildMatchExplainabilitySovereignBundle(packs, params);
+  const sovereignReady = matchExplainabilitySovereignReady(sovereign);
+  const exports = sovereignReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    sovereignReady,
+    sovereignSchema: 'agent19.sovereign.v1',
+    releaseReady: sovereignReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Sovereign export: ${sovereignReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionSovereignExportShipped(bundle: SessionSovereignExportBundle): boolean {
+  return (
+    bundle.sovereignReady &&
+    bundle.exports.length > 0 &&
+    bundle.sovereignSchema === 'agent19.sovereign.v1'
+  );
+}
+
+
+// --- source: realm-sovereign-bridge.ts ---
+  buildMatchExplainabilitySovereignBundle,
+  matchExplainabilitySovereignReady,
+} from './match-explainability-sovereign-bundle.ts';
+  buildMatchExplainabilityRealmBundle,
+  matchExplainabilityRealmReady,
+} from './match-explainability-realm-bundle.ts';
+
+export interface RealmSovereignBridgeReport {
+  aligned: boolean;
+  sovereignReady: boolean;
+  realmReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Sovereign-ready should match realm-ready when realm export stack passes. */
+export function auditRealmSovereignBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): RealmSovereignBridgeReport {
+  const sovereign = buildMatchExplainabilitySovereignBundle(packs, params);
+  const realm = buildMatchExplainabilityRealmBundle(packs, params);
+  const sovereignReady = matchExplainabilitySovereignReady(sovereign);
+  const realmReady = matchExplainabilityRealmReady(realm);
+  const aligned = sovereignReady === realmReady;
+  const narrativeLines = [
+    `Realm/sovereign bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (sovereign ${sovereignReady ? 'ok' : 'fail'}, realm ${realmReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, sovereignReady, realmReady, narrativeLines };
+}
+
+export function realmSovereignBridgeHealthy(report: RealmSovereignBridgeReport): boolean {
+  return report.sovereignReady && report.realmReady && report.aligned;
+}
+
+
+// --- source: match-explainability-imperial-gate.ts ---
+  buildMatchExplainabilitySovereignBundle,
+  matchExplainabilitySovereignReady,
+} from './match-explainability-sovereign-bundle.ts';
+  buildSessionSovereignExportBundle,
+  sessionSovereignExportShipped,
+} from './session-sovereign-export-bundle.ts';
+
+export interface MatchExplainabilityImperialGateReport {
+  imperialAllowed: boolean;
+  sovereignReady: boolean;
+  sovereignExportShipped: boolean;
+  realmSovereignHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Imperial gate: sovereign bundle + sovereign export + realm/sovereign bridge. */
+export function auditMatchExplainabilityImperialGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityImperialGateReport {
+  const sovereign = buildMatchExplainabilitySovereignBundle(packs, params);
+  const sovereignExport = buildSessionSovereignExportBundle(packs, params);
+  const bridge = auditRealmSovereignBridge(packs, params);
+  const sovereignReady = matchExplainabilitySovereignReady(sovereign);
+  const sovereignExportShipped = sessionSovereignExportShipped(sovereignExport);
+  const realmSovereignHealthy = realmSovereignBridgeHealthy(bridge);
+  const imperialAllowed = sovereignReady && sovereignExportShipped && realmSovereignHealthy;
+  const narrativeLines = [
+    `Match explainability imperial: ${imperialAllowed ? 'ALLOWED' : 'DENIED'} (sovereign ${sovereignReady ? 'ok' : 'fail'}, export ${sovereignExportShipped ? 'ok' : 'fail'}).`,
+    ...sovereign.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    imperialAllowed,
+    sovereignReady,
+    sovereignExportShipped,
+    realmSovereignHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityImperialAllowed(report: MatchExplainabilityImperialGateReport): boolean {
+  return report.imperialAllowed;
+}
+
+
+// --- source: sovereign-recovery-orchestrator.ts ---
+  auditMatchExplainabilitySovereignGate,
+  matchExplainabilitySovereignAllowed,
+} from './match-explainability-sovereign-gate.ts';
+
+export const AGENT19_SOVEREIGN_RECOVERY_CAP = 10;
+
+export interface SovereignRecoveryOrchestratorReport {
+  sovereignBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when sovereign gate blocks imperial rollout. */
+export function buildSovereignRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): SovereignRecoveryOrchestratorReport {
+  const sovereign = auditMatchExplainabilitySovereignGate(packs, params);
+  const sovereignBlocked = !matchExplainabilitySovereignAllowed(sovereign);
+  const steps: string[] = [];
+  if (sovereignBlocked) {
+    if (!sovereign.realmReady) {
+      steps.push('Restore realm bundle: commonwealth and realm export must pass.');
+    }
+    if (!sovereign.realmExportShipped) {
+      steps.push('Emit session realm export before sovereign clearance.');
+    }
+    if (!sovereign.commonwealthRealmHealthy) {
+      steps.push('Reconcile commonwealth/realm bridge before sovereign.');
+    }
+    steps.push(...buildRealmRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const realm = buildMatchExplainabilityRealmBundle(packs, params);
+    if (!realm.realmReady) {
+      steps.push('Re-run realm readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Sovereign gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_SOVEREIGN_RECOVERY_CAP);
+  return {
+    sovereignBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Sovereign recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function sovereignRecoveryOrchestratorWithinCap(report: SovereignRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_SOVEREIGN_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -9904,6 +10191,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilitySovereignGate,
   matchExplainabilitySovereignAllowed,
 } from '../match-explainability-sovereign-gate.ts';
+  buildMatchExplainabilitySovereignBundle,
+  matchExplainabilitySovereignReady,
+} from '../match-explainability-sovereign-bundle.ts';
+  buildSessionSovereignExportBundle,
+  sessionSovereignExportShipped,
+} from '../session-sovereign-export-bundle.ts';
+  buildSovereignRecoveryOrchestrator,
+  sovereignRecoveryOrchestratorWithinCap,
+} from '../sovereign-recovery-orchestrator.ts';
+  auditMatchExplainabilityImperialGate,
+  matchExplainabilityImperialAllowed,
+} from '../match-explainability-imperial-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -14901,6 +15200,138 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilitySovereignAllowed(report) && !report.realmReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r36_sovereign_ready',
+        'Sovereign bundle ready when sovereign gate and realm export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilitySovereignBundle([pack], params);
+          return matchExplainabilitySovereignReady(bundle) && bundle.sovereignAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r36_sovereign_held',
+        'Sovereign bundle pending when sovereign gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 47, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilitySovereignBundle([pack], {
+            memory: null,
+            currentTurn: 47,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilitySovereignReady(bundle) && !bundle.sovereignAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r36_sovereign_recovery',
+        'Sovereign recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 22, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 22, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildSovereignRecoveryOrchestrator([pack], params);
+          return report.sovereignBlocked && sovereignRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r36_realm_sovereign_bridge',
+        'Realm sovereign bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditRealmSovereignBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return realmSovereignBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r36_sovereign_export',
+        'Sovereign export shipped when sovereign ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionSovereignExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionSovereignExportShipped(bundle) && bundle.sovereignSchema === 'agent19.sovereign.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r36_imperial_gate_ok',
+        'Imperial gate allowed on healthy sovereign stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityImperialGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityImperialAllowed(report) && report.sovereignExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r36_imperial_gate_block',
+        'Imperial gate denied when sovereign pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 48, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityImperialGate([pack], {
+            memory: null,
+            currentTurn: 48,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityImperialAllowed(report) && !report.sovereignReady || JSON.stringify(report);
         },
       ],
     ]),
