@@ -94,6 +94,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   stewardshipLoadIndex: number;
   oversightCommitmentScore: number;
   sustainabilityMarginScore: number;
+  accountabilityLoadIndex: number;
+  delegationFidelityScore: number;
+  governanceEnduranceScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -840,6 +843,62 @@ export function buildGuardianDepthStewardshipReport(snapshot: GuardianCoPilotMon
   return lines.slice(0, 3);
 }
 
+export function computeAccountabilityLoadIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.sustainabilityMarginScore < 50) load += Math.min(25, 50 - snapshot.sustainabilityMarginScore);
+  if (snapshot.sustainabilityMarginScore < 35) load += 10;
+  if (snapshot.oversightCommitmentScore < 45) load += 20;
+  if (snapshot.oversightCommitmentScore < 35) load += 10;
+  if (snapshot.stewardshipLoadIndex >= 55) load += 20;
+  if (snapshot.stewardshipLoadIndex >= 70) load += 10;
+  if (snapshot.copilotTrustGapScore >= 50) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.governanceCoherenceScore < 45) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeDelegationFidelityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.accountabilityLoadIndex >= 45) score -= Math.min(30, Math.round(snapshot.accountabilityLoadIndex * 0.35));
+  if (snapshot.copilotTrustGapScore >= 45) score -= Math.min(25, Math.round(snapshot.copilotTrustGapScore * 0.35));
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianConfirmationLikelyRequired && snapshot.copilotHoldsControl) score -= 10;
+  if (snapshot.oversightCommitmentScore < 40) score -= 15;
+  if (snapshot.humanRelayPressure >= 50) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceEnduranceScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.accountabilityLoadIndex >= 40) score -= Math.min(30, Math.round(snapshot.accountabilityLoadIndex * 0.32));
+  if (snapshot.delegationFidelityScore < 50) score -= Math.min(25, 50 - snapshot.delegationFidelityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.continuityMarginScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthAccountabilityReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.accountabilityLoadIndex >= 55) {
+    lines.push(
+      `Accountability load ${snapshot.accountabilityLoadIndex} — stacked warn-only obligations may exceed operator review capacity`
+    );
+  }
+  if (snapshot.delegationFidelityScore < 45) {
+    lines.push(
+      `Delegation fidelity ${snapshot.delegationFidelityScore} — align Co-Pilot delegation with Guardian accountability posture`
+    );
+  }
+  if (snapshot.governanceEnduranceScore < 40) {
+    lines.push(
+      `Governance endurance ${snapshot.governanceEnduranceScore} — little endurance to sustain oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -913,9 +972,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withLoad: GuardianCoPilotMonitorSnapshot = { ...withContinuity, stewardshipLoadIndex };
   const oversightCommitmentScore = computeOversightCommitmentScore(withLoad);
   const withOversight: GuardianCoPilotMonitorSnapshot = { ...withLoad, oversightCommitmentScore };
-  return {
+  const withSustainability: GuardianCoPilotMonitorSnapshot = {
     ...withOversight,
     sustainabilityMarginScore: computeSustainabilityMarginScore(withOversight),
+    accountabilityLoadIndex: 0,
+    delegationFidelityScore: 100,
+    governanceEnduranceScore: 100,
+  };
+  const accountabilityLoadIndex = computeAccountabilityLoadIndex(withSustainability);
+  const withAccountability: GuardianCoPilotMonitorSnapshot = { ...withSustainability, accountabilityLoadIndex };
+  const delegationFidelityScore = computeDelegationFidelityScore(withAccountability);
+  const withFidelity: GuardianCoPilotMonitorSnapshot = { ...withAccountability, delegationFidelityScore };
+  return {
+    ...withFidelity,
+    governanceEnduranceScore: computeGovernanceEnduranceScore(withFidelity),
   };
 }
 
@@ -1167,6 +1237,41 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       continuityMarginScore: 28,
     } as GuardianCoPilotMonitorSnapshot;
     return computeSustainabilityMarginScore(snap) < 35;
+  });
+  ok('gd_accountability_load', () => {
+    const snap = {
+      sustainabilityMarginScore: 30,
+      oversightCommitmentScore: 32,
+      stewardshipLoadIndex: 72,
+      copilotTrustGapScore: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      governanceCoherenceScore: 35,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAccountabilityLoadIndex(snap) >= 70;
+  });
+  ok('gd_delegation_fidelity', () => {
+    const snap = {
+      accountabilityLoadIndex: 72,
+      copilotTrustGapScore: 65,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianConfirmationLikelyRequired: true,
+      copilotHoldsControl: true,
+      oversightCommitmentScore: 32,
+      humanRelayPressure: 55,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeDelegationFidelityScore(snap) < 40;
+  });
+  ok('gd_governance_endurance', () => {
+    const snap = {
+      accountabilityLoadIndex: 78,
+      delegationFidelityScore: 32,
+      recoveryHeadroomScore: 28,
+      continuityMarginScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceEnduranceScore(snap) < 35;
   });
   return out;
 }
@@ -2409,6 +2514,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_8: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_8_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_8.length;
 
 
+// --- source: monitor-rules-scale-wave-9.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_9: AdvisoryMonitorRule[] = [
+  {
+    id: 'accountability_load_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Accountability Load High',
+    detailTemplate: 'Accountability load is in the high band — reduce stacked warn-only governance obligations',
+    evidenceFields: ['accountabilityLoadIndex', 'sustainabilityMarginScore', 'delegationFidelityScore'],
+    evaluate: s => s.accountabilityLoadIndex >= 70,
+  },
+  {
+    id: 'accountability_load_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Accountability Load Elevated',
+    detailTemplate: 'Accountability load is elevated — expect slower delegation review across turns',
+    evidenceFields: ['accountabilityLoadIndex', 'stewardshipLoadIndex'],
+    evaluate: s => s.accountabilityLoadIndex >= 45 && s.accountabilityLoadIndex < 70,
+  },
+  {
+    id: 'delegation_fidelity_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Delegation Fidelity Low',
+    detailTemplate: 'Delegation fidelity is critically low — defer stacked autonomous actions',
+    evidenceFields: ['delegationFidelityScore', 'accountabilityLoadIndex', 'oversightCommitmentScore'],
+    evaluate: s => s.delegationFidelityScore < 35,
+  },
+  {
+    id: 'delegation_fidelity_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Delegation While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate delegation fidelity',
+    evidenceFields: ['delegationFidelityScore', 'copilotAutonomousActive', 'accountabilityLoadIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.delegationFidelityScore >= 35 && s.delegationFidelityScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_endurance_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Endurance Low',
+    detailTemplate: 'Little governance endurance remains for warn-only oversight across turns',
+    evidenceFields: ['governanceEnduranceScore', 'accountabilityLoadIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governanceEnduranceScore < 35,
+  },
+  {
+    id: 'governance_endurance_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Endurance While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance endurance',
+    evidenceFields: ['governanceEnduranceScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governanceEnduranceScore >= 35 && s.governanceEnduranceScore < 55,
+  },
+  {
+    id: 'accountability_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Accountability Envelope Pressured',
+    detailTemplate: 'Accountability load and low delegation fidelity align in the pressured envelope band',
+    evidenceFields: ['accountabilityLoadIndex', 'delegationFidelityScore', 'governanceEnduranceScore'],
+    evaluate: s => s.accountabilityLoadIndex >= 55 && s.delegationFidelityScore < 50,
+  },
+  {
+    id: 'rival_accountability_load',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Accountability Load',
+    detailTemplate: 'Rival victory progress plus elevated accountability load',
+    evidenceFields: ['rivalVictoryProgressPct', 'accountabilityLoadIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.accountabilityLoadIndex >= 50,
+  },
+  {
+    id: 'team_plan_accountability_load',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Accountability Load',
+    detailTemplate: 'Pending team plan while accountability load is elevated',
+    evidenceFields: ['teamPlanPending', 'accountabilityLoadIndex', 'governanceEnduranceScore'],
+    evaluate: s => s.teamPlanPending && s.accountabilityLoadIndex >= 55,
+  },
+  {
+    id: 'guardian_accountability_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Accountability Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance endurance',
+    evidenceFields: ['guardianRiskBand', 'governanceEnduranceScore', 'accountabilityLoadIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governanceEnduranceScore < 40,
+  },
+  {
+    id: 'copilot_accountability_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Accountability Load',
+    detailTemplate: 'Autonomous Co-Pilot while accountability load is high',
+    evidenceFields: ['copilotAutonomousActive', 'accountabilityLoadIndex', 'delegationFidelityScore'],
+    evaluate: s => s.copilotAutonomousActive && s.accountabilityLoadIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_endurance',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Endurance',
+    detailTemplate: 'Expiring contracts while governance endurance is low',
+    evidenceFields: ['expiringContractCount', 'governanceEnduranceScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governanceEnduranceScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_9_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_9.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -2646,6 +2884,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_6,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_7,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_8,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_9,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -2986,6 +3225,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     stewardshipLoadIndex: 0,
     oversightCommitmentScore: 100,
     sustainabilityMarginScore: 100,
+    accountabilityLoadIndex: 0,
+    delegationFidelityScore: 100,
+    governanceEnduranceScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -3066,6 +3308,9 @@ export function createAdvisoryOpsFixtureSnapshot(
     stewardshipLoadIndex: 0,
     oversightCommitmentScore: 100,
     sustainabilityMarginScore: 100,
+    accountabilityLoadIndex: 0,
+    delegationFidelityScore: 100,
+    governanceEnduranceScore: 100,
     ...overrides,
   };
   if (snap.objectiveTargetRegion && !snap.objectiveRegion) {
@@ -3765,6 +4010,75 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['stewardship_envelope_pressured', 'guardian_stewardship_envelope_critical'],
     notes: 'Pressured stewardship envelope with critical Guardian band',
   },
+  {
+    id: 'sc_accountability_load_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 14,
+      minCashReserve: 500,
+      debt: 1500,
+      maxSpendPerAction: 9000,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+      governanceCoherenceScore: 30,
+    },
+    expectRuleIds: ['accountability_load_high', 'delegation_fidelity_low'],
+    notes: 'High accountability load with critical delegation fidelity',
+  },
+  {
+    id: 'sc_governance_endurance_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 26,
+      minCashReserve: 500,
+      debt: 1020,
+      maxSpendPerAction: 7200,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_endurance_low', 'contracts_governance_endurance'],
+    notes: 'Low governance endurance with expiring contracts',
+  },
+  {
+    id: 'sc_accountability_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 18,
+      minCashReserve: 500,
+      debt: 1200,
+      maxSpendPerAction: 8100,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['accountability_envelope_pressured', 'guardian_accountability_envelope_critical'],
+    notes: 'Pressured accountability envelope with critical Guardian band',
+  },
 ];
 
 
@@ -3940,8 +4254,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 8 scale wave brings monitor catalog to 130+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 130;
+  check(results, 'a16_expansion_count', 'Round 9 scale wave brings monitor catalog to 142+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 142;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -4126,6 +4440,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthStewardshipReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round9_metrics', 'Round 9 accountability envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.accountabilityLoadIndex >= 40 &&
+      snap.delegationFidelityScore <= 100 &&
+      snap.governanceEnduranceScore <= 100
+    );
+  });
+
+  check(results, 'a16_accountability_report', 'Guardian depth accountability report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthAccountabilityReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 
