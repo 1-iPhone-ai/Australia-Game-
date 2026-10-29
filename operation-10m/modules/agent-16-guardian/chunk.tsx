@@ -205,6 +205,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   authenticationStrainIndex: number;
   authenticationIntegrityScore: number;
   governanceVerveScore: number;
+  identificationStrainIndex: number;
+  identificationIntegrityScore: number;
+  governancePanacheScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -3023,6 +3026,62 @@ export function buildGuardianDepthAuthenticationReport(snapshot: GuardianCoPilot
   return lines.slice(0, 3);
 }
 
+export function computeIdentificationStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceVerveScore < 50) load += Math.min(25, 50 - snapshot.governanceVerveScore);
+  if (snapshot.governanceVerveScore < 35) load += 10;
+  if (snapshot.authenticationIntegrityScore < 45) load += 20;
+  if (snapshot.authenticationIntegrityScore < 35) load += 10;
+  if (snapshot.authenticationStrainIndex >= 55) load += 20;
+  if (snapshot.authenticationStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeIdentificationIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.identificationStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.identificationStrainIndex * 0.35));
+  if (snapshot.authenticationIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.authenticationIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceVerveScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernancePanacheScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.identificationStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.identificationStrainIndex * 0.32));
+  if (snapshot.identificationIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.identificationIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceVerveScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthIdentificationReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.identificationStrainIndex >= 55) {
+    lines.push(
+      `Identification strain ${snapshot.identificationStrainIndex} — stacked identification review may exceed operator identification capacity`
+    );
+  }
+  if (snapshot.identificationIntegrityScore < 45) {
+    lines.push(
+      `Identification integrity ${snapshot.identificationIntegrityScore} — align Co-Pilot identifications with Guardian identification posture`
+    );
+  }
+  if (snapshot.governancePanacheScore < 40) {
+    lines.push(
+      `Governance panache ${snapshot.governancePanacheScore} — little panache to sustain identification oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -3503,9 +3562,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withAuthenticationStrain: GuardianCoPilotMonitorSnapshot = { ...withElan, authenticationStrainIndex };
   const authenticationIntegrityScore = computeAuthenticationIntegrityScore(withAuthenticationStrain);
   const withAuthentication: GuardianCoPilotMonitorSnapshot = { ...withAuthenticationStrain, authenticationIntegrityScore };
-  return {
+  const withVerve: GuardianCoPilotMonitorSnapshot = {
     ...withAuthentication,
     governanceVerveScore: computeGovernanceVerveScore(withAuthentication),
+    identificationStrainIndex: 0,
+    identificationIntegrityScore: 100,
+    governancePanacheScore: 100,
+  };
+  const identificationStrainIndex = computeIdentificationStrainIndex(withVerve);
+  const withIdentificationStrain: GuardianCoPilotMonitorSnapshot = { ...withVerve, identificationStrainIndex };
+  const identificationIntegrityScore = computeIdentificationIntegrityScore(withIdentificationStrain);
+  const withIdentification: GuardianCoPilotMonitorSnapshot = { ...withIdentificationStrain, identificationIntegrityScore };
+  return {
+    ...withIdentification,
+    governancePanacheScore: computeGovernancePanacheScore(withIdentification),
   };
 }
 
@@ -5018,6 +5088,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceVerveScore(snap) < 35;
+  });
+  ok('gd_identification_strain', () => {
+    const snap = {
+      governanceVerveScore: 30,
+      authenticationIntegrityScore: 32,
+      authenticationStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeIdentificationStrainIndex(snap) >= 70;
+  });
+  ok('gd_identification_integrity', () => {
+    const snap = {
+      identificationStrainIndex: 72,
+      authenticationIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceVerveScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeIdentificationIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_panache', () => {
+    const snap = {
+      identificationStrainIndex: 78,
+      identificationIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceVerveScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernancePanacheScore(snap) < 35;
   });
   return out;
 }
@@ -11181,6 +11285,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_45: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_45_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_45.length;
 
 
+// --- source: monitor-rules-scale-wave-46.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_46: AdvisoryMonitorRule[] = [
+  {
+    id: 'identification_strain_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Identification Strain High',
+    detailTemplate: 'Identification strain is in the high band — reduce overlapping warn-only identification review demands',
+    evidenceFields: ['identificationStrainIndex', 'governanceVerveScore', 'identificationIntegrityScore'],
+    evaluate: s => s.identificationStrainIndex >= 70,
+  },
+  {
+    id: 'identification_strain_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Identification Strain Elevated',
+    detailTemplate: 'Identification strain is elevated — expect slower identification review across turns',
+    evidenceFields: ['identificationStrainIndex', 'authenticationStrainIndex'],
+    evaluate: s => s.identificationStrainIndex >= 45 && s.identificationStrainIndex < 70,
+  },
+  {
+    id: 'identification_integrity_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Identification Integrity Low',
+    detailTemplate: 'Identification integrity is critically low — defer stacked autonomous actions',
+    evidenceFields: ['identificationIntegrityScore', 'identificationStrainIndex', 'authenticationIntegrityScore'],
+    evaluate: s => s.identificationIntegrityScore < 35,
+  },
+  {
+    id: 'identification_integrity_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Identification While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate identification integrity',
+    evidenceFields: ['identificationIntegrityScore', 'copilotAutonomousActive', 'identificationStrainIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.identificationIntegrityScore >= 35 && s.identificationIntegrityScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_panache_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Panache Low',
+    detailTemplate: 'Little governance panache remains for warn-only identification oversight across turns',
+    evidenceFields: ['governancePanacheScore', 'identificationStrainIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governancePanacheScore < 35,
+  },
+  {
+    id: 'governance_panache_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Panache While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance panache',
+    evidenceFields: ['governancePanacheScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governancePanacheScore >= 35 && s.governancePanacheScore < 55,
+  },
+  {
+    id: 'identification_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Identification Envelope Pressured',
+    detailTemplate: 'Identification strain and low identification integrity align in the pressured envelope band',
+    evidenceFields: ['identificationStrainIndex', 'identificationIntegrityScore', 'governancePanacheScore'],
+    evaluate: s => s.identificationStrainIndex >= 55 && s.identificationIntegrityScore < 50,
+  },
+  {
+    id: 'rival_identification_strain',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Identification Strain',
+    detailTemplate: 'Rival victory progress plus elevated identification strain',
+    evidenceFields: ['rivalVictoryProgressPct', 'identificationStrainIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.identificationStrainIndex >= 50,
+  },
+  {
+    id: 'team_plan_identification_strain',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Identification Strain',
+    detailTemplate: 'Pending team plan while identification strain is elevated',
+    evidenceFields: ['teamPlanPending', 'identificationStrainIndex', 'governancePanacheScore'],
+    evaluate: s => s.teamPlanPending && s.identificationStrainIndex >= 55,
+  },
+  {
+    id: 'guardian_identification_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Identification Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance panache',
+    evidenceFields: ['guardianRiskBand', 'governancePanacheScore', 'identificationStrainIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governancePanacheScore < 40,
+  },
+  {
+    id: 'copilot_identification_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Identification Strain',
+    detailTemplate: 'Autonomous Co-Pilot while identification strain is high',
+    evidenceFields: ['copilotAutonomousActive', 'identificationStrainIndex', 'identificationIntegrityScore'],
+    evaluate: s => s.copilotAutonomousActive && s.identificationStrainIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_panache',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Panache',
+    detailTemplate: 'Expiring contracts while governance panache is low',
+    evidenceFields: ['expiringContractCount', 'governancePanacheScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governancePanacheScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_46_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_46.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -11455,6 +11692,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_43,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_44,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_45,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_46,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -11906,6 +12144,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     authenticationStrainIndex: 0,
     authenticationIntegrityScore: 100,
     governanceVerveScore: 100,
+    identificationStrainIndex: 0,
+    identificationIntegrityScore: 100,
+    governancePanacheScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -15226,6 +15467,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['authentication_envelope_pressured', 'guardian_authentication_envelope_critical'],
     notes: 'Pressured authentication envelope with critical Guardian band',
   },
+  {
+    id: 'sc_identification_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2260,
+      maxSpendPerAction: 10580,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['identification_strain_high', 'identification_integrity_low'],
+    notes: 'High identification strain with critical identification integrity',
+  },
+  {
+    id: 'sc_governance_panache_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 4,
+      minCashReserve: 500,
+      debt: 1380,
+      maxSpendPerAction: 8080,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_panache_low', 'contracts_governance_panache'],
+    notes: 'Low governance panache with expiring contracts',
+  },
+  {
+    id: 'sc_identification_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 1300,
+      maxSpendPerAction: 8280,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['identification_envelope_pressured', 'guardian_identification_envelope_critical'],
+    notes: 'Pressured identification envelope with critical Guardian band',
+  },
 ];
 
 
@@ -15401,8 +15710,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 45 scale wave brings monitor catalog to 574+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 574;
+  check(results, 'a16_expansion_count', 'Round 46 scale wave brings monitor catalog to 586+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 586;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -17104,6 +17413,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthAuthenticationReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round46_metrics', 'Round 46 identification envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.identificationStrainIndex >= 40 &&
+      snap.identificationIntegrityScore <= 100 &&
+      snap.governancePanacheScore <= 100
+    );
+  });
+
+  check(results, 'a16_identification_report', 'Guardian depth identification report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthIdentificationReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 
