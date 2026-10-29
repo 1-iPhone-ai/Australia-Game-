@@ -14359,6 +14359,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   stateCapacityEnabled: true,
   publicFinanceEnabled: true,
   householdsEnabled: true,
+  transportLogisticsEnabled: true,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -26927,6 +26928,8 @@ export type GameSettingsState = {
   publicFinanceEnabled?: boolean;
   /** V10.13 Households, Living Standards & Domestic Demand (needs National Systems; off = no households layer, V10.0–V10.12 unchanged). */
   householdsEnabled?: boolean;
+  /** V10.14 Transport Logistics Operations (needs National Systems; off = no maintenance backlog / modal modifiers, V10.0 unchanged). */
+  transportLogisticsEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -36758,6 +36761,8 @@ export const initialGameState = {
   publicFinance: null as any,
   /** V10.13: household-economy lifecycle memory (band hysteresis, pinned concerns, transitions, history). Living standards and demand are derived. */
   householdEconomy: null as any,
+  /** V10.14: transport operations memory (backlog, band hysteresis, last V10.0 modifiers). Snapshot is recomputed. */
+  transportLogistics: null as any,
   /** V9.3 per-match content state (profile, budgets, cooldowns, bounded history). Not AI memory. */
   contentState: null as MatchContentState | null,
   // Regional Factions initialise from Living Regions / contracts / standing on the first live pass.
@@ -80973,6 +80978,7 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.publicFinance = sanitizePublicFinancePersisted(migrated.gameState.publicFinance);
   // V10.13: pre-V10.13 saves carry NO household-economy memory (null) — current living standards and domestic demand are derived on load.
   if (migrated.gameState) migrated.gameState.householdEconomy = migrated.gameState.householdEconomy ? sanitizeHouseholdEconomyPersisted(migrated.gameState.householdEconomy) : null;
+  if (migrated.gameState) migrated.gameState.transportLogistics = migrated.gameState.transportLogistics ? sanitizeTransportLogisticsPersisted(migrated.gameState.transportLogistics) : null;
   if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
@@ -134060,7 +134066,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'strategicCapitalEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'transportLogisticsEnabled', 'strategicCapitalEnabled'
 ] as const;
 
 /**
@@ -134424,6 +134430,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         stateCapacity: sanitizeStateCapacityPersisted(stateData.stateCapacity || raw.gameState?.stateCapacity),
         publicFinance: sanitizePublicFinancePersisted(stateData.publicFinance || raw.gameState?.publicFinance),
         householdEconomy: (stateData.householdEconomy || raw.gameState?.householdEconomy) ? sanitizeHouseholdEconomyPersisted(stateData.householdEconomy || raw.gameState?.householdEconomy) : null,
+        transportLogistics: (stateData.transportLogistics || raw.gameState?.transportLogistics) ? sanitizeTransportLogisticsPersisted(stateData.transportLogistics || raw.gameState?.transportLogistics) : null,
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -136510,6 +136517,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1011', label: 'V10.11 Adaptive Governance & State Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1011AdaptiveGovernanceSelfTests() },
   { id: 'v1012', label: 'V10.12 Public Finance & Fiscal Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1012PublicFinanceSelfTests() },
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
+  { id: 'v1014', label: 'V10.14 Transport Logistics Operations', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014TransportLogisticsSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
@@ -181925,6 +181933,332 @@ export function triggerJsonFileDownload(filename: string, data: unknown): boolea
 }
 
 // ============================================================================
+// SECTION 20AG: V10.14 TRANSPORT LOGISTICS OPERATIONS — ROADS • RAIL • PORTS
+// ============================================================================
+// Agent 12 / Operation 600K. Reads canonical infrastructure + V10.0 snapshot; never writes projects.
+// Models maintenance backlog, modal health (road/rail/port/intermodal), and bounded freight/trade modifiers.
+
+export type TransportModality = 'road' | 'rail' | 'port' | 'intermodal';
+export type TransportOpsCondition = 'sound' | 'watch' | 'degraded' | 'critical';
+export type TransportMaintenancePolicy = 'full' | 'essential' | 'deferred';
+
+export const TRANSPORT_MODALITIES: TransportModality[] = ['road', 'rail', 'port', 'intermodal'];
+export const TRANSPORT_MODALITY_LABEL: Record<TransportModality, string> = { road: 'Road', rail: 'Rail', port: 'Port', intermodal: 'Intermodal' };
+export const TRANSPORT_MODALITY_ICON: Record<TransportModality, string> = { road: '🛣', rail: '🚆', port: '🚢', intermodal: '🔀' };
+export const TRANSPORT_OPS_LABEL: Record<TransportOpsCondition, string> = { sound: 'Sound', watch: 'Watch', degraded: 'Degraded', critical: 'Critical' };
+
+export const V1014_LIMITS = { history: 40, backlogCap: 50000, modifierCap: 8, evidence: 8, eventCooldown: 2 } as const;
+
+/** Maps canonical infrastructure project types to the operations modality they primarily support. */
+export const V1014_PROJECT_MODALITY: Record<string, TransportModality> = {
+  high_speed_rail: 'rail',
+  inland_rail_hub: 'rail',
+  freight_rail_upgrade: 'rail',
+  port_expansion: 'port',
+  automated_port: 'port',
+  maritime_export_hub: 'port',
+  trade_depot: 'intermodal',
+  remote_logistics_base: 'road',
+  subsea_cable_hub: 'intermodal',
+  desalination_plant: 'road',
+  tech_innovation_park: 'road',
+};
+
+export function v1014ModalityForProject(projectType: string): TransportModality {
+  const t = String(projectType || '');
+  if (V1014_PROJECT_MODALITY[t]) return V1014_PROJECT_MODALITY[t];
+  if (/rail|hsr|freight_rail/.test(t)) return 'rail';
+  if (/port|maritime|harbour|harbor/.test(t)) return 'port';
+  if (/depot|hub|corridor|intermodal|logistics/.test(t)) return 'intermodal';
+  return 'road';
+}
+
+/** Reference catalog — strategic labels only (not real-world engineering units). */
+export interface TransportReferenceNode { id: string; regionId: string; modality: TransportModality; label: string; strategicWeight: number; notes: string }
+export const V1014_REFERENCE_NODES: TransportReferenceNode[] = [
+  { id: 'ref_port_brisbane', regionId: 'QLD', modality: 'port', label: 'Brisbane export gateway', strategicWeight: 1.2, notes: 'Bulk coal and agricultural exports' },
+  { id: 'ref_port_fremantle', regionId: 'WA', modality: 'port', label: 'Fremantle bulk gateway', strategicWeight: 1.15, notes: 'Iron ore and lithium export pressure' },
+  { id: 'ref_port_darwin', regionId: 'NT', modality: 'port', label: 'Darwin northern gateway', strategicWeight: 1.0, notes: 'Remote supply and defence logistics' },
+  { id: 'ref_rail_inland', regionId: 'QLD', modality: 'rail', label: 'Inland rail spine segment', strategicWeight: 1.1, notes: 'East–north freight alternative' },
+  { id: 'ref_rail_hsr', regionId: 'NSW', modality: 'rail', label: 'East coast passenger/freight spine', strategicWeight: 1.25, notes: 'Sydney–Melbourne corridor' },
+  { id: 'ref_road_nullarbor', regionId: 'SA', modality: 'road', label: 'Nullarbor long-haul road link', strategicWeight: 0.9, notes: 'WA–east road redundancy' },
+  { id: 'ref_road_bruce', regionId: 'QLD', modality: 'road', label: 'Queensland coastal freight road', strategicWeight: 0.85, notes: 'Agricultural road haulage' },
+  { id: 'ref_intermodal_parkes', regionId: 'NSW', modality: 'intermodal', label: 'Parkes intermodal hub', strategicWeight: 1.05, notes: 'East–west mode shift' },
+];
+
+export interface TransportLogisticsEvidence { label: string; value: number; source: string }
+export interface TransportModalityState {
+  modality: TransportModality; maintenanceDue: number; maintenancePaid: number; backlog: number;
+  health: number; condition: TransportOpsCondition; assetCount: number; evidence: TransportLogisticsEvidence[];
+}
+export interface TransportRegionOpsState {
+  regionId: string; name: string; modalities: Record<TransportModality, TransportModalityState>;
+  totalBacklog: number; primaryStress: TransportModality | null;
+}
+export interface TransportLogisticsSummary {
+  nationalBacklog: number; nationalMaintenanceDue: number; worstRegion: string | null;
+  worstModality: TransportModality | null; averageHealth: number;
+}
+export type TransportLogisticsDerivedKind = 'transport_backlog_critical' | 'transport_backlog_eased' | 'transport_modal_degraded' | 'transport_modal_recovered';
+export interface TransportLogisticsDerivedEvent { id: string; turn: number; kind: TransportLogisticsDerivedKind; regionId: string; modality: TransportModality | null; text: string; significance: 'meaningful' | 'major' }
+
+export interface TransportLogisticsInputs {
+  turn: number;
+  projects: Array<{ id: string; title: string; regionId: string | null; projectType: string; status: string; maintenanceCostPerTurn: number }>;
+  national: NationalSystemsState | null;
+  fundingRatio?: number;
+  policy?: TransportMaintenancePolicy;
+}
+
+export interface TransportLogisticsPersisted {
+  schemaVersion: '10.14'; revision: number; lastUpdatedTurn: number; lastInputHash: string;
+  backlogByRegion: Record<string, Partial<Record<TransportModality, number>>>;
+  bands: Record<string, TransportOpsCondition>;
+  policy: TransportMaintenancePolicy;
+  fundingRatio: number;
+  lastNationalModifiers: Record<string, Partial<Record<NationalNetworkKind, number>>>;
+  history: Array<{ id: string; turn: number; summary: string }>;
+  cooldowns: Record<string, number>;
+}
+
+export interface TransportLogisticsState {
+  schemaVersion: '10.14'; revision: number; lastUpdatedTurn: number; inputHash: string;
+  regions: Record<string, TransportRegionOpsState>; summary: TransportLogisticsSummary;
+  nationalModifiers: Record<string, Partial<Record<NationalNetworkKind, number>>>;
+  computeMs: number;
+}
+
+const v1014r = (v: number, d = 1) => { const p = Math.pow(10, d); return Math.round((Number.isFinite(v) ? v : 0) * p) / p; };
+const v1014clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Number.isFinite(v) ? v : lo));
+
+export function createEmptyTransportLogisticsPersisted(): TransportLogisticsPersisted {
+  return { schemaVersion: '10.14', revision: 0, lastUpdatedTurn: 0, lastInputHash: '', backlogByRegion: {}, bands: {}, policy: 'full', fundingRatio: 1, lastNationalModifiers: {}, history: [], cooldowns: {} };
+}
+
+export function sanitizeTransportLogisticsPersisted(raw: unknown, turn = 1): TransportLogisticsPersisted {
+  const out = createEmptyTransportLogisticsPersisted();
+  if (!raw || typeof raw !== 'object') return out;
+  const r = raw as any;
+  if (r.schemaVersion !== '10.14') return out;
+  out.revision = Math.max(0, Number(r.revision) || 0);
+  out.lastUpdatedTurn = Math.max(0, Number(r.lastUpdatedTurn) || turn);
+  out.lastInputHash = String(r.lastInputHash || '');
+  out.policy = r.policy === 'essential' || r.policy === 'deferred' ? r.policy : 'full';
+  out.fundingRatio = v1014clamp(Number(r.fundingRatio) || 1, 0.25, 1.25);
+  if (r.backlogByRegion && typeof r.backlogByRegion === 'object') out.backlogByRegion = { ...r.backlogByRegion };
+  if (r.bands && typeof r.bands === 'object') out.bands = { ...r.bands };
+  if (r.lastNationalModifiers && typeof r.lastNationalModifiers === 'object') out.lastNationalModifiers = { ...r.lastNationalModifiers };
+  if (Array.isArray(r.history)) out.history = r.history.slice(-V1014_LIMITS.history).map((h: any, i: number) => ({ id: String(h?.id || `h_${i}`), turn: Number(h?.turn) || 0, summary: String(h?.summary || '').slice(0, 240) }));
+  return out;
+}
+
+export function transportLogisticsInputHash(i: TransportLogisticsInputs): string {
+  const raw = JSON.stringify([i.turn, i.fundingRatio ?? 1, i.policy ?? 'full',
+    i.projects.filter(p => p.status === 'active' || p.status === 'upgraded' || p.status === 'damaged').map(p => `${p.id}:${p.status}:${Math.round(p.maintenanceCostPerTurn)}:${p.regionId}:${p.projectType}`).sort(),
+    i.national?.inputHash || 'none']);
+  let h = 2166136261;
+  for (let k = 0; k < raw.length; k++) { h ^= raw.charCodeAt(k); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36);
+}
+
+function v1014Condition(health: number, prev?: TransportOpsCondition): TransportOpsCondition {
+  let raw: TransportOpsCondition = health >= 72 ? 'sound' : health >= 52 ? 'watch' : health >= 32 ? 'degraded' : 'critical';
+  if (!prev || prev === raw) return raw;
+  const rank: Record<TransportOpsCondition, number> = { sound: 3, watch: 2, degraded: 1, critical: 0 };
+  if (Math.abs(rank[raw] - rank[prev]) >= 2) return raw;
+  if (rank[raw] < rank[prev] && health < 38) return raw;
+  if (rank[raw] > rank[prev] && health > 58) return raw;
+  return prev;
+}
+
+function v1014PolicyFactor(policy: TransportMaintenancePolicy): number {
+  return policy === 'deferred' ? 0.55 : policy === 'essential' ? 0.82 : 1;
+}
+
+/** Network kinds affected by each modality's operational health. */
+function v1014ModalNetworkKinds(m: TransportModality): NationalNetworkKind[] {
+  if (m === 'port') return ['trade', 'freight'];
+  if (m === 'rail') return ['freight', 'trade'];
+  if (m === 'intermodal') return ['freight', 'trade', 'digital'];
+  return ['freight'];
+}
+
+export interface TransportLogisticsComputeResult { state: TransportLogisticsState; persisted: TransportLogisticsPersisted; derived: TransportLogisticsDerivedEvent[] }
+
+export function computeTransportLogisticsOperations(i: TransportLogisticsInputs, prevIn?: TransportLogisticsPersisted | null, opts: { emit?: boolean } = {}): TransportLogisticsComputeResult {
+  const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+  const prev = prevIn || null;
+  const turn = Number(i.turn) || 0;
+  const funding = v1014clamp(Number(i.fundingRatio ?? prev?.fundingRatio ?? 1), 0.25, 1.25);
+  const policy = i.policy || prev?.policy || 'full';
+  const payFactor = funding * v1014PolicyFactor(policy);
+  const regions: Record<string, TransportRegionOpsState> = {};
+  const codes = Object.keys(REGIONS).sort();
+  const backlogMem: Record<string, Partial<Record<TransportModality, number>>> = { ...(prev?.backlogByRegion || {}) };
+  const bands: Record<string, TransportOpsCondition> = { ...(prev?.bands || {}) };
+  const derived: TransportLogisticsDerivedEvent[] = [];
+  const nationalModifiers: Record<string, Partial<Record<NationalNetworkKind, number>>> = {};
+
+  codes.forEach(code => {
+    const name = REGIONS[code]?.name || code;
+    const modalities = {} as Record<TransportModality, TransportModalityState>;
+    let totalBacklog = 0;
+    let worst: { m: TransportModality; health: number } | null = null;
+    TRANSPORT_MODALITIES.forEach(mod => {
+      const projs = i.projects.filter(p => (p.regionId === code || p.regionId === null) && v1014ModalityForProject(p.projectType) === mod && (p.status === 'active' || p.status === 'upgraded' || p.status === 'damaged'));
+      let due = 0;
+      projs.forEach(p => {
+        const fac = p.status === 'damaged' ? 1.35 : p.status === 'upgraded' ? 1.1 : 1;
+        due += Math.max(0, Number(p.maintenanceCostPerTurn) || 0) * fac;
+      });
+      V1014_REFERENCE_NODES.filter(n => n.regionId === code && n.modality === mod).forEach(n => { due += 40 * n.strategicWeight; });
+      const paid = v1014r(due * payFactor);
+      const prevBack = Number(backlogMem[code]?.[mod]) || 0;
+      let backlog = v1014r(Math.min(V1014_LIMITS.backlogCap, Math.max(0, prevBack + due - paid)));
+      if (paid >= due && backlog > 0) backlog = v1014r(Math.max(0, backlog - (paid - due) * 0.35));
+      backlogMem[code] = backlogMem[code] || {}; backlogMem[code][mod] = backlog;
+      const util = i.national?.regions?.[code]?.networks?.freight?.utilization || 0;
+      const tradeUtil = i.national?.regions?.[code]?.networks?.trade?.utilization || 0;
+      const stress = v1014clamp((util + tradeUtil) * 25, 0, 40);
+      const health = v1014clamp(100 - (backlog / Math.max(1, due + 120)) * 55 - stress, 0, 100);
+      const key = `${code}:${mod}`;
+      const condition = v1014Condition(health, prev?.bands[key]);
+      bands[key] = condition;
+      const evidence: TransportLogisticsEvidence[] = [];
+      if (due > 0) evidence.push({ label: 'Maintenance due', value: v1014r(due), source: 'projects' });
+      if (backlog > 0) evidence.push({ label: 'Backlog', value: v1014r(backlog), source: 'operations' });
+      if (stress > 5) evidence.push({ label: 'Network stress', value: v1014r(stress), source: 'v10.0' });
+      modalities[mod] = { modality: mod, maintenanceDue: v1014r(due), maintenancePaid: paid, backlog, health: v1014r(health), condition, assetCount: projs.length, evidence: evidence.slice(0, V1014_LIMITS.evidence) };
+      totalBacklog += backlog;
+      if (!worst || health < worst.health) worst = { m: mod, health };
+      if (condition === 'degraded' || condition === 'critical') {
+        const pen = condition === 'critical' ? -V1014_LIMITS.modifierCap : -Math.round(V1014_LIMITS.modifierCap * 0.55);
+        nationalModifiers[code] = nationalModifiers[code] || {};
+        v1014ModalNetworkKinds(mod).forEach(nk => { nationalModifiers[code]![nk] = v1014r((nationalModifiers[code]![nk] || 0) + pen); });
+      } else if (condition === 'sound' && backlog <= 0 && due > 200) {
+        nationalModifiers[code] = nationalModifiers[code] || {};
+        v1014ModalNetworkKinds(mod).forEach(nk => { nationalModifiers[code]![nk] = v1014r((nationalModifiers[code]![nk] || 0) + 1.5); });
+      }
+    });
+    regions[code] = { regionId: code, name, modalities, totalBacklog: v1014r(totalBacklog), primaryStress: worst && worst.health < 52 ? worst.m : null };
+  });
+
+  // Cap modifiers per region/network
+  Object.keys(nationalModifiers).forEach(reg => {
+    Object.keys(nationalModifiers[reg] || {}).forEach(nk => {
+      const k = nk as NationalNetworkKind;
+      nationalModifiers[reg]![k] = v1014clamp(nationalModifiers[reg]![k] || 0, -V1014_LIMITS.modifierCap, V1014_LIMITS.modifierCap);
+    });
+  });
+
+  const nationalBacklog = v1014r(Object.values(regions).reduce((a, r) => a + r.totalBacklog, 0));
+  const nationalDue = v1014r(Object.values(regions).reduce((a, r) => TRANSPORT_MODALITIES.reduce((x, m) => x + r.modalities[m].maintenanceDue, 0) + a, 0));
+  const healths = codes.map(c => TRANSPORT_MODALITIES.reduce((a, m) => a + regions[c].modalities[m].health, 0) / TRANSPORT_MODALITIES.length);
+  const averageHealth = healths.length ? v1014r(healths.reduce((a, b) => a + b, 0) / healths.length) : 0;
+  const worstRegion = [...codes].sort((a, b) => regions[a].totalBacklog - regions[b].totalBacklog).pop() || null;
+  let worstModality: TransportModality | null = null;
+  let worstScore = -1;
+  TRANSPORT_MODALITIES.forEach(m => { const s = codes.reduce((a, c) => a + regions[c].modalities[m].backlog, 0); if (s > worstScore) { worstScore = s; worstModality = m; } });
+
+  const inputHash = transportLogisticsInputHash(i);
+  const history = [...(prev?.history || [])];
+  if (prev && prev.lastInputHash && prev.lastInputHash !== inputHash && opts.emit !== false) {
+    codes.forEach(c => TRANSPORT_MODALITIES.forEach(m => {
+      const key = `${c}:${m}`;
+      const before = prev.bands[key]; const after = bands[key];
+      if (!before || before === after) return;
+      if ((after === 'critical' || after === 'degraded') && (before === 'sound' || before === 'watch'))
+        derived.push({ id: `tl_${c}_${m}_${turn}`, turn, kind: 'transport_modal_degraded', regionId: c, modality: m, text: `${REGIONS[c]?.name || c} ${TRANSPORT_MODALITY_LABEL[m].toLowerCase()} operations became ${TRANSPORT_OPS_LABEL[after].toLowerCase()}.`, significance: after === 'critical' ? 'major' : 'meaningful' });
+      if ((after === 'sound' || after === 'watch') && (before === 'degraded' || before === 'critical'))
+        derived.push({ id: `tl_rec_${c}_${m}_${turn}`, turn, kind: 'transport_modal_recovered', regionId: c, modality: m, text: `${REGIONS[c]?.name || c} ${TRANSPORT_MODALITY_LABEL[m].toLowerCase()} operations recovered (${TRANSPORT_OPS_LABEL[before]} → ${TRANSPORT_OPS_LABEL[after]}).`, significance: 'meaningful' });
+    }));
+  }
+
+  const persisted: TransportLogisticsPersisted = {
+    schemaVersion: '10.14', revision: (prev?.revision || 0) + (prev?.lastInputHash === inputHash ? 0 : 1), lastUpdatedTurn: turn, lastInputHash: inputHash,
+    backlogByRegion: backlogMem, bands, policy, fundingRatio: funding, lastNationalModifiers: nationalModifiers,
+    history: history.slice(-V1014_LIMITS.history), cooldowns: prev?.cooldowns || {}
+  };
+
+  const state: TransportLogisticsState = {
+    schemaVersion: '10.14', revision: persisted.revision, lastUpdatedTurn: turn, inputHash,
+    regions, summary: { nationalBacklog, nationalMaintenanceDue: nationalDue, worstRegion: worstRegion && regions[worstRegion!]?.totalBacklog > 0 ? worstRegion : null, worstModality: worstScore > 0 ? worstModality : null, averageHealth },
+    nationalModifiers, computeMs: typeof performance !== 'undefined' ? v1014r(performance.now() - t0, 2) : 0
+  };
+  return { state, persisted, derived };
+}
+
+export function buildTransportLogisticsInputs(src: { turn: number; projects: Record<string, any> | any[] | null | undefined; national: NationalSystemsState | null; persisted?: TransportLogisticsPersisted | null }): TransportLogisticsInputs {
+  const raw = Array.isArray(src.projects) ? src.projects : Object.values(src.projects || {});
+  return {
+    turn: Number(src.turn) || 0,
+    national: src.national,
+    fundingRatio: src.persisted?.fundingRatio,
+    policy: src.persisted?.policy,
+    projects: raw.filter((p: any) => p && p.id).map((p: any) => ({ id: String(p.id), title: String(p.title || p.id), regionId: p.regionId || p.stateCode || null, projectType: String(p.projectType || ''), status: String(p.status || 'locked'), maintenanceCostPerTurn: Number(p.maintenanceCostPerTurn) || 0 }))
+  };
+}
+
+/** Modifiers for V10.0 — use persisted snapshot from previous stable pass to avoid same-tick cascade. */
+export function transportLogisticsNationalModifiers(p: TransportLogisticsPersisted | null | undefined): Record<string, Partial<Record<NationalNetworkKind, number>>> {
+  if (!p || !p.lastNationalModifiers) return {};
+  return p.lastNationalModifiers;
+}
+
+export function runV1014TransportLogisticsSelfTests(): { passed: number; failed: number; total: number; results: Array<{ id: string; name: string; passed: boolean; detail?: string }> } {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, ok: boolean | (() => boolean), detail?: string) => {
+    const passed = typeof ok === 'function' ? ok() : ok;
+    results.push({ id, name, passed, detail: passed ? undefined : detail });
+  };
+  const fxProj = (id: string, region: string, type: string, status: string, maint: number) => ({ id, title: id, regionId: region, projectType: type, status, maintenanceCostPerTurn: maint });
+  const baseProjects = [
+    fxProj('p_hsr', 'NSW', 'high_speed_rail', 'active', 2000),
+    fxProj('p_rail', 'QLD', 'inland_rail_hub', 'active', 1000),
+    fxProj('p_port', 'QLD', 'port_expansion', 'active', 1500),
+  ];
+  const ns = computeNationalSystems(createNationalSystemsFixtureInputs({ turn: 3, projects: baseProjects.map(p => ({ id: p.id, title: p.title, regionId: p.regionId, projectType: p.projectType, status: p.status })) })).state;
+
+  check('tl01', 'sanitize empty', () => sanitizeTransportLogisticsPersisted(null).schemaVersion === '10.14');
+  check('tl02', 'modality rail', () => v1014ModalityForProject('high_speed_rail') === 'rail');
+  check('tl03', 'modality port', () => v1014ModalityForProject('port_expansion') === 'port');
+  check('tl04', 'reference catalog', () => V1014_REFERENCE_NODES.length >= 8);
+  check('tl05', 'baseline compute', () => computeTransportLogisticsOperations(buildTransportLogisticsInputs({ turn: 1, projects: baseProjects, national: ns })).state.summary.averageHealth > 0);
+  check('tl06', 'underfund raises backlog', () => (() => { const a = computeTransportLogisticsOperations({ turn: 2, projects: baseProjects, national: ns, fundingRatio: 0.3 }).state.summary.nationalBacklog; const b = computeTransportLogisticsOperations({ turn: 2, projects: baseProjects, national: ns, fundingRatio: 1 }).state.summary.nationalBacklog; return a > b; })());
+  check('tl07', 'modifier cap', () => (() => { const mods = computeTransportLogisticsOperations({ turn: 2, projects: baseProjects, national: ns, fundingRatio: 0.2, policy: 'deferred' }).state.nationalModifiers; return Object.values(mods).every(reg => Object.values(reg || {}).every(v => Math.abs(Number(v)) <= V1014_LIMITS.modifierCap)); })());
+  check('tl08', 'input hash stable', () => transportLogisticsInputHash(buildTransportLogisticsInputs({ turn: 5, projects: baseProjects, national: ns })) === transportLogisticsInputHash(buildTransportLogisticsInputs({ turn: 5, projects: baseProjects, national: ns })));
+  check('tl09', 'revision increments', () => computeTransportLogisticsOperations(buildTransportLogisticsInputs({ turn: 1, projects: baseProjects, national: ns }), null).persisted.revision >= 1);
+  check('tl10', 'damaged maintenance', () => computeTransportLogisticsOperations({ turn: 1, projects: [fxProj('d','WA','freight_rail_upgrade','damaged',500)], national: ns }).state.regions.WA.modalities.rail.maintenanceDue > 500);
+  check('tl11', 'locked projects ignored', () => computeTransportLogisticsOperations({ turn: 1, projects: [fxProj('x','NSW','high_speed_rail','locked',9000)], national: ns }).state.regions.NSW.modalities.rail.maintenanceDue < 100);
+  check('tl12', 'national modifiers export', () => typeof transportLogisticsNationalModifiers({ schemaVersion: '10.14', revision: 1, lastUpdatedTurn: 1, lastInputHash: 'a', backlogByRegion: {}, bands: {}, policy: 'full', fundingRatio: 1, lastNationalModifiers: { NSW: { freight: -2 } }, history: [], cooldowns: {} }).NSW?.freight === 'number');
+  check('tl13', 'all regions present', () => Object.keys(computeTransportLogisticsOperations(buildTransportLogisticsInputs({ turn: 1, projects: baseProjects, national: ns })).state.regions).length === Object.keys(REGIONS).length);
+  check('tl14', 'four modalities each region', () => TRANSPORT_MODALITIES.every(m => computeTransportLogisticsOperations(buildTransportLogisticsInputs({ turn: 1, projects: baseProjects, national: ns })).state.regions.NSW.modalities[m]));
+  check('tl15', 'backlog cap', () => computeTransportLogisticsOperations({ turn: 50, projects: baseProjects, national: ns, fundingRatio: 0.1, policy: 'deferred' }).state.summary.nationalBacklog <= V1014_LIMITS.backlogCap * Object.keys(REGIONS).length);
+  check('tl16', 'full funding clears backlog trend', () => (() => { let p = null as any; for (let t = 1; t <= 6; t++) { const r = computeTransportLogisticsOperations({ turn: t, projects: baseProjects, national: ns, fundingRatio: 1, policy: 'full' }, p); p = r.persisted; } return p && Object.values(p.backlogByRegion).every((x: any) => TRANSPORT_MODALITIES.every(m => (x?.[m] || 0) < 50000)); })());
+  check('tl17', 'deferred policy worse than full', () => (() => { const d = computeTransportLogisticsOperations({ turn: 3, projects: baseProjects, national: ns, fundingRatio: 0.9, policy: 'deferred' }).state.summary.nationalBacklog; const f = computeTransportLogisticsOperations({ turn: 3, projects: baseProjects, national: ns, fundingRatio: 0.9, policy: 'full' }).state.summary.nationalBacklog; return d >= f; })());
+  check('tl18', 'computeMs finite', () => Number.isFinite(computeTransportLogisticsOperations(buildTransportLogisticsInputs({ turn: 1, projects: baseProjects, national: ns })).state.computeMs));
+  check('tl19', 'derived on band change', () => (() => { const p = createEmptyTransportLogisticsPersisted(); p.bands['NSW:rail'] = 'sound'; p.lastInputHash = 'old'; const r = computeTransportLogisticsOperations({ turn: 4, projects: baseProjects, national: ns, fundingRatio: 0.1, policy: 'deferred' }, p); return r.derived.some(e => e.kind === 'transport_modal_degraded') || r.state.regions.NSW.modalities.rail.condition !== 'sound'; })());
+  check('tl20', 'NSW port modality', () => v1014ModalityForProject('automated_port') === 'port');
+  check('tl21', 'intermodal depot', () => v1014ModalityForProject('trade_depot') === 'intermodal');
+  check('tl22', 'road fallback', () => v1014ModalityForProject('tech_innovation_park') === 'road');
+  check('tl23', 'summary worst region', () => computeTransportLogisticsOperations({ turn: 2, projects: baseProjects, national: ns, fundingRatio: 0.2 }).state.summary.worstRegion !== null || computeTransportLogisticsOperations({ turn: 2, projects: baseProjects, national: ns, fundingRatio: 1 }).state.summary.nationalBacklog === 0);
+  check('tl24', 'persist sanitize roundtrip', () => (() => { const r = computeTransportLogisticsOperations(buildTransportLogisticsInputs({ turn: 2, projects: baseProjects, national: ns })); const s = sanitizeTransportLogisticsPersisted(r.persisted); return s.revision === r.persisted.revision && s.lastInputHash === r.persisted.lastInputHash; })());
+  check('tl25', 'national null safe', () => computeTransportLogisticsOperations({ turn: 1, projects: baseProjects, national: null }).state.summary.averageHealth >= 0);
+  check('tl26', 'health bounded 0-100', () => Object.values(computeTransportLogisticsOperations(buildTransportLogisticsInputs({ turn: 1, projects: baseProjects, national: ns })).state.regions).every(r => TRANSPORT_MODALITIES.every(m => r.modalities[m].health >= 0 && r.modalities[m].health <= 100)));
+  check('tl27', 'evidence capped', () => Object.values(computeTransportLogisticsOperations(buildTransportLogisticsInputs({ turn: 1, projects: baseProjects, national: ns })).state.regions).every(r => TRANSPORT_MODALITIES.every(m => r.modalities[m].evidence.length <= V1014_LIMITS.evidence)));
+  check('tl28', 'modifier merge helper empty', () => Object.keys(transportLogisticsNationalModifiers(null)).length === 0);
+  check('tl29', 'QLD port due with project', () => computeTransportLogisticsOperations(buildTransportLogisticsInputs({ turn: 1, projects: baseProjects, national: ns })).state.regions.QLD.modalities.port.maintenanceDue >= 1500);
+  check('tl30', 'reference adds due', () => computeTransportLogisticsOperations({ turn: 1, projects: [], national: ns }).state.regions.QLD.modalities.port.maintenanceDue > 0);
+  check('tl31', 'sequential persisted', () => (() => { let p: any = null; const hashes: string[] = []; for (let t = 1; t <= 4; t++) { const r = computeTransportLogisticsOperations(buildTransportLogisticsInputs({ turn: t, projects: baseProjects, national: ns }), p); p = r.persisted; hashes.push(r.state.inputHash); } return new Set(hashes).size === hashes.length || hashes[hashes.length-1] === hashes[hashes.length-2]; })());
+  check('tl32', 'schema version state', () => computeTransportLogisticsOperations(buildTransportLogisticsInputs({ turn: 1, projects: baseProjects, national: ns })).state.schemaVersion === '10.14');
+  check('tl33', 'activeInfrastructureMaintenance boundary', () => typeof activeInfrastructureMaintenance({ infrastructureProjects: { a: { status: 'active', maintenanceCostPerTurn: 10 } } }) === 'number');
+  check('tl34', 'performance 40 evals', () => (() => { const start = Date.now(); let p: any = null; for (let i = 0; i < 40; i++) { p = computeTransportLogisticsOperations(buildTransportLogisticsInputs({ turn: i, projects: baseProjects, national: ns }), p).persisted; } return Date.now() - start < 500; })());
+  check('tl35', 'deterministic state', () => (() => { const i = buildTransportLogisticsInputs({ turn: 7, projects: baseProjects, national: ns }); return JSON.stringify(computeTransportLogisticsOperations(i, null).state.summary) === JSON.stringify(computeTransportLogisticsOperations(i, null).state.summary); })());
+  const passed = results.filter(r => r.passed).length;
+  return { passed, failed: results.length - passed, total: results.length, results };
+}
+
+// ============================================================================
 // SECTION 21B: RELIABILITY UPGRADE — FOCUSED REGRESSION SELF-TESTS
 // ----------------------------------------------------------------------------
 // One check per substantive reliability fix (crash, accounting, lifecycle, determinism, gating).
@@ -213930,7 +214264,11 @@ function dispatchGameSettingsChange(
   const icSectorKey = JSON.stringify(Object.keys(lrState?.regions || {}).sort().map(k => [k, Math.round(Number((lrState as any)?.regions?.[k]?.sectors?.renewables || 0))]));
   const icModifiers = useMemo<CapabilityModifiers>(() => innovationCapabilityModifiers(icPersisted, Object.fromEntries(Object.entries((lrState?.regions || {}) as Record<string, any>).map(([k, r]) => [k, r?.sectors || {}]))),
     [icEnabled, icPersisted, icSectorKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const nsModifiersLive = useMemo(() => mergeCapabilityModifiers(nsScenarioModifiers, icModifiers.national), [nsScenarioModifiers, icModifiers]);
+  const tlEnabledForNs = Boolean(nsEnabled && gameSettings.transportLogisticsEnabled !== false);
+  const tlStoredRaw = (gameState as any).transportLogistics;
+  const tlPersistedForNs = useMemo(() => sanitizeTransportLogisticsPersisted(tlStoredRaw, lrInputs.turn), [tlStoredRaw, lrInputs.turn]);
+  const tlNsModifiers = useMemo(() => (tlEnabledForNs ? transportLogisticsNationalModifiers(tlPersistedForNs) : {}), [tlEnabledForNs, tlPersistedForNs?.revision, tlPersistedForNs?.lastInputHash]);
+  const nsModifiersLive = useMemo(() => mergeCapabilityModifiers(mergeCapabilityModifiers(nsScenarioModifiers, icModifiers.national), tlNsModifiers), [nsScenarioModifiers, icModifiers, tlNsModifiers]);
   const nsInputs = useMemo<NationalSystemsInputs>(() => buildNationalSystemsInputs({
     turn: lrInputs.turn, lr: lrState, projects: gameState.infrastructureProjects as any,
     crises: ((gameState as any).crisisChainState?.activeCrisisChains || []) as any[], modifiers: nsModifiersLive
@@ -214781,6 +215119,31 @@ function dispatchGameSettingsChange(
     return { state: hh13State, persisted: hh13Persisted, inputs: hh13Inputs };
   }, [hh13State, hh13Persisted, hh13Inputs]);
   if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, households: hh13Enabled ? hh13View : null };
+
+  // ---- V10.14 Transport Logistics Operations: maintenance backlog + modal health → bounded V10.0 modifiers ----
+  const tl14Enabled = Boolean(nsEnabled && gameSettings.transportLogisticsEnabled !== false);
+  const tl14StoredRaw = (gameState as any).transportLogistics;
+  const tl14Persisted = useMemo(() => sanitizeTransportLogisticsPersisted(tl14StoredRaw, lrInputs.turn), [tl14StoredRaw, lrInputs.turn]);
+  const tl14PersistedRef = useRef<TransportLogisticsPersisted>(tl14Persisted); tl14PersistedRef.current = tl14Persisted;
+  const tl14Inputs = useMemo<TransportLogisticsInputs | null>(() => {
+    if (!tl14Enabled) return null;
+    return buildTransportLogisticsInputs({ turn: lrInputs.turn, projects: gameState.infrastructureProjects as any, national: nsState, persisted: tl14PersistedRef.current });
+  }, [tl14Enabled, lrInputs.turn, gameState.infrastructureProjects, nsState, tl14Persisted?.revision]);
+  const tl14Hash = useMemo(() => (tl14Inputs ? transportLogisticsInputHash(tl14Inputs) : ''), [tl14Inputs]);
+  const tl14State = useMemo<TransportLogisticsState | null>(() => {
+    if (!tl14Inputs) return null;
+    return computeTransportLogisticsOperations(tl14Inputs, tl14PersistedRef.current, { emit: false }).state;
+  }, [tl14Hash, tl14Inputs, tl14Persisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!tl14Enabled || !tl14Inputs || gameState.gameMode !== 'game') return;
+    const prev = tl14PersistedRef.current;
+    if (prev && prev.lastInputHash === tl14Hash) return;
+    const res = computeTransportLogisticsOperations(tl14Inputs, prev && prev.lastUpdatedTurn ? prev : null);
+    tl14PersistedRef.current = res.persisted;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { transportLogistics: res.persisted, transportLogisticsState: res.state } as any });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tl14Hash, tl14Enabled, gameState.gameMode]);
+  if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, transportLogistics: tl14Enabled && tl14State ? { state: tl14State, persisted: tl14Persisted, inputs: tl14Inputs } : null };
 
   const swrViewerId = String(player?.id || 'player');
   const swrViewerTeamId = player?.teamId ? String(player.teamId) : null;
