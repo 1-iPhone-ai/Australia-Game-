@@ -125910,7 +125910,7 @@ export interface LivingRegionsWorldView {
 }
 
 export type LRQueryTopic = 'status' | 'value' | 'fastest' | 'decline' | 'growth_why' | 'needs' | 'contract_why' | 'rival_invested' | 'infra_problems' | 'invest_where' | 'project_preview' | 'national';
-export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery; industry?: IndustryQuery; infra?: InfraQuery; megaproject?: MegaprojectQuery; nationalDev?: NationalDevelopmentQuery; capability?: CapabilityQuery; systemic?: SystemicQuery; priority?: NationalPriorityQuery; geography?: EconomicGeographyQuery; stateCapacity?: StateCapacityQuery; publicFinance?: PublicFinanceQuery; households?: { topic: V1013HouseholdQueryTopic; question: string; regionId: string | null } }
+export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery; industry?: IndustryQuery; infra?: InfraQuery; megaproject?: MegaprojectQuery; nationalDev?: NationalDevelopmentQuery; capability?: CapabilityQuery; technologyResearch?: TechnologyResearchQuery; systemic?: SystemicQuery; priority?: NationalPriorityQuery; geography?: EconomicGeographyQuery; stateCapacity?: StateCapacityQuery; publicFinance?: PublicFinanceQuery; households?: { topic: V1013HouseholdQueryTopic; question: string; regionId: string | null } }
 
 function lrRegionInText(q: string, v: LivingRegionsWorldView): string | null {
   const regs = Object.values(v.state.regions);
@@ -125943,6 +125943,8 @@ export function detectLivingRegionsQuery(raw: string, gw: GIWorld): LRQuery | nu
   if (npq) return mk('national', { priority: npq, regionId: npq.regionId });
   const srq = detectSystemicQuery(raw, gw);
   if (srq) return mk('national', { systemic: srq, regionId: srq.regionId });
+  const trq = detectTechnologyResearchQuery(raw, gw);
+  if (trq) return mk('national', { technologyResearch: trq, regionId: trq.regionId });
   const cq = detectCapabilityQuery(raw, gw);
   if (cq) return mk('national', { capability: cq, regionId: cq.regionId });
   const ndq = detectNationalDevelopmentQuery(raw, gw);
@@ -126010,6 +126012,7 @@ export function composeLivingRegionsAnswer(query: LRQuery, gw: GIWorld): GICompo
   if (query.topic === 'national' && query.geography && (gw.national as any)?.geography) return composeEconomicGeographyAnswer(query.geography, gw);
   if (query.topic === 'national' && query.priority && gw.national?.priorities) return composeNationalPriorityAnswer(query.priority, gw);
   if (query.topic === 'national' && query.systemic && gw.national?.systemic) return composeSystemicAnswer(query.systemic, gw);
+  if (query.topic === 'national' && query.technologyResearch) return composeTechnologyResearchAnswer(query.technologyResearch, gw);
   if (query.topic === 'national' && query.capability && gw.national?.innovation) return composeCapabilityAnswer(query.capability, gw);
   if (query.topic === 'national' && query.nationalDev && gw.national?.development) return composeNationalDevelopmentAnswer(query.nationalDev, gw);
   if (query.topic === 'national' && query.megaproject && gw.national?.megaprojects) return composeMegaprojectAnswer(query.megaproject, gw);
@@ -146095,6 +146098,15 @@ export function runV105InnovationCapabilitiesSelfTests(): V9SelfTestResult[] {
     const r = seq(steps);
     return (r.persisted.history.length <= V105_LIMITS.history && CAPABILITY_IDS.every(id => r.persisted.current.caps[id].history.length <= V105_LIMITS.perCapabilityHistory) && J(r.persisted).length < 60000 && valid(r.last.state, r.persisted) === true) || J({ h: r.persisted.history.length, size: J(r.persisted).length, v: valid(r.last.state, r.persisted) });
   });
+  check('ic42', 'Technology & Research meta: research tree / Research Funds / Technology Race route without capability names; unrelated money questions do not', () => {
+    const gw: any = { livingRegions: { state: { regions: { ACT: { regionId: 'ACT', name: 'Australian Capital Territory', sectors: { technology: 20, research: 25 }, identity: { label: 'Institutions' }, development: { tier: 1 }, economy: { band: 'stable' }, momentum: { band: 'rising' }, infrastructure: { active: [], building: [], quality: 50 }, needs: [], conditions: [], history: [], evidence: [], core: {}, strategicValue: { score: 40, band: 'moderate', inputs: {} }, name: 'Australian Capital Territory' } } }, inputs: null, viewerId: 'p', viewerKeys: ['p'], names: {} }, player: { inventory: { 'Research Funds': 3 } }, national: null };
+    const model = detectTechnologyResearchQuery('Is there a research tree?', gw);
+    const funds = detectTechnologyResearchQuery('What are Research Funds?', gw);
+    const race = detectTechnologyResearchQuery('What does the technology race opening mean?', gw);
+    const money = detectTechnologyResearchQuery('How much money do I have?', gw);
+    const a = model && composeTechnologyResearchAnswer(model, gw);
+    return (model?.topic === 'research_model' && funds?.topic === 'research_funds' && race?.topic === 'technology_race_opening' && !money && a && a.sections.length >= 2 && /no separate research tree/i.test(a.sections[0].claims[0].text)) || J({ model, funds, race, money, a: a?.sections?.length });
+  });
   check('ic41', 'Ask the Game: the 10 capability questions route here with Fact / Calculated / Inference / Projection; unrelated questions do not', () => {
     const r = seq(10, tech); const inputs = tech(10);
     const gw: any = { national: { innovation: { state: r.last.state, persisted: r.persisted, inputs, ctx: { nsInputs: null, scInputs: null }, strategy: { label: 'Build a technology economy', goals: [] } } } };
@@ -146127,6 +146139,70 @@ export function innovationWhatIfProjects(base: InnovationInputs, ctx: { nsInputs
     networks = computeStrategicInfrastructureNetworks(buildInfraNetworkInputs({ turn: base.turn, projects, national, industries }), null).state;
   }
   return projectInnovationCapabilities(before, { ...base, projects, national, industries, networks }, persisted);
+}
+
+// ---- Technology & Research meta (Division B / Agent 16): no research tree; canonical resources vs capabilities ----
+export type TechnologyResearchQueryTopic = 'research_model' | 'research_funds' | 'technology_sectors' | 'technology_race_opening';
+export interface TechnologyResearchQuery { topic: TechnologyResearchQueryTopic; regionId: string | null }
+
+/** Routes player questions about the research model, Research Funds, and tech/regional openings (not capability-specific). */
+export function detectTechnologyResearchQuery(raw: string, gw: GIWorld): TechnologyResearchQuery | null {
+  const q = ` ${String(raw || '').toLowerCase().replace(/[’']/g, "'").replace(/[?!.]/g, ' ').replace(/\s+/g, ' ').trim()} `;
+  const regionId = gw.livingRegions && Object.keys(gw.livingRegions.state.regions).length ? lrRegionInText(q, gw.livingRegions) : nsRegionInText(q);
+  if (/\b(research tree|tech tree|technology tree|science points?|research points?|research bar)\b/.test(q) || /\bhow does research work\b/.test(q) || /\bis there a research tree\b/.test(q))
+    return { topic: 'research_model', regionId };
+  if (/\bresearch funds?\b/.test(q) && (/\b(what|how|explain|mean|use|do|are)\b/.test(q) || q.trim().length < 28))
+    return { topic: 'research_funds', regionId };
+  if (/\btechnology race\b/.test(q))
+    return { topic: 'technology_race_opening', regionId };
+  if (/\b(technology|research) (sector|speciali[sz]ation)\b/.test(q) && /\b(how|what|grow|improve|boost|raise|increase)\b/.test(q))
+    return { topic: 'technology_sectors', regionId };
+  return null;
+}
+
+export function composeTechnologyResearchAnswer(query: TechnologyResearchQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  const sections: GIAnswerSection[] = [];
+  const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | '' | undefined>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
+  const C = (t: string, k: LRClaim) => nsClaim(t, k);
+  const reg = query.regionId ? gw.livingRegions?.state.regions[query.regionId] : null;
+  const techSec = reg ? Math.round(reg.sectors.technology || 0) : null;
+  const resSec = reg ? Math.round(reg.sectors.research || 0) : null;
+  const inv = gw.player.inventory['Research Funds'] ?? 0;
+  let title = 'Technology & research'; let shape: GIAnswerShape = 'explanation';
+  switch (query.topic) {
+    case 'research_model':
+      title = 'How research works';
+      say('f', 'Fact', [C('There is no separate research tree, science points bar, or research-only currency that unlocks tech.', 'fact')]);
+      say('c', 'Calculated', [C('Research strength shows up as Living Regions technology & research sectors, canonical resources (Research Funds, Education), research/AI contracts, and — when Innovation is on — emerging capabilities such as AI Compute and Research Commercialization.', 'calculated')]);
+      say('i', 'Inference', [C('Build research campuses, tech parks, data centres, and deliver research contracts in ACT/VIC/NSW; readiness for capabilities is derived from the whole economy, not a checklist action.', 'inference')]);
+      break;
+    case 'research_funds':
+      title = 'Research Funds';
+      shape = 'status';
+      say('f', 'Fact', [C('Research Funds are a canonical tradable resource (especially in ACT). They are not the national treasury balance.', 'fact'), C(`You currently hold ${Math.round(inv)} Research Funds.`, 'fact')]);
+      say('c', 'Calculated', [C('They feed the research_capability supply chain, appear in contract objectives and market prices, and pair with Education in research-heavy regions.', 'calculated')]);
+      say('i', 'Inference', [C('Grant rounds, tech conferences, and the Technology Race opening raise Research Fund prices — use them in research contracts and ACT faction work rather than treating them as cash.', 'inference')]);
+      break;
+    case 'technology_race_opening':
+      title = 'Technology Race opening';
+      say('f', 'Fact', [C('Technology Race highlights VIC technology momentum, ACT research opportunity, and NSW finance; Research Fund and Education prices start elevated.', 'fact')]);
+      say('c', 'Calculated', [C('The opening event technology_demand boosts educational challenges in tech regions and favours ai_research_center contracts.', 'calculated')]);
+      say('i', 'Inference', [C('You can still win without Melbourne — build research/digital infrastructure elsewhere or contest VIC deliberately; capabilities emerge from regional structure, not a race timer.', 'inference')]);
+      break;
+    case 'technology_sectors':
+      title = reg ? `${reg.name}: technology & research` : 'Technology & research sectors';
+      shape = reg ? 'diagnosis' : 'explanation';
+      if (reg) {
+        say('f', 'Fact', [C(`${reg.name} technology sector ${techSec ?? 0}/100 · research sector ${resSec ?? 0}/100 · identity ${reg.identity.label}.`, 'fact')]);
+        say('c', 'Calculated', [C('Sectors rise from projects (research_campus, tech_innovation_park, data_center, subsea_cable_hub), completed research/technology contracts, and national network/digital condition.', 'calculated')]);
+        say('i', 'Inference', [C((techSec ?? 0) >= 12 || (resSec ?? 0) >= 12 ? 'This region can already feed capability readiness — keep digital and energy networks healthy.' : 'Fund research infrastructure and research contracts here before expecting AI Compute or Research Commercialization.', 'inference')]);
+      } else {
+        say('f', 'Fact', [C('Each region tracks technology and research as Living Regions sectors (0–100), separate from your inventory.', 'fact')]);
+        say('i', 'Inference', [C('Ask about a specific state (e.g. ACT or VIC) to see local sector scores and what to build next.', 'inference')]);
+      }
+      break;
+  }
+  return { title, sections, buttons: [], shape };
 }
 
 // ---- V10.5 Game Intelligence ------------------------------------------------------------------------------------------
