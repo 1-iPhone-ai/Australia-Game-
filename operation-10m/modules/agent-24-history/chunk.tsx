@@ -1166,6 +1166,362 @@ export function runAgent24AttestationSelfTests(): Array<{ name: string; passed: 
 }
 
 
+// --- source: checkpoint-coverage.ts ---
+
+export interface Agent24CheckpointGap {
+  fromTurn: number;
+  toTurn: number;
+  spanTurns: number;
+  severity: 'info' | 'warn' | 'critical';
+  fingerprint: string;
+}
+
+export interface Agent24CheckpointCoverageReport {
+  reportId: string;
+  matchId: string;
+  checkpointTurns: number[];
+  checkpointCount: number;
+  maxGapTurns: number;
+  gaps: Agent24CheckpointGap[];
+  endgameCoverageOk: boolean;
+  coverageScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24CheckpointCoverageInput {
+  matchId: string;
+  snapshot: O6kHistoricalAnalyticsSnapshot;
+  lateGame: Agent24LateGameReplayAssessment;
+  maxTurns?: number;
+  maxAllowedGapTurns?: number;
+  checkpointTurns?: number[];
+}
+
+function gapSeverity(span: number, maxAllowed: number): Agent24CheckpointGap['severity'] {
+  if (span <= maxAllowed) return 'info';
+  if (span <= maxAllowed * 2) return 'warn';
+  return 'critical';
+}
+
+export function buildAgent24CheckpointCoverageReport(input: Agent24CheckpointCoverageInput): Agent24CheckpointCoverageReport {
+  const maxTurn = input.snapshot.generatedAtTurn;
+  const maxAllowedGapTurns = input.maxAllowedGapTurns && input.maxAllowedGapTurns > 0 ? input.maxAllowedGapTurns : 12;
+  const checkpointTurns = [...new Set(input.checkpointTurns || [])]
+    .filter(t => Number.isFinite(t) && t >= 1 && t <= maxTurn)
+    .sort((a, b) => a - b);
+  const gaps: Agent24CheckpointGap[] = [];
+
+  const anchors = [1, ...checkpointTurns, maxTurn];
+  const uniqueAnchors = [...new Set(anchors)].sort((a, b) => a - b);
+
+  for (let i = 1; i < uniqueAnchors.length; i++) {
+    const fromTurn = uniqueAnchors[i - 1];
+    const toTurn = uniqueAnchors[i];
+    const spanTurns = toTurn - fromTurn;
+    if (spanTurns <= 0) continue;
+    if (spanTurns > maxAllowedGapTurns) {
+      gaps.push({
+        fromTurn,
+        toTurn,
+        spanTurns,
+        severity: gapSeverity(spanTurns, maxAllowedGapTurns),
+        fingerprint: o6kAgent24Fingerprint('checkpoint_gap', { fromTurn, toTurn, spanTurns }),
+      });
+    }
+  }
+
+  gaps.sort((a, b) => a.fromTurn - b.fromTurn || a.toTurn - b.toTurn);
+  const maxGapTurns = gaps.reduce((m, g) => Math.max(m, g.spanTurns), 0);
+
+  const maxTurns = input.maxTurns && input.maxTurns > 0 ? input.maxTurns : 120;
+  const endgameStart = Math.floor(maxTurns * 0.75);
+  const endgameCoverageOk =
+    !input.lateGame.isLateGame ||
+    checkpointTurns.some(t => t >= endgameStart && t <= maxTurn) ||
+    gaps.filter(g => g.severity === 'critical' && g.toTurn >= endgameStart).length === 0;
+
+  const criticalCount = gaps.filter(g => g.severity === 'critical').length;
+  const warnCount = gaps.filter(g => g.severity === 'warn').length;
+  let coverageScore = 100;
+  coverageScore -= criticalCount * 25;
+  coverageScore -= warnCount * 8;
+  if (!endgameCoverageOk) coverageScore -= 15;
+  coverageScore = Math.max(0, Math.min(100, coverageScore));
+
+  const payload = {
+    checkpoints: checkpointTurns,
+    gaps: gaps.map(g => g.fingerprint),
+    endgameCoverageOk,
+    coverageScore,
+  };
+
+  return {
+    reportId: o6kAgent24Fingerprint('checkpoint_coverage', { matchId: input.matchId, turn: maxTurn }),
+    matchId: input.matchId,
+    checkpointTurns,
+    checkpointCount: checkpointTurns.length,
+    maxGapTurns,
+    gaps,
+    endgameCoverageOk,
+    coverageScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('checkpoint_coverage_body', payload),
+  };
+}
+
+export function extractAgent24CheckpointTurnsFromReplay(replay?: {
+  events?: Array<Record<string, unknown>>;
+  checkpoints?: Record<string, unknown>;
+} | null): number[] {
+  const turns: number[] = [];
+  for (const key of Object.keys(replay?.checkpoints || {})) {
+    const n = Number.parseInt(key, 10);
+    if (Number.isFinite(n)) turns.push(n);
+  }
+  for (const evt of replay?.events || []) {
+    const type = String(evt?.eventType || '').toLowerCase();
+    if (type.includes('checkpoint')) {
+      const turn = Number(evt?.turn ?? evt?.day);
+      if (Number.isFinite(turn)) turns.push(turn);
+    }
+  }
+  return [...new Set(turns)].sort((a, b) => a - b);
+}
+
+export function runAgent24CheckpointCoverageSelfTests(): Array<{ name: string; passed: boolean; detail: string }> {
+  const late = {
+    isLateGame: false,
+    requiresEndgameCheckpoint: false,
+    fingerprint: 'x',
+    phase: 'opening' as const,
+    recommendedCheckpointKinds: ['turn'],
+  };
+  const snap = {
+    matchId: 't',
+    generatedAtTurn: 20,
+    integrity: { replayEventCount: 2, checkpointCount: 2, fingerprint: 'i', deterministicMode: true },
+    milestoneHits: [],
+  } as O6kHistoricalAnalyticsSnapshot;
+  const report = buildAgent24CheckpointCoverageReport({
+    matchId: 't',
+    snapshot: snap,
+    lateGame: late,
+    maxAllowedGapTurns: 6,
+    checkpointTurns: [5, 15],
+  });
+  return [
+    {
+      name: 'checkpoint_coverage_counts',
+      passed: report.checkpointCount >= 2 && report.coverageScore >= 0,
+      detail: 'basic coverage report',
+    },
+  ];
+}
+
+
+// --- source: rewind-safety.ts ---
+
+export interface Agent24RewindTarget {
+  turn: number;
+  source: 'checkpoint' | 'branch_fork' | 'session_boundary' | 'audit_anchor';
+  label: string;
+  safe: boolean;
+  fingerprint: string;
+}
+
+export interface Agent24RewindSafetyReport {
+  reportId: string;
+  matchId: string;
+  currentTurn: number;
+  targets: Agent24RewindTarget[];
+  safeTargetCount: number;
+  recommendedTurn: number | null;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24RewindSafetyInput {
+  matchId: string;
+  currentTurn: number;
+  registry: Agent24TimelineRegistry;
+  auditTrail: Agent24AuditTrail;
+  checkpointCoverage: Agent24CheckpointCoverageReport;
+}
+
+function isAuditSafeTurn(trail: Agent24AuditTrail, turn: number): boolean {
+  const after = trail.entries.filter(e => e.turn > turn);
+  const blocked = after.some(e => e.action === 'timeline_merged' || e.action === 'branch_switched');
+  return !blocked;
+}
+
+export function buildAgent24RewindSafetyReport(input: Agent24RewindSafetyInput): Agent24RewindSafetyReport {
+  const targets: Agent24RewindTarget[] = [];
+
+  for (const turn of input.checkpointCoverage.checkpointTurns) {
+    if (turn >= input.currentTurn) continue;
+    const safe = isAuditSafeTurn(input.auditTrail, turn);
+    targets.push({
+      turn,
+      source: 'checkpoint',
+      label: `Checkpoint @ turn ${turn}`,
+      safe,
+      fingerprint: o6kAgent24Fingerprint('rewind_checkpoint', { turn, safe }),
+    });
+  }
+
+  for (const entry of input.registry.entries) {
+    const forkTurn = entry.branchTurn;
+    if (forkTurn == null || forkTurn >= input.currentTurn) continue;
+    const safe = isAuditSafeTurn(input.auditTrail, forkTurn);
+    targets.push({
+      turn: forkTurn,
+      source: 'branch_fork',
+      label: `Branch fork ${entry.label}`,
+      safe,
+      fingerprint: o6kAgent24Fingerprint('rewind_branch', { timeline: entry.timelineId, forkTurn, safe }),
+    });
+  }
+
+  for (const entry of input.auditTrail.entries) {
+    if (entry.action !== 'session_saved' && entry.action !== 'replay_checkpoint') continue;
+    if (entry.turn >= input.currentTurn) continue;
+    const safe = isAuditSafeTurn(input.auditTrail, entry.turn);
+    targets.push({
+      turn: entry.turn,
+      source: entry.action === 'session_saved' ? 'session_boundary' : 'audit_anchor',
+      label: entry.summary.slice(0, 80),
+      safe,
+      fingerprint: o6kAgent24Fingerprint('rewind_audit', { seq: entry.sequence, turn: entry.turn, safe }),
+    });
+  }
+
+  const dedup = new Map<number, Agent24RewindTarget>();
+  for (const t of targets.sort((a, b) => a.turn - b.turn || a.source.localeCompare(b.source))) {
+    const existing = dedup.get(t.turn);
+    if (!existing || (t.safe && !existing.safe)) dedup.set(t.turn, t);
+  }
+  const merged = [...dedup.values()].sort((a, b) => a.turn - b.turn || a.fingerprint.localeCompare(b.fingerprint));
+  const safeTargets = merged.filter(t => t.safe);
+  const recommendedTurn = safeTargets.length > 0 ? safeTargets[safeTargets.length - 1].turn : null;
+
+  return {
+    reportId: o6kAgent24Fingerprint('rewind_safety', { matchId: input.matchId, turn: input.currentTurn }),
+    matchId: input.matchId,
+    currentTurn: input.currentTurn,
+    targets: merged,
+    safeTargetCount: safeTargets.length,
+    recommendedTurn,
+    deterministicFingerprint: o6kAgent24Fingerprint('rewind_safety_body', merged.map(t => t.fingerprint)),
+  };
+}
+
+
+// --- source: history-reconciliation.ts ---
+
+export interface Agent24SessionReconciliationIssue {
+  sessionId: string;
+  kind: 'missing_save' | 'missing_resume' | 'turn_overlap' | 'attestation_mismatch';
+  detail: string;
+  fingerprint: string;
+}
+
+export interface Agent24HistoryReconciliationReport {
+  reportId: string;
+  matchId: string;
+  sessionCount: number;
+  issueCount: number;
+  issues: Agent24SessionReconciliationIssue[];
+  reconciled: boolean;
+  reconciliationScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24HistoryReconciliationInput {
+  matchId: string;
+  multiSession: Agent24MultiSessionContinuity;
+  auditTrail: Agent24AuditTrail;
+  attestation: Agent24ReplayAttestation;
+}
+
+export function buildAgent24HistoryReconciliationReport(
+  input: Agent24HistoryReconciliationInput,
+): Agent24HistoryReconciliationReport {
+  const issues: Agent24SessionReconciliationIssue[] = [];
+  const savesBySession = new Map<string, number>();
+  const resumesBySession = new Map<string, number>();
+
+  for (const entry of input.auditTrail.entries) {
+    const sid = entry.relatedSessionId;
+    if (!sid) continue;
+    if (entry.action === 'session_saved') savesBySession.set(sid, (savesBySession.get(sid) || 0) + 1);
+    if (entry.action === 'session_resumed') resumesBySession.set(sid, (resumesBySession.get(sid) || 0) + 1);
+  }
+
+  for (const session of input.multiSession.sessions) {
+    const saves = savesBySession.get(session.sessionId) || 0;
+    const resumes = resumesBySession.get(session.sessionId) || 0;
+    if (
+      input.multiSession.sessionCount > 1 &&
+      saves === 0 &&
+      session.endedAtTurn > session.startedAtTurn
+    ) {
+      issues.push({
+        sessionId: session.sessionId,
+        kind: 'missing_save',
+        detail: `Session ${session.sessionId} ended without session_saved audit`,
+        fingerprint: o6kAgent24Fingerprint('recon_missing_save', { sessionId: session.sessionId }),
+      });
+    }
+    if (resumes === 0 && input.multiSession.sessionCount > 1 && session.sessionId !== input.multiSession.sessions[0]?.sessionId) {
+      issues.push({
+        sessionId: session.sessionId,
+        kind: 'missing_resume',
+        detail: `Follow-on session ${session.sessionId} lacks session_resumed audit`,
+        fingerprint: o6kAgent24Fingerprint('recon_missing_resume', { sessionId: session.sessionId }),
+      });
+    }
+  }
+
+  if (!input.multiSession.resumeSafe) {
+    issues.push({
+      sessionId: '_overlap',
+      kind: 'turn_overlap',
+      detail: 'Multi-session continuity flagged overlapping turn ranges',
+      fingerprint: o6kAgent24Fingerprint('recon_overlap', { resumeSafe: false }),
+    });
+  }
+
+  if (input.attestation.status === 'failed') {
+    issues.push({
+      sessionId: '_attest',
+      kind: 'attestation_mismatch',
+      detail: 'Replay attestation failed while sessions present',
+      fingerprint: o6kAgent24Fingerprint('recon_attest_failed', { status: input.attestation.status }),
+    });
+  }
+
+  issues.sort((a, b) => a.sessionId.localeCompare(b.sessionId) || a.kind.localeCompare(b.kind));
+  const issueCount = issues.length;
+  let reconciliationScore = 100;
+  reconciliationScore -= issueCount * 12;
+  reconciliationScore = Math.max(0, Math.min(100, reconciliationScore));
+  const reconciled = issueCount === 0 && input.multiSession.resumeSafe && input.attestation.status !== 'failed';
+
+  return {
+    reportId: o6kAgent24Fingerprint('history_reconciliation', { matchId: input.matchId, sessions: input.multiSession.sessionCount }),
+    matchId: input.matchId,
+    sessionCount: input.multiSession.sessionCount,
+    issueCount,
+    issues,
+    reconciled,
+    reconciliationScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('history_reconciliation_body', {
+      issues: issues.map(i => i.fingerprint),
+      reconciled,
+      reconciliationScore,
+    }),
+  };
+}
+
+
 // --- source: history-replay-analytics.ts ---
 
 export const O6K_AGENT24_MODULE_VERSION = '1.1.0-op10m';
@@ -20653,6 +21009,13 @@ export function applyO6kHistoricalAnalyticsCachePatch(state: Record<string, unkn
   type O6kHistoricalAnalyticsBuildInput,
   type O6kHistoricalAnalyticsSnapshot,
 } from './history-replay-analytics.ts';
+  buildAgent24CheckpointCoverageReport,
+  extractAgent24CheckpointTurnsFromReplay,
+  type Agent24CheckpointCoverageReport,
+} from './checkpoint-coverage.ts';
+  buildAgent24HistoryReconciliationReport,
+  type Agent24HistoryReconciliationReport,
+} from './history-reconciliation.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -20667,6 +21030,9 @@ export interface Agent24ReplayDeterminismBundle {
   timelineDivergence: Agent24TimelineDivergenceReport;
   historyRollup: Agent24HistoryRollupReport;
   attestation: Agent24ReplayAttestation;
+  checkpointCoverage: Agent24CheckpointCoverageReport;
+  rewindSafety: Agent24RewindSafetyReport;
+  historyReconciliation: Agent24HistoryReconciliationReport;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -20775,6 +21141,14 @@ export function buildAgent24ReplayDeterminismBundle(
     snapshot,
     windowSize: input.maxTurns && input.maxTurns > 30 ? 15 : 10,
   });
+  const checkpointTurns = extractAgent24CheckpointTurnsFromReplay(input.replay);
+  const checkpointCoverage = buildAgent24CheckpointCoverageReport({
+    matchId: input.matchId,
+    snapshot,
+    lateGame,
+    maxTurns: input.maxTurns,
+    checkpointTurns,
+  });
   const partialBundle = {
     snapshot,
     causalIndex,
@@ -20786,7 +21160,20 @@ export function buildAgent24ReplayDeterminismBundle(
     auditTrail,
     multiSession,
   };
-  const attestation = buildAgent24ReplayAttestation({ ...partialBundle, compositeFingerprint: '' });
+  const attestationDraft = buildAgent24ReplayAttestation({ ...partialBundle, compositeFingerprint: '' });
+  const rewindSafety = buildAgent24RewindSafetyReport({
+    matchId: input.matchId,
+    currentTurn: input.turn,
+    registry: timelineRegistry,
+    auditTrail,
+    checkpointCoverage,
+  });
+  const historyReconciliation = buildAgent24HistoryReconciliationReport({
+    matchId: input.matchId,
+    multiSession,
+    auditTrail,
+    attestation: attestationDraft,
+  });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
@@ -20798,7 +21185,10 @@ export function buildAgent24ReplayDeterminismBundle(
     sessions: multiSession.deterministicFingerprint,
     divergence: timelineDivergence.deterministicFingerprint,
     rollup: historyRollup.deterministicFingerprint,
-    attestation: attestation.deterministicFingerprint,
+    attestation: attestationDraft.deterministicFingerprint,
+    checkpointCoverage: checkpointCoverage.deterministicFingerprint,
+    rewindSafety: rewindSafety.deterministicFingerprint,
+    reconciliation: historyReconciliation.deterministicFingerprint,
   });
   const attestationFinal = buildAgent24ReplayAttestation({ ...partialBundle, compositeFingerprint });
 
@@ -20807,6 +21197,9 @@ export function buildAgent24ReplayDeterminismBundle(
     ...partialBundle,
     timelineDivergence,
     historyRollup,
+    checkpointCoverage,
+    rewindSafety,
+    historyReconciliation,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -20872,6 +21265,21 @@ export function verifyAgent24ReplayDeterminism(
       name: 'attestation_twin',
       passed: a.attestation.deterministicFingerprint === b.attestation.deterministicFingerprint,
       detail: 'Twin replay attestation fingerprints',
+    },
+    {
+      name: 'checkpoint_coverage_twin',
+      passed: a.checkpointCoverage.deterministicFingerprint === b.checkpointCoverage.deterministicFingerprint,
+      detail: 'Twin checkpoint coverage fingerprints',
+    },
+    {
+      name: 'rewind_safety_twin',
+      passed: a.rewindSafety.deterministicFingerprint === b.rewindSafety.deterministicFingerprint,
+      detail: 'Twin rewind safety fingerprints',
+    },
+    {
+      name: 'history_reconciliation_twin',
+      passed: a.historyReconciliation.deterministicFingerprint === b.historyReconciliation.deterministicFingerprint,
+      detail: 'Twin history reconciliation fingerprints',
     },
     {
       name: 'composite_twin',

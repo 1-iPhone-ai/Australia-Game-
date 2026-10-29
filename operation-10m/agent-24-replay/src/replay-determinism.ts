@@ -19,6 +19,16 @@ import { buildAgent24MultiSessionContinuity, type Agent24MultiSessionContinuity 
 import { buildAgent24TimelineDivergenceReport, type Agent24TimelineDivergenceReport } from './timeline-divergence.ts';
 import { buildAgent24HistoryRollupReport, type Agent24HistoryRollupReport } from './history-rollups.ts';
 import { buildAgent24ReplayAttestation, type Agent24ReplayAttestation } from './replay-attestation.ts';
+import {
+  buildAgent24CheckpointCoverageReport,
+  extractAgent24CheckpointTurnsFromReplay,
+  type Agent24CheckpointCoverageReport,
+} from './checkpoint-coverage.ts';
+import { buildAgent24RewindSafetyReport, type Agent24RewindSafetyReport } from './rewind-safety.ts';
+import {
+  buildAgent24HistoryReconciliationReport,
+  type Agent24HistoryReconciliationReport,
+} from './history-reconciliation.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -33,6 +43,9 @@ export interface Agent24ReplayDeterminismBundle {
   timelineDivergence: Agent24TimelineDivergenceReport;
   historyRollup: Agent24HistoryRollupReport;
   attestation: Agent24ReplayAttestation;
+  checkpointCoverage: Agent24CheckpointCoverageReport;
+  rewindSafety: Agent24RewindSafetyReport;
+  historyReconciliation: Agent24HistoryReconciliationReport;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -141,6 +154,14 @@ export function buildAgent24ReplayDeterminismBundle(
     snapshot,
     windowSize: input.maxTurns && input.maxTurns > 30 ? 15 : 10,
   });
+  const checkpointTurns = extractAgent24CheckpointTurnsFromReplay(input.replay);
+  const checkpointCoverage = buildAgent24CheckpointCoverageReport({
+    matchId: input.matchId,
+    snapshot,
+    lateGame,
+    maxTurns: input.maxTurns,
+    checkpointTurns,
+  });
   const partialBundle = {
     snapshot,
     causalIndex,
@@ -152,7 +173,20 @@ export function buildAgent24ReplayDeterminismBundle(
     auditTrail,
     multiSession,
   };
-  const attestation = buildAgent24ReplayAttestation({ ...partialBundle, compositeFingerprint: '' });
+  const attestationDraft = buildAgent24ReplayAttestation({ ...partialBundle, compositeFingerprint: '' });
+  const rewindSafety = buildAgent24RewindSafetyReport({
+    matchId: input.matchId,
+    currentTurn: input.turn,
+    registry: timelineRegistry,
+    auditTrail,
+    checkpointCoverage,
+  });
+  const historyReconciliation = buildAgent24HistoryReconciliationReport({
+    matchId: input.matchId,
+    multiSession,
+    auditTrail,
+    attestation: attestationDraft,
+  });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
@@ -164,7 +198,10 @@ export function buildAgent24ReplayDeterminismBundle(
     sessions: multiSession.deterministicFingerprint,
     divergence: timelineDivergence.deterministicFingerprint,
     rollup: historyRollup.deterministicFingerprint,
-    attestation: attestation.deterministicFingerprint,
+    attestation: attestationDraft.deterministicFingerprint,
+    checkpointCoverage: checkpointCoverage.deterministicFingerprint,
+    rewindSafety: rewindSafety.deterministicFingerprint,
+    reconciliation: historyReconciliation.deterministicFingerprint,
   });
   const attestationFinal = buildAgent24ReplayAttestation({ ...partialBundle, compositeFingerprint });
 
@@ -173,6 +210,9 @@ export function buildAgent24ReplayDeterminismBundle(
     ...partialBundle,
     timelineDivergence,
     historyRollup,
+    checkpointCoverage,
+    rewindSafety,
+    historyReconciliation,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -238,6 +278,21 @@ export function verifyAgent24ReplayDeterminism(
       name: 'attestation_twin',
       passed: a.attestation.deterministicFingerprint === b.attestation.deterministicFingerprint,
       detail: 'Twin replay attestation fingerprints',
+    },
+    {
+      name: 'checkpoint_coverage_twin',
+      passed: a.checkpointCoverage.deterministicFingerprint === b.checkpointCoverage.deterministicFingerprint,
+      detail: 'Twin checkpoint coverage fingerprints',
+    },
+    {
+      name: 'rewind_safety_twin',
+      passed: a.rewindSafety.deterministicFingerprint === b.rewindSafety.deterministicFingerprint,
+      detail: 'Twin rewind safety fingerprints',
+    },
+    {
+      name: 'history_reconciliation_twin',
+      passed: a.historyReconciliation.deterministicFingerprint === b.historyReconciliation.deterministicFingerprint,
+      detail: 'Twin history reconciliation fingerprints',
     },
     {
       name: 'composite_twin',

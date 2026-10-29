@@ -18,6 +18,13 @@ import { buildAgent24MultiSessionContinuity } from '../src/multi-session.ts';
 import { buildAgent24TimelineDivergenceReport } from '../src/timeline-divergence.ts';
 import { buildAgent24HistoryRollupReport } from '../src/history-rollups.ts';
 import { buildAgent24ReplayAttestation, runAgent24AttestationSelfTests } from '../src/replay-attestation.ts';
+import {
+  buildAgent24CheckpointCoverageReport,
+  extractAgent24CheckpointTurnsFromReplay,
+  runAgent24CheckpointCoverageSelfTests,
+} from '../src/checkpoint-coverage.ts';
+import { buildAgent24RewindSafetyReport } from '../src/rewind-safety.ts';
+import { buildAgent24HistoryReconciliationReport } from '../src/history-reconciliation.ts';
 import { buildO6kHistoricalAnalyticsSnapshot } from '../src/history-replay-analytics.ts';
 import { o6kAgent24StableStringify, runO6kAgent24SelfTests } from '../src/history-replay-analytics.ts';
 
@@ -106,6 +113,9 @@ describe('Agent 24 replay determinism bundle', () => {
     assert.ok(result.probes.some(p => p.name === 'timeline_divergence_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'history_rollup_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'attestation_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'checkpoint_coverage_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'rewind_safety_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'history_reconciliation_twin' && p.passed));
   });
 
   it('includes analytics depth rollups and stable twin fingerprint', () => {
@@ -215,6 +225,60 @@ describe('Agent 24 history rollups', () => {
     const report = buildAgent24HistoryRollupReport({ matchId: 'm', snapshot: snap, windowSize: 10 });
     assert.ok(report.windows.length >= 3);
     assert.ok(report.totalMilestoneWeight >= 0);
+  });
+});
+
+describe('Agent 24 checkpoint coverage', () => {
+  it('extracts checkpoint turns and scores gaps', () => {
+    const turns = extractAgent24CheckpointTurnsFromReplay({
+      checkpoints: { '4': {}, '12': {} },
+      events: [{ eventType: 'replay_checkpoint', turn: 12 }],
+    });
+    assert.deepEqual(turns, [4, 12]);
+    assert.ok(runAgent24CheckpointCoverageSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 rewind safety', () => {
+  it('recommends latest safe checkpoint turn', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle({
+      matchId: 'm',
+      turn: 20,
+      day: 20,
+      replay: { events: [{ eventType: 'replay_checkpoint', turn: 8 }, { eventType: 'replay_checkpoint', turn: 15 }], checkpoints: { '8': {}, '15': {} } },
+      deterministicMode: true,
+    });
+    assert.ok(bundle.rewindSafety.safeTargetCount >= 1);
+    assert.equal(bundle.rewindSafety.recommendedTurn, 15);
+    const twin = buildAgent24RewindSafetyReport({
+      matchId: 'm',
+      currentTurn: 20,
+      registry: bundle.timelineRegistry,
+      auditTrail: bundle.auditTrail,
+      checkpointCoverage: bundle.checkpointCoverage,
+    });
+    assert.equal(twin.deterministicFingerprint, bundle.rewindSafety.deterministicFingerprint);
+  });
+});
+
+describe('Agent 24 history reconciliation', () => {
+  it('flags reconciled single-session bundles', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle({
+      matchId: 'm',
+      turn: 10,
+      day: 10,
+      replay: { events: [{ eventType: 'replay_checkpoint', turn: 10 }] },
+      deterministicMode: true,
+    });
+    assert.equal(bundle.historyReconciliation.reconciled, true);
+    assert.equal(bundle.historyReconciliation.issueCount, 0);
+    const direct = buildAgent24HistoryReconciliationReport({
+      matchId: 'm',
+      multiSession: bundle.multiSession,
+      auditTrail: bundle.auditTrail,
+      attestation: bundle.attestation,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.historyReconciliation.deterministicFingerprint);
   });
 });
 
