@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.47' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.48' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -362,7 +362,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'existential_absolute_nullity_sanctification'
   | 'collapse_omni_singularity_panpsychism'
   | 'void_total_erosion_attenuation'
-  | 'existential_absolute_nullity_consecration';
+  | 'existential_absolute_nullity_consecration'
+  | 'collapse_omni_singularity_panidealism'
+  | 'void_total_erosion_dissipation'
+  | 'existential_absolute_nullity_beatification';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -1684,6 +1687,37 @@ export interface OP10M_A11_ExistentialAbsoluteNullityConsecrationRow {
   narrative: string;
 }
 
+
+export type OP10M_A11_CollapseOmniSingularityPanidealismBand = 'latent' | 'aligning' | 'total' | 'panidealism';
+
+export interface OP10M_A11_CollapseOmniSingularityPanidealismRow {
+  regionId: OP10M_A11_RegionId;
+  panidealismScore: number;
+  band: OP10M_A11_CollapseOmniSingularityPanidealismBand;
+  marks: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_VoidTotalErosionDissipationBand = 'dormant' | 'dissipating' | 'total' | 'complete_dissipation';
+
+export interface OP10M_A11_VoidTotalErosionDissipationRow {
+  regionId: OP10M_A11_RegionId;
+  dissipationScore: number;
+  band: OP10M_A11_VoidTotalErosionDissipationBand;
+  phases: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_ExistentialAbsoluteNullityBeatificationBand = 'trace' | 'beatifying' | 'absolute' | 'total_beatification';
+
+export interface OP10M_A11_ExistentialAbsoluteNullityBeatificationRow {
+  regionId: OP10M_A11_RegionId;
+  beatificationScore: number;
+  band: OP10M_A11_ExistentialAbsoluteNullityBeatificationBand;
+  marks: string[];
+  narrative: string;
+}
+
 export interface OP10M_A11_ExistentialAbsoluteNullityContinuityRow {
   regionId: OP10M_A11_RegionId;
   continuityScore: number;
@@ -2066,6 +2100,12 @@ export interface OP10M_A11_CompositeState {
   nationalVoidTotalErosionAttenuationIndex: number;
   existentialAbsoluteNullityConsecration: OP10M_A11_ExistentialAbsoluteNullityConsecrationRow[];
   nationalExistentialAbsoluteNullityConsecrationIndex: number;
+  collapseOmniSingularityPanidealism: OP10M_A11_CollapseOmniSingularityPanidealismRow[];
+  nationalCollapseOmniSingularityPanidealismIndex: number;
+  voidTotalErosionDissipation: OP10M_A11_VoidTotalErosionDissipationRow[];
+  nationalVoidTotalErosionDissipationIndex: number;
+  existentialAbsoluteNullityBeatification: OP10M_A11_ExistentialAbsoluteNullityBeatificationRow[];
+  nationalExistentialAbsoluteNullityBeatificationIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -2207,5 +2247,8 @@ export interface OP10M_A11_CompositePersisted {
   lastCollapseOmniSingularityPanpsychismIndex: number;
   lastVoidTotalErosionAttenuationIndex: number;
   lastExistentialAbsoluteNullityConsecrationIndex: number;
+  lastCollapseOmniSingularityPanidealismIndex: number;
+  lastVoidTotalErosionDissipationIndex: number;
+  lastExistentialAbsoluteNullityBeatificationIndex: number;
   inputHash: string;
 }
