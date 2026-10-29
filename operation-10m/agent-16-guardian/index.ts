@@ -458,5 +458,6 @@ export {
 } from './monitor-rules-scale-wave-54.js';
 export { ADVISORY_MONITOR_RULES_SCALE_WAVE_55 } from './monitor-rules-scale-wave-55.js';
 export { ADVISORY_MONITOR_RULES_SCALE_WAVE_56 } from './monitor-rules-scale-wave-56.js';
+export { ADVISORY_MONITOR_RULES_SCALE_WAVE_57 } from './monitor-rules-scale-wave-57.js';
 export { ADVISORY_SCENARIO_CATALOG } from './scenarios.js';
 export { runAgent16GuardianCoPilotSelfTests, summarizeAgent16SelfTests } from './self-tests.js';
