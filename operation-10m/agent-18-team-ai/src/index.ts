@@ -181,5 +181,6 @@ export * from './septenary-harmony-resonance-convergence-stack-index.ts';
 export * from './octonary-harmony-resonance-convergence-stack-index.ts';
 export * from './nonary-harmony-resonance-convergence-stack-index.ts';
 export * from './decenary-harmony-resonance-convergence-stack-index.ts';
+export * from './undecenary-harmony-resonance-convergence-stack-index.ts';
 
 export * from './resonance-harmony-convergence-stack-index.ts';
