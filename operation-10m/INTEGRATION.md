@@ -11,7 +11,7 @@ Agent 05 owns **state-triggered narrative chains** outside canonical V9.4 until 
 | Export | Role |
 |--------|------|
 | `OP10M_AGENT05_MODULE_ID` | Stable integrator key |
-| `OP10M_AGENT05_CHAIN_CATALOG` | 840 chain descriptors (tranche1: 600 theme chains, tranche2: 240 crisis archetypes) |
+| `OP10M_AGENT05_CHAIN_CATALOG` | 1200 chain descriptors (600 + 240 archetype + 360 cross-system synergy) |
 | `createDefaultOp10mSimulationSlice` | Minimal mutable sim slice for hooks |
 | `createDefaultOp10mNarrativeEngineState` | Persistent narrative runtime state |
 | `sanitizeOp10mNarrativeEngineState` | Save/load hygiene |

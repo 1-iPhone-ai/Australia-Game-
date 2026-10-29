@@ -5,6 +5,7 @@ export * from './regional-hook-engine.ts';
 export * from './trigger-engine.ts';
 export * from './consequence-applier.ts';
 export * from './narrative-runtime.ts';
+export * from './cross-system-orchestrator.ts';
 export * from './chain-catalog-aggregate.ts';
 export {
   OP10M_AGENT05_REGIONAL_HOOK_CATALOG,

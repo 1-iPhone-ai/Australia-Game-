@@ -1,7 +1,7 @@
 /** Operation 10M · Agent 05 — dynamic events & narrative (standalone contract). */
 
 export const OP10M_AGENT05_MODULE_ID = 'op10m_agent05_dynamic_events';
-export const OP10M_AGENT05_MODULE_VERSION = '1.1.0';
+export const OP10M_AGENT05_MODULE_VERSION = '1.2.0';
 
 export type Op10mChainPhase = 'signal' | 'pressure' | 'rupture' | 'recovery';
 
@@ -148,6 +148,30 @@ export interface Op10mTriggerRequireActivePhase {
   phase: Op10mChainPhase;
 }
 
+export interface Op10mTriggerRequireMinActiveCrises {
+  k: 'min_active_crises';
+  min: number;
+}
+
+export interface Op10mTriggerRequireCombinedSector {
+  k: 'combined_sector';
+  sectors: Array<{ sector: string; min: number }>;
+}
+
+export interface Op10mTriggerRequireCrossSystemCoupling {
+  k: 'cross_system_coupling';
+  region: string;
+  synergyId: string;
+  min: number;
+}
+
+export interface Op10mTriggerRequirePeerChainPhase {
+  k: 'peer_chain_phase';
+  region: string;
+  theme: Op10mContentTheme;
+  minPhase: Op10mChainPhase;
+}
+
 export type Op10mTriggerRequirement =
   | Op10mTriggerRequireSeason
   | Op10mTriggerRequireSector
@@ -158,7 +182,11 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequireMinDay
   | Op10mTriggerRequireActivePhase
   | Op10mTriggerRequireRegionalContagion
-  | Op10mTriggerRequireArmedBypass;
+  | Op10mTriggerRequireArmedBypass
+  | Op10mTriggerRequireMinActiveCrises
+  | Op10mTriggerRequireCombinedSector
+  | Op10mTriggerRequireCrossSystemCoupling
+  | Op10mTriggerRequirePeerChainPhase;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -242,6 +270,7 @@ export interface Op10mNarrativeEngineState {
     consequencesApplied: number;
     regionalHooksFired: number;
     deepFollowUpsArmed: number;
+    crossSystemCouplings: number;
   };
   regional?: Op10mRegionalContagionLedger;
 }

@@ -7,8 +7,9 @@ import type {
   Op10mSimulationSlice,
   Op10mTriggerRequirement,
 } from './types.ts';
-import { getContagionLevel } from './regional-graph.ts';
+import { getCrossSystemCouplingLevel, hasPeerChainAtPhase } from './cross-system-orchestrator.ts';
 import { hasArmedBypass } from './deep-chain-orchestrator.ts';
+import { getContagionLevel } from './regional-graph.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -19,7 +20,12 @@ export function evaluateRequirements(
   requires: Op10mTriggerRequirement[],
   sim: Op10mSimulationSlice,
   chainRuntime: Op10mActiveChainRuntime | null,
-  context?: { armedBypass?: boolean; chainId?: string; narrative?: Op10mNarrativeEngineState }
+  context?: {
+    armedBypass?: boolean;
+    chainId?: string;
+    narrative?: Op10mNarrativeEngineState;
+    catalog?: Op10mChainDescriptor[];
+  }
 ): { ok: boolean; reason: string } {
   for (const req of requires) {
     switch (req.k) {
@@ -80,6 +86,31 @@ export function evaluateRequirements(
         const narrative = context?.narrative;
         if (!narrative || !hasArmedBypass(narrative, req.chainId)) {
           return { ok: false, reason: 'no armed bypass' };
+        }
+        break;
+      }
+      case 'min_active_crises':
+        if (sim.activeCrisisCount < req.min) {
+          return { ok: false, reason: `crises ${sim.activeCrisisCount}<${req.min}` };
+        }
+        break;
+      case 'combined_sector':
+        for (const s of req.sectors) {
+          const v = sim.sectorActivity[s.sector] ?? 0;
+          if (v < s.min) return { ok: false, reason: `sector ${s.sector} ${v}<${s.min}` };
+        }
+        break;
+      case 'cross_system_coupling': {
+        const level = getCrossSystemCouplingLevel(sim, req.region, req.synergyId);
+        if (level < req.min) return { ok: false, reason: `xsys ${level}<${req.min}` };
+        break;
+      }
+      case 'peer_chain_phase': {
+        const narrative = context?.narrative;
+        const catalog = context?.catalog;
+        if (!narrative || !catalog) return { ok: false, reason: 'missing peer context' };
+        if (!hasPeerChainAtPhase(narrative, catalog, req.region, req.theme, req.minPhase)) {
+          return { ok: false, reason: 'peer chain phase' };
         }
         break;
       }

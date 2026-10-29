@@ -17,11 +17,13 @@ const SOURCE_FILES = [
   'src/regional-graph.ts',
   'src/consequence-applier.ts',
   'src/deep-chain-orchestrator.ts',
+  'src/cross-system-orchestrator.ts',
   'src/trigger-engine.ts',
   'src/regional-hook-engine.ts',
   'src/narrative-runtime.ts',
   'generated/chain-catalog.ts',
   'generated/chain-catalog-tranche2.ts',
+  'generated/chain-catalog-tranche3.ts',
   'src/chain-catalog-aggregate.ts',
   'generated/regional-hook-catalog.ts',
 ] as const;
@@ -88,15 +90,15 @@ function bundleSources(): string {
     `  });`,
     `  results.push({`,
     `    id: 'agent05_chain_count',`,
-    `    name: '840 chain descriptors (600+240 tranches)',`,
-    `    passed: OP10M_AGENT05_CHAIN_CATALOG.length === 840,`,
+    `    name: '1200 chain descriptors (600+240+360)',`,
+    `    passed: OP10M_AGENT05_CHAIN_CATALOG.length === 1200,`,
     `  });`,
     `  results.push({`,
-    `    id: 'agent05_tranche2_depth',`,
-    `    name: 'tranche2 contagion-gated pressure chains present',`,
+    `    id: 'agent05_tranche3_cross_system',`,
+    `    name: 'tranche3 synergy chains present',`,
     `    passed:`,
-    `      OP10M_AGENT05_CHAIN_CATALOG_TRANCHE2.length === 240 &&`,
-    `      OP10M_AGENT05_CHAIN_CATALOG.some((c) => c.chainId.startsWith('op10m_t2_')),`,
+    `      OP10M_AGENT05_CHAIN_CATALOG_TRANCHE3.length === 360 &&`,
+    `      OP10M_AGENT05_CHAIN_CATALOG.some((c) => c.chainId.startsWith('op10m_t3_')),`,
     `  });`,
     `  results.push({`,
     `    id: 'agent05_regional_hooks',`,
@@ -145,5 +147,20 @@ const chunk = wrapChunk(body);
 const outPath = resolve(moduleRoot, 'chunk.tsx');
 writeFileSync(outPath, chunk, 'utf8');
 const lineCount = chunk.split('\n').length;
-const hash = createHash('sha256').update(body).digest('hex').slice(0, 16);
-console.log(`Wrote ${outPath} (${lineCount} lines, sha256~${hash})`);
+const contentSha256 = createHash('sha256').update(body).digest('hex');
+const manifestPath = resolve(moduleRoot, 'module.manifest.json');
+const manifest = {
+  moduleId,
+  slot: 'post-crisis-chains',
+  touchesSaveFormat: true,
+  proposedGameStateField: 'agent05NarrativeState',
+  contentSha256,
+  contentSha256Prefix: contentSha256.slice(0, 16),
+  chunkPath: `operation-10m/${moduleId}/chunk.tsx`,
+  chunkLineCount: lineCount,
+  chainCount: 1200,
+  regenerate: 'npm run bundle:agent05',
+};
+writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+console.log(`Wrote ${outPath} (${lineCount} lines, sha256~${contentSha256.slice(0, 16)})`);
+console.log(`Wrote ${manifestPath}`);
