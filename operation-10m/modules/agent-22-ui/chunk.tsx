@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: c2b7d738da2a68a8
+// content-sha256-prefix: 4f53569a37a4f01b
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -959,6 +959,10 @@ export interface DayAdvanceUiEvolutionResult {
   rememberedPanelRosterDayCoachCopy: string | null;
   calmRecoverySuggestionDayCoachCopy: string | null;
   multiUnlockBatchDayCoachCopy: string | null;
+  announcementQueueDepthDayCoachCopy: string | null;
+  dedupSuppressedBatchDayCoachCopy: string | null;
+  legacyNavRememberAppliedDayCoachCopy: string | null;
+  coachAnnouncementVolumeDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1653,6 +1657,27 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const announcementQueueDepthDayCoach = buildAnnouncementQueueDepthDayCoach({
+    combinedQueueDepth: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const dedupSuppressedBatchDayCoach = buildDedupSuppressedBatchDayCoach({
+    suppressedCount: deduped.suppressedCount,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const legacyNavRememberAppliedDayCoach = buildLegacyNavRememberAppliedDayCoach({
+    rememberedCount: legacyRememberApply.rememberedCount,
+    applied: legacyRememberApply.applied,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const coachAnnouncementVolumeDayCoach = buildCoachAnnouncementVolumeDayCoach({
+    coachAnnouncementCount: coachAnnouncements.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1783,6 +1808,10 @@ export function tickEvolvingUiOnDayAdvance(
     rememberedPanelRosterDayCoachCopy: rememberedPanelRosterDayCoach.coachCopy,
     calmRecoverySuggestionDayCoachCopy: calmRecoverySuggestionDayCoach.coachCopy,
     multiUnlockBatchDayCoachCopy: multiUnlockBatchDayCoach.coachCopy,
+    announcementQueueDepthDayCoachCopy: announcementQueueDepthDayCoach.coachCopy,
+    dedupSuppressedBatchDayCoachCopy: dedupSuppressedBatchDayCoach.coachCopy,
+    legacyNavRememberAppliedDayCoachCopy: legacyNavRememberAppliedDayCoach.coachCopy,
+    coachAnnouncementVolumeDayCoachCopy: coachAnnouncementVolumeDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -6971,6 +7000,248 @@ export function buildMultiUnlockBatchDayCoach(input: {
     unlockCount: count,
     coachCopy: `Day ${input.nextGameDay}: ${count} interface panels unlocked together — screen reader announcements may batch.`,
   };
+}
+
+// --- source: engine/announcement-queue-depth-day-coach.ts ---
+export interface AnnouncementQueueDepthDayCoach {
+  queueDepth: number;
+  coachCopy: string | null;
+}
+
+export function buildAnnouncementQueueDepthDayCoach(input: {
+  combinedQueueDepth: number;
+  nextGameDay: number;
+  minDepth?: number;
+}): AnnouncementQueueDepthDayCoach {
+  const min = input.minDepth ?? 2;
+  if (input.combinedQueueDepth < min) {
+    return { queueDepth: input.combinedQueueDepth, coachCopy: null };
+  }
+  const noun = input.combinedQueueDepth === 1 ? 'announcement' : 'announcements';
+  return {
+    queueDepth: input.combinedQueueDepth,
+    coachCopy: `Day ${input.nextGameDay}: ${input.combinedQueueDepth} coach ${noun} waiting in the delivery queue.`,
+  };
+}
+
+// --- source: engine/dedup-suppressed-batch-day-coach.ts ---
+export interface DedupSuppressedBatchDayCoach {
+  suppressedCount: number;
+  coachCopy: string | null;
+}
+
+export function buildDedupSuppressedBatchDayCoach(input: {
+  suppressedCount: number;
+  nextGameDay: number;
+}): DedupSuppressedBatchDayCoach {
+  if (input.suppressedCount <= 0) {
+    return { suppressedCount: 0, coachCopy: null };
+  }
+  const noun = input.suppressedCount === 1 ? 'line' : 'lines';
+  return {
+    suppressedCount: input.suppressedCount,
+    coachCopy: `Day ${input.nextGameDay}: ${input.suppressedCount} duplicate coach ${noun} skipped to protect screen reader calm.`,
+  };
+}
+
+// --- source: engine/legacy-nav-remember-applied-day-coach.ts ---
+export interface LegacyNavRememberAppliedDayCoach {
+  rememberedCount: number;
+  coachCopy: string | null;
+}
+
+export function buildLegacyNavRememberAppliedDayCoach(input: {
+  rememberedCount: number;
+  applied: boolean;
+  nextGameDay: number;
+}): LegacyNavRememberAppliedDayCoach {
+  if (!input.applied || input.rememberedCount <= 0) {
+    return { rememberedCount: 0, coachCopy: null };
+  }
+  const noun = input.rememberedCount === 1 ? 'panel' : 'panels';
+  return {
+    rememberedCount: input.rememberedCount,
+    coachCopy: `Day ${input.nextGameDay}: Auto-remembered ${input.rememberedCount} legacy nav ${noun} for deep-link reachability.`,
+  };
+}
+
+// --- source: engine/coach-announcement-volume-day-coach.ts ---
+export interface CoachAnnouncementVolumeDayCoach {
+  announcementCount: number;
+  coachCopy: string | null;
+}
+
+export function buildCoachAnnouncementVolumeDayCoach(input: {
+  coachAnnouncementCount: number;
+  nextGameDay: number;
+  minCount?: number;
+}): CoachAnnouncementVolumeDayCoach {
+  const min = input.minCount ?? 2;
+  if (input.coachAnnouncementCount < min) {
+    return { announcementCount: input.coachAnnouncementCount, coachCopy: null };
+  }
+  return {
+    announcementCount: input.coachAnnouncementCount,
+    coachCopy: `Day ${input.nextGameDay}: ${input.coachAnnouncementCount} unlock coach announcements prepared for this day advance.`,
+  };
+}
+
+// --- source: engine/round36-self-tests.ts ---
+export function runAgent22Round36SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r36_queue_depth',
+    'announcement queue depth day coach',
+    (() => {
+      const coach = buildAnnouncementQueueDepthDayCoach({ combinedQueueDepth: 3, nextGameDay: 4 });
+      return coach.queueDepth === 3 && Boolean(coach.coachCopy?.includes('Day 4'));
+    })()
+  );
+
+  check(
+    'r36_dedup_suppressed',
+    'dedup suppressed batch day coach',
+    (() => {
+      const coach = buildDedupSuppressedBatchDayCoach({ suppressedCount: 2, nextGameDay: 5 });
+      return coach.suppressedCount === 2 && Boolean(coach.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r36_legacy_remember',
+    'legacy nav remember applied day coach',
+    (() => {
+      const coach = buildLegacyNavRememberAppliedDayCoach({
+        rememberedCount: 2,
+        applied: true,
+        nextGameDay: 6,
+      });
+      return coach.rememberedCount === 2 && Boolean(coach.coachCopy?.includes('Day 6'));
+    })()
+  );
+
+  check(
+    'r36_announcement_volume',
+    'coach announcement volume day coach',
+    (() => {
+      const coach = buildCoachAnnouncementVolumeDayCoach({
+        coachAnnouncementCount: 3,
+        nextGameDay: 7,
+      });
+      return coach.announcementCount === 3 && Boolean(coach.coachCopy?.includes('Day 7'));
+    })()
+  );
+
+  check(
+    'r36_tick_queue',
+    'tick exposes announcement queue depth day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.announcementQueueDepthDayCoachCopy === 'string' || r.announcementQueueDepthDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r36_tick_dedup',
+    'tick exposes dedup suppressed batch day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.dedupSuppressedBatchDayCoachCopy === 'string' || r.dedupSuppressedBatchDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r36_tick_legacy_remember',
+    'tick exposes legacy nav remember applied day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn', autoRememberLegacyNav: true }
+      );
+      return typeof r.legacyNavRememberAppliedDayCoachCopy === 'string' || r.legacyNavRememberAppliedDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r36_tick_volume',
+    'tick exposes coach announcement volume day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.coachAnnouncementVolumeDayCoachCopy === 'string' || r.coachAnnouncementVolumeDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r36_queue_shallow',
+    'queue depth null when shallow',
+    (() => {
+      const coach = buildAnnouncementQueueDepthDayCoach({ combinedQueueDepth: 1, nextGameDay: 1 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r36_dedup_zero',
+    'dedup suppressed null when zero',
+    (() => {
+      const coach = buildDedupSuppressedBatchDayCoach({ suppressedCount: 0, nextGameDay: 2 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r36_remember_not_applied',
+    'legacy remember null when not applied',
+    (() => {
+      const coach = buildLegacyNavRememberAppliedDayCoach({
+        rememberedCount: 1,
+        applied: false,
+        nextGameDay: 3,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r36_volume_low',
+    'announcement volume null for single announcement',
+    (() => {
+      const coach = buildCoachAnnouncementVolumeDayCoach({ coachAnnouncementCount: 1, nextGameDay: 4 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round35-self-tests.ts ---
@@ -13689,6 +13960,18 @@ export function SimulationUiEvolutionBridge({
       ) : null}
       {result.multiUnlockBatchDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-multi-unlock-day">{result.multiUnlockBatchDayCoachCopy}</div>
+      ) : null}
+      {result.announcementQueueDepthDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-queue-depth-day">{result.announcementQueueDepthDayCoachCopy}</div>
+      ) : null}
+      {result.dedupSuppressedBatchDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-dedup-suppressed-day">{result.dedupSuppressedBatchDayCoachCopy}</div>
+      ) : null}
+      {result.legacyNavRememberAppliedDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-legacy-remember-day">{result.legacyNavRememberAppliedDayCoachCopy}</div>
+      ) : null}
+      {result.coachAnnouncementVolumeDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-announcement-volume-day">{result.coachAnnouncementVolumeDayCoachCopy}</div>
       ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">

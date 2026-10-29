@@ -117,3 +117,7 @@ export { ProgressionCoverageTierDayCoachStrip } from './ProgressionCoverageTierD
 export { RememberedPanelRosterDayCoachStrip } from './RememberedPanelRosterDayCoachStrip.js';
 export { CalmRecoverySuggestionDayCoachStrip } from './CalmRecoverySuggestionDayCoachStrip.js';
 export { MultiUnlockBatchDayCoachStrip } from './MultiUnlockBatchDayCoachStrip.js';
+export { AnnouncementQueueDepthDayCoachStrip } from './AnnouncementQueueDepthDayCoachStrip.js';
+export { DedupSuppressedBatchDayCoachStrip } from './DedupSuppressedBatchDayCoachStrip.js';
+export { LegacyNavRememberAppliedDayCoachStrip } from './LegacyNavRememberAppliedDayCoachStrip.js';
+export { CoachAnnouncementVolumeDayCoachStrip } from './CoachAnnouncementVolumeDayCoachStrip.js';
