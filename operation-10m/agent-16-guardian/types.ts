@@ -129,6 +129,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   accreditationStrainIndex: number;
   accreditationIntegrityScore: number;
   governanceCredibilityScore: number;
+  endorsementStrainIndex: number;
+  endorsementIntegrityScore: number;
+  governanceTrustworthinessScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
