@@ -5,11 +5,14 @@ import { applyMacroIndustrySpillover, readMacroIndustrySpilloverFromV101 } from 
 import { applyMacroTradeSpillover, readMacroTradeSpilloverFromV1015 } from './bridge-v1015-trade.ts';
 import { applyMacroGeographySpillover, readMacroGeographySpillover } from './bridge-economic-geography.ts';
 import { applyMacroCreditSpillover, readMacroCreditSpilloverFromV1016 } from './bridge-v1016-credit.ts';
+import { applyMacroInnovationSpillover, readMacroInnovationSpilloverFromV104 } from './bridge-v104-innovation.ts';
+import { applyMacroWorkforceSpillover, readMacroWorkforceSpilloverFromV107 } from './bridge-v107-workforce.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
 import { buildMacroStressIndexSnapshot } from './macro-stress-index.ts';
 import { buildMacroPolicyStanceSnapshot } from './policy-stance-snapshot.ts';
+import { buildMacroCapacitySnapshot } from './macro-capacity-snapshot.ts';
 import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
 import { V1014_MACRO_LIMITS } from './constants.ts';
 import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
@@ -79,13 +82,17 @@ export function computeNationalMacroEconomy(
   const tradeSpillover = readMacroTradeSpilloverFromV1015(inputs);
   const geographySpillover = readMacroGeographySpillover(inputs);
   const creditSpillover = readMacroCreditSpilloverFromV1016(inputs);
+  const innovationSpillover = readMacroInnovationSpilloverFromV104(inputs);
+  const workforceSpillover = readMacroWorkforceSpilloverFromV107(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
   const withTrade = applyMacroTradeSpillover(withIndustry, tradeSpillover);
   const withGeography = applyMacroGeographySpillover(withTrade, geographySpillover);
   const withCredit = applyMacroCreditSpillover(withGeography, creditSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withCredit, pushEv);
+  const withInnovation = applyMacroInnovationSpillover(withCredit, innovationSpillover);
+  const withWorkforce = applyMacroWorkforceSpillover(withInnovation, workforceSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withWorkforce, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -119,7 +126,19 @@ export function computeNationalMacroEconomy(
     industry: industrySpillover,
     trade: tradeSpillover,
     geography: geographySpillover,
-    credit: creditSpillover
+    credit: creditSpillover,
+    innovation: innovationSpillover,
+    workforce: workforceSpillover
+  });
+
+  const capacitySnapshot = buildMacroCapacitySnapshot({
+    state: {
+      utilizationIndex,
+      utilizationBand,
+      investmentClimate
+    },
+    industry: industrySpillover,
+    workforce: workforceSpillover
   });
 
   let nextPersisted: MacroEconomyPersisted = {
@@ -167,6 +186,9 @@ export function computeNationalMacroEconomy(
     tradeSpilloverSummary: tradeSpillover.summary,
     geographySpilloverSummary: geographySpillover.summary,
     creditSpilloverSummary: creditSpillover.summary,
+    innovationSpilloverSummary: innovationSpillover.summary,
+    workforceSpilloverSummary: workforceSpillover.summary,
+    capacitySnapshot,
     transmissionReport,
     stressIndex: {
       score: 0,

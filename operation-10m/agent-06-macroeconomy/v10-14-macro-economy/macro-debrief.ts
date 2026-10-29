@@ -16,6 +16,11 @@ export function composeMacroEconomyDebrief(state: NationalMacroEconomyState): Ma
   if (state.tradeSpilloverSummary) bullets.push(state.tradeSpilloverSummary);
   if (state.geographySpilloverSummary) bullets.push(state.geographySpilloverSummary);
   if (state.creditSpilloverSummary) bullets.push(state.creditSpilloverSummary);
+  if (state.innovationSpilloverSummary) bullets.push(state.innovationSpilloverSummary);
+  if (state.workforceSpilloverSummary) bullets.push(state.workforceSpilloverSummary);
+  if (state.capacitySnapshot?.band && state.capacitySnapshot.band !== 'balanced') {
+    bullets.push(state.capacitySnapshot.summary);
+  }
   if (state.transmissionReport?.dominantLayerId) {
     bullets.push(`Dominant transmission: ${state.transmissionReport.dominantLayerId}`);
   }

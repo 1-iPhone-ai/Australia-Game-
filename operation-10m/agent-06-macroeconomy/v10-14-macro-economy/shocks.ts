@@ -18,16 +18,13 @@ export type MacroEvidenceSink = (
   regionIds?: string[]
 ) => void;
 
-/** Apply innovation, workforce, and household demand adjustments. */
+/** Apply household demand structural adjustments (innovation/workforce via spillover bridges). */
 export function applyMacroStructuralAdjustments(
   inputs: MacroEconomyInputs,
   base: MacroScoreBundle,
   _pushEv: MacroEvidenceSink
 ): MacroScoreBundle {
   let { productivityScore, investmentScore, cycleScore } = base;
-
-  if (inputs.innovation?.nationalProductivityBonus) productivityScore += 2;
-  if (inputs.workforce?.nationalReadinessBand === 'strong') productivityScore += 3;
 
   const hhDemand = inputs.households?.domesticDemand?.level ?? inputs.households?.domesticDemand?.band;
   if (hhDemand === 'strong' || hhDemand === 'very_strong' || hhDemand === 'surging') cycleScore += 4;

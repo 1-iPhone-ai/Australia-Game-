@@ -95,6 +95,9 @@ export interface NationalMacroEconomyState {
   tradeSpilloverSummary: string | null;
   geographySpilloverSummary: string | null;
   creditSpilloverSummary: string | null;
+  innovationSpilloverSummary: string | null;
+  workforceSpilloverSummary: string | null;
+  capacitySnapshot: MacroCapacitySnapshot;
   transmissionReport: MacroTransmissionReport;
   stressIndex: MacroStressIndexSnapshot;
   policyStance: MacroPolicyStanceSnapshot;
@@ -156,6 +159,14 @@ export interface MacroTransmissionReport {
   netCycleNudge: number;
   netInvestmentNudge: number;
   netProductivityNudge: number;
+}
+
+export type MacroCapacityBand = 'deep_slack' | 'slack' | 'balanced' | 'tight' | 'binding';
+
+export interface MacroCapacitySnapshot {
+  index: number;
+  band: MacroCapacityBand;
+  summary: string;
 }
 
 export type MacroStressBand = 'calm' | 'elevated' | 'acute';
@@ -819,6 +830,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Credit crunch',
     shockIds: ['credit_contraction', 'global_slowdown'],
     description: 'Spread widening with external demand fade.'
+  },
+  {
+    id: 'labor_innovation_shock',
+    label: 'Labor & innovation shock',
+    shockIds: ['global_slowdown', 'credit_contraction'],
+    description: 'External fade with labor and innovation pipeline stress (harness overlay).'
   }
 ];
 
@@ -985,16 +1002,13 @@ export type MacroEvidenceSink = (
   regionIds?: string[]
 ) => void;
 
-/** Apply innovation, workforce, and household demand adjustments. */
+/** Apply household demand structural adjustments (innovation/workforce via spillover bridges). */
 export function applyMacroStructuralAdjustments(
   inputs: MacroEconomyInputs,
   base: MacroScoreBundle,
   _pushEv: MacroEvidenceSink
 ): MacroScoreBundle {
   let { productivityScore, investmentScore, cycleScore } = base;
-
-  if (inputs.innovation?.nationalProductivityBonus) productivityScore += 2;
-  if (inputs.workforce?.nationalReadinessBand === 'strong') productivityScore += 3;
 
   const hhDemand = inputs.households?.domesticDemand?.level ?? inputs.households?.domesticDemand?.band;
   if (hhDemand === 'strong' || hhDemand === 'very_strong' || hhDemand === 'surging') cycleScore += 4;
@@ -1670,6 +1684,142 @@ export function applyMacroCreditSpillover(
 }
 
 
+// --- source: bridge-v104-innovation.ts ---
+
+export interface MacroInnovationSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only innovation / R&D spillover (never mutates innovation state). */
+export function readMacroInnovationSpilloverFromV104(inputs: MacroEconomyInputs): MacroInnovationSpillover {
+  const inn: any = inputs.innovation;
+  if (!inn) return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  if (inn.nationalProductivityBonus) {
+    productivityNudge += 2;
+    summary = 'National innovation bonus lifts macro productivity read.';
+  }
+
+  const momentum = String(inn.momentum?.band ?? inn.rAndDMomentum ?? inn.pipelineBand ?? '');
+  if (momentum === 'accelerating' || momentum === 'strong') {
+    productivityNudge += 2;
+    investmentNudge += 1;
+    cycleNudge += 1;
+    summary = (summary ? summary + ' ' : '') + 'Accelerating innovation pipeline supports macro cycle interpretation.';
+  } else if (momentum === 'stalled' || momentum === 'weak' || momentum === 'contracting') {
+    productivityNudge -= 2;
+    cycleNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Stalled innovation pipeline drags macro productivity read.';
+  }
+
+  const adoption = String(inn.adoption?.band ?? inn.diffusionBand ?? '');
+  if (adoption === 'broad' || adoption === 'leading') {
+    productivityNudge += 1.5;
+    summary = (summary ? summary + ' ' : '') + 'Broad technology adoption supports productivity.';
+  } else if (adoption === 'narrow' || adoption === 'lagging') {
+    productivityNudge -= 1;
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -4, 4),
+    investmentNudge: v1014macroClamp(investmentNudge, -2, 4),
+    productivityNudge: v1014macroClamp(productivityNudge, -6, 8),
+    summary
+  };
+}
+
+export function applyMacroInnovationSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroInnovationSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: bridge-v107-workforce.ts ---
+
+export interface MacroWorkforceSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only workforce / labor market spillover (never mutates workforce state). */
+export function readMacroWorkforceSpilloverFromV107(inputs: MacroEconomyInputs): MacroWorkforceSpillover {
+  const wf: any = inputs.workforce;
+  if (!wf) return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const readiness = String(wf.nationalReadinessBand ?? wf.readiness?.band ?? wf.skillsBand ?? '');
+  if (readiness === 'strong' || readiness === 'leading') {
+    productivityNudge += 3;
+    cycleNudge += 1;
+    summary = 'Strong national workforce readiness lifts macro productivity read.';
+  } else if (readiness === 'weak' || readiness === 'strained') {
+    productivityNudge -= 2;
+    cycleNudge -= 1;
+    summary = 'Weak workforce readiness weighs on macro productivity interpretation.';
+  } else if (readiness === 'critical' || readiness === 'shortage') {
+    productivityNudge -= 4;
+    investmentNudge -= 2;
+    cycleNudge -= 2;
+    summary = 'Critical labor shortages bind macro capacity and investment upside.';
+  }
+
+  const slack = String(wf.laborMarket?.slack ?? wf.marketSlack ?? wf.tightnessBand ?? '');
+  if (slack === 'tight' || slack === 'very_tight' || slack === 'shortage') {
+    cycleNudge += 1;
+    investmentNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Tight labor markets support cycle but can cap investment scaling.';
+  } else if (slack === 'slack' || slack === 'deep_slack' || slack === 'surplus') {
+    cycleNudge -= 1;
+    productivityNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Slack labor markets signal macro underutilization.';
+  }
+
+  const mismatch = Boolean(wf.skillsMismatch ?? wf.structuralMismatch);
+  if (mismatch) {
+    productivityNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Skills mismatch reduces effective macro productivity.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -6, 4),
+    investmentNudge: v1014macroClamp(investmentNudge, -4, 2),
+    productivityNudge: v1014macroClamp(productivityNudge, -8, 6),
+    summary
+  };
+}
+
+export function applyMacroWorkforceSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroWorkforceSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
 // --- source: macro-transmission.ts ---
 
 export function buildMacroTransmissionReport(params: {
@@ -1680,6 +1830,8 @@ export function buildMacroTransmissionReport(params: {
   trade: MacroTradeSpillover;
   geography: MacroGeographySpillover;
   credit: MacroCreditSpillover;
+  innovation: MacroInnovationSpillover;
+  workforce: MacroWorkforceSpillover;
 }): MacroTransmissionReport {
   const layers: MacroTransmissionLayer[] = [
     layer(
@@ -1701,6 +1853,22 @@ export function buildMacroTransmissionReport(params: {
       params.credit.investmentNudge,
       params.credit.productivityNudge,
       params.credit.summary
+    ),
+    layer(
+      'v10.4_innovation',
+      'Innovation & productivity',
+      params.innovation.cycleNudge,
+      params.innovation.investmentNudge,
+      params.innovation.productivityNudge,
+      params.innovation.summary
+    ),
+    layer(
+      'v10.7_workforce',
+      'Workforce & labor market',
+      params.workforce.cycleNudge,
+      params.workforce.investmentNudge,
+      params.workforce.productivityNudge,
+      params.workforce.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);
@@ -1856,6 +2024,70 @@ export function computeMacroCounterfactualDelta(
 }
 
 
+// --- source: macro-capacity-snapshot.ts ---
+
+export type { MacroCapacityBand, MacroCapacitySnapshot };
+
+/** Composite capacity read from utilization, industry, and workforce spillovers. */
+export function buildMacroCapacitySnapshot(params: {
+  state: Pick<NationalMacroEconomyState, 'utilizationIndex' | 'utilizationBand' | 'investmentClimate'>;
+  industry: MacroIndustrySpillover;
+  workforce: MacroWorkforceSpillover;
+}): MacroCapacitySnapshot {
+  const utilComponent = (params.state.utilizationIndex - 50) / 50;
+  const industryComponent = params.industry.productivityNudge / 6;
+  const workforceComponent = -(params.workforce.productivityNudge / 8);
+  const raw = utilComponent * 0.45 + industryComponent * 0.25 + workforceComponent * 0.3;
+  const index = v1014macroClamp(Math.round((50 + raw * 35) * 10) / 10, 0, 100);
+
+  let band: MacroCapacityBand = 'balanced';
+  if (index >= 78) band = 'binding';
+  else if (index >= 62) band = 'tight';
+  else if (index <= 28) band = 'deep_slack';
+  else if (index <= 42) band = 'slack';
+
+  let summary = `Capacity index ${index.toFixed(0)} (${band}) from utilization and labor/industry reads.`;
+  if (band === 'binding' && params.state.investmentClimate === 'active') {
+    summary += ' Binding capacity may limit further investment acceleration.';
+  }
+  if (band === 'deep_slack' && params.state.utilizationBand === 'slack') {
+    summary += ' Deep slack suggests substantial macro headroom before constraints bind.';
+  }
+
+  return { index, band, summary };
+}
+
+
+// --- source: scenario-compare.ts ---
+
+export interface MacroScenarioCompareRow {
+  scenarioId: string;
+  delta: MacroCounterfactualDelta;
+  stressScore: number;
+  capacityIndex: number;
+}
+
+/** Compare baseline against named input overlays (single turn, shared persisted path). */
+export function compareMacroEconomyScenarios(
+  baseInputs: MacroEconomyInputs,
+  scenarios: Array<{ id: string; overlay: Partial<MacroEconomyInputs> }>,
+  persisted: Parameters<typeof computeNationalMacroEconomy>[1],
+  prev: NationalMacroEconomyState | null
+): MacroScenarioCompareRow[] {
+  return scenarios.map(({ id, overlay }) => {
+    const delta = computeMacroCounterfactualDelta(baseInputs, overlay, persisted, prev);
+    const stressed = computeNationalMacroEconomy({ ...baseInputs, ...overlay, turn: baseInputs.turn }, persisted, prev)
+      .state;
+    return {
+      scenarioId: id,
+      delta,
+      stressScore: stressed.stressIndex.score,
+      capacityIndex: stressed.capacitySnapshot.index
+    };
+  });
+}
+
+
 // --- source: regression-harness.ts ---
 
 export interface MacroRegressionCheck {
@@ -1876,10 +2108,12 @@ export function runMacroEconomyRegressionHarness(options?: {
   turns?: number;
   scenarioId?: string;
   includeCreditStress?: boolean;
+  includeLaborInnovationStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
   const includeCreditStress = Boolean(options?.includeCreditStress);
+  const includeLaborInnovationStress = Boolean(options?.includeLaborInnovationStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -1897,7 +2131,16 @@ export function runMacroEconomyRegressionHarness(options?: {
         t % 7 === 0
           ? { termsOfTrade: { band: 'weak' }, exportMomentum: -4 }
           : { termsOfTrade: { band: 'stable' }, exportMomentum: 1 },
-      economicGeography: { connectivity: { band: t % 11 === 0 ? 'fragmented' : 'moderate' }, urbanizationIndex: 58 }
+      economicGeography: { connectivity: { band: t % 11 === 0 ? 'fragmented' : 'moderate' }, urbanizationIndex: 58 },
+      workforce: includeLaborInnovationStress
+        ? {
+            nationalReadinessBand: t % 6 === 0 ? 'critical' : 'strained',
+            laborMarket: { slack: t % 4 === 0 ? 'tight' : 'moderate' }
+          }
+        : undefined,
+      innovation: includeLaborInnovationStress
+        ? { momentum: { band: t % 5 === 0 ? 'stalled' : 'moderate' }, nationalProductivityBonus: t % 8 === 0 }
+        : undefined
     });
     const { state, persisted: nextP } = computeNationalMacroEconomy(inputs, persisted, prev);
     persisted = nextP;
@@ -1926,7 +2169,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   });
   checks.push({
     id: 'transmission_present',
-    passed: Boolean(prev?.transmissionReport?.layers?.length && prev.transmissionReport.layers.length >= 6),
+    passed: Boolean(prev?.transmissionReport?.layers?.length && prev.transmissionReport.layers.length >= 8),
     detail: String(prev?.transmissionReport?.layers?.length ?? 0)
   });
   if (includeCreditStress && prev) {
@@ -1934,6 +2177,13 @@ export function runMacroEconomyRegressionHarness(options?: {
       id: 'stress_index_present',
       passed: Number.isFinite(prev.stressIndex.score),
       detail: String(prev.stressIndex.score)
+    });
+  }
+  if (includeLaborInnovationStress && prev) {
+    checks.push({
+      id: 'capacity_snapshot_finite',
+      passed: Number.isFinite(prev.capacitySnapshot.index),
+      detail: String(prev.capacitySnapshot.index)
     });
   }
   checks.push({
@@ -2240,6 +2490,40 @@ export function evaluateMacroConsistencyGates(
       summary: 'Credit layer dominates macro transmission under tight financial conditions.'
     });
   }
+  const wf: any = inputs.workforce;
+  const readiness = String(wf?.nationalReadinessBand ?? wf?.readiness?.band ?? '');
+  if (
+    (readiness === 'critical' || readiness === 'shortage') &&
+    (state.utilizationBand === 'tight' || state.utilizationBand === 'overextended')
+  ) {
+    gates.push({
+      id: 'workforce_utilization_bind',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Labor shortages coincide with tight utilization — capacity constraint likely binding.'
+    });
+  }
+  const inn: any = inputs.innovation;
+  const innMomentum = String(inn?.momentum?.band ?? inn?.rAndDMomentum ?? '');
+  if (
+    (state.cyclePhase === 'contraction' || state.cyclePhase === 'trough') &&
+    (innMomentum === 'stalled' || innMomentum === 'weak' || innMomentum === 'contracting')
+  ) {
+    gates.push({
+      id: 'innovation_contraction_drag',
+      triggered: true,
+      severity: 'info',
+      summary: 'Innovation pipeline weakness amplifies macro contraction read.'
+    });
+  }
+  if (state.capacitySnapshot?.band === 'binding' && state.investmentClimate === 'frozen') {
+    gates.push({
+      id: 'capacity_investment_paradox',
+      triggered: true,
+      severity: 'info',
+      summary: 'Binding capacity read coexists with frozen investment — financing or policy may be the bind, not physical capacity.'
+    });
+  }
   return gates;
 }
 
@@ -2261,6 +2545,11 @@ export function composeMacroEconomyDebrief(state: NationalMacroEconomyState): Ma
   if (state.tradeSpilloverSummary) bullets.push(state.tradeSpilloverSummary);
   if (state.geographySpilloverSummary) bullets.push(state.geographySpilloverSummary);
   if (state.creditSpilloverSummary) bullets.push(state.creditSpilloverSummary);
+  if (state.innovationSpilloverSummary) bullets.push(state.innovationSpilloverSummary);
+  if (state.workforceSpilloverSummary) bullets.push(state.workforceSpilloverSummary);
+  if (state.capacitySnapshot?.band && state.capacitySnapshot.band !== 'balanced') {
+    bullets.push(state.capacitySnapshot.summary);
+  }
   if (state.transmissionReport?.dominantLayerId) {
     bullets.push(`Dominant transmission: ${state.transmissionReport.dominantLayerId}`);
   }
@@ -2422,13 +2711,17 @@ export function computeNationalMacroEconomy(
   const tradeSpillover = readMacroTradeSpilloverFromV1015(inputs);
   const geographySpillover = readMacroGeographySpillover(inputs);
   const creditSpillover = readMacroCreditSpilloverFromV1016(inputs);
+  const innovationSpillover = readMacroInnovationSpilloverFromV104(inputs);
+  const workforceSpillover = readMacroWorkforceSpilloverFromV107(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
   const withTrade = applyMacroTradeSpillover(withIndustry, tradeSpillover);
   const withGeography = applyMacroGeographySpillover(withTrade, geographySpillover);
   const withCredit = applyMacroCreditSpillover(withGeography, creditSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withCredit, pushEv);
+  const withInnovation = applyMacroInnovationSpillover(withCredit, innovationSpillover);
+  const withWorkforce = applyMacroWorkforceSpillover(withInnovation, workforceSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withWorkforce, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -2462,7 +2755,19 @@ export function computeNationalMacroEconomy(
     industry: industrySpillover,
     trade: tradeSpillover,
     geography: geographySpillover,
-    credit: creditSpillover
+    credit: creditSpillover,
+    innovation: innovationSpillover,
+    workforce: workforceSpillover
+  });
+
+  const capacitySnapshot = buildMacroCapacitySnapshot({
+    state: {
+      utilizationIndex,
+      utilizationBand,
+      investmentClimate
+    },
+    industry: industrySpillover,
+    workforce: workforceSpillover
   });
 
   let nextPersisted: MacroEconomyPersisted = {
@@ -2510,6 +2815,9 @@ export function computeNationalMacroEconomy(
     tradeSpilloverSummary: tradeSpillover.summary,
     geographySpilloverSummary: geographySpillover.summary,
     creditSpilloverSummary: creditSpillover.summary,
+    innovationSpilloverSummary: innovationSpillover.summary,
+    workforceSpilloverSummary: workforceSpillover.summary,
+    capacitySnapshot,
     transmissionReport,
     stressIndex: {
       score: 0,
@@ -3164,9 +3472,11 @@ export function runAgent06Round4SelfTests(): {
     industry: readMacroIndustrySpilloverFromV101(makeDefaultV1014_MACRO_TestInputs()),
     trade,
     geography: geo,
-    credit: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null }
+    credit: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null },
+    innovation: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null },
+    workforce: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null }
   });
-  record('R4-03', 'Transmission report has six layers', report.layers.length === 6, String(report.layers.length));
+  record('R4-03', 'Transmission report has eight layers', report.layers.length === 8, String(report.layers.length));
   record('R4-04', 'Net cycle nudge finite', Number.isFinite(report.netCycleNudge), String(report.netCycleNudge));
 
   const integrated = computeNationalMacroEconomy(
@@ -3177,7 +3487,7 @@ export function runAgent06Round4SelfTests(): {
     null,
     null
   );
-  record('R4-05', 'State carries transmission report', integrated.state.transmissionReport.layers.length === 6, 'ok');
+  record('R4-05', 'State carries transmission report', integrated.state.transmissionReport.layers.length === 8, 'ok');
   record('R4-06', 'Trade summary on state', integrated.state.tradeSpilloverSummary != null, String(integrated.state.tradeSpilloverSummary));
 
   const stress = computeNationalMacroEconomy(
@@ -3281,6 +3591,84 @@ export function runAgent06Round5SelfTests(): {
   );
 
   record('R5-10', 'Transmission includes credit layer', integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.16_credit'), 'ok');
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: round6-self-tests.ts ---
+
+export function runAgent06Round6SelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const innovation = readMacroInnovationSpilloverFromV104(
+    makeDefaultV1014_MACRO_TestInputs({ innovation: { momentum: { band: 'accelerating' }, nationalProductivityBonus: true } })
+  );
+  record('R6-01', 'Accelerating innovation lifts productivity read', innovation.productivityNudge > 3, String(innovation.productivityNudge));
+
+  const workforce = readMacroWorkforceSpilloverFromV107(
+    makeDefaultV1014_MACRO_TestInputs({ workforce: { nationalReadinessBand: 'critical', laborMarket: { slack: 'tight' } } })
+  );
+  record('R6-02', 'Critical workforce drags productivity', workforce.productivityNudge < -3, String(workforce.productivityNudge));
+
+  const integrated = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({
+      innovation: { nationalProductivityBonus: true },
+      workforce: { nationalReadinessBand: 'strong' }
+    }),
+    null,
+    null
+  );
+  record('R6-03', 'State exposes innovation summary', integrated.state.innovationSpilloverSummary != null, 'ok');
+  record('R6-04', 'State exposes workforce summary', integrated.state.workforceSpilloverSummary != null, 'ok');
+  record('R6-05', 'Eight transmission layers', integrated.state.transmissionReport.layers.length === 8, String(integrated.state.transmissionReport.layers.length));
+
+  const capacity = buildMacroCapacitySnapshot({
+    state: integrated.state,
+    industry: readMacroIndustrySpilloverFromV101(makeDefaultV1014_MACRO_TestInputs()),
+    workforce
+  });
+  record('R6-06', 'Capacity snapshot finite', Number.isFinite(capacity.index), String(capacity.index));
+
+  record(
+    'R6-07',
+    'Transmission includes innovation layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.4_innovation'),
+    integrated.state.transmissionReport.layers.map(l => l.systemId).join(',')
+  );
+
+  const compare = compareMacroEconomyScenarios(
+    makeDefaultV1014_MACRO_TestInputs({ turn: 9 }),
+    [
+      { id: 'strong_labor', overlay: { workforce: { nationalReadinessBand: 'strong' } } },
+      { id: 'stalled_innovation', overlay: { innovation: { momentum: { band: 'stalled' } } } }
+    ],
+    null,
+    null
+  );
+  record('R6-08', 'Scenario compare returns two rows', compare.length === 2, String(compare.length));
+  record(
+    'R6-09',
+    'Strong labor raises productivity vs stalled innovation',
+    compare[0].delta.productivityScoreDelta >= compare[1].delta.productivityScoreDelta,
+    `${compare[0].delta.productivityScoreDelta}/${compare[1].delta.productivityScoreDelta}`
+  );
+
+  const harness = runMacroEconomyRegressionHarness({
+    turns: 10,
+    scenarioId: 'labor_innovation_shock',
+    includeLaborInnovationStress: true
+  });
+  record('R6-10', 'Labor/innovation regression harness', harness.allPassed, harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok');
 
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
@@ -3400,6 +3788,11 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
 
   const round5 = runAgent06Round5SelfTests();
   for (const r of round5.results) {
+    check(r.id, r.name, r.passed, r.detail);
+  }
+
+  const round6 = runAgent06Round6SelfTests();
+  for (const r of round6.results) {
     check(r.id, r.name, r.passed, r.detail);
   }
 

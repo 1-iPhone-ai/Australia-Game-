@@ -38,10 +38,14 @@ const FILES = [
   'bridge-v1015-trade.ts',
   'bridge-economic-geography.ts',
   'bridge-v1016-credit.ts',
+  'bridge-v104-innovation.ts',
+  'bridge-v107-workforce.ts',
   'macro-transmission.ts',
   'macro-stress-index.ts',
   'policy-stance-snapshot.ts',
   'counterfactual-delta.ts',
+  'macro-capacity-snapshot.ts',
+  'scenario-compare.ts',
   'regression-harness.ts',
   'cycle-memory.ts',
   'sector-decomposition.ts',
@@ -60,6 +64,7 @@ const FILES = [
   'round3-self-tests.ts',
   'round4-self-tests.ts',
   'round5-self-tests.ts',
+  'round6-self-tests.ts',
   'self-tests.ts',
   'react/MacroEconomyInspectorLab.tsx'
 ];

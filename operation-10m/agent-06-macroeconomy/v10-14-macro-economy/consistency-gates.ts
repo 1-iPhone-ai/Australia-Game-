@@ -97,5 +97,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Credit layer dominates macro transmission under tight financial conditions.'
     });
   }
+  const wf: any = inputs.workforce;
+  const readiness = String(wf?.nationalReadinessBand ?? wf?.readiness?.band ?? '');
+  if (
+    (readiness === 'critical' || readiness === 'shortage') &&
+    (state.utilizationBand === 'tight' || state.utilizationBand === 'overextended')
+  ) {
+    gates.push({
+      id: 'workforce_utilization_bind',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Labor shortages coincide with tight utilization — capacity constraint likely binding.'
+    });
+  }
+  const inn: any = inputs.innovation;
+  const innMomentum = String(inn?.momentum?.band ?? inn?.rAndDMomentum ?? '');
+  if (
+    (state.cyclePhase === 'contraction' || state.cyclePhase === 'trough') &&
+    (innMomentum === 'stalled' || innMomentum === 'weak' || innMomentum === 'contracting')
+  ) {
+    gates.push({
+      id: 'innovation_contraction_drag',
+      triggered: true,
+      severity: 'info',
+      summary: 'Innovation pipeline weakness amplifies macro contraction read.'
+    });
+  }
+  if (state.capacitySnapshot?.band === 'binding' && state.investmentClimate === 'frozen') {
+    gates.push({
+      id: 'capacity_investment_paradox',
+      triggered: true,
+      severity: 'info',
+      summary: 'Binding capacity read coexists with frozen investment — financing or policy may be the bind, not physical capacity.'
+    });
+  }
   return gates;
 }

@@ -91,6 +91,9 @@ export interface NationalMacroEconomyState {
   tradeSpilloverSummary: string | null;
   geographySpilloverSummary: string | null;
   creditSpilloverSummary: string | null;
+  innovationSpilloverSummary: string | null;
+  workforceSpilloverSummary: string | null;
+  capacitySnapshot: MacroCapacitySnapshot;
   transmissionReport: MacroTransmissionReport;
   stressIndex: MacroStressIndexSnapshot;
   policyStance: MacroPolicyStanceSnapshot;
@@ -152,6 +155,14 @@ export interface MacroTransmissionReport {
   netCycleNudge: number;
   netInvestmentNudge: number;
   netProductivityNudge: number;
+}
+
+export type MacroCapacityBand = 'deep_slack' | 'slack' | 'balanced' | 'tight' | 'binding';
+
+export interface MacroCapacitySnapshot {
+  index: number;
+  band: MacroCapacityBand;
+  summary: string;
 }
 
 export type MacroStressBand = 'calm' | 'elevated' | 'acute';

@@ -42,6 +42,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Credit crunch',
     shockIds: ['credit_contraction', 'global_slowdown'],
     description: 'Spread widening with external demand fade.'
+  },
+  {
+    id: 'labor_innovation_shock',
+    label: 'Labor & innovation shock',
+    shockIds: ['global_slowdown', 'credit_contraction'],
+    description: 'External fade with labor and innovation pipeline stress (harness overlay).'
   }
 ];
 

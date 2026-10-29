@@ -4,6 +4,8 @@ import type { MacroHouseholdSpillover } from './bridge-v1013-households.ts';
 import type { MacroIndustrySpillover } from './bridge-v101-industries.ts';
 import type { MacroFiscalSpillover } from './bridge-v1012-fiscal.ts';
 import type { MacroCreditSpillover } from './bridge-v1016-credit.ts';
+import type { MacroInnovationSpillover } from './bridge-v104-innovation.ts';
+import type { MacroWorkforceSpillover } from './bridge-v107-workforce.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 export function buildMacroTransmissionReport(params: {
@@ -14,6 +16,8 @@ export function buildMacroTransmissionReport(params: {
   trade: MacroTradeSpillover;
   geography: MacroGeographySpillover;
   credit: MacroCreditSpillover;
+  innovation: MacroInnovationSpillover;
+  workforce: MacroWorkforceSpillover;
 }): MacroTransmissionReport {
   const layers: MacroTransmissionLayer[] = [
     layer(
@@ -35,6 +39,22 @@ export function buildMacroTransmissionReport(params: {
       params.credit.investmentNudge,
       params.credit.productivityNudge,
       params.credit.summary
+    ),
+    layer(
+      'v10.4_innovation',
+      'Innovation & productivity',
+      params.innovation.cycleNudge,
+      params.innovation.investmentNudge,
+      params.innovation.productivityNudge,
+      params.innovation.summary
+    ),
+    layer(
+      'v10.7_workforce',
+      'Workforce & labor market',
+      params.workforce.cycleNudge,
+      params.workforce.investmentNudge,
+      params.workforce.productivityNudge,
+      params.workforce.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);
