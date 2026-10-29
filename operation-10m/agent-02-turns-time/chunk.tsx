@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
 // @ts-nocheck
-// content-sha256-prefix: b6204b967fdbb54a
+// content-sha256-prefix: 38332bf734e219a6
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -8851,6 +8851,173 @@ export function verifyBatchNationalTickSessionWave54IntegrationReplayParity(
   return { parityOk, baseline, replay };
 }
 
+// --- src/batch-national-tick-session-wave55-integration-seal.ts ---
+
+/** O10-232 integration baseline (wave 50 24/24 projection). */
+export const WAVE55_INTEGRATION_BASELINE_SHA = 'c4bbec67';
+export const WAVE55_PROJECTED_LOC = 3_054_213;
+export const WAVE55_ROUND = 51;
+export const WAVE55_TICKET = 'O10-247';
+
+export interface BatchNationalTickSessionWave55IntegrationSealResult {
+  ok: boolean;
+  commitOk: boolean;
+  baselineSha: typeof WAVE55_INTEGRATION_BASELINE_SHA;
+  projectedLoc: typeof WAVE55_PROJECTED_LOC;
+  wave: typeof WAVE55_ROUND;
+  ticket: typeof WAVE55_TICKET;
+  commit: BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditResult;
+  sealDigest: string;
+}
+
+/**
+ * Round 51 wave 51: seal the round-47 national-tick audit-gate commit against
+ * the O10-232 integration baseline so Agent 25 assembly can reject a chunk
+ * built on the wrong projection SHA / LOC.
+ */
+export function sealBatchNationalTickSessionWave55Integration(
+  engine: TurnTimeEngine,
+  budget: TurnAdvanceBudgetState,
+  tickBatches: readonly (readonly NationalTickSessionWaveTickSpec[])[],
+): BatchNationalTickSessionWave55IntegrationSealResult {
+  const commit =
+    commitBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAudit(
+      engine,
+      budget,
+      tickBatches,
+    );
+  const commitOk = commit.ok;
+  const sealDigest = fnv1a64Hex(
+    JSON.stringify({
+      ticket: WAVE55_TICKET,
+      wave: WAVE55_ROUND,
+      baselineSha: WAVE55_INTEGRATION_BASELINE_SHA,
+      projectedLoc: WAVE55_PROJECTED_LOC,
+      commitDigest: commit.commitDigest,
+      latchDigest: commit.export.latchDigest,
+      commitOk,
+    }),
+  );
+  return {
+    ok: commitOk,
+    commitOk,
+    baselineSha: WAVE55_INTEGRATION_BASELINE_SHA,
+    projectedLoc: WAVE55_PROJECTED_LOC,
+    wave: WAVE55_ROUND,
+    ticket: WAVE55_TICKET,
+    commit,
+    sealDigest,
+  };
+}
+
+// --- src/batch-national-tick-session-wave55-integration-export.ts ---
+
+export interface BatchNationalTickSessionWave55IntegrationExport {
+  ok: boolean;
+  commitOk: boolean;
+  baselineSha: string;
+  projectedLoc: number;
+  wave: number;
+  ticket: string;
+  commitDigest: string;
+  latchDigest: string;
+  sealDigest: string;
+}
+
+/**
+ * Round 51 wave 51: flatten the O10-232 integration seal for Agent 25 manifest hooks.
+ */
+export function exportBatchNationalTickSessionWave55Integration(
+  seal: BatchNationalTickSessionWave55IntegrationSealResult,
+): BatchNationalTickSessionWave55IntegrationExport {
+  return {
+    ok: seal.ok,
+    commitOk: seal.commitOk,
+    baselineSha: seal.baselineSha,
+    projectedLoc: seal.projectedLoc,
+    wave: seal.wave,
+    ticket: seal.ticket,
+    commitDigest: seal.commit.commitDigest,
+    latchDigest: seal.commit.export.latchDigest,
+    sealDigest: seal.sealDigest,
+  };
+}
+
+// --- src/batch-national-tick-session-wave55-integration-export-compare.ts ---
+
+export interface BatchNationalTickSessionWave55IntegrationExportCompareResult {
+  ok: boolean;
+  sealDigestMatch: boolean;
+  commitDigestMatch: boolean;
+  latchDigestMatch: boolean;
+  baselineShaMatch: boolean;
+  projectedLocMatch: boolean;
+  okFlagMatch: boolean;
+}
+
+/**
+ * Round 51 wave 51: compare two O10-232 integration-seal exports.
+ */
+export function compareBatchNationalTickSessionWave55IntegrationExports(
+  baseline: BatchNationalTickSessionWave55IntegrationExport,
+  candidate: BatchNationalTickSessionWave55IntegrationExport,
+): BatchNationalTickSessionWave55IntegrationExportCompareResult {
+  const sealDigestMatch = baseline.sealDigest === candidate.sealDigest;
+  const commitDigestMatch = baseline.commitDigest === candidate.commitDigest;
+  const latchDigestMatch = baseline.latchDigest === candidate.latchDigest;
+  const baselineShaMatch = baseline.baselineSha === candidate.baselineSha;
+  const projectedLocMatch = baseline.projectedLoc === candidate.projectedLoc;
+  const okFlagMatch = baseline.ok === candidate.ok;
+  return {
+    ok:
+      sealDigestMatch &&
+      commitDigestMatch &&
+      latchDigestMatch &&
+      baselineShaMatch &&
+      projectedLocMatch &&
+      okFlagMatch,
+    sealDigestMatch,
+    commitDigestMatch,
+    latchDigestMatch,
+    baselineShaMatch,
+    projectedLocMatch,
+    okFlagMatch,
+  };
+}
+
+// --- src/batch-national-tick-session-wave55-integration-replay-parity.ts ---
+
+export interface BatchNationalTickSessionWave55IntegrationReplayParityResult {
+  parityOk: boolean;
+  baseline: BatchNationalTickSessionWave55IntegrationSealResult;
+  replay: BatchNationalTickSessionWave55IntegrationSealResult;
+}
+
+/**
+ * Round 51 wave 51: two integration seals from the same engine snapshot must
+ * share sealDigest, commitDigest, and the O10-232 baseline pin.
+ */
+export function verifyBatchNationalTickSessionWave55IntegrationReplayParity(
+  engine: TurnTimeEngine,
+  budget: TurnAdvanceBudgetState,
+  tickBatches: readonly (readonly NationalTickSessionWaveTickSpec[])[],
+): BatchNationalTickSessionWave55IntegrationReplayParityResult {
+  const snapshot = engine.snapshot();
+  const baseline = sealBatchNationalTickSessionWave55Integration(engine, budget, tickBatches);
+  const replay = sealBatchNationalTickSessionWave55Integration(
+    TurnTimeEngine.fromSnapshot(snapshot),
+    budget,
+    tickBatches,
+  );
+  const parityOk =
+    baseline.sealDigest === replay.sealDigest &&
+    baseline.commit.commitDigest === replay.commit.commitDigest &&
+    baseline.ok === replay.ok &&
+    baseline.baselineSha === replay.baselineSha &&
+    baseline.projectedLoc === replay.projectedLoc;
+  return { parityOk, baseline, replay };
+}
+
 // --- src/batch-national-tick-session-wave52-integration-seal.ts ---
 
 /** O10-232 integration baseline (wave 50 24/24 projection). */
@@ -9168,7 +9335,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '5.14.0';
+export const AGENT_02_MODULE_VERSION = '5.16.0';
 
 
 
