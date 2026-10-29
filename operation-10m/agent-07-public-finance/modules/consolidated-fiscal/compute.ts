@@ -65,6 +65,8 @@ import { buildPortfolioOutturnReprioritisationBridgeReport } from '../portfolio-
 import { buildTaxSensitivityIntegrityCoherenceReport } from '../tax-sensitivity-integrity-coherence/compute';
 import { buildInfrastructureStressEnvelopeBridgeReport } from '../infrastructure-stress-envelope-bridge/compute';
 import { buildBudgetNeutralProgramCoherenceReport } from '../budget-neutral-program-coherence/compute';
+import { buildSovereignCreditStressBridgeReport } from '../sovereign-credit-stress-bridge/compute';
+import { buildMediumTermAnchorIntegrityCoherenceReport } from '../medium-term-anchor-integrity-coherence/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -430,6 +432,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     budgetNeutralPackages,
     budgetNeutralForwardCoherence,
     programPerformanceFiscalBridge
+  );
+  const sovereignCreditStressBridge = buildSovereignCreditStressBridgeReport(
+    turn,
+    v1012,
+    sovereignCreditOutlook,
+    fiscalStress,
+    debtFiscalCouplingRegister
+  );
+  const mediumTermAnchorIntegrityCoherence = buildMediumTermAnchorIntegrityCoherenceReport(
+    turn,
+    v1012,
+    mediumTermRevenueAnchor,
+    forwardEstimatesIntegrity,
+    revenueIntegrityForwardBridge
   );
 
   checks.push({
@@ -1316,12 +1332,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `net=${budgetNeutralPackages.aggregateNetPoints}, bridge=${programPerformanceFiscalBridge.bridgeFeedbackGapPoints}`
   });
 
+  checks.push({
+    id: 'CF125',
+    label: 'Sovereign credit stress bridge within band',
+    passed: sovereignCreditStressBridge.withinCreditStressBand || v1012.pressure === 'critical',
+    detail: `gap=${sovereignCreditStressBridge.bridgeGapPoints}, checks=${sovereignCreditStressBridge.checks.filter(c => c.passed).length}/${sovereignCreditStressBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF126',
+    label: 'Medium-term anchor integrity coherence within band',
+    passed: mediumTermAnchorIntegrityCoherence.withinAnchorIntegrityBand || v1012.pressure === 'critical',
+    detail: `gap=${mediumTermAnchorIntegrityCoherence.aggregateCoherenceGapPoints}, checks=${mediumTermAnchorIntegrityCoherence.checks.filter(c => c.passed).length}/${mediumTermAnchorIntegrityCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF127',
+    label: 'Credit stress aligned with debt coupling',
+    passed: sovereignCreditStressBridge.alignedWithDebtCoupling,
+    detail: `spread=${sovereignCreditOutlook.impliedSpreadBps}, coupling=${debtFiscalCouplingRegister.couplingStressPoints}`
+  });
+
+  checks.push({
+    id: 'CF128',
+    label: 'Anchor integrity aligned with forward bridge',
+    passed: mediumTermAnchorIntegrityCoherence.alignedWithIntegrityForwardBridge,
+    detail: `drift=${mediumTermRevenueAnchor.anchorDriftPoints}, bridge=${revenueIntegrityForwardBridge.bridgeGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 90
+    layerCount: 92
   };
 }

@@ -73,6 +73,8 @@ import { runPortfolioOutturnReprioritisationBridgeSelfTests } from './modules/po
 import { runTaxSensitivityIntegrityCoherenceSelfTests } from './modules/tax-sensitivity-integrity-coherence/self-tests';
 import { runInfrastructureStressEnvelopeBridgeSelfTests } from './modules/infrastructure-stress-envelope-bridge/self-tests';
 import { runBudgetNeutralProgramCoherenceSelfTests } from './modules/budget-neutral-program-coherence/self-tests';
+import { runSovereignCreditStressBridgeSelfTests } from './modules/sovereign-credit-stress-bridge/self-tests';
+import { runMediumTermAnchorIntegrityCoherenceSelfTests } from './modules/medium-term-anchor-integrity-coherence/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -155,6 +157,8 @@ ok = runSuite('Portfolio outturn reprioritisation bridge', runPortfolioOutturnRe
 ok = runSuite('Tax sensitivity integrity coherence', runTaxSensitivityIntegrityCoherenceSelfTests) && ok;
 ok = runSuite('Infrastructure stress envelope bridge', runInfrastructureStressEnvelopeBridgeSelfTests) && ok;
 ok = runSuite('Budget neutral program coherence', runBudgetNeutralProgramCoherenceSelfTests) && ok;
+ok = runSuite('Sovereign credit stress bridge', runSovereignCreditStressBridgeSelfTests) && ok;
+ok = runSuite('Medium-term anchor integrity coherence', runMediumTermAnchorIntegrityCoherenceSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

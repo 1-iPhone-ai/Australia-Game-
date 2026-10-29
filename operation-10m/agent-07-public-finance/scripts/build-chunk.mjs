@@ -140,6 +140,10 @@ const FILES = [
   'infrastructure-stress-envelope-bridge/compute.ts',
   'budget-neutral-program-coherence/types.ts',
   'budget-neutral-program-coherence/compute.ts',
+  'sovereign-credit-stress-bridge/types.ts',
+  'sovereign-credit-stress-bridge/compute.ts',
+  'medium-term-anchor-integrity-coherence/types.ts',
+  'medium-term-anchor-integrity-coherence/compute.ts',
   'infrastructure-financing/types.ts',
   'infrastructure-financing/compute.ts',
   'recurring-commitments/types.ts',
@@ -247,7 +251,9 @@ const FILES = [
   'portfolio-outturn-reprioritisation-bridge/self-tests.ts',
   'tax-sensitivity-integrity-coherence/self-tests.ts',
   'infrastructure-stress-envelope-bridge/self-tests.ts',
-  'budget-neutral-program-coherence/self-tests.ts'
+  'budget-neutral-program-coherence/self-tests.ts',
+  'sovereign-credit-stress-bridge/self-tests.ts',
+  'medium-term-anchor-integrity-coherence/self-tests.ts'
 ];
 
 function stripModulePreamble(source) {
