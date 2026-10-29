@@ -228,6 +228,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Wave 36 export & projection stress',
     shockIds: ['global_slowdown', 'credit_contraction'],
     description: 'Blocked automation wave 36 export with drifted forecast wave 36 projection sync (harness overlay).'
+  },
+  {
+    id: 'wave37_ui_dashboard_export_stress',
+    label: 'Wave 37 UI & dashboard export stress',
+    shockIds: ['stimulus_bounce', 'terms_of_trade_squeeze'],
+    description: 'Blocked UI wave 37 export with unclear dashboard wave 37 export (harness overlay).'
   }
 ];
 

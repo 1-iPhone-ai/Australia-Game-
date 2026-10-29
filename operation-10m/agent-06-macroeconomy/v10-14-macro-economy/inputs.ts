@@ -239,6 +239,16 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
       params?.forecastingLab?.wave36ProjectionSync ??
       params?.macroForecasts?.wave36ProjectionSync ??
       params?.nationalForecasts?.wave36Sync,
+    uiResponsivenessWave37Export:
+      params?.uiResponsivenessWave37Export ??
+      params?.uiResponsiveness?.wave37Export ??
+      params?.gameUi?.responsivenessWave37Export ??
+      params?.nationalUi?.responsivenessWave37Export,
+    dashboardClarityWave37Export:
+      params?.dashboardClarityWave37Export ??
+      params?.dashboardClarity?.wave37Export ??
+      params?.dashboards?.clarityWave37Export ??
+      params?.nationalDashboards?.clarityWave37Export,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };
