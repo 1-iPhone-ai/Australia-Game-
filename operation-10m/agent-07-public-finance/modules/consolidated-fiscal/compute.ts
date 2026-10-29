@@ -77,6 +77,8 @@ import { buildRecurringForwardOutlookCoherenceReport } from '../recurring-forwar
 import { buildTaxLedgerSensitivityBridgeReport } from '../tax-ledger-sensitivity-bridge/compute';
 import { buildDebtServiceForwardCoherenceReport } from '../debt-service-forward-coherence/compute';
 import { buildStatutoryOutlookBufferBridgeReport } from '../statutory-outlook-buffer-bridge/compute';
+import { buildContingencyOutlookIntegrityBridgeReport } from '../contingency-outlook-integrity-bridge/compute';
+import { buildAppropriationCarryTimingBridgeReport } from '../appropriation-carry-timing-bridge/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -526,6 +528,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     statutory,
     fiscalBufferCoherence,
     outlook
+  );
+  const contingencyOutlookIntegrityBridge = buildContingencyOutlookIntegrityBridgeReport(
+    turn,
+    v1012,
+    contingencyDrawdownRegister,
+    forwardEstimatesIntegrity,
+    outlook
+  );
+  const appropriationCarryTimingBridge = buildAppropriationCarryTimingBridgeReport(
+    turn,
+    v1012,
+    appropriationTimingCoherence,
+    appropriationCarryForward,
+    revenueForwardReconciliation
   );
 
   checks.push({
@@ -1580,12 +1596,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `operating=${statutory.netOperatingBalance}, buffer=${fiscalBufferCoherence.aggregateBufferPoints}`
   });
 
+  checks.push({
+    id: 'CF149',
+    label: 'Contingency outlook integrity bridge within band',
+    passed: contingencyOutlookIntegrityBridge.withinContingencyOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${contingencyOutlookIntegrityBridge.bridgeGapPoints}, checks=${contingencyOutlookIntegrityBridge.checks.filter(c => c.passed).length}/${contingencyOutlookIntegrityBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF150',
+    label: 'Appropriation carry timing bridge within band',
+    passed: appropriationCarryTimingBridge.withinAppropriationCarryTimingBand || v1012.pressure === 'critical',
+    detail: `gap=${appropriationCarryTimingBridge.bridgeGapPoints}, checks=${appropriationCarryTimingBridge.checks.filter(c => c.passed).length}/${appropriationCarryTimingBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF151',
+    label: 'Contingency outlook aligned with forward integrity',
+    passed: contingencyOutlookIntegrityBridge.alignedWithForwardIntegrity,
+    detail: `flex=${contingencyDrawdownRegister.closingFlexPoints}, revision=${forwardEstimatesIntegrity.aggregateRevisionGap}`
+  });
+
+  checks.push({
+    id: 'CF152',
+    label: 'Appropriation carry aligned with revenue forward',
+    passed: appropriationCarryTimingBridge.alignedWithRevenueForward,
+    detail: `carry=${appropriationCarryForward.aggregateCarryForwardPoints}, forward=${revenueForwardReconciliation.aggregateGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 102
+    layerCount: 104
   };
 }

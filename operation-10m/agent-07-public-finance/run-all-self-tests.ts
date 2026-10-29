@@ -85,6 +85,8 @@ import { runRecurringForwardOutlookCoherenceSelfTests } from './modules/recurrin
 import { runTaxLedgerSensitivityBridgeSelfTests } from './modules/tax-ledger-sensitivity-bridge/self-tests';
 import { runDebtServiceForwardCoherenceSelfTests } from './modules/debt-service-forward-coherence/self-tests';
 import { runStatutoryOutlookBufferBridgeSelfTests } from './modules/statutory-outlook-buffer-bridge/self-tests';
+import { runContingencyOutlookIntegrityBridgeSelfTests } from './modules/contingency-outlook-integrity-bridge/self-tests';
+import { runAppropriationCarryTimingBridgeSelfTests } from './modules/appropriation-carry-timing-bridge/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -179,6 +181,8 @@ ok = runSuite('Recurring forward outlook coherence', runRecurringForwardOutlookC
 ok = runSuite('Tax ledger sensitivity bridge', runTaxLedgerSensitivityBridgeSelfTests) && ok;
 ok = runSuite('Debt service forward coherence', runDebtServiceForwardCoherenceSelfTests) && ok;
 ok = runSuite('Statutory outlook buffer bridge', runStatutoryOutlookBufferBridgeSelfTests) && ok;
+ok = runSuite('Contingency outlook integrity bridge', runContingencyOutlookIntegrityBridgeSelfTests) && ok;
+ok = runSuite('Appropriation carry timing bridge', runAppropriationCarryTimingBridgeSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

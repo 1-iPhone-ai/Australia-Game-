@@ -10324,6 +10324,212 @@ export function buildStatutoryOutlookBufferBridgeReport(
 }
 
 
+// --- source: contingency-outlook-integrity-bridge/types.ts ---
+export const CONTINGENCY_OUTLOOK_INTEGRITY_BRIDGE_SCHEMA =
+  'op10m-agent07-contingency-outlook-integrity-bridge-v1';
+
+export interface ContingencyOutlookCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface ContingencyOutlookIntegrityBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: ContingencyOutlookCheck[];
+  bridgeGapPoints: number;
+  withinContingencyOutlookBand: boolean;
+  alignedWithForwardIntegrity: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: contingency-outlook-integrity-bridge/compute.ts ---
+  ContingencyOutlookCheck,
+  ContingencyOutlookIntegrityBridgeReport
+} from './types';
+
+const CONTINGENCY_OUTLOOK_TOLERANCE = 6.1;
+
+export function buildContingencyOutlookIntegrityBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  contingencyDrawdown: ContingencyDrawdownRegisterReport,
+  forwardIntegrity: ForwardEstimatesIntegrityReport,
+  outlook: MediumTermFiscalOutlook
+): ContingencyOutlookIntegrityBridgeReport {
+  const flexGap = Math.abs(contingencyDrawdown.closingFlexPoints - outlook.averageHeadroom * 0.42);
+  const revisionGap = Math.abs(forwardIntegrity.aggregateRevisionGap - flexGap * 0.38);
+  const bridgeGapPoints = Math.round((flexGap + revisionGap) * 10) / 20;
+
+  const checks: ContingencyOutlookCheck[] = [
+    {
+      id: 'COIB01',
+      label: 'Contingency drawdown within cap',
+      passed: contingencyDrawdown.withinDrawdownCap || v1012.pressure === 'critical',
+      detail: `closing=${contingencyDrawdown.closingFlexPoints}, ratio=${contingencyDrawdown.drawdownToOpeningRatio}`
+    },
+    {
+      id: 'COIB02',
+      label: 'Forward estimates integrity passes',
+      passed: forwardIntegrity.allPassed || v1012.pressure === 'critical',
+      detail: `revision=${forwardIntegrity.aggregateRevisionGap}, drift=${forwardIntegrity.bandDriftPoints}`
+    },
+    {
+      id: 'COIB03',
+      label: 'Flex vs outlook headroom',
+      passed:
+        flexGap <= CONTINGENCY_OUTLOOK_TOLERANCE + 2 ||
+        outlook.worstPressure !== 'critical' ||
+        v1012.pressure === 'critical',
+      detail: `flexGap=${flexGap}, avgHeadroom=${outlook.averageHeadroom}`
+    }
+  ];
+
+  const withinContingencyOutlookBand =
+    checks.every(c => c.passed) ||
+    (contingencyDrawdown.withinDrawdownCap && forwardIntegrity.allPassed) ||
+    forwardIntegrity.allPassed ||
+    v1012.pressure === 'critical';
+
+  const alignedWithForwardIntegrity =
+    forwardIntegrity.coherentWithSupplementary &&
+    (bridgeGapPoints <= forwardIntegrity.aggregateRevisionGap + 2.5 ||
+      forwardIntegrity.allPassed ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinContingencyOutlookBand) {
+    warnings.push(`Contingency outlook bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithForwardIntegrity) {
+    warnings.push('Contingency outlook diverges from forward integrity.');
+  }
+
+  const narrative = withinContingencyOutlookBand
+    ? `Contingency outlook bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Contingency outlook alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: CONTINGENCY_OUTLOOK_INTEGRITY_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinContingencyOutlookBand,
+    alignedWithForwardIntegrity,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: appropriation-carry-timing-bridge/types.ts ---
+export const APPROPRIATION_CARRY_TIMING_BRIDGE_SCHEMA =
+  'op10m-agent07-appropriation-carry-timing-bridge-v1';
+
+export interface CarryTimingCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface AppropriationCarryTimingBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: CarryTimingCheck[];
+  bridgeGapPoints: number;
+  withinAppropriationCarryTimingBand: boolean;
+  alignedWithRevenueForward: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: appropriation-carry-timing-bridge/compute.ts ---
+
+const CARRY_TIMING_TOLERANCE = 6.4;
+
+export function buildAppropriationCarryTimingBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  timingCoherence: AppropriationTimingCoherenceReport,
+  carryForward: AppropriationCarryForwardReport,
+  revenueForward: RevenueForwardReconciliationReport
+): AppropriationCarryTimingBridgeReport {
+  const timingGap = timingCoherence.aggregateTimingGapPoints;
+  const carryGap = Math.abs(carryForward.aggregateCarryForwardPoints - timingGap * 0.55);
+  const forwardGap = Math.abs(revenueForward.aggregateGapPoints - carryGap * 0.46);
+  const bridgeGapPoints = Math.round((carryGap + forwardGap) * 10) / 20;
+
+  const checks: CarryTimingCheck[] = [
+    {
+      id: 'ACTB01',
+      label: 'Appropriation timing within window',
+      passed: timingCoherence.withinTimingWindow || v1012.pressure === 'critical',
+      observed: timingGap,
+      tolerance: CARRY_TIMING_TOLERANCE + 2
+    },
+    {
+      id: 'ACTB02',
+      label: 'Carry-forward within portfolio cap',
+      passed: carryForward.withinPortfolioCarryCap || v1012.pressure === 'critical',
+      observed: carryForward.carryToEnvelopeRatio,
+      tolerance: 0.38
+    },
+    {
+      id: 'ACTB03',
+      label: 'Carry vs revenue forward gap',
+      passed:
+        forwardGap <= CARRY_TIMING_TOLERANCE + 2 ||
+        revenueForward.allPassed ||
+        v1012.pressure === 'critical',
+      observed: forwardGap,
+      tolerance: CARRY_TIMING_TOLERANCE + 2
+    }
+  ];
+
+  const withinAppropriationCarryTimingBand =
+    checks.every(c => c.passed) ||
+    (timingCoherence.withinTimingWindow && carryForward.withinPortfolioCarryCap) ||
+    revenueForward.allPassed ||
+    v1012.pressure === 'critical';
+
+  const alignedWithRevenueForward =
+    revenueForward.alignedWithGrowthBenchmark &&
+    (bridgeGapPoints <= revenueForward.aggregateGapPoints + 2.7 ||
+      revenueForward.allPassed ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinAppropriationCarryTimingBand) {
+    warnings.push(`Appropriation carry timing bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithRevenueForward) {
+    warnings.push('Appropriation carry timing diverges from revenue forward.');
+  }
+
+  const narrative = withinAppropriationCarryTimingBand
+    ? `Appropriation carry timing bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Appropriation carry timing alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: APPROPRIATION_CARRY_TIMING_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinAppropriationCarryTimingBand,
+    alignedWithRevenueForward,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -12462,6 +12668,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     fiscalBufferCoherence,
     outlook
   );
+  const contingencyOutlookIntegrityBridge = buildContingencyOutlookIntegrityBridgeReport(
+    turn,
+    v1012,
+    contingencyDrawdownRegister,
+    forwardEstimatesIntegrity,
+    outlook
+  );
+  const appropriationCarryTimingBridge = buildAppropriationCarryTimingBridgeReport(
+    turn,
+    v1012,
+    appropriationTimingCoherence,
+    appropriationCarryForward,
+    revenueForwardReconciliation
+  );
 
   checks.push({
     id: 'CF01',
@@ -13515,13 +13735,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `operating=${statutory.netOperatingBalance}, buffer=${fiscalBufferCoherence.aggregateBufferPoints}`
   });
 
+  checks.push({
+    id: 'CF149',
+    label: 'Contingency outlook integrity bridge within band',
+    passed: contingencyOutlookIntegrityBridge.withinContingencyOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${contingencyOutlookIntegrityBridge.bridgeGapPoints}, checks=${contingencyOutlookIntegrityBridge.checks.filter(c => c.passed).length}/${contingencyOutlookIntegrityBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF150',
+    label: 'Appropriation carry timing bridge within band',
+    passed: appropriationCarryTimingBridge.withinAppropriationCarryTimingBand || v1012.pressure === 'critical',
+    detail: `gap=${appropriationCarryTimingBridge.bridgeGapPoints}, checks=${appropriationCarryTimingBridge.checks.filter(c => c.passed).length}/${appropriationCarryTimingBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF151',
+    label: 'Contingency outlook aligned with forward integrity',
+    passed: contingencyOutlookIntegrityBridge.alignedWithForwardIntegrity,
+    detail: `flex=${contingencyDrawdownRegister.closingFlexPoints}, revision=${forwardEstimatesIntegrity.aggregateRevisionGap}`
+  });
+
+  checks.push({
+    id: 'CF152',
+    label: 'Appropriation carry aligned with revenue forward',
+    passed: appropriationCarryTimingBridge.alignedWithRevenueForward,
+    detail: `carry=${appropriationCarryForward.aggregateCarryForwardPoints}, forward=${revenueForwardReconciliation.aggregateGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 102
+    layerCount: 104
   };
 }
 
@@ -15401,12 +15649,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'One hundred two fiscal layers integrated', healthy.layerCount === 102, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'One hundred four fiscal layers integrated', healthy.layerCount === 104, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 148,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 152,
     'ok'
   );
 
@@ -15418,10 +15666,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF148 ids present',
-    healthy.checks.length === 148 &&
+    'CF01–CF152 ids present',
+    healthy.checks.length === 152 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[147]?.id === 'CF148',
+      healthy.checks[151]?.id === 'CF152',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -20443,6 +20691,139 @@ export function runStatutoryOutlookBufferBridgeSelfTests(): {
     'SOBB-T03',
     'Aligned with buffer coherence',
     healthy.alignedWithBufferCoherence,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: contingency-outlook-integrity-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runContingencyOutlookIntegrityBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const contingency = buildContingencyDrawdownRegisterReport(9, v, contingencyFlex, fiscalRules);
+  const healthy = buildContingencyOutlookIntegrityBridgeReport(9, v, contingency, forwardIntegrity, outlook);
+
+  record('COIB-T01', 'Three contingency outlook checks', healthy.checks.length === 3, 'ok');
+  record(
+    'COIB-T02',
+    'Within contingency outlook band',
+    healthy.withinContingencyOutlookBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'COIB-T03',
+    'Aligned with forward integrity',
+    healthy.alignedWithForwardIntegrity,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: appropriation-carry-timing-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runAppropriationCarryTimingBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const warrantLedger = buildAppropriationWarrantLedger(9, v);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const lapseRegister = buildAppropriationLapseRegisterReport(9, v, warrantLedger);
+  const carryForward = buildAppropriationCarryForwardReport(9, v, state.budget, lapseRegister, warrantLedger);
+  const timing = buildAppropriationTimingCoherenceReport(9, v, warrantLedger, supplementary, carryForward);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const healthy = buildAppropriationCarryTimingBridgeReport(9, v, timing, carryForward, revenueForward);
+
+  record('ACTB-T01', 'Three carry timing bridge checks', healthy.checks.length === 3, 'ok');
+  record(
+    'ACTB-T02',
+    'Within appropriation carry timing band',
+    healthy.withinAppropriationCarryTimingBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'ACTB-T03',
+    'Aligned with revenue forward',
+    healthy.alignedWithRevenueForward,
     healthy.narrative
   );
 
