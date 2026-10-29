@@ -214,6 +214,10 @@ import { computeNationalMentorshipAdvocacyCouplingBrief } from './mentorship-adv
 import { computeNationalAdvocacyResonanceOutlook } from './advocacy-resonance-outlook';
 import { computeNationalSubjectAdvocacyReadinessBrief } from './subject-advocacy-readiness-brief';
 import { computeNationalWorkforceAdvocacyIndex } from './national-workforce-advocacy-index';
+import { computeNationalAdvocacyInclusionCouplingBrief } from './advocacy-inclusion-coupling-brief';
+import { computeNationalInclusionEquityOutlook } from './inclusion-equity-outlook';
+import { computeNationalSubjectInclusionReadinessBrief } from './subject-inclusion-readiness-brief';
+import { computeNationalWorkforceInclusionIndex } from './national-workforce-inclusion-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -2523,6 +2527,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'advocacy steward note'
   );
   check('R4016', advocacyEaseForRegion('NSW', 'technology') > 0, 'advocacy ease for region');
+
+  check('R4101', Boolean(r1.state.advocacyInclusionCouplingBrief?.band), 'advocacy inclusion on state');
+  check(
+    'R4102',
+    (r1.state.advocacyInclusionCouplingBrief?.advocacyDrag ?? 0) >= 0,
+    'advocacy inclusion drag'
+  );
+  check('R4103', Boolean(r1.state.inclusionEquityOutlook?.band), 'inclusion equity on state');
+  check(
+    'R4104',
+    (r1.state.inclusionEquityOutlook?.advocacyDrag ?? 0) >= 0,
+    'inclusion equity advocacy drag'
+  );
+  check('R4105', Boolean(r1.state.subjectInclusionReadinessBrief?.band), 'subject inclusion on state');
+  check('R4106', Boolean(r1.state.nationalWorkforceInclusionIndex?.band), 'workforce inclusion on state');
+  check(
+    'R4107',
+    detectLaborDemographicsQuery('advocacy inclusion coupling') === 'advocacy_inclusion_coupling',
+    'GI advocacy inclusion detect'
+  );
+  check(
+    'R4108',
+    detectLaborDemographicsQuery('inclusion equity') === 'inclusion_equity',
+    'GI inclusion equity detect'
+  );
+  check(
+    'R4109',
+    detectLaborDemographicsQuery('subject inclusion readiness') === 'subject_inclusion_readiness',
+    'GI subject inclusion detect'
+  );
+  check(
+    'R4110',
+    detectLaborDemographicsQuery('workforce inclusion') === 'workforce_inclusion',
+    'GI workforce inclusion detect'
+  );
+  check(
+    'R4111',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_inclusion').headline.length > 5,
+    'GI workforce inclusion answer'
+  );
+  const advocacyInclusionOnly = computeNationalAdvocacyInclusionCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceAdvocacyIndex
+  );
+  check('R4112', advocacyInclusionOnly.summary.length > 10, 'advocacy inclusion standalone summary');
+  const inclusionEquityOnly = computeNationalInclusionEquityOutlook(
+    r1.state,
+    r1.state.advocacyResonanceOutlook
+  );
+  check('R4113', inclusionEquityOnly.band.length > 3, 'inclusion equity band string');
+  const subjectInclusionOnly = computeNationalSubjectInclusionReadinessBrief(
+    r1.state,
+    r1.state.subjectAdvocacyReadinessBrief,
+    r1.state.nationalWorkforceAdvocacyIndex
+  );
+  check('R4114', subjectInclusionOnly.inclusionDrag >= 0, 'subject inclusion drag');
+  check(
+    'R4115',
+    computeNationalWorkforceInclusionIndex(
+      rHhBad.state,
+      rHhBad.state.advocacyInclusionCouplingBrief,
+      rHhBad.state.inclusionEquityOutlook,
+      rHhBad.state.subjectInclusionReadinessBrief
+    ).stewardNote.length > 8,
+    'inclusion steward note'
+  );
+  check('R4116', inclusionEaseForRegion('NSW', 'technology') > 0, 'inclusion ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

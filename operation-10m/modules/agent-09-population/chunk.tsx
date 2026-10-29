@@ -333,6 +333,10 @@ export interface NationalLaborDemographicsState {
   advocacyResonanceOutlook?: NationalAdvocacyResonanceOutlook;
   subjectAdvocacyReadinessBrief?: NationalSubjectAdvocacyReadinessBrief;
   nationalWorkforceAdvocacyIndex?: NationalWorkforceAdvocacyIndex;
+  advocacyInclusionCouplingBrief?: NationalAdvocacyInclusionCouplingBrief;
+  inclusionEquityOutlook?: NationalInclusionEquityOutlook;
+  subjectInclusionReadinessBrief?: NationalSubjectInclusionReadinessBrief;
+  nationalWorkforceInclusionIndex?: NationalWorkforceInclusionIndex;
 }
 
 export type MigrationShockKind =
@@ -1965,6 +1969,54 @@ export interface NationalWorkforceAdvocacyIndex {
   stewardNote: string;
 }
 
+export type AdvocacyInclusionCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalAdvocacyInclusionCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: AdvocacyInclusionCouplingBand;
+  advocacyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type InclusionEquityBand = 'ebbing' | 'patchy' | 'rising' | 'equitable';
+
+export interface NationalInclusionEquityOutlook {
+  turn: number;
+  equityIndex: number;
+  band: InclusionEquityBand;
+  advocacyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectInclusionReadinessBand =
+  | 'below_inclusion'
+  | 'approaching'
+  | 'inclusion_ready'
+  | 'advocacy_locked';
+
+export interface NationalSubjectInclusionReadinessBrief {
+  turn: number;
+  inclusionIndex: number;
+  band: SubjectInclusionReadinessBand;
+  inclusionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceInclusionBand = 'fragile' | 'thin' | 'elevated' | 'inclusion';
+
+export interface NationalWorkforceInclusionIndex {
+  turn: number;
+  inclusionIndex: number;
+  band: WorkforceInclusionBand;
+  inclusionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -3175,7 +3227,11 @@ export type LaborGiQueryTopic =
   | 'mentorship_advocacy_coupling'
   | 'advocacy_resonance'
   | 'subject_advocacy_readiness'
-  | 'workforce_advocacy';
+  | 'workforce_advocacy'
+  | 'advocacy_inclusion_coupling'
+  | 'inclusion_equity'
+  | 'subject_inclusion_readiness'
+  | 'workforce_inclusion';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -3334,6 +3390,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_advocacy_readiness';
   }
   if (/\b(workforce advocacy|advocacy index labor workforce)/.test(q)) return 'workforce_advocacy';
+  if (/\b(advocacy inclusion|advocacy-inclusion coupling)/.test(q)) return 'advocacy_inclusion_coupling';
+  if (/\b(inclusion equity|inclusion pipeline equity)/.test(q)) return 'inclusion_equity';
+  if (/\b(subject inclusion readiness|inclusion readiness subject)/.test(q)) {
+    return 'subject_inclusion_readiness';
+  }
+  if (/\b(workforce inclusion|inclusion index labor workforce)/.test(q)) return 'workforce_inclusion';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -4505,6 +4567,38 @@ export function answerLaborDemographicsQuestion(
         inference: state.nationalWorkforceAdvocacyIndex?.stewardNote || state.summary,
         projection: 'Workforce advocacy synthesizes mentorship-advocacy coupling, advocacy resonance, and subject advocacy.'
       };
+    case 'advocacy_inclusion_coupling':
+      return {
+        topic,
+        headline: state.advocacyInclusionCouplingBrief?.summary || 'Advocacy-inclusion coupling unavailable.',
+        fact: `Coupling band ${state.advocacyInclusionCouplingBrief?.band ?? 'unknown'}; advocacy drag ${Math.round(state.advocacyInclusionCouplingBrief?.advocacyDrag ?? 0)}.`,
+        inference: state.advocacyInclusionCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce advocacy with inclusion levers — wave 41 / O10-213 depth.'
+      };
+    case 'inclusion_equity':
+      return {
+        topic,
+        headline: state.inclusionEquityOutlook?.summary || 'Inclusion equity unavailable.',
+        fact: `Equity band ${state.inclusionEquityOutlook?.band ?? 'unknown'}; advocacy drag ${Math.round(state.inclusionEquityOutlook?.advocacyDrag ?? 0)}.`,
+        inference: state.inclusionEquityOutlook?.stewardNote || state.outlook,
+        projection: 'Equity blends inclusion levers with advocacy resonance — bounded indices only.'
+      };
+    case 'subject_inclusion_readiness':
+      return {
+        topic,
+        headline: state.subjectInclusionReadinessBrief?.summary || 'Subject inclusion readiness unavailable.',
+        fact: `Inclusion band ${state.subjectInclusionReadinessBrief?.band ?? 'unknown'}; inclusion drag ${Math.round(state.subjectInclusionReadinessBrief?.inclusionDrag ?? 0)}.`,
+        inference: state.subjectInclusionReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject inclusion readiness gates subject advocacy against workforce advocacy for O10-213 wave 41.'
+      };
+    case 'workforce_inclusion':
+      return {
+        topic,
+        headline: state.nationalWorkforceInclusionIndex?.summary || 'Workforce inclusion unavailable.',
+        fact: `Inclusion band ${state.nationalWorkforceInclusionIndex?.band ?? 'unknown'}; inclusion drag ${Math.round(state.nationalWorkforceInclusionIndex?.inclusionDrag ?? 0)}.`,
+        inference: state.nationalWorkforceInclusionIndex?.stewardNote || state.summary,
+        projection: 'Workforce inclusion synthesizes advocacy-inclusion coupling, inclusion equity, and subject inclusion.'
+      };
     default:
       return {
         topic: 'national_summary',
@@ -5613,6 +5707,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceAdvocacyIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceAdvocacyIndex.stewardNote);
+  }
+  if (
+    state.advocacyInclusionCouplingBrief?.band === 'decoupled' ||
+    state.advocacyInclusionCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.advocacyInclusionCouplingBrief.stewardNote);
+  }
+  if (
+    state.inclusionEquityOutlook?.band === 'ebbing' ||
+    state.inclusionEquityOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.inclusionEquityOutlook.stewardNote);
+  }
+  if (
+    state.subjectInclusionReadinessBrief?.band === 'below_inclusion' ||
+    state.subjectInclusionReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectInclusionReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceInclusionIndex?.band === 'fragile' ||
+    state.nationalWorkforceInclusionIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceInclusionIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -16482,6 +16600,278 @@ export function computeNationalWorkforceAdvocacyIndex(
 }
 
 
+// --- source: advocacy-inclusion-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type AdvocacyInclusionCouplingBand,
+  type NationalAdvocacyInclusionCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalWorkforceAdvocacyIndex
+} from './types';
+
+function couplingBand(index: number): AdvocacyInclusionCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-41 / wave-41 advocacy-inclusion coupling — advocacy × inclusion (O10-213). */
+export function computeNationalAdvocacyInclusionCouplingBrief(
+  state: NationalLaborDemographicsState,
+  advocacy: NationalWorkforceAdvocacyIndex | null | undefined
+): NationalAdvocacyInclusionCouplingBrief {
+  if (!state.enabled || !advocacy) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      advocacyDrag: 0,
+      summary: 'Advocacy-inclusion coupling idle — workforce advocacy unavailable.',
+      stewardNote: 'Compute workforce advocacy before inclusion coupling guidance.'
+    };
+  }
+
+  let inclusionLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    inclusionLift += inclusionEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  inclusionLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const advocacyDrag = v1014laborClamp(
+    advocacy.advocacyDrag * 0.48 + (advocacy.band === 'fragile' || advocacy.band === 'thin' ? 11 : 3)
+  );
+  const advocacyLift =
+    advocacy.band === 'elevated' || advocacy.band === 'advocacy'
+      ? advocacy.advocacyIndex * 0.24
+      : advocacy.advocacyIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + inclusionLift * 21 + advocacyLift - advocacyDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained advocacy-inclusion link — deploy inclusion levers before wave-41 inclusion commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard inclusion equity spikes that drain advocacy buffers.'
+        : 'Amplified coupling — pair inclusion packs with subject inclusion readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    advocacyDrag,
+    summary: `Advocacy-inclusion coupling ${band} (index ${Math.round(couplingIndex)}); advocacy drag ${Math.round(advocacyDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: inclusion-equity-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type InclusionEquityBand,
+  type NationalAdvocacyResonanceOutlook,
+  type NationalInclusionEquityOutlook,
+  type NationalLaborDemographicsState
+} from './types';
+
+function equityBand(index: number): InclusionEquityBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'equitable';
+}
+
+export function computeNationalInclusionEquityOutlook(
+  state: NationalLaborDemographicsState,
+  advocacyResonance: NationalAdvocacyResonanceOutlook | null | undefined
+): NationalInclusionEquityOutlook {
+  if (!state.enabled || !advocacyResonance) {
+    return {
+      turn: state.turn,
+      equityIndex: 50,
+      band: 'patchy',
+      advocacyDrag: 0,
+      summary: 'Inclusion equity idle — advocacy resonance unavailable.',
+      stewardNote: 'Compute advocacy resonance before inclusion equity guidance.'
+    };
+  }
+
+  let inclusionLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    inclusionLift += inclusionEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  inclusionLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const advocacyDrag = v1014laborClamp(
+    advocacyResonance.mentorshipDrag * 0.46 +
+      (advocacyResonance.band === 'ebbing' || advocacyResonance.band === 'patchy' ? 10 : 3)
+  );
+  const resonanceLift =
+    advocacyResonance.band === 'rising' || advocacyResonance.band === 'resonant'
+      ? advocacyResonance.resonanceIndex * 0.2
+      : advocacyResonance.resonanceIndex * 0.1;
+
+  const equityIndex = v1014laborClamp(24 + inclusionLift * 22 + resonanceLift - advocacyDrag);
+  const band = equityBand(equityIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy inclusion equity — deploy inclusion levers before subject inclusion assembly.'
+      : band === 'equitable'
+        ? 'Equitable band — verify advocacy-inclusion coupling before auto workforce pushes.'
+        : 'Rising equity — align with advocacy resonance outlook checks.';
+
+  return {
+    turn: state.turn,
+    equityIndex,
+    band,
+    advocacyDrag,
+    summary: `National inclusion equity ${band} (index ${Math.round(equityIndex)}); advocacy drag ${Math.round(advocacyDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-inclusion-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectAdvocacyReadinessBrief,
+  type NationalSubjectInclusionReadinessBrief,
+  type NationalWorkforceAdvocacyIndex,
+  type SubjectInclusionReadinessBand
+} from './types';
+
+function inclusionBand(index: number): SubjectInclusionReadinessBand {
+  if (index <= 34) return 'below_inclusion';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'inclusion_ready';
+  return 'advocacy_locked';
+}
+
+/** Round-41 / wave-41 subject inclusion readiness — advocacy × workforce advocacy (O10-213). */
+export function computeNationalSubjectInclusionReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectAdvocacy: NationalSubjectAdvocacyReadinessBrief | null | undefined,
+  workforceAdvocacy: NationalWorkforceAdvocacyIndex | null | undefined
+): NationalSubjectInclusionReadinessBrief {
+  if (!state.enabled || !subjectAdvocacy || !workforceAdvocacy) {
+    return {
+      turn: state.turn,
+      inclusionIndex: 50,
+      band: 'approaching',
+      inclusionDrag: 0,
+      summary: 'Subject inclusion readiness idle — subject advocacy or workforce advocacy unavailable.',
+      stewardNote: 'Compute subject advocacy and workforce advocacy before inclusion guidance.'
+    };
+  }
+
+  const inclusionDrag = v1014laborClamp(
+    subjectAdvocacy.advocacyDrag * 0.38 +
+      workforceAdvocacy.advocacyDrag * 0.38 +
+      (subjectAdvocacy.band === 'below_advocacy' || workforceAdvocacy.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectAdvocacy.band === 'advocacy_ready' || subjectAdvocacy.band === 'mentorship_locked'
+      ? subjectAdvocacy.advocacyIndex * 0.27
+      : subjectAdvocacy.advocacyIndex * 0.14;
+  const workforceLift =
+    workforceAdvocacy.band === 'elevated' || workforceAdvocacy.band === 'advocacy'
+      ? workforceAdvocacy.advocacyIndex * 0.25
+      : workforceAdvocacy.advocacyIndex * 0.12;
+
+  const inclusionIndex = v1014laborClamp(20 + subjectLift + workforceLift - inclusionDrag);
+  const band = inclusionBand(inclusionIndex);
+
+  const stewardNote =
+    band === 'below_inclusion' || band === 'approaching'
+      ? 'Approaching inclusion — hold O10-213 wave-41 scale until advocacy-inclusion syncs.'
+      : band === 'advocacy_locked'
+        ? 'Advocacy-locked inclusion — still monitor inclusion equity during corridor peaks.'
+        : 'Inclusion-ready — pair with workforce inclusion index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    inclusionIndex,
+    band,
+    inclusionDrag,
+    summary: `Subject inclusion readiness ${band} (index ${Math.round(inclusionIndex)}); inclusion drag ${Math.round(inclusionDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-inclusion-index.ts ---
+  type NationalAdvocacyInclusionCouplingBrief,
+  type NationalInclusionEquityOutlook,
+  type NationalLaborDemographicsState,
+  type NationalSubjectInclusionReadinessBrief,
+  type NationalWorkforceInclusionIndex,
+  type WorkforceInclusionBand
+} from './types';
+
+function inclusionBand(index: number): WorkforceInclusionBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'inclusion';
+}
+
+export function computeNationalWorkforceInclusionIndex(
+  state: NationalLaborDemographicsState,
+  inclusionCoupling: NationalAdvocacyInclusionCouplingBrief | null | undefined,
+  inclusionEquity: NationalInclusionEquityOutlook | null | undefined,
+  subjectInclusion: NationalSubjectInclusionReadinessBrief | null | undefined
+): NationalWorkforceInclusionIndex {
+  if (!state.enabled || !inclusionCoupling || !inclusionEquity || !subjectInclusion) {
+    return {
+      turn: state.turn,
+      inclusionIndex: 50,
+      band: 'thin',
+      inclusionDrag: 0,
+      summary: 'Workforce inclusion idle — inclusion coupling, equity, or subject inclusion unavailable.',
+      stewardNote: 'Compute O10-213 wave-41 depth stack before inclusion guidance.'
+    };
+  }
+
+  const inclusionDrag = v1014laborClamp(
+    subjectInclusion.inclusionDrag * 0.35 +
+      inclusionCoupling.advocacyDrag * 0.3 +
+      inclusionEquity.advocacyDrag * 0.25 +
+      (subjectInclusion.band === 'below_inclusion' || inclusionCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const couplingLift =
+    inclusionCoupling.band === 'amplified' || inclusionCoupling.band === 'elevated'
+      ? inclusionCoupling.couplingIndex * 0.2
+      : inclusionCoupling.couplingIndex * 0.1;
+  const equityLift =
+    inclusionEquity.band === 'rising' || inclusionEquity.band === 'equitable'
+      ? inclusionEquity.equityIndex * 0.18
+      : inclusionEquity.equityIndex * 0.09;
+  const subjectLift =
+    subjectInclusion.band === 'inclusion_ready' || subjectInclusion.band === 'advocacy_locked'
+      ? subjectInclusion.inclusionIndex * 0.22
+      : subjectInclusion.inclusionIndex * 0.11;
+
+  const inclusionIndex = v1014laborClamp(18 + couplingLift + equityLift + subjectLift - inclusionDrag);
+  const band = inclusionBand(inclusionIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce inclusion — sequence advocacy-inclusion, inclusion equity, and subject inclusion before post-875d6f3 tranche.'
+      : band === 'inclusion'
+        ? 'Inclusion band — avoid corridor overload that breaks subject inclusion bands.'
+        : 'Elevated inclusion — refresh subject inclusion checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    inclusionIndex,
+    band,
+    inclusionDrag,
+    summary: `National workforce inclusion ${band} (index ${Math.round(inclusionIndex)}); inclusion drag ${Math.round(inclusionDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -17609,6 +17999,25 @@ export function computeNationalLaborDemographics(
     state.advocacyResonanceOutlook,
     state.subjectAdvocacyReadinessBrief
   );
+  state.advocacyInclusionCouplingBrief = computeNationalAdvocacyInclusionCouplingBrief(
+    state,
+    state.nationalWorkforceAdvocacyIndex
+  );
+  state.inclusionEquityOutlook = computeNationalInclusionEquityOutlook(
+    state,
+    state.advocacyResonanceOutlook
+  );
+  state.subjectInclusionReadinessBrief = computeNationalSubjectInclusionReadinessBrief(
+    state,
+    state.subjectAdvocacyReadinessBrief,
+    state.nationalWorkforceAdvocacyIndex
+  );
+  state.nationalWorkforceInclusionIndex = computeNationalWorkforceInclusionIndex(
+    state,
+    state.advocacyInclusionCouplingBrief,
+    state.inclusionEquityOutlook,
+    state.subjectInclusionReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -18515,6 +18924,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceAdvocacyIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.advocacyInclusionCouplingBrief?.band === 'decoupled' ||
+      state.advocacyInclusionCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.advocacyInclusionCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.inclusionEquityOutlook?.band === 'ebbing' ||
+      state.inclusionEquityOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.inclusionEquityOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectInclusionReadinessBrief?.band === 'below_inclusion' ||
+      state.subjectInclusionReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectInclusionReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceInclusionIndex?.band === 'fragile' ||
+      state.nationalWorkforceInclusionIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceInclusionIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -20893,6 +21330,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'advocacy steward note'
   );
   check('R4016', advocacyEaseForRegion('NSW', 'technology') > 0, 'advocacy ease for region');
+
+  check('R4101', Boolean(r1.state.advocacyInclusionCouplingBrief?.band), 'advocacy inclusion on state');
+  check(
+    'R4102',
+    (r1.state.advocacyInclusionCouplingBrief?.advocacyDrag ?? 0) >= 0,
+    'advocacy inclusion drag'
+  );
+  check('R4103', Boolean(r1.state.inclusionEquityOutlook?.band), 'inclusion equity on state');
+  check(
+    'R4104',
+    (r1.state.inclusionEquityOutlook?.advocacyDrag ?? 0) >= 0,
+    'inclusion equity advocacy drag'
+  );
+  check('R4105', Boolean(r1.state.subjectInclusionReadinessBrief?.band), 'subject inclusion on state');
+  check('R4106', Boolean(r1.state.nationalWorkforceInclusionIndex?.band), 'workforce inclusion on state');
+  check(
+    'R4107',
+    detectLaborDemographicsQuery('advocacy inclusion coupling') === 'advocacy_inclusion_coupling',
+    'GI advocacy inclusion detect'
+  );
+  check(
+    'R4108',
+    detectLaborDemographicsQuery('inclusion equity') === 'inclusion_equity',
+    'GI inclusion equity detect'
+  );
+  check(
+    'R4109',
+    detectLaborDemographicsQuery('subject inclusion readiness') === 'subject_inclusion_readiness',
+    'GI subject inclusion detect'
+  );
+  check(
+    'R4110',
+    detectLaborDemographicsQuery('workforce inclusion') === 'workforce_inclusion',
+    'GI workforce inclusion detect'
+  );
+  check(
+    'R4111',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_inclusion').headline.length > 5,
+    'GI workforce inclusion answer'
+  );
+  const advocacyInclusionOnly = computeNationalAdvocacyInclusionCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceAdvocacyIndex
+  );
+  check('R4112', advocacyInclusionOnly.summary.length > 10, 'advocacy inclusion standalone summary');
+  const inclusionEquityOnly = computeNationalInclusionEquityOutlook(
+    r1.state,
+    r1.state.advocacyResonanceOutlook
+  );
+  check('R4113', inclusionEquityOnly.band.length > 3, 'inclusion equity band string');
+  const subjectInclusionOnly = computeNationalSubjectInclusionReadinessBrief(
+    r1.state,
+    r1.state.subjectAdvocacyReadinessBrief,
+    r1.state.nationalWorkforceAdvocacyIndex
+  );
+  check('R4114', subjectInclusionOnly.inclusionDrag >= 0, 'subject inclusion drag');
+  check(
+    'R4115',
+    computeNationalWorkforceInclusionIndex(
+      rHhBad.state,
+      rHhBad.state.advocacyInclusionCouplingBrief,
+      rHhBad.state.inclusionEquityOutlook,
+      rHhBad.state.subjectInclusionReadinessBrief
+    ).stewardNote.length > 8,
+    'inclusion steward note'
+  );
+  check('R4116', inclusionEaseForRegion('NSW', 'technology') > 0, 'inclusion ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

@@ -147,7 +147,11 @@ export type LaborGiQueryTopic =
   | 'mentorship_advocacy_coupling'
   | 'advocacy_resonance'
   | 'subject_advocacy_readiness'
-  | 'workforce_advocacy';
+  | 'workforce_advocacy'
+  | 'advocacy_inclusion_coupling'
+  | 'inclusion_equity'
+  | 'subject_inclusion_readiness'
+  | 'workforce_inclusion';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -162,7 +166,7 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(youth pipeline|youth entry|apprentice pipeline)/.test(q)) return 'youth_pipeline';
   if (/\b(senior retention|aged workforce retention|elder workforce)/.test(q)) return 'senior_retention';
   if (/\b(labor absorption|regional absorption|absorption headroom)/.test(q)) return 'labor_absorption';
-  if (/\b(participation equity|equity gap|inclusion equity)/.test(q)) return 'participation_equity';
+  if (/\b(participation equity|equity gap)/.test(q)) return 'participation_equity';
   if (/\b(credential mobility|portable credential|skills portability)/.test(q)) return 'credential_mobility';
   if (/\b(household participation coupling|budget participation link)/.test(q)) return 'household_participation_coupling';
   if (/\b(rebalancing stress|corridor stress|interregional stress)/.test(q)) return 'rebalancing_stress';
@@ -306,6 +310,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_advocacy_readiness';
   }
   if (/\b(workforce advocacy|advocacy index labor workforce)/.test(q)) return 'workforce_advocacy';
+  if (/\b(advocacy inclusion|advocacy-inclusion coupling)/.test(q)) return 'advocacy_inclusion_coupling';
+  if (/\b(inclusion equity|inclusion pipeline equity)/.test(q)) return 'inclusion_equity';
+  if (/\b(subject inclusion readiness|inclusion readiness subject)/.test(q)) {
+    return 'subject_inclusion_readiness';
+  }
+  if (/\b(workforce inclusion|inclusion index labor workforce)/.test(q)) return 'workforce_inclusion';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1476,6 +1486,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Advocacy band ${state.nationalWorkforceAdvocacyIndex?.band ?? 'unknown'}; advocacy drag ${Math.round(state.nationalWorkforceAdvocacyIndex?.advocacyDrag ?? 0)}.`,
         inference: state.nationalWorkforceAdvocacyIndex?.stewardNote || state.summary,
         projection: 'Workforce advocacy synthesizes mentorship-advocacy coupling, advocacy resonance, and subject advocacy.'
+      };
+    case 'advocacy_inclusion_coupling':
+      return {
+        topic,
+        headline: state.advocacyInclusionCouplingBrief?.summary || 'Advocacy-inclusion coupling unavailable.',
+        fact: `Coupling band ${state.advocacyInclusionCouplingBrief?.band ?? 'unknown'}; advocacy drag ${Math.round(state.advocacyInclusionCouplingBrief?.advocacyDrag ?? 0)}.`,
+        inference: state.advocacyInclusionCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce advocacy with inclusion levers — wave 41 / O10-213 depth.'
+      };
+    case 'inclusion_equity':
+      return {
+        topic,
+        headline: state.inclusionEquityOutlook?.summary || 'Inclusion equity unavailable.',
+        fact: `Equity band ${state.inclusionEquityOutlook?.band ?? 'unknown'}; advocacy drag ${Math.round(state.inclusionEquityOutlook?.advocacyDrag ?? 0)}.`,
+        inference: state.inclusionEquityOutlook?.stewardNote || state.outlook,
+        projection: 'Equity blends inclusion levers with advocacy resonance — bounded indices only.'
+      };
+    case 'subject_inclusion_readiness':
+      return {
+        topic,
+        headline: state.subjectInclusionReadinessBrief?.summary || 'Subject inclusion readiness unavailable.',
+        fact: `Inclusion band ${state.subjectInclusionReadinessBrief?.band ?? 'unknown'}; inclusion drag ${Math.round(state.subjectInclusionReadinessBrief?.inclusionDrag ?? 0)}.`,
+        inference: state.subjectInclusionReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject inclusion readiness gates subject advocacy against workforce advocacy for O10-213 wave 41.'
+      };
+    case 'workforce_inclusion':
+      return {
+        topic,
+        headline: state.nationalWorkforceInclusionIndex?.summary || 'Workforce inclusion unavailable.',
+        fact: `Inclusion band ${state.nationalWorkforceInclusionIndex?.band ?? 'unknown'}; inclusion drag ${Math.round(state.nationalWorkforceInclusionIndex?.inclusionDrag ?? 0)}.`,
+        inference: state.nationalWorkforceInclusionIndex?.stewardNote || state.summary,
+        projection: 'Workforce inclusion synthesizes advocacy-inclusion coupling, inclusion equity, and subject inclusion.'
       };
     default:
       return {

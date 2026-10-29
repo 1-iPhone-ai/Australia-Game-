@@ -329,6 +329,10 @@ export interface NationalLaborDemographicsState {
   advocacyResonanceOutlook?: NationalAdvocacyResonanceOutlook;
   subjectAdvocacyReadinessBrief?: NationalSubjectAdvocacyReadinessBrief;
   nationalWorkforceAdvocacyIndex?: NationalWorkforceAdvocacyIndex;
+  advocacyInclusionCouplingBrief?: NationalAdvocacyInclusionCouplingBrief;
+  inclusionEquityOutlook?: NationalInclusionEquityOutlook;
+  subjectInclusionReadinessBrief?: NationalSubjectInclusionReadinessBrief;
+  nationalWorkforceInclusionIndex?: NationalWorkforceInclusionIndex;
 }
 
 export type MigrationShockKind =
@@ -1957,6 +1961,54 @@ export interface NationalWorkforceAdvocacyIndex {
   advocacyIndex: number;
   band: WorkforceAdvocacyBand;
   advocacyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type AdvocacyInclusionCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalAdvocacyInclusionCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: AdvocacyInclusionCouplingBand;
+  advocacyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type InclusionEquityBand = 'ebbing' | 'patchy' | 'rising' | 'equitable';
+
+export interface NationalInclusionEquityOutlook {
+  turn: number;
+  equityIndex: number;
+  band: InclusionEquityBand;
+  advocacyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectInclusionReadinessBand =
+  | 'below_inclusion'
+  | 'approaching'
+  | 'inclusion_ready'
+  | 'advocacy_locked';
+
+export interface NationalSubjectInclusionReadinessBrief {
+  turn: number;
+  inclusionIndex: number;
+  band: SubjectInclusionReadinessBand;
+  inclusionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceInclusionBand = 'fragile' | 'thin' | 'elevated' | 'inclusion';
+
+export interface NationalWorkforceInclusionIndex {
+  turn: number;
+  inclusionIndex: number;
+  band: WorkforceInclusionBand;
+  inclusionDrag: number;
   summary: string;
   stewardNote: string;
 }

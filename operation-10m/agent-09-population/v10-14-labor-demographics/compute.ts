@@ -170,6 +170,10 @@ import { computeNationalMentorshipAdvocacyCouplingBrief } from './mentorship-adv
 import { computeNationalAdvocacyResonanceOutlook } from './advocacy-resonance-outlook';
 import { computeNationalSubjectAdvocacyReadinessBrief } from './subject-advocacy-readiness-brief';
 import { computeNationalWorkforceAdvocacyIndex } from './national-workforce-advocacy-index';
+import { computeNationalAdvocacyInclusionCouplingBrief } from './advocacy-inclusion-coupling-brief';
+import { computeNationalInclusionEquityOutlook } from './inclusion-equity-outlook';
+import { computeNationalSubjectInclusionReadinessBrief } from './subject-inclusion-readiness-brief';
+import { computeNationalWorkforceInclusionIndex } from './national-workforce-inclusion-index';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -1126,6 +1130,25 @@ export function computeNationalLaborDemographics(
     state.advocacyResonanceOutlook,
     state.subjectAdvocacyReadinessBrief
   );
+  state.advocacyInclusionCouplingBrief = computeNationalAdvocacyInclusionCouplingBrief(
+    state,
+    state.nationalWorkforceAdvocacyIndex
+  );
+  state.inclusionEquityOutlook = computeNationalInclusionEquityOutlook(
+    state,
+    state.advocacyResonanceOutlook
+  );
+  state.subjectInclusionReadinessBrief = computeNationalSubjectInclusionReadinessBrief(
+    state,
+    state.subjectAdvocacyReadinessBrief,
+    state.nationalWorkforceAdvocacyIndex
+  );
+  state.nationalWorkforceInclusionIndex = computeNationalWorkforceInclusionIndex(
+    state,
+    state.advocacyInclusionCouplingBrief,
+    state.inclusionEquityOutlook,
+    state.subjectInclusionReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -2032,6 +2055,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceAdvocacyIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.advocacyInclusionCouplingBrief?.band === 'decoupled' ||
+      state.advocacyInclusionCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.advocacyInclusionCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.inclusionEquityOutlook?.band === 'ebbing' ||
+      state.inclusionEquityOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.inclusionEquityOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectInclusionReadinessBrief?.band === 'below_inclusion' ||
+      state.subjectInclusionReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectInclusionReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceInclusionIndex?.band === 'fragile' ||
+      state.nationalWorkforceInclusionIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceInclusionIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
