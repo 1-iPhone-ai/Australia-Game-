@@ -1,0 +1,31 @@
+import type { V1018FfedGrantStackEdge } from '../../types/core.ts';
+
+/** Grant stack graph shard 078 (state–federal transfer cross-system coupling). */
+export const V1018_FFED_GRANT_STACK_SHARD_078: readonly V1018FfedGrantStackEdge[] = [
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.211, lagTurns: 9, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.218, lagTurns: 10, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.225, lagTurns: 11, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.232, lagTurns: 9, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.239, lagTurns: 10, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.246, lagTurns: 11, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.253, lagTurns: 9, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.26, lagTurns: 10, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.267, lagTurns: 11, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.274, lagTurns: 9, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.281, lagTurns: 10, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.288, lagTurns: 11, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.19, lagTurns: 9, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.197, lagTurns: 10, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.204, lagTurns: 11, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.211, lagTurns: 9, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.218, lagTurns: 10, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.225, lagTurns: 11, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.232, lagTurns: 9, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.239, lagTurns: 10, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.246, lagTurns: 11, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.253, lagTurns: 9, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.26, lagTurns: 10, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.267, lagTurns: 11, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.274, lagTurns: 9, nodeId: 'audit_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.281, lagTurns: 10, nodeId: 'audit_06' },
+];
