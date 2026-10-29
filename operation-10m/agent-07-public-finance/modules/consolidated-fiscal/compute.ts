@@ -69,6 +69,8 @@ import { buildSovereignCreditStressBridgeReport } from '../sovereign-credit-stre
 import { buildMediumTermAnchorIntegrityCoherenceReport } from '../medium-term-anchor-integrity-coherence/compute';
 import { buildLapseCarryWarrantCoherenceReport } from '../lapse-carry-warrant-coherence/compute';
 import { buildTransparencyProgramForwardBridgeReport } from '../transparency-program-forward-bridge/compute';
+import { buildFiscalRiskOutlookCoherenceReport } from '../fiscal-risk-outlook-coherence/compute';
+import { buildCostRecoveryFiscalBufferBridgeReport } from '../cost-recovery-fiscal-buffer-bridge/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -462,6 +464,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     transparency,
     programPerf,
     transparencyForwardCoherence
+  );
+  const fiscalRiskOutlookCoherence = buildFiscalRiskOutlookCoherenceReport(
+    turn,
+    v1012,
+    riskRegister,
+    outlook,
+    fiscalStress
+  );
+  const costRecoveryFiscalBufferBridge = buildCostRecoveryFiscalBufferBridgeReport(
+    turn,
+    v1012,
+    costRecovery,
+    fiscalBufferCoherence,
+    costRecoveryRevenueCoherence
   );
 
   checks.push({
@@ -1404,12 +1420,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `score=${transparency.compositeScore}, forward=${transparencyForwardCoherence.aggregateCoherenceGapPoints}`
   });
 
+  checks.push({
+    id: 'CF133',
+    label: 'Fiscal risk outlook coherence within band',
+    passed: fiscalRiskOutlookCoherence.withinRiskOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${fiscalRiskOutlookCoherence.aggregateCoherenceGapPoints}, checks=${fiscalRiskOutlookCoherence.checks.filter(c => c.passed).length}/${fiscalRiskOutlookCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF134',
+    label: 'Cost recovery fiscal buffer bridge within band',
+    passed: costRecoveryFiscalBufferBridge.withinRecoveryBufferBand || v1012.pressure === 'critical',
+    detail: `gap=${costRecoveryFiscalBufferBridge.bridgeGapPoints}, checks=${costRecoveryFiscalBufferBridge.checks.filter(c => c.passed).length}/${costRecoveryFiscalBufferBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF135',
+    label: 'Risk outlook aligned with stress scenarios',
+    passed: fiscalRiskOutlookCoherence.alignedWithStressScenarios,
+    detail: `heat=${riskRegister.aggregateHeat}, stress=${fiscalStress.worstHeadroomDelta}`
+  });
+
+  checks.push({
+    id: 'CF136',
+    label: 'Recovery buffer aligned with revenue coherence',
+    passed: costRecoveryFiscalBufferBridge.alignedWithRecoveryRevenueCoherence,
+    detail: `recovery=${costRecovery.weightedRecoveryRatio}, coherence=${costRecoveryRevenueCoherence.aggregateCoherenceGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 94
+    layerCount: 96
   };
 }

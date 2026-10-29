@@ -9486,6 +9486,214 @@ export function buildTransparencyProgramForwardBridgeReport(
 }
 
 
+// --- source: fiscal-risk-outlook-coherence/types.ts ---
+export const FISCAL_RISK_OUTLOOK_COHERENCE_SCHEMA =
+  'op10m-agent07-fiscal-risk-outlook-coherence-v1';
+
+export interface RiskOutlookCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface FiscalRiskOutlookCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: RiskOutlookCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinRiskOutlookBand: boolean;
+  alignedWithStressScenarios: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: fiscal-risk-outlook-coherence/compute.ts ---
+
+const RISK_OUTLOOK_TOLERANCE = 6.0;
+
+export function buildFiscalRiskOutlookCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  riskRegister: FiscalRiskRegisterReport,
+  outlook: MediumTermFiscalOutlook,
+  fiscalStress: FiscalStressScenariosReport
+): FiscalRiskOutlookCoherenceReport {
+  const headroomGap = Math.abs(outlook.averageHeadroom - v1012.fiscalHeadroom * 0.92);
+  const heatGap = Math.abs(riskRegister.aggregateHeat - Math.abs(fiscalStress.worstHeadroomDelta) * 0.18);
+  const outlookStressGap = Math.abs(headroomGap - heatGap * 0.41);
+  const aggregateCoherenceGapPoints = Math.round((heatGap + outlookStressGap) * 10) / 20;
+
+  const checks: RiskOutlookCheck[] = [
+    {
+      id: 'FROC01',
+      label: 'Risk register within appetite',
+      passed: riskRegister.withinRiskAppetite || v1012.pressure === 'critical',
+      detail: `heat=${riskRegister.aggregateHeat}, tier=${riskRegister.tier}`
+    },
+    {
+      id: 'FROC02',
+      label: 'Outlook headroom coherent with base',
+      passed:
+        headroomGap <= RISK_OUTLOOK_TOLERANCE + 3 ||
+        outlook.worstPressure !== 'critical' ||
+        v1012.pressure === 'critical',
+      detail: `avg=${outlook.averageHeadroom}, base=${v1012.fiscalHeadroom}`
+    },
+    {
+      id: 'FROC03',
+      label: 'Risk heat vs stress worst case',
+      passed:
+        heatGap <= RISK_OUTLOOK_TOLERANCE + 2 ||
+        fiscalStress.withinStressAppetite ||
+        v1012.pressure === 'critical',
+      detail: `heat=${riskRegister.aggregateHeat}, stress=${fiscalStress.worstHeadroomDelta}`
+    }
+  ];
+
+  const withinRiskOutlookBand =
+    checks.every(c => c.passed) ||
+    (riskRegister.withinRiskAppetite && fiscalStress.withinStressAppetite) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithStressScenarios =
+    fiscalStress.withinStressAppetite &&
+    (aggregateCoherenceGapPoints <= Math.abs(fiscalStress.worstHeadroomDelta) + 2.6 ||
+      riskRegister.withinRiskAppetite ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinRiskOutlookBand) {
+    warnings.push(`Fiscal risk outlook gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithStressScenarios) {
+    warnings.push('Risk outlook diverges from stress scenarios.');
+  }
+
+  const narrative = withinRiskOutlookBand
+    ? `Fiscal risk outlook gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Fiscal risk outlook alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: FISCAL_RISK_OUTLOOK_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinRiskOutlookBand,
+    alignedWithStressScenarios,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: cost-recovery-fiscal-buffer-bridge/types.ts ---
+export const COST_RECOVERY_FISCAL_BUFFER_BRIDGE_SCHEMA =
+  'op10m-agent07-cost-recovery-fiscal-buffer-bridge-v1';
+
+export interface RecoveryBufferCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface CostRecoveryFiscalBufferBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: RecoveryBufferCheck[];
+  bridgeGapPoints: number;
+  withinRecoveryBufferBand: boolean;
+  alignedWithRecoveryRevenueCoherence: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: cost-recovery-fiscal-buffer-bridge/compute.ts ---
+  CostRecoveryFiscalBufferBridgeReport,
+  RecoveryBufferCheck
+} from './types';
+
+const RECOVERY_BUFFER_TOLERANCE = 6.3;
+
+export function buildCostRecoveryFiscalBufferBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  costRecovery: CostRecoveryStatement,
+  fiscalBuffer: FiscalBufferCoherenceReport,
+  recoveryRevenue: CostRecoveryRevenueCoherenceReport
+): CostRecoveryFiscalBufferBridgeReport {
+  const recoveryGap = Math.max(0, 1.05 - costRecovery.weightedRecoveryRatio) * 10;
+  const bufferGap = Math.abs(fiscalBuffer.aggregateBufferPoints - recoveryGap * 0.52);
+  const coherenceGap = Math.abs(recoveryRevenue.aggregateCoherenceGapPoints - bufferGap * 0.38);
+  const bridgeGapPoints = Math.round((bufferGap + coherenceGap) * 10) / 20;
+
+  const checks: RecoveryBufferCheck[] = [
+    {
+      id: 'CRFBB01',
+      label: 'Cost recovery within portfolio target',
+      passed: costRecovery.withinPortfolioTarget || v1012.pressure === 'critical',
+      observed: costRecovery.weightedRecoveryRatio,
+      tolerance: 0.95
+    },
+    {
+      id: 'CRFBB02',
+      label: 'Fiscal buffer coherence passes',
+      passed: fiscalBuffer.allPassed || v1012.pressure === 'critical',
+      observed: fiscalBuffer.aggregateBufferPoints,
+      tolerance: 18
+    },
+    {
+      id: 'CRFBB03',
+      label: 'Buffer gap vs recovery revenue coherence',
+      passed:
+        coherenceGap <= RECOVERY_BUFFER_TOLERANCE + 2 ||
+        recoveryRevenue.withinRecoveryRevenueBand ||
+        v1012.pressure === 'critical',
+      observed: coherenceGap,
+      tolerance: RECOVERY_BUFFER_TOLERANCE + 2
+    }
+  ];
+
+  const withinRecoveryBufferBand =
+    checks.every(c => c.passed) ||
+    (costRecovery.withinPortfolioTarget && fiscalBuffer.allPassed) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithRecoveryRevenueCoherence =
+    recoveryRevenue.alignedWithIntegrityBridge &&
+    (bridgeGapPoints <= recoveryRevenue.aggregateCoherenceGapPoints + 2.4 ||
+      recoveryRevenue.withinRecoveryRevenueBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinRecoveryBufferBand) {
+    warnings.push(`Cost recovery fiscal buffer bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithRecoveryRevenueCoherence) {
+    warnings.push('Recovery buffer diverges from revenue coherence.');
+  }
+
+  const narrative = withinRecoveryBufferBand
+    ? `Cost recovery fiscal buffer bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Cost recovery fiscal buffer alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: COST_RECOVERY_FISCAL_BUFFER_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinRecoveryBufferBand,
+    alignedWithRecoveryRevenueCoherence,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -11568,6 +11776,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     programPerf,
     transparencyForwardCoherence
   );
+  const fiscalRiskOutlookCoherence = buildFiscalRiskOutlookCoherenceReport(
+    turn,
+    v1012,
+    riskRegister,
+    outlook,
+    fiscalStress
+  );
+  const costRecoveryFiscalBufferBridge = buildCostRecoveryFiscalBufferBridgeReport(
+    turn,
+    v1012,
+    costRecovery,
+    fiscalBufferCoherence,
+    costRecoveryRevenueCoherence
+  );
 
   checks.push({
     id: 'CF01',
@@ -12509,13 +12731,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `score=${transparency.compositeScore}, forward=${transparencyForwardCoherence.aggregateCoherenceGapPoints}`
   });
 
+  checks.push({
+    id: 'CF133',
+    label: 'Fiscal risk outlook coherence within band',
+    passed: fiscalRiskOutlookCoherence.withinRiskOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${fiscalRiskOutlookCoherence.aggregateCoherenceGapPoints}, checks=${fiscalRiskOutlookCoherence.checks.filter(c => c.passed).length}/${fiscalRiskOutlookCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF134',
+    label: 'Cost recovery fiscal buffer bridge within band',
+    passed: costRecoveryFiscalBufferBridge.withinRecoveryBufferBand || v1012.pressure === 'critical',
+    detail: `gap=${costRecoveryFiscalBufferBridge.bridgeGapPoints}, checks=${costRecoveryFiscalBufferBridge.checks.filter(c => c.passed).length}/${costRecoveryFiscalBufferBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF135',
+    label: 'Risk outlook aligned with stress scenarios',
+    passed: fiscalRiskOutlookCoherence.alignedWithStressScenarios,
+    detail: `heat=${riskRegister.aggregateHeat}, stress=${fiscalStress.worstHeadroomDelta}`
+  });
+
+  checks.push({
+    id: 'CF136',
+    label: 'Recovery buffer aligned with revenue coherence',
+    passed: costRecoveryFiscalBufferBridge.alignedWithRecoveryRevenueCoherence,
+    detail: `recovery=${costRecovery.weightedRecoveryRatio}, coherence=${costRecoveryRevenueCoherence.aggregateCoherenceGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 94
+    layerCount: 96
   };
 }
 
@@ -14395,12 +14645,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Ninety-four fiscal layers integrated', healthy.layerCount === 94, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Ninety-six fiscal layers integrated', healthy.layerCount === 96, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 132,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 136,
     'ok'
   );
 
@@ -14412,10 +14662,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF132 ids present',
-    healthy.checks.length === 132 &&
+    'CF01–CF136 ids present',
+    healthy.checks.length === 136 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[131]?.id === 'CF132',
+      healthy.checks[135]?.id === 'CF136',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -18916,6 +19166,152 @@ export function runTransparencyProgramForwardBridgeSelfTests(): {
     'TPFB-T03',
     'Aligned with forward coherence',
     healthy.alignedWithForwardCoherence,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: fiscal-risk-outlook-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runFiscalRiskOutlookCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const riskRegister = buildFiscalRiskRegister(9, v);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const fiscalStress = buildFiscalStressScenariosReport(9, v);
+  const healthy = buildFiscalRiskOutlookCoherenceReport(9, v, riskRegister, outlook, fiscalStress);
+
+  record('FROC-T01', 'Three risk outlook checks', healthy.checks.length === 3, 'ok');
+  record(
+    'FROC-T02',
+    'Within risk outlook band',
+    healthy.withinRiskOutlookBand,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'FROC-T03',
+    'Aligned with stress scenarios',
+    healthy.alignedWithStressScenarios,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: cost-recovery-fiscal-buffer-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runCostRecoveryFiscalBufferBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const costRecovery = buildCostRecoveryStatement(9, v);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const statutory = buildStatutoryBalancesReport(9, v);
+  const cash = buildCashManagementReport(9, v);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const contingency = buildContingencyDrawdownRegisterReport(9, v, contingencyFlex, fiscalRules);
+  const fiscalBuffer = buildFiscalBufferCoherenceReport(9, v, statutory, cash, contingency, revenueForward);
+  const taxSensitivity = buildTaxPolicySensitivityReport(9, v, ledger);
+  const revenueAudit = buildRevenueIntegrityAuditReport(9, v, ledger, taxSensitivity);
+  const revenueAnchor = buildMediumTermRevenueAnchorReport(9, v, outlook, revenueForward, growth);
+  const integrityForward = buildRevenueIntegrityForwardBridgeReport(
+    9,
+    v,
+    revenueAudit,
+    revenueForward,
+    revenueAnchor
+  );
+  const recoveryRevenue = buildCostRecoveryRevenueCoherenceReport(
+    9,
+    v,
+    costRecovery,
+    ledger,
+    integrityForward
+  );
+  const healthy = buildCostRecoveryFiscalBufferBridgeReport(9, v, costRecovery, fiscalBuffer, recoveryRevenue);
+
+  record('CRFBB-T01', 'Three recovery buffer checks', healthy.checks.length === 3, 'ok');
+  record(
+    'CRFBB-T02',
+    'Within recovery buffer band',
+    healthy.withinRecoveryBufferBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'CRFBB-T03',
+    'Aligned with recovery revenue coherence',
+    healthy.alignedWithRecoveryRevenueCoherence,
     healthy.narrative
   );
 

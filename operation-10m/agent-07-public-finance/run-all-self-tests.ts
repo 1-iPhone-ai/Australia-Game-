@@ -77,6 +77,8 @@ import { runSovereignCreditStressBridgeSelfTests } from './modules/sovereign-cre
 import { runMediumTermAnchorIntegrityCoherenceSelfTests } from './modules/medium-term-anchor-integrity-coherence/self-tests';
 import { runLapseCarryWarrantCoherenceSelfTests } from './modules/lapse-carry-warrant-coherence/self-tests';
 import { runTransparencyProgramForwardBridgeSelfTests } from './modules/transparency-program-forward-bridge/self-tests';
+import { runFiscalRiskOutlookCoherenceSelfTests } from './modules/fiscal-risk-outlook-coherence/self-tests';
+import { runCostRecoveryFiscalBufferBridgeSelfTests } from './modules/cost-recovery-fiscal-buffer-bridge/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -163,6 +165,8 @@ ok = runSuite('Sovereign credit stress bridge', runSovereignCreditStressBridgeSe
 ok = runSuite('Medium-term anchor integrity coherence', runMediumTermAnchorIntegrityCoherenceSelfTests) && ok;
 ok = runSuite('Lapse carry warrant coherence', runLapseCarryWarrantCoherenceSelfTests) && ok;
 ok = runSuite('Transparency program forward bridge', runTransparencyProgramForwardBridgeSelfTests) && ok;
+ok = runSuite('Fiscal risk outlook coherence', runFiscalRiskOutlookCoherenceSelfTests) && ok;
+ok = runSuite('Cost recovery fiscal buffer bridge', runCostRecoveryFiscalBufferBridgeSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);
