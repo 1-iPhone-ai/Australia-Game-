@@ -97,6 +97,18 @@ import {
   buildAgent24ArchiveContinuityAttestation,
   runAgent24ArchiveContinuityAttestationSelfTests,
 } from '../src/archive-continuity-attestation.ts';
+import {
+  buildAgent24ContinuityExportGateReport,
+  runAgent24ContinuityExportGateSelfTests,
+} from '../src/continuity-export-gate.ts';
+import {
+  buildAgent24RestoreCommitAuditReport,
+  runAgent24RestoreCommitAuditSelfTests,
+} from '../src/restore-commit-audit.ts';
+import {
+  buildAgent24AttestationChainSeal,
+  runAgent24AttestationChainSealSelfTests,
+} from '../src/attestation-chain-seal.ts';
 import { buildO6kHistoricalAnalyticsSnapshot } from '../src/history-replay-analytics.ts';
 import { o6kAgent24StableStringify, runO6kAgent24SelfTests } from '../src/history-replay-analytics.ts';
 
@@ -209,6 +221,9 @@ describe('Agent 24 replay determinism bundle', () => {
     assert.ok(result.probes.some(p => p.name === 'restore_commit_record_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'fulfillment_seal_bridge_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'archive_continuity_attestation_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'continuity_export_gate_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'restore_commit_audit_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'attestation_chain_seal_twin' && p.passed));
   });
 
   it('includes analytics depth rollups and stable twin fingerprint', () => {
@@ -907,6 +922,66 @@ describe('Agent 24 archive continuity attestation', () => {
     });
     assert.equal(direct.deterministicFingerprint, bundle.archiveContinuityAttestation.deterministicFingerprint);
     assert.ok(runAgent24ArchiveContinuityAttestationSelfTests().every(t => t.passed));
+  });
+});
+
+const richArchiveBundleInput = () => ({
+  matchId: 'm',
+  turn: 36,
+  day: 36,
+  maxTurns: 100,
+  replay: {
+    events: [
+      { eventType: 'replay_checkpoint', turn: 8, sequence: 1 },
+      { eventType: 'replay_checkpoint', turn: 24, sequence: 2 },
+      { eventType: 'replay_checkpoint', turn: 36, sequence: 3 },
+    ],
+    checkpoints: { '8': {}, '24': {}, '36': {} },
+  },
+  deterministicMode: true,
+});
+
+describe('Agent 24 continuity export gate', () => {
+  it('opens export when attestation verified and transfer ready', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    const direct = buildAgent24ContinuityExportGateReport({
+      matchId: 'm',
+      archiveContinuityAttestation: bundle.archiveContinuityAttestation,
+      exportReadiness: bundle.exportReadiness,
+      replayTransferGate: bundle.replayTransferGate,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.continuityExportGate.deterministicFingerprint);
+    assert.ok(runAgent24ContinuityExportGateSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 restore commit audit', () => {
+  it('passes audit when commit record matches plan and gate', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.restoreCommitAudit.auditPassed, true);
+    const direct = buildAgent24RestoreCommitAuditReport({
+      matchId: 'm',
+      restoreCommitRecord: bundle.restoreCommitRecord,
+      replayRestorePlan: bundle.replayRestorePlan,
+      restoreExecutionGate: bundle.restoreExecutionGate,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.restoreCommitAudit.deterministicFingerprint);
+    assert.ok(runAgent24RestoreCommitAuditSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 attestation chain seal', () => {
+  it('seals attestation chain when all segments align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    const direct = buildAgent24AttestationChainSeal({
+      matchId: 'm',
+      snapshotSeal: bundle.snapshotSeal,
+      exportManifest: bundle.exportManifest,
+      archiveContinuityAttestation: bundle.archiveContinuityAttestation,
+      continuityExportGate: bundle.continuityExportGate,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.attestationChainSeal.deterministicFingerprint);
+    assert.ok(runAgent24AttestationChainSealSelfTests().every(t => t.passed));
   });
 });
 

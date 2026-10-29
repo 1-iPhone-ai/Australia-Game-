@@ -4809,6 +4809,452 @@ export function runAgent24ArchiveContinuityAttestationSelfTests(): Array<{ name:
 }
 
 
+// --- source: continuity-export-gate.ts ---
+
+export interface Agent24ContinuityExportBlocker {
+  kind: 'attestation_failed' | 'attestation_partial' | 'export_not_ready' | 'transfer_blocked';
+  detail: string;
+  fingerprint: string;
+}
+
+export interface Agent24ContinuityExportGateReport {
+  reportId: string;
+  matchId: string;
+  exportAllowed: boolean;
+  blockerCount: number;
+  blockers: Agent24ContinuityExportBlocker[];
+  exportGateScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ContinuityExportGateInput {
+  matchId: string;
+  archiveContinuityAttestation: Agent24ArchiveContinuityAttestation;
+  exportReadiness: Agent24ExportReadinessReport;
+  replayTransferGate: Agent24ReplayTransferGateReport;
+  requireVerifiedAttestation?: boolean;
+}
+
+export function buildAgent24ContinuityExportGateReport(
+  input: Agent24ContinuityExportGateInput,
+): Agent24ContinuityExportGateReport {
+  const requireVerified = input.requireVerifiedAttestation ?? true;
+  const blockers: Agent24ContinuityExportBlocker[] = [];
+
+  if (input.archiveContinuityAttestation.status === 'failed') {
+    blockers.push({
+      kind: 'attestation_failed',
+      detail: 'Archive continuity attestation failed',
+      fingerprint: o6kAgent24Fingerprint('cex_att_failed', { status: 'failed' }),
+    });
+  } else if (requireVerified && input.archiveContinuityAttestation.status !== 'verified') {
+    blockers.push({
+      kind: 'attestation_partial',
+      detail: `Attestation status ${input.archiveContinuityAttestation.status}`,
+      fingerprint: o6kAgent24Fingerprint('cex_att_partial', {
+        status: input.archiveContinuityAttestation.status,
+      }),
+    });
+  }
+  if (!input.exportReadiness.ready) {
+    blockers.push({
+      kind: 'export_not_ready',
+      detail: `Export readiness score ${input.exportReadiness.readinessScore}`,
+      fingerprint: o6kAgent24Fingerprint('cex_export', { ready: false }),
+    });
+  }
+  if (!input.replayTransferGate.transferAllowed) {
+    blockers.push({
+      kind: 'transfer_blocked',
+      detail: `Transfer gate blocked (${input.replayTransferGate.blockerCount} blockers)`,
+      fingerprint: o6kAgent24Fingerprint('cex_transfer', {
+        blockers: input.replayTransferGate.blockerCount,
+      }),
+    });
+  }
+
+  let exportGateScore = 100;
+  exportGateScore -= blockers.length * 20;
+  exportGateScore -= Math.max(0, 100 - input.archiveContinuityAttestation.attestationScore) * 0.2;
+  exportGateScore = Math.max(0, Math.min(100, Math.round(exportGateScore)));
+
+  const exportAllowed = blockers.length === 0;
+
+  return {
+    reportId: o6kAgent24Fingerprint('continuity_export_gate', { matchId: input.matchId }),
+    matchId: input.matchId,
+    exportAllowed,
+    blockerCount: blockers.length,
+    blockers,
+    exportGateScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('continuity_export_gate_body', {
+      blockers: blockers.map(b => b.fingerprint),
+      exportAllowed,
+      exportGateScore,
+    }),
+  };
+}
+
+export function runAgent24ContinuityExportGateSelfTests(): Array<{ name: string; passed: boolean }> {
+  const attestation = {
+    attestationId: 'a',
+    matchId: 'self',
+    status: 'verified' as const,
+    restoreCommitOk: true,
+    fulfillmentBridgeOk: true,
+    ledgerContinuityOk: true,
+    attestationScore: 95,
+    deterministicFingerprint: o6kAgent24Fingerprint('att_cex', { v: 1 }),
+  };
+  const exportReady = {
+    reportId: 'er',
+    matchId: 'self',
+    ready: true,
+    readinessScore: 95,
+    blockers: [],
+    deterministicFingerprint: o6kAgent24Fingerprint('er_cex', { v: 1 }),
+  };
+  const transfer = {
+    reportId: 'tg',
+    matchId: 'self',
+    transferAllowed: true,
+    blockerCount: 0,
+    blockers: [],
+    transferScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('tg_cex', { v: 1 }),
+  };
+
+  const report = buildAgent24ContinuityExportGateReport({
+    matchId: 'self',
+    archiveContinuityAttestation: attestation,
+    exportReadiness: exportReady,
+    replayTransferGate: transfer,
+  });
+
+  return [
+    { name: 'export_allowed_when_verified', passed: report.exportAllowed && report.blockerCount === 0 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        report.deterministicFingerprint ===
+        buildAgent24ContinuityExportGateReport({
+          matchId: 'self',
+          archiveContinuityAttestation: attestation,
+          exportReadiness: exportReady,
+          replayTransferGate: transfer,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
+// --- source: restore-commit-audit.ts ---
+
+export interface Agent24RestoreCommitAuditFinding {
+  kind: 'anchor_drift' | 'commit_without_execution' | 'step_count_mismatch';
+  detail: string;
+  fingerprint: string;
+}
+
+export interface Agent24RestoreCommitAuditReport {
+  reportId: string;
+  matchId: string;
+  auditPassed: boolean;
+  findingCount: number;
+  findings: Agent24RestoreCommitAuditFinding[];
+  auditScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24RestoreCommitAuditInput {
+  matchId: string;
+  restoreCommitRecord: Agent24RestoreCommitRecord;
+  replayRestorePlan: Agent24ReplayRestorePlan;
+  restoreExecutionGate: Agent24RestoreExecutionGateReport;
+}
+
+export function buildAgent24RestoreCommitAuditReport(
+  input: Agent24RestoreCommitAuditInput,
+): Agent24RestoreCommitAuditReport {
+  const findings: Agent24RestoreCommitAuditFinding[] = [];
+
+  if (
+    input.restoreCommitRecord.anchorTurn !== null &&
+    input.replayRestorePlan.anchorTurn !== null &&
+    input.restoreCommitRecord.anchorTurn !== input.replayRestorePlan.anchorTurn
+  ) {
+    findings.push({
+      kind: 'anchor_drift',
+      detail: `Commit anchor ${input.restoreCommitRecord.anchorTurn} vs plan ${input.replayRestorePlan.anchorTurn}`,
+      fingerprint: o6kAgent24Fingerprint('rca_anchor', {
+        commit: input.restoreCommitRecord.anchorTurn,
+        plan: input.replayRestorePlan.anchorTurn,
+      }),
+    });
+  }
+
+  if (input.restoreCommitRecord.commitAllowed && !input.restoreExecutionGate.executionAllowed) {
+    findings.push({
+      kind: 'commit_without_execution',
+      detail: 'Commit record allowed but execution gate closed',
+      fingerprint: o6kAgent24Fingerprint('rca_exec', { commit: true, exec: false }),
+    });
+  }
+
+  if (input.restoreCommitRecord.committedStepCount > input.replayRestorePlan.stepCount) {
+    findings.push({
+      kind: 'step_count_mismatch',
+      detail: `Committed steps ${input.restoreCommitRecord.committedStepCount} exceed plan ${input.replayRestorePlan.stepCount}`,
+      fingerprint: o6kAgent24Fingerprint('rca_steps', {
+        committed: input.restoreCommitRecord.committedStepCount,
+        plan: input.replayRestorePlan.stepCount,
+      }),
+    });
+  }
+
+  findings.sort((a, b) => a.fingerprint.localeCompare(b.fingerprint));
+
+  let auditScore = 100;
+  auditScore -= findings.length * 22;
+  auditScore = Math.max(0, Math.min(100, auditScore));
+
+  const auditPassed = findings.length === 0;
+
+  return {
+    reportId: o6kAgent24Fingerprint('restore_commit_audit', { matchId: input.matchId }),
+    matchId: input.matchId,
+    auditPassed,
+    findingCount: findings.length,
+    findings,
+    auditScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('restore_commit_audit_body', {
+      findings: findings.map(f => f.fingerprint),
+      auditPassed,
+      auditScore,
+    }),
+  };
+}
+
+export function runAgent24RestoreCommitAuditSelfTests(): Array<{ name: string; passed: boolean }> {
+  const plan = {
+    planId: 'p',
+    matchId: 'self',
+    restoreAllowed: true,
+    anchorTurn: 10,
+    stepCount: 3,
+    requiredStepCount: 2,
+    steps: [],
+    restorePlanScore: 90,
+    deterministicFingerprint: o6kAgent24Fingerprint('rp_rca', { v: 1 }),
+  };
+  const gate = {
+    reportId: 'g',
+    matchId: 'self',
+    executionAllowed: true,
+    anchorTurn: 10,
+    requiredStepCount: 2,
+    satisfiedRequiredSteps: 2,
+    blockerCount: 0,
+    blockers: [],
+    executionScore: 92,
+    deterministicFingerprint: o6kAgent24Fingerprint('eg_rca', { v: 1 }),
+  };
+  const commit = {
+    recordId: 'c',
+    matchId: 'self',
+    currentTurn: 14,
+    commitAllowed: true,
+    anchorTurn: 10,
+    committedStepCount: 2,
+    steps: [],
+    commitScore: 94,
+    deterministicFingerprint: o6kAgent24Fingerprint('rc_rca', { v: 1 }),
+  };
+
+  const audit = buildAgent24RestoreCommitAuditReport({
+    matchId: 'self',
+    restoreCommitRecord: commit,
+    replayRestorePlan: plan,
+    restoreExecutionGate: gate,
+  });
+
+  return [
+    { name: 'audit_passes_when_aligned', passed: audit.auditPassed && audit.findingCount === 0 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        audit.deterministicFingerprint ===
+        buildAgent24RestoreCommitAuditReport({
+          matchId: 'self',
+          restoreCommitRecord: commit,
+          replayRestorePlan: plan,
+          restoreExecutionGate: gate,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
+// --- source: attestation-chain-seal.ts ---
+
+export interface Agent24AttestationChainLink {
+  linkId: string;
+  segment: 'continuity_attestation' | 'export_gate' | 'manifest' | 'snapshot_seal';
+  aligned: boolean;
+  fingerprint: string;
+}
+
+export interface Agent24AttestationChainSeal {
+  sealId: string;
+  matchId: string;
+  chainSealed: boolean;
+  linkCount: number;
+  alignedLinkCount: number;
+  links: Agent24AttestationChainLink[];
+  chainScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24AttestationChainSealInput {
+  matchId: string;
+  snapshotSeal: Agent24SnapshotSeal;
+  exportManifest: Agent24ExportManifest;
+  archiveContinuityAttestation: Agent24ArchiveContinuityAttestation;
+  continuityExportGate: Agent24ContinuityExportGateReport;
+}
+
+export function buildAgent24AttestationChainSeal(input: Agent24AttestationChainSealInput): Agent24AttestationChainSeal {
+  const links: Agent24AttestationChainLink[] = [
+    {
+      linkId: o6kAgent24Fingerprint('att_chain', { seg: 'continuity_attestation' }),
+      segment: 'continuity_attestation',
+      aligned: input.archiveContinuityAttestation.status === 'verified',
+      fingerprint: '',
+    },
+    {
+      linkId: o6kAgent24Fingerprint('att_chain', { seg: 'export_gate' }),
+      segment: 'export_gate',
+      aligned: input.continuityExportGate.exportAllowed,
+      fingerprint: '',
+    },
+    {
+      linkId: o6kAgent24Fingerprint('att_chain', { seg: 'manifest' }),
+      segment: 'manifest',
+      aligned:
+        input.exportManifest.complete &&
+        input.exportManifest.compositeBundleFingerprint === input.snapshotSeal.compositeBundleFingerprint,
+      fingerprint: '',
+    },
+    {
+      linkId: o6kAgent24Fingerprint('att_chain', { seg: 'snapshot_seal' }),
+      segment: 'snapshot_seal',
+      aligned: input.snapshotSeal.sealed,
+      fingerprint: '',
+    },
+  ];
+
+  for (const link of links) {
+    link.fingerprint = o6kAgent24Fingerprint('att_chain_link', {
+      segment: link.segment,
+      aligned: link.aligned,
+    });
+  }
+
+  const alignedLinkCount = links.filter(l => l.aligned).length;
+
+  let chainScore = 100;
+  chainScore -= (links.length - alignedLinkCount) * 15;
+  if (!input.snapshotSeal.sealed) chainScore -= 10;
+  chainScore = Math.max(0, Math.min(100, chainScore));
+
+  const chainSealed =
+    input.snapshotSeal.sealed &&
+    alignedLinkCount === links.length &&
+    input.archiveContinuityAttestation.status === 'verified';
+
+  return {
+    sealId: o6kAgent24Fingerprint('attestation_chain_seal', { matchId: input.matchId }),
+    matchId: input.matchId,
+    chainSealed,
+    linkCount: links.length,
+    alignedLinkCount,
+    links,
+    chainScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('attestation_chain_seal_body', {
+      links: links.map(l => l.fingerprint),
+      chainSealed,
+      chainScore,
+    }),
+  };
+}
+
+export function runAgent24AttestationChainSealSelfTests(): Array<{ name: string; passed: boolean }> {
+  const seal = {
+    sealId: 's',
+    matchId: 'self',
+    turn: 12,
+    sealed: true,
+    linkCount: 5,
+    links: [],
+    compositeBundleFingerprint: 'comp',
+    sealFingerprint: 'sf',
+    deterministicFingerprint: o6kAgent24Fingerprint('ss_acs', { v: 1 }),
+  };
+  const manifest = {
+    manifestId: 'm',
+    matchId: 'self',
+    complete: true,
+    compositeBundleFingerprint: 'comp',
+    sectionCount: 4,
+    sections: [],
+    deterministicFingerprint: o6kAgent24Fingerprint('em_acs', { v: 1 }),
+  };
+  const attestation = {
+    attestationId: 'a',
+    matchId: 'self',
+    status: 'verified' as const,
+    restoreCommitOk: true,
+    fulfillmentBridgeOk: true,
+    ledgerContinuityOk: true,
+    attestationScore: 98,
+    deterministicFingerprint: o6kAgent24Fingerprint('aca_acs', { v: 1 }),
+  };
+  const exportGate = {
+    reportId: 'g',
+    matchId: 'self',
+    exportAllowed: true,
+    blockerCount: 0,
+    blockers: [],
+    exportGateScore: 95,
+    deterministicFingerprint: o6kAgent24Fingerprint('ceg_acs', { v: 1 }),
+  };
+
+  const chain = buildAgent24AttestationChainSeal({
+    matchId: 'self',
+    snapshotSeal: seal,
+    exportManifest: manifest,
+    archiveContinuityAttestation: attestation,
+    continuityExportGate: exportGate,
+  });
+
+  return [
+    { name: 'chain_sealed_when_all_links_aligned', passed: chain.chainSealed && chain.alignedLinkCount === 4 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        chain.deterministicFingerprint ===
+        buildAgent24AttestationChainSeal({
+          matchId: 'self',
+          snapshotSeal: seal,
+          exportManifest: manifest,
+          archiveContinuityAttestation: attestation,
+          continuityExportGate: exportGate,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
 // --- source: history-replay-analytics.ts ---
 
 export const O6K_AGENT24_MODULE_VERSION = '1.1.0-op10m';
@@ -24339,6 +24785,12 @@ export function applyO6kHistoricalAnalyticsCachePatch(state: Record<string, unkn
   buildAgent24ArchiveContinuityAttestation,
   type Agent24ArchiveContinuityAttestation,
 } from './archive-continuity-attestation.ts';
+  buildAgent24ContinuityExportGateReport,
+  type Agent24ContinuityExportGateReport,
+} from './continuity-export-gate.ts';
+  buildAgent24RestoreCommitAuditReport,
+  type Agent24RestoreCommitAuditReport,
+} from './restore-commit-audit.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -24377,6 +24829,9 @@ export interface Agent24ReplayDeterminismBundle {
   restoreCommitRecord: Agent24RestoreCommitRecord;
   fulfillmentSealBridge: Agent24FulfillmentSealBridgeReport;
   archiveContinuityAttestation: Agent24ArchiveContinuityAttestation;
+  continuityExportGate: Agent24ContinuityExportGateReport;
+  restoreCommitAudit: Agent24RestoreCommitAuditReport;
+  attestationChainSeal: Agent24AttestationChainSeal;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -24708,6 +25163,25 @@ export function buildAgent24ReplayDeterminismBundle(
     fulfillmentSealBridge,
     ledgerSealContinuity,
   });
+  const continuityExportGate = buildAgent24ContinuityExportGateReport({
+    matchId: input.matchId,
+    archiveContinuityAttestation,
+    exportReadiness: exportReadinessFinal,
+    replayTransferGate,
+  });
+  const restoreCommitAudit = buildAgent24RestoreCommitAuditReport({
+    matchId: input.matchId,
+    restoreCommitRecord,
+    replayRestorePlan,
+    restoreExecutionGate,
+  });
+  const attestationChainSeal = buildAgent24AttestationChainSeal({
+    matchId: input.matchId,
+    snapshotSeal,
+    exportManifest,
+    archiveContinuityAttestation,
+    continuityExportGate,
+  });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
@@ -24744,6 +25218,9 @@ export function buildAgent24ReplayDeterminismBundle(
     restoreCommitRecord: restoreCommitRecord.deterministicFingerprint,
     fulfillmentSealBridge: fulfillmentSealBridge.deterministicFingerprint,
     archiveContinuityAttestation: archiveContinuityAttestation.deterministicFingerprint,
+    continuityExportGate: continuityExportGate.deterministicFingerprint,
+    restoreCommitAudit: restoreCommitAudit.deterministicFingerprint,
+    attestationChainSeal: attestationChainSeal.deterministicFingerprint,
   });
 
   return {
@@ -24775,6 +25252,9 @@ export function buildAgent24ReplayDeterminismBundle(
     restoreCommitRecord,
     fulfillmentSealBridge,
     archiveContinuityAttestation,
+    continuityExportGate,
+    restoreCommitAudit,
+    attestationChainSeal,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -24961,6 +25441,21 @@ export function verifyAgent24ReplayDeterminism(
       passed:
         a.archiveContinuityAttestation.deterministicFingerprint === b.archiveContinuityAttestation.deterministicFingerprint,
       detail: 'Twin archive continuity attestation fingerprints',
+    },
+    {
+      name: 'continuity_export_gate_twin',
+      passed: a.continuityExportGate.deterministicFingerprint === b.continuityExportGate.deterministicFingerprint,
+      detail: 'Twin continuity export gate fingerprints',
+    },
+    {
+      name: 'restore_commit_audit_twin',
+      passed: a.restoreCommitAudit.deterministicFingerprint === b.restoreCommitAudit.deterministicFingerprint,
+      detail: 'Twin restore commit audit fingerprints',
+    },
+    {
+      name: 'attestation_chain_seal_twin',
+      passed: a.attestationChainSeal.deterministicFingerprint === b.attestationChainSeal.deterministicFingerprint,
+      detail: 'Twin attestation chain seal fingerprints',
     },
     {
       name: 'composite_twin',
