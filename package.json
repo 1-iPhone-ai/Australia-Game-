@@ -1,0 +1,30 @@
+{
+  "name": "australia-game",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 5173",
+    "measure-loc": "node scripts/measure-loc.mjs",
+    "op10m:audit": "node operation-10m/assembly/validate-manifest.mjs && node operation-10m/assembly/audit-duplication.mjs --write-audit operation-10m/assembly/audits/duplication-latest.json && node operation-10m/assembly/audit-save-migrations.mjs && node scripts/measure-loc.mjs",
+    "op10m:assemble:dry": "node operation-10m/assembly/assemble.mjs --dry-run",
+    "op10m:sync-manifest": "node operation-10m/assembly/sync-manifest.mjs",
+    "op10m:dry-run-bundle": "node operation-10m/assembly/dry-run-bundle.mjs",
+    "op10m:promote-tranche": "node operation-10m/assembly/promote-tranche.mjs",
+    "op10m:tranche-dry-run": "node operation-10m/assembly/tranche-dry-run.mjs --tranche operation-10m/assembly/tranches/tranche-01-op10m-registry.json",
+    "op10m:full-chunks-dry-run": "node operation-10m/assembly/full-chunks-dry-run.mjs",
+    "op10m:scale-path": "node operation-10m/assembly/scale-path-gate.mjs --write-audit"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "5.2.0",
+    "typescript": "5.9.3",
+    "vite": "7.3.7"
+  }
+}

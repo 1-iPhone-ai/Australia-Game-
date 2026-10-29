@@ -1,0 +1,212 @@
+{
+  "projectionId": "tranche-projection-full-chunks",
+  "dryRunAt": "2026-10-29T10:07:38.825Z",
+  "canonicalBaseCommit": "bc1adf3",
+  "baselineAuditedFunctional": 389566,
+  "projectedAuditedFunctional": 2207543,
+  "deltaAuditedFunctional": 1817977,
+  "baselinePhysicalLines": 419353,
+  "projectedPhysicalLines": 2294388,
+  "branchHeadCount": 33,
+  "branchesScannedExcludingIntegration": 32,
+  "assemblyReadyRemote": 24,
+  "modulesInManifest": 25,
+  "integrationOrder": [
+    "agent-01-strategic-gameplay",
+    "agent-02-turns-time",
+    "agent-03-research-tech",
+    "agent-04-modes-scenarios",
+    "agent-05-events",
+    "agent-06-macroeconomy",
+    "agent-07-public-finance",
+    "agent-08-companies",
+    "agent-09-population",
+    "agent-10-finance",
+    "agent-11-cities",
+    "agent-12-infrastructure",
+    "agent-13-energy",
+    "agent-14-housing",
+    "agent-15-trade",
+    "agent-16-guardian",
+    "agent-17-command-center",
+    "agent-18-team-ai",
+    "agent-19-ai-memory",
+    "agent-20-automation",
+    "agent-21-forecasting",
+    "agent-22-ui",
+    "agent-23-dashboards",
+    "agent-24-history",
+    "agent-25-op10m-registry"
+  ],
+  "pendingChunks": [
+    {
+      "branchSlug": "agent-10-finance",
+      "moduleId": "agent-10-finance",
+      "skipReason": "no OP10M chunk"
+    },
+    {
+      "branchSlug": "agent-12-transport-infrastructure",
+      "moduleId": "agent-12-infrastructure",
+      "skipReason": "duplicate moduleId (branch not primary)"
+    },
+    {
+      "branchSlug": "agent-12-transport",
+      "moduleId": "agent-12-transport",
+      "skipReason": "no OP10M chunk"
+    },
+    {
+      "branchSlug": "agent-13-energy-environment",
+      "moduleId": "agent-13-energy",
+      "skipReason": "duplicate moduleId (branch not primary)"
+    },
+    {
+      "branchSlug": "agent-14-housing-wellbeing",
+      "moduleId": "agent-14-housing",
+      "skipReason": "duplicate moduleId (branch not primary)"
+    },
+    {
+      "branchSlug": "agent-19-memory",
+      "moduleId": "agent-19-ai-memory",
+      "skipReason": "duplicate moduleId (branch not primary)"
+    },
+    {
+      "branchSlug": "agent-24-history-replay",
+      "moduleId": "agent-24-history",
+      "skipReason": "duplicate moduleId (branch not primary)"
+    },
+    {
+      "branchSlug": "agent-24-replay",
+      "moduleId": "agent-24-history",
+      "skipReason": "duplicate moduleId (branch not primary)"
+    }
+  ],
+  "moduleStats": [
+    {
+      "moduleId": "agent-01-strategic-gameplay",
+      "slot": "pre-final-export",
+      "contentSha256": "9b787fc3d2186a833943234e034f6d968f19adce928006d91131d2fc7415d3f9"
+    },
+    {
+      "moduleId": "agent-02-turns-time",
+      "slot": "pre-final-export",
+      "contentSha256": "6db9e6dd2ee401e0f7ee4d37edc17d33879a979c891a9f70efd5f7e1138a1eb3"
+    },
+    {
+      "moduleId": "agent-03-research-tech",
+      "slot": "post-v10z",
+      "contentSha256": "57b4672c64608b4a3779ef363e0c8acf8deb38ade23b50a977e92555879e05ce"
+    },
+    {
+      "moduleId": "agent-04-modes-scenarios",
+      "slot": "scenario-engine-extension",
+      "contentSha256": "64e47c5f3cd21e15cc308410cd111ede23eb655aa53c9681170f7595d745b226"
+    },
+    {
+      "moduleId": "agent-05-events",
+      "slot": "pre-final-export",
+      "contentSha256": "b7d9c8361fbf73bbc674fdd39014e7c90068c8622a422d8b15c23ceb284628d1"
+    },
+    {
+      "moduleId": "agent-06-macroeconomy",
+      "slot": "append-only-self-tests",
+      "contentSha256": "c9d6d83e2d69dc8c80807235a8c26873a690d5eecbdac35d074e107bb8a71aee"
+    },
+    {
+      "moduleId": "agent-07-public-finance",
+      "slot": "pre-final-export",
+      "contentSha256": "d5ebbe0002fc3e8ea8a32505f5766284e7b3b1975a70abcb84e122d374095ca8"
+    },
+    {
+      "moduleId": "agent-08-companies",
+      "slot": "append-only-self-tests",
+      "contentSha256": "57c4fb15dfcf190bdec86c3aec6a6b479e8eb72cda9541b0f366cc38307133ca"
+    },
+    {
+      "moduleId": "agent-09-population",
+      "slot": "pre-final-export",
+      "contentSha256": "224ee199b43b98a721b4c3dc4ee2e736433e616ff32b160ae2133e8c54ed994d"
+    },
+    {
+      "moduleId": "agent-10-finance",
+      "slot": "append-only-self-tests",
+      "contentSha256": "8c2e9937e487a34d997b2601f395d86fa9b11610d88f54af1c66feaf22ef62b1"
+    },
+    {
+      "moduleId": "agent-11-cities",
+      "slot": "pre-final-export",
+      "contentSha256": "14b76b07b5b9ad440520fcf6ea4fd55954dda46ad0a93974809093282402d622"
+    },
+    {
+      "moduleId": "agent-12-infrastructure",
+      "slot": "pre-final-export",
+      "contentSha256": "ac690bc103f866667588ee7bc05af5665b725b5022a482b62bee48e11c051ead"
+    },
+    {
+      "moduleId": "agent-13-energy",
+      "slot": "pre-final-export",
+      "contentSha256": "a983de0c2107d231edcf555e54129a6ff77918fc6bcc229a3e68991744c46d23"
+    },
+    {
+      "moduleId": "agent-14-housing",
+      "slot": "pre-final-export",
+      "contentSha256": "681e7b1b72dfc56861ce1079e3df54725e05ff2f63c6d5af79c95ed49df836cb"
+    },
+    {
+      "moduleId": "agent-15-trade",
+      "slot": "pre-final-export",
+      "contentSha256": "f9e93d48b3ee8c1c54005c026a58e4b562c3ecaa533d42c816a8dfb438073de5"
+    },
+    {
+      "moduleId": "agent-16-guardian",
+      "slot": "pre-final-export",
+      "contentSha256": "9ffd0ca3ef3a362e8f42321facd55a00dd233abd23edf669ad6151cac8aa54f5"
+    },
+    {
+      "moduleId": "agent-17-command-center",
+      "slot": "pre-final-export",
+      "contentSha256": "b87e6194775a0545adf5888706154c4104797fba70073d34159d114ce73e1a43"
+    },
+    {
+      "moduleId": "agent-18-team-ai",
+      "slot": "pre-final-export",
+      "contentSha256": "59d7d33af9d2dcbde8f0cafe195212858e5cce7adeccd335130c927dd792e9ad"
+    },
+    {
+      "moduleId": "agent-19-ai-memory",
+      "slot": "pre-final-export",
+      "contentSha256": "414a278bba5ec0487ac2c5ff523a69b3ef3f3412e3dd3dde969d18cf5e4412d1"
+    },
+    {
+      "moduleId": "agent-20-automation",
+      "slot": "append-only-self-tests",
+      "contentSha256": "b59a04ae2b42f6c938f57d4458beb36d5b0116edcb67df984c343c7ad2557cb2"
+    },
+    {
+      "moduleId": "agent-21-forecasting",
+      "slot": "O10M_AGENT21_INTEGRATION_ANCHOR",
+      "contentSha256": "d905c48bd7d308302c995db51654ee23a9cee9f27d96f6e2ad8ef60634466196"
+    },
+    {
+      "moduleId": "agent-22-ui",
+      "slot": "post-v10z",
+      "contentSha256": "996da4a1d1a20a4d7d5db8223d4b323f5d6fc0c8f4791199422b1c40ee51291c"
+    },
+    {
+      "moduleId": "agent-23-dashboards",
+      "slot": "post-living-regions-national-systems",
+      "contentSha256": "be73737567cc3f38f40e7b96ba0a34f5d97c2c855ed2c58db26d1482adbf7d10"
+    },
+    {
+      "moduleId": "agent-24-history",
+      "slot": "pre-final-export",
+      "contentSha256": "5839158d7dcc904a00bfcdda6a648cf3867b2b0b24e815befd75293986c064b6"
+    },
+    {
+      "moduleId": "agent-25-op10m-registry",
+      "slot": "pre-final-export",
+      "contentSha256": "ab4c5979022091045987084038013d0911b9789f54fdcc58804a4d37ec9e6ff8"
+    }
+  ],
+  "artifact": "build/tranche-full-chunks-projection.tsx",
+  "note": "Projection only — canonical not modified."
+}
