@@ -29,6 +29,9 @@ const FILES = [
   'handoff-sla-monitor.ts',
   'actor-capacity-ledger.ts',
   'directive-quota-guard.ts',
+  'handoff-readiness-scorer.ts',
+  'mutex-stability-index.ts',
+  'workstream-barrier-monitor.ts',
   'self-tests.ts',
 ];
 

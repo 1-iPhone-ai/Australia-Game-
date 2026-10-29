@@ -1,4 +1,5 @@
 import { evaluateHandoffSla, summarizeDualTeamHandoffSla } from './handoff-sla-monitor.ts';
+import { combineDualTeamMutexStability } from './mutex-stability-index.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -17,6 +18,7 @@ export interface DualTeamMultiAgentResult {
   isolationIssues: string[];
   byTeam: Record<string, TeamMultiAgentLayerState>;
   handoffSlaCombinedCompliance: number;
+  mutexStabilityCombined: number;
 }
 
 /**
@@ -51,6 +53,7 @@ export function evaluateDualTeamMultiAgentLayers(
       isolationIssues: boundaryIssues,
       byTeam: { [friendlyInputs.teamId]: friendly.state },
       handoffSlaCombinedCompliance: friendlySla.complianceScore,
+      mutexStabilityCombined: friendly.state.meta.mutexStabilityIndex ?? 100,
     };
   }
 
@@ -89,5 +92,21 @@ export function evaluateDualTeamMultiAgentLayers(
       [enemyInputs.teamId]: enemy.state,
     },
     handoffSlaCombinedCompliance: slaSummary.combinedCompliance,
+    mutexStabilityCombined: combineDualTeamMutexStability(
+      {
+        stabilityIndex: friendly.state.meta.mutexStabilityIndex ?? 100,
+        volatileRegionIds: friendly.state.meta.volatileMutexRegionIds ?? [],
+        stableRegionCount: 0,
+        trackedTurns: friendly.state.meta.mutexHistory.length,
+        notes: [],
+      },
+      {
+        stabilityIndex: enemy.state.meta.mutexStabilityIndex ?? 100,
+        volatileRegionIds: enemy.state.meta.volatileMutexRegionIds ?? [],
+        stableRegionCount: 0,
+        trackedTurns: enemy.state.meta.mutexHistory.length,
+        notes: [],
+      },
+    ),
   };
 }

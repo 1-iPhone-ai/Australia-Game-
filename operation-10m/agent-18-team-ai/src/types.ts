@@ -236,6 +236,13 @@ export interface TeamMultiAgentCoordinationMeta {
   overloadedActorIds?: string[];
   idleActorIds?: string[];
   directiveQuotaRemaining?: Record<string, number>;
+  handoffReadinessAverage?: number;
+  notReadyHandoffIds?: string[];
+  mutexStabilityIndex?: number;
+  volatileMutexRegionIds?: string[];
+  workstreamBarrierCompliance?: number;
+  stalledWorkstreamIds?: string[];
+  workstreamBarrierSince?: Record<string, number>;
 }
 
 export const AGENT18_LIMITS = {
@@ -250,6 +257,8 @@ export const AGENT18_LIMITS = {
   maxDirectivesPerActorPerTurn: 3,
   maxDirectivesPerTeamPerTurn: 8,
   handoffSlaMaxPendingTurns: 2,
+  workstreamBarrierMaxWaitTurns: 2,
+  maxMutexHistorySnapshots: 5,
   roleMinTurnsDefault: 2,
 } as const;
 

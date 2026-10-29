@@ -240,6 +240,13 @@ export interface TeamMultiAgentCoordinationMeta {
   overloadedActorIds?: string[];
   idleActorIds?: string[];
   directiveQuotaRemaining?: Record<string, number>;
+  handoffReadinessAverage?: number;
+  notReadyHandoffIds?: string[];
+  mutexStabilityIndex?: number;
+  volatileMutexRegionIds?: string[];
+  workstreamBarrierCompliance?: number;
+  stalledWorkstreamIds?: string[];
+  workstreamBarrierSince?: Record<string, number>;
 }
 
 export const AGENT18_LIMITS = {
@@ -254,6 +261,8 @@ export const AGENT18_LIMITS = {
   maxDirectivesPerActorPerTurn: 3,
   maxDirectivesPerTeamPerTurn: 8,
   handoffSlaMaxPendingTurns: 2,
+  workstreamBarrierMaxWaitTurns: 2,
+  maxMutexHistorySnapshots: 5,
   roleMinTurnsDefault: 2,
 } as const;
 
@@ -1450,6 +1459,37 @@ export function auditTeamMultiAgentLayer(
     });
   }
 
+  if (state.meta.notReadyHandoffIds && state.meta.notReadyHandoffIds.length > 0) {
+    push({
+      severity: 'warning',
+      message: `Handoff targets not ready: ${state.meta.notReadyHandoffIds.join(', ')}`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.mutexStabilityIndex === 'number' &&
+    state.meta.mutexStabilityIndex < 50 &&
+    (state.meta.volatileMutexRegionIds?.length ?? 0) > 0
+  ) {
+    push({
+      severity: 'warning',
+      message: `Low mutex stability (${state.meta.mutexStabilityIndex}) on ${state.meta.volatileMutexRegionIds!.join(', ')}`,
+      actorIds: [],
+      regionId: state.meta.volatileMutexRegionIds![0] || null,
+    });
+  }
+
+  if (state.meta.stalledWorkstreamIds && state.meta.stalledWorkstreamIds.length > 0) {
+    push({
+      severity: 'warning',
+      message: `Workstream barrier stall: ${state.meta.stalledWorkstreamIds.join(', ')}`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
   state.coordination.leases.forEach(lease => {
     if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
       push({
@@ -1639,6 +1679,9 @@ export function summarizeArbitrationDemotions(log: PriorityArbitrationRecord[]):
   buildActorCapacityLedger,
   suggestCapacityRebalanceNotes,
 } from './actor-capacity-ledger.ts';
+  evaluateWorkstreamBarriers,
+  trackWorkstreamBarrierSince,
+} from './workstream-barrier-monitor.ts';
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
   teamActorScope,
@@ -1741,6 +1784,27 @@ export function sanitizeTeamMultiAgentCoordinationState(
         metaRaw.directiveQuotaRemaining && typeof metaRaw.directiveQuotaRemaining === 'object'
           ? (metaRaw.directiveQuotaRemaining as Record<string, number>)
           : undefined,
+      handoffReadinessAverage:
+        typeof metaRaw.handoffReadinessAverage === 'number' ? metaRaw.handoffReadinessAverage : undefined,
+      notReadyHandoffIds: Array.isArray(metaRaw.notReadyHandoffIds)
+        ? metaRaw.notReadyHandoffIds.map(String).slice(0, 8)
+        : undefined,
+      mutexStabilityIndex:
+        typeof metaRaw.mutexStabilityIndex === 'number' ? metaRaw.mutexStabilityIndex : undefined,
+      volatileMutexRegionIds: Array.isArray(metaRaw.volatileMutexRegionIds)
+        ? metaRaw.volatileMutexRegionIds.map(String).slice(0, 8)
+        : undefined,
+      workstreamBarrierCompliance:
+        typeof metaRaw.workstreamBarrierCompliance === 'number'
+          ? metaRaw.workstreamBarrierCompliance
+          : undefined,
+      stalledWorkstreamIds: Array.isArray(metaRaw.stalledWorkstreamIds)
+        ? metaRaw.stalledWorkstreamIds.map(String).slice(0, 8)
+        : undefined,
+      workstreamBarrierSince:
+        metaRaw.workstreamBarrierSince && typeof metaRaw.workstreamBarrierSince === 'object'
+          ? (metaRaw.workstreamBarrierSince as Record<string, number>)
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -1792,6 +1856,13 @@ export function evaluateTeamMultiAgentLayer(
     maxPendingTurns: AGENT18_LIMITS.handoffSlaMaxPendingTurns,
   });
   handoffSla.notes.forEach(n => diagnostics.push(n));
+  const handoffReadiness = scoreHandoffReadiness(
+    coordination.handoffs,
+    inputs.actors,
+    roles,
+    inputs.tasks,
+  );
+  handoffReadiness.notes.forEach(n => diagnostics.push(n));
   const capacityLedger = buildActorCapacityLedger(inputs.actors, inputs.tasks, roles);
   suggestCapacityRebalanceNotes(capacityLedger).forEach(n => diagnostics.push(n));
   directiveResult.suppressed.forEach(s =>
@@ -1824,7 +1895,9 @@ export function evaluateTeamMultiAgentLayer(
     auditFindings: [],
   };
 
-  const mutexHistory = [...(previous?.meta.mutexHistory || []), coordination.mutexRegions].slice(-5);
+  const mutexHistory = [...(previous?.meta.mutexHistory || []), coordination.mutexRegions].slice(
+    -AGENT18_LIMITS.maxMutexHistorySnapshots,
+  );
   const reconcile = mergeReconcileThrashing(
     reconcileCoordinationPlans(previous?.coordination ?? null, coordination, inputs.turn),
     mutexHistory,
@@ -1835,6 +1908,22 @@ export function evaluateTeamMultiAgentLayer(
   if (reconcile.thrashingRegions.length) {
     diagnostics.push(`Mutex thrashing: ${reconcile.thrashingRegions.join(', ')}`);
   }
+
+  const mutexStability = computeMutexStabilityIndex(mutexHistory, reconcile.thrashingRegions);
+  mutexStability.notes.forEach(n => diagnostics.push(n));
+
+  const barrierSince = trackWorkstreamBarrierSince(
+    previous?.meta.workstreamBarrierSince ?? {},
+    coordination.workstreams,
+    inputs.turn,
+  );
+  const workstreamBarriers = evaluateWorkstreamBarriers(
+    inputs.turn,
+    coordination.workstreams,
+    inputs.tasks,
+    { workstreamSinceTurn: barrierSince },
+  );
+  workstreamBarriers.notes.forEach(n => diagnostics.push(n));
 
   state = {
     ...state,
@@ -1855,6 +1944,13 @@ export function evaluateTeamMultiAgentLayer(
       overloadedActorIds: capacityLedger.overloadedActorIds,
       idleActorIds: capacityLedger.idleActorIds,
       directiveQuotaRemaining: quota.remainingByActor,
+      handoffReadinessAverage: handoffReadiness.averageReadiness,
+      notReadyHandoffIds: handoffReadiness.notReadyHandoffIds,
+      mutexStabilityIndex: mutexStability.stabilityIndex,
+      volatileMutexRegionIds: mutexStability.volatileRegionIds,
+      workstreamBarrierCompliance: workstreamBarriers.barrierComplianceScore,
+      stalledWorkstreamIds: workstreamBarriers.stalledWorkstreamIds,
+      workstreamBarrierSince: barrierSince,
     },
   };
 
@@ -2027,6 +2123,7 @@ export interface DualTeamMultiAgentResult {
   isolationIssues: string[];
   byTeam: Record<string, TeamMultiAgentLayerState>;
   handoffSlaCombinedCompliance: number;
+  mutexStabilityCombined: number;
 }
 
 /**
@@ -2061,6 +2158,7 @@ export function evaluateDualTeamMultiAgentLayers(
       isolationIssues: boundaryIssues,
       byTeam: { [friendlyInputs.teamId]: friendly.state },
       handoffSlaCombinedCompliance: friendlySla.complianceScore,
+      mutexStabilityCombined: friendly.state.meta.mutexStabilityIndex ?? 100,
     };
   }
 
@@ -2099,6 +2197,22 @@ export function evaluateDualTeamMultiAgentLayers(
       [enemyInputs.teamId]: enemy.state,
     },
     handoffSlaCombinedCompliance: slaSummary.combinedCompliance,
+    mutexStabilityCombined: combineDualTeamMutexStability(
+      {
+        stabilityIndex: friendly.state.meta.mutexStabilityIndex ?? 100,
+        volatileRegionIds: friendly.state.meta.volatileMutexRegionIds ?? [],
+        stableRegionCount: 0,
+        trackedTurns: friendly.state.meta.mutexHistory.length,
+        notes: [],
+      },
+      {
+        stabilityIndex: enemy.state.meta.mutexStabilityIndex ?? 100,
+        volatileRegionIds: enemy.state.meta.volatileMutexRegionIds ?? [],
+        stableRegionCount: 0,
+        trackedTurns: enemy.state.meta.mutexHistory.length,
+        notes: [],
+      },
+    ),
   };
 }
 
@@ -2364,6 +2478,272 @@ export function mergeQuotaDroppedIntoSuppressed(
 }
 
 
+// --- source: handoff-readiness-scorer.ts ---
+  HandoffRequest,
+  RoleAssignment,
+  TeamActorSnapshot,
+  TeamTaskSnapshot,
+} from './types.ts';
+
+export interface HandoffReadinessRow {
+  handoffId: string;
+  toActorId: string;
+  readinessScore: number;
+  blockers: string[];
+  ready: boolean;
+}
+
+export interface HandoffReadinessReport {
+  rows: HandoffReadinessRow[];
+  averageReadiness: number;
+  notReadyHandoffIds: string[];
+  notes: string[];
+}
+
+/**
+ * Score whether pending handoff targets can accept responsibility this turn.
+ */
+export function scoreHandoffReadiness(
+  handoffs: HandoffRequest[],
+  actors: TeamActorSnapshot[],
+  roles: RoleAssignment[],
+  tasks: TeamTaskSnapshot[],
+): HandoffReadinessReport {
+  const pending = handoffs.filter(h => h.status === 'pending');
+  const rows: HandoffReadinessRow[] = [];
+  const notReadyHandoffIds: string[] = [];
+  const notes: string[] = [];
+
+  pending.forEach(h => {
+    const actor = actors.find(a => a.id === h.toActorId);
+    const role = roles.find(r => r.actorId === h.toActorId);
+    const task = tasks.find(t => t.id === h.taskId);
+    const blockers: string[] = [];
+    let score = 100;
+
+    if (!actor) {
+      blockers.push('missing_target_actor');
+      score = 0;
+    } else {
+      if (actor.inRecovery) {
+        blockers.push('target_in_recovery');
+        score -= 45;
+      }
+      if (actor.apRemaining !== null && actor.apRemaining <= 0) {
+        blockers.push('target_no_ap');
+        score -= 35;
+      }
+    }
+
+    if (role?.primaryRole === 'recovery') {
+      blockers.push('target_recovery_role');
+      score -= 25;
+    }
+
+    if (task && task.status !== 'blocked') {
+      blockers.push('task_not_blocked');
+      score -= 20;
+    }
+
+    const ready = score >= 60 && blockers.length === 0;
+    if (!ready) {
+      notReadyHandoffIds.push(h.id);
+      notes.push(`Handoff ${h.id} target ${h.toActorId} not ready (${blockers.join(', ') || 'low score'})`);
+    }
+
+    rows.push({
+      handoffId: h.id,
+      toActorId: h.toActorId,
+      readinessScore: Math.max(0, Math.min(100, score)),
+      blockers,
+      ready,
+    });
+  });
+
+  const averageReadiness =
+    rows.length === 0
+      ? 100
+      : Math.round(rows.reduce((sum, r) => sum + r.readinessScore, 0) / rows.length);
+
+  return {
+    rows,
+    averageReadiness,
+    notReadyHandoffIds,
+    notes: notes.slice(0, 8),
+  };
+}
+
+export function filterHandoffsByReadiness(
+  handoffs: HandoffRequest[],
+  report: HandoffReadinessReport,
+  minScore = 60,
+): { eligible: HandoffRequest[]; deferredIds: string[] } {
+  const eligible: HandoffRequest[] = [];
+  const deferredIds: string[] = [];
+  handoffs.forEach(h => {
+    if (h.status !== 'pending') {
+      eligible.push(h);
+      return;
+    }
+    const row = report.rows.find(r => r.handoffId === h.id);
+    if (row && row.readinessScore >= minScore && row.ready) {
+      eligible.push(h);
+    } else {
+      deferredIds.push(h.id);
+    }
+  });
+  return { eligible, deferredIds };
+}
+
+
+// --- source: mutex-stability-index.ts ---
+
+export interface MutexStabilityReport {
+  stabilityIndex: number;
+  volatileRegionIds: string[];
+  stableRegionCount: number;
+  trackedTurns: number;
+  notes: string[];
+}
+
+/**
+ * Complement thrashing detection: score how stable region mutex holders have been.
+ */
+export function computeMutexStabilityIndex(
+  mutexHistory: Array<Record<string, string>>,
+  thrashingRegions: string[] = [],
+): MutexStabilityReport {
+  const history = mutexHistory.slice(-AGENT18_LIMITS.maxMutexHistorySnapshots);
+  if (history.length < 2) {
+    return {
+      stabilityIndex: 100,
+      volatileRegionIds: [],
+      stableRegionCount: 0,
+      trackedTurns: history.length,
+      notes: history.length === 0 ? ['No mutex history yet'] : [],
+    };
+  }
+
+  const regions = new Set<string>();
+  history.forEach(snap => Object.keys(snap).forEach(r => regions.add(r)));
+
+  const volatileRegionIds: string[] = [];
+  const notes: string[] = [];
+  let stableRegionCount = 0;
+
+  regions.forEach(regionId => {
+    if (thrashingRegions.includes(regionId)) {
+      volatileRegionIds.push(regionId);
+      return;
+    }
+    const holders = history.map(s => s[regionId]).filter(Boolean);
+    if (holders.length < 2) {
+      stableRegionCount += 1;
+      return;
+    }
+    const flips = holders.slice(1).filter((h, i) => h !== holders[i]).length;
+    const flipRate = flips / (holders.length - 1);
+    if (flipRate >= 0.5) {
+      volatileRegionIds.push(regionId);
+      notes.push(`Region ${regionId} volatile (flip rate ${Math.round(flipRate * 100)}%)`);
+    } else {
+      stableRegionCount += 1;
+    }
+  });
+
+  const volatilePenalty = volatileRegionIds.length * 18;
+  const stabilityIndex = Math.max(0, Math.min(100, 100 - volatilePenalty));
+
+  return {
+    stabilityIndex,
+    volatileRegionIds: volatileRegionIds.slice(0, 8),
+    stableRegionCount,
+    trackedTurns: history.length,
+    notes: notes.slice(0, 6),
+  };
+}
+
+export function combineDualTeamMutexStability(
+  friendly: MutexStabilityReport,
+  enemy: MutexStabilityReport | null,
+): number {
+  if (!enemy) return friendly.stabilityIndex;
+  return Math.round((friendly.stabilityIndex + enemy.stabilityIndex) / 2);
+}
+
+
+// --- source: workstream-barrier-monitor.ts ---
+
+export interface WorkstreamBarrierReport {
+  stalledWorkstreamIds: string[];
+  waitingBarrierCount: number;
+  barrierComplianceScore: number;
+  notes: string[];
+}
+
+/**
+ * Detect parallel workstreams stuck on barrier tasks beyond a turn budget.
+ */
+export function evaluateWorkstreamBarriers(
+  turn: number,
+  workstreams: ParallelWorkstream[],
+  tasks: TeamTaskSnapshot[],
+  options: { maxBarrierWaitTurns?: number; workstreamSinceTurn?: Record<string, number> } = {},
+): WorkstreamBarrierReport {
+  const maxWait = options.maxBarrierWaitTurns ?? AGENT18_LIMITS.workstreamBarrierMaxWaitTurns;
+  const sinceById = options.workstreamSinceTurn ?? {};
+  const stalledWorkstreamIds: string[] = [];
+  const notes: string[] = [];
+
+  const waiting = workstreams.filter(ws => ws.phase === 'waiting_barrier');
+  waiting.forEach(ws => {
+    const barrierTasks = ws.barrierTaskIds
+      .map(id => tasks.find(t => t.id === id))
+      .filter((t): t is TeamTaskSnapshot => Boolean(t));
+    const allWaiting = barrierTasks.length > 0 && barrierTasks.every(t => t.status === 'waiting');
+    if (!allWaiting) return;
+
+    const since = sinceById[ws.id] ?? turn;
+    const age = turn - since;
+    if (age > maxWait) {
+      stalledWorkstreamIds.push(ws.id);
+      notes.push(`Workstream ${ws.id} stalled on barrier (${age} turns, max ${maxWait})`);
+    }
+  });
+
+  const barrierComplianceScore =
+    waiting.length === 0
+      ? 100
+      : Math.max(
+          0,
+          Math.round(100 * (1 - stalledWorkstreamIds.length / Math.max(1, waiting.length))),
+        );
+
+  return {
+    stalledWorkstreamIds,
+    waitingBarrierCount: waiting.length,
+    barrierComplianceScore,
+    notes: notes.slice(0, 6),
+  };
+}
+
+export function trackWorkstreamBarrierSince(
+  previous: Record<string, number>,
+  workstreams: ParallelWorkstream[],
+  turn: number,
+): Record<string, number> {
+  const next: Record<string, number> = { ...previous };
+  workstreams.forEach(ws => {
+    if (ws.phase === 'waiting_barrier') {
+      if (next[ws.id] === undefined) next[ws.id] = turn;
+    } else {
+      delete next[ws.id];
+    }
+  });
+  return next;
+}
+
+
 // --- source: self-tests.ts ---
   arbitrateRegionLead,
   buildMutexMapWithPriorityArbitration,
@@ -2390,6 +2770,12 @@ export function mergeQuotaDroppedIntoSuppressed(
   buildActorCapacityLedger,
   suggestCapacityRebalanceNotes,
 } from './actor-capacity-ledger.ts';
+  filterHandoffsByReadiness,
+  scoreHandoffReadiness,
+} from './handoff-readiness-scorer.ts';
+  evaluateWorkstreamBarriers,
+  trackWorkstreamBarrierSince,
+} from './workstream-barrier-monitor.ts';
   DuplicateActionGuard,
   buildActionFingerprint,
   detectDuplicateIntents,
@@ -3327,6 +3713,170 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
     });
     const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
     return typeof dual.handoffSlaCombinedCompliance === 'number';
+  });
+
+  check(results, 'a18_handoff_readiness_block', 'Handoff readiness: zero AP marks target not ready', () => {
+    const handoffs = [
+      {
+        id: 'h1',
+        fromActorId: 'player',
+        toActorId: 'mate',
+        regionId: 'NSW',
+        taskId: 'task_defend_NSW',
+        status: 'pending' as const,
+        requestedTurn: 5,
+        reason: 'test',
+      },
+    ];
+    const inp = baseInputs();
+    inp.tasks = inp.tasks.map(t =>
+      t.id === 'task_defend_NSW' ? { ...t, status: 'blocked' as const } : t,
+    );
+    inp.actors = inp.actors.map(a => (a.id === 'mate' ? { ...a, apRemaining: 0 } : a));
+    const roles = assignTeamRolesWithSlots(inp).roles;
+    const report = scoreHandoffReadiness(handoffs, inp.actors, roles, inp.tasks);
+    return report.notReadyHandoffIds.includes('h1') && report.averageReadiness < 100;
+  });
+
+  check(results, 'a18_handoff_readiness_ok', 'Handoff readiness: blocked task + AP yields ready target', () => {
+    const handoffs = [
+      {
+        id: 'h_ok',
+        fromActorId: 'player',
+        toActorId: 'mate',
+        regionId: 'NSW',
+        taskId: 'task_defend_NSW',
+        status: 'pending' as const,
+        requestedTurn: 6,
+        reason: 'test',
+      },
+    ];
+    const inp = baseInputs();
+    inp.tasks = inp.tasks.map(t =>
+      t.id === 'task_defend_NSW' ? { ...t, status: 'blocked' as const } : t,
+    );
+    const roles = assignTeamRolesWithSlots(inp).roles;
+    const report = scoreHandoffReadiness(handoffs, inp.actors, roles, inp.tasks);
+    const row = report.rows.find(r => r.handoffId === 'h_ok');
+    return row?.ready === true && report.notReadyHandoffIds.length === 0;
+  });
+
+  check(results, 'a18_handoff_filter_defer', 'Handoff filter: defers unreadiness below score threshold', () => {
+    const handoffs = [
+      {
+        id: 'h_bad',
+        fromActorId: 'player',
+        toActorId: 'mate',
+        regionId: 'NSW',
+        taskId: 't',
+        status: 'pending' as const,
+        requestedTurn: 1,
+        reason: 'test',
+      },
+    ];
+    const report = scoreHandoffReadiness(
+      handoffs,
+      [{ id: 'mate', name: 'M', isHuman: false, inRecovery: true, location: 'NSW', apRemaining: 0, brainRole: null }],
+      [],
+      [{ id: 't', type: 'defend_region', label: 'x', status: 'blocked', priority: 1, assignedActorIds: ['player'], regionId: 'NSW', resourceRequirement: 1, dependencies: [] }],
+    );
+    const filtered = filterHandoffsByReadiness(handoffs, report);
+    return filtered.deferredIds.includes('h_bad') && filtered.eligible.length === 0;
+  });
+
+  check(results, 'a18_mutex_stability_stable', 'Mutex stability: steady holder history scores 100', () => {
+    const history = [{ NSW: 'player' }, { NSW: 'player' }, { NSW: 'player' }];
+    const report = computeMutexStabilityIndex(history, []);
+    return report.stabilityIndex === 100 && report.volatileRegionIds.length === 0;
+  });
+
+  check(results, 'a18_mutex_stability_volatile', 'Mutex stability: flip-flopping region marked volatile', () => {
+    const history = [{ NSW: 'a' }, { NSW: 'b' }, { NSW: 'a' }, { NSW: 'b' }];
+    const report = computeMutexStabilityIndex(history, []);
+    return report.volatileRegionIds.includes('NSW') && report.stabilityIndex < 100;
+  });
+
+  check(results, 'a18_mutex_stability_thrash_penalty', 'Mutex stability: thrashing list forces volatile region', () => {
+    const report = computeMutexStabilityIndex([{ NSW: 'a' }, { NSW: 'b' }], ['NSW']);
+    return report.volatileRegionIds.includes('NSW');
+  });
+
+  check(results, 'a18_barrier_stall', 'Workstream barrier: long wait marks stall', () => {
+    const ws = [
+      {
+        id: 'ws1',
+        actorIds: ['player', 'mate'],
+        taskIds: ['b1'],
+        phase: 'waiting_barrier' as const,
+        barrierTaskIds: ['b1'],
+      },
+    ];
+    const tasks: TeamTaskSnapshot[] = [
+      {
+        id: 'b1',
+        type: 'preserve_reserve',
+        label: 'Reserve',
+        status: 'waiting',
+        priority: 1,
+        assignedActorIds: ['player', 'mate'],
+        regionId: null,
+        resourceRequirement: 0,
+        dependencies: [],
+      },
+    ];
+    const report = evaluateWorkstreamBarriers(10, ws, tasks, {
+      workstreamSinceTurn: { ws1: 5 },
+      maxBarrierWaitTurns: 2,
+    });
+    return report.stalledWorkstreamIds.includes('ws1') && report.barrierComplianceScore === 0;
+  });
+
+  check(results, 'a18_barrier_track_since', 'Workstream barrier: since-turn tracker resets when phase clears', () => {
+    const ws = [
+      {
+        id: 'ws1',
+        actorIds: ['a'],
+        taskIds: [],
+        phase: 'active' as const,
+        barrierTaskIds: [],
+      },
+    ];
+    const tracked = trackWorkstreamBarrierSince({ ws1: 3, ws_old: 1 }, ws, 7);
+    return tracked.ws1 === undefined && tracked.ws_old === 1;
+  });
+
+  check(results, 'a18_eval_round5_meta', 'Layer: round-5 meta exposes readiness, stability, barrier fields', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.handoffReadinessAverage === 'number' &&
+      typeof m.mutexStabilityIndex === 'number' &&
+      typeof m.workstreamBarrierCompliance === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_handoff_not_ready', 'Audit: not-ready handoffs surface warning finding', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = {
+      ...ev.state,
+      meta: { ...ev.state.meta, notReadyHandoffIds: ['h_x'] },
+    };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /not ready/.test(f.message));
+  });
+
+  check(results, 'a18_dual_mutex_stability', 'Dual team: combined mutex stability exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return typeof dual.mutexStabilityCombined === 'number';
   });
 
   return results;

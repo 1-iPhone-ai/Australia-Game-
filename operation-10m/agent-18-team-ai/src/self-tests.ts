@@ -35,6 +35,15 @@ import {
 import { applyDirectiveQuotaGuard } from './directive-quota-guard.ts';
 import { evaluateHandoffSla } from './handoff-sla-monitor.ts';
 import {
+  filterHandoffsByReadiness,
+  scoreHandoffReadiness,
+} from './handoff-readiness-scorer.ts';
+import { computeMutexStabilityIndex } from './mutex-stability-index.ts';
+import {
+  evaluateWorkstreamBarriers,
+  trackWorkstreamBarrierSince,
+} from './workstream-barrier-monitor.ts';
+import {
   DuplicateActionGuard,
   buildActionFingerprint,
   detectDuplicateIntents,
@@ -975,6 +984,170 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
     });
     const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
     return typeof dual.handoffSlaCombinedCompliance === 'number';
+  });
+
+  check(results, 'a18_handoff_readiness_block', 'Handoff readiness: zero AP marks target not ready', () => {
+    const handoffs = [
+      {
+        id: 'h1',
+        fromActorId: 'player',
+        toActorId: 'mate',
+        regionId: 'NSW',
+        taskId: 'task_defend_NSW',
+        status: 'pending' as const,
+        requestedTurn: 5,
+        reason: 'test',
+      },
+    ];
+    const inp = baseInputs();
+    inp.tasks = inp.tasks.map(t =>
+      t.id === 'task_defend_NSW' ? { ...t, status: 'blocked' as const } : t,
+    );
+    inp.actors = inp.actors.map(a => (a.id === 'mate' ? { ...a, apRemaining: 0 } : a));
+    const roles = assignTeamRolesWithSlots(inp).roles;
+    const report = scoreHandoffReadiness(handoffs, inp.actors, roles, inp.tasks);
+    return report.notReadyHandoffIds.includes('h1') && report.averageReadiness < 100;
+  });
+
+  check(results, 'a18_handoff_readiness_ok', 'Handoff readiness: blocked task + AP yields ready target', () => {
+    const handoffs = [
+      {
+        id: 'h_ok',
+        fromActorId: 'player',
+        toActorId: 'mate',
+        regionId: 'NSW',
+        taskId: 'task_defend_NSW',
+        status: 'pending' as const,
+        requestedTurn: 6,
+        reason: 'test',
+      },
+    ];
+    const inp = baseInputs();
+    inp.tasks = inp.tasks.map(t =>
+      t.id === 'task_defend_NSW' ? { ...t, status: 'blocked' as const } : t,
+    );
+    const roles = assignTeamRolesWithSlots(inp).roles;
+    const report = scoreHandoffReadiness(handoffs, inp.actors, roles, inp.tasks);
+    const row = report.rows.find(r => r.handoffId === 'h_ok');
+    return row?.ready === true && report.notReadyHandoffIds.length === 0;
+  });
+
+  check(results, 'a18_handoff_filter_defer', 'Handoff filter: defers unreadiness below score threshold', () => {
+    const handoffs = [
+      {
+        id: 'h_bad',
+        fromActorId: 'player',
+        toActorId: 'mate',
+        regionId: 'NSW',
+        taskId: 't',
+        status: 'pending' as const,
+        requestedTurn: 1,
+        reason: 'test',
+      },
+    ];
+    const report = scoreHandoffReadiness(
+      handoffs,
+      [{ id: 'mate', name: 'M', isHuman: false, inRecovery: true, location: 'NSW', apRemaining: 0, brainRole: null }],
+      [],
+      [{ id: 't', type: 'defend_region', label: 'x', status: 'blocked', priority: 1, assignedActorIds: ['player'], regionId: 'NSW', resourceRequirement: 1, dependencies: [] }],
+    );
+    const filtered = filterHandoffsByReadiness(handoffs, report);
+    return filtered.deferredIds.includes('h_bad') && filtered.eligible.length === 0;
+  });
+
+  check(results, 'a18_mutex_stability_stable', 'Mutex stability: steady holder history scores 100', () => {
+    const history = [{ NSW: 'player' }, { NSW: 'player' }, { NSW: 'player' }];
+    const report = computeMutexStabilityIndex(history, []);
+    return report.stabilityIndex === 100 && report.volatileRegionIds.length === 0;
+  });
+
+  check(results, 'a18_mutex_stability_volatile', 'Mutex stability: flip-flopping region marked volatile', () => {
+    const history = [{ NSW: 'a' }, { NSW: 'b' }, { NSW: 'a' }, { NSW: 'b' }];
+    const report = computeMutexStabilityIndex(history, []);
+    return report.volatileRegionIds.includes('NSW') && report.stabilityIndex < 100;
+  });
+
+  check(results, 'a18_mutex_stability_thrash_penalty', 'Mutex stability: thrashing list forces volatile region', () => {
+    const report = computeMutexStabilityIndex([{ NSW: 'a' }, { NSW: 'b' }], ['NSW']);
+    return report.volatileRegionIds.includes('NSW');
+  });
+
+  check(results, 'a18_barrier_stall', 'Workstream barrier: long wait marks stall', () => {
+    const ws = [
+      {
+        id: 'ws1',
+        actorIds: ['player', 'mate'],
+        taskIds: ['b1'],
+        phase: 'waiting_barrier' as const,
+        barrierTaskIds: ['b1'],
+      },
+    ];
+    const tasks: TeamTaskSnapshot[] = [
+      {
+        id: 'b1',
+        type: 'preserve_reserve',
+        label: 'Reserve',
+        status: 'waiting',
+        priority: 1,
+        assignedActorIds: ['player', 'mate'],
+        regionId: null,
+        resourceRequirement: 0,
+        dependencies: [],
+      },
+    ];
+    const report = evaluateWorkstreamBarriers(10, ws, tasks, {
+      workstreamSinceTurn: { ws1: 5 },
+      maxBarrierWaitTurns: 2,
+    });
+    return report.stalledWorkstreamIds.includes('ws1') && report.barrierComplianceScore === 0;
+  });
+
+  check(results, 'a18_barrier_track_since', 'Workstream barrier: since-turn tracker resets when phase clears', () => {
+    const ws = [
+      {
+        id: 'ws1',
+        actorIds: ['a'],
+        taskIds: [],
+        phase: 'active' as const,
+        barrierTaskIds: [],
+      },
+    ];
+    const tracked = trackWorkstreamBarrierSince({ ws1: 3, ws_old: 1 }, ws, 7);
+    return tracked.ws1 === undefined && tracked.ws_old === 1;
+  });
+
+  check(results, 'a18_eval_round5_meta', 'Layer: round-5 meta exposes readiness, stability, barrier fields', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.handoffReadinessAverage === 'number' &&
+      typeof m.mutexStabilityIndex === 'number' &&
+      typeof m.workstreamBarrierCompliance === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_handoff_not_ready', 'Audit: not-ready handoffs surface warning finding', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = {
+      ...ev.state,
+      meta: { ...ev.state.meta, notReadyHandoffIds: ['h_x'] },
+    };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /not ready/.test(f.message));
+  });
+
+  check(results, 'a18_dual_mutex_stability', 'Dual team: combined mutex stability exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return typeof dual.mutexStabilityCombined === 'number';
   });
 
   return results;

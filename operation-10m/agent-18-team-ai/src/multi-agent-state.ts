@@ -29,6 +29,12 @@ import {
 } from './actor-capacity-ledger.ts';
 import { applyDirectiveQuotaGuard } from './directive-quota-guard.ts';
 import { evaluateHandoffSla } from './handoff-sla-monitor.ts';
+import { scoreHandoffReadiness } from './handoff-readiness-scorer.ts';
+import { computeMutexStabilityIndex } from './mutex-stability-index.ts';
+import {
+  evaluateWorkstreamBarriers,
+  trackWorkstreamBarrierSince,
+} from './workstream-barrier-monitor.ts';
 import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
@@ -133,6 +139,27 @@ export function sanitizeTeamMultiAgentCoordinationState(
         metaRaw.directiveQuotaRemaining && typeof metaRaw.directiveQuotaRemaining === 'object'
           ? (metaRaw.directiveQuotaRemaining as Record<string, number>)
           : undefined,
+      handoffReadinessAverage:
+        typeof metaRaw.handoffReadinessAverage === 'number' ? metaRaw.handoffReadinessAverage : undefined,
+      notReadyHandoffIds: Array.isArray(metaRaw.notReadyHandoffIds)
+        ? metaRaw.notReadyHandoffIds.map(String).slice(0, 8)
+        : undefined,
+      mutexStabilityIndex:
+        typeof metaRaw.mutexStabilityIndex === 'number' ? metaRaw.mutexStabilityIndex : undefined,
+      volatileMutexRegionIds: Array.isArray(metaRaw.volatileMutexRegionIds)
+        ? metaRaw.volatileMutexRegionIds.map(String).slice(0, 8)
+        : undefined,
+      workstreamBarrierCompliance:
+        typeof metaRaw.workstreamBarrierCompliance === 'number'
+          ? metaRaw.workstreamBarrierCompliance
+          : undefined,
+      stalledWorkstreamIds: Array.isArray(metaRaw.stalledWorkstreamIds)
+        ? metaRaw.stalledWorkstreamIds.map(String).slice(0, 8)
+        : undefined,
+      workstreamBarrierSince:
+        metaRaw.workstreamBarrierSince && typeof metaRaw.workstreamBarrierSince === 'object'
+          ? (metaRaw.workstreamBarrierSince as Record<string, number>)
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -184,6 +211,13 @@ export function evaluateTeamMultiAgentLayer(
     maxPendingTurns: AGENT18_LIMITS.handoffSlaMaxPendingTurns,
   });
   handoffSla.notes.forEach(n => diagnostics.push(n));
+  const handoffReadiness = scoreHandoffReadiness(
+    coordination.handoffs,
+    inputs.actors,
+    roles,
+    inputs.tasks,
+  );
+  handoffReadiness.notes.forEach(n => diagnostics.push(n));
   const capacityLedger = buildActorCapacityLedger(inputs.actors, inputs.tasks, roles);
   suggestCapacityRebalanceNotes(capacityLedger).forEach(n => diagnostics.push(n));
   directiveResult.suppressed.forEach(s =>
@@ -216,7 +250,9 @@ export function evaluateTeamMultiAgentLayer(
     auditFindings: [],
   };
 
-  const mutexHistory = [...(previous?.meta.mutexHistory || []), coordination.mutexRegions].slice(-5);
+  const mutexHistory = [...(previous?.meta.mutexHistory || []), coordination.mutexRegions].slice(
+    -AGENT18_LIMITS.maxMutexHistorySnapshots,
+  );
   const reconcile = mergeReconcileThrashing(
     reconcileCoordinationPlans(previous?.coordination ?? null, coordination, inputs.turn),
     mutexHistory,
@@ -227,6 +263,22 @@ export function evaluateTeamMultiAgentLayer(
   if (reconcile.thrashingRegions.length) {
     diagnostics.push(`Mutex thrashing: ${reconcile.thrashingRegions.join(', ')}`);
   }
+
+  const mutexStability = computeMutexStabilityIndex(mutexHistory, reconcile.thrashingRegions);
+  mutexStability.notes.forEach(n => diagnostics.push(n));
+
+  const barrierSince = trackWorkstreamBarrierSince(
+    previous?.meta.workstreamBarrierSince ?? {},
+    coordination.workstreams,
+    inputs.turn,
+  );
+  const workstreamBarriers = evaluateWorkstreamBarriers(
+    inputs.turn,
+    coordination.workstreams,
+    inputs.tasks,
+    { workstreamSinceTurn: barrierSince },
+  );
+  workstreamBarriers.notes.forEach(n => diagnostics.push(n));
 
   state = {
     ...state,
@@ -247,6 +299,13 @@ export function evaluateTeamMultiAgentLayer(
       overloadedActorIds: capacityLedger.overloadedActorIds,
       idleActorIds: capacityLedger.idleActorIds,
       directiveQuotaRemaining: quota.remainingByActor,
+      handoffReadinessAverage: handoffReadiness.averageReadiness,
+      notReadyHandoffIds: handoffReadiness.notReadyHandoffIds,
+      mutexStabilityIndex: mutexStability.stabilityIndex,
+      volatileMutexRegionIds: mutexStability.volatileRegionIds,
+      workstreamBarrierCompliance: workstreamBarriers.barrierComplianceScore,
+      stalledWorkstreamIds: workstreamBarriers.stalledWorkstreamIds,
+      workstreamBarrierSince: barrierSince,
     },
   };
 
