@@ -37,13 +37,13 @@ describe('Agent 12 round 29 catalog', () => {
 });
 
 describe('Agent 12 round 29 systems', () => {
-  it('returns agent12/39 with alumina export, relief air bridge, yard automation', () => {
+  it('returns agent12/40 with alumina export, relief air bridge, yard automation', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(260), {
       aluminaRefineryExportPolicy: 'accelerate',
       disasterReliefAirBridgePolicy: 'surge',
       containerYardAutomationPolicy: 'deploy',
     });
-    assert.equal(state.schemaVersion, 'agent12/39');
+    assert.equal(state.schemaVersion, 'agent12/40');
     assert.ok(state.nationalAluminaRefineryExportIndex >= 5);
     assert.ok(state.nationalDisasterReliefAirBridgeIndex >= 6);
     assert.ok(state.containerYardAutomationShare >= 0.03);

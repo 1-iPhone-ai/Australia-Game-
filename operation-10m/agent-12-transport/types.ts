@@ -381,8 +381,14 @@ export type CoastalFloodEvacStagingPolicy = 'baseline' | 'surge';
 
 export type WarehouseRobotSortationLogisticsPolicy = 'baseline' | 'expand';
 
+export type OffshoreWaveEnergyExportPolicy = 'baseline' | 'accelerate';
+
+export type RemoteSchoolSupplyStagingPolicy = 'baseline' | 'surge';
+
+export type PortLithiumHydroxideLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/39';
+  schemaVersion: 'agent12/40';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -660,6 +666,14 @@ export interface TransportInfrastructureState {
   warehouseRobotSortationLogisticsShare: number;
   nationalWarehouseRobotSortationLogisticsThroughputIndex: number;
   warehouseRobotSortationLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalOffshoreWaveEnergyExportIndex: number;
+  offshoreWaveEnergyExportByRegion: Record<AuRegionCode, number>;
+  remoteSchoolSupplyStagingShare: number;
+  nationalRemoteSchoolSupplyStagingIndex: number;
+  remoteSchoolSupplyStagingByRegion: Record<AuRegionCode, number>;
+  portLithiumHydroxideLogisticsShare: number;
+  nationalPortLithiumHydroxideLogisticsThroughputIndex: number;
+  portLithiumHydroxideLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -767,6 +781,9 @@ export interface TransportInfrastructureOptions {
   deepGeothermalExportPolicy?: DeepGeothermalExportPolicy;
   coastalFloodEvacStagingPolicy?: CoastalFloodEvacStagingPolicy;
   warehouseRobotSortationLogisticsPolicy?: WarehouseRobotSortationLogisticsPolicy;
+  offshoreWaveEnergyExportPolicy?: OffshoreWaveEnergyExportPolicy;
+  remoteSchoolSupplyStagingPolicy?: RemoteSchoolSupplyStagingPolicy;
+  portLithiumHydroxideLogisticsPolicy?: PortLithiumHydroxideLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {

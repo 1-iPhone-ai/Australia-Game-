@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/39' &&
+      infra.schemaVersion === 'agent12/40' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -202,8 +202,16 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalPumpedHydroRenewableExportIndex >= 5 &&
       infra.nationalWildfireAirtankerStagingIndex >= 6 &&
       infra.suburbanMicroFulfillmentLogisticsShare >= 0.03 &&
-      infra.nationalSuburbanMicroFulfillmentLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} pumped=${infra.nationalPumpedHydroRenewableExportIndex.toFixed(1)} tanker=${infra.nationalWildfireAirtankerStagingIndex.toFixed(1)} micro=${infra.nationalSuburbanMicroFulfillmentLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalSuburbanMicroFulfillmentLogisticsThroughputIndex >= 2 &&
+      infra.nationalDeepGeothermalExportIndex >= 5 &&
+      infra.nationalCoastalFloodEvacStagingIndex >= 6 &&
+      infra.warehouseRobotSortationLogisticsShare >= 0.03 &&
+      infra.nationalWarehouseRobotSortationLogisticsThroughputIndex >= 2 &&
+      infra.nationalOffshoreWaveEnergyExportIndex >= 5 &&
+      infra.nationalRemoteSchoolSupplyStagingIndex >= 6 &&
+      infra.portLithiumHydroxideLogisticsShare >= 0.03 &&
+      infra.nationalPortLithiumHydroxideLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} wave=${infra.nationalOffshoreWaveEnergyExportIndex.toFixed(1)} school=${infra.nationalRemoteSchoolSupplyStagingIndex.toFixed(1)} hydroxide=${infra.nationalPortLithiumHydroxideLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;

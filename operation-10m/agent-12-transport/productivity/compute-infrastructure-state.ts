@@ -601,6 +601,23 @@ import {
   nationalWarehouseRobotSortationLogisticsThroughputIndex,
   warehouseRobotSortationLogisticsProductivityMultiplier,
 } from './warehouse-robot-sortation-logistics-index.ts';
+import {
+  computeOffshoreWaveEnergyExportByRegion,
+  nationalOffshoreWaveEnergyExportIndex,
+  offshoreWaveEnergyExportProductivityMultiplier,
+} from '../network/offshore-wave-energy-export-index.ts';
+import {
+  computeRemoteSchoolSupplyStagingByRegion,
+  computeRemoteSchoolSupplyStagingShare,
+  nationalRemoteSchoolSupplyStagingIndex,
+  remoteSchoolSupplyStagingProductivityMultiplier,
+} from '../operations/remote-school-supply-staging-index.ts';
+import {
+  computePortLithiumHydroxideLogisticsShare,
+  computePortLithiumHydroxideLogisticsThroughputByRegion,
+  nationalPortLithiumHydroxideLogisticsThroughputIndex,
+  portLithiumHydroxideLogisticsProductivityMultiplier,
+} from './port-lithium-hydroxide-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1870,6 +1887,35 @@ export function computeTransportInfrastructureState(
     warehouseRobotSortationLogisticsShare,
     options?.warehouseRobotSortationLogisticsPolicy ?? 'baseline',
   );
+  const offshoreWaveEnergyExportByRegion = computeOffshoreWaveEnergyExportByRegion(ops);
+  const nationalWaveEnergy = nationalOffshoreWaveEnergyExportIndex(offshoreWaveEnergyExportByRegion);
+  const waveEnergyMult = offshoreWaveEnergyExportProductivityMultiplier(
+    nationalWaveEnergy,
+    options?.offshoreWaveEnergyExportPolicy ?? 'baseline',
+  );
+  const remoteSchoolSupplyStagingByRegion = computeRemoteSchoolSupplyStagingByRegion(ops, networkStress);
+  const nationalSchoolSupply = nationalRemoteSchoolSupplyStagingIndex(remoteSchoolSupplyStagingByRegion);
+  const remoteSchoolSupplyStagingShare = computeRemoteSchoolSupplyStagingShare(
+    ops,
+    options?.remoteSchoolSupplyStagingPolicy ?? 'baseline',
+  );
+  const schoolSupplyMult = remoteSchoolSupplyStagingProductivityMultiplier(
+    remoteSchoolSupplyStagingShare,
+    options?.remoteSchoolSupplyStagingPolicy ?? 'baseline',
+  );
+  const portLithiumHydroxideLogisticsThroughputByRegion =
+    computePortLithiumHydroxideLogisticsThroughputByRegion(ops);
+  const nationalLithiumHydroxide = nationalPortLithiumHydroxideLogisticsThroughputIndex(
+    portLithiumHydroxideLogisticsThroughputByRegion,
+  );
+  const portLithiumHydroxideLogisticsShare = computePortLithiumHydroxideLogisticsShare(
+    ops,
+    options?.portLithiumHydroxideLogisticsPolicy ?? 'baseline',
+  );
+  const lithiumHydroxideMult = portLithiumHydroxideLogisticsProductivityMultiplier(
+    portLithiumHydroxideLogisticsShare,
+    options?.portLithiumHydroxideLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1941,6 +1987,9 @@ export function computeTransportInfrastructureState(
     const geothermalBoost = (deepGeothermalExportByRegion[code] - 5) * 0.003;
     const floodEvacBoost = (coastalFloodEvacStagingByRegion[code] - 6) * 0.0026;
     const robotSortationBoost = (warehouseRobotSortationLogisticsThroughputByRegion[code] - 2) * 0.0022;
+    const waveEnergyBoost = (offshoreWaveEnergyExportByRegion[code] - 5) * 0.0029;
+    const schoolSupplyBoost = (remoteSchoolSupplyStagingByRegion[code] - 6) * 0.0025;
+    const lithiumHydroxideBoost = (portLithiumHydroxideLogisticsThroughputByRegion[code] - 2) * 0.0021;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -2011,7 +2060,10 @@ export function computeTransportInfrastructureState(
         suburbanMicroBoost +
         geothermalBoost +
         floodEvacBoost +
-        robotSortationBoost) *
+        robotSortationBoost +
+        waveEnergyBoost +
+        schoolSupplyBoost +
+        lithiumHydroxideBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -2080,7 +2132,10 @@ export function computeTransportInfrastructureState(
       suburbanMicroMult *
       geothermalMult *
       floodEvacMult *
-      robotSortationMult;
+      robotSortationMult *
+      waveEnergyMult *
+      schoolSupplyMult *
+      lithiumHydroxideMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -2172,7 +2227,10 @@ export function computeTransportInfrastructureState(
     nationalSuburbanMicro * 0.003 +
     nationalGeothermal * 0.003 +
     nationalFloodEvac * 0.003 +
-    nationalRobotSortation * 0.003;
+    nationalRobotSortation * 0.003 +
+    nationalWaveEnergy * 0.003 +
+    nationalSchoolSupply * 0.003 +
+    nationalLithiumHydroxide * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -2187,7 +2245,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/39',
+    schemaVersion: 'agent12/40',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -2465,6 +2523,14 @@ export function computeTransportInfrastructureState(
     warehouseRobotSortationLogisticsShare,
     nationalWarehouseRobotSortationLogisticsThroughputIndex: nationalRobotSortation,
     warehouseRobotSortationLogisticsThroughputByRegion,
+    nationalOffshoreWaveEnergyExportIndex: nationalWaveEnergy,
+    offshoreWaveEnergyExportByRegion,
+    remoteSchoolSupplyStagingShare,
+    nationalRemoteSchoolSupplyStagingIndex: nationalSchoolSupply,
+    remoteSchoolSupplyStagingByRegion,
+    portLithiumHydroxideLogisticsShare,
+    nationalPortLithiumHydroxideLogisticsThroughputIndex: nationalLithiumHydroxide,
+    portLithiumHydroxideLogisticsThroughputByRegion,
     computeMs,
   };
 }

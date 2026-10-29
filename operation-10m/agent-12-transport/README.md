@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 39
+
+- Schema **`agent12/40`**: offshore wave energy export throughput, remote school supply staging readiness, port lithium hydroxide logistics share (`offshoreWaveEnergyExportPolicy`, `remoteSchoolSupplyStagingPolicy`, `portLithiumHydroxideLogisticsPolicy`)
+- Catalog: **537** assets, **131** corridors, **213** scenarios
+- Systems: `network/offshore-wave-energy-export-index.ts`, `operations/remote-school-supply-staging-index.ts`, `productivity/port-lithium-hydroxide-logistics-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 38
 
 - Schema **`agent12/39`**: deep geothermal export throughput, coastal flood evac staging readiness, warehouse robot sortation logistics share (`deepGeothermalExportPolicy`, `coastalFloodEvacStagingPolicy`, `warehouseRobotSortationLogisticsPolicy`)
