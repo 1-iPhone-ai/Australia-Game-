@@ -880,5 +880,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Wide transmission envelope — peak layer spillover magnitude is elevated.'
     });
   }
+  const eventCascade: any = inputs.eventCascade ?? inputs.dynamicEvents?.cascade;
+  const cascadeIntensity = String(eventCascade?.intensityBand ?? eventCascade?.cascadeBand ?? '');
+  if (
+    (cascadeIntensity === 'runaway' || cascadeIntensity === 'extreme') &&
+    (state.eventsSpilloverSummary != null || state.stressIndex.band !== 'calm')
+  ) {
+    gates.push({
+      id: 'event_cascade_runaway',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Runaway event cascade coincides with elevated narrative or macro stress read.'
+    });
+  }
+  const demoShift: any = inputs.demographicShift ?? inputs.population?.shift;
+  const participation = String(demoShift?.participationBand ?? demoShift?.laborParticipation?.band ?? '');
+  if (
+    (participation === 'collapsed' || participation === 'falling') &&
+    (state.populationSpilloverSummary != null || state.workforceSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'demographic_participation_falling',
+      triggered: true,
+      severity: 'info',
+      summary: 'Falling demographic participation aligns with strained workforce/population spillover.'
+    });
+  }
+  if (state.transmissionPersistence?.band === 'fragile') {
+    gates.push({
+      id: 'transmission_persistence_fragile',
+      triggered: true,
+      severity: 'info',
+      summary: 'Fragile transmission persistence — layer signs diverge from aggregate spillover direction.'
+    });
+  }
   return gates;
 }

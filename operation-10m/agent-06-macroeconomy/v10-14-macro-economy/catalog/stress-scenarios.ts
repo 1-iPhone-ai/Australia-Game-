@@ -174,6 +174,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Mode & supply stress',
     shockIds: ['global_slowdown', 'commodity_bust'],
     description: 'Chaotic mode scenario shift with broken corporate supply chains (harness overlay).'
+  },
+  {
+    id: 'event_demographic_stress',
+    label: 'Event & demographic stress',
+    shockIds: ['global_slowdown', 'drought_ag_cycle'],
+    description: 'Runaway event cascade with adverse demographic shift (harness overlay).'
   }
 ];
 

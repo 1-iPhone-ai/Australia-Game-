@@ -48,6 +48,8 @@ import type { MacroResearchMomentumSpillover } from './bridge-v1003-research-mom
 import type { MacroBudgetOutlookSpillover } from './bridge-v1007-budget-outlook.ts';
 import type { MacroModeShiftSpillover } from './bridge-v1004-mode-shift.ts';
 import type { MacroSupplyChainSpillover } from './bridge-v1008-supply-chain.ts';
+import type { MacroEventCascadeSpillover } from './bridge-v1005-event-cascade.ts';
+import type { MacroDemographicShiftSpillover } from './bridge-v1009-demographic-shift.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -104,6 +106,8 @@ export function buildMacroTransmissionReport(params: {
   budgetOutlook?: MacroBudgetOutlookSpillover;
   modeShift?: MacroModeShiftSpillover;
   supplyChain?: MacroSupplyChainSpillover;
+  eventCascade?: MacroEventCascadeSpillover;
+  demographicShift?: MacroDemographicShiftSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -145,6 +149,8 @@ export function buildMacroTransmissionReport(params: {
   const budgetOutlook = params.budgetOutlook ?? ZERO_SPILLOVER;
   const modeShift = params.modeShift ?? ZERO_SPILLOVER;
   const supplyChain = params.supplyChain ?? ZERO_SPILLOVER;
+  const eventCascade = params.eventCascade ?? ZERO_SPILLOVER;
+  const demographicShift = params.demographicShift ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -517,6 +523,22 @@ export function buildMacroTransmissionReport(params: {
       supplyChain.investmentNudge,
       supplyChain.productivityNudge,
       supplyChain.summary
+    ),
+    layer(
+      'v10.05_event_cascade',
+      'Dynamic event cascade',
+      eventCascade.cycleNudge,
+      eventCascade.investmentNudge,
+      eventCascade.productivityNudge,
+      eventCascade.summary
+    ),
+    layer(
+      'v10.09_demographic_shift',
+      'Demographic shift',
+      demographicShift.cycleNudge,
+      demographicShift.investmentNudge,
+      demographicShift.productivityNudge,
+      demographicShift.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

@@ -150,6 +150,16 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
       params?.supplyChainStress ??
       params?.companies?.supplyChain ??
       params?.privateSector?.supplyChain,
+    eventCascade:
+      params?.eventCascade ??
+      params?.dynamicEvents?.cascade ??
+      params?.op10mEvents?.cascade ??
+      params?.narrativeEvents?.cascade,
+    demographicShift:
+      params?.demographicShift ??
+      params?.population?.shift ??
+      params?.demographics?.shift ??
+      params?.nationalPopulation?.shift,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };

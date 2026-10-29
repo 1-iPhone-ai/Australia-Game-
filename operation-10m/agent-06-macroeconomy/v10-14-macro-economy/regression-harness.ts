@@ -44,6 +44,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeIntegrationCadenceStress?: boolean;
   includeResearchBudgetStress?: boolean;
   includeModeSupplyStress?: boolean;
+  includeEventDemographicStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
@@ -70,6 +71,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   const includeIntegrationCadenceStress = Boolean(options?.includeIntegrationCadenceStress);
   const includeResearchBudgetStress = Boolean(options?.includeResearchBudgetStress);
   const includeModeSupplyStress = Boolean(options?.includeModeSupplyStress);
+  const includeEventDemographicStress = Boolean(options?.includeEventDemographicStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -390,6 +392,20 @@ export function runMacroEconomyRegressionHarness(options?: {
             leadTimeBand: t % 5 === 0 ? 'extreme' : 'normal',
             inventoryBand: t % 7 === 0 ? 'empty' : 'healthy'
           }
+        : undefined,
+      eventCascade: includeEventDemographicStress
+        ? {
+            intensityBand: t % 6 === 0 ? 'runaway' : 'contained',
+            propagationBand: t % 5 === 0 ? 'accelerating' : 'local',
+            durationBand: t % 7 === 0 ? 'chronic' : 'fading'
+          }
+        : undefined,
+      demographicShift: includeEventDemographicStress
+        ? {
+            migrationBand: t % 6 === 0 ? 'brain_drain' : 'balanced',
+            agingBand: t % 5 === 0 ? 'accelerating' : 'gradual',
+            participationBand: t % 7 === 0 ? 'collapsed' : 'stable'
+          }
         : undefined
     });
     const { state, persisted: nextP } = computeNationalMacroEconomy(inputs, persisted, prev);
@@ -631,7 +647,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'forty_two_transmission_layers_liquidity',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 50,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 52,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -643,7 +659,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'forty_four_transmission_layers_gameplay',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 50,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 52,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -655,7 +671,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'forty_six_transmission_layers_integration',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 50,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 52,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -667,7 +683,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'forty_eight_transmission_layers_research',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 50,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 52,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -679,7 +695,19 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'fifty_transmission_layers_mode',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 50,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 52,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeEventDemographicStress && prev) {
+    checks.push({
+      id: 'transmission_persistence_finite',
+      passed: Number.isFinite(prev.transmissionPersistence.persistenceIndex),
+      detail: String(prev.transmissionPersistence.persistenceIndex)
+    });
+    checks.push({
+      id: 'fifty_two_transmission_layers_event',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 52,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
