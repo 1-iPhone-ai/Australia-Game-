@@ -29,6 +29,8 @@ import { resetCoalitionCrisisStreak } from './coalition-crisis.ts';
 import { resetCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import { resetCoalitionVolatilityEvents, decrementCoalitionVolatilityEvents } from './coalition-volatility.ts';
 import { resetCoalitionStabilizationStreak } from './coalition-stabilization.ts';
+import { resetCoalitionLockInStreak } from './coalition-lock-in.ts';
+import { resetCrossModuleSyncStreak } from '../integrations/strategic-cross-module-hooks.ts';
 import {
   scoreNationalPriorityAlignment,
   validateAction,
@@ -53,6 +55,8 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     coalitionRecoveryStreakDays: 0,
     coalitionVolatilityEvents: 0,
     coalitionStabilizationStreakDays: 0,
+    coalitionLockInStreakDays: 0,
+    crossModuleSyncStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -212,6 +216,13 @@ export function executeStrategicAction(
   if (action.id === 'sga_coalition_stabilization_accord') {
     nextState = resetCoalitionVolatilityEvents(nextState);
     nextState = resetCoalitionStabilizationStreak(nextState);
+    nextState = resetCoalitionLockInStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_lock_in_charter') {
+    nextState = resetCoalitionLockInStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_integrated_stabilization_review') {
+    nextState = resetCrossModuleSyncStreak(nextState);
   }
 
   contracts.ui.pushToast({

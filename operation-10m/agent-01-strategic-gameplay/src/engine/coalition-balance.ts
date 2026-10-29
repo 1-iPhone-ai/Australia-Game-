@@ -58,3 +58,23 @@ export function stabilizationRankingBonus(
   if (streak >= action.minCoalitionStabilizationStreakDays) return 5;
   return 2;
 }
+
+export function lockInRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionLockInStreakDays === undefined) return 0;
+  const streak = state.coalitionLockInStreakDays ?? 0;
+  if (streak >= action.minCoalitionLockInStreakDays) return 4;
+  return 0;
+}
+
+export function crossModuleSyncRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCrossModuleSyncStreakDays === undefined) return 0;
+  const streak = state.crossModuleSyncStreakDays ?? 0;
+  if (streak >= action.minCrossModuleSyncStreakDays) return 5;
+  return 2;
+}

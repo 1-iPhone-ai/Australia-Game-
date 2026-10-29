@@ -11,6 +11,7 @@ import { classifyCoalitionCrisisLevel } from './coalition-crisis.ts';
 import { isProlongedCoalitionCrisis } from './coalition-crisis-pressure.ts';
 import { isSustainedCoalitionRecovery } from './coalition-recovery-pressure.ts';
 import { isElevatedCoalitionVolatility } from './coalition-volatility-pressure.ts';
+import { isPostStabilizationLockIn } from './coalition-lock-in.ts';
 import { listStakeholderWarnings } from './stakeholder-coalition.ts';
 import { rankStrategicActions } from './strategic-recommendations.ts';
 import { listStrategicActions } from '../catalog/strategic-action-catalog.ts';
@@ -45,6 +46,9 @@ export function buildTurnStrategicBriefing(
     coalitionVolatilityEvents: state.coalitionVolatilityEvents ?? 0,
     elevatedCoalitionVolatility: isElevatedCoalitionVolatility(state),
     coalitionStabilizationStreakDays: state.coalitionStabilizationStreakDays ?? 0,
+    postStabilizationLockIn: isPostStabilizationLockIn(state),
+    coalitionLockInStreakDays: state.coalitionLockInStreakDays ?? 0,
+    crossModuleSyncStreakDays: state.crossModuleSyncStreakDays ?? 0,
     mandateDriftRisk: classifyMandateDriftRisk(state),
     completedActionCount: state.completedActionIds.length,
     activeChoiceId: state.activeChoice?.choiceId ?? null,

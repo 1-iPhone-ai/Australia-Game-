@@ -1,4 +1,5 @@
 import type { StrategicGameplayContracts } from '../contracts/index.ts';
+import type { StrategicCrossModuleInbound } from '../integrations/strategic-cross-module-hooks.ts';
 import type { StrategicGameplayState } from '../types/strategic-action.ts';
 import { advanceDayAndResolveDelayed } from './delayed-effects.ts';
 import { applyMandateIdleDrift } from './mandate-idle-drift.ts';
@@ -7,6 +8,8 @@ import { applyProlongedCrisisMandatePressure } from './coalition-crisis-pressure
 import { applySustainedRecoveryMandateBonus } from './coalition-recovery-pressure.ts';
 import { applyElevatedVolatilityMandateDrag } from './coalition-volatility-pressure.ts';
 import { advanceCoalitionStabilizationStreak } from './coalition-stabilization.ts';
+import { advanceCoalitionLockInStreak } from './coalition-lock-in.ts';
+import { advanceCrossModuleSyncStreak } from '../integrations/strategic-cross-module-hooks.ts';
 import { advanceCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 import type { StakeholderGroupId, StakeholderSentiment } from '../types/coalition-mandate.ts';
@@ -50,6 +53,7 @@ export function advanceStrategicGameplayCalendar(
   state: StrategicGameplayState,
   contracts: StrategicGameplayContracts,
   toDay: number,
+  crossModuleInbound?: StrategicCrossModuleInbound,
 ): AdvanceStrategicCalendarResult {
   if (toDay <= state.day) {
     return { state, firedTradeOffCount: 0 };
@@ -63,6 +67,8 @@ export function advanceStrategicGameplayCalendar(
   next = advanceCoalitionRecoveryStreak(next, daysAdvanced);
   next = applySustainedRecoveryMandateBonus(next, daysAdvanced);
   next = applyElevatedVolatilityMandateDrag(next, daysAdvanced);
+  next = advanceCoalitionLockInStreak(next, daysAdvanced);
+  next = advanceCrossModuleSyncStreak(next, daysAdvanced, crossModuleInbound);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 

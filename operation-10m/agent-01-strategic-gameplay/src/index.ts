@@ -96,6 +96,8 @@ export {
   coalitionRecoveryRankingBonus,
   sustainedRecoveryRankingBonus,
   stabilizationRankingBonus,
+  lockInRankingBonus,
+  crossModuleSyncRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -162,6 +164,34 @@ export {
   decrementCoalitionVolatilityEvents,
 } from './engine/coalition-volatility.ts';
 
+export {
+  POST_STABILIZATION_LOCK_IN_THRESHOLD,
+  advanceCoalitionLockInStreak,
+  resetCoalitionLockInStreak,
+  isPostStabilizationLockIn,
+} from './engine/coalition-lock-in.ts';
+
+export {
+  coalitionLockInStreakIssues,
+  coalitionVolatilityCapIssues,
+} from './engine/coalition-lock-in-gates.ts';
+
+export { crossModuleSyncStreakIssues } from './engine/cross-module-sync-gates.ts';
+
+export {
+  buildExternalCoalitionTurnSignals,
+  normalizeExternalCoalitionTurnSignals,
+} from './integrations/external-coalition-turn-signals.ts';
+export type { ExternalCoalitionTurnSignals } from './integrations/external-coalition-turn-signals.ts';
+
+export {
+  normalizeStrategicCrossModuleInbound,
+  crossModuleStabilizationAligned,
+  advanceCrossModuleSyncStreak,
+  resetCrossModuleSyncStreak,
+} from './integrations/strategic-cross-module-hooks.ts';
+export type { StrategicCrossModuleInbound } from './integrations/strategic-cross-module-hooks.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '1.9.0';
+export const AGENT_01_MODULE_VERSION = '2.0.0';

@@ -28,6 +28,8 @@ import {
 } from './coalition-crisis-gates.ts';
 import { coalitionVolatilityIssues } from './coalition-volatility-gates.ts';
 import { coalitionStabilizationStreakIssues } from './coalition-stabilization-gates.ts';
+import { coalitionLockInStreakIssues, coalitionVolatilityCapIssues } from './coalition-lock-in-gates.ts';
+import { crossModuleSyncStreakIssues } from './cross-module-sync-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -278,6 +280,9 @@ export function validateAction(
     issues.push(...coalitionRecoveryStreakIssues(action, state));
     issues.push(...coalitionVolatilityIssues(action, state));
     issues.push(...coalitionStabilizationStreakIssues(action, state));
+    issues.push(...coalitionLockInStreakIssues(action, state));
+    issues.push(...coalitionVolatilityCapIssues(action, state));
+    issues.push(...crossModuleSyncStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({
