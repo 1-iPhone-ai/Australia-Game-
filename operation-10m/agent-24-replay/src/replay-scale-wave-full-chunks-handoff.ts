@@ -14,7 +14,9 @@ import {
   O6K_AGENT24_WAVE31_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE32_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE33_INTEGRATION_BASELINE_SHA,
-  O6K_AGENT24_WAVE34_INTEGRATION_BASELINE_SHA, O6K_AGENT24_WAVE35_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE34_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE35_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
 export { O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA } from './replay-scale-wave-integration-closeout.ts';
@@ -52,7 +54,9 @@ export function buildAgent24ReplayScaleWaveFullChunksHandoffSeal(
   const waveRound = input.replayScaleWaveDryrunVerification.waveRound;
   const fullChunksBaselineSha =
     input.fullChunksBaselineSha ??
-    (waveRound >= 35
+    (waveRound >= 36
+      ? O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA
+      : waveRound >= 35
       ? O6K_AGENT24_WAVE35_INTEGRATION_BASELINE_SHA
       : waveRound >= 34
       ? O6K_AGENT24_WAVE34_INTEGRATION_BASELINE_SHA
@@ -148,8 +152,8 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
   const dryrunVerification = {
     reportId: 'dv',
     matchId: 'self',
-    waveRound: 35,
-    dryrunBaselineSha: O6K_AGENT24_WAVE35_INTEGRATION_BASELINE_SHA,
+    waveRound: 36,
+    dryrunBaselineSha: O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -160,7 +164,7 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
   const fullChunksGate = {
     reportId: 'fcg',
     matchId: 'self',
-    waveRound: 35,
+    waveRound: 36,
     chunksGateOpen: true,
     blockerCount: 0,
     blockers: [],
@@ -179,9 +183,9 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
       name: 'handoff_ready_at_full_chunks_baseline',
       passed:
         seal.handoffReady &&
-        seal.fullChunksBaselineSha === O6K_AGENT24_WAVE35_INTEGRATION_BASELINE_SHA,
+        seal.fullChunksBaselineSha === O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: seal.waveRound === 35 },
+    { name: 'wave_round_pinned', passed: seal.waveRound === 36 },
     {
       name: 'deterministic_fingerprint',
       passed:
