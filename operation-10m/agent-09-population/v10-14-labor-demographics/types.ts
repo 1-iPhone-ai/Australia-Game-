@@ -253,6 +253,10 @@ export interface NationalLaborDemographicsState {
   inclusionResilienceOutlook?: NationalInclusionResilienceOutlook;
   subjectCommitReadinessBrief?: NationalSubjectCommitReadinessBrief;
   nationalWorkforceTenacityIndex?: NationalWorkforceTenacityIndex;
+  tenacityCareCouplingBrief?: NationalTenacityCareCouplingBrief;
+  safetyCohesionOutlook?: NationalSafetyCohesionOutlook;
+  subjectReleaseReadinessBrief?: NationalSubjectReleaseReadinessBrief;
+  nationalWorkforceSteadfastIndex?: NationalWorkforceSteadfastIndex;
 }
 
 export type MigrationShockKind =
@@ -1013,6 +1017,50 @@ export interface NationalWorkforceTenacityIndex {
   tenacityIndex: number;
   band: WorkforceTenacityBand;
   commitDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type TenacityCareCouplingBand = 'decoupled' | 'strained' | 'supported' | 'nurtured';
+
+export interface NationalTenacityCareCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: TenacityCareCouplingBand;
+  tenacityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SafetyCohesionBand = 'exposed' | 'uneven' | 'guarded' | 'shielded';
+
+export interface NationalSafetyCohesionOutlook {
+  turn: number;
+  cohesionIndex: number;
+  band: SafetyCohesionBand;
+  resilienceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectReleaseReadinessBand = 'held' | 'staged' | 'release_ready' | 'cleared';
+
+export interface NationalSubjectReleaseReadinessBrief {
+  turn: number;
+  releaseIndex: number;
+  band: SubjectReleaseReadinessBand;
+  releaseDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceSteadfastBand = 'fragile' | 'thin' | 'steady' | 'anchored';
+
+export interface NationalWorkforceSteadfastIndex {
+  turn: number;
+  steadfastIndex: number;
+  band: WorkforceSteadfastBand;
+  releaseDrag: number;
   summary: string;
   stewardNote: string;
 }

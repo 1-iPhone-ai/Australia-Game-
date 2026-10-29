@@ -71,7 +71,11 @@ export type LaborGiQueryTopic =
   | 'endurance_flexibility_coupling'
   | 'inclusion_resilience'
   | 'subject_commit_readiness'
-  | 'workforce_tenacity';
+  | 'workforce_tenacity'
+  | 'tenacity_care_coupling'
+  | 'safety_cohesion'
+  | 'subject_release_readiness'
+  | 'workforce_steadfast';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -140,6 +144,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(inclusion resilience|inclusion labor resilience)/.test(q)) return 'inclusion_resilience';
   if (/\b(subject commit readiness|commit readiness subject)/.test(q)) return 'subject_commit_readiness';
   if (/\b(workforce tenacity|tenacity index labor)/.test(q)) return 'workforce_tenacity';
+  if (/\b(tenacity care|tenacity-care coupling)/.test(q)) return 'tenacity_care_coupling';
+  if (/\b(safety cohesion|labor safety cohesion)/.test(q)) return 'safety_cohesion';
+  if (/\b(subject release readiness|release readiness subject)/.test(q)) return 'subject_release_readiness';
+  if (/\b(workforce steadfast|steadfast index labor)/.test(q)) return 'workforce_steadfast';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -702,6 +710,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Tenacity band ${state.nationalWorkforceTenacityIndex?.band ?? 'unknown'}; commit drag ${Math.round(state.nationalWorkforceTenacityIndex?.commitDrag ?? 0)}.`,
         inference: state.nationalWorkforceTenacityIndex?.stewardNote || state.summary,
         projection: 'Tenacity synthesizes flexibility coupling, inclusion resilience, and subject commit readiness.'
+      };
+    case 'tenacity_care_coupling':
+      return {
+        topic,
+        headline: state.tenacityCareCouplingBrief?.summary || 'Tenacity-care coupling unavailable.',
+        fact: `Coupling band ${state.tenacityCareCouplingBrief?.band ?? 'unknown'}; tenacity drag ${Math.round(state.tenacityCareCouplingBrief?.tenacityDrag ?? 0)}.`,
+        inference: state.tenacityCareCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce tenacity with care levers — bounded indices only.'
+      };
+    case 'safety_cohesion':
+      return {
+        topic,
+        headline: state.safetyCohesionOutlook?.summary || 'Safety cohesion unavailable.',
+        fact: `Cohesion band ${state.safetyCohesionOutlook?.band ?? 'unknown'}; resilience drag ${Math.round(state.safetyCohesionOutlook?.resilienceDrag ?? 0)}.`,
+        inference: state.safetyCohesionOutlook?.stewardNote || state.outlook,
+        projection: 'Cohesion blends safety levers with inclusion resilience — not literal incident counts.'
+      };
+    case 'subject_release_readiness':
+      return {
+        topic,
+        headline: state.subjectReleaseReadinessBrief?.summary || 'Subject release readiness unavailable.',
+        fact: `Release band ${state.subjectReleaseReadinessBrief?.band ?? 'unknown'}; release drag ${Math.round(state.subjectReleaseReadinessBrief?.releaseDrag ?? 0)}.`,
+        inference: state.subjectReleaseReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject release readiness gates commit against tenacity for O10-175 scale release.'
+      };
+    case 'workforce_steadfast':
+      return {
+        topic,
+        headline: state.nationalWorkforceSteadfastIndex?.summary || 'Workforce steadfast unavailable.',
+        fact: `Steadfast band ${state.nationalWorkforceSteadfastIndex?.band ?? 'unknown'}; release drag ${Math.round(state.nationalWorkforceSteadfastIndex?.releaseDrag ?? 0)}.`,
+        inference: state.nationalWorkforceSteadfastIndex?.stewardNote || state.summary,
+        projection: 'Steadfast synthesizes care coupling, safety cohesion, and subject release readiness.'
       };
     default:
       return {

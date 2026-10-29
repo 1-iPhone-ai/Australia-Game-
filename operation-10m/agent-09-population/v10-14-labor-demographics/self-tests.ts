@@ -138,6 +138,10 @@ import { computeNationalEnduranceFlexibilityCouplingBrief } from './endurance-fl
 import { computeNationalInclusionResilienceOutlook } from './inclusion-resilience-outlook';
 import { computeNationalSubjectCommitReadinessBrief } from './subject-commit-readiness-brief';
 import { computeNationalWorkforceTenacityIndex } from './national-workforce-tenacity-index';
+import { computeNationalTenacityCareCouplingBrief } from './tenacity-care-coupling-brief';
+import { computeNationalSafetyCohesionOutlook } from './safety-cohesion-outlook';
+import { computeNationalSubjectReleaseReadinessBrief } from './subject-release-readiness-brief';
+import { computeNationalWorkforceSteadfastIndex } from './national-workforce-steadfast-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -1333,6 +1337,55 @@ export function runV1014LaborDemographicsSelfTests(): {
     'tenacity steward note'
   );
   check('R2116', flexibilityEaseForRegion('NSW', 'technology') > 0, 'flexibility ease for region');
+
+  check('R2201', Boolean(r1.state.tenacityCareCouplingBrief?.band), 'tenacity care on state');
+  check('R2202', (r1.state.tenacityCareCouplingBrief?.tenacityDrag ?? 0) >= 0, 'tenacity care drag');
+  check('R2203', Boolean(r1.state.safetyCohesionOutlook?.band), 'safety cohesion on state');
+  check('R2204', (r1.state.safetyCohesionOutlook?.resilienceDrag ?? 0) >= 0, 'safety resilience drag');
+  check('R2205', Boolean(r1.state.subjectReleaseReadinessBrief?.band), 'subject release on state');
+  check('R2206', Boolean(r1.state.nationalWorkforceSteadfastIndex?.band), 'workforce steadfast on state');
+  check(
+    'R2207',
+    detectLaborDemographicsQuery('tenacity care coupling') === 'tenacity_care_coupling',
+    'GI tenacity care detect'
+  );
+  check('R2208', detectLaborDemographicsQuery('safety cohesion') === 'safety_cohesion', 'GI safety cohesion detect');
+  check(
+    'R2209',
+    detectLaborDemographicsQuery('subject release readiness') === 'subject_release_readiness',
+    'GI subject release detect'
+  );
+  check(
+    'R2210',
+    detectLaborDemographicsQuery('workforce steadfast') === 'workforce_steadfast',
+    'GI workforce steadfast detect'
+  );
+  check(
+    'R2211',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_steadfast').headline.length > 5,
+    'GI workforce steadfast answer'
+  );
+  const careCouplingOnly = computeNationalTenacityCareCouplingBrief(r1.state, r1.state.nationalWorkforceTenacityIndex);
+  check('R2212', careCouplingOnly.summary.length > 10, 'care coupling standalone summary');
+  const safetyOnly = computeNationalSafetyCohesionOutlook(r1.state, r1.state.inclusionResilienceOutlook);
+  check('R2213', safetyOnly.band.length > 3, 'safety cohesion band string');
+  const releaseOnly = computeNationalSubjectReleaseReadinessBrief(
+    r1.state,
+    r1.state.subjectCommitReadinessBrief,
+    r1.state.nationalWorkforceTenacityIndex
+  );
+  check('R2214', releaseOnly.releaseDrag >= 0, 'subject release drag');
+  check(
+    'R2215',
+    computeNationalWorkforceSteadfastIndex(
+      rHhBad.state,
+      rHhBad.state.tenacityCareCouplingBrief,
+      rHhBad.state.safetyCohesionOutlook,
+      rHhBad.state.subjectReleaseReadinessBrief
+    ).stewardNote.length > 8,
+    'steadfast steward note'
+  );
+  check('R2216', careReliefForRegion('NSW', 'technology') > 0, 'care relief for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
