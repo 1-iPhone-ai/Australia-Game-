@@ -1,0 +1,31 @@
+import type { V1030IheatAridBufferEdge } from '../../types/core.ts';
+
+/** Arid buffer graph shard 071 (extreme_heat/drought/dust corridor coupling). */
+export const V1030_IHEAT_ARID_BUFFER_SHARD_071: readonly V1030IheatAridBufferEdge[] = [
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.266, lagTurns: 10, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.272, lagTurns: 11, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.278, lagTurns: 12, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.284, lagTurns: 13, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.29, lagTurns: 10, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.296, lagTurns: 11, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.302, lagTurns: 12, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.308, lagTurns: 13, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.314, lagTurns: 10, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.32, lagTurns: 11, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.326, lagTurns: 12, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.332, lagTurns: 13, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.236, lagTurns: 10, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.242, lagTurns: 11, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.248, lagTurns: 12, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.254, lagTurns: 13, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.26, lagTurns: 10, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.266, lagTurns: 11, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.272, lagTurns: 12, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.278, lagTurns: 13, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.284, lagTurns: 10, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.29, lagTurns: 11, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.296, lagTurns: 12, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.302, lagTurns: 13, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.308, lagTurns: 10, nodeId: 'inland_zone_23' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.314, lagTurns: 11, nodeId: 'inland_zone_23' },
+];

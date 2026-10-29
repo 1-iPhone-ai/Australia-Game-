@@ -696,6 +696,53 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  createEmptyV1029CresPersisted,\n  v1029CresInputHash,\n  sanitizeV1029CresPersisted,\n} from '../engine/coastal-resilience-orchestrator';",
             "  v1029CresInputHash,\n} from '../engine/coastal-resilience-orchestrator';\nimport {\n  createEmptyV1029CresPersisted,\n  sanitizeV1029CresPersisted,\n} from '../persistence/migrations';",
         )
+    if "v1030-inland-heat" in name.replace("\\", "/"):
+        src = src.replace("SECTION 20BY", "SECTION 20BZ")
+        src = src.replace("SECTION 20BX", "SECTION 20BZ")
+        src = src.replace("SECTION 20BW", "SECTION 20BZ")
+        src = src.replace("SECTION 20BV", "SECTION 20BZ")
+        src = src.replace("SECTION 20BU", "SECTION 20BZ")
+        src = src.replace("SECTION 20BT", "SECTION 20BZ")
+        src = src.replace("SECTION 20BR", "SECTION 20BZ")
+    if "inland-heat/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1030IheatClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1030IheatClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1030_IHEAT_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1030_IHEAT_MIG_REGIONS", src)
+    if "inland-heat-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1030IheatPersisted, sanitizeV1030IheatPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1030_IHEAT_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1030_IHEAT_ORCH_REGIONS.forEach", src)
+    if "inland-heat-utils.ts" in name:
+        src = re.sub(
+            r"export function V1030_IHEAT_aridBufferGraphHash",
+            "export function V1030_IHEAT_utilAridBufferGraphHash",
+            src,
+        )
+    if "v1030-inland-heat/arid-buffer-stacks/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"V1030_IHEAT_aridBufferGraphHash as dgovGraphHashCore",
+            "V1030_IHEAT_utilAridBufferGraphHash as dgovGraphHashCore",
+            src,
+        )
+    if "run-v1030-iheat-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1030IheatSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1030IheatSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1030IheatBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1030IheatBaseInput(", src)
+        src = src.replace(
+            "  runV1030IheatTurn,\n  createEmptyV1030IheatPersisted,\n  v1030IheatInputHash,\n  sanitizeV1030IheatPersisted,\n} from '../engine/inland-heat-orchestrator';",
+            "  runV1030IheatTurn,\n  v1030IheatInputHash,\n} from '../engine/inland-heat-orchestrator';\nimport {\n  createEmptyV1030IheatPersisted,\n  sanitizeV1030IheatPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1030IheatPersisted,\n  v1030IheatInputHash,\n  sanitizeV1030IheatPersisted,\n} from '../engine/inland-heat-orchestrator';",
+            "  v1030IheatInputHash,\n} from '../engine/inland-heat-orchestrator';\nimport {\n  createEmptyV1030IheatPersisted,\n  sanitizeV1030IheatPersisted,\n} from '../persistence/migrations';",
+        )
     return src
 
 
@@ -1613,6 +1660,82 @@ def coastal_resilience_paths() -> list[str]:
             and "drought-buffer-bundle" not in str(p)
             and "distribution-network" not in str(p)
             and "emergency-response" not in str(p)
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def inland_heat_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1030-inland-heat"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/arid-buffer-stacks/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/heatwave-scenarios/" in s:
+            return (3, s)
+        if "/generated/arid-buffer-stacks/" in s:
+            return (4, s)
+        if "heatwave-registry" in s or "arid-buffer-bundle" in s:
+            return (5, s)
+        if "/inland-zone-nodes/" in s:
+            return (6, s)
+        if "inland-heat-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "inland-heat-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
+        if "distribution-network" in s or "emergency-response" in s or "littoral-zone" in s:
+            return (98, s)
+        if "aquifer-reserve" in s or "basin-registry" in s:
+            return (98, s)
+        if "evacuation-capacity" in s or "hazard-registry" in s:
+            return (98, s)
+        if "surge-registry" in s or "adaptation-buffer" in s:
+            return (98, s)
+        if "biodiversity-stewardship-20bu" in s:
+            return (98, s)
+        if "conservation-offset" in s or "recovery-registry" in s or "primary-care" in s:
+            return (98, s)
+        if "stress-registry" in s or "supply-pipeline" in s:
+            return (98, s)
+        if "drought-buffer-bundle" in s:
+            return (98, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+            and not (p.parent.name == "generated" and p.name == "index.ts")
+            and "aquifer-reserve" not in str(p)
+            and "basin-registry" not in str(p)
+            and "evacuation-capacity" not in str(p)
+            and "hazard-registry" not in str(p)
+            and "surge-registry" not in str(p)
+            and "adaptation-buffer" not in str(p)
+            and "conservation-offset" not in str(p)
+            and "recovery-registry" not in str(p)
+            and "primary-care" not in str(p)
+            and "stress-registry" not in str(p)
+            and "supply-pipeline" not in str(p)
+            and "drought-buffer-bundle" not in str(p)
+            and "distribution-network" not in str(p)
+            and "emergency-response" not in str(p)
+            and "littoral-zone" not in str(p)
+            and "biodiversity-stewardship-20bu" not in str(p)
         ),
         key=sort_key,
     )
