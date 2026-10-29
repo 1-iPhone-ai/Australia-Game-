@@ -7,6 +7,10 @@ export interface Agent22UiSnapshot {
   inflationDashboardStressHighlight: boolean;
   playerAttentionOnCostOfLiving: 'low' | 'medium' | 'high';
   uiNudgeInflationExpectationsUp: boolean;
+  /** Round 17: utilities stress banner visible in UI shell. */
+  utilitiesStressBannerActive?: boolean;
+  /** Round 17: phase-shell cost-of-living coach elevating inflation salience. */
+  phaseShellCostOfLivingCoachActive?: boolean;
 }
 
 export function mergeAgent22IntoMacroFinancialInputs(
@@ -22,9 +26,18 @@ export function mergeAgent22IntoMacroFinancialInputs(
   if (snapshot.uiNudgeInflationExpectationsUp) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   }
+  if (snapshot.utilitiesStressBannerActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  }
+  if (snapshot.phaseShellCostOfLivingCoachActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
 
   let householdInflationScenarioActive = base.householdInflationScenarioActive;
   if (snapshot.playerAttentionOnCostOfLiving === 'high') {
+    householdInflationScenarioActive = true;
+  }
+  if (snapshot.phaseShellCostOfLivingCoachActive && snapshot.utilitiesStressBannerActive) {
     householdInflationScenarioActive = true;
   }
 

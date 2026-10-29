@@ -8,6 +8,10 @@ export interface Agent12TransportSnapshot {
   fuelSurchargeActive: boolean;
   portBacklogBand: 'clear' | 'moderate' | 'severe';
   logisticsInflationScenarioActive: boolean;
+  /** Round 17: V10.12 utilities grid thin capacity margin (distinct from freight). */
+  utilitiesGridCapacityMarginThin?: boolean;
+  /** Round 17: severe rolling utility outages feeding tariff CPI metadata. */
+  utilitiesOutageBandSevere?: boolean;
 }
 
 export function mergeAgent12IntoMacroFinancialInputs(
@@ -31,6 +35,12 @@ export function mergeAgent12IntoMacroFinancialInputs(
   } else if (snapshot.portBacklogBand === 'moderate') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
+  if (snapshot.utilitiesGridCapacityMarginThin) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.07, 0.85, 1.45);
+  }
+  if (snapshot.utilitiesOutageBandSevere) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.09, 0.85, 1.45);
+  }
 
   let highInflationScenario = base.highInflationScenario;
   if (
@@ -39,10 +49,16 @@ export function mergeAgent12IntoMacroFinancialInputs(
   ) {
     highInflationScenario = true;
   }
+  if (snapshot.utilitiesOutageBandSevere) {
+    highInflationScenario = true;
+  }
 
   let systemicLiquidityBand = base.systemicLiquidityBand;
   if (snapshot.freightCapacityBand === 'critical' && snapshot.portBacklogBand !== 'clear') {
     systemicLiquidityBand = systemicLiquidityBand === 'critical' ? 'critical' : 'strained';
+  }
+  if (snapshot.utilitiesGridCapacityMarginThin || snapshot.utilitiesOutageBandSevere) {
+    systemicLiquidityBand = snapshot.utilitiesOutageBandSevere ? 'critical' : systemicLiquidityBand === 'critical' ? 'critical' : 'strained';
   }
 
   return {

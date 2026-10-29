@@ -3018,6 +3018,150 @@ export function agriculturalFarmgateInflationScoreAdjustment(band: AgriculturalF
 }
 
 
+// --- source: inflation/public-utilities-grid-tariff-inflation.ts ---
+
+export type PublicUtilitiesGridTariffBand = 'subdued' | 'firming' | 'elevated' | 'grid_shock';
+
+export interface PublicUtilitiesGridTariffInflationAssessment {
+  tariffBand: PublicUtilitiesGridTariffBand;
+  gridIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Electricity and gas grid tariffs in macro CPI metadata (V10.12 utilities — distinct from water). */
+export function assessPublicUtilitiesGridTariffInflation(input: {
+  serviceReliabilityBand: 'robust' | 'strained' | 'fragile' | 'critical';
+  outageRiskBand: 'clear' | 'moderate' | 'rolling' | 'severe';
+  capacityMarginBand: 'surplus' | 'balanced' | 'thin' | 'critical';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): PublicUtilitiesGridTariffInflationAssessment {
+  let pressure = 0;
+  if (input.serviceReliabilityBand === 'critical' || input.serviceReliabilityBand === 'fragile') {
+    pressure += 0.34;
+  } else if (input.serviceReliabilityBand === 'strained') {
+    pressure += 0.18;
+  }
+
+  if (input.outageRiskBand === 'severe' || input.outageRiskBand === 'rolling') {
+    pressure += 0.28;
+  } else if (input.outageRiskBand === 'moderate') {
+    pressure += 0.12;
+  }
+
+  if (input.capacityMarginBand === 'critical' || input.capacityMarginBand === 'thin') {
+    pressure += 0.22;
+  } else if (input.capacityMarginBand === 'balanced') {
+    pressure += 0.06;
+  }
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.08;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.0048, 0, 1.05);
+  const gridIndex = finRound(100 + pressure * 18, 1);
+
+  let tariffBand: PublicUtilitiesGridTariffBand = 'subdued';
+  if (pressure >= 0.58) tariffBand = 'grid_shock';
+  else if (pressure >= 0.38) tariffBand = 'elevated';
+  else if (pressure >= 0.2) tariffBand = 'firming';
+
+  const inflationScoreNudge =
+    tariffBand === 'grid_shock'
+      ? 0.09
+      : tariffBand === 'elevated'
+        ? 0.06
+        : tariffBand === 'firming'
+          ? 0.03
+          : 0;
+
+  const narrative =
+    tariffBand === 'grid_shock' || tariffBand === 'elevated'
+      ? 'Public utilities grid tariffs are lifting CPI through reliability stress and thin capacity margins.'
+      : tariffBand === 'firming'
+        ? 'Grid tariff inflation firming as outage risk and reserve margins tighten.'
+        : 'Electricity and gas grid tariff pass-through subdued versus headline.';
+
+  return { tariffBand, gridIndex, inflationScoreNudge, narrative };
+}
+
+export function publicUtilitiesGridTariffInflationScoreAdjustment(band: PublicUtilitiesGridTariffBand): number {
+  if (band === 'grid_shock') return 4;
+  if (band === 'elevated') return 3;
+  if (band === 'firming') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/ui-inflation-salience-pass-through.ts ---
+
+export type UiInflationSalienceBand = 'muted' | 'elevated' | 'salient' | 'attention_shock';
+
+export interface UiInflationSaliencePassThroughAssessment {
+  salienceBand: UiInflationSalienceBand;
+  presentationIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Player-facing UI / dashboard inflation salience (expectations channel — not commodity prices). */
+export function assessUiInflationSaliencePassThrough(input: {
+  dashboardStressHighlight: boolean;
+  playerAttentionBand: 'low' | 'medium' | 'high';
+  uiExpectationsNudgeUp: boolean;
+  phaseShellCoachActive: boolean;
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): UiInflationSaliencePassThroughAssessment {
+  let pressure = 0;
+  if (input.dashboardStressHighlight) pressure += 0.22;
+  if (input.playerAttentionBand === 'high') pressure += 0.28;
+  else if (input.playerAttentionBand === 'medium') pressure += 0.12;
+
+  if (input.uiExpectationsNudgeUp) pressure += 0.18;
+  if (input.phaseShellCoachActive) pressure += 0.14;
+
+  if (input.inflationBand === 'elevated' || input.inflationBand === 'high') {
+    pressure += 0.07;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.0035, 0, 1.05);
+  const presentationIndex = finRound(100 + pressure * 14, 1);
+
+  let salienceBand: UiInflationSalienceBand = 'muted';
+  if (pressure >= 0.62) salienceBand = 'attention_shock';
+  else if (pressure >= 0.4) salienceBand = 'salient';
+  else if (pressure >= 0.22) salienceBand = 'elevated';
+
+  const inflationScoreNudge =
+    salienceBand === 'attention_shock'
+      ? 0.07
+      : salienceBand === 'salient'
+        ? 0.05
+        : salienceBand === 'elevated'
+          ? 0.03
+          : 0;
+
+  const narrative =
+    salienceBand === 'attention_shock' || salienceBand === 'salient'
+      ? 'UI inflation salience is reinforcing expectations through dashboard stress and player attention.'
+      : salienceBand === 'elevated'
+        ? 'Presentation-layer inflation cues firming — cost-of-living visibility elevated.'
+        : 'UI inflation salience muted relative to macro bands.';
+
+  return { salienceBand, presentationIndex, inflationScoreNudge, narrative };
+}
+
+export function uiInflationSaliencePassThroughScoreAdjustment(band: UiInflationSalienceBand): number {
+  if (band === 'attention_shock') return 3;
+  if (band === 'salient') return 3;
+  if (band === 'elevated') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -3778,6 +3922,43 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       publicStability: 38,
     },
     tags: ['inflation', 'command', 'round16'],
+  },
+  {
+    id: 'public_utilities_grid_tariff_stack',
+    label: 'Public utilities grid tariff stack',
+    description: 'Thin grid margins with rolling outages — electricity/gas CPI.',
+    patch: {
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.24,
+      highInflationScenario: true,
+      creditShockActive: true,
+    },
+    tags: ['inflation', 'utilities', 'round17'],
+  },
+  {
+    id: 'ui_inflation_salience_stress',
+    label: 'UI inflation salience stress',
+    description: 'Dashboard stress with high player attention on cost of living.',
+    patch: {
+      householdAffordability: 'severe_pressure',
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.21,
+      highInflationScenario: true,
+    },
+    tags: ['inflation', 'ui', 'round17'],
+  },
+  {
+    id: 'ui_utilities_fusion_stress',
+    label: 'UI & utilities fusion stress',
+    description: 'Aligned with macro ui_utilities_stress — grid + presentation salience.',
+    patch: {
+      inflationSettingMultiplier: 1.28,
+      highInflationScenario: true,
+      systemicLiquidityBand: 'strained',
+      publicStability: 42,
+      householdInflationScenarioActive: true,
+    },
+    tags: ['inflation', 'ui', 'utilities', 'round17'],
   },
 ] as const;
 
@@ -4947,6 +5128,10 @@ export interface Agent12TransportSnapshot {
   fuelSurchargeActive: boolean;
   portBacklogBand: 'clear' | 'moderate' | 'severe';
   logisticsInflationScenarioActive: boolean;
+  /** Round 17: V10.12 utilities grid thin capacity margin (distinct from freight). */
+  utilitiesGridCapacityMarginThin?: boolean;
+  /** Round 17: severe rolling utility outages feeding tariff CPI metadata. */
+  utilitiesOutageBandSevere?: boolean;
 }
 
 export function mergeAgent12IntoMacroFinancialInputs(
@@ -4970,6 +5155,12 @@ export function mergeAgent12IntoMacroFinancialInputs(
   } else if (snapshot.portBacklogBand === 'moderate') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
+  if (snapshot.utilitiesGridCapacityMarginThin) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.07, 0.85, 1.45);
+  }
+  if (snapshot.utilitiesOutageBandSevere) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.09, 0.85, 1.45);
+  }
 
   let highInflationScenario = base.highInflationScenario;
   if (
@@ -4978,10 +5169,16 @@ export function mergeAgent12IntoMacroFinancialInputs(
   ) {
     highInflationScenario = true;
   }
+  if (snapshot.utilitiesOutageBandSevere) {
+    highInflationScenario = true;
+  }
 
   let systemicLiquidityBand = base.systemicLiquidityBand;
   if (snapshot.freightCapacityBand === 'critical' && snapshot.portBacklogBand !== 'clear') {
     systemicLiquidityBand = systemicLiquidityBand === 'critical' ? 'critical' : 'strained';
+  }
+  if (snapshot.utilitiesGridCapacityMarginThin || snapshot.utilitiesOutageBandSevere) {
+    systemicLiquidityBand = snapshot.utilitiesOutageBandSevere ? 'critical' : systemicLiquidityBand === 'critical' ? 'critical' : 'strained';
   }
 
   return {
@@ -5501,6 +5698,10 @@ export interface Agent22UiSnapshot {
   inflationDashboardStressHighlight: boolean;
   playerAttentionOnCostOfLiving: 'low' | 'medium' | 'high';
   uiNudgeInflationExpectationsUp: boolean;
+  /** Round 17: utilities stress banner visible in UI shell. */
+  utilitiesStressBannerActive?: boolean;
+  /** Round 17: phase-shell cost-of-living coach elevating inflation salience. */
+  phaseShellCostOfLivingCoachActive?: boolean;
 }
 
 export function mergeAgent22IntoMacroFinancialInputs(
@@ -5516,9 +5717,18 @@ export function mergeAgent22IntoMacroFinancialInputs(
   if (snapshot.uiNudgeInflationExpectationsUp) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   }
+  if (snapshot.utilitiesStressBannerActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  }
+  if (snapshot.phaseShellCostOfLivingCoachActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
 
   let householdInflationScenarioActive = base.householdInflationScenarioActive;
   if (snapshot.playerAttentionOnCostOfLiving === 'high') {
+    householdInflationScenarioActive = true;
+  }
+  if (snapshot.phaseShellCostOfLivingCoachActive && snapshot.utilitiesStressBannerActive) {
     householdInflationScenarioActive = true;
   }
 
@@ -5649,6 +5859,12 @@ export function agent23DashboardsBridgeIntegrationNote(): string {
   assessAgriculturalFarmgateInflation,
   type AgriculturalFarmgatePressureBand,
 } from '../inflation/agricultural-farmgate-inflation.js';
+  assessPublicUtilitiesGridTariffInflation,
+  type PublicUtilitiesGridTariffBand,
+} from '../inflation/public-utilities-grid-tariff-inflation.js';
+  assessUiInflationSaliencePassThrough,
+  type UiInflationSalienceBand,
+} from '../inflation/ui-inflation-salience-pass-through.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -5681,6 +5897,8 @@ export interface InflationForecastPoint {
   retailTradeMarginBand: RetailTradeMarginBand;
   financialServicesFeeBand: FinancialServicesFeeBand;
   agriculturalFarmgatePressureBand: AgriculturalFarmgatePressureBand;
+  publicUtilitiesGridTariffBand: PublicUtilitiesGridTariffBand;
+  uiInflationSalienceBand: UiInflationSalienceBand;
 }
 
 export interface InflationForecastPath {
@@ -5878,6 +6096,32 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const publicGrid = assessPublicUtilitiesGridTariffInflation({
+      serviceReliabilityBand:
+        inputs.systemicLiquidityBand === 'critical'
+          ? 'critical'
+          : inputs.systemicLiquidityBand === 'strained'
+            ? 'fragile'
+            : 'strained',
+      outageRiskBand: inputs.creditShockActive ? 'rolling' : inputs.fiscalPressure === 'critical' ? 'moderate' : 'clear',
+      capacityMarginBand:
+        inputs.systemicLiquidityBand === 'critical' || inputs.systemicLiquidityBand === 'strained' ? 'thin' : 'balanced',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const uiSalience = assessUiInflationSaliencePassThrough({
+      dashboardStressHighlight: inputs.householdInflationScenarioActive,
+      playerAttentionBand:
+        inputs.householdAffordability === 'severe_pressure'
+          ? 'high'
+          : inputs.householdAffordability === 'strained'
+            ? 'medium'
+            : 'low',
+      uiExpectationsNudgeUp: inputs.highInflationScenario,
+      phaseShellCoachActive: inputs.householdInflationScenarioActive && inputs.publicStability < 50,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -5910,6 +6154,8 @@ export function projectInflationForecastPath(
       retailTradeMarginBand: retailMargin.marginBand,
       financialServicesFeeBand: financialFees.feeBand,
       agriculturalFarmgatePressureBand: farmgate.pressureBand,
+      publicUtilitiesGridTariffBand: publicGrid.tariffBand,
+      uiInflationSalienceBand: uiSalience.salienceBand,
     });
   }
 
@@ -6015,7 +6261,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r16';
+  schemaVersion: '10.14.agent10.r17';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -6043,6 +6289,8 @@ export interface Agent21InflationForecastBundle {
   terminalRetailTradeMargin: RetailTradeMarginBand;
   terminalFinancialServicesFee: FinancialServicesFeeBand;
   terminalAgriculturalFarmgatePressure: AgriculturalFarmgatePressureBand;
+  terminalPublicUtilitiesGridTariff: PublicUtilitiesGridTariffBand;
+  terminalUiInflationSalience: UiInflationSalienceBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -6071,7 +6319,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r16',
+    schemaVersion: '10.14.agent10.r17',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -6099,6 +6347,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalRetailTradeMargin: lastPoint?.retailTradeMarginBand ?? 'stable',
     terminalFinancialServicesFee: lastPoint?.financialServicesFeeBand ?? 'subdued',
     terminalAgriculturalFarmgatePressure: lastPoint?.agriculturalFarmgatePressureBand ?? 'soft',
+    terminalPublicUtilitiesGridTariff: lastPoint?.publicUtilitiesGridTariffBand ?? 'subdued',
+    terminalUiInflationSalience: lastPoint?.uiInflationSalienceBand ?? 'muted',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -6292,6 +6542,12 @@ export function effectiveTierLoanRate(
   assessAgriculturalFarmgateInflation,
   agriculturalFarmgateInflationScoreAdjustment,
 } from './inflation/agricultural-farmgate-inflation.js';
+  assessPublicUtilitiesGridTariffInflation,
+  publicUtilitiesGridTariffInflationScoreAdjustment,
+} from './inflation/public-utilities-grid-tariff-inflation.js';
+  assessUiInflationSaliencePassThrough,
+  uiInflationSaliencePassThroughScoreAdjustment,
+} from './inflation/ui-inflation-salience-pass-through.js';
   mergeAgent22IntoMacroFinancialInputs,
   agent22UiBridgeIntegrationNote,
 } from './integration/agent22-ui-bridge.js';
@@ -6696,7 +6952,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r16');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r17');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -6843,7 +7099,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r16' &&
+      bundle.schemaVersion === '10.14.agent10.r17' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -6935,7 +7191,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r16' &&
+      bundle.schemaVersion === '10.14.agent10.r17' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -7034,7 +7290,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r16' &&
+      bundle.schemaVersion === '10.14.agent10.r17' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -7132,7 +7388,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r16' &&
+      bundle.schemaVersion === '10.14.agent10.r17' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -7230,7 +7486,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r16' &&
+      bundle.schemaVersion === '10.14.agent10.r17' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -7320,7 +7576,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r12_10',
       'agent21 r12 fields',
-      bundle.schemaVersion === '10.14.agent10.r16' &&
+      bundle.schemaVersion === '10.14.agent10.r17' &&
         bundle.terminalRecreationLeisurePressure !== undefined &&
         bundle.terminalProfessionalServicesFee !== undefined,
     );
@@ -7410,7 +7666,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r13_10',
       'agent21 r13 fields',
-      bundle.schemaVersion === '10.14.agent10.r16' &&
+      bundle.schemaVersion === '10.14.agent10.r17' &&
         bundle.terminalChildcareServicesPressure !== undefined &&
         bundle.terminalGovernmentChargesPressure !== undefined,
     );
@@ -7500,7 +7756,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r14_10',
       'agent21 r14 fields',
-      bundle.schemaVersion === '10.14.agent10.r16' &&
+      bundle.schemaVersion === '10.14.agent10.r17' &&
         bundle.terminalWaterUtilitiesPressure !== undefined &&
         bundle.terminalDomesticTravelPressure !== undefined,
     );
@@ -7590,7 +7846,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r15_10',
       'agent21 r15 fields',
-      bundle.schemaVersion === '10.14.agent10.r16' &&
+      bundle.schemaVersion === '10.14.agent10.r17' &&
         bundle.terminalConstructionMaterialsPressure !== undefined &&
         bundle.terminalRetailTradeMargin !== undefined,
     );
@@ -7682,7 +7938,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r16_10',
       'agent21 r16 fields',
-      bundle.schemaVersion === '10.14.agent10.r16' &&
+      bundle.schemaVersion === '10.14.agent10.r17' &&
         bundle.terminalFinancialServicesFee !== undefined &&
         bundle.terminalAgriculturalFarmgatePressure !== undefined,
     );
@@ -7708,6 +7964,102 @@ export function runAgent10FinanceSelfTests(): {
     'round16 preset command red alert',
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'command_fusion_red_farmgate_alert');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.25;
+    })(),
+  );
+
+  // --- Round 17 scale wave ---
+  {
+    const grid = assessPublicUtilitiesGridTariffInflation({
+      serviceReliabilityBand: 'fragile',
+      outageRiskBand: 'rolling',
+      capacityMarginBand: 'thin',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check('a10_r17_01', 'grid elevated or shock', grid.tariffBand === 'elevated' || grid.tariffBand === 'grid_shock');
+    check('a10_r17_02', 'grid score adj', publicUtilitiesGridTariffInflationScoreAdjustment(grid.tariffBand) >= 3);
+  }
+  {
+    const salience = assessUiInflationSaliencePassThrough({
+      dashboardStressHighlight: true,
+      playerAttentionBand: 'high',
+      uiExpectationsNudgeUp: true,
+      phaseShellCoachActive: true,
+      inflationBand: 'elevated',
+      turn: 3,
+    });
+    check('a10_r17_03', 'ui salient or shock', salience.salienceBand === 'salient' || salience.salienceBand === 'attention_shock');
+    check('a10_r17_04', 'ui score adj', uiInflationSaliencePassThroughScoreAdjustment(salience.salienceBand) >= 3);
+  }
+  {
+    const merged12 = mergeAgent12IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      freightCapacityBand: 'tight',
+      fuelSurchargeActive: false,
+      portBacklogBand: 'moderate',
+      logisticsInflationScenarioActive: false,
+      utilitiesGridCapacityMarginThin: true,
+      utilitiesOutageBandSevere: true,
+    });
+    check('a10_r17_05', 'agent12 utilities merge', merged12.highInflationScenario === true && merged12.systemicLiquidityBand === 'critical');
+    check('a10_r17_06', 'agent12 bridge note', agent12TransportBridgeIntegrationNote().includes('Agent 12'));
+  }
+  {
+    const merged22 = mergeAgent22IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      inflationDashboardStressHighlight: true,
+      playerAttentionOnCostOfLiving: 'high',
+      uiNudgeInflationExpectationsUp: true,
+      utilitiesStressBannerActive: true,
+      phaseShellCostOfLivingCoachActive: true,
+    });
+    check('a10_r17_07', 'agent22 ui utilities merge', merged22.householdInflationScenarioActive === true);
+    check('a10_r17_08', 'agent22 bridge note', agent22UiBridgeIntegrationNote().includes('Agent 22'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r17_09',
+      'forecast grid and ui salience fields',
+      path.points.every((p) => !!p.publicUtilitiesGridTariffBand && !!p.uiInflationSalienceBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r17_10',
+      'agent21 r17 fields',
+      bundle.schemaVersion === '10.14.agent10.r17' &&
+        bundle.terminalPublicUtilitiesGridTariff !== undefined &&
+        bundle.terminalUiInflationSalience !== undefined,
+    );
+  }
+  check(
+    'a10_r17_11',
+    'round17 preset grid tariff stack',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'public_utilities_grid_tariff_stack');
+      return inp?.creditShockActive === true && inp.systemicLiquidityBand === 'critical';
+    })(),
+  );
+  check(
+    'a10_r17_12',
+    'round17 preset ui salience',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'ui_inflation_salience_stress');
+      return inp?.householdInflationScenarioActive === true && inp.householdAffordability === 'severe_pressure';
+    })(),
+  );
+  check(
+    'a10_r17_13',
+    'round17 preset ui utilities fusion',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'ui_utilities_fusion_stress');
       return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.25;
     })(),
   );
@@ -8581,6 +8933,77 @@ export function FinancialServicesFarmgateCommandInflationPanel(props: FinancialS
       </p>
       <p data-testid="financial-farmgate-fees-note">{fees.narrative}</p>
       <p>{farmgate.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/UiUtilitiesGridInflationPanel.tsx ---
+  assessPublicUtilitiesGridTariffInflation,
+  publicUtilitiesGridTariffInflationScoreAdjustment,
+} from '../inflation/public-utilities-grid-tariff-inflation.js';
+  assessUiInflationSaliencePassThrough,
+  uiInflationSaliencePassThroughScoreAdjustment,
+} from '../inflation/ui-inflation-salience-pass-through.js';
+
+export interface UiUtilitiesGridInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent12?: Agent12TransportSnapshot | null;
+  agent22?: Agent22UiSnapshot | null;
+}
+
+export function UiUtilitiesGridInflationPanel(props: UiUtilitiesGridInflationPanelProps) {
+  const transport = props.agent12 ?? {
+    turn: props.inputs.turn,
+    freightCapacityBand: props.inputs.systemicLiquidityBand === 'critical' ? ('critical' as const) : ('tight' as const),
+    fuelSurchargeActive: props.inputs.highInflationScenario,
+    portBacklogBand: props.inputs.fiscalPressure === 'critical' ? ('severe' as const) : ('moderate' as const),
+    logisticsInflationScenarioActive: props.inputs.creditShockActive,
+    utilitiesGridCapacityMarginThin: props.inputs.systemicLiquidityBand === 'strained',
+    utilitiesOutageBandSevere: props.inputs.systemicLiquidityBand === 'critical',
+  };
+
+  const ui = props.agent22 ?? {
+    turn: props.inputs.turn,
+    inflationDashboardStressHighlight: props.inputs.householdInflationScenarioActive,
+    playerAttentionOnCostOfLiving: props.inputs.householdAffordability === 'severe_pressure' ? ('high' as const) : ('medium' as const),
+    uiNudgeInflationExpectationsUp: props.inputs.highInflationScenario,
+    utilitiesStressBannerActive: props.inputs.fiscalPressure === 'critical',
+    phaseShellCostOfLivingCoachActive: props.inputs.householdInflationScenarioActive,
+  };
+
+  const grid = assessPublicUtilitiesGridTariffInflation({
+    serviceReliabilityBand:
+      transport.utilitiesOutageBandSevere ? 'critical' : transport.utilitiesGridCapacityMarginThin ? 'fragile' : 'strained',
+    outageRiskBand: transport.utilitiesOutageBandSevere ? 'severe' : transport.portBacklogBand === 'severe' ? 'rolling' : 'moderate',
+    capacityMarginBand: transport.utilitiesGridCapacityMarginThin ? 'thin' : 'balanced',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const salience = assessUiInflationSaliencePassThrough({
+    dashboardStressHighlight: ui.inflationDashboardStressHighlight || ui.utilitiesStressBannerActive === true,
+    playerAttentionBand: ui.playerAttentionOnCostOfLiving,
+    uiExpectationsNudgeUp: ui.uiNudgeInflationExpectationsUp,
+    phaseShellCoachActive: ui.phaseShellCostOfLivingCoachActive === true,
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-ui-utilities-grid-inflation" data-testid="ui-utilities-grid-inflation-panel">
+      <h4>UI salience & utilities grid (round 17)</h4>
+      <p>
+        Grid {grid.tariffBand} · index {grid.gridIndex.toFixed(0)} · score adj{' '}
+        {publicUtilitiesGridTariffInflationScoreAdjustment(grid.tariffBand)}
+      </p>
+      <p>
+        UI salience {salience.salienceBand} · index {salience.presentationIndex.toFixed(0)} · score adj{' '}
+        {uiInflationSaliencePassThroughScoreAdjustment(salience.salienceBand)}
+      </p>
+      <p data-testid="ui-utilities-grid-note">{grid.narrative}</p>
+      <p>{salience.narrative}</p>
     </div>
   );
 }

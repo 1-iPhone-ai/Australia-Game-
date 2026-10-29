@@ -95,6 +95,14 @@ import {
   assessAgriculturalFarmgateInflation,
   type AgriculturalFarmgatePressureBand,
 } from '../inflation/agricultural-farmgate-inflation.js';
+import {
+  assessPublicUtilitiesGridTariffInflation,
+  type PublicUtilitiesGridTariffBand,
+} from '../inflation/public-utilities-grid-tariff-inflation.js';
+import {
+  assessUiInflationSaliencePassThrough,
+  type UiInflationSalienceBand,
+} from '../inflation/ui-inflation-salience-pass-through.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -127,6 +135,8 @@ export interface InflationForecastPoint {
   retailTradeMarginBand: RetailTradeMarginBand;
   financialServicesFeeBand: FinancialServicesFeeBand;
   agriculturalFarmgatePressureBand: AgriculturalFarmgatePressureBand;
+  publicUtilitiesGridTariffBand: PublicUtilitiesGridTariffBand;
+  uiInflationSalienceBand: UiInflationSalienceBand;
 }
 
 export interface InflationForecastPath {
@@ -324,6 +334,32 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const publicGrid = assessPublicUtilitiesGridTariffInflation({
+      serviceReliabilityBand:
+        inputs.systemicLiquidityBand === 'critical'
+          ? 'critical'
+          : inputs.systemicLiquidityBand === 'strained'
+            ? 'fragile'
+            : 'strained',
+      outageRiskBand: inputs.creditShockActive ? 'rolling' : inputs.fiscalPressure === 'critical' ? 'moderate' : 'clear',
+      capacityMarginBand:
+        inputs.systemicLiquidityBand === 'critical' || inputs.systemicLiquidityBand === 'strained' ? 'thin' : 'balanced',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const uiSalience = assessUiInflationSaliencePassThrough({
+      dashboardStressHighlight: inputs.householdInflationScenarioActive,
+      playerAttentionBand:
+        inputs.householdAffordability === 'severe_pressure'
+          ? 'high'
+          : inputs.householdAffordability === 'strained'
+            ? 'medium'
+            : 'low',
+      uiExpectationsNudgeUp: inputs.highInflationScenario,
+      phaseShellCoachActive: inputs.householdInflationScenarioActive && inputs.publicStability < 50,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -356,6 +392,8 @@ export function projectInflationForecastPath(
       retailTradeMarginBand: retailMargin.marginBand,
       financialServicesFeeBand: financialFees.feeBand,
       agriculturalFarmgatePressureBand: farmgate.pressureBand,
+      publicUtilitiesGridTariffBand: publicGrid.tariffBand,
+      uiInflationSalienceBand: uiSalience.salienceBand,
     });
   }
 

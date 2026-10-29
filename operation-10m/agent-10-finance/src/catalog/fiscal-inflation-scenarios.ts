@@ -523,6 +523,43 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'command', 'round16'],
   },
+  {
+    id: 'public_utilities_grid_tariff_stack',
+    label: 'Public utilities grid tariff stack',
+    description: 'Thin grid margins with rolling outages — electricity/gas CPI.',
+    patch: {
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.24,
+      highInflationScenario: true,
+      creditShockActive: true,
+    },
+    tags: ['inflation', 'utilities', 'round17'],
+  },
+  {
+    id: 'ui_inflation_salience_stress',
+    label: 'UI inflation salience stress',
+    description: 'Dashboard stress with high player attention on cost of living.',
+    patch: {
+      householdAffordability: 'severe_pressure',
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.21,
+      highInflationScenario: true,
+    },
+    tags: ['inflation', 'ui', 'round17'],
+  },
+  {
+    id: 'ui_utilities_fusion_stress',
+    label: 'UI & utilities fusion stress',
+    description: 'Aligned with macro ui_utilities_stress — grid + presentation salience.',
+    patch: {
+      inflationSettingMultiplier: 1.28,
+      highInflationScenario: true,
+      systemicLiquidityBand: 'strained',
+      publicStability: 42,
+      householdInflationScenarioActive: true,
+    },
+    tags: ['inflation', 'ui', 'utilities', 'round17'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
