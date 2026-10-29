@@ -162,6 +162,9 @@ const FILES = [
   'macro-transmission-elasticity.ts',
   'bridge-v1020-automation-idle-governance.ts',
   'bridge-v1021-forecast-projection-sync.ts',
+  'bridge-v1020-automation-idle-governance-wave-round36-export.ts',
+  'bridge-v1021-forecast-wave36-projection-sync.ts',
+  'scenario-wave36-integration-rank.ts',
   'regression-harness.ts',
   'cycle-memory.ts',
   'sector-decomposition.ts',
@@ -210,6 +213,7 @@ const FILES = [
   'round33-self-tests.ts',
   'round34-self-tests.ts',
   'round35-self-tests.ts',
+  'round36-self-tests.ts',
   'self-tests.ts',
   'react/MacroEconomyInspectorLab.tsx'
 ];

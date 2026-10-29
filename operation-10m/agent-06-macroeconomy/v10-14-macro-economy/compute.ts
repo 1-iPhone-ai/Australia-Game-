@@ -134,6 +134,14 @@ import {
   applyMacroForecastProjectionSyncSpillover,
   readMacroForecastProjectionSyncSpilloverFromV1021
 } from './bridge-v1021-forecast-projection-sync.ts';
+import {
+  applyMacroAutomationIdleGovernanceWave36ExportSpillover,
+  readMacroAutomationIdleGovernanceWave36ExportSpilloverFromV1020
+} from './bridge-v1020-automation-idle-governance-wave-round36-export.ts';
+import {
+  applyMacroForecastWave36ProjectionSyncSpillover,
+  readMacroForecastWave36ProjectionSyncSpilloverFromV1021
+} from './bridge-v1021-forecast-wave36-projection-sync.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
@@ -298,6 +306,9 @@ export function computeNationalMacroEconomy(
   const forecastCalibrationSpillover = readMacroForecastCalibrationSpilloverFromV1021(inputs);
   const automationIdleGovernanceSpillover = readMacroAutomationIdleGovernanceSpilloverFromV1020(inputs);
   const forecastProjectionSyncSpillover = readMacroForecastProjectionSyncSpilloverFromV1021(inputs);
+  const automationIdleGovernanceWave36ExportSpillover =
+    readMacroAutomationIdleGovernanceWave36ExportSpilloverFromV1020(inputs);
+  const forecastWave36ProjectionSyncSpillover = readMacroForecastWave36ProjectionSyncSpilloverFromV1021(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -370,7 +381,15 @@ export function computeNationalMacroEconomy(
     withAutomationIdleGovernance,
     forecastProjectionSyncSpillover
   );
-  const shocked = applyMacroShockAdjustments(inputs, withForecastProjectionSync, pushEv);
+  const withAutomationIdleGovernanceWave36Export = applyMacroAutomationIdleGovernanceWave36ExportSpillover(
+    withForecastProjectionSync,
+    automationIdleGovernanceWave36ExportSpillover
+  );
+  const withForecastWave36ProjectionSync = applyMacroForecastWave36ProjectionSyncSpillover(
+    withAutomationIdleGovernanceWave36Export,
+    forecastWave36ProjectionSyncSpillover
+  );
+  const shocked = applyMacroShockAdjustments(inputs, withForecastWave36ProjectionSync, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -464,7 +483,9 @@ export function computeNationalMacroEconomy(
     automationThroughput: automationThroughputSpillover,
     forecastCalibration: forecastCalibrationSpillover,
     automationIdleGovernance: automationIdleGovernanceSpillover,
-    forecastProjectionSync: forecastProjectionSyncSpillover
+    forecastProjectionSync: forecastProjectionSyncSpillover,
+    automationIdleGovernanceWave36Export: automationIdleGovernanceWave36ExportSpillover,
+    forecastWave36ProjectionSync: forecastWave36ProjectionSyncSpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
@@ -612,6 +633,8 @@ export function computeNationalMacroEconomy(
     forecastCalibrationSpilloverSummary: forecastCalibrationSpillover.summary,
     automationIdleGovernanceSpilloverSummary: automationIdleGovernanceSpillover.summary,
     forecastProjectionSyncSpilloverSummary: forecastProjectionSyncSpillover.summary,
+    automationIdleGovernanceWave36ExportSpilloverSummary: automationIdleGovernanceWave36ExportSpillover.summary,
+    forecastWave36ProjectionSyncSpilloverSummary: forecastWave36ProjectionSyncSpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,

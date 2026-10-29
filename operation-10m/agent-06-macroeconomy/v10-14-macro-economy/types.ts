@@ -151,6 +151,8 @@ export interface NationalMacroEconomyState {
   forecastCalibrationSpilloverSummary: string | null;
   automationIdleGovernanceSpilloverSummary: string | null;
   forecastProjectionSyncSpilloverSummary: string | null;
+  automationIdleGovernanceWave36ExportSpilloverSummary: string | null;
+  forecastWave36ProjectionSyncSpilloverSummary: string | null;
   capacitySnapshot: MacroCapacitySnapshot;
   transmissionBalance: MacroTransmissionBalanceSnapshot;
   transmissionCoherence: MacroTransmissionCoherenceSnapshot;
@@ -689,6 +691,8 @@ export interface MacroEconomyInputs {
   forecastCalibration?: any;
   automationIdleGovernance?: any;
   forecastProjectionSync?: any;
+  automationIdleGovernanceWave36Export?: any;
+  forecastWave36ProjectionSync?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;
   /** Additional catalog shock ids (see catalog/cyclical-shocks.ts). Legacy flags merge in. */

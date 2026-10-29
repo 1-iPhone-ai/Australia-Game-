@@ -64,6 +64,8 @@ import type { MacroAutomationThroughputSpillover } from './bridge-v1020-automati
 import type { MacroForecastCalibrationSpillover } from './bridge-v1021-forecast-calibration.ts';
 import type { MacroAutomationIdleGovernanceSpillover } from './bridge-v1020-automation-idle-governance.ts';
 import type { MacroForecastProjectionSyncSpillover } from './bridge-v1021-forecast-projection-sync.ts';
+import type { MacroAutomationIdleGovernanceWave36ExportSpillover } from './bridge-v1020-automation-idle-governance-wave-round36-export.ts';
+import type { MacroForecastWave36ProjectionSyncSpillover } from './bridge-v1021-forecast-wave36-projection-sync.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -136,6 +138,8 @@ export function buildMacroTransmissionReport(params: {
   forecastCalibration?: MacroForecastCalibrationSpillover;
   automationIdleGovernance?: MacroAutomationIdleGovernanceSpillover;
   forecastProjectionSync?: MacroForecastProjectionSyncSpillover;
+  automationIdleGovernanceWave36Export?: MacroAutomationIdleGovernanceWave36ExportSpillover;
+  forecastWave36ProjectionSync?: MacroForecastWave36ProjectionSyncSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -193,6 +197,8 @@ export function buildMacroTransmissionReport(params: {
   const forecastCalibration = params.forecastCalibration ?? ZERO_SPILLOVER;
   const automationIdleGovernance = params.automationIdleGovernance ?? ZERO_SPILLOVER;
   const forecastProjectionSync = params.forecastProjectionSync ?? ZERO_SPILLOVER;
+  const automationIdleGovernanceWave36Export = params.automationIdleGovernanceWave36Export ?? ZERO_SPILLOVER;
+  const forecastWave36ProjectionSync = params.forecastWave36ProjectionSync ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -693,6 +699,22 @@ export function buildMacroTransmissionReport(params: {
       forecastProjectionSync.investmentNudge,
       forecastProjectionSync.productivityNudge,
       forecastProjectionSync.summary
+    ),
+    layer(
+      'v10.20_automation_idle_governance_wave36_export',
+      'Automation idle governance wave 36 export',
+      automationIdleGovernanceWave36Export.cycleNudge,
+      automationIdleGovernanceWave36Export.investmentNudge,
+      automationIdleGovernanceWave36Export.productivityNudge,
+      automationIdleGovernanceWave36Export.summary
+    ),
+    layer(
+      'v10.21_forecast_wave36_projection_sync',
+      'Forecast wave 36 projection sync',
+      forecastWave36ProjectionSync.cycleNudge,
+      forecastWave36ProjectionSync.investmentNudge,
+      forecastWave36ProjectionSync.productivityNudge,
+      forecastWave36ProjectionSync.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

@@ -1152,5 +1152,44 @@ export function evaluateMacroConsistencyGates(
       summary: 'Rigid transmission elasticity — active spillover mass concentrates in few layers.'
     });
   }
+  const wave36Export: any =
+    inputs.automationIdleGovernanceWave36Export ?? inputs.idleAutomation?.governanceWave36Export;
+  const round36Ready = Boolean(
+    wave36Export?.round36Ready ?? wave36Export?.payload?.round36Ready ?? wave36Export?.exportReady
+  );
+  if (
+    wave36Export &&
+    !round36Ready &&
+    (state.automationSpilloverSummary != null || state.automationIdleGovernanceWave36ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'automation_idle_governance_wave36_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Automation idle governance wave 36 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave36Sync: any =
+    inputs.forecastWave36ProjectionSync ?? inputs.forecastingLab?.wave36ProjectionSync;
+  const syncStatus = String(wave36Sync?.status ?? wave36Sync?.syncStatus ?? '').toLowerCase();
+  if (
+    syncStatus === 'drift' &&
+    (state.forecastingSpilloverSummary != null || state.forecastWave36ProjectionSyncSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'forecast_wave36_projection_sync_drifted',
+      triggered: true,
+      severity: 'info',
+      summary: 'Forecast wave 36 projection sync drifted coincides with strained forecasting spillover.'
+    });
+  }
+  if (state.transmissionDispersion?.band === 'moderate') {
+    gates.push({
+      id: 'transmission_dispersion_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated transmission dispersion — spillover mass is uneven across active layers.'
+    });
+  }
   return gates;
 }

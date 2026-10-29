@@ -222,6 +222,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Governance & projection stress',
     shockIds: ['terms_of_trade_squeeze', 'global_slowdown'],
     description: 'Escalated automation idle governance with runaway forecast projection drift (harness overlay).'
+  },
+  {
+    id: 'wave36_export_projection_stress',
+    label: 'Wave 36 export & projection stress',
+    shockIds: ['global_slowdown', 'credit_contraction'],
+    description: 'Blocked automation wave 36 export with drifted forecast wave 36 projection sync (harness overlay).'
   }
 ];
 
