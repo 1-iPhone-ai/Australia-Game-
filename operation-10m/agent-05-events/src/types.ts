@@ -345,6 +345,14 @@ export interface Op10mTriggerRequireAgent25ProjectionWaveReady {
   k: 'agent25_projection_wave_ready';
 }
 
+export interface Op10mTriggerRequireScaleWaveDryRunGate {
+  k: 'scale_wave_dry_run_gate';
+}
+
+export interface Op10mTriggerRequireAgent25DryRunWaveAttested {
+  k: 'agent25_dry_run_wave_attested';
+}
+
 export type Op10mComputeTurnStage =
   | 'pre_simulation'
   | 'post_simulation'
@@ -423,7 +431,9 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequireScaleWaveOriginGate
   | Op10mTriggerRequireAgent25OriginWaveAttested
   | Op10mTriggerRequireScaleWaveProjectionLatch
-  | Op10mTriggerRequireAgent25ProjectionWaveReady;
+  | Op10mTriggerRequireAgent25ProjectionWaveReady
+  | Op10mTriggerRequireScaleWaveDryRunGate
+  | Op10mTriggerRequireAgent25DryRunWaveAttested;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -539,6 +549,8 @@ export interface Op10mNarrativeEngineState {
     agent25OriginWaveAttestedPasses: number;
     scaleWaveProjectionLatches: number;
     agent25ProjectionWaveReadyPasses: number;
+    scaleWaveDryRunGates: number;
+    agent25DryRunWaveAttestedPasses: number;
   };
   regional?: Op10mRegionalContagionLedger;
   turnCompute?: Op10mTurnComputeLedger;
