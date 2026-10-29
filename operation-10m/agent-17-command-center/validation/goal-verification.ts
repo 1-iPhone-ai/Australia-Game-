@@ -142,6 +142,14 @@ import {
   doctrineAccordBlocksCommand,
 } from '../planning/doctrine-accord.ts';
 import {
+  buildAgent17CommandIndex,
+  commandIndexBlocksFederation,
+} from '../planning/command-index.ts';
+import {
+  buildAgent17FederationAccord,
+  federationAccordBlocksOps,
+} from '../planning/federation-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -1264,6 +1272,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const commandIndex = depthEval.snapshot.planningDepth?.commandIndex;
+  goalResults.push(
+    result(
+      'G17-076',
+      !!commandIndex &&
+        commandIndex.pillars.length >= 5 &&
+        commandIndex.commandScore >= 0 &&
+        commandIndex.commandScore <= 100 &&
+        (commandIndex.band === 'supreme' ||
+          commandIndex.band === 'delegated' ||
+          commandIndex.band === 'degraded'),
+      `pillars=${commandIndex?.pillars.length} score=${commandIndex?.commandScore}`
+    )
+  );
+
+  const federationAccord = depthEval.snapshot.planningDepth?.federationAccord;
+  goalResults.push(
+    result(
+      'G17-077',
+      !!federationAccord &&
+        federationAccord.covenants.length >= 5 &&
+        federationAccord.federationScore >= 0 &&
+        federationAccord.federationScore <= 100,
+      `covenants=${federationAccord?.covenants.length} score=${federationAccord?.federationScore}`
+    )
+  );
+
+  const degradedCommand = buildAgent17CommandIndex({
+    doctrineAccord: voidDoctrine,
+    mandateWeave: depthEval.snapshot.planningDepth!.mandateWeave,
+    sovereigntyLock: depthEval.snapshot.planningDepth!.sovereigntyLock,
+  });
+  const dissolvedFederation = buildAgent17FederationAccord({
+    commandIndex: degradedCommand,
+    doctrineAccord: voidDoctrine,
+    commitLattice: depthEval.snapshot.planningDepth!.commitLattice,
+  });
+  goalResults.push(
+    result(
+      'G17-078',
+      doctrineAccordBlocksCommand(voidDoctrine) ||
+        commandIndexBlocksFederation(degradedCommand) ||
+        federationAccordBlocksOps(dissolvedFederation),
+      `${degradedCommand.band}/${dissolvedFederation.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -1369,6 +1424,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-073',
     'G17-074',
     'G17-075',
+    'G17-076',
+    'G17-077',
+    'G17-078',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

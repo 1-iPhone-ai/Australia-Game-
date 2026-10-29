@@ -527,6 +527,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Fractured strategic or void covenant yields doctrineAccordBlocksCommand.',
     severity: 'major',
   },
+  {
+    id: 'G17-076',
+    title: 'Command index on planning depth',
+    category: 'telemetry',
+    acceptance: 'commandIndex reports commandScore 0–100 with supreme/delegated/degraded band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-077',
+    title: 'Federation accord covenants complete',
+    category: 'telemetry',
+    acceptance: 'federationAccord exposes ≥5 covenants and federationScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-078',
+    title: 'Degraded command dissolves federation accord',
+    category: 'integration',
+    acceptance: 'Degraded command or fragmented lattice yields federationAccordBlocksOps.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

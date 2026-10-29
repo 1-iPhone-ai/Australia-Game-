@@ -217,6 +217,8 @@ export interface Agent17PlanningDepthSnapshot {
   missionLattice: Agent17MissionLatticeSnapshot;
   strategicIndex: Agent17StrategicIndexSnapshot;
   doctrineAccord: Agent17DoctrineAccordSnapshot;
+  commandIndex: Agent17CommandIndexSnapshot;
+  federationAccord: Agent17FederationAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -787,6 +789,40 @@ export interface Agent17DoctrineAccordSnapshot {
   strategicBand: Agent17StrategicIndexSnapshot['band'];
   covenantBand: Agent17CovenantGateSnapshot['band'];
   doctrineRatified: boolean;
+  headline: string;
+}
+
+export interface Agent17CommandIndexPillar {
+  id: string;
+  label: string;
+  standing: boolean;
+  weight: number;
+}
+
+export interface Agent17CommandIndexSnapshot {
+  commandScore: number;
+  band: 'supreme' | 'delegated' | 'degraded';
+  pillars: Agent17CommandIndexPillar[];
+  doctrineBand: Agent17DoctrineAccordSnapshot['band'];
+  lockBand: Agent17SovereigntyLockSnapshot['band'];
+  commandReady: boolean;
+  headline: string;
+}
+
+export interface Agent17FederationCovenant {
+  id: string;
+  label: string;
+  bound: boolean;
+  weight: number;
+}
+
+export interface Agent17FederationAccordSnapshot {
+  federationScore: number;
+  band: 'unified' | 'partial' | 'dissolved';
+  covenants: Agent17FederationCovenant[];
+  commandBand: Agent17CommandIndexSnapshot['band'];
+  latticeBand: Agent17CommitLatticeSnapshot['band'];
+  federationUnified: boolean;
   headline: string;
 }
 
