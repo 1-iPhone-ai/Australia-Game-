@@ -7,3 +7,5 @@ export * from './mode-interactions.js';
 export * from './catalog.js';
 export * from './objective-evaluator.js';
 export * from './scenarios/o10m-presets.js';
+export * from './scenario-chains.js';
+export * from './sandbox-knobs.js';

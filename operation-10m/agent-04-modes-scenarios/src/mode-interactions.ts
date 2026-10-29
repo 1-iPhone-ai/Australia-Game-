@@ -1,10 +1,23 @@
 import { getO10mChallengeMode, O10M_CHALLENGE_MODES } from './challenge-modes.js';
+import {
+  buildChainForcedSettingsPatch,
+  buildChainScenarioStartOverrides,
+  initializeChainProgress,
+  validateChainStepSelection,
+} from './scenario-chains.js';
+import {
+  applySandboxKnobsToForcedSettings,
+  applySandboxKnobsToScenarioStart,
+  resolveSandboxKnobValues,
+} from './sandbox-knobs.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
 import type {
   GameModeSelection,
   ModeInteractionRequest,
   ModeInteractionResult,
+  O10mChainProgress,
   O10mChallengeModeId,
+  O10mScenarioStartOverrides,
 } from './types.js';
 import { isSoloRivalMode } from './canonical-modes.js';
 
@@ -12,11 +25,16 @@ function mergeSettings(base: Record<string, unknown>, patch: Record<string, unkn
   return { ...base, ...patch };
 }
 
-export function resolveModeInteraction(request: ModeInteractionRequest): ModeInteractionResult {
+export interface ExtendedModeInteractionRequest extends ModeInteractionRequest {
+  chainProgress?: O10mChainProgress | null;
+}
+
+export function resolveModeInteraction(request: ExtendedModeInteractionRequest): ModeInteractionResult {
   const errors: string[] = [];
   const warnings: string[] = [];
   let effectiveBaseMode: GameModeSelection = request.baseMode;
   let forcedSettingsMerge: Record<string, unknown> = {};
+  let scenarioStartOverrides: O10mScenarioStartOverrides = {};
 
   const scenario = request.scenarioId ? findO10mScenario(request.scenarioId) : undefined;
   const hasScenario = Boolean(scenario || request.scenarioId);
@@ -35,6 +53,21 @@ export function resolveModeInteraction(request: ModeInteractionRequest): ModeInt
 
   if (request.baseMode === 'grand_tour' && hasScenario && request.scenarioId !== 'o10m_grand_tour_prologue') {
     warnings.push('Grand tour with non-prologue scenario may double-count challenge progression.');
+  }
+
+  if (request.chainId != null && request.chainStepIndex != null && request.scenarioId) {
+    const chainCheck = validateChainStepSelection(
+      request.chainId,
+      request.chainProgress ?? initializeChainProgress(request.chainId),
+      request.scenarioId,
+      request.chainStepIndex,
+    );
+    if (!chainCheck.ok) {
+      errors.push(...chainCheck.errors);
+    } else if (request.chainProgress) {
+      forcedSettingsMerge = mergeSettings(forcedSettingsMerge, buildChainForcedSettingsPatch(request.chainProgress));
+      scenarioStartOverrides = buildChainScenarioStartOverrides(request.chainProgress);
+    }
   }
 
   if (hasScenario && isSoloRivalMode(request.baseMode)) {
@@ -76,8 +109,30 @@ export function resolveModeInteraction(request: ModeInteractionRequest): ModeInt
     errors.push('Ironman overlay is disabled for team_ai_vs_ai autoplay.');
   }
 
+  const sandboxResolved = resolveSandboxKnobValues(request.sandboxProfileId, request.sandboxKnobs);
+  if (!sandboxResolved.ok) {
+    errors.push(...sandboxResolved.errors);
+  } else if (Object.keys(sandboxResolved.knobs).length > 0) {
+    forcedSettingsMerge = applySandboxKnobsToForcedSettings(forcedSettingsMerge, sandboxResolved.knobs);
+    scenarioStartOverrides = applySandboxKnobsToScenarioStart(scenarioStartOverrides, sandboxResolved.knobs);
+    if (request.sandboxProfileId) {
+      forcedSettingsMerge.o10mSandboxProfileId = request.sandboxProfileId;
+    }
+  }
+
+  if (request.baseMode === 'single' && request.sandboxProfileId === 'o10m_sandbox_gauntlet') {
+    warnings.push('Gauntlet sandbox on single mode is for mechanic testing only — no structured objectives.');
+  }
+
   const ok = errors.length === 0;
-  return { ok, errors, warnings, effectiveBaseMode, forcedSettingsMerge };
+  return {
+    ok,
+    errors,
+    warnings,
+    effectiveBaseMode,
+    forcedSettingsMerge,
+    scenarioStartOverrides: Object.keys(scenarioStartOverrides).length ? scenarioStartOverrides : undefined,
+  };
 }
 
 export function listChallengeIncompatibilities(): Array<{ challengeId: O10mChallengeModeId; mode: GameModeSelection }> {
@@ -88,4 +143,15 @@ export function listChallengeIncompatibilities(): Array<{ challengeId: O10mChall
     }
   }
   return pairs;
+}
+
+/** Computes effective starting money for assembly hooks. */
+export function computeEffectiveScenarioStartingMoney(
+  scenarioBaseMoney: number,
+  startOverrides?: O10mScenarioStartOverrides,
+  chainMoneyBonus?: number,
+): number {
+  const mult = startOverrides?.startingMoneyMultiplier ?? 1;
+  const bonus = chainMoneyBonus ?? 0;
+  return Math.round(scenarioBaseMoney * mult + bonus);
 }

@@ -223,6 +223,13 @@ export interface ModeInteractionRequest {
   scenarioId: string | null;
   challengeModeIds: O10mChallengeModeId[];
   scenarioModeEnabled?: boolean;
+  /** Optional named sandbox profile (`o10m_sandbox_*`). */
+  sandboxProfileId?: string | null;
+  /** Ad-hoc knob overrides; validated and merged after profile. */
+  sandboxKnobs?: Partial<Record<O10mSandboxKnobKey, number | string>>;
+  /** When set, validates scenarioId against chain step eligibility. */
+  chainId?: string | null;
+  chainStepIndex?: number;
 }
 
 export interface ModeInteractionResult {
@@ -231,4 +238,74 @@ export interface ModeInteractionResult {
   warnings: string[];
   effectiveBaseMode: GameModeSelection;
   forcedSettingsMerge: Record<string, unknown>;
+  scenarioStartOverrides?: O10mScenarioStartOverrides;
+}
+
+export type O10mSandboxKnobKey =
+  | 'economicStartingCashMultiplier'
+  | 'totalDaysMultiplier'
+  | 'rivalFairnessDelta'
+  | 'contractAbundanceOverride'
+  | 'crisisIntensityOverride'
+  | 'deterministicSeedOffset';
+
+export interface O10mSandboxKnobDefinition {
+  key: O10mSandboxKnobKey;
+  label: string;
+  description: string;
+  min?: number;
+  max?: number;
+  allowedStringValues?: string[];
+  defaultValue: number | string;
+}
+
+export interface O10mSandboxKnobProfile {
+  id: string;
+  title: string;
+  description: string;
+  knobs: Partial<Record<O10mSandboxKnobKey, number | string>>;
+}
+
+export interface O10mScenarioStartOverrides {
+  startingMoneyMultiplier?: number;
+  startingStandingDelta?: Record<string, number>;
+}
+
+export interface O10mChainCarryBonus {
+  startingMoneyDelta?: number;
+  standingDelta?: Record<string, number>;
+  forcedSettingsPatch?: Record<string, unknown>;
+}
+
+export interface O10mScenarioChainStep {
+  stepIndex: number;
+  scenarioId: string;
+  title: string;
+  narrativeBridge?: string;
+  requiresPrimaryVictory: boolean;
+  requiresOptionalCount?: number;
+  carryBonusOnComplete?: O10mChainCarryBonus;
+}
+
+export interface O10mScenarioChain {
+  id: string;
+  title: string;
+  description: string;
+  steps: O10mScenarioChainStep[];
+  completionBadgeId: string;
+}
+
+export interface O10mChainProgress {
+  chainId: string;
+  completedStepIndexes: number[];
+  activeStepIndex: number;
+  accumulatedCarry: O10mChainCarryBonus;
+  chainCompleted: boolean;
+}
+
+export interface O10mChainAdvanceResult {
+  progress: O10mChainProgress;
+  advanced: boolean;
+  chainCompleted: boolean;
+  unlockedNextScenarioId: string | null;
 }

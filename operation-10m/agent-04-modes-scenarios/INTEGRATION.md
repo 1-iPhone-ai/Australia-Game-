@@ -17,6 +17,10 @@ Canonical merge path (Agent 25 only): append exports from `src/index.ts` into `(
 | `resolveModeInteraction` | Validates base mode + scenario + challenge combo |
 | `evaluateO10mAltVictory` | Alt victory pass after primary scenario eval |
 | `evaluateMissionMilestones` | Milestone progress from snapshot |
+| `O10M_SCENARIO_CHAINS` | Multi-step scenario arcs (`o10m_chain_*`) |
+| `advanceChainAfterRun` / `validateChainStepSelection` | Chain progression and gating |
+| `O10M_SANDBOX_KNOB_PROFILES` | Named sandbox difficulty/economy profiles |
+| `applySandboxKnobsToForcedSettings` | Merge validated knobs into forced settings |
 
 ## Dependencies on canonical (at assembly time)
 
