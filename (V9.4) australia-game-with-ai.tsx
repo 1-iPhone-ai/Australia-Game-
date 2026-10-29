@@ -11338,6 +11338,7 @@ export function reduceGameAction(
       const usedAtStart = Number(actor?.actionsUsedThisTurn) || 0;
 
       let actionExecuted = false;
+      let rejectReason: string | undefined;
 
       switch (action.type as string) {
         case 'copilot_telemetry_noop':
@@ -12079,28 +12080,20 @@ export function reduceGameAction(
         }
 
         case 'megaproject_command': {
-          // V10.3: thin canonical program action (propose / commit / contribute / choose / suspend / resume). applyMegaprojectCommand
-          // validates turn ownership, authority, AP, cash, program + stage state, the stage-remainder cap and prerequisites; real cash
-          // moves HERE exactly once and AP is spent once by the shared post-switch rule. A rejected command executes nothing.
+          // V10.3 + O111 command contract: validate + mutate program memory in applyMegaprojectCommand; cash moves here
+          // exactly once; AP once via applyExecutedGameplayActionPointSpend. Rejected commands leave state unchanged.
           if (!actor) break;
           const gsLive: any = (nextState as any).gameState || {};
-          const isAiActor = actorId === 'ai' || actor.kind === 'ai' || Boolean(actor.isAi);
-          const soloAiTurn = gsLive.gameMode === 'game' && isSoloRivalModeSelection(gsLive.selectedMode) && Boolean(gsLive.currentTurn);
-          const turnOwner = isAiActor ? !(soloAiTurn && gsLive.currentTurn !== 'ai') : !isHumanLockedOutForSoloRival(gsLive, 'human');
-          const limitsOn = gameSettings.actionLimitsEnabled !== false;
-          const apRemaining = limitsOn ? getRemainingActionPoints(actor, gameSettings) : Number.POSITIVE_INFINITY;
-          const apCost = limitsOn ? Math.max(1, getActionPointCost('megaproject_command', actor, gameSettings)) : 0;
-          // Derived (read-only) system snapshots are pure functions of canonical state; the caller passes the ones it already computed.
           const derived: any = action.parameters?.derived || {};
-          const mpWorld = buildMegaprojectWorld({ turn: Number(nextState.turn) || 1, totalDays: (gameSettings as any).totalDays, enabled: (gameSettings as any).megaprojectsEnabled !== false && (gameSettings as any).nationalSystemsEnabled !== false,
-            infrastructureEnabled: Boolean((gameSettings as any).stateInfrastructureEnabled), gameOver: Boolean(gsLive.isGameOver) || (typeof gsLive.gameMode === 'string' && gsLive.gameMode !== 'game'), projects: nextState.infrastructureProjects, regionalDevLevels: nextState.regionalDevLevels,
-            national: derived.national || null, industries: derived.industries || null, networks: derived.networks || null, factions: (nextState as any).regionalFactions || null, flags: (nextState as any).contentState?.flags || gsLive.contentState?.flags || {} });
-          const mpRes = applyMegaprojectCommand((nextState as any).megaprojects || null, (action.parameters?.command || {}) as MegaprojectCommand,
-            { id: actorId, kind: isAiActor ? 'ai' : 'human', teamId: actor.teamId || null, money: Number(actor.money) || 0, currentRegion: actor.currentRegion || null, apRemaining, apCost, turnOwner }, mpWorld);
+          const mpActor = resolveMegaprojectActorContext(actorId, actor, gameSettings, gsLive);
+          const mpWorld = resolveMegaprojectWorldFromGameState(nextState, gameSettings, derived);
+          const mpRes = applyMegaprojectCommand((nextState as any).megaprojects || null, (action.parameters?.command || {}) as MegaprojectCommand, mpActor, mpWorld);
           if (mpRes.ok) {
             actor.money -= mpRes.moneySpent;
             (nextState as any).megaprojects = mpRes.persisted;
             actionExecuted = true;
+          } else {
+            rejectReason = mpRes.reason || undefined;
           }
           break;
         }
@@ -13429,7 +13422,8 @@ export function reduceGameAction(
         nextState,
         actionAttemptId,
         stateHash,
-        ledgerEvent
+        ledgerEvent,
+        error: rejectReason
       };
     });
   });
@@ -136499,6 +136493,7 @@ function v95NormalizeSuiteResults(raw: unknown): Array<{ name: string; passed: b
 
 export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
+  { id: 'o111-cc', label: 'O111 Command & Action Contract', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runO111CommandActionContractSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
   { id: 'v105', label: 'V10.5 Innovation & Emerging Capabilities', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV105InnovationCapabilitiesSelfTests() },
@@ -142838,6 +142833,78 @@ export function setMegaprojectTracked(prev: MegaprojectsPersisted | null, actorI
   s.revision += 1; return s;
 }
 
+// ---- O111 Agent 5: canonical command contract (validate → mutate domain memory; money/AP at reducer boundary) ----
+/** Reference shape for domain commands: pure validation + memory mutation; economic side effects stay in reduceGameAction. */
+export interface CanonicalDomainCommandResult<TMemory = unknown> {
+  ok: boolean;
+  reason: string | null;
+  memory: TMemory;
+  moneySpent: number;
+}
+
+export type MegaprojectCommandDerivedSnapshots = {
+  national?: NationalSystemsState | null;
+  industries?: IndustriesSupplyChainsState | null;
+  networks?: StrategicInfrastructureState | null;
+};
+
+export function resolveMegaprojectTurnOwner(gsLive: any, actorId: string, actor: any): boolean {
+  const isAiActor = actorId === 'ai' || actor?.kind === 'ai' || Boolean(actor?.isAi);
+  const soloAiTurn = gsLive?.gameMode === 'game' && isSoloRivalModeSelection(gsLive.selectedMode) && Boolean(gsLive.currentTurn);
+  return isAiActor ? !(soloAiTurn && gsLive.currentTurn !== 'ai') : !isHumanLockedOutForSoloRival(gsLive, 'human');
+}
+
+/** Single source for turn ownership, AP budget and actor identity used by reducer, UI preview and tests. */
+export function resolveMegaprojectActorContext(actorId: string, actor: any, gameSettings: any, gsLive: any): MegaprojectActorContext {
+  const isAiActor = actorId === 'ai' || actor?.kind === 'ai' || Boolean(actor?.isAi);
+  const limitsOn = gameSettings?.actionLimitsEnabled !== false;
+  const apRemaining = limitsOn ? getRemainingActionPoints(actor, gameSettings) : Number.POSITIVE_INFINITY;
+  const apCost = limitsOn ? Math.max(1, getActionPointCost('megaproject_command', actor, gameSettings)) : 0;
+  return {
+    id: actorId,
+    kind: isAiActor ? 'ai' : 'human',
+    teamId: actor?.teamId || null,
+    money: Number(actor?.money) || 0,
+    currentRegion: actor?.currentRegion || null,
+    apRemaining,
+    apCost,
+    turnOwner: resolveMegaprojectTurnOwner(gsLive, actorId, actor)
+  };
+}
+
+export function resolveMegaprojectWorldFromGameState(nextState: any, gameSettings: any, derived?: MegaprojectCommandDerivedSnapshots | null): MegaprojectWorld {
+  const gsLive: any = nextState?.gameState || nextState || {};
+  return buildMegaprojectWorld({
+    turn: Number(nextState.turn) || 1,
+    totalDays: (gameSettings as any).totalDays,
+    enabled: (gameSettings as any).megaprojectsEnabled !== false && (gameSettings as any).nationalSystemsEnabled !== false,
+    infrastructureEnabled: Boolean((gameSettings as any).stateInfrastructureEnabled),
+    gameOver: Boolean(gsLive.isGameOver) || (typeof gsLive.gameMode === 'string' && gsLive.gameMode !== 'game'),
+    projects: nextState.infrastructureProjects,
+    regionalDevLevels: nextState.regionalDevLevels,
+    national: derived?.national || null,
+    industries: derived?.industries || null,
+    networks: derived?.networks || null,
+    factions: (nextState as any).regionalFactions || null,
+    flags: (nextState as any).contentState?.flags || gsLive.contentState?.flags || {}
+  });
+}
+
+/** Alias documenting the validate+mutate contract (implementation: applyMegaprojectCommand). */
+export function validateAndApplyMegaprojectCommand(prev: MegaprojectsPersisted | null, cmd: MegaprojectCommand, actor: MegaprojectActorContext, world: MegaprojectWorld): MegaprojectCommandResult {
+  return applyMegaprojectCommand(prev, cmd, actor, world);
+}
+
+export function previewMegaprojectCommand(prev: MegaprojectsPersisted | null, cmd: MegaprojectCommand, actor: MegaprojectActorContext, world: MegaprojectWorld): { ok: boolean; reason: string | null } {
+  const r = applyMegaprojectCommand(prev, cmd, actor, world);
+  return { ok: r.ok, reason: r.reason };
+}
+
+export function executeMegaprojectDomainCommand(prev: MegaprojectsPersisted | null, cmd: MegaprojectCommand, actorId: string, actor: any, gameSettings: any, stateForWorld: any, derived?: MegaprojectCommandDerivedSnapshots | null): MegaprojectCommandResult {
+  const gsLive: any = stateForWorld?.gameState || stateForWorld || {};
+  return applyMegaprojectCommand(prev, cmd, resolveMegaprojectActorContext(actorId, actor, gameSettings, gsLive), resolveMegaprojectWorldFromGameState(stateForWorld, gameSettings, derived));
+}
+
 export interface MegaprojectCommandResult { ok: boolean; reason: string | null; persisted: MegaprojectsPersisted; moneySpent: number; laborApplied: number; programId: string | null }
 /**
  * Validate + apply one command to program memory (pure). Money is NOT touched here — the caller (reduceGameAction for the
@@ -143348,6 +143415,67 @@ export function createMegaprojectFixtureWorld(o: { statuses?: Record<string, str
   });
   return buildMegaprojectWorld({ turn, totalDays: o.totalDays ?? 30, enabled: o.enabled !== false, infrastructureEnabled: o.infrastructureEnabled !== false, gameOver: o.gameOver, projects,
     regionalDevLevels: Object.fromEntries(Object.entries(o.devTiers || {}).map(([k, t]) => [k, { tier: t }])), national: ns, industries: ind, networks: net, factions: null, flags: o.flags || {} });
+}
+
+export function runO111CommandActionContractSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const HSR = 'infra_hsr_nsw_vic', ID = megaprojectIdFor('national_high_speed_rail');
+  const w = createMegaprojectFixtureWorld({ statuses: { [HSR]: 'under_construction' }, nsModifiers: Object.fromEntries(['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA'].map(r => [r, { freight: -40 }])) as any });
+  const committed = () => {
+    let s = applyMegaprojectCommand(null, { op: 'propose', kind: 'national_high_speed_rail' }, { id: 'player', kind: 'human', teamId: 'team_player', money: 50000, currentRegion: 'NSW', apRemaining: 3, apCost: 1, turnOwner: true }, w);
+    if (!s.ok) throw new Error(s.reason || 'propose failed');
+    s = applyMegaprojectCommand(s.persisted, { op: 'commit', programId: ID, amount: 5000 }, { id: 'player', kind: 'human', teamId: 'team_player', money: 50000, currentRegion: 'NSW', apRemaining: 3, apCost: 1, turnOwner: true }, w);
+    if (!s.ok) throw new Error(s.reason || 'commit failed');
+    return s.persisted;
+  };
+  check('o111_cc01_actor_ap_cost', 'resolveMegaprojectActorContext uses getActionPointCost (not a hard-coded 1)', () => {
+    const gs = { gameMode: 'game', selectedMode: 'ai', currentTurn: 'player' };
+    const actor = { id: 'player', kind: 'human', money: 1000, actionsUsedThisTurn: 0, teamId: 'team_player' };
+    const settings = { ...DEFAULT_GAME_SETTINGS, actionLimitsEnabled: true, playerActionsPerDay: 5 };
+    const ctx = resolveMegaprojectActorContext('player', actor, settings, gs);
+    const expected = Math.max(1, getActionPointCost('megaproject_command', actor, settings));
+    return ctx.apCost === expected || `expected ${expected}, got ${ctx.apCost}`;
+  });
+  check('o111_cc02_preview_matches_apply', 'previewMegaprojectCommand matches applyMegaprojectCommand ok/reason', () => {
+    const s = committed();
+    const cmd: MegaprojectCommand = { op: 'contribute', programId: ID, amount: 4000 };
+    const act = { id: 'player', kind: 'human' as const, teamId: 'team_player', money: 1000, currentRegion: 'NSW', apRemaining: 1, apCost: 1, turnOwner: true };
+    const apply = applyMegaprojectCommand(s, cmd, act, w);
+    const prev = previewMegaprojectCommand(s, cmd, act, w);
+    return (apply.ok === prev.ok && apply.reason === prev.reason) || JSON.stringify({ apply, prev });
+  });
+  check('o111_cc03_reducer_error', 'reduceGameAction surfaces megaproject rejection on error', () => {
+    const s = committed();
+    const projects = Object.fromEntries([...PRESET_INFRASTRUCTURE_PROJECTS, ...V93_INFRASTRUCTURE_PROJECTS].map(p => [p.id, { ...JSON.parse(JSON.stringify(p)), status: p.id === HSR ? 'under_construction' : p.status }]));
+    const bundle = { gameState: { gameMode: 'game', selectedMode: 'ai', currentTurn: 'ai', turnCounter: 5, infrastructureProjects: projects, megaprojects: s, regionalDevLevels: {} },
+      player: { ...initialPlayerState, id: 'player', kind: 'human', money: 20000, actionsUsedThisTurn: 0, currentRegion: 'NSW' }, aiPlayer: { ...initialPlayerState, id: 'ai', kind: 'ai', isAi: true, money: 20000, actionsUsedThisTurn: 0, currentRegion: 'NSW' },
+      gameSettings: { ...DEFAULT_GAME_SETTINGS, stateInfrastructureEnabled: true, actionLimitsEnabled: true, playerActionsPerDay: 3, aiActionsPerDay: 3 } };
+    const res = reduceGameAction(bundle as any, { type: 'megaproject_command', actorId: 'player', parameters: { command: { op: 'contribute', programId: ID, amount: 1000 } } } as any);
+    return (!res.success && typeof res.error === 'string' && res.error.length > 0) || JSON.stringify({ success: res.success, error: res.error });
+  });
+  check('o111_cc04_domain_executor', 'executeMegaprojectDomainCommand matches direct applyMegaprojectCommand', () => {
+    const s = committed();
+    const cmd: MegaprojectCommand = { op: 'contribute', programId: ID, amount: 500 };
+    const actor = { id: 'player', kind: 'human', money: 20000, currentRegion: 'NSW', teamId: 'team_player', actionsUsedThisTurn: 0 };
+    const state = { gameState: { gameMode: 'game', turnCounter: 5, infrastructureProjects: w.projects, megaprojects: s, regionalDevLevels: w.devTiers }, turn: 5, infrastructureProjects: w.projects, regionalDevLevels: w.devTiers, megaprojects: s };
+    const settings = { ...DEFAULT_GAME_SETTINGS, stateInfrastructureEnabled: true, actionLimitsEnabled: true, playerActionsPerDay: 3 };
+    const a = applyMegaprojectCommand(s, cmd, resolveMegaprojectActorContext('player', actor, settings, state.gameState), w);
+    const b = executeMegaprojectDomainCommand(s, cmd, 'player', actor, settings, state);
+    return (a.ok === b.ok && a.moneySpent === b.moneySpent && a.reason === b.reason) || JSON.stringify({ a, b });
+  });
+  check('o111_cc05_validate_alias', 'validateAndApplyMegaprojectCommand is applyMegaprojectCommand', () => {
+    const s = committed();
+    const act = { id: 'player', kind: 'human' as const, teamId: 'team_player', money: 50000, currentRegion: 'NSW', apRemaining: 2, apCost: 1, turnOwner: true };
+    const cmd: MegaprojectCommand = { op: 'contribute', programId: ID, amount: 100 };
+    const direct = applyMegaprojectCommand(s, cmd, act, w);
+    const alias = validateAndApplyMegaprojectCommand(s, cmd, act, w);
+    return (direct.ok === alias.ok && direct.moneySpent === alias.moneySpent && JSON.stringify(direct.persisted) === JSON.stringify(alias.persisted)) || 'alias drift';
+  });
+  return results;
 }
 
 export function runV103NationalMegaprojectSelfTests(): V9SelfTestResult[] {
@@ -214146,16 +214274,15 @@ function dispatchGameSettingsChange(
     const human: any = playerRef.current; const ai: any = aiPlayerRef.current;
     const actorId = who === 'ai' ? 'ai' : String(human?.id || 'player');
     const act: any = who === 'ai' ? ai : human;
-    const bundle: any = { gameState: gameStateLiveRef.current, player: human, aiPlayer: ai, actorsById: { [String(human?.id || 'player')]: human, player: human, ...(ai ? { ai } : {}) }, gameSettings };
+    const gsLive = gameStateLiveRef.current;
+    const bundle: any = { gameState: gsLive, player: human, aiPlayer: ai, actorsById: { [String(human?.id || 'player')]: human, player: human, ...(ai ? { ai } : {}) }, gameSettings, megaprojects: mpPersistedRef.current, infrastructureProjects: gsLive?.infrastructureProjects, regionalDevLevels: gsLive?.regionalDevLevels, turn: gsLive?.turnCounter || gsLive?.turn || 1 };
     const derived = { national: nsStateRef.current, industries: scStateRef.current, networks: inStateRef.current };
     const res = reduceGameAction(bundle, { type: 'megaproject_command', actorId, teamId: act?.teamId, parameters: { command: cmd, derived } } as any, { active: true, operation: 'megaproject_command', actorId, teamId: act?.teamId } as ActionExecutionContext);
     const dg = mpDiagRef.current; dg.commands += 1;
     if (!res?.success) {
       dg.rejected += 1;
-      const limitsOn = gameSettings.actionLimitsEnabled !== false;
-      const why = applyMegaprojectCommand(mpPersistedRef.current, cmd, { id: actorId, kind: who, teamId: act?.teamId || null, money: Number(act?.money) || 0, currentRegion: act?.currentRegion || null,
-        apRemaining: limitsOn ? getRemainingActionPoints(act, gameSettings) : Number.POSITIVE_INFINITY, apCost: limitsOn ? 1 : 0, turnOwner: who === 'ai' || !isHumanLockedOutForSoloRival(gameStateLiveRef.current, 'human') }, mpWorldRef.current).reason;
-      return { ok: false, reason: why || 'Not possible right now.' };
+      const preview = previewMegaprojectCommand(mpPersistedRef.current, cmd, resolveMegaprojectActorContext(actorId, act, gameSettings, gsLive), resolveMegaprojectWorldFromGameState(bundle, gameSettings, derived));
+      return { ok: false, reason: res.error || preview.reason || 'Not possible right now.' };
     }
     const next: any = res.nextState;
     mpPersistedRef.current = next.megaprojects;
