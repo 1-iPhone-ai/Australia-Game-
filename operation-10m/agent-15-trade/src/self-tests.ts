@@ -369,6 +369,16 @@ import {
   createEmptyBilateralLaunchedWaveSustainGateSnapshot,
   bilateralLaunchedWaveSustainGateExportScale,
 } from './bilateral-launched-wave-sustain-gate.ts';
+import {
+  computeLaunchedWaveSustainContinuitySnapshot,
+  createEmptyLaunchedWaveSustainContinuitySnapshot,
+  launchedWaveSustainContinuityExportScale,
+} from './launched-wave-sustain-continuity.ts';
+import {
+  computeBilateralSustainedWaveThroughputGateSnapshot,
+  createEmptyBilateralSustainedWaveThroughputGateSnapshot,
+  bilateralSustainedWaveThroughputGateExportScale,
+} from './bilateral-sustained-wave-throughput-gate.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -2513,6 +2523,55 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
       bilateralLaunchedWaveSustainGateExportScale(sustaining) >=
         bilateralLaunchedWaveSustainGateExportScale(blocked),
       'expected wave sustain scale lift',
+    );
+  });
+
+  ok('launched wave sustain continuity improves when sustain gate is sustaining', () => {
+    const gate = {
+      ...createEmptyBilateralLaunchedWaveSustainGateSnapshot(),
+      score: 0.95,
+      band: 'sustaining' as const,
+    };
+    const launch = { ...createEmptyPrimedWaveLaunchContinuitySnapshot(), score: 0.93, band: 'sustained' as const };
+    const firm = computeLaunchedWaveSustainContinuitySnapshot({
+      bilateralLaunchedWaveSustainGate: gate,
+      primedWaveLaunchContinuity: launch,
+      persisted: { ...createEmptyGTELPersisted(), launchedWaveSustainContinuitySmoothing: 0.98 },
+    }).snapshot;
+    const failed = computeLaunchedWaveSustainContinuitySnapshot({
+      bilateralLaunchedWaveSustainGate: { ...gate, score: 0.1, band: 'blocked' },
+      primedWaveLaunchContinuity: { ...launch, score: 0.08, band: 'collapsed' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(firm.score > failed.score, 'expected firm sustain continuity');
+    gtelAssert(
+      launchedWaveSustainContinuityExportScale(firm) >= launchedWaveSustainContinuityExportScale(failed),
+      'expected sustain continuity scale lift',
+    );
+  });
+
+  ok('bilateral sustained wave throughput gate improves when sustain continuity is firm', () => {
+    const continuity = {
+      ...createEmptyLaunchedWaveSustainContinuitySnapshot(),
+      score: 0.96,
+      band: 'firm' as const,
+    };
+    const loop = { ...createEmptyBilateralLoopResumptionGateSnapshot(), score: 0.91, band: 'resumed' as const };
+    const cleared = computeBilateralSustainedWaveThroughputGateSnapshot({
+      launchedWaveSustainContinuity: continuity,
+      bilateralLoopResumptionGate: loop,
+      persisted: { ...createEmptyGTELPersisted(), bilateralSustainedWaveThroughputGateSmoothing: 0.99 },
+    }).snapshot;
+    const blocked = computeBilateralSustainedWaveThroughputGateSnapshot({
+      launchedWaveSustainContinuity: { ...continuity, score: 0.11, band: 'failed' },
+      bilateralLoopResumptionGate: { ...loop, score: 0.08, band: 'closed' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(cleared.score > blocked.score, 'expected throughput clearance when firm');
+    gtelAssert(
+      bilateralSustainedWaveThroughputGateExportScale(cleared) >=
+        bilateralSustainedWaveThroughputGateExportScale(blocked),
+      'expected throughput gate scale lift',
     );
   });
 
