@@ -85,3 +85,7 @@ export { ShowAllProgressiveSafetyDayCoachStrip } from './ShowAllProgressiveSafet
 export { LegacyNavAutoRememberDayCoachStrip } from './LegacyNavAutoRememberDayCoachStrip.js';
 export { FocusSessionPolicyDayCoachStrip } from './FocusSessionPolicyDayCoachStrip.js';
 export { CoachDismissalBackoffDayCoachStrip } from './CoachDismissalBackoffDayCoachStrip.js';
+export { SessionResumeCoachPlanDayCoachStrip } from './SessionResumeCoachPlanDayCoachStrip.js';
+export { DayAdvanceCalmRecoveryDayCoachStrip } from './DayAdvanceCalmRecoveryDayCoachStrip.js';
+export { PanelUnlockHeadlineDayCoachStrip } from './PanelUnlockHeadlineDayCoachStrip.js';
+export { UiDensityProfileDayCoachStrip } from './UiDensityProfileDayCoachStrip.js';

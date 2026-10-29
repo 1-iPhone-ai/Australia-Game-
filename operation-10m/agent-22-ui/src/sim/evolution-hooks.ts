@@ -89,6 +89,10 @@ import { buildShowAllProgressiveSafetyDayCoach } from '../engine/show-all-progre
 import { buildLegacyNavAutoRememberDayCoach } from '../engine/legacy-nav-auto-remember-day-coach.js';
 import { buildFocusSessionPolicyDayCoach } from '../engine/focus-session-policy-day-coach.js';
 import { buildCoachDismissalBackoffDayCoach } from '../engine/coach-dismissal-backoff-day-coach.js';
+import { buildSessionResumeCoachPlanDayCoach } from '../engine/session-resume-coach-plan-day-coach.js';
+import { buildDayAdvanceCalmRecoveryDayCoach } from '../engine/day-advance-calm-recovery-day-coach.js';
+import { buildPanelUnlockHeadlineDayCoach } from '../engine/panel-unlock-headline-day-coach.js';
+import { buildUiDensityProfileDayCoach } from '../engine/ui-density-profile-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -186,6 +190,10 @@ export interface DayAdvanceUiEvolutionResult {
   legacyNavAutoRememberDayCoachCopy: string | null;
   focusSessionPolicyDayCoachCopy: string | null;
   coachDismissalBackoffDayCoachCopy: string | null;
+  sessionResumeCoachPlanDayCoachCopy: string | null;
+  dayAdvanceCalmRecoveryDayCoachCopy: string | null;
+  panelUnlockHeadlineDayCoachCopy: string | null;
+  uiDensityProfileDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -665,6 +673,38 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const sessionResumeCoachPlanDayCoach = buildSessionResumeCoachPlanDayCoach({
+    memory: context.sessionMemory,
+    signals: nextSignals,
+    policy,
+    accessibility,
+    phaseAllowsResume: context.phase !== 'save_load' && context.phase !== 'main_menu',
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const dayAdvanceCalmRecoveryDayCoach = buildDayAdvanceCalmRecoveryDayCoach({
+    signals: nextSignals,
+    policy,
+    persisted: persistedAfterCalm,
+    newlyUnlockedPanelCount: newlyUnlockedPanelIds.length,
+    deferredAnnouncementCount: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const panelUnlockHeadlineDayCoach = buildPanelUnlockHeadlineDayCoach({
+    newlyUnlockedPanelIds,
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const uiDensityProfileDayCoach = buildUiDensityProfileDayCoach({
+    interfaceLevel: nextSignals.interfaceLevel,
+    layoutPreset: context.layoutPreset,
+    textScaleMultiplier: accessibility.textScaleMultiplier,
+    preferredTier: persistedAfterCalm.preferredDensity ?? null,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -763,6 +803,10 @@ export function tickEvolvingUiOnDayAdvance(
     legacyNavAutoRememberDayCoachCopy: legacyNavAutoRememberDayCoach.coachCopy,
     focusSessionPolicyDayCoachCopy: focusSessionPolicyDayCoach.coachCopy,
     coachDismissalBackoffDayCoachCopy: coachDismissalBackoffDayCoach.coachCopy,
+    sessionResumeCoachPlanDayCoachCopy: sessionResumeCoachPlanDayCoach.coachCopy,
+    dayAdvanceCalmRecoveryDayCoachCopy: dayAdvanceCalmRecoveryDayCoach.coachCopy,
+    panelUnlockHeadlineDayCoachCopy: panelUnlockHeadlineDayCoach.coachCopy,
+    uiDensityProfileDayCoachCopy: uiDensityProfileDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

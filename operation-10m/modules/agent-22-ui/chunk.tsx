@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 055991b975806b25
+// content-sha256-prefix: eb4ac49c95b24110
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -927,6 +927,10 @@ export interface DayAdvanceUiEvolutionResult {
   legacyNavAutoRememberDayCoachCopy: string | null;
   focusSessionPolicyDayCoachCopy: string | null;
   coachDismissalBackoffDayCoachCopy: string | null;
+  sessionResumeCoachPlanDayCoachCopy: string | null;
+  dayAdvanceCalmRecoveryDayCoachCopy: string | null;
+  panelUnlockHeadlineDayCoachCopy: string | null;
+  uiDensityProfileDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1406,6 +1410,38 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const sessionResumeCoachPlanDayCoach = buildSessionResumeCoachPlanDayCoach({
+    memory: context.sessionMemory,
+    signals: nextSignals,
+    policy,
+    accessibility,
+    phaseAllowsResume: context.phase !== 'save_load' && context.phase !== 'main_menu',
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const dayAdvanceCalmRecoveryDayCoach = buildDayAdvanceCalmRecoveryDayCoach({
+    signals: nextSignals,
+    policy,
+    persisted: persistedAfterCalm,
+    newlyUnlockedPanelCount: newlyUnlockedPanelIds.length,
+    deferredAnnouncementCount: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const panelUnlockHeadlineDayCoach = buildPanelUnlockHeadlineDayCoach({
+    newlyUnlockedPanelIds,
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const uiDensityProfileDayCoach = buildUiDensityProfileDayCoach({
+    interfaceLevel: nextSignals.interfaceLevel,
+    layoutPreset: context.layoutPreset,
+    textScaleMultiplier: accessibility.textScaleMultiplier,
+    preferredTier: persistedAfterCalm.preferredDensity ?? null,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1504,6 +1540,10 @@ export function tickEvolvingUiOnDayAdvance(
     legacyNavAutoRememberDayCoachCopy: legacyNavAutoRememberDayCoach.coachCopy,
     focusSessionPolicyDayCoachCopy: focusSessionPolicyDayCoach.coachCopy,
     coachDismissalBackoffDayCoachCopy: coachDismissalBackoffDayCoach.coachCopy,
+    sessionResumeCoachPlanDayCoachCopy: sessionResumeCoachPlanDayCoach.coachCopy,
+    dayAdvanceCalmRecoveryDayCoachCopy: dayAdvanceCalmRecoveryDayCoach.coachCopy,
+    panelUnlockHeadlineDayCoachCopy: panelUnlockHeadlineDayCoach.coachCopy,
+    uiDensityProfileDayCoachCopy: uiDensityProfileDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -5916,6 +5956,320 @@ export function buildCoachDismissalBackoffDayCoach(input: {
     dismissalStreak: input.persisted.coachDismissalStreak ?? 0,
     coachCopy,
   };
+}
+
+// --- source: engine/session-resume-coach-plan-day-coach.ts ---
+export interface SessionResumeCoachPlanDayCoach {
+  shouldShow: boolean;
+  navTarget: string | null;
+  coachCopy: string | null;
+}
+
+export function buildSessionResumeCoachPlanDayCoach(input: {
+  memory?: SessionUiMemory;
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  accessibility: AccessibilitySettingsSnapshot;
+  phaseAllowsResume?: boolean;
+  nextGameDay: number;
+}): SessionResumeCoachPlanDayCoach {
+  const plan = buildSessionResumeCoachPlan({
+    memory: input.memory,
+    signals: input.signals,
+    policy: input.policy,
+    accessibility: input.accessibility,
+    phaseAllowsResume: input.phaseAllowsResume,
+  });
+  const coachCopy = plan.coachCopy ? `Day ${input.nextGameDay}: ${plan.coachCopy}` : null;
+  return {
+    shouldShow: plan.shouldShow,
+    navTarget: plan.navTarget,
+    coachCopy,
+  };
+}
+
+// --- source: engine/day-advance-calm-recovery-day-coach.ts ---
+export interface DayAdvanceCalmRecoveryDayCoach {
+  suggestCalmRecovery: boolean;
+  alreadyActive: boolean;
+  coachCopy: string | null;
+}
+
+export function buildDayAdvanceCalmRecoveryDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  persisted: EvolvingUiPersistedState;
+  newlyUnlockedPanelCount: number;
+  deferredAnnouncementCount: number;
+  nextGameDay: number;
+}): DayAdvanceCalmRecoveryDayCoach {
+  const hint = evaluateDayAdvanceCalmRecoveryHint({
+    signals: input.signals,
+    policy: input.policy,
+    persisted: input.persisted,
+    newlyUnlockedPanelCount: input.newlyUnlockedPanelCount,
+    deferredAnnouncementCount: input.deferredAnnouncementCount,
+  });
+  const coachCopy = hint.coachCopy ? `Day ${input.nextGameDay}: ${hint.coachCopy}` : null;
+  return {
+    suggestCalmRecovery: hint.suggestCalmRecovery,
+    alreadyActive: hint.alreadyActive,
+    coachCopy,
+  };
+}
+
+// --- source: engine/panel-unlock-headline-day-coach.ts ---
+export interface PanelUnlockHeadlineDayCoach {
+  unlockCount: number;
+  headlinePanelId: string | null;
+  coachCopy: string | null;
+}
+
+export function buildPanelUnlockHeadlineDayCoach(input: {
+  newlyUnlockedPanelIds: string[];
+  signals: ProgressionSignalSnapshot;
+  nextGameDay: number;
+}): PanelUnlockHeadlineDayCoach {
+  if (!input.newlyUnlockedPanelIds.length) {
+    return { unlockCount: 0, headlinePanelId: null, coachCopy: null };
+  }
+  const headlinePanelId = input.newlyUnlockedPanelIds[0] ?? null;
+  const panel = headlinePanelId ? EVOLVING_UI_PANEL_BY_ID[headlinePanelId] : undefined;
+  if (!panel) {
+    return {
+      unlockCount: input.newlyUnlockedPanelIds.length,
+      headlinePanelId,
+      coachCopy: null,
+    };
+  }
+  const coachCopy = `Day ${input.nextGameDay}: ${buildCoachHeadline(panel, input.signals)}`;
+  return {
+    unlockCount: input.newlyUnlockedPanelIds.length,
+    headlinePanelId,
+    coachCopy,
+  };
+}
+
+// --- source: engine/ui-density-profile-day-coach.ts ---
+export interface UiDensityProfileDayCoach {
+  densityTier: UiDensityTier;
+  coachCopy: string | null;
+}
+
+export function buildUiDensityProfileDayCoach(input: {
+  interfaceLevel: InterfaceExperienceLevel;
+  layoutPreset?: V94LayoutPreset;
+  textScaleMultiplier?: number;
+  preferredTier?: UiDensityTier | null;
+  nextGameDay: number;
+}): UiDensityProfileDayCoach {
+  const profile = resolveUiDensityProfile({
+    interfaceLevel: input.interfaceLevel,
+    layoutPreset: input.layoutPreset,
+    textScaleMultiplier: input.textScaleMultiplier,
+    preferredTier: input.preferredTier ?? null,
+  });
+
+  let coachCopy: string | null = null;
+  if (input.preferredTier || input.nextGameDay <= 4) {
+    coachCopy = `Day ${input.nextGameDay}: ${profile.coachSummary}`;
+  }
+
+  return {
+    densityTier: profile.tier,
+    coachCopy,
+  };
+}
+
+// --- source: engine/round28-self-tests.ts ---
+export function runAgent22Round28SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r28_session_resume_plan',
+    'session resume coach plan day coach with hints enabled',
+    (() => {
+      const coach = buildSessionResumeCoachPlanDayCoach({
+        signals: { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, keyboardNavigationHints: true },
+        memory: { lastNavTarget: 'map', recentPanelIds: ['nav_map'] },
+        phaseAllowsResume: true,
+        nextGameDay: 4,
+      });
+      return (coach.coachCopy === null || coach.coachCopy.includes('Day 4'));
+    })()
+  );
+
+  check(
+    'r28_calm_recovery_day',
+    'day advance calm recovery day coach when already active',
+    (() => {
+      const coach = buildDayAdvanceCalmRecoveryDayCoach({
+        signals: { gameDay: 5, turnCount: 5, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        persisted: { ...createDefaultEvolvingUiPersistedState(), calmRecoveryUntilDay: 8 },
+        newlyUnlockedPanelCount: 0,
+        deferredAnnouncementCount: 0,
+        nextGameDay: 5,
+      });
+      return coach.alreadyActive && Boolean(coach.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r28_panel_unlock_headline',
+    'panel unlock headline day coach null without unlocks',
+    (() => {
+      const coach = buildPanelUnlockHeadlineDayCoach({
+        newlyUnlockedPanelIds: [],
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        nextGameDay: 2,
+      });
+      return coach.unlockCount === 0 && coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r28_ui_density',
+    'ui density profile day coach on early day',
+    (() => {
+      const coach = buildUiDensityProfileDayCoach({
+        interfaceLevel: 'simple',
+        nextGameDay: 2,
+      });
+      return Boolean(coach.coachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r28_tick_session_plan_field',
+    'day advance exposes session resume coach plan day copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'guided' },
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.sessionResumeCoachPlanDayCoachCopy === 'string' || r.sessionResumeCoachPlanDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r28_tick_calm_recovery_day_field',
+    'day advance exposes calm recovery day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        { ...createDefaultEvolvingUiPersistedState(), calmRecoveryUntilDay: 6 },
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.dayAdvanceCalmRecoveryDayCoachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r28_tick_unlock_headline_field',
+    'day advance exposes panel unlock headline day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.panelUnlockHeadlineDayCoachCopy === 'string' || r.panelUnlockHeadlineDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r28_tick_density_field',
+    'day advance exposes ui density profile day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.uiDensityProfileDayCoachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r28_density_preferred',
+    'ui density profile day coach when preferred tier set',
+    (() => {
+      const coach = buildUiDensityProfileDayCoach({
+        interfaceLevel: 'expert',
+        preferredTier: 'compact',
+        nextGameDay: 12,
+      });
+      return coach.densityTier === 'compact' && Boolean(coach.coachCopy?.includes('Day 12'));
+    })()
+  );
+
+  check(
+    'r28_calm_suggest',
+    'calm recovery day coach suggests on heavy unlock day',
+    (() => {
+      const coach = buildDayAdvanceCalmRecoveryDayCoach({
+        signals: { gameDay: 10, turnCount: 10, interfaceLevel: 'guided' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        persisted: createDefaultEvolvingUiPersistedState(),
+        newlyUnlockedPanelCount: 4,
+        deferredAnnouncementCount: 3,
+        nextGameDay: 10,
+      });
+      return coach.suggestCalmRecovery && Boolean(coach.coachCopy?.includes('Day 10'));
+    })()
+  );
+
+  check(
+    'r28_tick_unlock_headline_active',
+    'panel unlock headline includes day prefix when panels unlock',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 0, turnCount: 0, interfaceLevel: 'simple' },
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return r.panelUnlockHeadlineDayCoachCopy === null || r.panelUnlockHeadlineDayCoachCopy.includes('Day 1');
+    })()
+  );
+
+  check(
+    'r28_session_plan_disabled',
+    'session resume plan day coach null when phase blocks resume',
+    (() => {
+      const coach = buildSessionResumeCoachPlanDayCoach({
+        signals: { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        accessibility: DEFAULT_ACCESSIBILITY_SNAPSHOT,
+        phaseAllowsResume: false,
+        nextGameDay: 3,
+      });
+      return !coach.shouldShow && coach.coachCopy === null;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round27-self-tests.ts ---
@@ -11124,6 +11478,18 @@ export function SimulationUiEvolutionBridge({
       {result.coachDismissalBackoffDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-dismissal-backoff-day">{result.coachDismissalBackoffDayCoachCopy}</div>
       ) : null}
+      {result.sessionResumeCoachPlanDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-session-plan-day">{result.sessionResumeCoachPlanDayCoachCopy}</div>
+      ) : null}
+      {result.dayAdvanceCalmRecoveryDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-calm-recovery-day">{result.dayAdvanceCalmRecoveryDayCoachCopy}</div>
+      ) : null}
+      {result.panelUnlockHeadlineDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-unlock-headline-day">{result.panelUnlockHeadlineDayCoachCopy}</div>
+      ) : null}
+      {result.uiDensityProfileDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-density-profile-day">{result.uiDensityProfileDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -13174,7 +13540,7 @@ export function ContextualWidgetDayCoachStrip({
 }
 
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.27.0';
+export const AGENT_22_MODULE_VERSION = '1.28.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -13325,6 +13691,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round28 = runAgent22Round28SelfTests();
+  for (const r of round28.results) {
+    check(`agent22_round28_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round27 = runAgent22Round27SelfTests();
