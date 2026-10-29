@@ -52493,6 +52493,9 @@ export function BalanceLabPanel({
   const [aiDifficultyScaling, setAiDifficultyScaling] = useState<number>(1.0);
   const [shopPriceScaling, setShopPriceScaling] = useState<number>(1.0);
   const [investmentReturnYields, setInvestmentReturnYields] = useState<number>(1.0);
+  const [idleLabTicks, setIdleLabTicks] = useState<number>(50);
+  const [idleLabReport, setIdleLabReport] = useState<IdleGameplayLabReport | null>(null);
+  const [idleLabRunning, setIdleLabRunning] = useState(false);
 
   const sandboxConfig: BalanceSandboxConfig = {
     baselineId: 'canonical_defaults',
@@ -52706,6 +52709,50 @@ export function BalanceLabPanel({
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="p-3 bg-slate-800/60 border border-indigo-500/30 rounded-lg space-y-3" data-testid="idle76-lab-panel">
+        <div className="font-semibold text-xs text-indigo-200">⏳ O111 Idle Gameplay Lab (Agent 76)</div>
+        <div className="text-[10px] opacity-75">
+          Headless idle tick simulator on the tuning fixture save — Auto Mode evaluation steps only, isolated from the live match.
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-[10px] flex flex-col gap-1">
+            Ticks (max {O111_IDLE_LAB_MAX_TICKS})
+            <input
+              type="number"
+              min={1}
+              max={O111_IDLE_LAB_MAX_TICKS}
+              value={idleLabTicks}
+              onChange={(e) => setIdleLabTicks(Math.max(1, Math.min(O111_IDLE_LAB_MAX_TICKS, Number(e.target.value) || O111_IDLE_LAB_DEFAULT_TICKS)))}
+              className="w-24 px-2 py-1 rounded bg-slate-900 border border-slate-600 text-white"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={idleLabRunning}
+            onClick={() => {
+              setIdleLabRunning(true);
+              try {
+                const report = v95WithIsolatedGlobals(() =>
+                  runIdleGameplayLabSimulator({ seed: 76, maxTicks: idleLabTicks })
+                );
+                setIdleLabReport(report);
+              } finally {
+                setIdleLabRunning(false);
+              }
+            }}
+            className={`px-3 py-1.5 rounded font-bold text-xs transition ${idleLabRunning ? 'bg-slate-700 text-slate-400' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}
+            data-testid="idle76-lab-run"
+          >
+            {idleLabRunning ? 'Running…' : 'Run idle sim'}
+          </button>
+        </div>
+        {idleLabReport && (
+          <pre className="text-[10px] whitespace-pre-wrap bg-black/40 p-2 rounded border border-white/10 font-mono" data-testid="idle76-lab-report">
+            {`ticks ${idleLabReport.ticksExecuted}/${idleLabReport.ticksRequested} · stop ${idleLabReport.stoppedReason}\nday ${idleLabReport.startDay}→${idleLabReport.endDay} · Δ$${Math.round(idleLabReport.playerMoneyDelta)} · ledger +${idleLabReport.ledgerEventsRecorded}\nbreaches ${idleLabReport.invariantBreaches.length} · hash ${idleLabReport.determinismHash.slice(0, 16)}`}
+          </pre>
+        )}
       </div>
     </div>
   );
@@ -56418,6 +56465,289 @@ export function runAutoModeRuntimeDevTests(
     overallStatus: failedCount === 0 ? 'passed' : 'failed',
     summary: `Auto Mode Dev Tests: ${passedCount}/${testCases.length} Passed`
   };
+}
+
+
+// ============================================================================
+// O111 AGENT 76 — IDLE GAMEPLAY LAB (Phase 1: headless tick simulator)
+// Advances turns via evaluateAutoModeTurnStep; yields on approvals, Guardian,
+// Co-Pilot confirmation, and the V95 AI turn watchdog. No reducer shortcuts.
+// ============================================================================
+
+export const O111_IDLE_GAMEPLAY_SCHEMA_VERSION = 1;
+export const O111_IDLE_LAB_DEFAULT_TICKS = 100;
+export const O111_IDLE_LAB_MAX_TICKS = 500;
+export const O111_IDLE_MAX_ACTIONS_PER_SEC = 8;
+
+export type IdleGameplayYieldReason =
+  | 'none'
+  | 'autoplay_disabled'
+  | 'autoplay_paused'
+  | 'pending_human_approval'
+  | 'guardian_block'
+  | 'copilot_confirmation'
+  | 'ai_turn_watchdog'
+  | 'match_not_active';
+
+export interface IdleGameplayExternalSignals {
+  hasPendingApprovals?: boolean;
+  guardianVerdict?: { allowedToProceed?: boolean; highestSeverity?: string; confirmationRequired?: boolean } | null;
+  coPilotAwaitingConfirmation?: boolean;
+  isAiThinking?: boolean;
+  msSinceLastAction?: number;
+  guardianProtectionLevel?: string;
+}
+
+export interface IdleGameplayLabTickResult {
+  state: ExtendedGameState;
+  yieldReason: IdleGameplayYieldReason;
+  ledgerEventsAdded: number;
+  dayBefore: number;
+  dayAfter: number;
+}
+
+export interface IdleGameplayLabSimulatorOptions {
+  seed?: number;
+  maxTicks?: number;
+  initialState?: ExtendedGameState;
+  settings?: GameSettingsState;
+  signals?: IdleGameplayExternalSignals;
+}
+
+export interface IdleGameplayLabReport {
+  schemaVersion: number;
+  seed: number;
+  ticksRequested: number;
+  ticksExecuted: number;
+  stoppedReason: IdleGameplayYieldReason | 'completed';
+  startDay: number;
+  endDay: number;
+  playerMoneyDelta: number;
+  ledgerEventsRecorded: number;
+  regionsTouched: string[];
+  crisesTriggered: number;
+  invariantBreaches: string[];
+  finalStateHash: string;
+  determinismHash: string;
+}
+
+function idleLabTotalActorCash(state: ExtendedGameState | GameState): number {
+  const ids = new Set<string>(['player', 'ai', ...Object.keys(state.actorsById || {})]);
+  let sum = 0;
+  ids.forEach(id => {
+    const a = state.actorsById?.[id] || (id === 'player' ? (state as any).player : id === 'ai' ? (state as any).aiPlayer : null);
+    sum += Number(a?.money) || 0;
+  });
+  return sum;
+}
+
+function buildIdleLabFixture(seed: number): { state: ExtendedGameState; settings: GameSettingsState } {
+  const canonical = createTuningMatchState(seed, false);
+  const settings: GameSettingsState = {
+    ...canonical.gameSettings,
+    autoModeSettings: {
+      ...(canonical.gameSettings?.autoModeSettings || createDefaultAutoModeGlobalSettings()),
+      autoModeEnabled: true,
+      enabled: true
+    }
+  };
+  const state = JSON.parse(JSON.stringify(canonical.gameState || {})) as ExtendedGameState;
+  state.day = canonical.day;
+  state.turn = canonical.turn;
+  state.turnCounter = canonical.turnCounter;
+  state.selectedMode = state.selectedMode || 'ai';
+  state.gameMode = state.gameMode || 'ai';
+  state.currentActorId = canonical.activeActorId || canonical.match?.activeActorId || 'player';
+  state.turnOrder = state.turnOrder?.length ? state.turnOrder : ['player', 'ai'];
+  state.actorsById = canonical.actorsById;
+  state.teamsById = canonical.teamsById;
+  state.autoplay = { enabled: true, paused: false, speed: 1 };
+  state.autoModeRuntime = createDefaultAutoModeRuntimeState();
+  state.gameActivityLedger = canonical.gameActivityLedger || createDefaultGameActivityLedgerState();
+  return { state, settings };
+}
+
+export function resolveIdleGameplayYieldReason(
+  state: GameState | ExtendedGameState,
+  _settings: GameSettingsState,
+  signals: IdleGameplayExternalSignals = {}
+): IdleGameplayYieldReason {
+  if (state.gameMode === 'menu' || !state.selectedMode) return 'match_not_active';
+  const ap = state.autoplay;
+  if (!ap?.enabled) return 'autoplay_disabled';
+  if (ap.paused) return 'autoplay_paused';
+  if (signals.hasPendingApprovals) return 'pending_human_approval';
+  if (guardianBlocksAutomation(signals.guardianVerdict, signals.guardianProtectionLevel)) return 'guardian_block';
+  if (signals.coPilotAwaitingConfirmation) return 'copilot_confirmation';
+  const watchdog = decideAiTurnWatchdog({
+    isThinking: Boolean(signals.isAiThinking),
+    hasPendingApprovals: Boolean(signals.hasPendingApprovals),
+    msSinceLastAction: signals.msSinceLastAction ?? 0
+  });
+  if (watchdog === 'waiting_for_approval') return 'pending_human_approval';
+  if (watchdog === 'recover') return 'ai_turn_watchdog';
+  return 'none';
+}
+
+export function runIdleGameplayLabTick(
+  state: ExtendedGameState,
+  settings: GameSettingsState,
+  signals: IdleGameplayExternalSignals = {}
+): IdleGameplayLabTickResult {
+  const yieldReason = resolveIdleGameplayYieldReason(state, settings, signals);
+  const dayBefore = state.day || 1;
+  const ledgerBefore = state.gameActivityLedger?.events?.length || 0;
+  if (yieldReason !== 'none') {
+    return { state, yieldReason, ledgerEventsAdded: 0, dayBefore, dayAfter: dayBefore };
+  }
+
+  let next = { ...state } as ExtendedGameState;
+  const turnIdx = (next.turnCounter || next.turn || 0) + 1;
+  next.turnCounter = turnIdx;
+  next.turn = turnIdx;
+  next.day = Math.floor((turnIdx - 1) / 2) + 1;
+  const actorOrder = next.turnOrder?.length ? next.turnOrder : ['player', 'ai'];
+  const activeActorId = actorOrder[(turnIdx - 1) % actorOrder.length] || 'player';
+  next.currentActorId = activeActorId;
+  next.currentTurn = activeActorId === 'player' ? 'player' : 'ai';
+
+  next = evaluateAutoModeTurnStep(next, settings, { actorId: activeActorId, boundaryType: 'actor_turn_completed' });
+  if (turnIdx % 2 === 0) {
+    next = evaluateAutoModeTurnStep(next, settings, { boundaryType: 'day_completed' });
+  }
+
+  const ledgerAfter = next.gameActivityLedger?.events?.length || 0;
+  return {
+    state: next,
+    yieldReason: 'none',
+    ledgerEventsAdded: ledgerAfter - ledgerBefore,
+    dayBefore,
+    dayAfter: next.day || dayBefore
+  };
+}
+
+export function runIdleGameplayLabSimulator(opts: IdleGameplayLabSimulatorOptions = {}): IdleGameplayLabReport {
+  const seed = opts.seed ?? 76;
+  const ticksRequested = Math.max(0, Math.min(opts.maxTicks ?? O111_IDLE_LAB_DEFAULT_TICKS, O111_IDLE_LAB_MAX_TICKS));
+  const built = opts.initialState && opts.settings
+    ? { state: JSON.parse(JSON.stringify(opts.initialState)) as ExtendedGameState, settings: opts.settings }
+    : buildIdleLabFixture(seed);
+
+  setRngMasterSeed(seed, true);
+  let state = built.state;
+  const settings = built.settings;
+  const signals = opts.signals || {};
+  const startDay = state.day || 1;
+  const startEvents = state.gameActivityLedger?.events?.length || 0;
+  const startCrises = (state.activeEvents || []).length;
+  const regionsTouched = new Set<string>();
+  const turnHashes: string[] = [];
+  const breaches: string[] = [];
+
+  let ticksExecuted = 0;
+  let stoppedReason: IdleGameplayYieldReason | 'completed' = 'completed';
+
+  for (let i = 0; i < ticksRequested; i++) {
+    const tick = runIdleGameplayLabTick(state, settings, signals);
+    if (tick.yieldReason !== 'none') {
+      stoppedReason = tick.yieldReason;
+      break;
+    }
+    state = tick.state;
+    ticksExecuted += 1;
+    turnHashes.push(computeCanonicalStateHash(state));
+    (state.activeEvents || []).forEach((ev: any) => {
+      if (ev?.region) regionsTouched.add(String(ev.region));
+    });
+    const cash = idleLabTotalActorCash(state);
+    if (!Number.isFinite(cash)) breaches.push(`tick ${i + 1}: non-finite total cash`);
+  }
+
+  const endEvents = state.gameActivityLedger?.events?.length || 0;
+  const endCrises = (state.activeEvents || []).length;
+
+  return {
+    schemaVersion: O111_IDLE_GAMEPLAY_SCHEMA_VERSION,
+    seed,
+    ticksRequested,
+    ticksExecuted,
+    stoppedReason,
+    startDay,
+    endDay: state.day || startDay,
+    playerMoneyDelta: (Number(state.actorsById?.player?.money) || Number((state as any).player?.money) || 0)
+      - (Number(built.state.actorsById?.player?.money) || Number((built.state as any).player?.money) || 0),
+    ledgerEventsRecorded: endEvents - startEvents,
+    regionsTouched: [...regionsTouched],
+    crisesTriggered: Math.max(0, endCrises - startCrises),
+    invariantBreaches: breaches,
+    finalStateHash: computeCanonicalStateHash(state),
+    determinismHash: computeBundleChecksum(JSON.stringify(turnHashes))
+  };
+}
+
+export function runIdleGameplaySelfTests(): V9SelfTestResult[] {
+  const out: V9SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail: string) => {
+    out.push({ id, name, passed, detail });
+  };
+
+  const { state, settings } = buildIdleLabFixture(7601);
+  push(
+    'idle76_yield_paused',
+    'Idle yields when autoplay is paused',
+    resolveIdleGameplayYieldReason({ ...state, autoplay: { enabled: true, paused: true, speed: 1 } }, settings) === 'autoplay_paused',
+    'paused autoplay must not advance'
+  );
+  push(
+    'idle76_yield_approval',
+    'Idle yields on pending human approval',
+    resolveIdleGameplayYieldReason(state, settings, { hasPendingApprovals: true }) === 'pending_human_approval',
+    'approval queue blocks idle ticks'
+  );
+  push(
+    'idle76_yield_guardian',
+    'Idle yields on Guardian hard block',
+    resolveIdleGameplayYieldReason(state, settings, { guardianVerdict: { allowedToProceed: false } }) === 'guardian_block',
+    'guardianBlocksAutomation respected'
+  );
+  push(
+    'idle76_yield_copilot',
+    'Idle yields on Co-Pilot confirmation token',
+    resolveIdleGameplayYieldReason(state, settings, { coPilotAwaitingConfirmation: true }) === 'copilot_confirmation',
+    'Co-Pilot confirmation must pause idle'
+  );
+  push(
+    'idle76_yield_watchdog',
+    'Idle yields when AI turn watchdog requests recovery',
+    resolveIdleGameplayYieldReason(state, settings, { isAiThinking: true, msSinceLastAction: V95_AI_TURN_WATCHDOG_MS + 500 }) === 'ai_turn_watchdog',
+    'decideAiTurnWatchdog recover path'
+  );
+
+  const simA = v95WithIsolatedGlobals(() => runIdleGameplayLabSimulator({ seed: 7611, maxTicks: 24 }));
+  push(
+    'idle76_sim_runs',
+    'LAB idle simulator completes ticks on fixture save',
+    simA.ticksExecuted >= 10 && simA.stoppedReason === 'completed' && simA.invariantBreaches.length === 0,
+    `${simA.ticksExecuted}/${simA.ticksRequested} ticks, day ${simA.startDay}→${simA.endDay}, breaches=${simA.invariantBreaches.length}`
+  );
+
+  const simB = v95WithIsolatedGlobals(() => runIdleGameplayLabSimulator({ seed: 7611, maxTicks: 24 }));
+  push(
+    'idle76_sim_deterministic',
+    'Idle simulator is deterministic for fixed seed',
+    simA.determinismHash === simB.determinismHash && simA.finalStateHash === simB.finalStateHash,
+    `hashA=${simA.determinismHash.slice(0, 12)} hashB=${simB.determinismHash.slice(0, 12)}`
+  );
+
+  const fuzz = v95WithIsolatedGlobals(() => runV95ResourceConservationFuzz(76));
+  push(
+    'idle76_fuzz_anchor',
+    'Resource conservation fuzz still clean (Agent 76 baseline seed)',
+    fuzz.breaches.length === 0,
+    `${fuzz.cases} cases, ${fuzz.breaches.length} breaches`
+  );
+
+  return out;
 }
 
 // MILESTONE 7: HUMAN COPILOT AI DEV SELF-TESTS DIAGNOSTIC ENGINE
@@ -136533,6 +136863,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'intent', label: 'Player Intent', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runPlayerIntentLayerSelfTests() },
   { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
   { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
+  { id: 'idle76', label: 'O111 Idle Gameplay (Agent 76)', tier: 'quick', section: 'AI Turn Reliability', severity: 'MAJOR', run: () => runIdleGameplaySelfTests() },
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
     ...runAiMemoryPhase1SelfTests().results, ...runAiMemoryPhase2SelfTests().results, ...runAiMemoryPhase3SelfTests().results,
