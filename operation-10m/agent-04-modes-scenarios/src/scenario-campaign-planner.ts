@@ -122,6 +122,11 @@ import {
   sanitizeContemptSession,
 } from './save-format-contempt.js';
 import {
+  getSequestrationScenarioAtCursor,
+  sequestrationSessionSummary,
+  sanitizeSequestrationSession,
+} from './save-format-sequestration.js';
+import {
   getInjunctionScenarioAtCursor,
   injunctionSessionSummary,
   sanitizeInjunctionSession,
@@ -257,6 +262,7 @@ import type {
   O10mQuowarrantoPhase,
   O10mInjunctionPhase,
   O10mContemptPhase,
+  O10mSequestrationPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -431,9 +437,31 @@ const emptyQueuePlan = {
   contemptCursor: null as number | null,
   contemptPhase: null as O10mContemptPhase | null,
   contemptScore: null as number | null,
+  sequestrationId: null as string | null,
+  sequestrationCursor: null as number | null,
+  sequestrationPhase: null as O10mSequestrationPhase | null,
+  sequestrationScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const sequestration = sanitizeSequestrationSession(state.sequestrationSession);
+  const sequestrationScenario = getSequestrationScenarioAtCursor(sequestration);
+  if (sequestration && sequestration.active && sequestrationScenario) {
+    return {
+      kind: 'sequestration_step',
+      scenarioId: sequestrationScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      sequestrationId: sequestration.sequestrationId,
+      sequestrationCursor: sequestration.cursor,
+      sequestrationPhase: sequestration.phaseTag,
+      sequestrationScore: sequestration.sequestrationScore,
+      reason: `Sequestration "${sequestration.label}" ${sequestration.phaseTag} phase ${sequestration.cursor + 1}/${sequestration.scenarioIds.length} (score ${sequestration.sequestrationScore}).`,
+    };
+  }
+
   const contempt = sanitizeContemptSession(state.contemptSession);
   const contemptScenario = getContemptScenarioAtCursor(contempt);
   if (contempt && contempt.active && contemptScenario) {
@@ -1316,6 +1344,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   quowarrantoActive: boolean;
   injunctionActive: boolean;
   contemptActive: boolean;
+  sequestrationActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -1366,6 +1395,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const quowarranto = quowarrantoSessionSummary(state);
   const injunction = injunctionSessionSummary(state);
   const contempt = contemptSessionSummary(state);
+  const sequestration = sequestrationSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -1414,6 +1444,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     quowarrantoActive: quowarranto.active,
     injunctionActive: injunction.active,
     contemptActive: contempt.active,
+    sequestrationActive: sequestration.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

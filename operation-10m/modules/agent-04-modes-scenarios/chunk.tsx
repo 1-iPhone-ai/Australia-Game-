@@ -404,6 +404,8 @@ export type O10mQuowarrantoPhase = 'filing' | 'review' | 'quowarranto';
 export type O10mInjunctionPhase = 'filing' | 'review' | 'injunction';
 export type O10mContemptPhase = 'filing' | 'review' | 'contempt';
 
+export type O10mSequestrationPhase = 'filing' | 'review' | 'sequestration';
+
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
   circuitId: string;
@@ -844,6 +846,17 @@ export interface O10mContemptSession {
   phaseTag: O10mContemptPhase;
 }
 
+/** Schema v48 — sequestration arc with score accrual between phases. */
+export interface O10mSequestrationSession {
+  sequestrationId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  sequestrationScore: number;
+  phaseTag: O10mSequestrationPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -868,6 +881,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'sequestration_step'
     | 'contempt_step'
     | 'injunction_step'
     | 'quowarranto_step'
@@ -1082,6 +1096,10 @@ export interface O10mCampaignPlan {
   injunctionCursor: number | null;
   injunctionPhase: O10mInjunctionPhase | null;
   injunctionScore: number | null;
+  sequestrationId: string | null;
+  sequestrationCursor: number | null;
+  sequestrationPhase: O10mSequestrationPhase | null;
+  sequestrationScore: number | null;
   contemptId: string | null;
   contemptCursor: number | null;
   contemptPhase: O10mContemptPhase | null;
@@ -1201,8 +1219,10 @@ export interface O10mModesPersistedState {
   quowarrantoSession?: O10mQuowarrantoSession | null;
   /** Schema v46 — active injunction arc (mutually exclusive with contempt / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   injunctionSession?: O10mInjunctionSession | null;
-  /** Schema v47 — active contempt arc (mutually exclusive with injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v47 — active contempt arc (mutually exclusive with sequestration / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   contemptSession?: O10mContemptSession | null;
+  /** Schema v48 — active sequestration arc (mutually exclusive with contempt / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  sequestrationSession?: O10mSequestrationSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -6309,6 +6329,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Contempt finales', 'Score ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_sequestration_filing_docket',
+    title: 'Sequestration Filing Docket',
+    description: 'Open a sequestration arc with low-pressure score pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100553,
+    startingMoney: 4200,
+    startingRegions: ['NT', 'QLD'],
+    badgeId: 'badge_o10m_sequestration_filing_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100553),
+      o10mSequestrationFilingDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_sfd_obj_day',
+        label: 'Filing Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Sequestration arcs', 'Score pacing', 'Filing phase'],
+  },
+  {
+    id: 'o10m_sequestration_review_chamber',
+    title: 'Sequestration Review Chamber',
+    description: 'Mid sequestration review with accrued score bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100554,
+    startingMoney: 4750,
+    startingRegions: ['WA', 'SA'],
+    startingStanding: { WA: 72, SA: 70 },
+    badgeId: 'badge_o10m_sequestration_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100554),
+      regionalStandingEnabled: true,
+      o10mSequestrationReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_src_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 75',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 75,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Score carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_sequestration_asset_finale',
+    title: 'Sequestration Asset Finale',
+    description: 'Finale sequestration stage — net worth gate with full score bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100555,
+    startingMoney: 5200,
+    startingRegions: ['ACT', 'NSW', 'VIC'],
+    badgeId: 'badge_o10m_sequestration_asset_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100555),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mSequestrationAssetFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_saf_obj_net',
+        label: 'Asset Net Worth',
+        description: 'Reach $23,200 net worth',
+        targetType: 'netWorth',
+        targetValue: 23200,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Sequestration finales', 'Score ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -8389,6 +8506,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_sequestration_route',
+    title: 'Sequestration Route',
+    description:
+      'Three-phase sequestration arc with score accrual between legs — round-48 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_sequestration_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_sequestration_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File sequestration petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 580 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_sequestration_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, VIC: 5 },
+          forcedSettingsPatch: { o10mSequestrationMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_sequestration_asset_finale',
+        title: 'Asset Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainSequestrationRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -9215,7 +9366,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 47;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 48;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -9361,6 +9512,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
   };
 }
 
@@ -9427,6 +9579,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       quowarrantoSession: merged.quowarrantoSession ?? null,
       injunctionSession: merged.injunctionSession ?? null,
       contemptSession: merged.contemptSession ?? null,
+      sequestrationSession: merged.sequestrationSession ?? null,
     };
     return upgraded;
   }
@@ -9517,6 +9670,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     quowarrantoSession: sanitizeQuowarrantoSession(o.quowarrantoSession),
     injunctionSession: sanitizeInjunctionSession(o.injunctionSession),
     contemptSession: sanitizeContemptSession(o.contemptSession),
+    sequestrationSession: sanitizeSequestrationSession(o.sequestrationSession),
   };
 }
 
@@ -9854,6 +10008,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Contempt cursor out of range; clamp on next sanitize.');
   }
 
+  const sequestration = sanitizeSequestrationSession(state.sequestrationSession);
+  if (state.sequestrationSession && !sequestration) {
+    warnings.push('Sequestration session failed sanitization; planner will ignore it.');
+  } else if (sequestration && sequestration.cursor >= sequestration.scenarioIds.length) {
+    warnings.push('Sequestration cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -10002,8 +10163,9 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'prohibitionSession',
   'habeasSession',
   'quowarrantoSession',
-  'contemptSession',
   'injunctionSession',
+  'contemptSession',
+  'sequestrationSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -10549,6 +10711,7 @@ export function attachMarathonQueueToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -10666,6 +10829,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceSequestrationSessionAfterRun(next, run);
   next = advanceContemptSessionAfterRun(next, run);
   next = advanceInjunctionSessionAfterRun(next, run);
   next = advanceQuowarrantoSessionAfterRun(next, run);
@@ -10876,6 +11040,7 @@ export function attachGauntletSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -11145,6 +11310,7 @@ export function attachRelaySessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -11374,6 +11540,7 @@ export function attachCircuitSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -11621,6 +11788,7 @@ export function attachExpeditionSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -11866,6 +12034,7 @@ export function attachOdysseySessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -12110,6 +12279,7 @@ export function attachPilgrimageSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -12355,6 +12525,7 @@ export function attachCaravanSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -12594,6 +12765,7 @@ export function attachVoyageSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -12833,6 +13005,7 @@ export function attachSiegeSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -13072,6 +13245,7 @@ export function attachConvoySessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -13311,6 +13485,7 @@ export function attachEscortSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -13559,6 +13734,7 @@ export function attachExtractionSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -13815,6 +13991,7 @@ export function attachSubjectSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -14071,6 +14248,7 @@ export function attachWitnessSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -14327,6 +14505,7 @@ export function attachTribunalSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -14583,6 +14762,7 @@ export function attachIndictmentSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -14839,6 +15019,7 @@ export function attachAppealSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -15095,6 +15276,7 @@ export function attachClemencySessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -15351,6 +15533,7 @@ export function attachPardonSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,
@@ -15607,6 +15790,7 @@ export function attachAmnestySessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     pardonSession: null,
     clemencySession: null,
     appealSession: null,
@@ -15863,6 +16047,7 @@ export function attachReprieveSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,
@@ -16119,6 +16304,7 @@ export function attachParoleSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     reprieveSession: null,
     amnestySession: null,
     pardonSession: null,
@@ -16375,6 +16561,7 @@ export function attachProbationSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     paroleSession: null,
     reprieveSession: null,
     amnestySession: null,
@@ -16631,6 +16818,7 @@ export function attachCommutationSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     probationSession: null,
     paroleSession: null,
     reprieveSession: null,
@@ -16887,6 +17075,7 @@ export function attachAcquittalSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     commutationSession: null,
     probationSession: null,
     paroleSession: null,
@@ -17143,6 +17332,7 @@ export function attachExonerationSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     acquittalSession: null,
     commutationSession: null,
     probationSession: null,
@@ -17399,6 +17589,7 @@ export function attachExpungementSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     exonerationSession: null,
     acquittalSession: null,
     commutationSession: null,
@@ -17655,6 +17846,7 @@ export function attachVacaturSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     expungementSession: null,
     exonerationSession: null,
     acquittalSession: null,
@@ -17911,6 +18103,7 @@ export function attachRemandSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     vacaturSession: null,
     expungementSession: null,
     exonerationSession: null,
@@ -18167,6 +18360,7 @@ export function attachReversalSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     remandSession: null,
     vacaturSession: null,
     expungementSession: null,
@@ -18423,6 +18617,7 @@ export function attachAnnulmentSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     reversalSession: null,
     remandSession: null,
     vacaturSession: null,
@@ -18681,6 +18876,7 @@ export function attachReinstatementSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     annulmentSession: null,
     reversalSession: null,
     remandSession: null,
@@ -18939,6 +19135,7 @@ export function attachSetAsideSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     reinstatementSession: null,
     annulmentSession: null,
     reversalSession: null,
@@ -19195,6 +19392,7 @@ export function attachQuashSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     setAsideSession: null,
     reinstatementSession: null,
     annulmentSession: null,
@@ -19453,6 +19651,7 @@ export function attachSupersedeSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     quashSession: null,
     setAsideSession: null,
     reinstatementSession: null,
@@ -20725,6 +20924,7 @@ export function attachQuowarrantoSessionToState(
     quowarrantoSession: sanitized,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     habeasSession: null,
     prohibitionSession: null,
     mandamusSession: null,
@@ -20983,6 +21183,7 @@ export function attachInjunctionSessionToState(
     ...state,
     injunctionSession: sanitized,
     contemptSession: null,
+    sequestrationSession: null,
     quowarrantoSession: null,
     habeasSession: null,
     prohibitionSession: null,
@@ -21379,6 +21580,266 @@ export function contemptSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-sequestration.ts ---
+export const O10M_SEQUESTRATION_SCENARIO_CAP = 6;
+export const O10M_SEQUESTRATION_SCORE_CAP = 1132;
+export const O10M_SEQUESTRATION_SCORE_MONEY_CAP = 1216;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mSequestrationPhase>(['filing', 'review', 'sequestration']);
+
+export function unlockTokenForSequestrationId(sequestrationId: string): string | null {
+  if (!sequestrationId.startsWith('o10m_sequestration_')) return null;
+  return `o10m_unlock_${sequestrationId.slice('o10m_sequestration_'.length)}`;
+}
+
+export function sequestrationPhaseForCursor(cursor: number, scenarioCount: number): O10mSequestrationPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'sequestration';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'filing';
+}
+
+export function sequestrationScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(147, Math.max(36, Math.floor(run.playerNetWorth / 114) + standingSlice));
+}
+
+export function sanitizeSequestrationSession(raw: unknown): O10mSequestrationSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const sequestrationId =
+    typeof o.sequestrationId === 'string' && o.sequestrationId.startsWith('o10m_sequestration_')
+      ? o.sequestrationId
+      : null;
+  if (!sequestrationId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : sequestrationId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_SEQUESTRATION_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const sequestrationScore = Math.min(
+    O10M_SEQUESTRATION_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.sequestrationScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mSequestrationPhase)
+      ? (phaseRaw as O10mSequestrationPhase)
+      : sequestrationPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    sequestrationId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    sequestrationScore,
+    phaseTag,
+  };
+}
+
+export function createSequestrationSession(params: {
+  sequestrationId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mSequestrationSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.sequestrationId.startsWith('o10m_sequestration_')) {
+    return { session: null, warnings: ['Sequestration ids must start with o10m_sequestration_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_SEQUESTRATION_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Sequestration arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      sequestrationId: params.sequestrationId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      sequestrationScore: 0,
+      phaseTag: sequestrationPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachSequestrationSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mSequestrationSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeSequestrationSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    sequestrationSession: sanitized,
+    contemptSession: null,
+    injunctionSession: null,
+    quowarrantoSession: null,
+    habeasSession: null,
+    prohibitionSession: null,
+    mandamusSession: null,
+    certiorariSession: null,
+    supersedeSession: null,
+    quashSession: null,
+    setAsideSession: null,
+    reinstatementSession: null,
+    annulmentSession: null,
+    reversalSession: null,
+    remandSession: null,
+    vacaturSession: null,
+    expungementSession: null,
+    exonerationSession: null,
+    acquittalSession: null,
+    commutationSession: null,
+    probationSession: null,
+    paroleSession: null,
+    reprieveSession: null,
+    amnestySession: null,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearSequestrationSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, sequestrationSession: null };
+}
+
+export function getSequestrationScenarioAtCursor(
+  session: O10mSequestrationSession | null | undefined,
+): string | null {
+  const sequestration = sanitizeSequestrationSession(session);
+  if (!sequestration || !sequestration.active) return null;
+  return sequestration.scenarioIds[sequestration.cursor] ?? null;
+}
+
+export function buildSequestrationScenarioStartOverrides(
+  session: O10mSequestrationSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const sequestration = sanitizeSequestrationSession(session);
+  if (!sequestration) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_SEQUESTRATION_SCORE_MONEY_CAP,
+    Math.floor(sequestration.sequestrationScore * 0.93),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveSequestrationId: sequestration.sequestrationId,
+      o10mActiveSequestrationStep: sequestration.cursor,
+      o10mActiveSequestrationPhase: sequestration.phaseTag,
+      o10mSequestrationScore: sequestration.sequestrationScore,
+    },
+  };
+}
+
+export function advanceSequestrationSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeSequestrationSession(state.sequestrationSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const sequestrationScore = Math.min(
+    O10M_SEQUESTRATION_SCORE_CAP,
+    session.sequestrationScore + sequestrationScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      sequestrationSession: {
+        ...session,
+        cursor,
+        sequestrationScore,
+        phaseTag: sequestrationPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForSequestrationId(session.sequestrationId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    sequestrationSession: { ...session, active: false, sequestrationScore, phaseTag: 'sequestration' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function sequestrationSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  sequestrationScore: number;
+  phase: O10mSequestrationPhase | null;
+} {
+  const session = sanitizeSequestrationSession(state.sequestrationSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    sequestrationScore: session?.sequestrationScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -21549,9 +22010,31 @@ const emptyQueuePlan = {
   contemptCursor: null as number | null,
   contemptPhase: null as O10mContemptPhase | null,
   contemptScore: null as number | null,
+  sequestrationId: null as string | null,
+  sequestrationCursor: null as number | null,
+  sequestrationPhase: null as O10mSequestrationPhase | null,
+  sequestrationScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const sequestration = sanitizeSequestrationSession(state.sequestrationSession);
+  const sequestrationScenario = getSequestrationScenarioAtCursor(sequestration);
+  if (sequestration && sequestration.active && sequestrationScenario) {
+    return {
+      kind: 'sequestration_step',
+      scenarioId: sequestrationScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      sequestrationId: sequestration.sequestrationId,
+      sequestrationCursor: sequestration.cursor,
+      sequestrationPhase: sequestration.phaseTag,
+      sequestrationScore: sequestration.sequestrationScore,
+      reason: `Sequestration "${sequestration.label}" ${sequestration.phaseTag} phase ${sequestration.cursor + 1}/${sequestration.scenarioIds.length} (score ${sequestration.sequestrationScore}).`,
+    };
+  }
+
   const contempt = sanitizeContemptSession(state.contemptSession);
   const contemptScenario = getContemptScenarioAtCursor(contempt);
   if (contempt && contempt.active && contemptScenario) {
@@ -22434,6 +22917,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   quowarrantoActive: boolean;
   injunctionActive: boolean;
   contemptActive: boolean;
+  sequestrationActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -22484,6 +22968,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const quowarranto = quowarrantoSessionSummary(state);
   const injunction = injunctionSessionSummary(state);
   const contempt = contemptSessionSummary(state);
+  const sequestration = sequestrationSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -22532,6 +23017,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     quowarrantoActive: quowarranto.active,
     injunctionActive: injunction.active,
     contemptActive: contempt.active,
+    sequestrationActive: sequestration.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -22550,7 +23036,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 48, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 49, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -22922,16 +23408,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const contemptState = contempt ? attachContemptSessionToState(createEmptyO10mModesPersistedState(), contempt) : null;
   push('agent04_chunk_55', contemptState !== null && planNextCampaignAction(contemptState!).kind === 'contempt_step');
 
+  const sequestration = createSequestrationSession({
+    sequestrationId: 'o10m_sequestration_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_sequestration_filing_docket'],
+  }).session;
+  const sequestrationState = sequestration ? attachSequestrationSessionToState(createEmptyO10mModesPersistedState(), sequestration) : null;
+  push('agent04_chunk_56', sequestrationState !== null && planNextCampaignAction(sequestrationState!).kind === 'sequestration_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v48',
+  schemaVersion: 'op10m-agent04-v49',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 47,
+  saveSchemaVersion: 48,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

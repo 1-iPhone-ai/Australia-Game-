@@ -72,8 +72,9 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'prohibitionSession',
   'habeasSession',
   'quowarrantoSession',
-  'contemptSession',
   'injunctionSession',
+  'contemptSession',
+  'sequestrationSession',
 ];
 
 function stableStringify(value: unknown): string {

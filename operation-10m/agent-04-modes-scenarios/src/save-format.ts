@@ -47,6 +47,7 @@ import { sanitizeHabeasSession } from './save-format-habeas.js';
 import { sanitizeQuowarrantoSession } from './save-format-quowarranto.js';
 import { sanitizeInjunctionSession } from './save-format-injunction.js';
 import { sanitizeContemptSession } from './save-format-contempt.js';
+import { sanitizeSequestrationSession } from './save-format-sequestration.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -65,7 +66,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 47;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 48;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -211,6 +212,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
   };
 }
 
@@ -277,6 +279,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       quowarrantoSession: merged.quowarrantoSession ?? null,
       injunctionSession: merged.injunctionSession ?? null,
       contemptSession: merged.contemptSession ?? null,
+      sequestrationSession: merged.sequestrationSession ?? null,
     };
     return upgraded;
   }
@@ -367,6 +370,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     quowarrantoSession: sanitizeQuowarrantoSession(o.quowarrantoSession),
     injunctionSession: sanitizeInjunctionSession(o.injunctionSession),
     contemptSession: sanitizeContemptSession(o.contemptSession),
+    sequestrationSession: sanitizeSequestrationSession(o.sequestrationSession),
   };
 }
 
@@ -702,6 +706,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Contempt session failed sanitization; planner will ignore it.');
   } else if (contempt && contempt.cursor >= contempt.scenarioIds.length) {
     warnings.push('Contempt cursor out of range; clamp on next sanitize.');
+  }
+
+  const sequestration = sanitizeSequestrationSession(state.sequestrationSession);
+  if (state.sequestrationSession && !sequestration) {
+    warnings.push('Sequestration session failed sanitization; planner will ignore it.');
+  } else if (sequestration && sequestration.cursor >= sequestration.scenarioIds.length) {
+    warnings.push('Sequestration cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

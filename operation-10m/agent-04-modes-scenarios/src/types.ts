@@ -400,6 +400,8 @@ export type O10mQuowarrantoPhase = 'filing' | 'review' | 'quowarranto';
 export type O10mInjunctionPhase = 'filing' | 'review' | 'injunction';
 export type O10mContemptPhase = 'filing' | 'review' | 'contempt';
 
+export type O10mSequestrationPhase = 'filing' | 'review' | 'sequestration';
+
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
   circuitId: string;
@@ -840,6 +842,17 @@ export interface O10mContemptSession {
   phaseTag: O10mContemptPhase;
 }
 
+/** Schema v48 — sequestration arc with score accrual between phases. */
+export interface O10mSequestrationSession {
+  sequestrationId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  sequestrationScore: number;
+  phaseTag: O10mSequestrationPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -864,6 +877,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'sequestration_step'
     | 'contempt_step'
     | 'injunction_step'
     | 'quowarranto_step'
@@ -1078,6 +1092,10 @@ export interface O10mCampaignPlan {
   injunctionCursor: number | null;
   injunctionPhase: O10mInjunctionPhase | null;
   injunctionScore: number | null;
+  sequestrationId: string | null;
+  sequestrationCursor: number | null;
+  sequestrationPhase: O10mSequestrationPhase | null;
+  sequestrationScore: number | null;
   contemptId: string | null;
   contemptCursor: number | null;
   contemptPhase: O10mContemptPhase | null;
@@ -1197,8 +1215,10 @@ export interface O10mModesPersistedState {
   quowarrantoSession?: O10mQuowarrantoSession | null;
   /** Schema v46 — active injunction arc (mutually exclusive with contempt / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   injunctionSession?: O10mInjunctionSession | null;
-  /** Schema v47 — active contempt arc (mutually exclusive with injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v47 — active contempt arc (mutually exclusive with sequestration / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   contemptSession?: O10mContemptSession | null;
+  /** Schema v48 — active sequestration arc (mutually exclusive with contempt / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  sequestrationSession?: O10mSequestrationSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

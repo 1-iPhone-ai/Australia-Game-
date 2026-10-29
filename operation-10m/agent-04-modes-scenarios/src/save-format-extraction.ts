@@ -157,6 +157,7 @@ export function attachExtractionSessionToState(
     quowarrantoSession: null,
     injunctionSession: null,
     contemptSession: null,
+    sequestrationSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
