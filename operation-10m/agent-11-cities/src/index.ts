@@ -19,5 +19,8 @@ export * from './fiscal-urban-coupling.ts';
 export * from './metropolitan-absorption-stress.ts';
 export * from './regional-service-equity.ts';
 export * from './regional-convergence-velocity.ts';
+export * from './peri-urban-expansion-pressure.ts';
+export * from './regional-infrastructure-backlog.ts';
+export * from './multi-tier-governance-friction.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';

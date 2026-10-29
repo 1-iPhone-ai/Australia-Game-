@@ -62,6 +62,20 @@ import {
   op10mA11LaggingRegionsNotClosing,
   op10mA11StandingSpread,
 } from './regional-convergence-velocity.ts';
+import {
+  op10mA11ComputePeriUrbanExpansionPressure,
+  op10mA11NationalPeriUrbanPressureIndex,
+  op10mA11RegionsWithPeriUrbanSprawl,
+} from './peri-urban-expansion-pressure.ts';
+import {
+  op10mA11ComputeRegionalInfrastructureBacklog,
+  op10mA11RegionsWithCriticalBacklog,
+} from './regional-infrastructure-backlog.ts';
+import {
+  op10mA11ComputeMultiTierGovernanceFriction,
+  op10mA11GovernanceFrictionEscalating,
+  op10mA11RegionsWithGovernanceBreakdown,
+} from './multi-tier-governance-friction.ts';
 
 export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePersisted {
   return {
@@ -75,6 +89,8 @@ export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePe
     lastCohesionIndex: 0,
     lastStandingSpread: 0,
     lastServiceEquityIndex: 0,
+    lastInfrastructureBacklogIndex: 0,
+    lastGovernanceFrictionIndex: 0,
     inputHash: '',
   };
 }
@@ -96,6 +112,12 @@ export function validateOP10M_A11_CompositeState(state: OP10M_A11_CompositeState
   if (state.metropolitanSaturationIndex < 0 || state.metropolitanSaturationIndex > 100) errs.push('saturation out of range');
   if (state.nationalServiceEquityIndex < 0 || state.nationalServiceEquityIndex > 100) errs.push('service equity index out of range');
   if (!state.convergence?.narrative) errs.push('convergence row missing');
+  if (state.periUrbanPressure.length !== 8) errs.push('peri-urban pressure row count');
+  if (state.infrastructureBacklog.length !== 8) errs.push('infrastructure backlog row count');
+  if (state.governanceFriction.length !== 8) errs.push('governance friction row count');
+  if (state.nationalPeriUrbanPressureIndex < 0 || state.nationalPeriUrbanPressureIndex > 100) errs.push('peri-urban index out of range');
+  if (state.nationalInfrastructureBacklogIndex < 0 || state.nationalInfrastructureBacklogIndex > 100) errs.push('backlog index out of range');
+  if (state.nationalGovernanceFrictionIndex < 0 || state.nationalGovernanceFrictionIndex > 100) errs.push('governance friction index out of range');
   return errs;
 }
 
@@ -189,6 +211,24 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
   const convergence = op10mA11ComputeRegionalConvergence({
     regions: urbanOut.state.regions,
     priorStandingSpread: base.revision > 0 ? base.lastStandingSpread : null,
+  });
+
+  const periUrbanPressure = op10mA11ComputePeriUrbanExpansionPressure({
+    cities: inputs.urban.cities,
+    corridorFlows,
+  });
+  const nationalPeriUrbanPressureIndex = op10mA11NationalPeriUrbanPressureIndex(periUrbanPressure);
+
+  const backlogOut = op10mA11ComputeRegionalInfrastructureBacklog({
+    bottlenecks: infraOut.state.bottlenecks,
+    absorptionStress,
+    corridorStressIndex: infraOut.state.corridorStressIndex,
+  });
+
+  const governanceOut = op10mA11ComputeMultiTierGovernanceFriction({
+    national: inputs.urban.national,
+    reliefPlaybook,
+    serviceEquity: serviceEquityOut.rows,
   });
 
   const derivedRaw: Omit<OP10M_A11_CompositeDerivedEvent, 'id'>[] = [];
@@ -349,6 +389,49 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     );
   }
 
+  const periUrbanHot = op10mA11RegionsWithPeriUrbanSprawl(periUrbanPressure);
+  if (periUrbanHot.length >= 2 || nationalPeriUrbanPressureIndex >= 55) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'peri_urban_sprawl_pressure',
+      periUrbanHot.slice(0, 5),
+      `Peri-urban expansion pressure elevated (index ${nationalPeriUrbanPressureIndex.toFixed(1)}).`,
+      nationalPeriUrbanPressureIndex >= 65 ? 'major' : 'meaningful',
+    );
+  }
+
+  const backlogCritical = op10mA11RegionsWithCriticalBacklog(backlogOut.rows);
+  if (
+    backlogCritical.length >= 2 ||
+    backlogOut.nationalIndex >= 52 ||
+    (base.revision > 0 && backlogOut.nationalIndex > base.lastInfrastructureBacklogIndex + 7)
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'infrastructure_backlog_critical',
+      backlogCritical.slice(0, 5),
+      `Regional infrastructure backlog critical (index ${backlogOut.nationalIndex.toFixed(1)}).`,
+      backlogOut.nationalIndex >= 62 ? 'major' : 'meaningful',
+    );
+  }
+
+  const governanceBreakdown = op10mA11RegionsWithGovernanceBreakdown(governanceOut.rows);
+  if (
+    governanceBreakdown.length >= 3 ||
+    op10mA11GovernanceFrictionEscalating(governanceOut.nationalIndex, base.revision > 0 ? base.lastGovernanceFrictionIndex : null)
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'governance_coordination_breakdown',
+      governanceBreakdown.slice(0, 5),
+      `Multi-tier governance friction (index ${governanceOut.nationalIndex.toFixed(1)}).`,
+      governanceOut.nationalIndex >= 62 ? 'major' : 'meaningful',
+    );
+  }
+
   base.revision += 1;
   base.urban = urbanOut.persisted;
   base.infra = infraOut.persisted;
@@ -357,11 +440,13 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
   base.lastCohesionIndex = regionalCohesionIndex;
   base.lastStandingSpread = standingSpread;
   base.lastServiceEquityIndex = serviceEquityOut.nationalIndex;
+  base.lastInfrastructureBacklogIndex = backlogOut.nationalIndex;
+  base.lastGovernanceFrictionIndex = governanceOut.nationalIndex;
   base.inputHash = op10mA11HashInputs({
     turn: inputs.urban.turn,
     cityCount: inputs.urban.cities.length,
     regionKeys: 'composite',
-    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}:${metropolitanSaturationIndex}`,
+    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}:${metropolitanSaturationIndex}:${backlogOut.nationalIndex}`,
   });
 
   const state: OP10M_A11_CompositeState = {
@@ -388,7 +473,13 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     serviceEquity: serviceEquityOut.rows,
     nationalServiceEquityIndex: serviceEquityOut.nationalIndex,
     convergence,
-    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}; saturation ${metropolitanSaturationIndex}; service equity ${serviceEquityOut.nationalIndex}.`,
+    periUrbanPressure,
+    nationalPeriUrbanPressureIndex,
+    infrastructureBacklog: backlogOut.rows,
+    nationalInfrastructureBacklogIndex: backlogOut.nationalIndex,
+    governanceFriction: governanceOut.rows,
+    nationalGovernanceFrictionIndex: governanceOut.nationalIndex,
+    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}; saturation ${metropolitanSaturationIndex}; service equity ${serviceEquityOut.nationalIndex}; backlog ${backlogOut.nationalIndex}; governance ${governanceOut.nationalIndex}.`,
     inputHash: base.inputHash,
   };
 

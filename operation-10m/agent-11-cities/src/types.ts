@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.4' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.5' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -233,7 +233,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'fiscal_coupling_mismatch'
   | 'absorption_capacity_breach'
   | 'service_equity_gap'
-  | 'convergence_stall';
+  | 'convergence_stall'
+  | 'peri_urban_sprawl_pressure'
+  | 'infrastructure_backlog_critical'
+  | 'governance_coordination_breakdown';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -264,6 +267,38 @@ export interface OP10M_A11_ConvergenceVelocityRow {
   band: OP10M_A11_ConvergenceBand;
   laggingCount: number;
   leadingCount: number;
+  narrative: string;
+}
+
+export type OP10M_A11_PeriUrbanPressureBand = 'contained' | 'expanding' | 'sprawl_risk' | 'unchecked';
+
+export interface OP10M_A11_PeriUrbanPressureRow {
+  regionId: OP10M_A11_RegionId;
+  pressureScore: number;
+  band: OP10M_A11_PeriUrbanPressureBand;
+  corridorPull: number;
+  metroCount: number;
+  narrative: string;
+}
+
+export type OP10M_A11_InfrastructureBacklogBand = 'manageable' | 'elevated' | 'severe' | 'critical';
+
+export interface OP10M_A11_InfrastructureBacklogRow {
+  regionId: OP10M_A11_RegionId;
+  backlogScore: number;
+  band: OP10M_A11_InfrastructureBacklogBand;
+  estimatedTurnsToClear: number;
+  drivers: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_GovernanceFrictionBand = 'aligned' | 'strained' | 'fragmented' | 'breakdown';
+
+export interface OP10M_A11_GovernanceFrictionRow {
+  regionId: OP10M_A11_RegionId;
+  frictionScore: number;
+  band: OP10M_A11_GovernanceFrictionBand;
+  coordinationGaps: string[];
   narrative: string;
 }
 
@@ -383,6 +418,12 @@ export interface OP10M_A11_CompositeState {
   serviceEquity: OP10M_A11_ServiceEquityRow[];
   nationalServiceEquityIndex: number;
   convergence: OP10M_A11_ConvergenceVelocityRow;
+  periUrbanPressure: OP10M_A11_PeriUrbanPressureRow[];
+  nationalPeriUrbanPressureIndex: number;
+  infrastructureBacklog: OP10M_A11_InfrastructureBacklogRow[];
+  nationalInfrastructureBacklogIndex: number;
+  governanceFriction: OP10M_A11_GovernanceFrictionRow[];
+  nationalGovernanceFrictionIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -398,5 +439,7 @@ export interface OP10M_A11_CompositePersisted {
   lastCohesionIndex: number;
   lastStandingSpread: number;
   lastServiceEquityIndex: number;
+  lastInfrastructureBacklogIndex: number;
+  lastGovernanceFrictionIndex: number;
   inputHash: string;
 }

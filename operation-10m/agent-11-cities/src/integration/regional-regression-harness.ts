@@ -12,10 +12,12 @@ export type OP10M_A11_RegressionTurnSnapshot = {
   inequalityIndex: number;
   serviceEquityIndex: number;
   standingSpread: number;
+  backlogIndex: number;
+  governanceFrictionIndex: number;
   validationErrors: number;
 };
 
-export function runOP10M_A11_RegionalRegressionHarness(turns = 8): {
+export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
   ok: boolean;
   snapshots: OP10M_A11_RegressionTurnSnapshot[];
   detail: string;
@@ -50,6 +52,8 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 8): {
       inequalityIndex: out.state.urban.inequalityIndex,
       serviceEquityIndex: out.state.nationalServiceEquityIndex,
       standingSpread: out.state.convergence.standingSpread,
+      backlogIndex: out.state.nationalInfrastructureBacklogIndex,
+      governanceFrictionIndex: out.state.nationalGovernanceFrictionIndex,
       validationErrors,
     });
   }
@@ -59,11 +63,20 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 8): {
   const cohesionStable = snapshots.every((s) => s.cohesionIndex >= 8 && s.cohesionIndex <= 100);
   const serviceEquityStable = snapshots.every((s) => s.serviceEquityIndex >= 8 && s.serviceEquityIndex <= 100);
   const spreadStable = snapshots.every((s) => s.standingSpread >= 0 && s.standingSpread <= 100);
+  const backlogStable = snapshots.every((s) => s.backlogIndex >= 8 && s.backlogIndex <= 100);
+  const governanceStable = snapshots.every((s) => s.governanceFrictionIndex >= 8 && s.governanceFrictionIndex <= 100);
 
-  const ok = monotonicRevision && allValid && cohesionStable && serviceEquityStable && spreadStable;
+  const ok =
+    monotonicRevision &&
+    allValid &&
+    cohesionStable &&
+    serviceEquityStable &&
+    spreadStable &&
+    backlogStable &&
+    governanceStable;
   const detail = ok
-    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, service equity ${snapshots[snapshots.length - 1].serviceEquityIndex}`
-    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable}`;
+    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, backlog ${snapshots[snapshots.length - 1].backlogIndex}`
+    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable}`;
 
   return { ok, snapshots, detail };
 }

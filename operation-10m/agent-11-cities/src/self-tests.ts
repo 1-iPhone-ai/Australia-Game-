@@ -54,6 +54,12 @@ import {
   op10mA11ComputeRegionalConvergence,
   op10mA11StandingSpread,
 } from './regional-convergence-velocity.ts';
+import {
+  op10mA11ComputePeriUrbanExpansionPressure,
+  op10mA11NationalPeriUrbanPressureIndex,
+} from './peri-urban-expansion-pressure.ts';
+import { op10mA11ComputeRegionalInfrastructureBacklog } from './regional-infrastructure-backlog.ts';
+import { op10mA11ComputeMultiTierGovernanceFriction } from './multi-tier-governance-friction.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -380,7 +386,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.4',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.5',
     composite.state.schemaVersion,
   );
 
@@ -458,7 +464,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     composite.derived.map((d) => d.kind).join(', '),
   );
 
-  const harness = runOP10M_A11_RegionalRegressionHarness(8);
+  const harness = runOP10M_A11_RegionalRegressionHarness(10);
   push(out, 'a11_34', harness.ok, harness.detail);
 
   push(
@@ -472,7 +478,8 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     out,
     'a11_36',
     composite.persisted.lastCohesionIndex === composite.state.regionalCohesionIndex &&
-      composite.persisted.lastServiceEquityIndex === composite.state.nationalServiceEquityIndex,
+      composite.persisted.lastServiceEquityIndex === composite.state.nationalServiceEquityIndex &&
+      composite.persisted.lastInfrastructureBacklogIndex === composite.state.nationalInfrastructureBacklogIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -544,6 +551,86 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_44',
     composite.derived.some((d) => d.kind === 'convergence_stall') || composite.state.convergence.band !== 'balanced',
     composite.state.convergence.band,
+  );
+
+  const periUrban = op10mA11ComputePeriUrbanExpansionPressure({
+    cities: sampleCities,
+    corridorFlows: composite.state.corridorFlows,
+  });
+  push(
+    out,
+    'a11_45',
+    composite.state.periUrbanPressure.length === 8 &&
+      composite.state.nationalPeriUrbanPressureIndex === op10mA11NationalPeriUrbanPressureIndex(periUrban),
+    `peri-urban index ${composite.state.nationalPeriUrbanPressureIndex}`,
+  );
+
+  const backlog = op10mA11ComputeRegionalInfrastructureBacklog({
+    bottlenecks: composite.state.infra.bottlenecks,
+    absorptionStress: composite.state.absorptionStress,
+    corridorStressIndex: composite.state.infra.corridorStressIndex,
+  });
+  push(
+    out,
+    'a11_46',
+    composite.state.infrastructureBacklog.length === 8 &&
+      composite.state.nationalInfrastructureBacklogIndex === backlog.nationalIndex,
+    `backlog index ${composite.state.nationalInfrastructureBacklogIndex}`,
+  );
+
+  const governance = op10mA11ComputeMultiTierGovernanceFriction({
+    national: inputs.national,
+    reliefPlaybook: composite.state.reliefPlaybook,
+    serviceEquity: composite.state.serviceEquity,
+  });
+  push(
+    out,
+    'a11_47',
+    composite.state.governanceFriction.length === 8 &&
+      composite.state.nationalGovernanceFrictionIndex === governance.nationalIndex,
+    `governance friction ${composite.state.nationalGovernanceFrictionIndex}`,
+  );
+
+  push(
+    out,
+    'a11_48',
+    composite.state.periUrbanPressure.every((p) => p.narrative.includes('peri-urban')),
+    composite.state.periUrbanPressure[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_49',
+    composite.derived.some((d) => d.kind === 'peri_urban_sprawl_pressure') ||
+      composite.state.periUrbanPressure.some(
+        (p) => p.band === 'expanding' || p.band === 'sprawl_risk' || p.band === 'unchecked',
+      ),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_50',
+    composite.derived.some((d) => d.kind === 'infrastructure_backlog_critical') ||
+      composite.state.infrastructureBacklog.some((b) => b.band === 'severe' || b.band === 'critical'),
+    composite.state.infrastructureBacklog[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_51',
+    composite.persisted.lastGovernanceFrictionIndex === composite.state.nationalGovernanceFrictionIndex,
+    `persisted governance ${composite.persisted.lastGovernanceFrictionIndex}`,
+  );
+
+  push(
+    out,
+    'a11_52',
+    composite.derived.some((d) => d.kind === 'governance_coordination_breakdown') ||
+      composite.state.governanceFriction.some(
+        (g) => g.band === 'strained' || g.band === 'fragmented' || g.band === 'breakdown',
+      ),
+    composite.state.governanceFriction[0]?.band ?? 'none',
   );
 
   return out;

@@ -26,26 +26,50 @@ const FILES = [
   'urban-hierarchy.ts',
   'regional-linkage-matrix.ts',
   'relief-playbook.ts',
-  'composite-recompute.ts',
   'urban-corridor-flow.ts',
   'linkage-hub-centrality.ts',
   'regional-migration-pressure.ts',
   'settlement-vulnerability.ts',
   'fiscal-urban-coupling.ts',
+  'metropolitan-absorption-stress.ts',
+  'regional-service-equity.ts',
+  'regional-convergence-velocity.ts',
+  'peri-urban-expansion-pressure.ts',
+  'regional-infrastructure-backlog.ts',
+  'multi-tier-governance-friction.ts',
+  'composite-recompute.ts',
   'integration/regional-regression-harness.ts',
   'self-tests.ts',
 ];
 
 function stripModulePreamble(source) {
-  return source
-    .split('\n')
-    .filter((line) => {
-      const t = line.trim();
-      if (t.startsWith('import ')) return false;
-      if (t.startsWith('export * from')) return false;
-      return true;
-    })
-    .join('\n');
+  const lines = source.split('\n');
+  const out = [];
+  let skippingImport = false;
+
+  for (const line of lines) {
+    const t = line.trim();
+    if (t.startsWith('export * from')) continue;
+
+    if (!skippingImport && t.startsWith('import ')) {
+      skippingImport = true;
+      if (/ from ['"].*['"];?\s*$/.test(t) || t.endsWith(';')) {
+        skippingImport = false;
+      }
+      continue;
+    }
+
+    if (skippingImport) {
+      if (/ from ['"].*['"];?\s*$/.test(t) || t.endsWith(';')) {
+        skippingImport = false;
+      }
+      continue;
+    }
+
+    out.push(line);
+  }
+
+  return out.join('\n');
 }
 
 const parts = [
