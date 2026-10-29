@@ -1,12 +1,12 @@
 {
   "projectionId": "tranche-projection-full-chunks",
-  "dryRunAt": "2026-10-29T10:01:10.054Z",
+  "dryRunAt": "2026-10-29T10:02:38.365Z",
   "canonicalBaseCommit": "bc1adf3",
   "baselineAuditedFunctional": 389566,
-  "projectedAuditedFunctional": 2369601,
-  "deltaAuditedFunctional": 1980035,
+  "projectedAuditedFunctional": 2165132,
+  "deltaAuditedFunctional": 1775566,
   "baselinePhysicalLines": 419353,
-  "projectedPhysicalLines": 2476857,
+  "projectedPhysicalLines": 2250562,
   "branchHeadCount": 33,
   "branchesScannedExcludingIntegration": 32,
   "assemblyReadyRemote": 24,
@@ -84,22 +84,22 @@
     {
       "moduleId": "agent-01-strategic-gameplay",
       "slot": "pre-final-export",
-      "contentSha256": "487cb8c5619264000530e379850b29810e362ac098db8f4d615768fa5fdf6ef3"
+      "contentSha256": "9b787fc3d2186a833943234e034f6d968f19adce928006d91131d2fc7415d3f9"
     },
     {
       "moduleId": "agent-02-turns-time",
       "slot": "pre-final-export",
-      "contentSha256": "eb484e77e11ad61a2cae1301b0159adc00aa8284d33ae27f833efead50ecb7e1"
+      "contentSha256": "6db9e6dd2ee401e0f7ee4d37edc17d33879a979c891a9f70efd5f7e1138a1eb3"
     },
     {
       "moduleId": "agent-03-research-tech",
       "slot": "post-v10z",
-      "contentSha256": "68286dc6b3531107c03b26cda1c2a2a744beaea1d7e158c82780293c1b6b1a92"
+      "contentSha256": "57b4672c64608b4a3779ef363e0c8acf8deb38ade23b50a977e92555879e05ce"
     },
     {
       "moduleId": "agent-04-modes-scenarios",
       "slot": "scenario-engine-extension",
-      "contentSha256": "23cfb874c2905b972db50122f04810e9798066f1f7555df9ee8c155ffc4ca0cd"
+      "contentSha256": "64e47c5f3cd21e15cc308410cd111ede23eb655aa53c9681170f7595d745b226"
     },
     {
       "moduleId": "agent-05-events",
@@ -109,32 +109,32 @@
     {
       "moduleId": "agent-06-macroeconomy",
       "slot": "append-only-self-tests",
-      "contentSha256": "78ab4cf6cd2444bcac1481f09f2891c79511b548e747ca2f3a77b2b1367a656e"
+      "contentSha256": "c9d6d83e2d69dc8c80807235a8c26873a690d5eecbdac35d074e107bb8a71aee"
     },
     {
       "moduleId": "agent-07-public-finance",
       "slot": "pre-final-export",
-      "contentSha256": "45103406677c90815ac3d9c3e2975c2a4ed0d0fbde96d54be37043e0d08fe32b"
+      "contentSha256": "d5ebbe0002fc3e8ea8a32505f5766284e7b3b1975a70abcb84e122d374095ca8"
     },
     {
       "moduleId": "agent-08-companies",
       "slot": "append-only-self-tests",
-      "contentSha256": "12ca7351ee3217f5413fff17212bb128625a28dac45c823fea356d73d3be21ce"
+      "contentSha256": "57c4fb15dfcf190bdec86c3aec6a6b479e8eb72cda9541b0f366cc38307133ca"
     },
     {
       "moduleId": "agent-09-population",
       "slot": "pre-final-export",
-      "contentSha256": "c3eaa93af8623aecc3ad65ca02344739fb35361c6998ad5dce24c5754b3784da"
+      "contentSha256": "224ee199b43b98a721b4c3dc4ee2e736433e616ff32b160ae2133e8c54ed994d"
     },
     {
       "moduleId": "agent-10-finance",
       "slot": "append-only-self-tests",
-      "contentSha256": "8fccb3f8a65f9e5eae6f1186e3a2cb5a5c76601600bea0586b9c43c40aecb20e"
+      "contentSha256": "8c2e9937e487a34d997b2601f395d86fa9b11610d88f54af1c66feaf22ef62b1"
     },
     {
       "moduleId": "agent-11-cities",
       "slot": "pre-final-export",
-      "contentSha256": "4964546aa350ecf18c5770fe98458c94f641847513a376b6f830a3eb57be4d74"
+      "contentSha256": "abd3ab772fa5791c75b9902b7d5ca7c835f551c9f691fcc0aa2c61283fe51800"
     },
     {
       "moduleId": "agent-12-infrastructure",
@@ -144,7 +144,7 @@
     {
       "moduleId": "agent-13-energy",
       "slot": "pre-final-export",
-      "contentSha256": "fcb4f8aaa77e41194fa21862cf57281412d7751480ba4872fdd5bc952c4224cc"
+      "contentSha256": "a983de0c2107d231edcf555e54129a6ff77918fc6bcc229a3e68991744c46d23"
     },
     {
       "moduleId": "agent-14-housing",
@@ -154,42 +154,42 @@
     {
       "moduleId": "agent-15-trade",
       "slot": "pre-final-export",
-      "contentSha256": "9d6a7cf0c731ef59b0e6d07cfdd5f71f08105459e60e52418ab1fe4cee9a1077"
+      "contentSha256": "f9e93d48b3ee8c1c54005c026a58e4b562c3ecaa533d42c816a8dfb438073de5"
     },
     {
       "moduleId": "agent-16-guardian",
       "slot": "pre-final-export",
-      "contentSha256": "30591f1162c246c2ad0b590262799962a96a9a25e6e502edfa5dbd574c6552f8"
+      "contentSha256": "9ffd0ca3ef3a362e8f42321facd55a00dd233abd23edf669ad6151cac8aa54f5"
     },
     {
       "moduleId": "agent-17-command-center",
       "slot": "pre-final-export",
-      "contentSha256": "41323f9ad7a922cb8f9dd0591d277559fe2d0967b60fa0fe4f6a2d606a5c5076"
+      "contentSha256": "b87e6194775a0545adf5888706154c4104797fba70073d34159d114ce73e1a43"
     },
     {
       "moduleId": "agent-18-team-ai",
       "slot": "pre-final-export",
-      "contentSha256": "3beae20928d2b402cbc4699a328a27fa35dee1081bc1bf51f444e7008d989421"
+      "contentSha256": "59d7d33af9d2dcbde8f0cafe195212858e5cce7adeccd335130c927dd792e9ad"
     },
     {
       "moduleId": "agent-19-ai-memory",
       "slot": "pre-final-export",
-      "contentSha256": "d83f0d8347f51972555c970a06d8528366bb76751088548250b44ff564ebeffd"
+      "contentSha256": "414a278bba5ec0487ac2c5ff523a69b3ef3f3412e3dd3dde969d18cf5e4412d1"
     },
     {
       "moduleId": "agent-20-automation",
       "slot": "append-only-self-tests",
-      "contentSha256": "d8f6ffff7dcf05bcf47815fe629ac3635002bb21ddfd75edb1886d9a1f2ac39e"
+      "contentSha256": "b59a04ae2b42f6c938f57d4458beb36d5b0116edcb67df984c343c7ad2557cb2"
     },
     {
       "moduleId": "agent-21-forecasting",
       "slot": "O10M_AGENT21_INTEGRATION_ANCHOR",
-      "contentSha256": "74e4b4626861e1208892b42d54d7ea0643210b7b60953ba43969ab82a0654af5"
+      "contentSha256": "d905c48bd7d308302c995db51654ee23a9cee9f27d96f6e2ad8ef60634466196"
     },
     {
       "moduleId": "agent-22-ui",
       "slot": "post-v10z",
-      "contentSha256": "e59d72f397df9038d057b36de57e6d8287ab4e965d7b3bf73b0e2c02db9295d8"
+      "contentSha256": "996da4a1d1a20a4d7d5db8223d4b323f5d6fc0c8f4791199422b1c40ee51291c"
     },
     {
       "moduleId": "agent-23-dashboards",
