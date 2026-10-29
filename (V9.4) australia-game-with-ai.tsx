@@ -8781,21 +8781,23 @@ export function applyTransitProgress(
   const newDaysRemaining = currentJourney.daysRemaining - 1;
   const expeditionRoll = drawGameplayRandom('Expedition');
   const hazardRisk = currentJourney.hazardRisk ?? getHazardRiskForTerritory(currentJourney.destinationRegion);
+  const survivalOn = !settings || settings.survivalMechanicsEnabled !== false;
+  const retreatOn = !settings || settings.forcedRetreatEnabled !== false;
 
-  // Daily supply burn during transit
-  const baseDailyBurn = settings?.dailySupplyConsumptionRate ?? 10;
+  // Daily supply burn during transit. Both switches off means the journey does not consume supplies.
+  const baseDailyBurn = survivalOn ? (settings?.dailySupplyConsumptionRate ?? 10) : 0;
   let currentSupp = Math.max(0, (actor.currentSupplies ?? 100) - baseDailyBurn);
   let hazardTriggered = false;
 
-  if (expeditionRoll < hazardRisk) {
+  if (survivalOn && expeditionRoll < hazardRisk) {
     hazardTriggered = true;
     currentSupp = Math.max(0, currentSupp - 15);
   }
 
   const newCondition = calculateActorConditionState(currentSupp, actor.maxSupplies || 100);
 
-  // Forced retreat check: trigger if supplies hit 0 or condition drops to critical
-  if (currentSupp <= 0 || newCondition === 'critical') {
+  // Forced retreat only when that switch is on.
+  if (retreatOn && (currentSupp <= 0 || newCondition === 'critical')) {
     const origin = currentJourney.originRegion || actor.committedOriginRegion || 'NSW';
     const destData = getRegionData(currentJourney.destinationRegion);
     const destName = destData?.name || currentJourney.destinationRegion;
@@ -9183,6 +9185,8 @@ const calculateInventoryMarketValue = (
 };
 
 export function generateDynamicEvent(gameState: any, turnCounter: number, activeRegions: string[], worldContext?: { instability: number; shortage: number } | null): any {
+  const nationalEvents = gameState?.gameSettings?.nationalEventsEnabled ?? gameState?.nationalEventsEnabled;
+  if (nationalEvents === false) return null;
   const turn = typeof turnCounter === 'number' && Number.isFinite(turnCounter) ? Math.max(1, turnCounter) : 1;
   const regions = Array.isArray(activeRegions) && activeRegions.length > 0
     ? activeRegions
@@ -17453,14 +17457,19 @@ interface PipelineTraceRecord {
   timestamp: number;
 }
 
-// Team Treasury Phase T1: transaction types. approved_funding_request/partial_funding_approval/
-// emergency_zero_cash_support/refund/unused_funds_return are declared now for schema stability but
-// no code path produces them until Phase T2 — this phase only ever writes manual_contribution/
-// automatic_contribution/excess_cash_contribution.
+// Team Treasury transaction types. An emergency_only resolution writes emergency_zero_cash_support.
+// A direct manual withdrawal and a generic refund are not separate actions: approved requests write
+// approved_funding_request or partial_funding_approval, and unused restricted funds write unused_funds_return.
 type TreasuryTransactionType =
   | 'manual_contribution' | 'automatic_contribution' | 'excess_cash_contribution'
   | 'manual_withdrawal' | 'approved_funding_request' | 'partial_funding_approval'
   | 'emergency_zero_cash_support' | 'refund' | 'unused_funds_return';
+
+export function treasuryResolutionTransactionType(control: string, partial: boolean): TreasuryTransactionType {
+  if (control === 'emergency_only') return 'emergency_zero_cash_support';
+  if (partial) return 'partial_funding_approval';
+  return 'approved_funding_request';
+}
 
 interface TreasuryTransaction {
   id: string;
@@ -137412,6 +137421,30 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number; pr
     const team = worked.nextState.teamsById.team_player.money;
     return (worked.success && worked.nextState.player.money === 1050 && team === 99999) || JSON.stringify({ ok: worked.success, player: worked.nextState.player.money, team });
   });
+  check('u_survival_off_does_not_retreat', 'Supply exhaustion does not retreat when survival and forced retreat are off (SIM-038)', () => {
+    const actor = { id: 'a', name: 'A', kind: 'human', currentRegion: 'VIC', currentSupplies: 5, maxSupplies: 100, activeJourney: { daysRemaining: 2, destinationRegion: 'WA', originRegion: 'NSW', hazardRisk: 0 } };
+    const offSettings = { ...DEFAULT_GAME_SETTINGS, survivalMechanicsEnabled: false, forcedRetreatEnabled: false };
+    const onSettings = { ...DEFAULT_GAME_SETTINGS, survivalMechanicsEnabled: true, forcedRetreatEnabled: true };
+    const stayed = applyTransitProgress(actor, undefined, offSettings);
+    const retreated = applyTransitProgress(actor, undefined, onSettings);
+    const ok = stayed.currentRegion === 'VIC' && stayed.activeJourney && stayed.currentSupplies === 5 && retreated.currentRegion === 'NSW' && !retreated.activeJourney;
+    return ok || JSON.stringify({ stayed: { region: stayed.currentRegion, supplies: stayed.currentSupplies, journey: Boolean(stayed.activeJourney) }, retreated: { region: retreated.currentRegion, journey: Boolean(retreated.activeJourney) } });
+  });
+  check('u_national_events_follow_the_switch', 'National events stay off unless nationalEventsEnabled is on (SIM-039)', () => {
+    const off = generateDynamicEvent({ day: 2, gameSettings: { nationalEventsEnabled: false } }, 2, ['QLD']);
+    const on = generateDynamicEvent({ day: 2, gameSettings: { nationalEventsEnabled: true } }, 2, ['QLD']);
+    const pocket = (enabled: boolean) => ({ day: 1, turn: 1, turnCounter: 1, player: { id: 'player', money: 1000, currentRegion: 'QLD', actionsUsedThisTurn: 0 }, actorsById: { player: { id: 'player', money: 1000, currentRegion: 'QLD', actionsUsedThisTurn: 0 } }, gameSettings: { ...DEFAULT_GAME_SETTINGS, nationalEventsEnabled: enabled } });
+    const endedOff = reduceGameAction(pocket(false) as any, { type: 'end_turn', actorId: 'player' } as any);
+    const endedOn = reduceGameAction(pocket(true) as any, { type: 'end_turn', actorId: 'player' } as any);
+    const ok = off === null && Boolean(on && on.name) && !endedOff.nextState.activeDynamicEvent && Boolean(endedOn.nextState.activeDynamicEvent && endedOn.nextState.activeDynamicEvent.name);
+    return ok || JSON.stringify({ off, on: on && on.name, endedOff: endedOff.nextState.activeDynamicEvent, endedOn: endedOn.nextState.activeDynamicEvent && endedOn.nextState.activeDynamicEvent.name });
+  });
+  check('u_emergency_treasury_type', 'An emergency treasury resolution is stored as emergency support (SIM-040)', () => {
+    const emergency = treasuryResolutionTransactionType('emergency_only', true);
+    const partial = treasuryResolutionTransactionType('approve_partial', true);
+    const full = treasuryResolutionTransactionType('approve_full', false);
+    return (emergency === 'emergency_zero_cash_support' && partial === 'partial_funding_approval' && full === 'approved_funding_request') || JSON.stringify({ emergency, partial, full });
+  });
 
 
 
@@ -196619,7 +196652,7 @@ function dispatchGameSettingsChange(
       turn: gameState.turnCounter,
       teamId,
       actorId: request.requestingActorId,
-      type: partial ? 'partial_funding_approval' : 'approved_funding_request',
+      type: treasuryResolutionTransactionType(control, partial),
       amount,
       balanceBefore,
       balanceAfter,
