@@ -33,6 +33,13 @@ All symbols are prefixed `OP10M_A11_` for grep-safe assembly.
 4. Persist infra slice under `gameState.op10mAgent11IntercityInfra` (`createEmptyOP10M_A11_InfraPersisted()`).
 5. Register `runOP10M_A11_SelfTests` in quick regression suite beside `runV1014_CITIES_CityRegionalIntercitySelfTests`.
 
+### Scale wave round 36 (O10-203, schema `10m.a11.composite.35`)
+
+- **Regional collapse omni singularity unification** — omni integration × erosion eradication × nullity continuity (`op10mA11ComputeRegionalCollapseOmniSingularityUnification`)
+- **Interregional void total erosion elimination** — eradication × integration × void front (`op10mA11ComputeInterregionalVoidTotalErosionElimination`)
+- **Settlement existential absolute nullity perpetuity** — continuity × integration × nullity sentence (`op10mA11ComputeSettlementExistentialAbsoluteNullityPerpetuity`)
+- Derived events: `collapse_omni_singularity_unification`, `void_total_erosion_elimination`, `existential_absolute_nullity_perpetuity`
+
 ### Scale wave round 35 (schema `10m.a11.composite.34`)
 
 - **Regional collapse omni singularity integration** — omni convergence × erosion obliteration × nullity binding (`op10mA11ComputeRegionalCollapseOmniSingularityIntegration`)
