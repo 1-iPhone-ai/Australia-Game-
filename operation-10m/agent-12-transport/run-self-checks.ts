@@ -66,9 +66,9 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
 
   const infra = computeTransportInfrastructureState(defaultInfrastructureInputs(5));
   results.push({
-    id: 'infrastructure_state_v8',
+    id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/8' &&
+      infra.schemaVersion === 'agent12/9' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -82,8 +82,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.greenFreightShare > 0.12 &&
       infra.nationalBulkExportThroughputIndex > 18 &&
       infra.nationalIntermodalDwellMedian > 10 &&
-      infra.nationalUrbanCongestionIndex > 15,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} bulk=${infra.nationalBulkExportThroughputIndex.toFixed(1)} dwell=${infra.nationalIntermodalDwellMedian.toFixed(1)} congestion=${infra.nationalUrbanCongestionIndex.toFixed(1)}`,
+      infra.nationalUrbanCongestionIndex > 15 &&
+      infra.nationalAviationCargoThroughputIndex > 9 &&
+      infra.nationalCustomsClearanceIndex > 35 &&
+      infra.hydrogenFreightShare >= 0.04 &&
+      infra.nationalHydrogenCorridorThroughputIndex > 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} aviation=${infra.nationalAviationCargoThroughputIndex.toFixed(1)} customs=${infra.nationalCustomsClearanceIndex.toFixed(1)} hydrogen=${infra.nationalHydrogenCorridorThroughputIndex.toFixed(1)}`,
   });
 
   return results;

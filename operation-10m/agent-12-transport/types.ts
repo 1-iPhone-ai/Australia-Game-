@@ -197,8 +197,12 @@ export type GreenFreightPolicy = 'baseline' | 'accelerate';
 
 export type CongestionReliefPolicy = 'baseline' | 'invest' | 'priority_freight';
 
+export type HydrogenFreightPolicy = 'baseline' | 'pipeline';
+
+export type CustomsModernizationPolicy = 'baseline' | 'digitize';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/8';
+  schemaVersion: 'agent12/9';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -239,6 +243,13 @@ export interface TransportInfrastructureState {
   intermodalDwellByRegion: Record<AuRegionCode, number>;
   nationalUrbanCongestionIndex: number;
   urbanCongestionByRegion: Record<AuRegionCode, number>;
+  nationalAviationCargoThroughputIndex: number;
+  aviationCargoThroughputByRegion: Record<AuRegionCode, number>;
+  nationalCustomsClearanceIndex: number;
+  customsClearanceByRegion: Record<AuRegionCode, number>;
+  hydrogenFreightShare: number;
+  nationalHydrogenCorridorThroughputIndex: number;
+  hydrogenCorridorThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -254,6 +265,8 @@ export interface TransportInfrastructureOptions {
   modalShiftPolicy?: ModalShiftPolicy;
   greenFreightPolicy?: GreenFreightPolicy;
   congestionReliefPolicy?: CongestionReliefPolicy;
+  hydrogenFreightPolicy?: HydrogenFreightPolicy;
+  customsModernizationPolicy?: CustomsModernizationPolicy;
 }
 
 export interface V94ProjectSnapshot {

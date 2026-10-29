@@ -86,6 +86,21 @@ import {
   congestionReliefMultiplier,
   nationalUrbanCongestionIndex,
 } from './congestion-relief-index.ts';
+import {
+  computeAviationCargoThroughputByRegion,
+  nationalAviationCargoThroughputIndex,
+} from '../network/aviation-cargo-throughput-index.ts';
+import {
+  computeCustomsClearanceByRegion,
+  customsClearanceProductivityMultiplier,
+  nationalCustomsClearanceIndex,
+} from '../operations/customs-clearance-index.ts';
+import {
+  computeHydrogenCorridorThroughputByRegion,
+  computeHydrogenFreightShare,
+  hydrogenFreightProductivityMultiplier,
+  nationalHydrogenCorridorThroughputIndex,
+} from './hydrogen-freight-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -339,6 +354,40 @@ export function computeTransportInfrastructureState(
     nationalContainerThroughput * 0.04 +
     nationalBulkExport * 0.035;
 
+  const aviationCargoThroughputByRegion = computeAviationCargoThroughputByRegion(ops);
+  const nationalAviationCargo = nationalAviationCargoThroughputIndex(aviationCargoThroughputByRegion);
+  const customsClearanceByRegion = computeCustomsClearanceByRegion(ops, freightUtil);
+  const nationalCustomsClearance = nationalCustomsClearanceIndex(customsClearanceByRegion);
+  const customsMult = customsClearanceProductivityMultiplier(
+    nationalCustomsClearance,
+    options?.customsModernizationPolicy ?? 'baseline',
+  );
+  const hydrogenCorridorThroughputByRegion = computeHydrogenCorridorThroughputByRegion(ops);
+  const nationalHydrogenCorridor = nationalHydrogenCorridorThroughputIndex(hydrogenCorridorThroughputByRegion);
+  const hydrogenFreightShare = computeHydrogenFreightShare(ops, options?.hydrogenFreightPolicy ?? 'baseline');
+  const hydrogenMult = hydrogenFreightProductivityMultiplier(
+    hydrogenFreightShare,
+    options?.hydrogenFreightPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const aviationBoost = (aviationCargoThroughputByRegion[code] - 12) * 0.006;
+    const customsBoost = (customsClearanceByRegion[code] - 40) * 0.005;
+    const hydrogenBoost = (hydrogenCorridorThroughputByRegion[code] - 8) * 0.007;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + aviationBoost + customsBoost + hydrogenBoost) *
+      customsMult *
+      hydrogenMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035 +
+    nationalAviationCargo * 0.03 +
+    nationalHydrogenCorridor * 0.028;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -352,7 +401,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/8',
+    schemaVersion: 'agent12/9',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -393,6 +442,13 @@ export function computeTransportInfrastructureState(
     intermodalDwellByRegion,
     nationalUrbanCongestionIndex: nationalUrbanCongestion,
     urbanCongestionByRegion,
+    nationalAviationCargoThroughputIndex: nationalAviationCargo,
+    aviationCargoThroughputByRegion,
+    nationalCustomsClearanceIndex: nationalCustomsClearance,
+    customsClearanceByRegion,
+    hydrogenFreightShare,
+    nationalHydrogenCorridorThroughputIndex: nationalHydrogenCorridor,
+    hydrogenCorridorThroughputByRegion,
     computeMs,
   };
 }

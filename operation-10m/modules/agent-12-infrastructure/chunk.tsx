@@ -201,8 +201,12 @@ export type GreenFreightPolicy = 'baseline' | 'accelerate';
 
 export type CongestionReliefPolicy = 'baseline' | 'invest' | 'priority_freight';
 
+export type HydrogenFreightPolicy = 'baseline' | 'pipeline';
+
+export type CustomsModernizationPolicy = 'baseline' | 'digitize';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/8';
+  schemaVersion: 'agent12/9';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -243,6 +247,13 @@ export interface TransportInfrastructureState {
   intermodalDwellByRegion: Record<AuRegionCode, number>;
   nationalUrbanCongestionIndex: number;
   urbanCongestionByRegion: Record<AuRegionCode, number>;
+  nationalAviationCargoThroughputIndex: number;
+  aviationCargoThroughputByRegion: Record<AuRegionCode, number>;
+  nationalCustomsClearanceIndex: number;
+  customsClearanceByRegion: Record<AuRegionCode, number>;
+  hydrogenFreightShare: number;
+  nationalHydrogenCorridorThroughputIndex: number;
+  hydrogenCorridorThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -258,6 +269,8 @@ export interface TransportInfrastructureOptions {
   modalShiftPolicy?: ModalShiftPolicy;
   greenFreightPolicy?: GreenFreightPolicy;
   congestionReliefPolicy?: CongestionReliefPolicy;
+  hydrogenFreightPolicy?: HydrogenFreightPolicy;
+  customsModernizationPolicy?: CustomsModernizationPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -618,6 +631,46 @@ export const TRANSPORT_CORRIDORS_ROUND7: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round8.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND8: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_qld_brisbane_air_cargo_chain',
+    name: 'Brisbane Air Cargo Chain',
+    networkKind: 'trade',
+    regionSequence: ['QLD'],
+    requiredTagsByRegion: {
+      QLD: ['air_freight', 'cargo_terminal', 'gateway'],
+    },
+    productivitySynergyPoints: 6.8,
+    logisticsRelief: 0.041,
+  },
+  {
+    id: 'corr_wa_kwinana_hydrogen_export',
+    name: 'Kwinana Hydrogen Export Chain',
+    networkKind: 'trade',
+    regionSequence: ['WA'],
+    requiredTagsByRegion: {
+      WA: ['hydrogen', 'energy_export', 'bulk'],
+    },
+    productivitySynergyPoints: 8.2,
+    logisticsRelief: 0.046,
+  },
+  {
+    id: 'corr_nsw_western_sydney_air_rail',
+    name: 'Western Sydney Air-Rail Loop',
+    networkKind: 'trade',
+    regionSequence: ['NSW', 'ACT'],
+    requiredTagsByRegion: {
+      NSW: ['air_freight', 'cargo_terminal'],
+      ACT: ['air_freight', 'capital'],
+    },
+    productivitySynergyPoints: 5.9,
+    logisticsRelief: 0.033,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -772,6 +825,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND5,
   ...TRANSPORT_CORRIDORS_ROUND6,
   ...TRANSPORT_CORRIDORS_ROUND7,
+  ...TRANSPORT_CORRIDORS_ROUND8,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -1196,6 +1250,62 @@ export const TRANSPORT_SCENARIOS_ROUND7: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round8.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND8: TransportStressScenario[] = [
+  {
+    id: 'scn_qld_brisbane_air_cargo_backlog',
+    label: 'Brisbane Air Cargo Backlog',
+    description: 'Customs surge queues Eagle Farm express freight.',
+    targetRegions: ['QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'port'],
+  },
+  {
+    id: 'scn_wa_kwinana_hydrogen_export_hold',
+    label: 'Kwinana Hydrogen Export Hold',
+    description: 'Ammonia loader maintenance slows hydrogen corridor trains.',
+    targetRegions: ['WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_nsw_customs_clearance_surge',
+    label: 'NSW Customs Clearance Surge',
+    description: 'Western Sydney air-sea transshipment inspection backlog.',
+    targetRegions: ['NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'port'],
+  },
+  {
+    id: 'scn_act_canberra_air_freight_grounding',
+    label: 'Canberra Air Freight Grounding',
+    description: 'Fog and curfew reduce capital express cargo slots.',
+    targetRegions: ['ACT', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.19,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_sa_perishable_air_slot_shortage',
+    label: 'Adelaide Perishable Air Slot Shortage',
+    description: 'Heat wave cuts refrigerated air uplift capacity.',
+    targetRegions: ['SA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -1364,6 +1474,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND5,
   ...TRANSPORT_SCENARIOS_ROUND6,
   ...TRANSPORT_SCENARIOS_ROUND7,
+  ...TRANSPORT_SCENARIOS_ROUND8,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -3657,6 +3768,232 @@ export const SCALE_WAVE_ROUND7_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round8-assets.ts ---
+
+export const ROUND8_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_qld_brisbane_airport_feed',
+    category: 'road',
+    name: 'Brisbane Airport Cargo Feed',
+    description: 'Motorway drayage from Eagle Farm air cargo precinct.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['air_freight', 'motorway', 'port_access'],
+    laneKilometres: 42,
+    designSpeedKmh: 100,
+    freightShare: 0.38,
+    urbanShare: 0.22,
+    tollRoad: true,
+  },
+  {
+    id: 'road_wa_kwinana_hydrogen_feed',
+    category: 'road',
+    name: 'Kwinana Hydrogen Export Feed',
+    description: 'Bulk ammonia and green H₂ feed to outer harbour loaders.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['hydrogen', 'bulk', 'port_access', 'energy_export'],
+    laneKilometres: 36,
+    designSpeedKmh: 90,
+    freightShare: 0.51,
+    urbanShare: 0.08,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_western_sydney_air_cargo',
+    category: 'road',
+    name: 'Western Sydney Air Cargo Link',
+    description: 'Badgerys Creek air freight precinct to Port Botany overflow.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['air_freight', 'motorway', 'intermodal'],
+    laneKilometres: 54,
+    designSpeedKmh: 110,
+    freightShare: 0.44,
+    urbanShare: 0.18,
+    tollRoad: true,
+  },
+  {
+    id: 'road_sa_adelaide_airfreight_link',
+    category: 'road',
+    name: 'Adelaide Airfreight Link',
+    description: 'Perishable and pharma feed to Adelaide airport cargo apron.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'VIC'],
+    baseProductivityPoints: 3.6,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['air_freight', 'freight', 'national_highway'],
+    laneKilometres: 28,
+    designSpeedKmh: 100,
+    freightShare: 0.36,
+    urbanShare: 0.14,
+    tollRoad: false,
+  },
+];
+
+export const ROUND8_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_kwinana_hydrogen_corridor',
+    category: 'rail',
+    name: 'Kwinana Hydrogen Export Corridor',
+    description: 'Dedicated ammonia unit trains to outer harbour bulk loaders.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 6.9,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['hydrogen', 'bulk', 'heavy_haul', 'energy_export', 'port_access'],
+    trackKilometres: 48,
+    dualTrackShare: 0.68,
+    electrifiedShare: 0.42,
+    designFreightTonnesPerYear: 18_000_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nsw_western_sydney_air_rail',
+    category: 'rail',
+    name: 'Western Sydney Air-Rail Shuttle',
+    description: 'Container and express air cargo shuttle to intermodal yard.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['air_freight', 'intermodal', 'freight_rail', 'container'],
+    trackKilometres: 38,
+    dualTrackShare: 0.62,
+    electrifiedShare: 0.78,
+    designFreightTonnesPerYear: 4_200_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_qld_brisbane_air_rail',
+    category: 'rail',
+    name: 'Brisbane Air-Rail Feed',
+    description: 'Eagle Farm air cargo precinct to Fisherman Islands port rail.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['air_freight', 'container', 'port_access', 'intermodal'],
+    trackKilometres: 52,
+    dualTrackShare: 0.58,
+    electrifiedShare: 0.55,
+    designFreightTonnesPerYear: 5_800_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND8_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_kwinana_hydrogen_export',
+    category: 'port',
+    name: 'Kwinana Hydrogen Export Terminal',
+    description: 'Green ammonia and bulk energy export berths.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 7.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['hydrogen', 'bulk', 'energy_export', 'port_access'],
+    berthCount: 6,
+    maxDraftMetres: 16.5,
+    teuCapacityPerYear: 280_000,
+    automationLevel: 2,
+    bulkShare: 0.76,
+  },
+  {
+    id: 'port_qld_brisbane_air_cargo',
+    category: 'port',
+    name: 'Brisbane Air Cargo Gateway',
+    description: 'Eagle Farm express cargo and perishable gateway berths.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['air_freight', 'gateway', 'container', 'export'],
+    berthCount: 4,
+    maxDraftMetres: 12.5,
+    teuCapacityPerYear: 210_000,
+    automationLevel: 2,
+    bulkShare: 0.28,
+  },
+];
+
+export const ROUND8_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_act_canberra_air_freight_dc',
+    category: 'logistics',
+    name: 'Canberra Air Freight DC',
+    description: 'Capital region express and diplomatic cargo consolidation.',
+    hostRegion: 'ACT',
+    servedRegions: ['ACT', 'NSW'],
+    baseProductivityPoints: 3.8,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['air_freight', 'air', 'cargo_terminal', 'capital'],
+    warehouseSqm: 92_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'air'],
+    lastMileCoveragePct: 72,
+  },
+  {
+    id: 'log_qld_brisbane_customs_bond',
+    category: 'logistics',
+    name: 'Brisbane Customs Bond Hub',
+    description: 'Digitized customs bond and air-sea transshipment staging.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['gateway', 'customs', 'intermodal', 'cargo_terminal'],
+    warehouseSqm: 155_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port', 'air'],
+    lastMileCoveragePct: 66,
+  },
+  {
+    id: 'log_wa_kwinana_hydrogen_staging',
+    category: 'logistics',
+    name: 'Kwinana Hydrogen Staging Yard',
+    description: 'Ammonia buffer tanks and export loader feed staging.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['hydrogen', 'warehouse', 'bulk', 'energy_export'],
+    warehouseSqm: 118_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 52,
+  },
+  {
+    id: 'log_nsw_sydney_intl_cargo',
+    category: 'logistics',
+    name: 'Sydney International Cargo Hub',
+    description: 'Mascot and Western Sydney air cargo customs gateway.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['air_freight', 'cargo_terminal', 'gateway', 'customs'],
+    warehouseSqm: 188_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port', 'air'],
+    lastMileCoveragePct: 74,
+  },
+];
+
+export const SCALE_WAVE_ROUND8_ASSETS = [
+  ...ROUND8_ROADS,
+  ...ROUND8_RAIL,
+  ...ROUND8_PORTS,
+  ...ROUND8_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -3672,6 +4009,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND5_ASSETS,
     ...SCALE_WAVE_ROUND6_ASSETS,
     ...SCALE_WAVE_ROUND7_ASSETS,
+    ...SCALE_WAVE_ROUND8_ASSETS,
   ];
 }
 
@@ -4068,6 +4406,57 @@ export function nationalBulkExportThroughputIndex(
   const max = Math.max(...values);
   const composite = avg * 0.55 + max * 0.45;
   return Math.round(clamp(composite, 6, 96) * 10) / 10;
+}
+
+
+// --- source: network/aviation-cargo-throughput-index.ts ---
+
+/** 0–100 normalized air-cargo handling (perishables, express, e-commerce feed). */
+export function computeAviationCargoThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const airTagged =
+      asset.tags.some((t) => t === 'air' || t === 'air_freight' || t === 'cargo_terminal') ||
+      (asset.category === 'logistics' && asset.intermodalLinks.includes('air'));
+
+    if (!airTagged) continue;
+
+    if (asset.category === 'logistics') {
+      const hubScore = asset.warehouseSqm / 85_000 + asset.lastMileCoveragePct / 120;
+      byRegion[asset.hostRegion] += hubScore * 1.4;
+      for (const r of asset.servedRegions) {
+        if (r !== asset.hostRegion) byRegion[r] += hubScore * 0.12;
+      }
+    }
+    if (asset.category === 'port' && asset.tags.some((t) => t === 'air_freight' || t === 'gateway')) {
+      const portScore = (asset.teuCapacityPerYear / 180_000) * (0.35 + asset.automationLevel * 0.12);
+      byRegion[asset.hostRegion] += portScore;
+    }
+    if (asset.category === 'road' && asset.tags.includes('air_freight') && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += (asset.laneKilometres * asset.freightShare) / 700;
+    }
+    if (asset.category === 'rail' && asset.tags.includes('air_freight')) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 4_500_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalAviationCargoThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  const composite = avg * 0.5 + max * 0.5;
+  return Math.round(clamp(composite, 4, 92) * 10) / 10;
 }
 
 
@@ -4481,6 +4870,60 @@ export function dwellProductivityPenalty(dwellMedian: number): number {
 }
 
 
+// --- source: operations/customs-clearance-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type CustomsModernizationPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 customs clearance efficiency (higher = faster border / gateway processing). */
+export function computeCustomsClearanceByRegion(
+  operationalAssets: TransportAsset[],
+  freightUtilization = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 42])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'port' && (asset.tags.includes('gateway') || asset.tags.includes('container'))) {
+      const draftBoost = 1 + Math.min(0.1, (asset.maxDraftMetres - 11) * 0.015);
+      const autoBoost = 1 + asset.automationLevel * 0.06;
+      byRegion[asset.hostRegion] += (asset.berthCount * 1.8 + asset.teuCapacityPerYear / 220_000) * draftBoost * autoBoost;
+    }
+    if (
+      asset.category === 'logistics' &&
+      (asset.tags.includes('gateway') || asset.tags.includes('customs') || asset.tags.includes('cargo_terminal'))
+    ) {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 95_000 + asset.intermodalLinks.length * 2.2;
+    }
+    if (asset.category === 'logistics' && asset.coldChainCapable) {
+      byRegion[asset.hostRegion] += 1.5;
+    }
+  }
+
+  const utilDrag = clamp(freightUtilization, 0.05, 1.2);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.02 - utilDrag * 0.08), 18, 96) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalCustomsClearanceIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  return Math.round(clamp(avg, 22, 88) * 10) / 10;
+}
+
+export function customsClearanceProductivityMultiplier(
+  clearanceIndex: number,
+  policy: CustomsModernizationPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'digitize' ? 0.05 : 0;
+  const normalized = (clearanceIndex - 45) / 100;
+  return clamp(1 + normalized * 0.06 + policyBoost, 0.92, 1.1);
+}
+
+
 // --- source: productivity/regional-investment-tiers.ts ---
 
 const TIERS: TransportInvestmentTier[] = ['emerging', 'regional', 'integrated', 'national_gateway'];
@@ -4804,6 +5247,87 @@ export function congestionReliefMultiplier(
 }
 
 
+// --- source: productivity/hydrogen-freight-index.ts ---
+
+/** 0–100 hydrogen corridor export throughput (ammonia, green H₂ feedstock). */
+export function computeHydrogenCorridorThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (!asset.tags.some((t) => t === 'hydrogen' || t === 'energy_export')) continue;
+
+    if (asset.category === 'port' && 'bulkShare' in asset) {
+      byRegion[asset.hostRegion] += asset.bulkShare * (asset.teuCapacityPerYear / 150_000) * 2.2;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 12_000_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += (asset.laneKilometres * asset.freightShare) / 1100;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 120_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+/** 0–1 share of freight capacity tied to hydrogen export corridors. */
+export function computeHydrogenFreightShare(
+  operationalAssets: TransportAsset[],
+  policy: HydrogenFreightPolicy = 'baseline',
+): number {
+  let hydrogenUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'rail' && 'trackKilometres' in asset) {
+      const units = asset.trackKilometres * (0.35 + asset.dualTrackShare);
+      totalUnits += units;
+      if (asset.tags.includes('hydrogen')) hydrogenUnits += units * 0.85;
+    }
+    if (asset.category === 'port') {
+      const units = asset.berthCount * 2 + asset.teuCapacityPerYear / 400_000;
+      totalUnits += units;
+      if (asset.tags.includes('hydrogen') || asset.tags.includes('energy_export')) {
+        hydrogenUnits += units * (0.55 + asset.bulkShare * 0.35);
+      }
+    }
+    if (asset.category === 'logistics' && asset.tags.includes('hydrogen')) {
+      totalUnits += asset.warehouseSqm / 60_000;
+      hydrogenUnits += asset.warehouseSqm / 60_000;
+    }
+  }
+
+  if (totalUnits <= 0) return 0.08;
+  const policyBoost = policy === 'pipeline' ? 0.05 : 0;
+  return Math.round(clamp(hydrogenUnits / totalUnits + policyBoost, 0.04, 0.72) * 1000) / 1000;
+}
+
+export function hydrogenFreightProductivityMultiplier(
+  share: number,
+  policy: HydrogenFreightPolicy,
+): number {
+  const bias = policy === 'pipeline' ? 1.025 : 1;
+  return (1 + (share - 0.12) * 0.04) * bias;
+}
+
+export function nationalHydrogenCorridorThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.6 + max * 0.4, 2, 85) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -5039,6 +5563,18 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   congestionReliefMultiplier,
   nationalUrbanCongestionIndex,
 } from './congestion-relief-index.ts';
+  computeAviationCargoThroughputByRegion,
+  nationalAviationCargoThroughputIndex,
+} from '../network/aviation-cargo-throughput-index.ts';
+  computeCustomsClearanceByRegion,
+  customsClearanceProductivityMultiplier,
+  nationalCustomsClearanceIndex,
+} from '../operations/customs-clearance-index.ts';
+  computeHydrogenCorridorThroughputByRegion,
+  computeHydrogenFreightShare,
+  hydrogenFreightProductivityMultiplier,
+  nationalHydrogenCorridorThroughputIndex,
+} from './hydrogen-freight-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -5291,6 +5827,40 @@ export function computeTransportInfrastructureState(
     nationalContainerThroughput * 0.04 +
     nationalBulkExport * 0.035;
 
+  const aviationCargoThroughputByRegion = computeAviationCargoThroughputByRegion(ops);
+  const nationalAviationCargo = nationalAviationCargoThroughputIndex(aviationCargoThroughputByRegion);
+  const customsClearanceByRegion = computeCustomsClearanceByRegion(ops, freightUtil);
+  const nationalCustomsClearance = nationalCustomsClearanceIndex(customsClearanceByRegion);
+  const customsMult = customsClearanceProductivityMultiplier(
+    nationalCustomsClearance,
+    options?.customsModernizationPolicy ?? 'baseline',
+  );
+  const hydrogenCorridorThroughputByRegion = computeHydrogenCorridorThroughputByRegion(ops);
+  const nationalHydrogenCorridor = nationalHydrogenCorridorThroughputIndex(hydrogenCorridorThroughputByRegion);
+  const hydrogenFreightShare = computeHydrogenFreightShare(ops, options?.hydrogenFreightPolicy ?? 'baseline');
+  const hydrogenMult = hydrogenFreightProductivityMultiplier(
+    hydrogenFreightShare,
+    options?.hydrogenFreightPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const aviationBoost = (aviationCargoThroughputByRegion[code] - 12) * 0.006;
+    const customsBoost = (customsClearanceByRegion[code] - 40) * 0.005;
+    const hydrogenBoost = (hydrogenCorridorThroughputByRegion[code] - 8) * 0.007;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + aviationBoost + customsBoost + hydrogenBoost) *
+      customsMult *
+      hydrogenMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035 +
+    nationalAviationCargo * 0.03 +
+    nationalHydrogenCorridor * 0.028;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -5304,7 +5874,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/8',
+    schemaVersion: 'agent12/9',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -5345,6 +5915,13 @@ export function computeTransportInfrastructureState(
     intermodalDwellByRegion,
     nationalUrbanCongestionIndex: nationalUrbanCongestion,
     urbanCongestionByRegion,
+    nationalAviationCargoThroughputIndex: nationalAviationCargo,
+    aviationCargoThroughputByRegion,
+    nationalCustomsClearanceIndex: nationalCustomsClearance,
+    customsClearanceByRegion,
+    hydrogenFreightShare,
+    nationalHydrogenCorridorThroughputIndex: nationalHydrogenCorridor,
+    hydrogenCorridorThroughputByRegion,
     computeMs,
   };
 }
@@ -5425,9 +6002,9 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
 
   const infra = computeTransportInfrastructureState(defaultInfrastructureInputs(5));
   results.push({
-    id: 'infrastructure_state_v8',
+    id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/8' &&
+      infra.schemaVersion === 'agent12/9' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -5441,8 +6018,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.greenFreightShare > 0.12 &&
       infra.nationalBulkExportThroughputIndex > 18 &&
       infra.nationalIntermodalDwellMedian > 10 &&
-      infra.nationalUrbanCongestionIndex > 15,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} bulk=${infra.nationalBulkExportThroughputIndex.toFixed(1)} dwell=${infra.nationalIntermodalDwellMedian.toFixed(1)} congestion=${infra.nationalUrbanCongestionIndex.toFixed(1)}`,
+      infra.nationalUrbanCongestionIndex > 15 &&
+      infra.nationalAviationCargoThroughputIndex > 9 &&
+      infra.nationalCustomsClearanceIndex > 35 &&
+      infra.hydrogenFreightShare >= 0.04 &&
+      infra.nationalHydrogenCorridorThroughputIndex > 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} aviation=${infra.nationalAviationCargoThroughputIndex.toFixed(1)} customs=${infra.nationalCustomsClearanceIndex.toFixed(1)} hydrogen=${infra.nationalHydrogenCorridorThroughputIndex.toFixed(1)}`,
   });
 
   return results;
