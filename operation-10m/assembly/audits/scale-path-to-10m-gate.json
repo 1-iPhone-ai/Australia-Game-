@@ -1,17 +1,17 @@
 {
-  "analyzedAt": "2026-10-29T07:04:40.529Z",
+  "analyzedAt": "2026-10-29T07:07:57.972Z",
   "gateAuditedFunctional": 10000000,
   "baselineCommit": "bc1adf3",
   "baselineAuditedFunctional": 389566,
-  "fullChunksProjectedAudited": 995291,
-  "netAuditedFunctionalToGate": 9004709,
-  "workerWaveDeltaAudited": 605725,
+  "fullChunksProjectedAudited": 1036314,
+  "netAuditedFunctionalToGate": 8963686,
+  "workerWaveDeltaAudited": 646748,
   "modulesInFullDryRun": 25,
   "assemblyReadyRemote": 24,
   "trancheEstimate": {
     "method": "equal worker-wave increments from full-chunks dry-run",
-    "auditedFunctionalPerWave": 605725,
-    "estimatedWavesToGate": 15,
+    "auditedFunctionalPerWave": 646748,
+    "estimatedWavesToGate": 14,
     "note": "Assumes each future wave adds ~same audited functional as current 24/25 module splice; real tranches vary."
   },
   "duplicationAuditRequirements": [
@@ -23,12 +23,12 @@
   "buildRuntimeRisks": [
     {
       "risk": "Single-file bundle size",
-      "signal": "Projected ~69,854,552 bytes / 1,044,381 lines after worker wave",
+      "signal": "Projected ~71,542,266 bytes / 1,086,661 lines after worker wave",
       "at10M": "Linear ~27× current projection bytes if structure unchanged (feasibility unknown for Vite/tsc)"
     },
     {
       "risk": "Typecheck / IDE parse",
-      "signal": "Export declarations ~13084 after wave",
+      "signal": "Export declarations ~13196 after wave",
       "at10M": "Editor and tsc memory limits likely binding before raw line count"
     },
     {
@@ -48,20 +48,20 @@
       "bytes": 37827738,
       "lines": 419353,
       "exportLines": 10082,
-      "readMs": 18,
+      "readMs": 20,
       "hashMs": 20,
       "sha256": "15321b841ead9bdf"
     },
     "fullChunksProjection": {
       "path": "build/tranche-full-chunks-projection.tsx",
-      "bytes": 69854552,
-      "lines": 1044381,
-      "exportLines": 13084,
+      "bytes": 71542266,
+      "lines": 1086661,
+      "exportLines": 13196,
       "readMs": 32,
-      "hashMs": 37,
-      "sha256": "e09fe0e612e2db65"
+      "hashMs": 38,
+      "sha256": "158e2bd0e96bbb8f"
     },
-    "extrapolatedScanMsAt10M": 429
+    "extrapolatedScanMsAt10M": 477
   },
   "references": {
     "fullChunksProjection": "operation-10m/assembly/audits/tranche-projection-full-chunks.json",
