@@ -23,7 +23,7 @@ Integration branch: **`op10m/agent-14-housing`** (canonical worker branch for th
 | `chunk-anchor-alignment-monitor.ts` | OP10M anchor alignment vs wire-in band and core trajectory coverage |
 | `agent25-inline-readiness-brief.ts` | GI signal when Agent 25 may inline chunk at canonical anchor |
 
-Turn advance attaches `assemblyMergeTrajectory`, `chunkAnchorAlignmentMonitor`, `agent25InlineReadinessBrief`, and returns `assemblyMergeTrajectoryPersisted`.
+Turn advance attaches `assemblyMergeTrajectory`, `chunkAnchorAlignmentMonitor`, `agent25InlineReadinessBrief`, `inlineMergeTrajectory`, `inlineActivationMonitor`, `agent25Wave17ProjectionHandoffBrief`, and returns `assemblyMergeTrajectoryPersisted` plus `inlineMergeTrajectoryPersisted`.
 
 Assembly stubs (`ps_xp_QLD_chunk_anchor`, `ps_xp_WA_assembly_merge`); scenarios `assembly_merge_trajectory_arc`, `chunk_anchor_alignment_stress`.
 
@@ -203,7 +203,7 @@ Suggested marker:
 - `advanceDelayedSpendingEffects` / `commitSpendingProgram` / `makeSpendingCommitment`
 - `runAgent14WellbeingSelfTests`
 - `runAgent14HousingScenarioSweep` / `simulateAgent14HousingScenario`
-- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.16-scale-wave-16`)
+- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.17-scale-wave-17`)
 
 ## Upstream inputs (read-only)
 

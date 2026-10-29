@@ -42,7 +42,9 @@ export type Agent14HousingScenarioId =
   | 'wire_in_trajectory_arc'
   | 'turn_boundary_activation_stress'
   | 'assembly_merge_trajectory_arc'
-  | 'chunk_anchor_alignment_stress';
+  | 'chunk_anchor_alignment_stress'
+  | 'inline_merge_trajectory_arc'
+  | 'inline_activation_stress';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -384,6 +386,29 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
       'ps_h_VIC_planning_reform',
     ],
   },
+  {
+    id: 'inline_merge_trajectory_arc',
+    label: 'Inline merge trajectory arc',
+    baseInputs: { fiscalHeadroom: 58, stateCapacityLoad: 42, workforceReadiness: 'strong' },
+    launchProgramIds: [
+      'ps_xp_TAS_inline_merge',
+      'ps_xp_QLD_chunk_anchor',
+      'ps_xp_NSW_turn_boundary',
+      'ps_h_QLD_regional_release',
+    ],
+  },
+  {
+    id: 'inline_activation_stress',
+    label: 'Inline activation stress',
+    baseInputs: { fiscalHeadroom: 14, stateCapacityLoad: 96, workforceReadiness: 'blocking', workforceSpecialistGap: 85 },
+    launchProgramIds: [
+      'ps_xp_ACT_wave17_projection',
+      'ps_xp_WA_assembly_merge',
+      'ps_he_VIC_hospital_backlog',
+      'ps_ed_NSW_skills',
+      'ps_h_SA_modular',
+    ],
+  },
 ];
 
 export { commitmentFromProgramStub } from './program-stub-commitments.ts';
@@ -413,6 +438,7 @@ export function simulateAgent14HousingScenario(
   let integrationTrajectoryPersisted = null;
   let wireInTrajectoryPersisted = null;
   let assemblyMergeTrajectoryPersisted = null;
+  let inlineMergeTrajectoryPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -440,6 +466,7 @@ export function simulateAgent14HousingScenario(
       integrationTrajectoryPersisted,
       wireInTrajectoryPersisted,
       assemblyMergeTrajectoryPersisted,
+      inlineMergeTrajectoryPersisted,
       newCommitments,
       enforceCapacity: true,
     });
@@ -458,6 +485,7 @@ export function simulateAgent14HousingScenario(
     integrationTrajectoryPersisted = result.integrationTrajectoryPersisted;
     wireInTrajectoryPersisted = result.wireInTrajectoryPersisted;
     assemblyMergeTrajectoryPersisted = result.assemblyMergeTrajectoryPersisted;
+    inlineMergeTrajectoryPersisted = result.inlineMergeTrajectoryPersisted;
     turns.push(result.inputs);
   }
 

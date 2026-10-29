@@ -50,4 +50,7 @@ export * from './agent25-assembly-handoff-brief.ts';
 export * from './assembly-merge-trajectory.ts';
 export * from './chunk-anchor-alignment-monitor.ts';
 export * from './agent25-inline-readiness-brief.ts';
+export * from './inline-merge-trajectory.ts';
+export * from './inline-activation-monitor.ts';
+export * from './agent25-wave17-projection-handoff-brief.ts';
 export { runAgent14WellbeingSelfTests } from './self-tests.ts';

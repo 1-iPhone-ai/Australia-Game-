@@ -38,6 +38,9 @@ import type {
   AssemblyMergeTrajectorySnapshot,
   ChunkAnchorAlignmentMonitor,
   Agent25InlineReadinessBrief,
+  InlineMergeTrajectorySnapshot,
+  InlineActivationMonitor,
+  Agent25Wave17ProjectionHandoffBrief,
   WellbeingTurnForecastPoint,
 } from './types.ts';
 
@@ -82,6 +85,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   assemblyMergeTrajectory?: AssemblyMergeTrajectorySnapshot;
   chunkAnchorAlignmentMonitor?: ChunkAnchorAlignmentMonitor;
   agent25InlineReadinessBrief?: Agent25InlineReadinessBrief;
+  inlineMergeTrajectory?: InlineMergeTrajectorySnapshot;
+  inlineActivationMonitor?: InlineActivationMonitor;
+  agent25Wave17ProjectionHandoffBrief?: Agent25Wave17ProjectionHandoffBrief;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -239,6 +245,17 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   if (args.agent25InlineReadinessBrief?.shouldInlineChunk) {
     giNotes.push(args.agent25InlineReadinessBrief.summary);
   }
+  if (args.inlineMergeTrajectory?.band === 'blocked') {
+    giNotes.push(
+      `Inline merge ${args.inlineMergeTrajectory.band} (EMA ${args.inlineMergeTrajectory.inlineMergeEma})`
+    );
+  }
+  if (args.inlineActivationMonitor && !args.inlineActivationMonitor.shouldActivateInline) {
+    giNotes.push(args.inlineActivationMonitor.summary);
+  }
+  if (args.agent25Wave17ProjectionHandoffBrief?.shouldProjectWave17) {
+    giNotes.push(args.agent25Wave17ProjectionHandoffBrief.summary);
+  }
 
   const headlineParts: string[] = [];
   if (args.coupling.band === 'critical' || args.coupling.band === 'strained') {
@@ -272,6 +289,8 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
     headlineParts.push('Agent 25 assembly handoff ready');
   } else if (args.agent25InlineReadinessBrief?.shouldInlineChunk) {
     headlineParts.push('Agent 25 inline readiness clear');
+  } else if (args.agent25Wave17ProjectionHandoffBrief?.shouldProjectWave17) {
+    headlineParts.push('Agent 25 wave 17 projection ready');
   }
 
   return {

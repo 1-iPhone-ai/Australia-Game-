@@ -116,6 +116,13 @@ import {
 } from './assembly-merge-trajectory.ts';
 import { buildChunkAnchorAlignmentMonitor } from './chunk-anchor-alignment-monitor.ts';
 import { composeAgent25InlineReadinessBrief } from './agent25-inline-readiness-brief.ts';
+import {
+  advanceInlineMergeTrajectory,
+  createInitialInlineMergeTrajectory,
+  sanitizeInlineMergeTrajectory,
+} from './inline-merge-trajectory.ts';
+import { buildInlineActivationMonitor } from './inline-activation-monitor.ts';
+import { composeAgent25Wave17ProjectionHandoffBrief } from './agent25-wave17-projection-handoff-brief.ts';
 import { AGENT14_WELLBEING_SCHEMA_VERSION } from './types.ts';
 
 export interface Agent14SelfTestResult {
@@ -617,8 +624,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Thirty-four housing scenarios registered',
-    listAgent14ScenarioIds().length === 34,
+    'Thirty-six housing scenarios registered',
+    listAgent14ScenarioIds().length === 36,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -847,7 +854,7 @@ export function runAgent14WellbeingSelfTests(): {
     results,
     'wave5_schema_version',
     'Wellbeing schema version is wave 15',
-    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.16-scale-wave-16',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.17-scale-wave-17',
     AGENT14_WELLBEING_SCHEMA_VERSION
   );
 
@@ -2672,6 +2679,170 @@ export function runAgent14WellbeingSelfTests(): {
     listAgent14ScenarioIds().includes('assembly_merge_trajectory_arc') &&
       listAgent14ScenarioIds().includes('chunk_anchor_alignment_stress'),
     '34 scenarios'
+  );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 5, fiscalHeadroom: 54, stateCapacityLoad: 46, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave17_inline_merge_trajectory',
+      'Turn advance attaches inline merge trajectory',
+      adv.inputs.inlineMergeTrajectory !== undefined &&
+        adv.inlineMergeTrajectoryPersisted.lastTurn === 5,
+      `band=${adv.inputs.inlineMergeTrajectory?.band}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 50, stateCapacityLoad: 50, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave17_inline_activation_monitor',
+      'Inline activation monitor present',
+      adv.inputs.inlineActivationMonitor !== undefined &&
+        adv.inputs.inlineActivationMonitor!.summary.length > 10,
+      adv.inputs.inlineActivationMonitor?.summary.slice(0, 72) ?? 'missing'
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 7, fiscalHeadroom: 60, stateCapacityLoad: 38, workforceReadiness: 'strong' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave17_projection_handoff_brief',
+      'Agent 25 wave 17 projection handoff attached',
+      adv.inputs.agent25Wave17ProjectionHandoffBrief !== undefined &&
+        adv.inputs.agent25Wave17ProjectionHandoffBrief!.summary.length > 10,
+      `project=${adv.inputs.agent25Wave17ProjectionHandoffBrief?.shouldProjectWave17}`
+    );
+  }
+
+  {
+    const raw = sanitizeInlineMergeTrajectory({
+      schemaVersion: AGENT14_WELLBEING_SCHEMA_VERSION,
+      lastTurn: 2,
+      emaAlpha: 0.3,
+      inlineMergeEma: 31,
+    });
+    check(
+      results,
+      'wave17_inline_merge_sanitize',
+      'Inline merge trajectory sanitize preserves schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.inlineMergeEma === 31,
+      `ema=${raw.inlineMergeEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 8, fiscalHeadroom: 58, stateCapacityLoad: 40, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const projection = composeAgent25Wave17ProjectionHandoffBrief({
+      turn: 8,
+      inlineActivationMonitor: adv.inputs.inlineActivationMonitor!,
+      inlineMergeTrajectory: adv.inputs.inlineMergeTrajectory,
+    });
+    check(
+      results,
+      'wave17_projection_composer',
+      'Standalone wave 17 projection composer returns headlines',
+      projection.headlines.length > 0 && projection.summary.length > 10,
+      projection.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 2, fiscalHeadroom: 50, stateCapacityLoad: 48, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const snap = advanceInlineMergeTrajectory(
+      2,
+      adv.inputs.agent25InlineReadinessBrief!,
+      createInitialInlineMergeTrajectory()
+    );
+    check(
+      results,
+      'wave17_inline_merge_advance_unit',
+      'Inline merge trajectory advance updates persisted turn',
+      snap.persisted.lastTurn === 2 && snap.snapshot.inlineMergeEma > 0,
+      `ema=${snap.snapshot.inlineMergeEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 6, fiscalHeadroom: 62, stateCapacityLoad: 36, workforceReadiness: 'strong' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const monitor = buildInlineActivationMonitor({
+      turn: 6,
+      inlineBrief: adv.inputs.agent25InlineReadinessBrief!,
+      inlineMergeTrajectory: adv.inputs.inlineMergeTrajectory,
+      activationMonitor: adv.inputs.turnBoundaryActivationMonitor!,
+    });
+    check(
+      results,
+      'wave17_inline_activation_unit',
+      'Standalone inline activation monitor returns summary',
+      monitor.summary.length > 10,
+      monitor.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('inline_merge_trajectory_arc', 10);
+    const last = sim.turns[sim.turns.length - 1];
+    check(
+      results,
+      'wave17_inline_merge_arc_scenario',
+      'Inline merge arc scenario surfaces projection brief',
+      last.inlineMergeTrajectory !== undefined &&
+        last.inlineActivationMonitor !== undefined &&
+        last.agent25Wave17ProjectionHandoffBrief !== undefined,
+      `merge=${last.inlineMergeTrajectory?.band}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('inline_activation_stress', 8);
+    const last = sim.turns[sim.turns.length - 1];
+    check(
+      results,
+      'wave17_inline_activation_stress_scenario',
+      'Inline activation stress keeps projection gated under stress',
+      !last.agent25Wave17ProjectionHandoffBrief!.shouldProjectWave17 ||
+        last.inlineActivationMonitor!.shouldActivateInline,
+      `project=${last.agent25Wave17ProjectionHandoffBrief?.shouldProjectWave17} inline=${last.inlineActivationMonitor?.shouldActivateInline}`
+    );
+  }
+
+  check(
+    results,
+    'wave17_inline_stub_catalog',
+    'Round 17 inline stubs registered',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_TAS_inline_merge') &&
+      AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_ACT_wave17_projection'),
+    'inline_merge+wave17_projection'
+  );
+
+  check(
+    results,
+    'wave17_scenario_registry',
+    'Round 17 scenarios registered',
+    listAgent14ScenarioIds().includes('inline_merge_trajectory_arc') &&
+      listAgent14ScenarioIds().includes('inline_activation_stress'),
+    '36 scenarios'
   );
 
   const passed = results.filter((r) => r.passed).length;
