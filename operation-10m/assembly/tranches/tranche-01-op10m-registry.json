@@ -1,0 +1,12 @@
+{
+  "id": "tranche-01-op10m-registry",
+  "title": "Operation 10M assembly registry (first authorized canonical tranche)",
+  "slot": "pre-final-export",
+  "moduleIds": ["agent-25-op10m-registry"],
+  "labEntry": {
+    "afterAnchorId": "v1015_orchestrator",
+    "id": "op10m_assembly_registry",
+    "label": "Operation 10M assembly registry",
+    "runExport": "runOp10mAssemblyRegistrySelfTests"
+  }
+}
