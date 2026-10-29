@@ -101,3 +101,7 @@ export function buildAgent17ProvenanceAccord(
 export function provenanceAccordBlocksLineage(snapshot: Agent17ProvenanceAccordSnapshot): boolean {
   return snapshot.band === 'repudiated' || !snapshot.provenanceAuthenticated;
 }
+
+export function provenanceAccordBlocksWitness(snapshot: Agent17ProvenanceAccordSnapshot): boolean {
+  return provenanceAccordBlocksLineage(snapshot);
+}

@@ -95,6 +95,8 @@ import { buildAgent17ArchiveIndex } from './archive-index.ts';
 import { buildAgent17PermanenceAccord } from './permanence-accord.ts';
 import { buildAgent17LineageIndex } from './lineage-index.ts';
 import { buildAgent17ProvenanceAccord } from './provenance-accord.ts';
+import { buildAgent17WitnessIndex } from './witness-index.ts';
+import { buildAgent17TestamentAccord } from './testament-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -559,6 +561,16 @@ export function buildAgent17PlanningDepthSnapshot(
     permanenceAccord,
     archiveIndex,
   });
+  const witnessIndex = buildAgent17WitnessIndex({
+    provenanceAccord,
+    lineageIndex,
+    permanenceAccord,
+  });
+  const testamentAccord = buildAgent17TestamentAccord({
+    witnessIndex,
+    provenanceAccord,
+    lineageIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -636,6 +648,8 @@ export function buildAgent17PlanningDepthSnapshot(
     permanenceAccord,
     lineageIndex,
     provenanceAccord,
+    witnessIndex,
+    testamentAccord,
   };
 }
 

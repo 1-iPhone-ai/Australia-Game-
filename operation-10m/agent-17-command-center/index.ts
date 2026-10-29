@@ -85,6 +85,8 @@ export * from './planning/archive-index.ts';
 export * from './planning/permanence-accord.ts';
 export * from './planning/lineage-index.ts';
 export * from './planning/provenance-accord.ts';
+export * from './planning/witness-index.ts';
+export * from './planning/testament-accord.ts';
 export * from './planning/planning-orchestrator.ts';
 export * from './planning/ops-state.ts';
 export * from './evaluation/operations-evaluator.ts';

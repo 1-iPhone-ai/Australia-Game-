@@ -101,6 +101,8 @@ const FILES = [
   'planning/permanence-accord.ts',
   'planning/lineage-index.ts',
   'planning/provenance-accord.ts',
+  'planning/witness-index.ts',
+  'planning/testament-accord.ts',
   'planning/planning-orchestrator.ts',
   'evaluation/operations-evaluator.ts',
   'rollback/rollback-controller.ts',

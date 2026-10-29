@@ -929,6 +929,28 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Fractured lineage or dissolved permanence yields provenanceAccordBlocksLineage.',
     severity: 'major',
   },
+  {
+    id: 'G17-133',
+    title: 'Witness index on planning depth',
+    category: 'telemetry',
+    acceptance: 'witnessIndex reports witnessScore 0–100 with affirmed/pending/contradicted band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-134',
+    title: 'Testament accord clauses complete',
+    category: 'telemetry',
+    acceptance: 'testamentAccord exposes ≥5 clauses and testamentScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-135',
+    title: 'Contradicted witness voids testament accord',
+    category: 'integration',
+    acceptance:
+      'Contradicted witness or repudiated provenance yields testamentAccordBlocksWitness.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

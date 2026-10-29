@@ -259,6 +259,8 @@ export interface Agent17PlanningDepthSnapshot {
   permanenceAccord: Agent17PermanenceAccordSnapshot;
   lineageIndex: Agent17LineageIndexSnapshot;
   provenanceAccord: Agent17ProvenanceAccordSnapshot;
+  witnessIndex: Agent17WitnessIndexSnapshot;
+  testamentAccord: Agent17TestamentAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1475,6 +1477,40 @@ export interface Agent17ProvenanceAccordSnapshot {
   lineageBand: Agent17LineageIndexSnapshot['band'];
   permanenceBand: Agent17PermanenceAccordSnapshot['band'];
   provenanceAuthenticated: boolean;
+  headline: string;
+}
+
+export interface Agent17WitnessDeposition {
+  id: string;
+  label: string;
+  affirmed: boolean;
+  weight: number;
+}
+
+export interface Agent17WitnessIndexSnapshot {
+  witnessScore: number;
+  band: 'affirmed' | 'pending' | 'contradicted';
+  depositions: Agent17WitnessDeposition[];
+  provenanceBand: Agent17ProvenanceAccordSnapshot['band'];
+  lineageBand: Agent17LineageIndexSnapshot['band'];
+  witnessAffirmed: boolean;
+  headline: string;
+}
+
+export interface Agent17TestamentClause {
+  id: string;
+  label: string;
+  binding: boolean;
+  weight: number;
+}
+
+export interface Agent17TestamentAccordSnapshot {
+  testamentScore: number;
+  band: 'binding' | 'draft' | 'voided';
+  clauses: Agent17TestamentClause[];
+  witnessBand: Agent17WitnessIndexSnapshot['band'];
+  provenanceBand: Agent17ProvenanceAccordSnapshot['band'];
+  testamentBinding: boolean;
   headline: string;
 }
 
@@ -10580,6 +10616,215 @@ export function provenanceAccordBlocksLineage(snapshot: Agent17ProvenanceAccordS
   return snapshot.band === 'repudiated' || !snapshot.provenanceAuthenticated;
 }
 
+export function provenanceAccordBlocksWitness(snapshot: Agent17ProvenanceAccordSnapshot): boolean {
+  return provenanceAccordBlocksLineage(snapshot);
+}
+
+
+// --- source: planning/witness-index.ts ---
+  Agent17LineageIndexSnapshot,
+  Agent17PermanenceAccordSnapshot,
+  Agent17ProvenanceAccordSnapshot,
+  Agent17WitnessIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17WitnessIndexInputs {
+  provenanceAccord: Agent17ProvenanceAccordSnapshot;
+  lineageIndex: Agent17LineageIndexSnapshot;
+  permanenceAccord: Agent17PermanenceAccordSnapshot;
+}
+
+export function buildAgent17WitnessIndex(
+  inputs: Agent17WitnessIndexInputs
+): Agent17WitnessIndexSnapshot {
+  const depositions: Agent17WitnessIndexSnapshot['depositions'] = [];
+
+  depositions.push({
+    id: 'provenance_authenticated',
+    label: 'Provenance accord provenance-authenticated',
+    affirmed:
+      inputs.provenanceAccord.provenanceAuthenticated &&
+      !provenanceAccordBlocksWitness(inputs.provenanceAccord),
+    weight: 30,
+  });
+
+  depositions.push({
+    id: 'provenance_band',
+    label: 'Provenance authenticated or tentative',
+    affirmed:
+      inputs.provenanceAccord.band === 'authenticated' ||
+      inputs.provenanceAccord.band === 'tentative',
+    weight: 25,
+  });
+
+  depositions.push({
+    id: 'lineage_rooted',
+    label: 'Lineage index lineage-rooted',
+    affirmed:
+      inputs.lineageIndex.lineageRooted &&
+      !lineageIndexBlocksProvenance(inputs.lineageIndex),
+    weight: 20,
+  });
+
+  depositions.push({
+    id: 'permanence_clear',
+    label: 'Permanence accord not blocking lineage',
+    affirmed: !permanenceAccordBlocksLineage(inputs.permanenceAccord),
+    weight: 15,
+  });
+
+  depositions.push({
+    id: 'provenance_score',
+    label: 'Provenance score headroom',
+    affirmed: inputs.provenanceAccord.provenanceScore >= 14,
+    weight: 10,
+  });
+
+  const weighted = depositions.reduce(
+    (n, d) => n + (d.affirmed ? 100 : 2) * (d.weight / 100),
+    0
+  );
+  const totalWeight = depositions.reduce((n, d) => n + d.weight, 0);
+  const witnessScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const contradictedSignals =
+    provenanceAccordBlocksWitness(inputs.provenanceAccord) ||
+    lineageIndexBlocksProvenance(inputs.lineageIndex) ||
+    permanenceAccordBlocksLineage(inputs.permanenceAccord);
+
+  const band: Agent17WitnessIndexSnapshot['band'] = contradictedSignals
+    ? 'contradicted'
+    : witnessScore >= 49 &&
+        inputs.provenanceAccord.band === 'authenticated' &&
+        inputs.lineageIndex.band === 'rooted'
+      ? 'affirmed'
+      : 'pending';
+
+  const witnessAffirmed =
+    band === 'affirmed' &&
+    inputs.provenanceAccord.provenanceAuthenticated &&
+    !provenanceAccordBlocksWitness(inputs.provenanceAccord);
+
+  return {
+    witnessScore,
+    band,
+    depositions,
+    provenanceBand: inputs.provenanceAccord.band,
+    lineageBand: inputs.lineageIndex.band,
+    witnessAffirmed,
+    headline: `Witness ${band} (${witnessScore}/100) · ${depositions.filter(d => d.affirmed).length}/${depositions.length} depositions`,
+  };
+}
+
+export function witnessIndexBlocksTestament(snapshot: Agent17WitnessIndexSnapshot): boolean {
+  return snapshot.band === 'contradicted' || !snapshot.witnessAffirmed;
+}
+
+
+// --- source: planning/testament-accord.ts ---
+  Agent17LineageIndexSnapshot,
+  Agent17ProvenanceAccordSnapshot,
+  Agent17TestamentAccordSnapshot,
+  Agent17WitnessIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17TestamentAccordInputs {
+  witnessIndex: Agent17WitnessIndexSnapshot;
+  provenanceAccord: Agent17ProvenanceAccordSnapshot;
+  lineageIndex: Agent17LineageIndexSnapshot;
+}
+
+export function buildAgent17TestamentAccord(
+  inputs: Agent17TestamentAccordInputs
+): Agent17TestamentAccordSnapshot {
+  const clauses: Agent17TestamentAccordSnapshot['clauses'] = [];
+
+  clauses.push({
+    id: 'witness_affirmed',
+    label: 'Witness index witness-affirmed',
+    binding:
+      inputs.witnessIndex.witnessAffirmed &&
+      !witnessIndexBlocksTestament(inputs.witnessIndex),
+    weight: 30,
+  });
+
+  clauses.push({
+    id: 'witness_band',
+    label: 'Witness affirmed or pending',
+    binding:
+      inputs.witnessIndex.band === 'affirmed' || inputs.witnessIndex.band === 'pending',
+    weight: 25,
+  });
+
+  clauses.push({
+    id: 'provenance_authenticated',
+    label: 'Provenance accord provenance-ready',
+    binding:
+      inputs.provenanceAccord.provenanceAuthenticated &&
+      !provenanceAccordBlocksWitness(inputs.provenanceAccord),
+    weight: 20,
+  });
+
+  clauses.push({
+    id: 'lineage_clear',
+    label: 'Lineage index not blocking provenance',
+    binding: !lineageIndexBlocksProvenance(inputs.lineageIndex),
+    weight: 15,
+  });
+
+  clauses.push({
+    id: 'witness_score',
+    label: 'Witness score headroom',
+    binding: inputs.witnessIndex.witnessScore >= 13,
+    weight: 10,
+  });
+
+  const weighted = clauses.reduce(
+    (n, c) => n + (c.binding ? 100 : 2) * (c.weight / 100),
+    0
+  );
+  const totalWeight = clauses.reduce((n, c) => n + c.weight, 0);
+  const testamentScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const voidedSignals =
+    witnessIndexBlocksTestament(inputs.witnessIndex) ||
+    provenanceAccordBlocksWitness(inputs.provenanceAccord) ||
+    lineageIndexBlocksProvenance(inputs.lineageIndex);
+
+  const band: Agent17TestamentAccordSnapshot['band'] = voidedSignals
+    ? 'voided'
+    : testamentScore >= 46 &&
+        inputs.witnessIndex.band === 'affirmed' &&
+        inputs.provenanceAccord.band === 'authenticated'
+      ? 'binding'
+      : 'draft';
+
+  const testamentBinding =
+    band === 'binding' &&
+    inputs.witnessIndex.witnessAffirmed &&
+    !lineageIndexBlocksProvenance(inputs.lineageIndex);
+
+  return {
+    testamentScore,
+    band,
+    clauses,
+    witnessBand: inputs.witnessIndex.band,
+    provenanceBand: inputs.provenanceAccord.band,
+    testamentBinding,
+    headline: `Testament ${band} (${testamentScore}/100) · ${clauses.filter(c => c.binding).length}/${clauses.length} clauses`,
+  };
+}
+
+export function testamentAccordBlocksWitness(snapshot: Agent17TestamentAccordSnapshot): boolean {
+  return snapshot.band === 'voided' || !snapshot.testamentBinding;
+}
+
 
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
@@ -11060,6 +11305,16 @@ export function buildAgent17PlanningDepthSnapshot(
     permanenceAccord,
     archiveIndex,
   });
+  const witnessIndex = buildAgent17WitnessIndex({
+    provenanceAccord,
+    lineageIndex,
+    permanenceAccord,
+  });
+  const testamentAccord = buildAgent17TestamentAccord({
+    witnessIndex,
+    provenanceAccord,
+    lineageIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -11137,6 +11392,8 @@ export function buildAgent17PlanningDepthSnapshot(
     permanenceAccord,
     lineageIndex,
     provenanceAccord,
+    witnessIndex,
+    testamentAccord,
   };
 }
 
@@ -12356,6 +12613,28 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Fractured lineage or dissolved permanence yields provenanceAccordBlocksLineage.',
     severity: 'major',
   },
+  {
+    id: 'G17-133',
+    title: 'Witness index on planning depth',
+    category: 'telemetry',
+    acceptance: 'witnessIndex reports witnessScore 0–100 with affirmed/pending/contradicted band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-134',
+    title: 'Testament accord clauses complete',
+    category: 'telemetry',
+    acceptance: 'testamentAccord exposes ≥5 clauses and testamentScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-135',
+    title: 'Contradicted witness voids testament accord',
+    category: 'integration',
+    acceptance:
+      'Contradicted witness or repudiated provenance yields testamentAccordBlocksWitness.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -12588,6 +12867,12 @@ export function listAgent17GoalIds(): string[] {
   buildAgent17ProvenanceAccord,
   provenanceAccordBlocksLineage,
 } from '../planning/provenance-accord.ts';
+  buildAgent17WitnessIndex,
+  witnessIndexBlocksTestament,
+} from '../planning/witness-index.ts';
+  buildAgent17TestamentAccord,
+  testamentAccordBlocksWitness,
+} from '../planning/testament-accord.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -14603,6 +14888,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const witnessIndex = depthEval.snapshot.planningDepth?.witnessIndex;
+  goalResults.push(
+    result(
+      'G17-133',
+      !!witnessIndex &&
+        witnessIndex.depositions.length >= 5 &&
+        witnessIndex.witnessScore >= 0 &&
+        witnessIndex.witnessScore <= 100 &&
+        (witnessIndex.band === 'affirmed' ||
+          witnessIndex.band === 'pending' ||
+          witnessIndex.band === 'contradicted'),
+      `depositions=${witnessIndex?.depositions.length} score=${witnessIndex?.witnessScore}`
+    )
+  );
+
+  const testamentAccord = depthEval.snapshot.planningDepth?.testamentAccord;
+  goalResults.push(
+    result(
+      'G17-134',
+      !!testamentAccord &&
+        testamentAccord.clauses.length >= 5 &&
+        testamentAccord.testamentScore >= 0 &&
+        testamentAccord.testamentScore <= 100,
+      `clauses=${testamentAccord?.clauses.length} score=${testamentAccord?.testamentScore}`
+    )
+  );
+
+  const contradictedWitness = buildAgent17WitnessIndex({
+    provenanceAccord: repudiatedProvenance,
+    lineageIndex: fracturedLineage,
+    permanenceAccord: dissolvedPermanence,
+  });
+  const voidedTestament = buildAgent17TestamentAccord({
+    witnessIndex: contradictedWitness,
+    provenanceAccord: repudiatedProvenance,
+    lineageIndex: fracturedLineage,
+  });
+  goalResults.push(
+    result(
+      'G17-135',
+      provenanceAccordBlocksLineage(repudiatedProvenance) ||
+        witnessIndexBlocksTestament(contradictedWitness) ||
+        testamentAccordBlocksWitness(voidedTestament),
+      `${contradictedWitness.band}/${voidedTestament.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -14765,6 +15097,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-130',
     'G17-131',
     'G17-132',
+    'G17-133',
+    'G17-134',
+    'G17-135',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

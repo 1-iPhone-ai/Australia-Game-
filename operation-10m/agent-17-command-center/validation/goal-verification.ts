@@ -305,6 +305,14 @@ import {
   provenanceAccordBlocksLineage,
 } from '../planning/provenance-accord.ts';
 import {
+  buildAgent17WitnessIndex,
+  witnessIndexBlocksTestament,
+} from '../planning/witness-index.ts';
+import {
+  buildAgent17TestamentAccord,
+  testamentAccordBlocksWitness,
+} from '../planning/testament-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -2320,6 +2328,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const witnessIndex = depthEval.snapshot.planningDepth?.witnessIndex;
+  goalResults.push(
+    result(
+      'G17-133',
+      !!witnessIndex &&
+        witnessIndex.depositions.length >= 5 &&
+        witnessIndex.witnessScore >= 0 &&
+        witnessIndex.witnessScore <= 100 &&
+        (witnessIndex.band === 'affirmed' ||
+          witnessIndex.band === 'pending' ||
+          witnessIndex.band === 'contradicted'),
+      `depositions=${witnessIndex?.depositions.length} score=${witnessIndex?.witnessScore}`
+    )
+  );
+
+  const testamentAccord = depthEval.snapshot.planningDepth?.testamentAccord;
+  goalResults.push(
+    result(
+      'G17-134',
+      !!testamentAccord &&
+        testamentAccord.clauses.length >= 5 &&
+        testamentAccord.testamentScore >= 0 &&
+        testamentAccord.testamentScore <= 100,
+      `clauses=${testamentAccord?.clauses.length} score=${testamentAccord?.testamentScore}`
+    )
+  );
+
+  const contradictedWitness = buildAgent17WitnessIndex({
+    provenanceAccord: repudiatedProvenance,
+    lineageIndex: fracturedLineage,
+    permanenceAccord: dissolvedPermanence,
+  });
+  const voidedTestament = buildAgent17TestamentAccord({
+    witnessIndex: contradictedWitness,
+    provenanceAccord: repudiatedProvenance,
+    lineageIndex: fracturedLineage,
+  });
+  goalResults.push(
+    result(
+      'G17-135',
+      provenanceAccordBlocksLineage(repudiatedProvenance) ||
+        witnessIndexBlocksTestament(contradictedWitness) ||
+        testamentAccordBlocksWitness(voidedTestament),
+      `${contradictedWitness.band}/${voidedTestament.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -2482,6 +2537,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-130',
     'G17-131',
     'G17-132',
+    'G17-133',
+    'G17-134',
+    'G17-135',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
