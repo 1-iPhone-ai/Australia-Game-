@@ -157,6 +157,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   dispensationStrainIndex: number;
   dispensationIntegrityScore: number;
   governanceFortitudeScore: number;
+  indulgenceStrainIndex: number;
+  indulgenceIntegrityScore: number;
+  governanceVigorScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -2079,6 +2082,62 @@ export function buildGuardianDepthDispensationReport(snapshot: GuardianCoPilotMo
   return lines.slice(0, 3);
 }
 
+export function computeIndulgenceStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceFortitudeScore < 50) load += Math.min(25, 50 - snapshot.governanceFortitudeScore);
+  if (snapshot.governanceFortitudeScore < 35) load += 10;
+  if (snapshot.dispensationIntegrityScore < 45) load += 20;
+  if (snapshot.dispensationIntegrityScore < 35) load += 10;
+  if (snapshot.dispensationStrainIndex >= 55) load += 20;
+  if (snapshot.dispensationStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeIndulgenceIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.indulgenceStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.indulgenceStrainIndex * 0.35));
+  if (snapshot.dispensationIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.dispensationIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceFortitudeScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceVigorScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.indulgenceStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.indulgenceStrainIndex * 0.32));
+  if (snapshot.indulgenceIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.indulgenceIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceFortitudeScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthIndulgenceReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.indulgenceStrainIndex >= 55) {
+    lines.push(
+      `Indulgence strain ${snapshot.indulgenceStrainIndex} — stacked indulgence review may exceed operator indulgence capacity`
+    );
+  }
+  if (snapshot.indulgenceIntegrityScore < 45) {
+    lines.push(
+      `Indulgence integrity ${snapshot.indulgenceIntegrityScore} — align Co-Pilot indulgences with Guardian indulgence posture`
+    );
+  }
+  if (snapshot.governanceVigorScore < 40) {
+    lines.push(
+      `Governance vigor ${snapshot.governanceVigorScore} — little vigor to sustain indulgence oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -2383,9 +2442,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withDispensationStrain: GuardianCoPilotMonitorSnapshot = { ...withPerseverance, dispensationStrainIndex };
   const dispensationIntegrityScore = computeDispensationIntegrityScore(withDispensationStrain);
   const withDispensation: GuardianCoPilotMonitorSnapshot = { ...withDispensationStrain, dispensationIntegrityScore };
-  return {
+  const withFortitude: GuardianCoPilotMonitorSnapshot = {
     ...withDispensation,
     governanceFortitudeScore: computeGovernanceFortitudeScore(withDispensation),
+    indulgenceStrainIndex: 0,
+    indulgenceIntegrityScore: 100,
+    governanceVigorScore: 100,
+  };
+  const indulgenceStrainIndex = computeIndulgenceStrainIndex(withFortitude);
+  const withIndulgenceStrain: GuardianCoPilotMonitorSnapshot = { ...withFortitude, indulgenceStrainIndex };
+  const indulgenceIntegrityScore = computeIndulgenceIntegrityScore(withIndulgenceStrain);
+  const withIndulgence: GuardianCoPilotMonitorSnapshot = { ...withIndulgenceStrain, indulgenceIntegrityScore };
+  return {
+    ...withIndulgence,
+    governanceVigorScore: computeGovernanceVigorScore(withIndulgence),
   };
 }
 
@@ -3354,6 +3424,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceFortitudeScore(snap) < 35;
+  });
+  ok('gd_indulgence_strain', () => {
+    const snap = {
+      governanceFortitudeScore: 30,
+      dispensationIntegrityScore: 32,
+      dispensationStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeIndulgenceStrainIndex(snap) >= 70;
+  });
+  ok('gd_indulgence_integrity', () => {
+    const snap = {
+      indulgenceStrainIndex: 72,
+      dispensationIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceFortitudeScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeIndulgenceIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_vigor', () => {
+    const snap = {
+      indulgenceStrainIndex: 78,
+      indulgenceIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceFortitudeScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceVigorScore(snap) < 35;
   });
   return out;
 }
@@ -7389,6 +7493,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_29: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_29_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_29.length;
 
 
+// --- source: monitor-rules-scale-wave-30.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_30: AdvisoryMonitorRule[] = [
+  {
+    id: 'indulgence_strain_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Indulgence Strain High',
+    detailTemplate: 'Indulgence strain is in the high band — reduce overlapping warn-only indulgence review demands',
+    evidenceFields: ['indulgenceStrainIndex', 'governanceFortitudeScore', 'indulgenceIntegrityScore'],
+    evaluate: s => s.indulgenceStrainIndex >= 70,
+  },
+  {
+    id: 'indulgence_strain_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Indulgence Strain Elevated',
+    detailTemplate: 'Indulgence strain is elevated — expect slower indulgence review across turns',
+    evidenceFields: ['indulgenceStrainIndex', 'dispensationStrainIndex'],
+    evaluate: s => s.indulgenceStrainIndex >= 45 && s.indulgenceStrainIndex < 70,
+  },
+  {
+    id: 'indulgence_integrity_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Indulgence Integrity Low',
+    detailTemplate: 'Indulgence integrity is critically low — defer stacked autonomous actions',
+    evidenceFields: ['indulgenceIntegrityScore', 'indulgenceStrainIndex', 'dispensationIntegrityScore'],
+    evaluate: s => s.indulgenceIntegrityScore < 35,
+  },
+  {
+    id: 'indulgence_integrity_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Indulgence While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate indulgence integrity',
+    evidenceFields: ['indulgenceIntegrityScore', 'copilotAutonomousActive', 'indulgenceStrainIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.indulgenceIntegrityScore >= 35 && s.indulgenceIntegrityScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_vigor_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Vigor Low',
+    detailTemplate: 'Little governance vigor remains for warn-only indulgence oversight across turns',
+    evidenceFields: ['governanceVigorScore', 'indulgenceStrainIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governanceVigorScore < 35,
+  },
+  {
+    id: 'governance_vigor_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Vigor While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance vigor',
+    evidenceFields: ['governanceVigorScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governanceVigorScore >= 35 && s.governanceVigorScore < 55,
+  },
+  {
+    id: 'indulgence_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Indulgence Envelope Pressured',
+    detailTemplate: 'Indulgence strain and low indulgence integrity align in the pressured envelope band',
+    evidenceFields: ['indulgenceStrainIndex', 'indulgenceIntegrityScore', 'governanceVigorScore'],
+    evaluate: s => s.indulgenceStrainIndex >= 55 && s.indulgenceIntegrityScore < 50,
+  },
+  {
+    id: 'rival_indulgence_strain',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Indulgence Strain',
+    detailTemplate: 'Rival victory progress plus elevated indulgence strain',
+    evidenceFields: ['rivalVictoryProgressPct', 'indulgenceStrainIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.indulgenceStrainIndex >= 50,
+  },
+  {
+    id: 'team_plan_indulgence_strain',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Indulgence Strain',
+    detailTemplate: 'Pending team plan while indulgence strain is elevated',
+    evidenceFields: ['teamPlanPending', 'indulgenceStrainIndex', 'governanceVigorScore'],
+    evaluate: s => s.teamPlanPending && s.indulgenceStrainIndex >= 55,
+  },
+  {
+    id: 'guardian_indulgence_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Indulgence Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance vigor',
+    evidenceFields: ['guardianRiskBand', 'governanceVigorScore', 'indulgenceStrainIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governanceVigorScore < 40,
+  },
+  {
+    id: 'copilot_indulgence_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Indulgence Strain',
+    detailTemplate: 'Autonomous Co-Pilot while indulgence strain is high',
+    evidenceFields: ['copilotAutonomousActive', 'indulgenceStrainIndex', 'indulgenceIntegrityScore'],
+    evaluate: s => s.copilotAutonomousActive && s.indulgenceStrainIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_vigor',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Vigor',
+    detailTemplate: 'Expiring contracts while governance vigor is low',
+    evidenceFields: ['expiringContractCount', 'governanceVigorScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governanceVigorScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_30_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_30.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -7647,6 +7884,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_27,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_28,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_29,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_30,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -8050,6 +8288,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     dispensationStrainIndex: 0,
     dispensationIntegrityScore: 100,
     governanceFortitudeScore: 100,
+    indulgenceStrainIndex: 0,
+    indulgenceIntegrityScore: 100,
+    governanceVigorScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -10282,6 +10523,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['dispensation_envelope_pressured', 'guardian_dispensation_envelope_critical'],
     notes: 'Pressured dispensation envelope with critical Guardian band',
   },
+  {
+    id: 'sc_indulgence_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2260,
+      maxSpendPerAction: 10580,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['indulgence_strain_high', 'indulgence_integrity_low'],
+    notes: 'High indulgence strain with critical indulgence integrity',
+  },
+  {
+    id: 'sc_governance_vigor_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 4,
+      minCashReserve: 500,
+      debt: 1380,
+      maxSpendPerAction: 8080,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_vigor_low', 'contracts_governance_vigor'],
+    notes: 'Low governance vigor with expiring contracts',
+  },
+  {
+    id: 'sc_indulgence_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 1300,
+      maxSpendPerAction: 8280,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['indulgence_envelope_pressured', 'guardian_indulgence_envelope_critical'],
+    notes: 'Pressured indulgence envelope with critical Guardian band',
+  },
 ];
 
 
@@ -10457,8 +10766,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 29 scale wave brings monitor catalog to 382+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 382;
+  check(results, 'a16_expansion_count', 'Round 30 scale wave brings monitor catalog to 394+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 394;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -11504,6 +11813,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthDispensationReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round30_metrics', 'Round 30 indulgence envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.indulgenceStrainIndex >= 40 &&
+      snap.indulgenceIntegrityScore <= 100 &&
+      snap.governanceVigorScore <= 100
+    );
+  });
+
+  check(results, 'a16_indulgence_report', 'Guardian depth indulgence report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthIndulgenceReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 
