@@ -389,6 +389,16 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
       params?.integrationHealth?.wave51Export ??
       params?.assembly?.integrationHealthWave51Export ??
       params?.nationalIntegration?.healthWave51Export,
+    replayWave52Export:
+      params?.replayWave52Export ??
+      params?.historyReplay?.wave52Export ??
+      params?.replay?.wave52Export ??
+      params?.nationalHistory?.replayWave52Export,
+    integrationHealthWave52Export:
+      params?.integrationHealthWave52Export ??
+      params?.integrationHealth?.wave52Export ??
+      params?.assembly?.integrationHealthWave52Export ??
+      params?.nationalIntegration?.healthWave52Export,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };

@@ -6,15 +6,14 @@
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
-<<<<<<< HEAD
     "test:agent-03": "npx --yes tsx@4.19.4 operation-10m/agent-03-research-tech/tests/agent03-self-tests.ts",
     "bundle:agent-03-chunk": "node operation-10m/agent-03-research-tech/scripts/bundle-chunk.mjs",
-=======
     "test:agent05": "tsx --test operation-10m/agent-05-events/tests/**/*.test.ts",
     "generate:agent05": "python3 operation-10m/agent-05-events/scripts/generate-catalog.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche2.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche3.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche4.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche5.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche6.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche7.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche8.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche9.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche10.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche11.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche12.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche13.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche14.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche15.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche16.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche17.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche18.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche19.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche20.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche21.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche22.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche23.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche24.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche25.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche26.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche27.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche28.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche29.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche30.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche31.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche32.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche33.py && python3 operation-10m/agent-05-events/scripts/generate-catalog-tranche34.py",
     "generate:agent05-regional": "python3 operation-10m/agent-05-events/scripts/generate-regional-hooks.py",
     "bundle:agent05": "tsx operation-10m/agent-05-events/scripts/bundle-chunk-for-agent25.ts",
->>>>>>> 1ef78cd0
+    "test:agent06": "tsx operation-10m/agent-06-macroeconomy/run-self-tests.ts",
+    "build:agent06-chunk": "node operation-10m/agent-06-macroeconomy/scripts/build-chunk.mjs",
     "measure-loc": "node scripts/measure-loc.mjs",
     "op10m:audit": "node operation-10m/assembly/validate-manifest.mjs && node operation-10m/assembly/audit-duplication.mjs --write-audit operation-10m/assembly/audits/duplication-latest.json && node operation-10m/assembly/audit-save-migrations.mjs && node scripts/measure-loc.mjs",
     "op10m:assemble:dry": "node operation-10m/assembly/assemble.mjs --dry-run",
@@ -33,8 +32,8 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "5.2.0",
-    "typescript": "5.9.3",
     "tsx": "4.20.6",
+    "typescript": "5.9.3",
     "vite": "7.3.7"
   }
 }
