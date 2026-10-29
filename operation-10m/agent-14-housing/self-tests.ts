@@ -172,6 +172,13 @@ import {
 } from './wave24-gate-trajectory.ts';
 import { buildWave24IntegrationMonitor } from './wave24-integration-monitor.ts';
 import { composeAgent25Wave24ProjectionHandoffBrief } from './agent25-wave24-projection-handoff-brief.ts';
+import {
+  advanceWave25GateTrajectory,
+  createInitialWave25GateTrajectory,
+  sanitizeWave25GateTrajectory,
+} from './wave25-gate-trajectory.ts';
+import { buildWave25IntegrationMonitor } from './wave25-integration-monitor.ts';
+import { composeAgent25Wave25ProjectionHandoffBrief } from './agent25-wave25-projection-handoff-brief.ts';
 import { AGENT14_WELLBEING_SCHEMA_VERSION } from './types.ts';
 
 export interface Agent14SelfTestResult {
@@ -673,8 +680,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Fifty housing scenarios registered',
-    listAgent14ScenarioIds().length === 50,
+    'Fifty-two housing scenarios registered',
+    listAgent14ScenarioIds().length === 52,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -903,7 +910,7 @@ export function runAgent14WellbeingSelfTests(): {
     results,
     'wave5_schema_version',
     'Wellbeing schema version is wave 15',
-    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.24-scale-wave-24',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.25-scale-wave-25',
     AGENT14_WELLBEING_SCHEMA_VERSION
   );
 
