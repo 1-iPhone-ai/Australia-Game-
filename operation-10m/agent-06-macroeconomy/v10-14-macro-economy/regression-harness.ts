@@ -45,6 +45,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeResearchBudgetStress?: boolean;
   includeModeSupplyStress?: boolean;
   includeEventDemographicStress?: boolean;
+  includeExpectationsMetroStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
@@ -72,6 +73,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   const includeResearchBudgetStress = Boolean(options?.includeResearchBudgetStress);
   const includeModeSupplyStress = Boolean(options?.includeModeSupplyStress);
   const includeEventDemographicStress = Boolean(options?.includeEventDemographicStress);
+  const includeExpectationsMetroStress = Boolean(options?.includeExpectationsMetroStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -406,6 +408,20 @@ export function runMacroEconomyRegressionHarness(options?: {
             agingBand: t % 5 === 0 ? 'accelerating' : 'gradual',
             participationBand: t % 7 === 0 ? 'collapsed' : 'stable'
           }
+        : undefined,
+      inflationExpectationsAnchor: includeExpectationsMetroStress
+        ? {
+            anchorBand: t % 6 === 0 ? 'deanchored' : 'well_anchored',
+            driftBand: t % 5 === 0 ? 'runaway' : 'stable',
+            credibilityBand: t % 7 === 0 ? 'lost' : 'strong'
+          }
+        : undefined,
+      metroMomentum: includeExpectationsMetroStress
+        ? {
+            growthBand: t % 6 === 0 ? 'contracting' : 'strong',
+            congestionBand: t % 5 === 0 ? 'gridlocked' : 'moderate',
+            spreadBand: t % 7 === 0 ? 'wide' : 'narrow'
+          }
         : undefined
     });
     const { state, persisted: nextP } = computeNationalMacroEconomy(inputs, persisted, prev);
@@ -647,7 +663,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'forty_two_transmission_layers_liquidity',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 52,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 54,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -659,7 +675,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'forty_four_transmission_layers_gameplay',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 52,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 54,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -671,7 +687,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'forty_six_transmission_layers_integration',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 52,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 54,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -683,7 +699,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'forty_eight_transmission_layers_research',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 52,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 54,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -695,7 +711,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'fifty_transmission_layers_mode',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 52,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 54,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -707,7 +723,19 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'fifty_two_transmission_layers_event',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 52,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 54,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeExpectationsMetroStress && prev) {
+    checks.push({
+      id: 'transmission_centrality_finite',
+      passed: Number.isFinite(prev.transmissionCentrality.centralityIndex),
+      detail: String(prev.transmissionCentrality.centralityIndex)
+    });
+    checks.push({
+      id: 'fifty_four_transmission_layers_expectations',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 54,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }

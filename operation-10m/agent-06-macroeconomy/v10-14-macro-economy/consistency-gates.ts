@@ -914,5 +914,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Fragile transmission persistence — layer signs diverge from aggregate spillover direction.'
     });
   }
+  const inflAnchor: any = inputs.inflationExpectationsAnchor ?? inputs.nationalFinance?.expectationsAnchor;
+  const anchorBand = String(inflAnchor?.anchorBand ?? inflAnchor?.stabilityBand ?? '');
+  if (
+    (anchorBand === 'deanchored' || anchorBand === 'unmoored') &&
+    (state.inflationSpilloverSummary != null || inputs.highInflationScenarioActive)
+  ) {
+    gates.push({
+      id: 'expectations_deanchored',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Deanchored inflation expectations align with elevated inflation macro read.'
+    });
+  }
+  const metroMom: any = inputs.metroMomentum ?? inputs.citiesRegions?.momentum;
+  const metroGrowth = String(metroMom?.growthBand ?? metroMom?.momentumBand ?? '');
+  if (
+    (metroGrowth === 'contracting' || metroGrowth === 'stalled') &&
+    (state.citiesSpilloverSummary != null || state.regionalDivergence?.band === 'wide_spread')
+  ) {
+    gates.push({
+      id: 'metro_growth_stalled',
+      triggered: true,
+      severity: 'info',
+      summary: 'Stalled metro momentum coincides with wide regional or cities spillover stress.'
+    });
+  }
+  if (state.transmissionCentrality?.band === 'concentrated') {
+    gates.push({
+      id: 'transmission_centrality_concentrated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Concentrated transmission centrality — top layers dominate spillover mass.'
+    });
+  }
   return gates;
 }

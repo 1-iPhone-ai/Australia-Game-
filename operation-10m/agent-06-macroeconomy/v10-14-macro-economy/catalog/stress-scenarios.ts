@@ -180,6 +180,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Event & demographic stress',
     shockIds: ['global_slowdown', 'drought_ag_cycle'],
     description: 'Runaway event cascade with adverse demographic shift (harness overlay).'
+  },
+  {
+    id: 'expectations_metro_stress',
+    label: 'Expectations & metro stress',
+    shockIds: ['high_inflation', 'housing_correction'],
+    description: 'Deanchored inflation expectations with stalled metro growth (harness overlay).'
   }
 ];
 

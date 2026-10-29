@@ -50,6 +50,8 @@ import type { MacroModeShiftSpillover } from './bridge-v1004-mode-shift.ts';
 import type { MacroSupplyChainSpillover } from './bridge-v1008-supply-chain.ts';
 import type { MacroEventCascadeSpillover } from './bridge-v1005-event-cascade.ts';
 import type { MacroDemographicShiftSpillover } from './bridge-v1009-demographic-shift.ts';
+import type { MacroExpectationsAnchorSpillover } from './bridge-v1010-expectations-anchor.ts';
+import type { MacroMetroMomentumSpillover } from './bridge-v1011-metro-momentum.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -108,6 +110,8 @@ export function buildMacroTransmissionReport(params: {
   supplyChain?: MacroSupplyChainSpillover;
   eventCascade?: MacroEventCascadeSpillover;
   demographicShift?: MacroDemographicShiftSpillover;
+  expectationsAnchor?: MacroExpectationsAnchorSpillover;
+  metroMomentum?: MacroMetroMomentumSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -151,6 +155,8 @@ export function buildMacroTransmissionReport(params: {
   const supplyChain = params.supplyChain ?? ZERO_SPILLOVER;
   const eventCascade = params.eventCascade ?? ZERO_SPILLOVER;
   const demographicShift = params.demographicShift ?? ZERO_SPILLOVER;
+  const expectationsAnchor = params.expectationsAnchor ?? ZERO_SPILLOVER;
+  const metroMomentum = params.metroMomentum ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -539,6 +545,22 @@ export function buildMacroTransmissionReport(params: {
       demographicShift.investmentNudge,
       demographicShift.productivityNudge,
       demographicShift.summary
+    ),
+    layer(
+      'v10.10_expectations',
+      'Inflation expectations anchor',
+      expectationsAnchor.cycleNudge,
+      expectationsAnchor.investmentNudge,
+      expectationsAnchor.productivityNudge,
+      expectationsAnchor.summary
+    ),
+    layer(
+      'v10.11_metro_momentum',
+      'Metro growth momentum',
+      metroMomentum.cycleNudge,
+      metroMomentum.investmentNudge,
+      metroMomentum.productivityNudge,
+      metroMomentum.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

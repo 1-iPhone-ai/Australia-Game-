@@ -160,6 +160,15 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
       params?.population?.shift ??
       params?.demographics?.shift ??
       params?.nationalPopulation?.shift,
+    inflationExpectationsAnchor:
+      params?.inflationExpectationsAnchor ??
+      params?.nationalFinance?.expectationsAnchor ??
+      params?.monetaryPolicy?.expectationsAnchor,
+    metroMomentum:
+      params?.metroMomentum ??
+      params?.citiesRegions?.momentum ??
+      params?.metropolitanSystems?.growthMomentum ??
+      params?.urbanRegions?.momentum,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };

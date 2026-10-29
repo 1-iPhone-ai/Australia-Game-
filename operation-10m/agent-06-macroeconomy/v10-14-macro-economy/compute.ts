@@ -78,6 +78,14 @@ import {
   applyMacroDemographicShiftSpillover,
   readMacroDemographicShiftSpilloverFromV1009
 } from './bridge-v1009-demographic-shift.ts';
+import {
+  applyMacroExpectationsAnchorSpillover,
+  readMacroExpectationsAnchorSpilloverFromV1010
+} from './bridge-v1010-expectations-anchor.ts';
+import {
+  applyMacroMetroMomentumSpillover,
+  readMacroMetroMomentumSpilloverFromV1011
+} from './bridge-v1011-metro-momentum.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
@@ -106,6 +114,7 @@ import { buildMacroTransmissionGradientSnapshot } from './macro-transmission-gra
 import { buildMacroTransmissionAttenuationSnapshot } from './macro-transmission-attenuation.ts';
 import { buildMacroTransmissionEnvelopeSnapshot } from './macro-transmission-envelope.ts';
 import { buildMacroTransmissionPersistenceSnapshot } from './macro-transmission-persistence.ts';
+import { buildMacroTransmissionCentralitySnapshot } from './macro-transmission-centrality.ts';
 import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
 import { V1014_MACRO_LIMITS } from './constants.ts';
 import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
@@ -221,6 +230,8 @@ export function computeNationalMacroEconomy(
   const supplyChainSpillover = readMacroSupplyChainSpilloverFromV1008(inputs);
   const eventCascadeSpillover = readMacroEventCascadeSpilloverFromV1005(inputs);
   const demographicShiftSpillover = readMacroDemographicShiftSpilloverFromV1009(inputs);
+  const expectationsAnchorSpillover = readMacroExpectationsAnchorSpilloverFromV1010(inputs);
+  const metroMomentumSpillover = readMacroMetroMomentumSpilloverFromV1011(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -273,7 +284,9 @@ export function computeNationalMacroEconomy(
   const withSupplyChain = applyMacroSupplyChainSpillover(withModeShift, supplyChainSpillover);
   const withEventCascade = applyMacroEventCascadeSpillover(withSupplyChain, eventCascadeSpillover);
   const withDemographicShift = applyMacroDemographicShiftSpillover(withEventCascade, demographicShiftSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withDemographicShift, pushEv);
+  const withExpectationsAnchor = applyMacroExpectationsAnchorSpillover(withDemographicShift, expectationsAnchorSpillover);
+  const withMetroMomentum = applyMacroMetroMomentumSpillover(withExpectationsAnchor, metroMomentumSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withMetroMomentum, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -353,7 +366,9 @@ export function computeNationalMacroEconomy(
     modeShift: modeShiftSpillover,
     supplyChain: supplyChainSpillover,
     eventCascade: eventCascadeSpillover,
-    demographicShift: demographicShiftSpillover
+    demographicShift: demographicShiftSpillover,
+    expectationsAnchor: expectationsAnchorSpillover,
+    metroMomentum: metroMomentumSpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
@@ -378,6 +393,7 @@ export function computeNationalMacroEconomy(
   const transmissionAttenuation = buildMacroTransmissionAttenuationSnapshot(transmissionReport);
   const transmissionEnvelope = buildMacroTransmissionEnvelopeSnapshot(transmissionReport);
   const transmissionPersistence = buildMacroTransmissionPersistenceSnapshot(transmissionReport);
+  const transmissionCentrality = buildMacroTransmissionCentralitySnapshot(transmissionReport);
 
   const capacitySnapshot = buildMacroCapacitySnapshot({
     state: {
@@ -480,6 +496,8 @@ export function computeNationalMacroEconomy(
     supplyChainSpilloverSummary: supplyChainSpillover.summary,
     eventCascadeSpilloverSummary: eventCascadeSpillover.summary,
     demographicShiftSpilloverSummary: demographicShiftSpillover.summary,
+    expectationsAnchorSpilloverSummary: expectationsAnchorSpillover.summary,
+    metroMomentumSpilloverSummary: metroMomentumSpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,
@@ -503,6 +521,7 @@ export function computeNationalMacroEconomy(
     transmissionAttenuation,
     transmissionEnvelope,
     transmissionPersistence,
+    transmissionCentrality,
     transmissionReport,
     stressIndex: {
       score: 0,
