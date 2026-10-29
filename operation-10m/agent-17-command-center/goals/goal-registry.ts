@@ -275,6 +275,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Volatile band or saturated envelope yields commandEnvelopeNeedsThrottle.',
     severity: 'major',
   },
+  {
+    id: 'G17-040',
+    title: 'Convergence index on planning depth',
+    category: 'telemetry',
+    acceptance: 'convergenceIndex reports convergenceIndex 0–100 with aligned/adjusting/diverging band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-041',
+    title: 'Mission directive lanes complete',
+    category: 'telemetry',
+    acceptance: 'missionDirective exposes ≥5 directive lanes and clearanceScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-042',
+    title: 'Diverging convergence holds directive',
+    category: 'integration',
+    acceptance: 'Diverging band or held directive yields missionDirectiveBlocksExecution.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

@@ -46,6 +46,14 @@ import {
   commandEnvelopeNeedsThrottle,
 } from '../planning/command-envelope.ts';
 import {
+  buildAgent17ConvergenceIndex,
+  convergenceIndexBlocksDirective,
+} from '../planning/convergence-index.ts';
+import {
+  buildAgent17MissionDirective,
+  missionDirectiveBlocksExecution,
+} from '../planning/mission-directive.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -599,6 +607,51 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const convergence = depthEval.snapshot.planningDepth?.convergenceIndex;
+  goalResults.push(
+    result(
+      'G17-040',
+      !!convergence &&
+        convergence.convergenceIndex >= 0 &&
+        convergence.convergenceIndex <= 100 &&
+        (convergence.band === 'aligned' ||
+          convergence.band === 'adjusting' ||
+          convergence.band === 'diverging'),
+      `${convergence?.convergenceIndex}/${convergence?.band}`
+    )
+  );
+
+  const missionDirective = depthEval.snapshot.planningDepth?.missionDirective;
+  goalResults.push(
+    result(
+      'G17-041',
+      !!missionDirective &&
+        missionDirective.lanes.length >= 5 &&
+        missionDirective.clearanceScore >= 0 &&
+        missionDirective.clearanceScore <= 100,
+      `lanes=${missionDirective?.lanes.length} score=${missionDirective?.clearanceScore}`
+    )
+  );
+
+  const divergingConvergence = buildAgent17ConvergenceIndex({
+    commandEnvelope: saturatedEnvelope,
+    stabilizationIndex: volatileStabilization,
+    strategicAlignment: depthEval.snapshot.planningDepth!.strategicAlignment,
+  });
+  const heldDirective = buildAgent17MissionDirective({
+    intentQueue: depthEval.snapshot.planningDepth!.intentQueue,
+    commandEnvelope: saturatedEnvelope,
+    convergenceIndex: divergingConvergence,
+  });
+  goalResults.push(
+    result(
+      'G17-042',
+      convergenceIndexBlocksDirective(divergingConvergence) ||
+        missionDirectiveBlocksExecution(heldDirective),
+      `${divergingConvergence.band}/${heldDirective.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -668,6 +721,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-037',
     'G17-038',
     'G17-039',
+    'G17-040',
+    'G17-041',
+    'G17-042',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

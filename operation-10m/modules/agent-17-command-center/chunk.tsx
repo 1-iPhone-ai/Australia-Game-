@@ -197,6 +197,8 @@ export interface Agent17PlanningDepthSnapshot {
   rollbackAssurance: Agent17RollbackAssuranceSnapshot;
   stabilizationIndex: Agent17StabilizationIndexSnapshot;
   commandEnvelope: Agent17CommandEnvelopeSnapshot;
+  convergenceIndex: Agent17ConvergenceIndexSnapshot;
+  missionDirective: Agent17MissionDirectiveSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -374,6 +376,39 @@ export interface Agent17CommandEnvelopeSnapshot {
   delegationCap: number;
   automationAllowed: boolean;
   signals: Agent17CommandEnvelopeSignal[];
+  headline: string;
+}
+
+export interface Agent17ConvergenceFactor {
+  id: string;
+  label: string;
+  score: number;
+  weight: number;
+}
+
+export interface Agent17ConvergenceIndexSnapshot {
+  convergenceIndex: number;
+  band: 'aligned' | 'adjusting' | 'diverging';
+  factors: Agent17ConvergenceFactor[];
+  envelopeBand: Agent17CommandEnvelopeSnapshot['capacityBand'];
+  stabilizationBand: Agent17StabilizationIndexSnapshot['band'];
+  headline: string;
+}
+
+export interface Agent17MissionDirectiveLane {
+  id: string;
+  label: string;
+  priority: number;
+  clearance: 'open' | 'conditional' | 'closed';
+  weight: number;
+}
+
+export interface Agent17MissionDirectiveSnapshot {
+  clearanceScore: number;
+  band: 'cleared' | 'conditional' | 'held';
+  lanes: Agent17MissionDirectiveLane[];
+  primaryLaneId: string | null;
+  executionAllowed: boolean;
   headline: string;
 }
 
@@ -3220,6 +3255,219 @@ export function commandEnvelopeNeedsThrottle(snapshot: Agent17CommandEnvelopeSna
 }
 
 
+// --- source: planning/convergence-index.ts ---
+  Agent17CommandEnvelopeSnapshot,
+  Agent17ConvergenceIndexSnapshot,
+  Agent17StabilizationIndexSnapshot,
+  Agent17StrategicAlignmentSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17ConvergenceIndexInputs {
+  commandEnvelope: Agent17CommandEnvelopeSnapshot;
+  stabilizationIndex: Agent17StabilizationIndexSnapshot;
+  strategicAlignment: Agent17StrategicAlignmentSnapshot;
+}
+
+export function buildAgent17ConvergenceIndex(
+  inputs: Agent17ConvergenceIndexInputs
+): Agent17ConvergenceIndexSnapshot {
+  const factors: Agent17ConvergenceIndexSnapshot['factors'] = [];
+
+  factors.push({
+    id: 'strategic_alignment',
+    label: 'Strategic alignment',
+    score: inputs.strategicAlignment.alignmentIndex,
+    weight: 35,
+  });
+
+  const stabilizationScore =
+    inputs.stabilizationIndex.band === 'stable'
+      ? inputs.stabilizationIndex.stabilizationIndex
+      : inputs.stabilizationIndex.band === 'adjusting'
+        ? Math.max(0, inputs.stabilizationIndex.stabilizationIndex - 8)
+        : Math.max(0, inputs.stabilizationIndex.stabilizationIndex - 28);
+  factors.push({
+    id: 'stabilization',
+    label: 'Ops stabilization',
+    score: stabilizationScore,
+    weight: 30,
+  });
+
+  const envelopeScore =
+    inputs.commandEnvelope.capacityBand === 'nominal'
+      ? 88
+      : inputs.commandEnvelope.capacityBand === 'constrained'
+        ? 58
+        : 28;
+  factors.push({
+    id: 'envelope_capacity',
+    label: 'Command envelope capacity',
+    score: envelopeScore,
+    weight: 20,
+  });
+
+  const horizonHeadroom = Math.max(
+    0,
+    Math.min(100, 100 - Math.max(0, inputs.commandEnvelope.horizonTurns - 6) * 8)
+  );
+  factors.push({
+    id: 'horizon_headroom',
+    label: 'Planning horizon headroom',
+    score: horizonHeadroom,
+    weight: 15,
+  });
+
+  const weighted = factors.reduce((n, f) => n + f.score * (f.weight / 100), 0);
+  const totalWeight = factors.reduce((n, f) => n + f.weight, 0);
+  const convergenceIndex = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const divergingSignals =
+    inputs.stabilizationIndex.band === 'volatile' ||
+    inputs.commandEnvelope.capacityBand === 'saturated' ||
+    stabilizationIndexBlocksAutomation(inputs.stabilizationIndex) ||
+    inputs.strategicAlignment.band === 'divergent';
+
+  const band: Agent17ConvergenceIndexSnapshot['band'] =
+    divergingSignals || convergenceIndex < 40
+      ? 'diverging'
+      : convergenceIndex >= 72
+        ? 'aligned'
+        : 'adjusting';
+
+  return {
+    convergenceIndex,
+    band,
+    factors,
+    envelopeBand: inputs.commandEnvelope.capacityBand,
+    stabilizationBand: inputs.stabilizationIndex.band,
+    headline: `Convergence ${band} (${convergenceIndex}/100) · env ${inputs.commandEnvelope.capacityBand}`,
+  };
+}
+
+export function convergenceIndexBlocksDirective(
+  snapshot: Agent17ConvergenceIndexSnapshot
+): boolean {
+  return snapshot.band === 'diverging' || snapshot.convergenceIndex < 38;
+}
+
+
+// --- source: planning/mission-directive.ts ---
+  Agent17CommandEnvelopeSnapshot,
+  Agent17ConvergenceIndexSnapshot,
+  Agent17IntentQueueSnapshot,
+  Agent17MissionDirectiveSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17MissionDirectiveInputs {
+  intentQueue: Agent17IntentQueueSnapshot;
+  commandEnvelope: Agent17CommandEnvelopeSnapshot;
+  convergenceIndex: Agent17ConvergenceIndexSnapshot;
+}
+
+export function buildAgent17MissionDirective(
+  inputs: Agent17MissionDirectiveInputs
+): Agent17MissionDirectiveSnapshot {
+  const lanes: Agent17MissionDirectiveSnapshot['lanes'] = [];
+
+  const objectiveLane: Agent17MissionDirectiveSnapshot['lanes'][number] = {
+    id: 'objective_lane',
+    label: 'Tracked objective',
+    priority: 90,
+    clearance: inputs.intentQueue.queueDepth >= 1 ? 'open' : 'conditional',
+    weight: 30,
+  };
+  lanes.push(objectiveLane);
+
+  lanes.push({
+    id: 'plan_execution',
+    label: 'Active plan execution',
+    priority: 80,
+    clearance: inputs.commandEnvelope.automationAllowed ? 'open' : 'conditional',
+    weight: 25,
+  });
+
+  lanes.push({
+    id: 'delegation_expansion',
+    label: 'Delegation expansion',
+    priority: 65,
+    clearance:
+      inputs.commandEnvelope.capacityBand === 'nominal' &&
+      inputs.commandEnvelope.activeDelegationCount < inputs.commandEnvelope.delegationCap
+        ? 'open'
+        : 'conditional',
+    weight: 20,
+  });
+
+  lanes.push({
+    id: 'recovery_reserve',
+    label: 'Recovery reserve',
+    priority: 55,
+    clearance:
+      inputs.convergenceIndex.band === 'diverging' ? 'closed' : 'conditional',
+    weight: 15,
+  });
+
+  lanes.push({
+    id: 'coordination_sync',
+    label: 'GI coordination sync',
+    priority: 70,
+    clearance: inputs.intentQueue.primaryIntentId ? 'open' : 'conditional',
+    weight: 10,
+  });
+
+  const weightedClearance = lanes.reduce((n, lane) => {
+    const laneScore =
+      lane.clearance === 'open' ? 100 : lane.clearance === 'conditional' ? 55 : 10;
+    return n + laneScore * (lane.weight / 100);
+  }, 0);
+  const totalWeight = lanes.reduce((n, lane) => n + lane.weight, 0);
+  const clearanceScore = Math.max(
+    0,
+    Math.min(100, Math.round((weightedClearance / Math.max(1, totalWeight)) * 100))
+  );
+
+  const heldSignals =
+    convergenceIndexBlocksDirective(inputs.convergenceIndex) ||
+    inputs.commandEnvelope.capacityBand === 'saturated' ||
+    lanes.some(l => l.clearance === 'closed');
+
+  const band: Agent17MissionDirectiveSnapshot['band'] = heldSignals
+    ? 'held'
+    : clearanceScore >= 70 && inputs.convergenceIndex.band === 'aligned'
+      ? 'cleared'
+      : 'conditional';
+
+  const primaryLaneId =
+    lanes.find(l => l.clearance === 'open')?.id ??
+    lanes.sort((a, b) => b.priority - a.priority)[0]?.id ??
+    null;
+
+  const executionAllowed =
+    band !== 'held' &&
+    inputs.commandEnvelope.automationAllowed &&
+    !convergenceIndexBlocksDirective(inputs.convergenceIndex) &&
+    !commandEnvelopeNeedsThrottle(inputs.commandEnvelope);
+
+  return {
+    clearanceScore,
+    band,
+    lanes,
+    primaryLaneId,
+    executionAllowed,
+    headline: `Directive ${band} (${clearanceScore}/100) · ${lanes.length} lanes`,
+  };
+}
+
+export function missionDirectiveBlocksExecution(
+  snapshot: Agent17MissionDirectiveSnapshot
+): boolean {
+  return snapshot.band === 'held' || !snapshot.executionAllowed;
+}
+
+
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -3389,6 +3637,16 @@ export function buildAgent17PlanningDepthSnapshot(
     executionPacing,
     stabilizationIndex,
   });
+  const convergenceIndex = buildAgent17ConvergenceIndex({
+    commandEnvelope,
+    stabilizationIndex,
+    strategicAlignment,
+  });
+  const missionDirective = buildAgent17MissionDirective({
+    intentQueue,
+    commandEnvelope,
+    convergenceIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -3404,6 +3662,8 @@ export function buildAgent17PlanningDepthSnapshot(
     rollbackAssurance,
     stabilizationIndex,
     commandEnvelope,
+    convergenceIndex,
+    missionDirective,
   };
 }
 
@@ -3969,6 +4229,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Volatile band or saturated envelope yields commandEnvelopeNeedsThrottle.',
     severity: 'major',
   },
+  {
+    id: 'G17-040',
+    title: 'Convergence index on planning depth',
+    category: 'telemetry',
+    acceptance: 'convergenceIndex reports convergenceIndex 0–100 with aligned/adjusting/diverging band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-041',
+    title: 'Mission directive lanes complete',
+    category: 'telemetry',
+    acceptance: 'missionDirective exposes ≥5 directive lanes and clearanceScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-042',
+    title: 'Diverging convergence holds directive',
+    category: 'integration',
+    acceptance: 'Diverging band or held directive yields missionDirectiveBlocksExecution.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -4004,6 +4285,12 @@ export function listAgent17GoalIds(): string[] {
   buildAgent17CommandEnvelope,
   commandEnvelopeNeedsThrottle,
 } from '../planning/command-envelope.ts';
+  buildAgent17ConvergenceIndex,
+  convergenceIndexBlocksDirective,
+} from '../planning/convergence-index.ts';
+  buildAgent17MissionDirective,
+  missionDirectiveBlocksExecution,
+} from '../planning/mission-directive.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -4557,6 +4844,51 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const convergence = depthEval.snapshot.planningDepth?.convergenceIndex;
+  goalResults.push(
+    result(
+      'G17-040',
+      !!convergence &&
+        convergence.convergenceIndex >= 0 &&
+        convergence.convergenceIndex <= 100 &&
+        (convergence.band === 'aligned' ||
+          convergence.band === 'adjusting' ||
+          convergence.band === 'diverging'),
+      `${convergence?.convergenceIndex}/${convergence?.band}`
+    )
+  );
+
+  const missionDirective = depthEval.snapshot.planningDepth?.missionDirective;
+  goalResults.push(
+    result(
+      'G17-041',
+      !!missionDirective &&
+        missionDirective.lanes.length >= 5 &&
+        missionDirective.clearanceScore >= 0 &&
+        missionDirective.clearanceScore <= 100,
+      `lanes=${missionDirective?.lanes.length} score=${missionDirective?.clearanceScore}`
+    )
+  );
+
+  const divergingConvergence = buildAgent17ConvergenceIndex({
+    commandEnvelope: saturatedEnvelope,
+    stabilizationIndex: volatileStabilization,
+    strategicAlignment: depthEval.snapshot.planningDepth!.strategicAlignment,
+  });
+  const heldDirective = buildAgent17MissionDirective({
+    intentQueue: depthEval.snapshot.planningDepth!.intentQueue,
+    commandEnvelope: saturatedEnvelope,
+    convergenceIndex: divergingConvergence,
+  });
+  goalResults.push(
+    result(
+      'G17-042',
+      convergenceIndexBlocksDirective(divergingConvergence) ||
+        missionDirectiveBlocksExecution(heldDirective),
+      `${divergingConvergence.band}/${heldDirective.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -4626,6 +4958,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-037',
     'G17-038',
     'G17-039',
+    'G17-040',
+    'G17-041',
+    'G17-042',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

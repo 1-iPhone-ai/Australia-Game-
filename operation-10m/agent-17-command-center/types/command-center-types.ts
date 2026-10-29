@@ -193,6 +193,8 @@ export interface Agent17PlanningDepthSnapshot {
   rollbackAssurance: Agent17RollbackAssuranceSnapshot;
   stabilizationIndex: Agent17StabilizationIndexSnapshot;
   commandEnvelope: Agent17CommandEnvelopeSnapshot;
+  convergenceIndex: Agent17ConvergenceIndexSnapshot;
+  missionDirective: Agent17MissionDirectiveSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -370,6 +372,39 @@ export interface Agent17CommandEnvelopeSnapshot {
   delegationCap: number;
   automationAllowed: boolean;
   signals: Agent17CommandEnvelopeSignal[];
+  headline: string;
+}
+
+export interface Agent17ConvergenceFactor {
+  id: string;
+  label: string;
+  score: number;
+  weight: number;
+}
+
+export interface Agent17ConvergenceIndexSnapshot {
+  convergenceIndex: number;
+  band: 'aligned' | 'adjusting' | 'diverging';
+  factors: Agent17ConvergenceFactor[];
+  envelopeBand: Agent17CommandEnvelopeSnapshot['capacityBand'];
+  stabilizationBand: Agent17StabilizationIndexSnapshot['band'];
+  headline: string;
+}
+
+export interface Agent17MissionDirectiveLane {
+  id: string;
+  label: string;
+  priority: number;
+  clearance: 'open' | 'conditional' | 'closed';
+  weight: number;
+}
+
+export interface Agent17MissionDirectiveSnapshot {
+  clearanceScore: number;
+  band: 'cleared' | 'conditional' | 'held';
+  lanes: Agent17MissionDirectiveLane[];
+  primaryLaneId: string | null;
+  executionAllowed: boolean;
   headline: string;
 }
 

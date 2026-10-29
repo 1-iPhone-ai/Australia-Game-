@@ -33,6 +33,8 @@ import { buildAgent17EscalationMatrix } from './escalation-matrix.ts';
 import { buildAgent17RollbackAssurance } from './rollback-assurance.ts';
 import { buildAgent17StabilizationIndex } from './stabilization-index.ts';
 import { buildAgent17CommandEnvelope } from './command-envelope.ts';
+import { buildAgent17ConvergenceIndex } from './convergence-index.ts';
+import { buildAgent17MissionDirective } from './mission-directive.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -187,6 +189,16 @@ export function buildAgent17PlanningDepthSnapshot(
     executionPacing,
     stabilizationIndex,
   });
+  const convergenceIndex = buildAgent17ConvergenceIndex({
+    commandEnvelope,
+    stabilizationIndex,
+    strategicAlignment,
+  });
+  const missionDirective = buildAgent17MissionDirective({
+    intentQueue,
+    commandEnvelope,
+    convergenceIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -202,6 +214,8 @@ export function buildAgent17PlanningDepthSnapshot(
     rollbackAssurance,
     stabilizationIndex,
     commandEnvelope,
+    convergenceIndex,
+    missionDirective,
   };
 }
 

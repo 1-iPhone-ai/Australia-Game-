@@ -39,6 +39,8 @@ const FILES = [
   'planning/rollback-assurance.ts',
   'planning/stabilization-index.ts',
   'planning/command-envelope.ts',
+  'planning/convergence-index.ts',
+  'planning/mission-directive.ts',
   'planning/planning-orchestrator.ts',
   'evaluation/operations-evaluator.ts',
   'rollback/rollback-controller.ts',
@@ -54,6 +56,7 @@ const FILES = [
   'harness/run-governance-depth-tests.ts',
   'harness/run-assurance-depth-tests.ts',
   'harness/run-stabilization-depth-tests.ts',
+  'harness/run-convergence-depth-tests.ts',
 ];
 
 function stripModulePreamble(source) {
