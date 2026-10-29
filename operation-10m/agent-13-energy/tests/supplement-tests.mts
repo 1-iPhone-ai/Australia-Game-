@@ -11,6 +11,7 @@ import {
 } from '../modules/grid-recovery-extraction-efficiency.ts';
 import { runV1014RegionalGridClimateScaleSelfTests } from '../modules/regional-grid-scenarios-climate-transition.ts';
 import { runAgent13StoragePermitScaleSelfTests } from '../modules/storage-permit-lifecycle.ts';
+import { runAgent13EmissionsWaterScaleSelfTests } from '../modules/emissions-water-credit-ledger.ts';
 import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
@@ -125,6 +126,9 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const storagePermit = runAgent13StoragePermitScaleSelfTests();
   ok(storagePermit.failed === 0 && storagePermit.passed >= 5);
+
+  const emissionsWater = runAgent13EmissionsWaterScaleSelfTests();
+  ok(emissionsWater.failed === 0 && emissionsWater.passed >= 5);
 
   return { passed, failed, total: passed + failed };
 }

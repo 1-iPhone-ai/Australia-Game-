@@ -16,6 +16,7 @@ operation-10m/agent-13-energy/
   modules/regional-grid-scenarios-climate-transition.ts
   modules/turn-simulation-depth.ts
   modules/storage-permit-lifecycle.ts
+  modules/emissions-water-credit-ledger.ts   # scale wave round 4
   modules/climate-hazards.ts
   modules/household-industry-links.ts
   modules/v94-type-stubs.ts                    # drop on merge
@@ -38,6 +39,7 @@ operation-10m/agent-13-energy/
 
 - Setting: `industrialEnergyEnabled` (default true)
 - Persisted key: `gameState.industrialEnergy`
+- Round 4 slices: `regionalCarbonMemory`, `regionalWaterMemory` (with round 3 `regionalPermitMemory`)
 - Regression id: `v1014_energy` → `runV1014IndustrialEnergyEnvironmentalSelfTests()`
 
 ## Boundaries
