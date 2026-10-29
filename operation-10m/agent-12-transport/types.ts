@@ -454,10 +454,13 @@ export type RemoteEcmoSupplyStagingPolicy = 'baseline' | 'surge';
 export type PortAmmoniaBunkeringLogisticsPolicy = 'baseline' | 'expand';
 
 export type SuperconductingHvdcExportPolicy = 'baseline' | 'accelerate';
+export type FusionTritiumBreedingExportPolicy = 'baseline' | 'accelerate';
 
 export type RemoteNeonatalIcuSupplyStagingPolicy = 'baseline' | 'surge';
+export type RemotePediatricOncologySupplyStagingPolicy = 'baseline' | 'surge';
 
 export type PortMethanolDualFuelBunkeringLogisticsPolicy = 'baseline' | 'expand';
+export type PortBioLngBunkeringLogisticsPolicy = 'baseline' | 'expand';
 
 export interface TransportInfrastructureState {
   schemaVersion: 'agent12/50';
@@ -842,6 +845,14 @@ export interface TransportInfrastructureState {
   portMethanolDualFuelBunkeringLogisticsShare: number;
   nationalPortMethanolDualFuelBunkeringLogisticsThroughputIndex: number;
   portMethanolDualFuelBunkeringLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalFusionTritiumBreedingExportIndex: number;
+  fusionTritiumBreedingExportByRegion: Record<AuRegionCode, number>;
+  remotePediatricOncologySupplyStagingShare: number;
+  nationalRemotePediatricOncologySupplyStagingIndex: number;
+  remotePediatricOncologySupplyStagingByRegion: Record<AuRegionCode, number>;
+  portBioLngBunkeringLogisticsShare: number;
+  nationalPortBioLngBunkeringLogisticsThroughputIndex: number;
+  portBioLngBunkeringLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -988,6 +999,9 @@ export interface TransportInfrastructureOptions {
   superconductingHvdcExportPolicy?: SuperconductingHvdcExportPolicy;
   remoteNeonatalIcuSupplyStagingPolicy?: RemoteNeonatalIcuSupplyStagingPolicy;
   portMethanolDualFuelBunkeringLogisticsPolicy?: PortMethanolDualFuelBunkeringLogisticsPolicy;
+  fusionTritiumBreedingExportPolicy?: FusionTritiumBreedingExportPolicy;
+  remotePediatricOncologySupplyStagingPolicy?: RemotePediatricOncologySupplyStagingPolicy;
+  portBioLngBunkeringLogisticsPolicy?: PortBioLngBunkeringLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
