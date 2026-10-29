@@ -189,6 +189,8 @@ export interface Agent17PlanningDepthSnapshot {
   coordinationBrief: Agent17CoordinationBrief;
   executionPacing: Agent17ExecutionPacingSnapshot;
   resilienceScorecard: Agent17ResilienceScorecard;
+  strategicAlignment: Agent17StrategicAlignmentSnapshot;
+  handoffReadiness: Agent17HandoffReadinessSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -249,6 +251,33 @@ export interface Agent17ResilienceScorecard {
   band: 'robust' | 'watch' | 'fragile';
   signalCount: number;
   mitigationHints: string[];
+  headline: string;
+}
+
+export interface Agent17StrategicAlignmentSnapshot {
+  alignmentIndex: number;
+  band: 'aligned' | 'drifting' | 'divergent';
+  gi3Overlap: number;
+  plannerOverlap: number;
+  planOverlap: number;
+  driftFlags: string[];
+  primaryIntentId: string | null;
+  headline: string;
+}
+
+export interface Agent17HandoffReadinessCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  weight: number;
+}
+
+export interface Agent17HandoffReadinessSnapshot {
+  readinessScore: number;
+  band: 'ready' | 'partial' | 'blocked';
+  readyForTeamOs: boolean;
+  checks: Agent17HandoffReadinessCheck[];
+  blockers: string[];
   headline: string;
 }
 
@@ -2376,6 +2405,180 @@ export function resilienceScorecardNeedsIntervention(card: Agent17ResilienceScor
 }
 
 
+// --- source: planning/strategic-alignment.ts ---
+  Acc17CommandCenterOpsState,
+  Agent17GameStateSlice,
+  Agent17IntentQueueSnapshot,
+  Agent17StrategicAlignmentSnapshot,
+} from '../types/command-center-types.ts';
+
+function tokenize(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length >= 4)
+  );
+}
+
+function overlapScore(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 50;
+  let hits = 0;
+  for (const w of a) {
+    if (b.has(w)) hits += 1;
+  }
+  const denom = Math.max(1, Math.min(a.size, b.size));
+  return Math.round((hits / denom) * 100);
+}
+
+export function buildAgent17StrategicAlignment(
+  ops: Acc17CommandCenterOpsState,
+  state: Agent17GameStateSlice,
+  settings: import('../types/command-center-types.ts').Agent17SettingsSlice,
+  actorId: string,
+  intentQueue: Agent17IntentQueueSnapshot
+): Agent17StrategicAlignmentSnapshot {
+  const objective = defaultObjectiveResolver(state, settings, actorId);
+  const objectiveText = objective?.title || '';
+  const gi3Text = state.gi3Strategy?.headline || '';
+  const plannerText = state.strategyPlannerState?.activePlan?.title || '';
+  const planText = ops.activePlan?.title || '';
+
+  const objectiveTokens = tokenize(objectiveText);
+  const gi3Tokens = tokenize(gi3Text);
+  const plannerTokens = tokenize(plannerText);
+  const planTokens = tokenize(planText || objectiveText);
+
+  const gi3Overlap = gi3Text ? overlapScore(objectiveTokens, gi3Tokens) : 60;
+  const plannerOverlap = plannerText ? overlapScore(objectiveTokens, plannerTokens) : 55;
+  const planOverlap = ops.activePlan ? overlapScore(objectiveTokens, planTokens) : 50;
+
+  const alignmentIndex = Math.max(
+    0,
+    Math.min(100, Math.round(gi3Overlap * 0.4 + plannerOverlap * 0.25 + planOverlap * 0.35))
+  );
+
+  const driftFlags: string[] = [];
+  if (gi3Text && gi3Overlap < 35) driftFlags.push('gi3_objective_drift');
+  if (plannerText && plannerOverlap < 30) driftFlags.push('planner_objective_drift');
+  if (ops.activePlan && planOverlap < 25) driftFlags.push('plan_title_drift');
+  if (intentQueue.primaryIntentId === 'intent_gi3' && gi3Overlap < 45) {
+    driftFlags.push('primary_intent_misaligned');
+  }
+
+  const band: Agent17StrategicAlignmentSnapshot['band'] =
+    alignmentIndex >= 70 ? 'aligned' : alignmentIndex >= 42 ? 'drifting' : 'divergent';
+
+  const cues = [gi3Text, plannerText, planText].filter(Boolean);
+  const headline =
+    cues.length >= 2
+      ? `Strategic ${band} (${alignmentIndex}/100) · GI3/plan cues ${cues.length}`
+      : `Strategic ${band} (${alignmentIndex}/100) · sparse upstream cues`;
+
+  return {
+    alignmentIndex,
+    band,
+    gi3Overlap,
+    plannerOverlap,
+    planOverlap,
+    driftFlags: driftFlags.slice(0, 4),
+    primaryIntentId: intentQueue.primaryIntentId,
+    headline,
+  };
+}
+
+export function strategicAlignmentNeedsReconcile(snapshot: Agent17StrategicAlignmentSnapshot): boolean {
+  return snapshot.band === 'divergent' || snapshot.driftFlags.length >= 2;
+}
+
+
+// --- source: planning/handoff-readiness.ts ---
+  Agent17CoordinationBrief,
+  Agent17ExecutionPacingSnapshot,
+  Agent17HandoffReadinessSnapshot,
+  Agent17ResilienceScorecard,
+  Agent17StrategicAlignmentSnapshot,
+  Agent17VerificationPolicySnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17HandoffReadinessInputs {
+  coordinationBrief: Agent17CoordinationBrief;
+  verificationPolicy: Agent17VerificationPolicySnapshot;
+  executionPacing: Agent17ExecutionPacingSnapshot;
+  resilienceScorecard: Agent17ResilienceScorecard;
+  strategicAlignment: Agent17StrategicAlignmentSnapshot;
+}
+
+export function buildAgent17HandoffReadiness(
+  inputs: Agent17HandoffReadinessInputs
+): Agent17HandoffReadinessSnapshot {
+  const checks: Agent17HandoffReadinessSnapshot['checks'] = [];
+
+  const giReady = coordinationBriefReadyForGi(inputs.coordinationBrief);
+  checks.push({
+    id: 'gi_brief',
+    label: 'Coordination brief GI-ready',
+    passed: giReady,
+    weight: 20,
+  });
+
+  checks.push({
+    id: 'verify_gate',
+    label: 'Verification gate open',
+    passed: inputs.verificationPolicy.allowVerification,
+    weight: 25,
+  });
+
+  checks.push({
+    id: 'pacing',
+    label: 'Execution pacing not throttled',
+    passed: inputs.executionPacing.pacingBand !== 'throttled',
+    weight: 15,
+  });
+
+  checks.push({
+    id: 'resilience',
+    label: 'Resilience posture stable',
+    passed: !resilienceScorecardNeedsIntervention(inputs.resilienceScorecard),
+    weight: 20,
+  });
+
+  checks.push({
+    id: 'alignment',
+    label: 'Strategic alignment not divergent',
+    passed: !strategicAlignmentNeedsReconcile(inputs.strategicAlignment),
+    weight: 20,
+  });
+
+  const earned = checks.filter(c => c.passed).reduce((n, c) => n + c.weight, 0);
+  const totalWeight = checks.reduce((n, c) => n + c.weight, 0);
+  const readinessScore = Math.round((earned / Math.max(1, totalWeight)) * 100);
+
+  const blockers = checks.filter(c => !c.passed).map(c => c.id);
+  const readyForTeamOs =
+    readinessScore >= 72 &&
+    inputs.verificationPolicy.allowVerification &&
+    inputs.coordinationBrief.giHandoffTags.includes('agent17_command_center');
+
+  const band: Agent17HandoffReadinessSnapshot['band'] =
+    readinessScore >= 80 ? 'ready' : readinessScore >= 50 ? 'partial' : 'blocked';
+
+  return {
+    readinessScore,
+    band,
+    readyForTeamOs,
+    checks,
+    blockers,
+    headline: `Handoff ${band} (${readinessScore}/100) · blockers ${blockers.length}`,
+  };
+}
+
+export function handoffReadinessBlocked(snapshot: Agent17HandoffReadinessSnapshot): boolean {
+  return snapshot.band === 'blocked' || snapshot.blockers.includes('verify_gate');
+}
+
+
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -2509,6 +2712,20 @@ export function buildAgent17PlanningDepthSnapshot(
     planHealth,
     verificationPolicy
   );
+  const strategicAlignment = buildAgent17StrategicAlignment(
+    ops,
+    state,
+    settings,
+    actorId,
+    intentQueue
+  );
+  const handoffReadiness = buildAgent17HandoffReadiness({
+    coordinationBrief,
+    verificationPolicy,
+    executionPacing,
+    resilienceScorecard,
+    strategicAlignment,
+  });
   return {
     ...core,
     intentQueue,
@@ -2516,6 +2733,8 @@ export function buildAgent17PlanningDepthSnapshot(
     coordinationBrief,
     executionPacing,
     resilienceScorecard,
+    strategicAlignment,
+    handoffReadiness,
   };
 }
 
@@ -2997,6 +3216,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Unchanged fingerprint yields throttled pacing or closed gate.',
     severity: 'major',
   },
+  {
+    id: 'G17-028',
+    title: 'Strategic alignment on planning depth',
+    category: 'planning',
+    acceptance: 'strategicAlignment reports alignmentIndex 0–100 with band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-029',
+    title: 'Handoff readiness checklist complete',
+    category: 'integration',
+    acceptance: 'handoffReadiness exposes ≥5 weighted checks and readinessScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-030',
+    title: 'Handoff blocked on verify hold',
+    category: 'validation',
+    acceptance: 'Closed verification gate yields blocked handoff or verify_gate blocker.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -3385,6 +3625,50 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const strat = depthEval.snapshot.planningDepth?.strategicAlignment;
+  goalResults.push(
+    result(
+      'G17-028',
+      !!strat &&
+        strat.alignmentIndex >= 0 &&
+        strat.alignmentIndex <= 100 &&
+        (strat.band === 'aligned' || strat.band === 'drifting' || strat.band === 'divergent'),
+      `${strat?.alignmentIndex}/${strat?.band}`
+    )
+  );
+
+  const handoff = depthEval.snapshot.planningDepth?.handoffReadiness;
+  goalResults.push(
+    result(
+      'G17-029',
+      !!handoff &&
+        handoff.checks.length >= 5 &&
+        handoff.readinessScore >= 0 &&
+        handoff.readinessScore <= 100,
+      `checks=${handoff?.checks.length} score=${handoff?.readinessScore}`
+    )
+  );
+
+  const fpBlock = acc17ComputeRelevantStateFingerprint(baseState, 'player');
+  const blockedHandoff = buildAgent17HandoffReadiness({
+    coordinationBrief: brief!,
+    verificationPolicy: buildAgent17VerificationPolicy(
+      { ...depthEval.ops, lastContextFingerprint: fpBlock },
+      baseState,
+      'player'
+    ),
+    executionPacing: pacingHeld,
+    resilienceScorecard: scorecard!,
+    strategicAlignment: strat!,
+  });
+  goalResults.push(
+    result(
+      'G17-030',
+      blockedHandoff.blockers.includes('verify_gate') || handoffReadinessBlocked(blockedHandoff),
+      blockedHandoff.blockers.join(',')
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -3442,6 +3726,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-025',
     'G17-026',
     'G17-027',
+    'G17-028',
+    'G17-029',
+    'G17-030',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
@@ -4325,6 +4612,229 @@ export function runAgent17ExecutionDepthTests(): Agent17DevTestReport {
 }
 
 
+// --- source: harness/run-continuity-depth-tests.ts ---
+  createDefaultAcc17CommandCenterOpsState,
+  acc17CreateMultiStepPlanFromObjective,
+  defaultObjectiveResolver,
+} from '../planning/ops-state.ts';
+  buildAgent17StrategicAlignment,
+  strategicAlignmentNeedsReconcile,
+} from '../planning/strategic-alignment.ts';
+  buildAgent17HandoffReadiness,
+  handoffReadinessBlocked,
+} from '../planning/handoff-readiness.ts';
+  rankAgent17TemplateCandidates,
+  summarizeAgent17CatalogDepth,
+} from '../planning/template-selector.ts';
+
+export function runAgent17ContinuityDepthTests(): Agent17DevTestReport {
+  const start = Date.now();
+  const testResults: Agent17DevTestReport['testResults'] = [];
+  const push = (id: string, name: string, ok: boolean, detail?: string) => {
+    testResults.push({
+      id,
+      name,
+      status: ok ? 'passed' : 'failed',
+      durationMs: 0,
+      errorMessage: ok ? undefined : detail,
+    });
+  };
+
+  try {
+    const settings = {
+      commandCenterSettings: { enabled: true },
+      aiCommunicationAutonomyLevel: 'assisted' as const,
+    };
+    const actor = {
+      id: 'player',
+      money: 120,
+      netWorth: 2400,
+      currentRegion: 'QLD',
+      currentSupplies: 6,
+    };
+    const state: Agent17GameStateSlice = {
+      turnCounter: 21,
+      day: 21,
+      player: actor,
+      actorsById: { player: actor },
+      playerTrackedObjective: {
+        title: 'Expand trade network supply chain',
+        sourceType: 'contract',
+      },
+      gi3Strategy: { headline: 'Expand trade network resilience' },
+      strategyPlannerState: { activePlan: { title: 'Trade network supply expansion' } },
+      lastExecutedAction: { type: 'trade' },
+    };
+    const ops = createDefaultAcc17CommandCenterOpsState();
+    const plan = acc17CreateMultiStepPlanFromObjective(
+      state,
+      settings,
+      'player',
+      (s, st, id) => defaultObjectiveResolver(s, st, id)
+    );
+    const opsWithPlan = { ...ops, activePlan: plan ? { ...plan, title: plan.title || 'Trade supply chain plan' } : plan };
+    const health = assessAgent17PlanHealth(opsWithPlan.activePlan, state, 'player');
+    const intentQueue = buildAgent17IntentQueue(opsWithPlan, state, settings, 'player', health);
+    const alignment = buildAgent17StrategicAlignment(
+      opsWithPlan,
+      state,
+      settings,
+      'player',
+      intentQueue
+    );
+
+    push(
+      'cont_align_bounded',
+      'Strategic alignment index bounded with band',
+      alignment.alignmentIndex >= 0 &&
+        alignment.alignmentIndex <= 100 &&
+        (alignment.band === 'aligned' ||
+          alignment.band === 'drifting' ||
+          alignment.band === 'divergent'),
+      `${alignment.alignmentIndex}/${alignment.band}`
+    );
+    push(
+      'cont_align_high_when_cues_match',
+      'Matching GI3/objective cues raise overlap',
+      alignment.gi3Overlap >= 40 && !strategicAlignmentNeedsReconcile(alignment),
+      `gi3=${alignment.gi3Overlap} flags=${alignment.driftFlags.length}`
+    );
+
+    const fp = acc17ComputeRelevantStateFingerprint(state, 'player');
+    const policyOpen = buildAgent17VerificationPolicy(
+      { ...opsWithPlan, lastContextFingerprint: 'other_fp' },
+      state,
+      'player'
+    );
+    const pacing = buildAgent17ExecutionPacing(opsWithPlan, state, health, policyOpen);
+    const scorecard = buildAgent17ResilienceScorecard(
+      opsWithPlan,
+      state,
+      'player',
+      health,
+      policyOpen
+    );
+    const routing = rankAgent17TemplateCandidates(state, settings, 'player');
+    const delegationAnalytics = buildAgent17DelegationAnalytics(opsWithPlan, settings);
+    const core = {
+      turn: state.turnCounter || 1,
+      actorId: 'player',
+      planHealth: health,
+      suggestion: buildAgent17PlanningSuggestion(
+        opsWithPlan,
+        state,
+        settings,
+        'player',
+        'copilot'
+      ),
+      templateRouting: routing,
+      delegationAnalytics,
+      delegationLadder: buildAgent17DelegationLadder(delegationAnalytics, settings, 'copilot'),
+      planLedger: summarizeAgent17PlanLedger(opsWithPlan, state),
+      catalogDepth: summarizeAgent17CatalogDepth(),
+    };
+    const brief = buildAgent17CoordinationBrief(
+      core,
+      intentQueue,
+      policyOpen,
+      opsWithPlan,
+      state,
+      settings
+    );
+    const handoffOpen = buildAgent17HandoffReadiness({
+      coordinationBrief: brief,
+      verificationPolicy: policyOpen,
+      executionPacing: pacing,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+
+    push(
+      'cont_handoff_checks',
+      'Handoff readiness exposes weighted checks',
+      handoffOpen.checks.length >= 5 &&
+        handoffOpen.readinessScore >= 0 &&
+        handoffOpen.readinessScore <= 100,
+      `checks=${handoffOpen.checks.length} score=${handoffOpen.readinessScore}`
+    );
+    push(
+      'cont_handoff_partial_or_ready',
+      'Open gates yield partial or ready band',
+      handoffOpen.band === 'partial' || handoffOpen.band === 'ready',
+      handoffOpen.band
+    );
+
+    const policyClosed = buildAgent17VerificationPolicy(
+      { ...opsWithPlan, lastContextFingerprint: fp },
+      state,
+      'player'
+    );
+    const pacingClosed = buildAgent17ExecutionPacing(opsWithPlan, state, health, policyClosed);
+    const handoffClosed = buildAgent17HandoffReadiness({
+      coordinationBrief: brief,
+      verificationPolicy: policyClosed,
+      executionPacing: pacingClosed,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    push(
+      'cont_handoff_blocked_verify',
+      'Closed verification blocks handoff',
+      handoffClosed.blockers.includes('verify_gate') || handoffReadinessBlocked(handoffClosed),
+      handoffClosed.blockers.join(',')
+    );
+
+    const divergentState: Agent17GameStateSlice = {
+      ...state,
+      gi3Strategy: { headline: 'Retreat mining operations entirely' },
+      strategyPlannerState: { activePlan: { title: 'Liquidate regional assets' } },
+    };
+    const alignDrift = buildAgent17StrategicAlignment(
+      opsWithPlan,
+      divergentState,
+      settings,
+      'player',
+      buildAgent17IntentQueue(opsWithPlan, divergentState, settings, 'player', health)
+    );
+    push(
+      'cont_drift_flags',
+      'Divergent upstream cues emit drift flags',
+      alignDrift.driftFlags.length >= 1 || alignDrift.band !== 'aligned',
+      alignDrift.driftFlags.join(',') || alignDrift.band
+    );
+
+    const evalRes = evaluateAcc17CommandCenterOperations(state, settings, 'player', ops);
+    const depth = evalRes.snapshot.planningDepth;
+    push(
+      'cont_evaluator_depth',
+      'Evaluator attaches strategic alignment and handoff readiness',
+      !!depth?.strategicAlignment?.headline &&
+        !!depth?.handoffReadiness?.headline &&
+        (depth.handoffReadiness.checks?.length ?? 0) >= 5,
+      `${depth?.strategicAlignment?.band}/${depth?.handoffReadiness?.band}`
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    push('cont_throw', 'Continuity harness did not throw', false, msg);
+  }
+
+  const passedCount = testResults.filter(t => t.status === 'passed').length;
+  const failedCount = testResults.filter(t => t.status === 'failed').length;
+  const overallStatus: 'passed' | 'failed' = failedCount === 0 ? 'passed' : 'failed';
+  return {
+    timestamp: Date.now(),
+    totalTests: testResults.length,
+    passedCount,
+    failedCount,
+    executionTimeMs: Date.now() - start,
+    overallStatus,
+    success: overallStatus === 'passed',
+    testResults,
+    summary: `Agent 17 Continuity Depth Tests: ${passedCount}/${testResults.length} Passed`,
+  };
+}
+
+
 export function runAgent17Op10mModuleSelfTests(): {
   acc17: ReturnType<typeof runAgent17Acc17DevTests>;
   recovery: ReturnType<typeof runAgent17RecoveryPathTests>;
@@ -4332,6 +4842,7 @@ export function runAgent17Op10mModuleSelfTests(): {
   delegation: ReturnType<typeof runAgent17DelegationDepthTests>;
   coordination: ReturnType<typeof runAgent17CoordinationDepthTests>;
   execution: ReturnType<typeof runAgent17ExecutionDepthTests>;
+  continuity: ReturnType<typeof runAgent17ContinuityDepthTests>;
   success: boolean;
 } {
   const acc17 = runAgent17Acc17DevTests();
@@ -4340,6 +4851,7 @@ export function runAgent17Op10mModuleSelfTests(): {
   const delegation = runAgent17DelegationDepthTests();
   const coordination = runAgent17CoordinationDepthTests();
   const execution = runAgent17ExecutionDepthTests();
+  const continuity = runAgent17ContinuityDepthTests();
   return {
     acc17,
     recovery,
@@ -4347,13 +4859,15 @@ export function runAgent17Op10mModuleSelfTests(): {
     delegation,
     coordination,
     execution,
+    continuity,
     success:
       acc17.success &&
       recovery.success &&
       depth.success &&
       delegation.success &&
       coordination.success &&
-      execution.success,
+      execution.success &&
+      continuity.success,
   };
 }
 

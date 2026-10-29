@@ -30,6 +30,7 @@ import { coordinationBriefReadyForGi } from '../planning/coordination-brief.ts';
 import { assessAgent17PlanHealth } from '../planning/plan-health.ts';
 import { buildAgent17ExecutionPacing } from '../planning/execution-pacing.ts';
 import { buildAgent17ResilienceScorecard } from '../planning/resilience-scorecard.ts';
+import { buildAgent17HandoffReadiness } from '../planning/handoff-readiness.ts';
 import {
   Agent17RollbackController,
   createAgent17RollbackController,
@@ -393,6 +394,50 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const strat = depthEval.snapshot.planningDepth?.strategicAlignment;
+  goalResults.push(
+    result(
+      'G17-028',
+      !!strat &&
+        strat.alignmentIndex >= 0 &&
+        strat.alignmentIndex <= 100 &&
+        (strat.band === 'aligned' || strat.band === 'drifting' || strat.band === 'divergent'),
+      `${strat?.alignmentIndex}/${strat?.band}`
+    )
+  );
+
+  const handoff = depthEval.snapshot.planningDepth?.handoffReadiness;
+  goalResults.push(
+    result(
+      'G17-029',
+      !!handoff &&
+        handoff.checks.length >= 5 &&
+        handoff.readinessScore >= 0 &&
+        handoff.readinessScore <= 100,
+      `checks=${handoff?.checks.length} score=${handoff?.readinessScore}`
+    )
+  );
+
+  const fpBlock = acc17ComputeRelevantStateFingerprint(baseState, 'player');
+  const blockedHandoff = buildAgent17HandoffReadiness({
+    coordinationBrief: brief!,
+    verificationPolicy: buildAgent17VerificationPolicy(
+      { ...depthEval.ops, lastContextFingerprint: fpBlock },
+      baseState,
+      'player'
+    ),
+    executionPacing: pacingHeld,
+    resilienceScorecard: scorecard!,
+    strategicAlignment: strat!,
+  });
+  goalResults.push(
+    result(
+      'G17-030',
+      blockedHandoff.blockers.includes('verify_gate') || handoffReadinessBlocked(blockedHandoff),
+      blockedHandoff.blockers.join(',')
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -450,6 +495,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-025',
     'G17-026',
     'G17-027',
+    'G17-028',
+    'G17-029',
+    'G17-030',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

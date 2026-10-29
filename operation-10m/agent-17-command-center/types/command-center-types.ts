@@ -185,6 +185,8 @@ export interface Agent17PlanningDepthSnapshot {
   coordinationBrief: Agent17CoordinationBrief;
   executionPacing: Agent17ExecutionPacingSnapshot;
   resilienceScorecard: Agent17ResilienceScorecard;
+  strategicAlignment: Agent17StrategicAlignmentSnapshot;
+  handoffReadiness: Agent17HandoffReadinessSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -245,6 +247,33 @@ export interface Agent17ResilienceScorecard {
   band: 'robust' | 'watch' | 'fragile';
   signalCount: number;
   mitigationHints: string[];
+  headline: string;
+}
+
+export interface Agent17StrategicAlignmentSnapshot {
+  alignmentIndex: number;
+  band: 'aligned' | 'drifting' | 'divergent';
+  gi3Overlap: number;
+  plannerOverlap: number;
+  planOverlap: number;
+  driftFlags: string[];
+  primaryIntentId: string | null;
+  headline: string;
+}
+
+export interface Agent17HandoffReadinessCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  weight: number;
+}
+
+export interface Agent17HandoffReadinessSnapshot {
+  readinessScore: number;
+  band: 'ready' | 'partial' | 'blocked';
+  readyForTeamOs: boolean;
+  checks: Agent17HandoffReadinessCheck[];
+  blockers: string[];
   headline: string;
 }
 

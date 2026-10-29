@@ -191,6 +191,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Unchanged fingerprint yields throttled pacing or closed gate.',
     severity: 'major',
   },
+  {
+    id: 'G17-028',
+    title: 'Strategic alignment on planning depth',
+    category: 'planning',
+    acceptance: 'strategicAlignment reports alignmentIndex 0–100 with band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-029',
+    title: 'Handoff readiness checklist complete',
+    category: 'integration',
+    acceptance: 'handoffReadiness exposes ≥5 weighted checks and readinessScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-030',
+    title: 'Handoff blocked on verify hold',
+    category: 'validation',
+    acceptance: 'Closed verification gate yields blocked handoff or verify_gate blocker.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
