@@ -1,12 +1,12 @@
 {
   "projectionId": "tranche-projection-full-chunks",
-  "dryRunAt": "2026-10-29T10:02:38.365Z",
+  "dryRunAt": "2026-10-29T10:07:38.825Z",
   "canonicalBaseCommit": "bc1adf3",
   "baselineAuditedFunctional": 389566,
-  "projectedAuditedFunctional": 2165132,
-  "deltaAuditedFunctional": 1775566,
+  "projectedAuditedFunctional": 2207543,
+  "deltaAuditedFunctional": 1817977,
   "baselinePhysicalLines": 419353,
-  "projectedPhysicalLines": 2250562,
+  "projectedPhysicalLines": 2294388,
   "branchHeadCount": 33,
   "branchesScannedExcludingIntegration": 32,
   "assemblyReadyRemote": 24,
@@ -104,7 +104,7 @@
     {
       "moduleId": "agent-05-events",
       "slot": "pre-final-export",
-      "contentSha256": "623a9c2091ce339dcc8c17a1cf566c984c63ebc729a97618885683628b5e3fd5"
+      "contentSha256": "b7d9c8361fbf73bbc674fdd39014e7c90068c8622a422d8b15c23ceb284628d1"
     },
     {
       "moduleId": "agent-06-macroeconomy",
@@ -134,7 +134,7 @@
     {
       "moduleId": "agent-11-cities",
       "slot": "pre-final-export",
-      "contentSha256": "abd3ab772fa5791c75b9902b7d5ca7c835f551c9f691fcc0aa2c61283fe51800"
+      "contentSha256": "14b76b07b5b9ad440520fcf6ea4fd55954dda46ad0a93974809093282402d622"
     },
     {
       "moduleId": "agent-12-infrastructure",
