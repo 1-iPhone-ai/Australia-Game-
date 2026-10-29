@@ -160,7 +160,7 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
     reportId: 'pv',
     matchId: 'self',
     waveRound: 37,
-    projectionBaselineSha: O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
+    projectionBaselineSha: O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -190,7 +190,7 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
       name: 'dryrun_handoff_complete_at_wave32_baseline',
       passed:
         report.handoffComplete &&
-        report.dryrunBaselineSha === O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
+        report.dryrunBaselineSha === O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA,
     },
     { name: 'wave_round_pinned', passed: report.waveRound === 37 },
     {

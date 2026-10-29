@@ -196,7 +196,7 @@ export function runAgent24ReplayScaleWaveProjectionHandoffSealSelfTests(): Array
       name: 'handoff_ready_at_projection_baseline',
       passed:
         seal.handoffReady &&
-        seal.projectionBaselineSha === O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
+        seal.projectionBaselineSha === O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA,
     },
     { name: 'wave_round_pinned', passed: seal.waveRound === 37 },
     {

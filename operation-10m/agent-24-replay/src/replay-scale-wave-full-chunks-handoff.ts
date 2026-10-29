@@ -156,7 +156,7 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
     reportId: 'dv',
     matchId: 'self',
     waveRound: 37,
-    dryrunBaselineSha: O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
+    dryrunBaselineSha: O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -186,7 +186,7 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
       name: 'handoff_ready_at_full_chunks_baseline',
       passed:
         seal.handoffReady &&
-        seal.fullChunksBaselineSha === O6K_AGENT24_WAVE36_INTEGRATION_BASELINE_SHA,
+        seal.fullChunksBaselineSha === O6K_AGENT24_WAVE37_INTEGRATION_BASELINE_SHA,
     },
     { name: 'wave_round_pinned', passed: seal.waveRound === 37 },
     {
