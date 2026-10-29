@@ -63,6 +63,7 @@ const FILES = [
   'safeguard-trade-certificate-stack-federation-ledger.ts',
   'hydrogen-ldes-export-buffer-federation-ledger.ts',
   'grid-ai-forecast-demand-flex-federation-ledger.ts',
+  'transmission-mlf-merchant-arbitration-federation-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -149,6 +150,8 @@ const EXPORT_MANIFEST = [
   'V1014_EXPORT_BUFFER_FEDERATION_CATALOG',
   'V1014_GRID_AI_FORECAST_CATALOG',
   'V1014_DEMAND_FLEX_FEDERATION_CATALOG',
+  'V1014_TRANSMISSION_MLF_CATALOG',
+  'V1014_MERCHANT_ARBITRATION_FEDERATION_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -284,6 +287,9 @@ const EXPORT_MANIFEST = [
   'runAgent13AiForecastFlexScaleSelfTests',
   'runAgent13AiForecastFlexTurnScenario',
   'V1014_AI_FORECAST_FLEX_TURN_SCENARIOS',
+  'runAgent13MlfMerchantArbitrationScaleSelfTests',
+  'runAgent13MlfMerchantArbitrationTurnScenario',
+  'V1014_MLF_MERCHANT_ARBITRATION_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

@@ -200,6 +200,11 @@ import {
   V1014_AI_FORECAST_FLEX_TURN_SCENARIOS,
 } from '../modules/grid-ai-forecast-demand-flex-federation-ledger.ts';
 import {
+  runAgent13MlfMerchantArbitrationScaleSelfTests,
+  runAgent13MlfMerchantArbitrationTurnScenario,
+  V1014_MLF_MERCHANT_ARBITRATION_TURN_SCENARIOS,
+} from '../modules/transmission-mlf-merchant-arbitration-federation-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -547,6 +552,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const aiFlexTurn = runAgent13AiForecastFlexTurnScenario(V1014_AI_FORECAST_FLEX_TURN_SCENARIOS[0]);
   ok(aiFlexTurn.passed);
+
+  const mlfMerchantArb = runAgent13MlfMerchantArbitrationScaleSelfTests();
+  ok(mlfMerchantArb.failed === 0 && mlfMerchantArb.passed >= 5);
+
+  const mlfArbTurn = runAgent13MlfMerchantArbitrationTurnScenario(V1014_MLF_MERCHANT_ARBITRATION_TURN_SCENARIOS[0]);
+  ok(mlfArbTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

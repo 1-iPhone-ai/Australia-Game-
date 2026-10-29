@@ -49,6 +49,7 @@ operation-10m/agent-13-energy/
   modules/safeguard-trade-certificate-stack-federation-ledger.ts  # scale wave round 41 (O10-213)
   modules/hydrogen-ldes-export-buffer-federation-ledger.ts  # scale wave round 42 (O10-215)
   modules/grid-ai-forecast-demand-flex-federation-ledger.ts  # scale wave round 43 (O10-217)
+  modules/transmission-mlf-merchant-arbitration-federation-ledger.ts  # scale wave round 44 (O10-219)
   modules/climate-hazards.ts
   modules/household-industry-links.ts
   modules/v94-type-stubs.ts                    # drop on merge

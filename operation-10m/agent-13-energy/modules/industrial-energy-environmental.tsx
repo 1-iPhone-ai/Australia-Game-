@@ -310,6 +310,13 @@ import {
   type V1014RegionalGridAiForecastLedger,
 } from './grid-ai-forecast-demand-flex-federation-ledger';
 import {
+  advanceRegionalMerchantArbitrationFederationOrchestration,
+  computeRegionalTransmissionMlfLedger,
+  scoreAgent13MlfMerchantArbitrationGIAlignment,
+  type V1014RegionalMerchantArbitrationFederationLedger,
+  type V1014RegionalTransmissionMlfLedger,
+} from './transmission-mlf-merchant-arbitration-federation-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25934,6 +25941,10 @@ export interface V1014RegionalEnergyProfile {
   gridAiForecastRelief: number;
   demandFlexFederationBand: string;
   demandFlexFederationRelief: number;
+  transmissionMlfBand: string;
+  transmissionMlfRelief: number;
+  merchantArbitrationFederationBand: string;
+  merchantArbitrationFederationRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -26054,6 +26065,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalExportBufferFederationLedgers: Record<string, V1014RegionalExportBufferFederationLedger>;
   regionalGridAiForecastLedgers: Record<string, V1014RegionalGridAiForecastLedger>;
   regionalDemandFlexFederationLedgers: Record<string, V1014RegionalDemandFlexFederationLedger>;
+  regionalTransmissionMlfLedgers: Record<string, V1014RegionalTransmissionMlfLedger>;
+  regionalMerchantArbitrationFederationLedgers: Record<string, V1014RegionalMerchantArbitrationFederationLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -26145,6 +26158,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalExportBufferFederationMemory: Record<string, { bufferIndex: number }>;
   regionalGridAiForecastMemory: Record<string, { forecastBalance: number; forecastIndex: number }>;
   regionalDemandFlexFederationMemory: Record<string, { flexIndex: number }>;
+  regionalTransmissionMlfMemory: Record<string, { mlfBalance: number; mlfIndex: number }>;
+  regionalMerchantArbitrationFederationMemory: Record<string, { arbitrationIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -26248,6 +26263,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalExportBufferFederationMemory: {},
     regionalGridAiForecastMemory: {},
     regionalDemandFlexFederationMemory: {},
+    regionalTransmissionMlfMemory: {},
+    regionalMerchantArbitrationFederationMemory: {},
     history: [],
   };
 }
@@ -26509,6 +26526,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalDemandFlexFederationMemory === 'object' && raw.regionalDemandFlexFederationMemory
         ? raw.regionalDemandFlexFederationMemory
         : {},
+    regionalTransmissionMlfMemory:
+      typeof raw.regionalTransmissionMlfMemory === 'object' && raw.regionalTransmissionMlfMemory
+        ? raw.regionalTransmissionMlfMemory
+        : {},
+    regionalMerchantArbitrationFederationMemory:
+      typeof raw.regionalMerchantArbitrationFederationMemory === 'object' && raw.regionalMerchantArbitrationFederationMemory
+        ? raw.regionalMerchantArbitrationFederationMemory
+        : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -26699,6 +26724,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalExportBufferFederationLedgers: {},
       regionalGridAiForecastLedgers: {},
       regionalDemandFlexFederationLedgers: {},
+      regionalTransmissionMlfLedgers: {},
+      regionalMerchantArbitrationFederationLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26793,6 +26820,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const exportBufferFederationLedgers: Record<string, V1014RegionalExportBufferFederationLedger> = {};
   const gridAiForecastLedgers: Record<string, V1014RegionalGridAiForecastLedger> = {};
   const demandFlexFederationLedgers: Record<string, V1014RegionalDemandFlexFederationLedger> = {};
+  const transmissionMlfLedgers: Record<string, V1014RegionalTransmissionMlfLedger> = {};
+  const merchantArbitrationFederationLedgers: Record<string, V1014RegionalMerchantArbitrationFederationLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26999,6 +27028,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextDemandFlexFederationMemory: Record<string, { flexIndex: number }> = {
     ...persisted.regionalDemandFlexFederationMemory,
+  };
+  const nextTransmissionMlfMemory: Record<string, { mlfBalance: number; mlfIndex: number }> = {
+    ...persisted.regionalTransmissionMlfMemory,
+  };
+  const nextMerchantArbitrationFederationMemory: Record<string, { arbitrationIndex: number }> = {
+    ...persisted.regionalMerchantArbitrationFederationMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -28141,6 +28176,33 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextDemandFlexFederationMemory[regionId] = demandFlexFederationStep.next;
     demandFlexFederationLedgers[regionId] = demandFlexFederationStep.ledger;
     pressure -= demandFlexFederationStep.ledger.demandFlexFederationRelief;
+
+    const transmissionMlfStep = computeRegionalTransmissionMlfLedger({
+      regionId,
+      demandFlexFederationRelief: demandFlexFederationStep.ledger.demandFlexFederationRelief,
+      gridAiForecastRelief: gridAiForecastStep.ledger.gridAiForecastRelief,
+      transmissionCongestionRelief: transmissionCongestionStep.ledger.transmissionCongestionRelief,
+      merchantStorageRelief: merchantStorageStep.ledger.merchantStorageRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextTransmissionMlfMemory[regionId] || null,
+    });
+    nextTransmissionMlfMemory[regionId] = transmissionMlfStep.next;
+    transmissionMlfLedgers[regionId] = transmissionMlfStep.ledger;
+    pressure -= transmissionMlfStep.ledger.transmissionMlfRelief;
+
+    const merchantArbitrationFederationStep = advanceRegionalMerchantArbitrationFederationOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      mlfBand: transmissionMlfStep.ledger.band,
+      nationalDecarbonArbitrationRelief: reliefArbitrationStep.ledger.reliefArbitrationRelief,
+      rezSpillRelief: rezStep.ledger.rezSpillRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextMerchantArbitrationFederationMemory[regionId] || null,
+    });
+    nextMerchantArbitrationFederationMemory[regionId] = merchantArbitrationFederationStep.next;
+    merchantArbitrationFederationLedgers[regionId] = merchantArbitrationFederationStep.ledger;
+    pressure -= merchantArbitrationFederationStep.ledger.merchantArbitrationFederationRelief;
     pressure = v1014Clamp(pressure, 0, 100);
 
     nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
@@ -28237,6 +28299,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       exportBufferFederationStep.ledger.summary,
       gridAiForecastStep.ledger.summary,
       demandFlexFederationStep.ledger.summary,
+      transmissionMlfStep.ledger.summary,
+      merchantArbitrationFederationStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -28481,6 +28545,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       gridAiForecastRelief: gridAiForecastStep.ledger.gridAiForecastRelief,
       demandFlexFederationBand: demandFlexFederationStep.ledger.band,
       demandFlexFederationRelief: demandFlexFederationStep.ledger.demandFlexFederationRelief,
+      transmissionMlfBand: transmissionMlfStep.ledger.band,
+      transmissionMlfRelief: transmissionMlfStep.ledger.transmissionMlfRelief,
+      merchantArbitrationFederationBand: merchantArbitrationFederationStep.ledger.band,
+      merchantArbitrationFederationRelief: merchantArbitrationFederationStep.ledger.merchantArbitrationFederationRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -28630,6 +28698,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalExportBufferFederationLedgers: exportBufferFederationLedgers,
     regionalGridAiForecastLedgers: gridAiForecastLedgers,
     regionalDemandFlexFederationLedgers: demandFlexFederationLedgers,
+    regionalTransmissionMlfLedgers: transmissionMlfLedgers,
+    regionalMerchantArbitrationFederationLedgers: merchantArbitrationFederationLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -28721,6 +28791,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalExportBufferFederationMemory: nextExportBufferFederationMemory,
     regionalGridAiForecastMemory: nextGridAiForecastMemory,
     regionalDemandFlexFederationMemory: nextDemandFlexFederationMemory,
+    regionalTransmissionMlfMemory: nextTransmissionMlfMemory,
+    regionalMerchantArbitrationFederationMemory: nextMerchantArbitrationFederationMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -30355,6 +30427,49 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     flexBand: rr43.state.regions.VIC?.demandFlexFederationBand,
   });
   check('AI FORECAST FLEX GI alignment', giAiForecastFlex.relevanceDelta > 0.25, giAiForecastFlex.reason || '');
+
+  const mlfMerchantArbInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'transmission_mlf_federation_hub',
+      'federation_transmission_mlf_tie',
+      'merchant_storage_arbitration_hub',
+      'rez_spill_arbitration_federation_mesh',
+      'grid_ai_forecast_federation_hub',
+      'industrial_dr_federation_orchestration_hub',
+      'merchant_interconnection_stacking_layer',
+      'national_decarbon_federation_hub',
+      'renewable_energy_zone_hub',
+      'renewable_grid',
+      'battery_grid',
+    ],
+  };
+  const rr44 = computeIndustrialEnergyEnvironmentalState(
+    mlfMerchantArbInp,
+    createInitialIndustrialEnergyEnvironmentalPersisted(),
+    null,
+  );
+  check(
+    'TRANSMISSION MLF tracked',
+    !!rr44.state.regionalTransmissionMlfLedgers.NSW?.band,
+    rr44.state.regionalTransmissionMlfLedgers.NSW?.band || '',
+  );
+  check(
+    'MERCHANT arbitration federation relief',
+    (rr44.state.regions.NSW?.merchantArbitrationFederationRelief || 0) > 0,
+    String(rr44.state.regions.NSW?.merchantArbitrationFederationRelief),
+  );
+  check(
+    'TRANSMISSION MLF memory persisted',
+    !!rr44.persisted.regionalTransmissionMlfMemory.NSW,
+    String(rr44.persisted.regionalTransmissionMlfMemory.NSW?.mlfIndex),
+  );
+  const giMlfMerchantArb = scoreAgent13MlfMerchantArbitrationGIAlignment({
+    actionText: 'Transmission MLF federation hub with merchant storage arbitration and REZ spill arbitration mesh',
+    mlfBand: rr44.state.regions.NSW?.transmissionMlfBand,
+    arbitrationBand: rr44.state.regions.NSW?.merchantArbitrationFederationBand,
+  });
+  check('MLF MERCHANT ARB GI alignment', giMlfMerchantArb.relevanceDelta > 0.25, giMlfMerchantArb.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');
