@@ -75,6 +75,8 @@ import { buildMultiYearSupplementaryCoherenceReport } from '../multi-year-supple
 import { buildFiscalRulesOffsetBridgeReport } from '../fiscal-rules-offset-bridge/compute';
 import { buildRecurringForwardOutlookCoherenceReport } from '../recurring-forward-outlook-coherence/compute';
 import { buildTaxLedgerSensitivityBridgeReport } from '../tax-ledger-sensitivity-bridge/compute';
+import { buildDebtServiceForwardCoherenceReport } from '../debt-service-forward-coherence/compute';
+import { buildStatutoryOutlookBufferBridgeReport } from '../statutory-outlook-buffer-bridge/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -510,6 +512,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     taxExp,
     ledger,
     taxPolicySensitivity
+  );
+  const debtServiceForwardCoherence = buildDebtServiceForwardCoherenceReport(
+    turn,
+    v1012,
+    debtServiceCoverage,
+    revenueForwardReconciliation,
+    outlook
+  );
+  const statutoryOutlookBufferBridge = buildStatutoryOutlookBufferBridgeReport(
+    turn,
+    v1012,
+    statutory,
+    fiscalBufferCoherence,
+    outlook
   );
 
   checks.push({
@@ -1536,12 +1552,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `forgone=${taxExp.totalForgone}, marginal=${taxPolicySensitivity.aggregateMarginalPoints}`
   });
 
+  checks.push({
+    id: 'CF145',
+    label: 'Debt service forward coherence within band',
+    passed: debtServiceForwardCoherence.withinDebtServiceForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${debtServiceForwardCoherence.aggregateCoherenceGapPoints}, checks=${debtServiceForwardCoherence.checks.filter(c => c.passed).length}/${debtServiceForwardCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF146',
+    label: 'Statutory outlook buffer bridge within band',
+    passed: statutoryOutlookBufferBridge.withinStatutoryOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${statutoryOutlookBufferBridge.bridgeGapPoints}, checks=${statutoryOutlookBufferBridge.checks.filter(c => c.passed).length}/${statutoryOutlookBufferBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF147',
+    label: 'Debt service aligned with forward reconciliation',
+    passed: debtServiceForwardCoherence.alignedWithForwardReconciliation,
+    detail: `coverage=${debtServiceCoverage.coverageRatio}, forward=${revenueForwardReconciliation.aggregateGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF148',
+    label: 'Statutory outlook aligned with buffer coherence',
+    passed: statutoryOutlookBufferBridge.alignedWithBufferCoherence,
+    detail: `operating=${statutory.netOperatingBalance}, buffer=${fiscalBufferCoherence.aggregateBufferPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 100
+    layerCount: 102
   };
 }

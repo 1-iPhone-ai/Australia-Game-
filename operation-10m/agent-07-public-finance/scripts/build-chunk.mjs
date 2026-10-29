@@ -160,6 +160,10 @@ const FILES = [
   'recurring-forward-outlook-coherence/compute.ts',
   'tax-ledger-sensitivity-bridge/types.ts',
   'tax-ledger-sensitivity-bridge/compute.ts',
+  'debt-service-forward-coherence/types.ts',
+  'debt-service-forward-coherence/compute.ts',
+  'statutory-outlook-buffer-bridge/types.ts',
+  'statutory-outlook-buffer-bridge/compute.ts',
   'infrastructure-financing/types.ts',
   'infrastructure-financing/compute.ts',
   'recurring-commitments/types.ts',
@@ -277,7 +281,9 @@ const FILES = [
   'multi-year-supplementary-coherence/self-tests.ts',
   'fiscal-rules-offset-bridge/self-tests.ts',
   'recurring-forward-outlook-coherence/self-tests.ts',
-  'tax-ledger-sensitivity-bridge/self-tests.ts'
+  'tax-ledger-sensitivity-bridge/self-tests.ts',
+  'debt-service-forward-coherence/self-tests.ts',
+  'statutory-outlook-buffer-bridge/self-tests.ts'
 ];
 
 function stripModulePreamble(source) {

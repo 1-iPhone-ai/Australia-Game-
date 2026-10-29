@@ -83,6 +83,8 @@ import { runMultiYearSupplementaryCoherenceSelfTests } from './modules/multi-yea
 import { runFiscalRulesOffsetBridgeSelfTests } from './modules/fiscal-rules-offset-bridge/self-tests';
 import { runRecurringForwardOutlookCoherenceSelfTests } from './modules/recurring-forward-outlook-coherence/self-tests';
 import { runTaxLedgerSensitivityBridgeSelfTests } from './modules/tax-ledger-sensitivity-bridge/self-tests';
+import { runDebtServiceForwardCoherenceSelfTests } from './modules/debt-service-forward-coherence/self-tests';
+import { runStatutoryOutlookBufferBridgeSelfTests } from './modules/statutory-outlook-buffer-bridge/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -175,6 +177,8 @@ ok = runSuite('Multi-year supplementary coherence', runMultiYearSupplementaryCoh
 ok = runSuite('Fiscal rules offset bridge', runFiscalRulesOffsetBridgeSelfTests) && ok;
 ok = runSuite('Recurring forward outlook coherence', runRecurringForwardOutlookCoherenceSelfTests) && ok;
 ok = runSuite('Tax ledger sensitivity bridge', runTaxLedgerSensitivityBridgeSelfTests) && ok;
+ok = runSuite('Debt service forward coherence', runDebtServiceForwardCoherenceSelfTests) && ok;
+ok = runSuite('Statutory outlook buffer bridge', runStatutoryOutlookBufferBridgeSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);
