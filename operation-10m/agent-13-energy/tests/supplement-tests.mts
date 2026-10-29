@@ -80,6 +80,11 @@ import {
   V1014_CSP_THERMAL_TURN_SCENARIOS,
 } from '../modules/csp-molten-salt-thermal-dispatch-ledger.ts';
 import {
+  runAgent13GridInertiaScaleSelfTests,
+  runAgent13GridInertiaTurnScenario,
+  V1014_GRID_INERTIA_TURN_SCENARIOS,
+} from '../modules/grid-forming-inertia-orchestration-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -283,6 +288,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const cspTurn = runAgent13CspThermalTurnScenario(V1014_CSP_THERMAL_TURN_SCENARIOS[0]);
   ok(cspTurn.passed);
+
+  const gridInertia = runAgent13GridInertiaScaleSelfTests();
+  ok(gridInertia.failed === 0 && gridInertia.passed >= 7);
+
+  const gfTurn = runAgent13GridInertiaTurnScenario(V1014_GRID_INERTIA_TURN_SCENARIOS[0]);
+  ok(gfTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

@@ -39,6 +39,7 @@ const FILES = [
   'pumped-hydro-seasonal-storage-ledger.ts',
   'community-microgrid-vpp-orchestration-ledger.ts',
   'csp-molten-salt-thermal-dispatch-ledger.ts',
+  'grid-forming-inertia-orchestration-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -77,6 +78,8 @@ const EXPORT_MANIFEST = [
   'V1014_VPP_ORCHESTRATION_CATALOG',
   'V1014_CSP_MOLTEN_SALT_CATALOG',
   'V1014_THERMAL_STORAGE_DISPATCH_CATALOG',
+  'V1014_GRID_FORMING_INVERTER_CATALOG',
+  'V1014_SYNTHETIC_INERTIA_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -140,6 +143,9 @@ const EXPORT_MANIFEST = [
   'runAgent13CspThermalScaleSelfTests',
   'runAgent13CspThermalTurnScenario',
   'V1014_CSP_THERMAL_TURN_SCENARIOS',
+  'runAgent13GridInertiaScaleSelfTests',
+  'runAgent13GridInertiaTurnScenario',
+  'V1014_GRID_INERTIA_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

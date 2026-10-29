@@ -142,6 +142,13 @@ import {
   type V1014RegionalThermalStorageDispatchLedger,
 } from './csp-molten-salt-thermal-dispatch-ledger';
 import {
+  advanceRegionalSyntheticInertiaOrchestration,
+  computeRegionalGridFormingInverterLedger,
+  scoreAgent13GridInertiaGIAlignment,
+  type V1014RegionalGridFormingInverterLedger,
+  type V1014RegionalSyntheticInertiaLedger,
+} from './grid-forming-inertia-orchestration-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25670,6 +25677,10 @@ export interface V1014RegionalEnergyProfile {
   cspThermalRelief: number;
   thermalStorageDispatchBand: string;
   thermalStorageDispatchRelief: number;
+  gridFormingInverterBand: string;
+  gridFormingRelief: number;
+  syntheticInertiaBand: string;
+  syntheticInertiaRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25742,6 +25753,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalVppOrchestrationLedgers: Record<string, V1014RegionalVppOrchestrationLedger>;
   regionalCspMoltenSaltLedgers: Record<string, V1014RegionalCspMoltenSaltLedger>;
   regionalThermalStorageDispatchLedgers: Record<string, V1014RegionalThermalStorageDispatchLedger>;
+  regionalGridFormingInverterLedgers: Record<string, V1014RegionalGridFormingInverterLedger>;
+  regionalSyntheticInertiaLedgers: Record<string, V1014RegionalSyntheticInertiaLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25785,6 +25798,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalVppMemory: Record<string, { orchestrationIndex: number }>;
   regionalCspMemory: Record<string, { saltStorageBalance: number; cspIndex: number }>;
   regionalThermalDispatchMemory: Record<string, { dispatchIndex: number }>;
+  regionalGridFormingMemory: Record<string, { strengthBalance: number; formingIndex: number }>;
+  regionalSyntheticInertiaMemory: Record<string, { inertiaIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25840,6 +25855,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalVppMemory: {},
     regionalCspMemory: {},
     regionalThermalDispatchMemory: {},
+    regionalGridFormingMemory: {},
+    regionalSyntheticInertiaMemory: {},
     history: [],
   };
 }
@@ -25917,6 +25934,12 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
     regionalThermalDispatchMemory:
       typeof raw.regionalThermalDispatchMemory === 'object' && raw.regionalThermalDispatchMemory
         ? raw.regionalThermalDispatchMemory
+        : {},
+    regionalGridFormingMemory:
+      typeof raw.regionalGridFormingMemory === 'object' && raw.regionalGridFormingMemory ? raw.regionalGridFormingMemory : {},
+    regionalSyntheticInertiaMemory:
+      typeof raw.regionalSyntheticInertiaMemory === 'object' && raw.regionalSyntheticInertiaMemory
+        ? raw.regionalSyntheticInertiaMemory
         : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
@@ -26060,6 +26083,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalVppOrchestrationLedgers: {},
       regionalCspMoltenSaltLedgers: {},
       regionalThermalStorageDispatchLedgers: {},
+      regionalGridFormingInverterLedgers: {},
+      regionalSyntheticInertiaLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26106,6 +26131,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const vppOrchestrationLedgers: Record<string, V1014RegionalVppOrchestrationLedger> = {};
   const cspMoltenSaltLedgers: Record<string, V1014RegionalCspMoltenSaltLedger> = {};
   const thermalStorageDispatchLedgers: Record<string, V1014RegionalThermalStorageDispatchLedger> = {};
+  const gridFormingInverterLedgers: Record<string, V1014RegionalGridFormingInverterLedger> = {};
+  const syntheticInertiaLedgers: Record<string, V1014RegionalSyntheticInertiaLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26172,6 +26199,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   const nextCspMemory: Record<string, { saltStorageBalance: number; cspIndex: number }> = { ...persisted.regionalCspMemory };
   const nextThermalDispatchMemory: Record<string, { dispatchIndex: number }> = {
     ...persisted.regionalThermalDispatchMemory,
+  };
+  const nextGridFormingMemory: Record<string, { strengthBalance: number; formingIndex: number }> = {
+    ...persisted.regionalGridFormingMemory,
+  };
+  const nextSyntheticInertiaMemory: Record<string, { inertiaIndex: number }> = {
+    ...persisted.regionalSyntheticInertiaMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -26602,6 +26635,29 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextThermalDispatchMemory[regionId] = thermalDispatchStep.next;
     thermalStorageDispatchLedgers[regionId] = thermalDispatchStep.ledger;
 
+    const gridFormingStep = computeRegionalGridFormingInverterLedger({
+      regionId,
+      gridFirmingRelief: firmingStep.ledger.gridFirmingRelief,
+      rezSpillRelief: rezStep.ledger.rezSpillRelief,
+      thermalStorageDispatchRelief: thermalDispatchStep.ledger.thermalStorageDispatchRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextGridFormingMemory[regionId] || null,
+    });
+    nextGridFormingMemory[regionId] = gridFormingStep.next;
+    gridFormingInverterLedgers[regionId] = gridFormingStep.ledger;
+
+    const syntheticInertiaStep = advanceRegionalSyntheticInertiaOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      gridFormingBand: gridFormingStep.ledger.band,
+      offshoreRenewableRelief: offshoreStep.ledger.offshoreRenewableRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextSyntheticInertiaMemory[regionId] || null,
+    });
+    nextSyntheticInertiaMemory[regionId] = syntheticInertiaStep.next;
+    syntheticInertiaLedgers[regionId] = syntheticInertiaStep.ledger;
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -26643,6 +26699,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= vppStep.ledger.vppOrchestrationRelief;
     pressure -= cspStep.ledger.cspThermalRelief;
     pressure -= thermalDispatchStep.ledger.thermalStorageDispatchRelief;
+    pressure -= gridFormingStep.ledger.gridFormingRelief;
+    pressure -= syntheticInertiaStep.ledger.syntheticInertiaRelief;
     if (biodiversityStep.ledger.band === 'critical_loss') pressure += 5;
     pressure -= gridRecovery.pressureRelief;
     pressure -= storageFlex.gridStressRelief;
@@ -26709,6 +26767,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       vppStep.ledger.summary,
       cspStep.ledger.summary,
       thermalDispatchStep.ledger.summary,
+      gridFormingStep.ledger.summary,
+      syntheticInertiaStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -26857,6 +26917,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       cspThermalRelief: cspStep.ledger.cspThermalRelief,
       thermalStorageDispatchBand: thermalDispatchStep.ledger.band,
       thermalStorageDispatchRelief: thermalDispatchStep.ledger.thermalStorageDispatchRelief,
+      gridFormingInverterBand: gridFormingStep.ledger.band,
+      gridFormingRelief: gridFormingStep.ledger.gridFormingRelief,
+      syntheticInertiaBand: syntheticInertiaStep.ledger.band,
+      syntheticInertiaRelief: syntheticInertiaStep.ledger.syntheticInertiaRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -26958,6 +27022,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalVppOrchestrationLedgers: vppOrchestrationLedgers,
     regionalCspMoltenSaltLedgers: cspMoltenSaltLedgers,
     regionalThermalStorageDispatchLedgers: thermalStorageDispatchLedgers,
+    regionalGridFormingInverterLedgers: gridFormingInverterLedgers,
+    regionalSyntheticInertiaLedgers: syntheticInertiaLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -27001,6 +27067,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalVppMemory: nextVppMemory,
     regionalCspMemory: nextCspMemory,
     regionalThermalDispatchMemory: nextThermalDispatchMemory,
+    regionalGridFormingMemory: nextGridFormingMemory,
+    regionalSyntheticInertiaMemory: nextSyntheticInertiaMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -27648,6 +27716,48 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     dispatchBand: rr19.state.regions.SA?.thermalStorageDispatchBand,
   });
   check('CSP THERMAL GI alignment', giCsp.relevanceDelta > 0.5, giCsp.reason || '');
+
+  const gfInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'industrial_ccs_cluster',
+      'pumped_hydro',
+      'long_duration_battery',
+      'rez_transmission_backbone',
+      'renewable_hub_switchyard',
+      'offshore_floating_wind',
+      'subsea_hvdc_corridor',
+      'central_receiver_power_tower',
+      'overnight_molten_salt_discharge',
+      'battery_grid_forming_inverter_fleet',
+      'wind_grid_forming_converter_train',
+      'virtual_inertia_orchestration_loop',
+      'weak_grid_stabilizer_deployment',
+      'synthetic_inertia_market_participation',
+    ],
+  };
+  const rr20 = computeIndustrialEnergyEnvironmentalState(gfInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check(
+    'GRID FORMING ledger tracked',
+    !!rr20.state.regionalGridFormingInverterLedgers.SA?.band,
+    rr20.state.regionalGridFormingInverterLedgers.SA?.band || '',
+  );
+  check(
+    'SYNTHETIC inertia relief',
+    (rr20.state.regions.SA?.syntheticInertiaRelief || 0) > 0,
+    String(rr20.state.regions.SA?.syntheticInertiaRelief),
+  );
+  check(
+    'GRID FORMING memory persisted',
+    !!rr20.persisted.regionalGridFormingMemory.SA,
+    String(rr20.persisted.regionalGridFormingMemory.SA?.formingIndex),
+  );
+  const giGf = scoreAgent13GridInertiaGIAlignment({
+    actionText: 'Battery grid forming inverter with virtual inertia orchestration',
+    formingBand: rr20.state.regions.SA?.gridFormingInverterBand,
+    inertiaBand: rr20.state.regions.SA?.syntheticInertiaBand,
+  });
+  check('GRID INERTIA GI alignment', giGf.relevanceDelta > 0.5, giGf.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');
