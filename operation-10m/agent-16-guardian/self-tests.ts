@@ -68,6 +68,7 @@ import {
   buildGuardianDepthIdentificationReport,
   buildGuardianDepthDelegationReport,
   buildGuardianDepthEmpowermentReport,
+  buildGuardianDepthEntrustmentReport,
   runGuardianDepthUnitSelfTests,
 } from './guardian-depth.js';
 import type { AdvisoryRecommendation, Agent16SelfTestResult, AiSuggestedAction } from './types.js';
@@ -2068,6 +2069,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthEmpowermentReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round49_metrics', 'Round 49 entrustment envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.entrustmentStrainIndex >= 40 &&
+      snap.entrustmentIntegrityScore <= 100 &&
+      snap.governanceVimScore <= 100
+    );
+  });
+
+  check(results, 'a16_entrustment_report', 'Guardian depth entrustment report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthEntrustmentReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 
