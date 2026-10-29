@@ -152,6 +152,14 @@ import {
   assessTeamIntelligenceConsensusInflation,
   type TeamIntelligenceConsensusBand,
 } from '../inflation/team-intelligence-consensus-inflation.js';
+import {
+  assessStrategicGeopoliticalInflationPremium,
+  type StrategicGeopoliticalPremiumBand,
+} from '../inflation/strategic-geopolitical-inflation-premium.js';
+import {
+  assessAiMemoryInflationRecallInflation,
+  type AiMemoryInflationRecallBand,
+} from '../inflation/ai-memory-inflation-recall-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -198,6 +206,8 @@ export interface InflationForecastPoint {
   tradeExchangeImportBand: TradeExchangeImportBand;
   guardianInflationInterventionBand: GuardianInflationInterventionBand;
   teamIntelligenceConsensusBand: TeamIntelligenceConsensusBand;
+  strategicGeopoliticalPremiumBand: StrategicGeopoliticalPremiumBand;
+  aiMemoryInflationRecallBand: AiMemoryInflationRecallBand;
 }
 
 export interface InflationForecastPath {
@@ -559,6 +569,25 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const strategicPremium = assessStrategicGeopoliticalInflationPremium({
+      nationalPriorityInflationBias: inputs.highInflationScenario ? 'expansionary' : 'neutral',
+      strategicStockpileStress: inputs.creditShockActive,
+      geopoliticalRiskPremium: inputs.fiscalPressure === 'critical' ? 0.68 : 0.4,
+      expansionaryPriorityCascadeActive: inputs.highInflationScenario && inputs.creditShockActive,
+      strategicInflationRiskBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'critical' : inputs.fiscalPressure === 'critical' ? 'elevated' : 'low',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const memoryRecall = assessAiMemoryInflationRecallInflation({
+      recalledInflationRegimeConfidence: inputs.highInflationScenario ? 0.8 : 0.52,
+      narrativeDriftTowardHigherInflation: inputs.householdInflationScenarioActive,
+      explainabilityAlertActive: inputs.publicStability < 45,
+      memoryInflationRecallCascade: inputs.highInflationScenario && inputs.householdInflationScenarioActive,
+      explainabilityInflationSalienceBand: inputs.publicStability < 40 ? 'critical' : inputs.publicStability < 50 ? 'elevated' : 'muted',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -605,6 +634,8 @@ export function projectInflationForecastPath(
       tradeExchangeImportBand: tradeImport.importBand,
       guardianInflationInterventionBand: guardianIntervention.interventionBand,
       teamIntelligenceConsensusBand: teamConsensus.consensusBand,
+      strategicGeopoliticalPremiumBand: strategicPremium.premiumBand,
+      aiMemoryInflationRecallBand: memoryRecall.recallBand,
     });
   }
 

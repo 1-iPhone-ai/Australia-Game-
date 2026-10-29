@@ -783,6 +783,44 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'guardian', 'team', 'round23'],
   },
+  {
+    id: 'strategic_geopolitical_premium_stack',
+    label: 'Strategic geopolitical premium stack',
+    description: 'Expansionary bias with critical strategic inflation risk.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.28,
+    },
+    tags: ['inflation', 'strategic', 'round24'],
+  },
+  {
+    id: 'ai_memory_recall_salience_stress',
+    label: 'AI memory recall salience stress',
+    description: 'High regime recall confidence with explainability alert.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      publicStability: 39,
+      inflationSettingMultiplier: 1.26,
+    },
+    tags: ['inflation', 'memory', 'round24'],
+  },
+  {
+    id: 'strategic_memory_fusion_stress',
+    label: 'Strategic & memory fusion stress',
+    description: 'Aligned Agent 01 cascade + Agent 19 recall salience critical.',
+    patch: {
+      inflationSettingMultiplier: 1.35,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      publicStability: 33,
+      systemicLiquidityBand: 'critical',
+    },
+    tags: ['inflation', 'strategic', 'memory', 'round24'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

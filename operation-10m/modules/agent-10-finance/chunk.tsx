@@ -4133,6 +4133,160 @@ export function teamIntelligenceConsensusInflationScoreAdjustment(band: TeamInte
 }
 
 
+// --- source: inflation/strategic-geopolitical-inflation-premium.ts ---
+
+export type StrategicGeopoliticalPremiumBand = 'contained' | 'firming' | 'elevated' | 'geopolitical_shock';
+
+export interface StrategicGeopoliticalInflationPremiumAssessment {
+  premiumBand: StrategicGeopoliticalPremiumBand;
+  strategicIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** National strategic priority and geopolitical risk premium in CPI metadata (Agent 01). */
+export function assessStrategicGeopoliticalInflationPremium(input: {
+  nationalPriorityInflationBias: 'containment' | 'neutral' | 'expansionary';
+  strategicStockpileStress: boolean;
+  geopoliticalRiskPremium: number;
+  expansionaryPriorityCascadeActive: boolean;
+  strategicInflationRiskBand: 'low' | 'elevated' | 'critical';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): StrategicGeopoliticalInflationPremiumAssessment {
+  let pressure = 0;
+  if (input.nationalPriorityInflationBias === 'expansionary') {
+    pressure += 0.22;
+  }
+  if (input.strategicStockpileStress) {
+    pressure += 0.18;
+  }
+  pressure += finClamp(input.geopoliticalRiskPremium, 0, 1) * 0.24;
+  if (input.expansionaryPriorityCascadeActive) {
+    pressure += 0.16;
+  }
+  if (input.strategicInflationRiskBand === 'critical') {
+    pressure += 0.22;
+  } else if (input.strategicInflationRiskBand === 'elevated') {
+    pressure += 0.11;
+  }
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.05;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.0036, 0, 1.05);
+  const strategicIndex = finRound(100 + pressure * 17, 1);
+
+  let premiumBand: StrategicGeopoliticalPremiumBand = 'contained';
+  if (pressure >= 0.56) premiumBand = 'geopolitical_shock';
+  else if (pressure >= 0.36) premiumBand = 'elevated';
+  else if (pressure >= 0.17) premiumBand = 'firming';
+
+  const inflationScoreNudge =
+    premiumBand === 'geopolitical_shock'
+      ? 0.09
+      : premiumBand === 'elevated'
+        ? 0.057
+        : premiumBand === 'firming'
+          ? 0.027
+          : 0;
+
+  const narrative =
+    premiumBand === 'geopolitical_shock' || premiumBand === 'elevated'
+      ? 'Strategic priorities and geopolitical risk are lifting CPI through premium channels.'
+      : premiumBand === 'firming'
+        ? 'National inflation bias firming with stockpile and risk pass-through.'
+        : 'Strategic geopolitical premium contained versus headline CPI.';
+
+  return { premiumBand, strategicIndex, inflationScoreNudge, narrative };
+}
+
+export function strategicGeopoliticalInflationPremiumScoreAdjustment(band: StrategicGeopoliticalPremiumBand): number {
+  if (band === 'geopolitical_shock') return 4;
+  if (band === 'elevated') return 3;
+  if (band === 'firming') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/ai-memory-inflation-recall-inflation.ts ---
+
+export type AiMemoryInflationRecallBand = 'anchored' | 'drifting' | 'recall_elevated' | 'memory_shock';
+
+export interface AiMemoryInflationRecallAssessment {
+  recallBand: AiMemoryInflationRecallBand;
+  memoryIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** AI memory recall and explainability salience in CPI metadata (Agent 19). */
+export function assessAiMemoryInflationRecallInflation(input: {
+  recalledInflationRegimeConfidence: number;
+  narrativeDriftTowardHigherInflation: boolean;
+  explainabilityAlertActive: boolean;
+  memoryInflationRecallCascade: boolean;
+  explainabilityInflationSalienceBand: 'muted' | 'elevated' | 'critical';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): AiMemoryInflationRecallAssessment {
+  let pressure = 0;
+  if (input.narrativeDriftTowardHigherInflation) {
+    pressure += 0.22;
+  }
+  pressure += finClamp(input.recalledInflationRegimeConfidence, 0, 1) * 0.2;
+  if (input.explainabilityAlertActive) {
+    pressure += 0.14;
+  }
+  if (input.memoryInflationRecallCascade) {
+    pressure += 0.18;
+  }
+  if (input.explainabilityInflationSalienceBand === 'critical') {
+    pressure += 0.2;
+  } else if (input.explainabilityInflationSalienceBand === 'elevated') {
+    pressure += 0.1;
+  }
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.05;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.0038, 0, 1.05);
+  const memoryIndex = finRound(100 + pressure * 16, 1);
+
+  let recallBand: AiMemoryInflationRecallBand = 'anchored';
+  if (pressure >= 0.55) recallBand = 'memory_shock';
+  else if (pressure >= 0.35) recallBand = 'recall_elevated';
+  else if (pressure >= 0.16) recallBand = 'drifting';
+
+  const inflationScoreNudge =
+    recallBand === 'memory_shock'
+      ? 0.088
+      : recallBand === 'recall_elevated'
+        ? 0.055
+        : recallBand === 'drifting'
+          ? 0.024
+          : 0;
+
+  const narrative =
+    recallBand === 'memory_shock' || recallBand === 'recall_elevated'
+      ? 'AI memory recall is elevating inflation regime confidence in CPI presentation layers.'
+      : recallBand === 'drifting'
+        ? 'Narrative drift toward higher inflation in memory-backed explainability.'
+        : 'AI memory inflation recall anchored versus headline.';
+
+  return { recallBand, memoryIndex, inflationScoreNudge, narrative };
+}
+
+export function aiMemoryInflationRecallScoreAdjustment(band: AiMemoryInflationRecallBand): number {
+  if (band === 'memory_shock') return 4;
+  if (band === 'recall_elevated') return 3;
+  if (band === 'drifting') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -5153,6 +5307,44 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       publicStability: 34,
     },
     tags: ['inflation', 'guardian', 'team', 'round23'],
+  },
+  {
+    id: 'strategic_geopolitical_premium_stack',
+    label: 'Strategic geopolitical premium stack',
+    description: 'Expansionary bias with critical strategic inflation risk.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.28,
+    },
+    tags: ['inflation', 'strategic', 'round24'],
+  },
+  {
+    id: 'ai_memory_recall_salience_stress',
+    label: 'AI memory recall salience stress',
+    description: 'High regime recall confidence with explainability alert.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      publicStability: 39,
+      inflationSettingMultiplier: 1.26,
+    },
+    tags: ['inflation', 'memory', 'round24'],
+  },
+  {
+    id: 'strategic_memory_fusion_stress',
+    label: 'Strategic & memory fusion stress',
+    description: 'Aligned Agent 01 cascade + Agent 19 recall salience critical.',
+    patch: {
+      inflationSettingMultiplier: 1.35,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      publicStability: 33,
+      systemicLiquidityBand: 'critical',
+    },
+    tags: ['inflation', 'strategic', 'memory', 'round24'],
   },
 ] as const;
 
@@ -6936,6 +7128,10 @@ export interface Agent01StrategicSnapshot {
   nationalPriorityInflationBias: 'containment' | 'neutral' | 'expansionary';
   strategicStockpileStress: boolean;
   geopoliticalRiskPremium: number;
+  /** Round 24: expansionary priority cascade feeding CPI metadata. */
+  expansionaryPriorityCascadeActive?: boolean;
+  /** Round 24: strategic inflation risk band. */
+  strategicInflationRiskBand?: 'low' | 'elevated' | 'critical';
 }
 
 export function mergeAgent01IntoMacroFinancialInputs(
@@ -6962,6 +7158,9 @@ export function mergeAgent01IntoMacroFinancialInputs(
   if (snapshot.strategicStockpileStress && snapshot.nationalPriorityInflationBias === 'expansionary') {
     highInflationScenario = true;
   }
+  if (snapshot.expansionaryPriorityCascadeActive || snapshot.strategicInflationRiskBand === 'critical') {
+    highInflationScenario = true;
+  }
 
   return {
     ...base,
@@ -6984,6 +7183,10 @@ export interface Agent19MemorySnapshot {
   recalledInflationRegimeConfidence: number;
   narrativeDriftTowardHigherInflation: boolean;
   explainabilityAlertActive: boolean;
+  /** Round 24: memory recall cascade into inflation presentation. */
+  memoryInflationRecallCascade?: boolean;
+  /** Round 24: explainability inflation salience band. */
+  explainabilityInflationSalienceBand?: 'muted' | 'elevated' | 'critical';
 }
 
 export function mergeAgent19IntoMacroFinancialInputs(
@@ -7006,6 +7209,10 @@ export function mergeAgent19IntoMacroFinancialInputs(
     snapshot.recalledInflationRegimeConfidence > 0.7
   ) {
     highInflationScenario = true;
+  }
+  if (snapshot.memoryInflationRecallCascade && snapshot.explainabilityInflationSalienceBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   }
 
   return {
@@ -7245,6 +7452,12 @@ export function agent23DashboardsBridgeIntegrationNote(): string {
   assessTeamIntelligenceConsensusInflation,
   type TeamIntelligenceConsensusBand,
 } from '../inflation/team-intelligence-consensus-inflation.js';
+  assessStrategicGeopoliticalInflationPremium,
+  type StrategicGeopoliticalPremiumBand,
+} from '../inflation/strategic-geopolitical-inflation-premium.js';
+  assessAiMemoryInflationRecallInflation,
+  type AiMemoryInflationRecallBand,
+} from '../inflation/ai-memory-inflation-recall-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -7291,6 +7504,8 @@ export interface InflationForecastPoint {
   tradeExchangeImportBand: TradeExchangeImportBand;
   guardianInflationInterventionBand: GuardianInflationInterventionBand;
   teamIntelligenceConsensusBand: TeamIntelligenceConsensusBand;
+  strategicGeopoliticalPremiumBand: StrategicGeopoliticalPremiumBand;
+  aiMemoryInflationRecallBand: AiMemoryInflationRecallBand;
 }
 
 export interface InflationForecastPath {
@@ -7652,6 +7867,25 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const strategicPremium = assessStrategicGeopoliticalInflationPremium({
+      nationalPriorityInflationBias: inputs.highInflationScenario ? 'expansionary' : 'neutral',
+      strategicStockpileStress: inputs.creditShockActive,
+      geopoliticalRiskPremium: inputs.fiscalPressure === 'critical' ? 0.68 : 0.4,
+      expansionaryPriorityCascadeActive: inputs.highInflationScenario && inputs.creditShockActive,
+      strategicInflationRiskBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'critical' : inputs.fiscalPressure === 'critical' ? 'elevated' : 'low',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const memoryRecall = assessAiMemoryInflationRecallInflation({
+      recalledInflationRegimeConfidence: inputs.highInflationScenario ? 0.8 : 0.52,
+      narrativeDriftTowardHigherInflation: inputs.householdInflationScenarioActive,
+      explainabilityAlertActive: inputs.publicStability < 45,
+      memoryInflationRecallCascade: inputs.highInflationScenario && inputs.householdInflationScenarioActive,
+      explainabilityInflationSalienceBand: inputs.publicStability < 40 ? 'critical' : inputs.publicStability < 50 ? 'elevated' : 'muted',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -7698,6 +7932,8 @@ export function projectInflationForecastPath(
       tradeExchangeImportBand: tradeImport.importBand,
       guardianInflationInterventionBand: guardianIntervention.interventionBand,
       teamIntelligenceConsensusBand: teamConsensus.consensusBand,
+      strategicGeopoliticalPremiumBand: strategicPremium.premiumBand,
+      aiMemoryInflationRecallBand: memoryRecall.recallBand,
     });
   }
 
@@ -7803,7 +8039,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r23';
+  schemaVersion: '10.14.agent10.r24';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -7845,6 +8081,8 @@ export interface Agent21InflationForecastBundle {
   terminalTradeExchangeImport: TradeExchangeImportBand;
   terminalGuardianInflationIntervention: GuardianInflationInterventionBand;
   terminalTeamIntelligenceConsensus: TeamIntelligenceConsensusBand;
+  terminalStrategicGeopoliticalPremium: StrategicGeopoliticalPremiumBand;
+  terminalAiMemoryInflationRecall: AiMemoryInflationRecallBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -7873,7 +8111,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r23',
+    schemaVersion: '10.14.agent10.r24',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -7915,6 +8153,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalTradeExchangeImport: lastPoint?.tradeExchangeImportBand ?? 'anchored',
     terminalGuardianInflationIntervention: lastPoint?.guardianInflationInterventionBand ?? 'calm',
     terminalTeamIntelligenceConsensus: lastPoint?.teamIntelligenceConsensusBand ?? 'anchored',
+    terminalStrategicGeopoliticalPremium: lastPoint?.strategicGeopoliticalPremiumBand ?? 'contained',
+    terminalAiMemoryInflationRecall: lastPoint?.aiMemoryInflationRecallBand ?? 'anchored',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -8150,6 +8390,12 @@ export function effectiveTierLoanRate(
   assessTeamIntelligenceConsensusInflation,
   teamIntelligenceConsensusInflationScoreAdjustment,
 } from './inflation/team-intelligence-consensus-inflation.js';
+  assessStrategicGeopoliticalInflationPremium,
+  strategicGeopoliticalInflationPremiumScoreAdjustment,
+} from './inflation/strategic-geopolitical-inflation-premium.js';
+  assessAiMemoryInflationRecallInflation,
+  aiMemoryInflationRecallScoreAdjustment,
+} from './inflation/ai-memory-inflation-recall-inflation.js';
   mergeAgent22IntoMacroFinancialInputs,
   agent22UiBridgeIntegrationNote,
 } from './integration/agent22-ui-bridge.js';
@@ -8554,7 +8800,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r23');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r24');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -8701,7 +8947,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r23' &&
+      bundle.schemaVersion === '10.14.agent10.r24' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -8793,7 +9039,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r23' &&
+      bundle.schemaVersion === '10.14.agent10.r24' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -8892,7 +9138,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r23' &&
+      bundle.schemaVersion === '10.14.agent10.r24' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -8990,7 +9236,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r23' &&
+      bundle.schemaVersion === '10.14.agent10.r24' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -9088,7 +9334,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r23' &&
+      bundle.schemaVersion === '10.14.agent10.r24' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -9178,7 +9424,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r12_10',
       'agent21 r12 fields',
-      bundle.schemaVersion === '10.14.agent10.r23' &&
+      bundle.schemaVersion === '10.14.agent10.r24' &&
         bundle.terminalRecreationLeisurePressure !== undefined &&
         bundle.terminalProfessionalServicesFee !== undefined,
     );
@@ -9268,7 +9514,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r13_10',
       'agent21 r13 fields',
-      bundle.schemaVersion === '10.14.agent10.r23' &&
+      bundle.schemaVersion === '10.14.agent10.r24' &&
         bundle.terminalChildcareServicesPressure !== undefined &&
         bundle.terminalGovernmentChargesPressure !== undefined,
     );
@@ -9358,7 +9604,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r14_10',
       'agent21 r14 fields',
-      bundle.schemaVersion === '10.14.agent10.r23' &&
+      bundle.schemaVersion === '10.14.agent10.r24' &&
         bundle.terminalWaterUtilitiesPressure !== undefined &&
         bundle.terminalDomesticTravelPressure !== undefined,
     );
@@ -9448,7 +9694,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r15_10',
       'agent21 r15 fields',
-      bundle.schemaVersion === '10.14.agent10.r23' &&
+      bundle.schemaVersion === '10.14.agent10.r24' &&
         bundle.terminalConstructionMaterialsPressure !== undefined &&
         bundle.terminalRetailTradeMargin !== undefined,
     );
@@ -9540,7 +9786,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r16_10',
       'agent21 r16 fields',
-      bundle.schemaVersion === '10.14.agent10.r23' &&
+      bundle.schemaVersion === '10.14.agent10.r24' &&
         bundle.terminalFinancialServicesFee !== undefined &&
         bundle.terminalAgriculturalFarmgatePressure !== undefined,
     );
@@ -9636,7 +9882,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r17_10',
       'agent21 r17 fields',
-      bundle.schemaVersion === '10.14.agent10.r23' &&
+      bundle.schemaVersion === '10.14.agent10.r24' &&
         bundle.terminalPublicUtilitiesGridTariff !== undefined &&
         bundle.terminalUiInflationSalience !== undefined,
     );
@@ -9740,7 +9986,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r18_10',
       'agent21 r18 fields',
-      bundle.schemaVersion === '10.14.agent10.r23' &&
+      bundle.schemaVersion === '10.14.agent10.r24' &&
         bundle.terminalHousingMortgageEssential !== undefined &&
         bundle.terminalMacroTransmissionMerge !== undefined,
     );
@@ -9845,7 +10091,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r19_10',
       'agent21 r19 fields',
-      bundle.schemaVersion === '10.14.agent10.r23' &&
+      bundle.schemaVersion === '10.14.agent10.r24' &&
         bundle.terminalDynamicEventsInflationSpillover !== undefined &&
         bundle.terminalDashboardMapInflationOverlay !== undefined,
     );
@@ -9950,7 +10196,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r20_10',
       'agent21 r20 fields',
-      bundle.schemaVersion === '10.14.agent10.r23' &&
+      bundle.schemaVersion === '10.14.agent10.r24' &&
         bundle.terminalPublicFinanceDebtService !== undefined &&
         bundle.terminalPopulationLaborWage !== undefined,
     );
@@ -10060,7 +10306,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r21_10',
       'agent21 r21 fields',
-      bundle.schemaVersion === '10.14.agent10.r23' &&
+      bundle.schemaVersion === '10.14.agent10.r24' &&
         bundle.terminalWholesaleEnergyTransition !== undefined &&
         bundle.terminalUrbanRentDispersion !== undefined,
     );
@@ -10162,7 +10408,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r22_10',
       'agent21 r22 fields',
-      bundle.schemaVersion === '10.14.agent10.r23' &&
+      bundle.schemaVersion === '10.14.agent10.r24' &&
         bundle.terminalCorporatePricingPassThrough !== undefined &&
         bundle.terminalTradeExchangeImport !== undefined,
     );
@@ -10268,7 +10514,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r23_10',
       'agent21 r23 fields',
-      bundle.schemaVersion === '10.14.agent10.r23' &&
+      bundle.schemaVersion === '10.14.agent10.r24' &&
         bundle.terminalGuardianInflationIntervention !== undefined &&
         bundle.terminalTeamIntelligenceConsensus !== undefined,
     );
@@ -10295,6 +10541,112 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'guardian_team_fusion_stress');
       return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.33;
+    })(),
+  );
+
+  // --- Round 24 scale wave ---
+  {
+    const strategic = assessStrategicGeopoliticalInflationPremium({
+      nationalPriorityInflationBias: 'expansionary',
+      strategicStockpileStress: true,
+      geopoliticalRiskPremium: 0.7,
+      expansionaryPriorityCascadeActive: true,
+      strategicInflationRiskBand: 'critical',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r24_01',
+      'strategic elevated or shock',
+      strategic.premiumBand === 'elevated' || strategic.premiumBand === 'geopolitical_shock',
+    );
+    check('a10_r24_02', 'strategic score adj', strategicGeopoliticalInflationPremiumScoreAdjustment(strategic.premiumBand) >= 3);
+  }
+  {
+    const memory = assessAiMemoryInflationRecallInflation({
+      recalledInflationRegimeConfidence: 0.85,
+      narrativeDriftTowardHigherInflation: true,
+      explainabilityAlertActive: true,
+      memoryInflationRecallCascade: true,
+      explainabilityInflationSalienceBand: 'critical',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r24_03',
+      'memory recall elevated or shock',
+      memory.recallBand === 'recall_elevated' || memory.recallBand === 'memory_shock',
+    );
+    check('a10_r24_04', 'memory score adj', aiMemoryInflationRecallScoreAdjustment(memory.recallBand) >= 3);
+  }
+  {
+    const merged01 = mergeAgent01IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      nationalPriorityInflationBias: 'expansionary',
+      strategicStockpileStress: true,
+      geopoliticalRiskPremium: 0.65,
+      expansionaryPriorityCascadeActive: true,
+      strategicInflationRiskBand: 'critical',
+    });
+    check('a10_r24_05', 'agent01 strategic merge', merged01.highInflationScenario === true);
+    check('a10_r24_06', 'agent01 bridge note', agent01StrategicBridgeIntegrationNote().includes('Agent 01'));
+  }
+  {
+    const merged19 = mergeAgent19IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      recalledInflationRegimeConfidence: 0.82,
+      narrativeDriftTowardHigherInflation: true,
+      explainabilityAlertActive: true,
+      memoryInflationRecallCascade: true,
+      explainabilityInflationSalienceBand: 'critical',
+    });
+    check('a10_r24_07', 'agent19 memory merge', merged19.highInflationScenario === true);
+    check('a10_r24_08', 'agent19 bridge note', agent19MemoryBridgeIntegrationNote().includes('Agent 19'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r24_09',
+      'forecast strategic premium and memory recall fields',
+      path.points.every((p) => !!p.strategicGeopoliticalPremiumBand && !!p.aiMemoryInflationRecallBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r24_10',
+      'agent21 r24 fields',
+      bundle.schemaVersion === '10.14.agent10.r24' &&
+        bundle.terminalStrategicGeopoliticalPremium !== undefined &&
+        bundle.terminalAiMemoryInflationRecall !== undefined,
+    );
+  }
+  check(
+    'a10_r24_11',
+    'round24 preset strategic premium stack',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'strategic_geopolitical_premium_stack');
+      return inp?.systemicLiquidityBand === 'critical' && inp.creditShockActive === true;
+    })(),
+  );
+  check(
+    'a10_r24_12',
+    'round24 preset memory recall stress',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'ai_memory_recall_salience_stress');
+      return inp?.highInflationScenario === true && inp.householdInflationScenarioActive === true;
+    })(),
+  );
+  check(
+    'a10_r24_13',
+    'round24 preset strategic memory fusion',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'strategic_memory_fusion_stress');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.34;
     })(),
   );
 
@@ -11700,6 +12052,78 @@ export function GuardianTeamInflationPanel(props: GuardianTeamInflationPanelProp
       </p>
       <p data-testid="guardian-team-note">{intervention.narrative}</p>
       <p>{consensus.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/StrategicMemoryInflationPanel.tsx ---
+  assessStrategicGeopoliticalInflationPremium,
+  strategicGeopoliticalInflationPremiumScoreAdjustment,
+} from '../inflation/strategic-geopolitical-inflation-premium.js';
+  assessAiMemoryInflationRecallInflation,
+  aiMemoryInflationRecallScoreAdjustment,
+} from '../inflation/ai-memory-inflation-recall-inflation.js';
+
+export interface StrategicMemoryInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent01?: Agent01StrategicSnapshot | null;
+  agent19?: Agent19MemorySnapshot | null;
+}
+
+export function StrategicMemoryInflationPanel(props: StrategicMemoryInflationPanelProps) {
+  const strategic = props.agent01 ?? {
+    turn: props.inputs.turn,
+    nationalPriorityInflationBias: props.inputs.highInflationScenario ? ('expansionary' as const) : ('neutral' as const),
+    strategicStockpileStress: props.inputs.creditShockActive,
+    geopoliticalRiskPremium: props.inputs.fiscalPressure === 'critical' ? 0.72 : 0.45,
+    expansionaryPriorityCascadeActive: props.inputs.highInflationScenario && props.inputs.creditShockActive,
+    strategicInflationRiskBand: props.inputs.systemicLiquidityBand === 'critical' ? ('critical' as const) : ('elevated' as const),
+  };
+
+  const memory = props.agent19 ?? {
+    turn: props.inputs.turn,
+    recalledInflationRegimeConfidence: props.inputs.highInflationScenario ? 0.82 : 0.55,
+    narrativeDriftTowardHigherInflation: props.inputs.householdInflationScenarioActive,
+    explainabilityAlertActive: props.inputs.publicStability < 45,
+    memoryInflationRecallCascade: props.inputs.highInflationScenario && props.inputs.householdInflationScenarioActive,
+    explainabilityInflationSalienceBand: props.inputs.publicStability < 40 ? ('critical' as const) : ('elevated' as const),
+  };
+
+  const premium = assessStrategicGeopoliticalInflationPremium({
+    nationalPriorityInflationBias: strategic.nationalPriorityInflationBias,
+    strategicStockpileStress: strategic.strategicStockpileStress,
+    geopoliticalRiskPremium: strategic.geopoliticalRiskPremium,
+    expansionaryPriorityCascadeActive: strategic.expansionaryPriorityCascadeActive === true,
+    strategicInflationRiskBand: strategic.strategicInflationRiskBand ?? 'low',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const recall = assessAiMemoryInflationRecallInflation({
+    recalledInflationRegimeConfidence: memory.recalledInflationRegimeConfidence,
+    narrativeDriftTowardHigherInflation: memory.narrativeDriftTowardHigherInflation,
+    explainabilityAlertActive: memory.explainabilityAlertActive,
+    memoryInflationRecallCascade: memory.memoryInflationRecallCascade === true,
+    explainabilityInflationSalienceBand: memory.explainabilityInflationSalienceBand ?? 'muted',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-strategic-memory-inflation" data-testid="strategic-memory-inflation-panel">
+      <h4>Strategic premium & AI memory recall (round 24)</h4>
+      <p>
+        Strategic {premium.premiumBand} · index {premium.strategicIndex.toFixed(0)} · score adj{' '}
+        {strategicGeopoliticalInflationPremiumScoreAdjustment(premium.premiumBand)}
+      </p>
+      <p>
+        Memory {recall.recallBand} · index {recall.memoryIndex.toFixed(0)} · score adj{' '}
+        {aiMemoryInflationRecallScoreAdjustment(recall.recallBand)}
+      </p>
+      <p data-testid="strategic-memory-note">{premium.narrative}</p>
+      <p>{recall.narrative}</p>
     </div>
   );
 }

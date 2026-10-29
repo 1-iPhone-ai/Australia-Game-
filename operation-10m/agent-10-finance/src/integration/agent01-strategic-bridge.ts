@@ -7,6 +7,10 @@ export interface Agent01StrategicSnapshot {
   nationalPriorityInflationBias: 'containment' | 'neutral' | 'expansionary';
   strategicStockpileStress: boolean;
   geopoliticalRiskPremium: number;
+  /** Round 24: expansionary priority cascade feeding CPI metadata. */
+  expansionaryPriorityCascadeActive?: boolean;
+  /** Round 24: strategic inflation risk band. */
+  strategicInflationRiskBand?: 'low' | 'elevated' | 'critical';
 }
 
 export function mergeAgent01IntoMacroFinancialInputs(
@@ -31,6 +35,9 @@ export function mergeAgent01IntoMacroFinancialInputs(
 
   let highInflationScenario = base.highInflationScenario;
   if (snapshot.strategicStockpileStress && snapshot.nationalPriorityInflationBias === 'expansionary') {
+    highInflationScenario = true;
+  }
+  if (snapshot.expansionaryPriorityCascadeActive || snapshot.strategicInflationRiskBand === 'critical') {
     highInflationScenario = true;
   }
 

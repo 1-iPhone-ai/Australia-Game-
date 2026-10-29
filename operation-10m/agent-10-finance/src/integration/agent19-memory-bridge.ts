@@ -7,6 +7,10 @@ export interface Agent19MemorySnapshot {
   recalledInflationRegimeConfidence: number;
   narrativeDriftTowardHigherInflation: boolean;
   explainabilityAlertActive: boolean;
+  /** Round 24: memory recall cascade into inflation presentation. */
+  memoryInflationRecallCascade?: boolean;
+  /** Round 24: explainability inflation salience band. */
+  explainabilityInflationSalienceBand?: 'muted' | 'elevated' | 'critical';
 }
 
 export function mergeAgent19IntoMacroFinancialInputs(
@@ -29,6 +33,10 @@ export function mergeAgent19IntoMacroFinancialInputs(
     snapshot.recalledInflationRegimeConfidence > 0.7
   ) {
     highInflationScenario = true;
+  }
+  if (snapshot.memoryInflationRecallCascade && snapshot.explainabilityInflationSalienceBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   }
 
   return {
