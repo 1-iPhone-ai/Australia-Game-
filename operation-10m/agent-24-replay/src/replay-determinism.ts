@@ -104,6 +104,15 @@ import {
   buildAgent24ArchiveRoundtripGateReport,
   type Agent24ArchiveRoundtripGateReport,
 } from './archive-roundtrip-gate.ts';
+import {
+  buildAgent24ArchiveRoundtripVerificationReport,
+  type Agent24ArchiveRoundtripVerificationReport,
+} from './archive-roundtrip-verification.ts';
+import {
+  buildAgent24ExportLedgerReconciliationReport,
+  type Agent24ExportLedgerReconciliationReport,
+} from './export-ledger-reconciliation.ts';
+import { buildAgent24ArchiveHandoffSeal, type Agent24ArchiveHandoffSeal } from './archive-handoff-seal.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -148,6 +157,9 @@ export interface Agent24ReplayDeterminismBundle {
   attestationChainVerification: Agent24AttestationChainVerificationReport;
   continuityExportLedger: Agent24ContinuityExportLedger;
   archiveRoundtripGate: Agent24ArchiveRoundtripGateReport;
+  archiveRoundtripVerification: Agent24ArchiveRoundtripVerificationReport;
+  exportLedgerReconciliation: Agent24ExportLedgerReconciliationReport;
+  archiveHandoffSeal: Agent24ArchiveHandoffSeal;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -517,6 +529,24 @@ export function buildAgent24ReplayDeterminismBundle(
     importValidation,
     replayTransferGate,
   });
+  const archiveRoundtripVerification = buildAgent24ArchiveRoundtripVerificationReport({
+    matchId: input.matchId,
+    archiveRoundtripGate,
+    attestationChainVerification,
+    continuityExportLedger,
+  });
+  const exportLedgerReconciliation = buildAgent24ExportLedgerReconciliationReport({
+    matchId: input.matchId,
+    continuityExportLedger,
+    publishReceiptLedger,
+    fulfillmentAudit: archiveFulfillmentAudit,
+  });
+  const archiveHandoffSeal = buildAgent24ArchiveHandoffSeal({
+    matchId: input.matchId,
+    attestationChainSeal,
+    archiveRoundtripVerification,
+    exportLedgerReconciliation,
+  });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
@@ -559,6 +589,9 @@ export function buildAgent24ReplayDeterminismBundle(
     attestationChainVerification: attestationChainVerification.deterministicFingerprint,
     continuityExportLedger: continuityExportLedger.deterministicFingerprint,
     archiveRoundtripGate: archiveRoundtripGate.deterministicFingerprint,
+    archiveRoundtripVerification: archiveRoundtripVerification.deterministicFingerprint,
+    exportLedgerReconciliation: exportLedgerReconciliation.deterministicFingerprint,
+    archiveHandoffSeal: archiveHandoffSeal.deterministicFingerprint,
   });
 
   return {
@@ -596,6 +629,9 @@ export function buildAgent24ReplayDeterminismBundle(
     attestationChainVerification,
     continuityExportLedger,
     archiveRoundtripGate,
+    archiveRoundtripVerification,
+    exportLedgerReconciliation,
+    archiveHandoffSeal,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -813,6 +849,23 @@ export function verifyAgent24ReplayDeterminism(
       name: 'archive_roundtrip_gate_twin',
       passed: a.archiveRoundtripGate.deterministicFingerprint === b.archiveRoundtripGate.deterministicFingerprint,
       detail: 'Twin archive roundtrip gate fingerprints',
+    },
+    {
+      name: 'archive_roundtrip_verification_twin',
+      passed:
+        a.archiveRoundtripVerification.deterministicFingerprint === b.archiveRoundtripVerification.deterministicFingerprint,
+      detail: 'Twin archive roundtrip verification fingerprints',
+    },
+    {
+      name: 'export_ledger_reconciliation_twin',
+      passed:
+        a.exportLedgerReconciliation.deterministicFingerprint === b.exportLedgerReconciliation.deterministicFingerprint,
+      detail: 'Twin export ledger reconciliation fingerprints',
+    },
+    {
+      name: 'archive_handoff_seal_twin',
+      passed: a.archiveHandoffSeal.deterministicFingerprint === b.archiveHandoffSeal.deterministicFingerprint,
+      detail: 'Twin archive handoff seal fingerprints',
     },
     {
       name: 'composite_twin',

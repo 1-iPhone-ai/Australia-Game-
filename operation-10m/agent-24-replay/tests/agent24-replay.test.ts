@@ -121,6 +121,18 @@ import {
   buildAgent24ArchiveRoundtripGateReport,
   runAgent24ArchiveRoundtripGateSelfTests,
 } from '../src/archive-roundtrip-gate.ts';
+import {
+  buildAgent24ArchiveRoundtripVerificationReport,
+  runAgent24ArchiveRoundtripVerificationSelfTests,
+} from '../src/archive-roundtrip-verification.ts';
+import {
+  buildAgent24ExportLedgerReconciliationReport,
+  runAgent24ExportLedgerReconciliationSelfTests,
+} from '../src/export-ledger-reconciliation.ts';
+import {
+  buildAgent24ArchiveHandoffSeal,
+  runAgent24ArchiveHandoffSealSelfTests,
+} from '../src/archive-handoff-seal.ts';
 import { buildO6kHistoricalAnalyticsSnapshot } from '../src/history-replay-analytics.ts';
 import { o6kAgent24StableStringify, runO6kAgent24SelfTests } from '../src/history-replay-analytics.ts';
 
@@ -239,6 +251,9 @@ describe('Agent 24 replay determinism bundle', () => {
     assert.ok(result.probes.some(p => p.name === 'attestation_chain_verification_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'continuity_export_ledger_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'archive_roundtrip_gate_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'archive_roundtrip_verification_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'export_ledger_reconciliation_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'archive_handoff_seal_twin' && p.passed));
   });
 
   it('includes analytics depth rollups and stable twin fingerprint', () => {
@@ -1042,6 +1057,51 @@ describe('Agent 24 archive roundtrip gate', () => {
     });
     assert.equal(direct.deterministicFingerprint, bundle.archiveRoundtripGate.deterministicFingerprint);
     assert.ok(runAgent24ArchiveRoundtripGateSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 archive roundtrip verification', () => {
+  it('verifies roundtrip when gate, chain, and export ledger align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.archiveRoundtripVerification.verified, true);
+    const direct = buildAgent24ArchiveRoundtripVerificationReport({
+      matchId: 'm',
+      archiveRoundtripGate: bundle.archiveRoundtripGate,
+      attestationChainVerification: bundle.attestationChainVerification,
+      continuityExportLedger: bundle.continuityExportLedger,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.archiveRoundtripVerification.deterministicFingerprint);
+    assert.ok(runAgent24ArchiveRoundtripVerificationSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 export ledger reconciliation', () => {
+  it('reconciles continuity export ledger with publish receipts', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.exportLedgerReconciliation.reconciled, true);
+    const direct = buildAgent24ExportLedgerReconciliationReport({
+      matchId: 'm',
+      continuityExportLedger: bundle.continuityExportLedger,
+      publishReceiptLedger: bundle.publishReceiptLedger,
+      fulfillmentAudit: bundle.archiveFulfillmentAudit,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.exportLedgerReconciliation.deterministicFingerprint);
+    assert.ok(runAgent24ExportLedgerReconciliationSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 archive handoff seal', () => {
+  it('marks handoff ready when roundtrip, reconciliation, and chain seal align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.archiveHandoffSeal.handoffReady, true);
+    const direct = buildAgent24ArchiveHandoffSeal({
+      matchId: 'm',
+      attestationChainSeal: bundle.attestationChainSeal,
+      archiveRoundtripVerification: bundle.archiveRoundtripVerification,
+      exportLedgerReconciliation: bundle.exportLedgerReconciliation,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.archiveHandoffSeal.deterministicFingerprint);
+    assert.ok(runAgent24ArchiveHandoffSealSelfTests().every(t => t.passed));
   });
 });
 

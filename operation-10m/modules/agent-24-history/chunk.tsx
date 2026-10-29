@@ -5680,6 +5680,419 @@ export function runAgent24ArchiveRoundtripGateSelfTests(): Array<{ name: string;
 }
 
 
+// --- source: archive-roundtrip-verification.ts ---
+
+export interface Agent24ArchiveRoundtripVerificationIssue {
+  kind: 'roundtrip_blocked' | 'chain_unverified' | 'ledger_not_recorded';
+  detail: string;
+  fingerprint: string;
+}
+
+export interface Agent24ArchiveRoundtripVerificationReport {
+  reportId: string;
+  matchId: string;
+  verified: boolean;
+  issueCount: number;
+  issues: Agent24ArchiveRoundtripVerificationIssue[];
+  verificationScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ArchiveRoundtripVerificationInput {
+  matchId: string;
+  archiveRoundtripGate: Agent24ArchiveRoundtripGateReport;
+  attestationChainVerification: Agent24AttestationChainVerificationReport;
+  continuityExportLedger: Agent24ContinuityExportLedger;
+}
+
+export function buildAgent24ArchiveRoundtripVerificationReport(
+  input: Agent24ArchiveRoundtripVerificationInput,
+): Agent24ArchiveRoundtripVerificationReport {
+  const issues: Agent24ArchiveRoundtripVerificationIssue[] = [];
+
+  if (!input.archiveRoundtripGate.roundtripAllowed) {
+    issues.push({
+      kind: 'roundtrip_blocked',
+      detail: `Roundtrip gate blocked (${input.archiveRoundtripGate.blockerCount} blockers)`,
+      fingerprint: o6kAgent24Fingerprint('rtv_gate', { blockers: input.archiveRoundtripGate.blockerCount }),
+    });
+  }
+  if (!input.attestationChainVerification.verified) {
+    issues.push({
+      kind: 'chain_unverified',
+      detail: `Attestation chain verification failed (${input.attestationChainVerification.issueCount} issues)`,
+      fingerprint: o6kAgent24Fingerprint('rtv_chain', { issues: input.attestationChainVerification.issueCount }),
+    });
+  }
+  if (input.continuityExportLedger.recordedEntryCount === 0) {
+    issues.push({
+      kind: 'ledger_not_recorded',
+      detail: 'No recorded continuity export ledger entries',
+      fingerprint: o6kAgent24Fingerprint('rtv_ledger', { recorded: 0 }),
+    });
+  }
+
+  issues.sort((a, b) => a.fingerprint.localeCompare(b.fingerprint));
+
+  let verificationScore = 100;
+  verificationScore -= issues.length * 18;
+  verificationScore -= Math.max(0, 100 - input.archiveRoundtripGate.roundtripScore) * 0.1;
+  verificationScore = Math.max(0, Math.min(100, Math.round(verificationScore)));
+
+  const verified =
+    issues.length === 0 &&
+    input.archiveRoundtripGate.roundtripAllowed &&
+    input.attestationChainVerification.verified &&
+    input.continuityExportLedger.ledgerComplete;
+
+  return {
+    reportId: o6kAgent24Fingerprint('archive_roundtrip_verification', { matchId: input.matchId }),
+    matchId: input.matchId,
+    verified,
+    issueCount: issues.length,
+    issues,
+    verificationScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('archive_roundtrip_verification_body', {
+      issues: issues.map(i => i.fingerprint),
+      verified,
+      verificationScore,
+    }),
+  };
+}
+
+export function runAgent24ArchiveRoundtripVerificationSelfTests(): Array<{ name: string; passed: boolean }> {
+  const gate = {
+    reportId: 'g',
+    matchId: 'self',
+    roundtripAllowed: true,
+    blockerCount: 0,
+    blockers: [],
+    roundtripScore: 95,
+    deterministicFingerprint: o6kAgent24Fingerprint('rtg_v', { v: 1 }),
+  };
+  const chainVerification = {
+    reportId: 'cv',
+    matchId: 'self',
+    verified: true,
+    issueCount: 0,
+    issues: [],
+    alignedLinkCount: 4,
+    verificationScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('acv_v', { v: 1 }),
+  };
+  const ledger = {
+    ledgerId: 'l',
+    matchId: 'self',
+    entryCount: 1,
+    recordedEntryCount: 1,
+    ledgerComplete: true,
+    entries: [],
+    ledgerScore: 98,
+    deterministicFingerprint: o6kAgent24Fingerprint('cel_v', { v: 1 }),
+  };
+
+  const report = buildAgent24ArchiveRoundtripVerificationReport({
+    matchId: 'self',
+    archiveRoundtripGate: gate,
+    attestationChainVerification: chainVerification,
+    continuityExportLedger: ledger,
+  });
+
+  return [
+    { name: 'verified_when_all_aligned', passed: report.verified && report.issueCount === 0 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        report.deterministicFingerprint ===
+        buildAgent24ArchiveRoundtripVerificationReport({
+          matchId: 'self',
+          archiveRoundtripGate: gate,
+          attestationChainVerification: chainVerification,
+          continuityExportLedger: ledger,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
+// --- source: export-ledger-reconciliation.ts ---
+
+export interface Agent24ExportLedgerReconciliationGap {
+  kind: 'receipt_count_drift' | 'fulfillment_not_complete' | 'export_ledger_incomplete';
+  detail: string;
+  fingerprint: string;
+}
+
+export interface Agent24ExportLedgerReconciliationReport {
+  reportId: string;
+  matchId: string;
+  reconciled: boolean;
+  gapCount: number;
+  gaps: Agent24ExportLedgerReconciliationGap[];
+  receiptEntryCount: number;
+  exportLedgerEntryCount: number;
+  reconciliationScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ExportLedgerReconciliationInput {
+  matchId: string;
+  continuityExportLedger: Agent24ContinuityExportLedger;
+  publishReceiptLedger: Agent24PublishReceiptLedger;
+  fulfillmentAudit: Agent24ArchiveFulfillmentAuditReport;
+}
+
+export function buildAgent24ExportLedgerReconciliationReport(
+  input: Agent24ExportLedgerReconciliationInput,
+): Agent24ExportLedgerReconciliationReport {
+  const gaps: Agent24ExportLedgerReconciliationGap[] = [];
+
+  if (!input.continuityExportLedger.ledgerComplete) {
+    gaps.push({
+      kind: 'export_ledger_incomplete',
+      detail: 'Continuity export ledger not complete',
+      fingerprint: o6kAgent24Fingerprint('elr_export', { complete: false }),
+    });
+  }
+  if (!input.fulfillmentAudit.fulfillmentComplete) {
+    gaps.push({
+      kind: 'fulfillment_not_complete',
+      detail: `Fulfillment audit incomplete (${input.fulfillmentAudit.mismatchCount} mismatches)`,
+      fingerprint: o6kAgent24Fingerprint('elr_fulfill', { mismatches: input.fulfillmentAudit.mismatchCount }),
+    });
+  }
+  if (
+    input.continuityExportLedger.recordedEntryCount > 0 &&
+    input.publishReceiptLedger.entryCount === 0 &&
+    input.fulfillmentAudit.dispatchedJobCount > 0
+  ) {
+    gaps.push({
+      kind: 'receipt_count_drift',
+      detail: 'Dispatched jobs exist but publish receipt ledger empty',
+      fingerprint: o6kAgent24Fingerprint('elr_drift', { receipts: 0 }),
+    });
+  }
+
+  gaps.sort((a, b) => a.fingerprint.localeCompare(b.fingerprint));
+
+  let reconciliationScore = 100;
+  reconciliationScore -= gaps.length * 20;
+  reconciliationScore = Math.max(0, Math.min(100, reconciliationScore));
+
+  const reconciled = gaps.length === 0 && input.continuityExportLedger.ledgerComplete;
+
+  return {
+    reportId: o6kAgent24Fingerprint('export_ledger_reconciliation', { matchId: input.matchId }),
+    matchId: input.matchId,
+    reconciled,
+    gapCount: gaps.length,
+    gaps,
+    receiptEntryCount: input.publishReceiptLedger.entryCount,
+    exportLedgerEntryCount: input.continuityExportLedger.entryCount,
+    reconciliationScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('export_ledger_reconciliation_body', {
+      gaps: gaps.map(g => g.fingerprint),
+      reconciled,
+      reconciliationScore,
+    }),
+  };
+}
+
+export function runAgent24ExportLedgerReconciliationSelfTests(): Array<{ name: string; passed: boolean }> {
+  const exportLedger = {
+    ledgerId: 'e',
+    matchId: 'self',
+    entryCount: 1,
+    recordedEntryCount: 1,
+    ledgerComplete: true,
+    entries: [],
+    ledgerScore: 96,
+    deterministicFingerprint: o6kAgent24Fingerprint('cel_elr', { v: 1 }),
+  };
+  const receiptLedger = {
+    ledgerId: 'r',
+    matchId: 'self',
+    entryCount: 1,
+    linkedEntryCount: 1,
+    totalEventSlots: 5,
+    ledgerComplete: true,
+    entries: [],
+    ledgerScore: 94,
+    deterministicFingerprint: o6kAgent24Fingerprint('prl_elr', { v: 1 }),
+  };
+  const fulfillment = {
+    reportId: 'fa',
+    matchId: 'self',
+    dispatchedJobCount: 1,
+    ledgerEntryCount: 1,
+    alignedPairCount: 1,
+    mismatchCount: 0,
+    mismatches: [],
+    fulfillmentComplete: true,
+    fulfillmentScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('fa_elr', { v: 1 }),
+  };
+
+  const report = buildAgent24ExportLedgerReconciliationReport({
+    matchId: 'self',
+    continuityExportLedger: exportLedger,
+    publishReceiptLedger: receiptLedger,
+    fulfillmentAudit: fulfillment,
+  });
+
+  return [
+    { name: 'reconciled_when_ledgers_align', passed: report.reconciled && report.gapCount === 0 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        report.deterministicFingerprint ===
+        buildAgent24ExportLedgerReconciliationReport({
+          matchId: 'self',
+          continuityExportLedger: exportLedger,
+          publishReceiptLedger: receiptLedger,
+          fulfillmentAudit: fulfillment,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
+// --- source: archive-handoff-seal.ts ---
+
+export interface Agent24ArchiveHandoffLink {
+  linkId: string;
+  segment: 'roundtrip_verified' | 'ledger_reconciled' | 'chain_sealed';
+  ready: boolean;
+  fingerprint: string;
+}
+
+export interface Agent24ArchiveHandoffSeal {
+  sealId: string;
+  matchId: string;
+  handoffReady: boolean;
+  linkCount: number;
+  readyLinkCount: number;
+  links: Agent24ArchiveHandoffLink[];
+  handoffScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ArchiveHandoffSealInput {
+  matchId: string;
+  attestationChainSeal: Agent24AttestationChainSeal;
+  archiveRoundtripVerification: Agent24ArchiveRoundtripVerificationReport;
+  exportLedgerReconciliation: Agent24ExportLedgerReconciliationReport;
+}
+
+export function buildAgent24ArchiveHandoffSeal(input: Agent24ArchiveHandoffSealInput): Agent24ArchiveHandoffSeal {
+  const links: Agent24ArchiveHandoffLink[] = [
+    {
+      linkId: o6kAgent24Fingerprint('handoff_link', { seg: 'roundtrip_verified' }),
+      segment: 'roundtrip_verified',
+      ready: input.archiveRoundtripVerification.verified,
+      fingerprint: '',
+    },
+    {
+      linkId: o6kAgent24Fingerprint('handoff_link', { seg: 'ledger_reconciled' }),
+      segment: 'ledger_reconciled',
+      ready: input.exportLedgerReconciliation.reconciled,
+      fingerprint: '',
+    },
+    {
+      linkId: o6kAgent24Fingerprint('handoff_link', { seg: 'chain_sealed' }),
+      segment: 'chain_sealed',
+      ready: input.attestationChainSeal.chainSealed,
+      fingerprint: '',
+    },
+  ];
+
+  for (const link of links) {
+    link.fingerprint = o6kAgent24Fingerprint('handoff_link_body', {
+      segment: link.segment,
+      ready: link.ready,
+    });
+  }
+
+  const readyLinkCount = links.filter(l => l.ready).length;
+
+  let handoffScore = 100;
+  handoffScore -= (links.length - readyLinkCount) * 18;
+  handoffScore = Math.max(0, Math.min(100, handoffScore));
+
+  const handoffReady = readyLinkCount === links.length && links.length > 0;
+
+  return {
+    sealId: o6kAgent24Fingerprint('archive_handoff_seal', { matchId: input.matchId }),
+    matchId: input.matchId,
+    handoffReady,
+    linkCount: links.length,
+    readyLinkCount,
+    links,
+    handoffScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('archive_handoff_seal_body', {
+      links: links.map(l => l.fingerprint),
+      handoffReady,
+      handoffScore,
+    }),
+  };
+}
+
+export function runAgent24ArchiveHandoffSealSelfTests(): Array<{ name: string; passed: boolean }> {
+  const chainSeal = {
+    sealId: 'c',
+    matchId: 'self',
+    chainSealed: true,
+    linkCount: 4,
+    alignedLinkCount: 4,
+    links: [],
+    chainScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('acs_hs', { v: 1 }),
+  };
+  const roundtripVerification = {
+    reportId: 'rv',
+    matchId: 'self',
+    verified: true,
+    issueCount: 0,
+    issues: [],
+    verificationScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('rtv_hs', { v: 1 }),
+  };
+  const reconciliation = {
+    reportId: 'rec',
+    matchId: 'self',
+    reconciled: true,
+    gapCount: 0,
+    gaps: [],
+    receiptEntryCount: 1,
+    exportLedgerEntryCount: 1,
+    reconciliationScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('elr_hs', { v: 1 }),
+  };
+
+  const seal = buildAgent24ArchiveHandoffSeal({
+    matchId: 'self',
+    attestationChainSeal: chainSeal,
+    archiveRoundtripVerification: roundtripVerification,
+    exportLedgerReconciliation: reconciliation,
+  });
+
+  return [
+    { name: 'handoff_ready_when_all_links_ready', passed: seal.handoffReady && seal.readyLinkCount === 3 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        seal.deterministicFingerprint ===
+        buildAgent24ArchiveHandoffSeal({
+          matchId: 'self',
+          attestationChainSeal: chainSeal,
+          archiveRoundtripVerification: roundtripVerification,
+          exportLedgerReconciliation: reconciliation,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
 // --- source: history-replay-analytics.ts ---
 
 export const O6K_AGENT24_MODULE_VERSION = '1.1.0-op10m';
@@ -25222,6 +25635,12 @@ export function applyO6kHistoricalAnalyticsCachePatch(state: Record<string, unkn
   buildAgent24ArchiveRoundtripGateReport,
   type Agent24ArchiveRoundtripGateReport,
 } from './archive-roundtrip-gate.ts';
+  buildAgent24ArchiveRoundtripVerificationReport,
+  type Agent24ArchiveRoundtripVerificationReport,
+} from './archive-roundtrip-verification.ts';
+  buildAgent24ExportLedgerReconciliationReport,
+  type Agent24ExportLedgerReconciliationReport,
+} from './export-ledger-reconciliation.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -25266,6 +25685,9 @@ export interface Agent24ReplayDeterminismBundle {
   attestationChainVerification: Agent24AttestationChainVerificationReport;
   continuityExportLedger: Agent24ContinuityExportLedger;
   archiveRoundtripGate: Agent24ArchiveRoundtripGateReport;
+  archiveRoundtripVerification: Agent24ArchiveRoundtripVerificationReport;
+  exportLedgerReconciliation: Agent24ExportLedgerReconciliationReport;
+  archiveHandoffSeal: Agent24ArchiveHandoffSeal;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -25635,6 +26057,24 @@ export function buildAgent24ReplayDeterminismBundle(
     importValidation,
     replayTransferGate,
   });
+  const archiveRoundtripVerification = buildAgent24ArchiveRoundtripVerificationReport({
+    matchId: input.matchId,
+    archiveRoundtripGate,
+    attestationChainVerification,
+    continuityExportLedger,
+  });
+  const exportLedgerReconciliation = buildAgent24ExportLedgerReconciliationReport({
+    matchId: input.matchId,
+    continuityExportLedger,
+    publishReceiptLedger,
+    fulfillmentAudit: archiveFulfillmentAudit,
+  });
+  const archiveHandoffSeal = buildAgent24ArchiveHandoffSeal({
+    matchId: input.matchId,
+    attestationChainSeal,
+    archiveRoundtripVerification,
+    exportLedgerReconciliation,
+  });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
@@ -25677,6 +26117,9 @@ export function buildAgent24ReplayDeterminismBundle(
     attestationChainVerification: attestationChainVerification.deterministicFingerprint,
     continuityExportLedger: continuityExportLedger.deterministicFingerprint,
     archiveRoundtripGate: archiveRoundtripGate.deterministicFingerprint,
+    archiveRoundtripVerification: archiveRoundtripVerification.deterministicFingerprint,
+    exportLedgerReconciliation: exportLedgerReconciliation.deterministicFingerprint,
+    archiveHandoffSeal: archiveHandoffSeal.deterministicFingerprint,
   });
 
   return {
@@ -25714,6 +26157,9 @@ export function buildAgent24ReplayDeterminismBundle(
     attestationChainVerification,
     continuityExportLedger,
     archiveRoundtripGate,
+    archiveRoundtripVerification,
+    exportLedgerReconciliation,
+    archiveHandoffSeal,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -25931,6 +26377,23 @@ export function verifyAgent24ReplayDeterminism(
       name: 'archive_roundtrip_gate_twin',
       passed: a.archiveRoundtripGate.deterministicFingerprint === b.archiveRoundtripGate.deterministicFingerprint,
       detail: 'Twin archive roundtrip gate fingerprints',
+    },
+    {
+      name: 'archive_roundtrip_verification_twin',
+      passed:
+        a.archiveRoundtripVerification.deterministicFingerprint === b.archiveRoundtripVerification.deterministicFingerprint,
+      detail: 'Twin archive roundtrip verification fingerprints',
+    },
+    {
+      name: 'export_ledger_reconciliation_twin',
+      passed:
+        a.exportLedgerReconciliation.deterministicFingerprint === b.exportLedgerReconciliation.deterministicFingerprint,
+      detail: 'Twin export ledger reconciliation fingerprints',
+    },
+    {
+      name: 'archive_handoff_seal_twin',
+      passed: a.archiveHandoffSeal.deterministicFingerprint === b.archiveHandoffSeal.deterministicFingerprint,
+      detail: 'Twin archive handoff seal fingerprints',
     },
     {
       name: 'composite_twin',
