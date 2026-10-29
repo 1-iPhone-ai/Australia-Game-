@@ -136533,6 +136533,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'intent', label: 'Player Intent', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runPlayerIntentLayerSelfTests() },
   { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
   { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
+  { id: 'o111-e2e', label: 'O111 End-to-End Gameplay (Agent 97)', tier: 'quick', section: 'System Regression', severity: 'CRITICAL', run: () => runO111EndToEndGameplaySelfTests() },
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
     ...runAiMemoryPhase1SelfTests().results, ...runAiMemoryPhase2SelfTests().results, ...runAiMemoryPhase3SelfTests().results,
@@ -182067,6 +182068,166 @@ export function runReliabilityUpgradeSelfTests(): V9SelfTestResult[] {
     const after: any = (r.nextState as any).actorsById.player;
     return (canon.actorsById.player.money === 123456 && canon.actorsById.player.currentRegion === 'WA' && after.money === 123456 + 50) || `canon ${canon.actorsById.player.money}@${canon.actorsById.player.currentRegion} after ${after.money}`;
   });
+  return results;
+}
+
+// ============================================================================
+// Operation 111 / Agent 97 — End-to-end gameplay smoke (integration plan §7.2–7.4)
+// Pure reducer + save/load paths; maps to regression rows R4–R9, R11–R13, R20.
+// ============================================================================
+export function runO111EndToEndGameplaySelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  const liveMatch = (): any => {
+    const settings = createDefaultGameSettings();
+    const player: any = {
+      id: 'player',
+      money: 8000,
+      inventory: [],
+      currentRegion: 'QLD',
+      actionsUsedThisTurn: 0,
+      actionPoints: 3,
+      teamId: TEAM_PLAYER_ID,
+      investments: []
+    };
+    const ai: any = { id: 'ai', money: 8000, teamId: TEAM_OPPONENT_ID, currentRegion: 'NSW' };
+    return {
+      ...JSON.parse(JSON.stringify(initialGameState)),
+      gameMode: 'game',
+      selectedMode: 'ai',
+      currentTurn: 'player',
+      currentActorId: 'player',
+      humanPlayerId: 'player',
+      turnCounter: 4,
+      day: 2,
+      turn: 2,
+      gameSettings: settings,
+      player,
+      aiPlayer: ai,
+      actorsById: { player, ai },
+      gameState: { day: 2, turnCounter: 4, regionDeposits: {} },
+      markets: { resourcePrices: { wool: 40 } }
+    };
+  };
+
+  check('e2e_r4_menu_to_game', 'R4: SET_GAME_MODE can enter an active match from menu (start flow)', () => {
+    const menu = { ...JSON.parse(JSON.stringify(initialGameState)), gameMode: 'menu', day: 1, turnCounter: 1 };
+    const started = gameStateReducer(menu, { type: 'SET_GAME_MODE', payload: 'game' });
+    return started.gameMode === 'game' && started.day === menu.day || `${started.gameMode}/${started.day}`;
+  });
+
+  check('e2e_r4_reset_game', 'R4: RESET_GAME returns core turn counters to a fresh baseline', () => {
+    const mid = { ...JSON.parse(JSON.stringify(initialGameState)), gameMode: 'game', day: 9, turnCounter: 40, currentActorId: 'ai' };
+    const reset = gameStateReducer(mid, { type: 'RESET_GAME' });
+    return reset.turnCounter === initialGameState.turnCounter
+      && reset.currentActorId === initialGameState.currentActorId
+      && reset.gameMode === 'game'
+      || `${reset.turnCounter}/${reset.currentActorId}/${reset.gameMode}`;
+  });
+
+  check('e2e_r5_save_load', 'R5: Save JSON round-trips through prepareSaveLoadTransaction + applyLoadedState', () => {
+    const fixture = createV95SaveFixture({ day: 7, money: 4321 });
+    const txn = prepareSaveLoadTransaction(JSON.stringify(fixture));
+    if (!txn.ok || !txn.data) return txn.report.fatalErrors.join('|') || 'load failed';
+    const applied = applyLoadedState(txn.data);
+    const money = (txn.data.player as any)?.money;
+    return applied.gameState.day === 7
+      && applied.gameState.gameMode === 'game'
+      && money === 4321
+      && txn.report.integrityStatus === 'intact'
+      || JSON.stringify({ day: applied.gameState.day, money, integrity: txn.report.integrityStatus });
+  });
+
+  check('e2e_r6_settings_persist', 'R6: Match settings survive save → load (totalDays)', () => {
+    const fixture = createV95SaveFixture();
+    const customDays = (fixture.gameSettings.totalDays || DEFAULT_GAME_SETTINGS.totalDays) + 11;
+    fixture.gameSettings.totalDays = customDays;
+    const txn = prepareSaveLoadTransaction(JSON.stringify(fixture));
+    const applied = applyLoadedState(txn.data);
+    return txn.ok && applied.gameSettings.totalDays === customDays || `${applied.gameSettings.totalDays} vs ${customDays}`;
+  });
+
+  check('e2e_r8_end_turn', 'R8: end_turn advances turnCounter (core loop)', () => {
+    const base = liveMatch();
+    const ended = reduceGameAction(base, { type: 'end_turn', actorId: 'player' } as any);
+    return ended.success
+      && ended.nextState.turnCounter === base.turnCounter + 1
+      && ended.nextState.gameState.turnCounter === base.gameState.turnCounter + 1
+      || JSON.stringify({ ok: ended.success, root: ended.nextState.turnCounter, nested: ended.nextState.gameState.turnCounter });
+  });
+
+  check('e2e_r9_settings_undo', 'R9: Smart settings apply + undo restores prior value', () => {
+    const baseline = createDefaultGameSettings();
+    const before = baseline.totalDays;
+    const plan: any = {
+      planId: 'o111_e2e_undo',
+      changes: [{ settingKey: 'totalDays', proposedValue: before + 9, reason: 'O111 E2E undo probe' }]
+    };
+    const applied = applySmartSettingsPlan(plan, baseline, false);
+    if (applied.updatedSettings.totalDays !== before + 9) return `apply=${applied.updatedSettings.totalDays}`;
+    const reverted = undoSmartSettingsTransaction(applied.undoStack, baseline);
+    return reverted.totalDays === before || `${reverted.totalDays} vs ${before}`;
+  });
+
+  check('e2e_r11_region_deposit', 'R11: region_deposit moves cash into regional control (budget smoke)', () => {
+    const base = liveMatch();
+    const before = base.player.money;
+    const amount = 500;
+    const r = reduceGameAction(base, {
+      type: 'region_deposit',
+      actorId: 'player',
+      targetRegion: 'NSW',
+      investmentAmount: amount
+    } as any);
+    const deposit = r.nextState.gameState.regionDeposits?.NSW?.player ?? r.nextState.regions?.NSW?.player;
+    return r.success
+      && r.nextState.player.money === before - amount
+      && deposit === amount
+      || JSON.stringify({ ok: r.success, money: r.nextState.player.money, deposit });
+  });
+
+  check('e2e_r12_travel_region', 'R12: travel selects a real region without error', () => {
+    const base = liveMatch();
+    const r = reduceGameAction(base, { type: 'travel', actorId: 'player', targetRegion: 'NSW', price: 25 } as any);
+    return r.success && r.nextState.player.currentRegion === 'NSW' && r.nextState.player.money === base.player.money - 25
+      || JSON.stringify({ ok: r.success, region: r.nextState.player.currentRegion, money: r.nextState.player.money });
+  });
+
+  check('e2e_r13_buy_market', 'R13: buy_market completes a trade action', () => {
+    const base = liveMatch();
+    const r = reduceGameAction(base, {
+      type: 'buy_market',
+      actorId: 'player',
+      item: 'wool',
+      price: 40,
+      parameters: { resource: 'wool', quantity: 2 }
+    } as any);
+    const inv = r.nextState.player.inventory || [];
+    const woolCount = inv.filter((x: string) => x === 'wool').length;
+    return r.success && woolCount === 2 && r.nextState.player.money === base.player.money - 80
+      || JSON.stringify({ ok: r.success, woolCount, money: r.nextState.player.money });
+  });
+
+  check('e2e_r20_ten_turns', 'R20: ten consecutive end_turn steps complete without hang', () => {
+    let st: any = liveMatch();
+    st.turnCounter = 1;
+    st.gameState.turnCounter = 1;
+    for (let i = 0; i < 10; i += 1) {
+      const step = reduceGameAction(st, { type: 'end_turn', actorId: 'player' } as any);
+      if (!step.success) return `failed at step ${i + 1}`;
+      st = step.nextState;
+    }
+    return st.turnCounter === 11 && st.gameState.turnCounter === 11 || `${st.turnCounter}/${st.gameState.turnCounter}`;
+  });
+
   return results;
 }
 
