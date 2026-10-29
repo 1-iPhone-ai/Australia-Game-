@@ -2357,6 +2357,257 @@ export function sessionTraceCompositeAllPassed(rollup: SessionTraceCompositeRoll
 }
 
 
+// --- source: match-explainability-final-gate.ts ---
+  auditSessionTraceContinuityGate,
+  sessionTraceContinuityGateOpen,
+} from './session-trace-continuity-gate.ts';
+  auditSessionHorizonAlignment,
+  sessionHorizonAlignmentOk,
+} from './session-horizon-alignment-audit.ts';
+  buildSessionTraceCompositeRollup,
+  sessionTraceCompositeAllPassed,
+} from './session-trace-composite-rollup.ts';
+
+export interface MatchExplainabilityFinalGateReport {
+  finalOpen: boolean;
+  matchGateOpen: boolean;
+  traceContinuityOpen: boolean;
+  horizonAlignmentOk: boolean;
+  traceCompositeAllPassed: boolean;
+  narrativeLines: string[];
+}
+
+/** Top-level match gate: match rollup + trace continuity + horizon alignment + trace/composite rollup. */
+export function auditMatchExplainabilityFinalGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityFinalGateReport {
+  const matchGate = auditMatchExplainabilityGate(packs, params);
+  const matchGateOpen = matchExplainabilityGateOpen(matchGate);
+  const traceGate = auditSessionTraceContinuityGate(packs, params.decisionsByTurn);
+  const traceContinuityOpen = sessionTraceContinuityGateOpen(traceGate);
+  const horizonReport = auditSessionHorizonAlignment(
+    packs,
+    params.decisionsByTurn.map(d => ({ after: d.after })),
+  );
+  const horizonAlignmentOk = sessionHorizonAlignmentOk(horizonReport);
+  const compositeRollup = buildSessionTraceCompositeRollup(packs, params.decisionsByTurn);
+  const traceCompositeAllPassed = sessionTraceCompositeAllPassed(compositeRollup);
+  const finalOpen =
+    matchGateOpen && traceContinuityOpen && horizonAlignmentOk && traceCompositeAllPassed;
+  const narrativeLines = [
+    `Match final explainability gate: ${finalOpen ? 'OPEN' : 'CLOSED'} (match ${matchGateOpen ? 'ok' : 'fail'}, trace ${traceContinuityOpen ? 'ok' : 'fail'}, horizon ${horizonAlignmentOk ? 'ok' : 'fail'}, composite ${traceCompositeAllPassed ? 'ok' : 'fail'}).`,
+    ...matchGate.narrativeLines.slice(0, 1),
+    ...traceGate.narrativeLines,
+    ...compositeRollup.narrativeLines,
+  ];
+  return {
+    finalOpen,
+    matchGateOpen,
+    traceContinuityOpen,
+    horizonAlignmentOk,
+    traceCompositeAllPassed,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityFinalGateOpen(report: MatchExplainabilityFinalGateReport): boolean {
+  return report.finalOpen;
+}
+
+
+// --- source: session-export-bundle.ts ---
+
+export const AGENT19_SESSION_EXPORT_TURN_CAP = 12;
+
+export interface SessionExportBundle {
+  turnCount: number;
+  exports: Record<string, unknown>[];
+  narrativeLines: string[];
+}
+
+/** Builds capped per-turn debug exports when session export gate allows. */
+export function buildSessionExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionExportBundle {
+  const exports: Record<string, unknown>[] = [];
+  packs.slice(0, AGENT19_SESSION_EXPORT_TURN_CAP).forEach((pack, i) => {
+    const gate = auditExplainabilityExportGate(packs, {
+      ...params,
+      exportTurnIndex: i,
+    });
+    if (explainabilityExportAllowed(gate) && gate.exportPayload) {
+      exports.push({ turn: pack.turn, ...gate.exportPayload });
+    }
+  });
+  const narrativeLines = [
+    `Session export bundle: ${exports.length}/${Math.min(packs.length, AGENT19_SESSION_EXPORT_TURN_CAP)} turn export(s) materialized.`,
+  ];
+  return { turnCount: packs.length, exports, narrativeLines };
+}
+
+export function sessionExportBundleWithinCap(bundle: SessionExportBundle): boolean {
+  return bundle.exports.length <= AGENT19_SESSION_EXPORT_TURN_CAP;
+}
+
+
+// --- source: negotiation-session-rollup.ts ---
+  buildNegotiationInfluenceBridge,
+  negotiationInfluenceAligned,
+} from './negotiation-influence-bridge.ts';
+
+export interface NegotiationSessionRollup {
+  turnCount: number;
+  alignedTurns: number;
+  mismatchTurns: number;
+  narrativeLines: string[];
+}
+
+/** Tracks negotiation vs relationship-slice alignment across turn packs. */
+export function buildNegotiationSessionRollup(
+  packs: TurnExplainabilityPack[],
+  params: {
+    relationship: Partial<AiRelationship> | null | undefined;
+    decisionsByTurn: Array<{ after: MemoryInfluenceDecisionLike[] }>;
+  },
+): NegotiationSessionRollup {
+  let alignedTurns = 0;
+  let mismatchTurns = 0;
+  packs.forEach((pack, i) => {
+    const after = params.decisionsByTurn[i]?.after ?? [];
+    const bridge = buildNegotiationInfluenceBridge(params.relationship, after);
+    if (negotiationInfluenceAligned(bridge)) alignedTurns += 1;
+    else mismatchTurns += 1;
+  });
+  const narrativeLines = [
+    `Negotiation session rollup: ${alignedTurns}/${packs.length} turn(s) aligned (${mismatchTurns} mismatch).`,
+  ];
+  return { turnCount: packs.length, alignedTurns, mismatchTurns, narrativeLines };
+}
+
+export function negotiationSessionMostlyAligned(rollup: NegotiationSessionRollup): boolean {
+  return rollup.turnCount === 0 || rollup.mismatchTurns === 0;
+}
+
+
+// --- source: confidence-export-bridge.ts ---
+
+export interface ConfidenceExportBridgeReport {
+  exportAllowed: boolean;
+  confidenceOk: boolean;
+  minBand: ExplainabilityConfidenceBand;
+  narrativeLines: string[];
+}
+
+/** Export gate plus explicit session confidence band check. */
+export function auditConfidenceExportBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): ConfidenceExportBridgeReport {
+  const minBand = params.minConfidenceBand ?? 'medium';
+  const confidence = buildSessionConfidenceRollup(packs, {
+    memory: params.memory,
+    decisionsByTurn: params.decisionsByTurn,
+  });
+  const confidenceOk = sessionConfidenceAtLeast(confidence, minBand);
+  const exportGate = auditExplainabilityExportGate(packs, params);
+  const exportAllowed = confidenceOk && explainabilityExportAllowed(exportGate);
+  const narrativeLines = [
+    `Confidence+export bridge: ${exportAllowed ? 'ALLOWED' : 'BLOCKED'} (confidence min ${minBand}, actual min ${confidence.minBand}).`,
+    ...confidence.narrativeLines,
+    ...exportGate.narrativeLines.slice(0, 1),
+  ];
+  return { exportAllowed, confidenceOk, minBand, narrativeLines };
+}
+
+export function confidenceExportBridgeAllowed(report: ConfidenceExportBridgeReport): boolean {
+  return report.exportAllowed;
+}
+
+
+// --- source: match-recovery-playbook.ts ---
+
+export const AGENT19_RECOVERY_PLAYBOOK_CAP = 10;
+
+export interface MatchRecoveryPlaybook {
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+/** Ordered, deduped recovery steps for a closed match explainability path. */
+export function buildMatchRecoveryPlaybook(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchRecoveryPlaybook {
+  const gate = auditMatchExplainabilityGate(packs, params);
+  const lastIdx = Math.max(0, packs.length - 1);
+  const lastPack = packs[lastIdx];
+  const lastDecisions = params.decisionsByTurn[lastIdx];
+  const steps = buildMatchGateRecoveryHints(gate, {
+    memory: params.memory,
+    currentTurn: params.currentTurn,
+    lastPack,
+    lastDecisions: lastDecisions
+      ? { before: lastDecisions.before, after: lastDecisions.after }
+      : undefined,
+  });
+  if (lastPack && lastDecisions) {
+    const bridge = auditTraceCompositeBridge(lastPack, {
+      decisionsBefore: lastDecisions.before,
+      decisionsAfter: lastDecisions.after,
+    });
+    if (!bridge.combinedOk) {
+      steps.push(...buildCompositeRecoveryHints(bridge.composite));
+    }
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_RECOVERY_PLAYBOOK_CAP);
+  const narrativeLines = [
+    `Match recovery playbook: ${unique.length} step(s) for ${packs.length} turn pack(s).`,
+    ...unique.slice(0, 3).map((s, i) => `${i + 1}. ${s}`),
+  ];
+  return { stepCount: unique.length, steps: unique, narrativeLines };
+}
+
+export function matchRecoveryPlaybookWithinCap(playbook: MatchRecoveryPlaybook): boolean {
+  return playbook.stepCount <= AGENT19_RECOVERY_PLAYBOOK_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -2537,6 +2788,23 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   buildSessionTraceCompositeRollup,
   sessionTraceCompositeAllPassed,
 } from '../session-trace-composite-rollup.ts';
+  auditMatchExplainabilityFinalGate,
+  matchExplainabilityFinalGateOpen,
+} from '../match-explainability-final-gate.ts';
+  buildSessionExportBundle,
+  sessionExportBundleWithinCap,
+  AGENT19_SESSION_EXPORT_TURN_CAP,
+} from '../session-export-bundle.ts';
+  buildNegotiationSessionRollup,
+  negotiationSessionMostlyAligned,
+} from '../negotiation-session-rollup.ts';
+  auditConfidenceExportBridge,
+  confidenceExportBridgeAllowed,
+} from '../confidence-export-bridge.ts';
+  buildMatchRecoveryPlaybook,
+  matchRecoveryPlaybookWithinCap,
+  AGENT19_RECOVERY_PLAYBOOK_CAP,
+} from '../match-recovery-playbook.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -3946,6 +4214,223 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           });
           const rollup = buildSessionTraceCompositeRollup([pack], [{ before: decisionsBefore, after: decisionsAfter }]);
           return sessionTraceCompositeAllPassed(rollup) && rollup.passCount === 1 || JSON.stringify(rollup);
+        },
+      ],
+      [
+        'a19_r11_final_gate_ok',
+        'Final match gate opens when all session checks pass',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'm' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const report = auditMatchExplainabilityFinalGate([pack], {
+            memory: mem,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityFinalGateOpen(report) && report.traceCompositeAllPassed || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r11_final_gate_fail',
+        'Final match gate closed when trace continuity fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({
+            turn: 2,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const report = auditMatchExplainabilityFinalGate([pack], {
+            memory: null,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityFinalGateOpen(report) && !report.traceContinuityOpen || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r11_export_bundle',
+        'Session export bundle materializes when gates pass',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'a', score: 5 }];
+          const decisionsAfter = [
+            {
+              type: 'a',
+              score: 10,
+              memoryInfluence: 5,
+              memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 't' }],
+            },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const bundle = buildSessionExportBundle([pack], {
+            memory: mem,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return (
+            bundle.exports.length === 1 &&
+            sessionExportBundleWithinCap(bundle) &&
+            AGENT19_SESSION_EXPORT_TURN_CAP >= 1
+          ) || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r11_negotiation_session',
+        'Negotiation session rollup counts aligned diplomacy turns',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const decisionsAfter = [
+            {
+              type: 'diplomacy',
+              score: 12,
+              memoryInfluence: 3,
+              memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 3, reason: 'trust from prior deal' }],
+            },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'diplomacy', score: 9 }],
+            decisionsAfter,
+          });
+          const rollup = buildNegotiationSessionRollup([pack], {
+            relationship: rel,
+            decisionsByTurn: [{ after: decisionsAfter }],
+          });
+          return negotiationSessionMostlyAligned(rollup) && rollup.alignedTurns === 1 || JSON.stringify(rollup);
+        },
+      ],
+      [
+        'a19_r11_confidence_export',
+        'Confidence export bridge allows export on healthy session',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'a', score: 5 }];
+          const decisionsAfter = [
+            {
+              type: 'a',
+              score: 10,
+              memoryInfluence: 5,
+              memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 't' }],
+            },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const report = auditConfidenceExportBridge([pack], {
+            memory: mem,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return confidenceExportBridgeAllowed(report) && report.confidenceOk || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r11_recovery_playbook',
+        'Recovery playbook lists bounds steps when gate closed',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.events = Array.from({ length: AGENT19_AI_MEMORY_EVENT_CAP + 1 }, (_, i) => ({
+            id: `e${i}`,
+            turn: i,
+            actionType: 'sell',
+            actorId: 'player',
+            targetId: null,
+            regionId: null,
+            summary: 's',
+            importance: 1,
+            valence: 0,
+            stableKey: `k${i}`,
+          }));
+          const decisionsBefore = [{ type: 'a', score: 5 }];
+          const decisionsAfter = [
+            {
+              type: 'a',
+              score: 10,
+              memoryInfluence: 5,
+              memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 't' }],
+            },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const playbook = buildMatchRecoveryPlaybook([pack], {
+            memory: mem,
+            currentTurn: 1,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return (
+            matchRecoveryPlaybookWithinCap(playbook) &&
+            playbook.steps.some(s => s.includes('Trim') || s.includes('bounds')) &&
+            playbook.stepCount <= AGENT19_RECOVERY_PLAYBOOK_CAP
+          ) || playbook.steps.join('|');
+        },
+      ],
+      [
+        'a19_r11_recovery_playbook_clean',
+        'Recovery playbook is short when match gate open',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'a', score: 5 }];
+          const decisionsAfter = [
+            {
+              type: 'a',
+              score: 10,
+              memoryInfluence: 5,
+              memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 't' }],
+            },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const playbook = buildMatchRecoveryPlaybook([pack], {
+            memory: mem,
+            currentTurn: 1,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return playbook.steps[0].includes('open') && playbook.stepCount >= 1 || playbook.steps.join('|');
         },
       ],
     ]),
