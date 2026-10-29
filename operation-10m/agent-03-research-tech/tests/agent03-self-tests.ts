@@ -2376,6 +2376,102 @@ tests.push(
 );
 
 tests.push(
+  test('save_v31_migrates_to_v32_with_seal_handoff_continuity_fields', () => {
+    const v31 = {
+      schemaVersion: 'op10m-agent03-v31',
+      turn: 60,
+      revision: 3,
+      unlockedNodes: [],
+      institutionUpgrades: [],
+      unlockSeq: 0,
+      branchEmphasis: [],
+      emphasisRevision: 1,
+      migrationLog: [{ fromVersion: 'op10m-agent03-v30', toVersion: 'op10m-agent03-v31', turn: 59 }],
+      saveKind: 'manual',
+      updatedAtTurn: 60,
+      sessionId: 'v31',
+      persistRevision: 31,
+      unlockEventLog: [],
+      lastReconciledAtTurn: 60,
+      emphasisChangeLog: [],
+      institutionTierSnapshot: { capturedAtTurn: 60, tiers: {}, digest: 'abc', nationalIntegrationCount: 0, strategicOrAboveCount: 0 },
+      readinessMilestoneLog: [],
+      readinessBranchSnapshot: null,
+      integrationRiskLog: [],
+      integrationRiskSnapshot: null,
+      scaleWaveSnapshot: null,
+      synergyThresholdLog: [],
+      synergySnapshot: null,
+      commercializationMilestoneLog: [],
+      commercializationSnapshot: null,
+      diffusionIntegrationLog: [],
+      diffusionIntegrationSnapshot: null,
+      portfolioBalanceLog: [],
+      portfolioBalanceSnapshot: null,
+      diffusionForecastBandLog: [],
+      diffusionForecastSnapshot: null,
+      horizonConvergenceBandLog: [],
+      horizonConvergenceSnapshot: null,
+      researchExecutionBandLog: [],
+      researchExecutionSnapshot: null,
+      strategicDeliveryBandLog: [],
+      strategicDeliverySnapshot: null,
+      scaleWaveMaturityBandLog: [],
+      scaleWaveMaturitySnapshot: null,
+      nationalIntegrationBandLog: [],
+      nationalIntegrationSnapshot: null,
+      scaleWaveProjectionBandLog: [],
+      scaleWaveProjectionSnapshot: null,
+      trancheProjectionBandLog: [],
+      trancheProjectionSnapshot: null,
+      integrationGateBandLog: [],
+      integrationGateSnapshot: null,
+      dryRunHandoffBandLog: [],
+      dryRunHandoffSnapshot: null,
+      mergedIntegrationBaselineBandLog: [],
+      mergedIntegrationBaselineSnapshot: null,
+      postIntegrationDryRunBandLog: [],
+      postIntegrationDryRunSnapshot: null,
+      integrationSealBandLog: [],
+      integrationSealSnapshot: null,
+      postSealHandoffBandLog: [],
+      postSealHandoffSnapshot: null,
+      integrationContinuityBandLog: [],
+      integrationContinuitySnapshot: null,
+      continuityHandoffBandLog: [],
+      continuityHandoffSnapshot: null,
+      handoffIntegrationBandLog: [],
+      handoffIntegrationSnapshot: null,
+      handoffIntegrationSealBandLog: [],
+      handoffIntegrationSealSnapshot: null,
+      integrationSealHandoffBandLog: [],
+      integrationSealHandoffSnapshot: null,
+    };
+    const core = migrateResearchProgressSave(v31);
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v31'));
+    assert(Array.isArray(core?.sealHandoffContinuityBandLog));
+    assert(core?.sealHandoffContinuitySnapshot === null);
+    const state = computeResearchProgress(baseInputs({ turn: 61 }), core);
+    assert(typeof state.sealHandoffContinuitySnapshot?.digest === 'string');
+    assert(Array.isArray(state.sealHandoffContinuityBandLog));
+  })
+);
+
+tests.push(
+  test('scale_wave_seal_handoff_integration_outlook_derived_wave32', () => {
+    const inputs = baseInputs({ turn: 32 });
+    const state = computeResearchProgress(inputs, null);
+    const outlook = state.scaleWaveSealHandoffIntegrationOutlook;
+    assert(outlook != null);
+    assert(outlook?.waveOrdinal === 32);
+    assert(outlook?.integrationBaselineShaHint === 'aa70dac');
+    assert(outlook?.projectedFunctionalHint === 1_798_330);
+    assert(detectForeignSaveFields({ scaleWaveSealHandoffIntegrationOutlook: outlook }).includes('scaleWaveSealHandoffIntegrationOutlook'));
+  })
+);
+
+tests.push(
   test('scale_wave_seal_handoff_continuity_outlook_derived_wave31', () => {
     const inputs = baseInputs({ turn: 31 });
     const state = computeResearchProgress(inputs, null);
