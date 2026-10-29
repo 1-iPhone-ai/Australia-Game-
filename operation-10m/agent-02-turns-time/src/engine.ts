@@ -159,6 +159,19 @@ import {
   type BatchAdvanceWithFullInstrumentedGate,
 } from './batch-advance-full-instrumented-step.js';
 import {
+  stepTurnsWithBudgetOrchestratedAdvance,
+  type BatchAdvanceWithOrchestratedGate,
+} from './batch-advance-orchestrated-step.js';
+import { computeBatchStabilizationAlignmentScore } from './batch-stabilization-alignment-score.js';
+import {
+  gateBatchAdvancePostStabilization,
+  type BatchAdvancePostStabilizationGateResult,
+} from './batch-advance-post-stabilization-gate.js';
+import {
+  computeBatchOrchestratedAdvanceDigest,
+  type BatchOrchestratedAdvanceReport,
+} from './batch-orchestrated-advance-report.js';
+import {
   buildBatchHorizonReconcileReport,
   type BatchHorizonReconcileReport,
 } from './batch-horizon-reconcile-report.js';
@@ -523,6 +536,32 @@ export class TurnTimeEngine {
 
   computeBatchInstrumentedAdvanceDigest(report: BatchInstrumentedAdvanceReport): string {
     return computeBatchInstrumentedAdvanceDigest(report);
+  }
+
+  computeBatchStabilizationAlignmentScore(
+    ...args: Parameters<typeof computeBatchStabilizationAlignmentScore>
+  ) {
+    return computeBatchStabilizationAlignmentScore(...args);
+  }
+
+  gateBatchAdvancePostStabilization(
+    batch: BatchAdvanceResult,
+    capture: BatchStabilizationQueueCapture,
+    stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+  ): BatchAdvancePostStabilizationGateResult {
+    return gateBatchAdvancePostStabilization(this.snapshot(), batch, capture, stabilizationByTurn);
+  }
+
+  stepTurnsWithBudgetOrchestratedAdvance(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+    input?: Parameters<typeof stepTurnsWithBudgetOrchestratedAdvance>[3],
+  ): BatchAdvanceWithOrchestratedGate {
+    return stepTurnsWithBudgetOrchestratedAdvance(this, maxSteps, budget, input);
+  }
+
+  computeBatchOrchestratedAdvanceDigest(report: BatchOrchestratedAdvanceReport): string {
+    return computeBatchOrchestratedAdvanceDigest(report);
   }
 
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {

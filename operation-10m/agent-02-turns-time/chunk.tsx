@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
 // @ts-nocheck
-// content-sha256-prefix: cecf933aa5d5a2e4
+// content-sha256-prefix: 0022373bee292353
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -2092,6 +2092,32 @@ export class TurnTimeEngine {
     return computeBatchInstrumentedAdvanceDigest(report);
   }
 
+  computeBatchStabilizationAlignmentScore(
+    ...args: Parameters<typeof computeBatchStabilizationAlignmentScore>
+  ) {
+    return computeBatchStabilizationAlignmentScore(...args);
+  }
+
+  gateBatchAdvancePostStabilization(
+    batch: BatchAdvanceResult,
+    capture: BatchStabilizationQueueCapture,
+    stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+  ): BatchAdvancePostStabilizationGateResult {
+    return gateBatchAdvancePostStabilization(this.snapshot(), batch, capture, stabilizationByTurn);
+  }
+
+  stepTurnsWithBudgetOrchestratedAdvance(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+    input?: Parameters<typeof stepTurnsWithBudgetOrchestratedAdvance>[3],
+  ): BatchAdvanceWithOrchestratedGate {
+    return stepTurnsWithBudgetOrchestratedAdvance(this, maxSteps, budget, input);
+  }
+
+  computeBatchOrchestratedAdvanceDigest(report: BatchOrchestratedAdvanceReport): string {
+    return computeBatchOrchestratedAdvanceDigest(report);
+  }
+
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {
     return buildAgent02TurnPipelineReport(this.snapshot(), before);
   }
@@ -3580,6 +3606,176 @@ export function stepTurnsWithBudgetFullInstrumentedGate(
   };
 }
 
+// --- src/batch-stabilization-alignment-score.ts ---
+
+export interface BatchStabilizationAlignmentScore {
+  steppedTurns: number;
+  alignedTurns: number;
+  ratio: number;
+  ok: boolean;
+}
+
+export function computeBatchStabilizationAlignmentScore(
+  reconcile: BatchStabilizationReconcileReport | undefined,
+): BatchStabilizationAlignmentScore {
+  if (!reconcile) {
+    return { steppedTurns: 0, alignedTurns: 0, ratio: 1, ok: true };
+  }
+  const steppedTurns = reconcile.gate.rows.length;
+  const alignedTurns = reconcile.alignedTurns;
+  const ratio = steppedTurns === 0 ? 1 : alignedTurns / steppedTurns;
+  return {
+    steppedTurns,
+    alignedTurns,
+    ratio,
+    ok: reconcile.ok && ratio === 1,
+  };
+}
+
+// --- src/batch-advance-post-stabilization-gate.ts ---
+
+export interface BatchAdvancePostStabilizationGateResult {
+  lastSteppedTurn?: number;
+  external?: ExternalStabilizationTurnSignals;
+  inferred?: ExternalStabilizationTurnSignals;
+  ok: boolean;
+}
+
+/**
+ * Round 12: after batch, last stepped turn's Agent 05 flags must match final queue snapshot.
+ */
+export function gateBatchAdvancePostStabilization(
+  finalSnapshot: TurnTimeSnapshot,
+  batch: BatchAdvanceResult,
+  capture: BatchStabilizationQueueCapture,
+  stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+): BatchAdvancePostStabilizationGateResult {
+  let lastStep: (typeof batch.steps)[number] | undefined;
+  for (const step of batch.steps) {
+    if (step.blockedByPause) continue;
+    lastStep = step;
+  }
+  if (!lastStep) {
+    return { ok: true };
+  }
+
+  const turn = lastStep.clockBefore.turnIndex;
+  const external = normalizeExternalStabilizationSignals(stabilizationByTurn[turn]);
+  const before = capture.queueBeforeByTurn[turn] ?? queueDepthFromSnapshot(finalSnapshot);
+  const after = queueDepthFromSnapshot(finalSnapshot);
+  const inferred = inferFullAgent02StabilizationSignals(lastStep, before, after);
+  const ok = externalStabilizationSignalsEqual(external, inferred);
+  return { lastSteppedTurn: turn, external, inferred, ok };
+}
+
+// --- src/batch-orchestrated-advance-report.ts ---
+
+export interface BatchOrchestratedAdvanceReport extends BatchInstrumentedAdvanceReport {
+  alignment: BatchStabilizationAlignmentScore;
+  postStabilization?: BatchAdvancePostStabilizationGateResult;
+}
+
+export function buildBatchOrchestratedAdvanceReport(
+  instrumented: BatchInstrumentedAdvanceReport,
+  alignment: BatchStabilizationAlignmentScore,
+  postStabilization?: BatchAdvancePostStabilizationGateResult,
+): BatchOrchestratedAdvanceReport {
+  const postOk = postStabilization?.ok ?? true;
+  return {
+    ...instrumented,
+    alignment,
+    postStabilization,
+    ok: instrumented.ok && alignment.ok && postOk,
+  };
+}
+
+export function computeBatchOrchestratedAdvanceDigest(report: BatchOrchestratedAdvanceReport): string {
+  const payload = JSON.stringify({
+    ok: report.ok,
+    instrumented: report.readiness.compositeDigest ?? report.readiness.digest,
+    alignment: report.alignment.ratio,
+    post: report.postStabilization?.lastSteppedTurn ?? null,
+    completed: report.batch.completed,
+  });
+  return fnv1a64Hex(payload);
+}
+
+// --- src/batch-advance-orchestrated-step.ts ---
+
+export interface BatchAdvanceOrchestratedInput extends BatchAdvanceFullInstrumentedInput {
+  /** When true (default), do not step if unified pre-gate fails. */
+  blockOnFailedPreGate?: boolean;
+}
+
+export interface BatchAdvanceWithOrchestratedGate {
+  report: BatchOrchestratedAdvanceReport;
+  orchestratedDigest: string;
+}
+
+function emptyBatch(budget: TurnAdvanceBudgetState): BatchAdvanceResult {
+  return { steps: [], budget, completed: 0, horizonReconcileOk: [] };
+}
+
+function emptyCapture(): BatchStabilizationQueueCapture {
+  return { queueBeforeByTurn: {}, queueAfterByTurn: {} };
+}
+
+function buildBlockedPreGateReport(
+  engine: TurnTimeEngine,
+  budget: TurnAdvanceBudgetState,
+  preGate: BatchAdvanceUnifiedPreGateResult,
+): BatchInstrumentedAdvanceReport {
+  const before = engine.snapshot();
+  const batch = emptyBatch(budget);
+  const rollup = buildBatchAdvanceObservabilityRollup(before, before, batch);
+  const readiness = gateBatchAdvanceReadiness(before, rollup);
+  return buildBatchInstrumentedAdvanceReport(preGate, batch, emptyCapture(), rollup, {
+    ...readiness,
+    ok: false,
+  });
+}
+
+/**
+ * Round 12: orchestrated XS-02 + Agent 05 path — optional pre-gate block, alignment score, post-stabilization verify.
+ */
+export function stepTurnsWithBudgetOrchestratedAdvance(
+  engine: TurnTimeEngine,
+  maxSteps: number,
+  budget: TurnAdvanceBudgetState,
+  input?: BatchAdvanceOrchestratedInput,
+): BatchAdvanceWithOrchestratedGate {
+  const blockOnFailedPreGate = input?.blockOnFailedPreGate !== false;
+  const preGateResult = input?.preGate
+    ? gateBatchAdvanceUnifiedPreconditions(engine.snapshot(), input.preGate)
+    : undefined;
+
+  if (preGateResult && !preGateResult.ok && blockOnFailedPreGate) {
+    const instrumented = buildBlockedPreGateReport(engine, budget, preGateResult);
+    const alignment = computeBatchStabilizationAlignmentScore(undefined);
+    const report = buildBatchOrchestratedAdvanceReport(instrumented, alignment);
+    return { report, orchestratedDigest: computeBatchOrchestratedAdvanceDigest(report) };
+  }
+
+  const run = stepTurnsWithBudgetFullInstrumentedGate(engine, maxSteps, budget, input);
+  const alignment = computeBatchStabilizationAlignmentScore(
+    run.report.readiness.stabilizationReconcile,
+  );
+  const postStabilization =
+    input?.stabilizationByTurn !== undefined
+      ? gateBatchAdvancePostStabilization(
+          engine.snapshot(),
+          run.report.batch,
+          run.report.capture,
+          input.stabilizationByTurn,
+        )
+      : undefined;
+  const report = buildBatchOrchestratedAdvanceReport(run.report, alignment, postStabilization);
+  return {
+    report,
+    orchestratedDigest: computeBatchOrchestratedAdvanceDigest(report),
+  };
+}
+
 // --- src/fast-forward.ts ---
 
 export interface FastForwardResult {
@@ -3730,7 +3926,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '2.1.0';
+export const AGENT_02_MODULE_VERSION = '2.2.0';
 
 
 
@@ -4117,6 +4313,52 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
     name: 'full instrumented gate report ok with auto capture',
 
     passed: fullRun.report.ok && fullRun.instrumentedDigest.length === 16,
+
+  });
+
+  const orch = new TurnTimeEngine();
+
+  orch.scheduleEvent({ id: 'orch', dueTurn: 1, kind: 'n' });
+
+  const orchRun = stepTurnsWithBudgetOrchestratedAdvance(orch, 1, createTurnAdvanceBudget(2), {
+
+    externalByTurn: { 1: ['orch'] },
+
+    stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: true } },
+
+  });
+
+  results.push({
+
+    id: 'agent02_orchestrated_advance',
+
+    name: 'orchestrated advance ok with alignment and post gate',
+
+    passed: orchRun.report.ok && orchRun.orchestratedDigest.length === 16,
+
+  });
+
+  results.push({
+
+    id: 'agent02_orchestrated_pregate_block',
+
+    name: 'orchestrated advance blocks on failed pre-gate',
+
+    passed:
+
+      !stepTurnsWithBudgetOrchestratedAdvance(new TurnTimeEngine(), 1, createTurnAdvanceBudget(2), {
+
+        preGate: {
+
+          fromTurn: 1,
+
+          toTurn: 1,
+
+          stabilizationByTurn: { 1: { postQueueCalm: false, pendingStabilizationWave: true } },
+
+        },
+
+      }).report.ok,
 
   });
 

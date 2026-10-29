@@ -49,4 +49,8 @@ export * from './batch-advance-unified-pregate.js';
 export * from './stabilization-backlog-rebound-gate.js';
 export * from './batch-instrumented-advance-report.js';
 export * from './batch-advance-full-instrumented-step.js';
+export * from './batch-stabilization-alignment-score.js';
+export * from './batch-advance-post-stabilization-gate.js';
+export * from './batch-orchestrated-advance-report.js';
+export * from './batch-advance-orchestrated-step.js';
 export * from './engine.js';
