@@ -87,6 +87,8 @@ import { runDebtServiceForwardCoherenceSelfTests } from './modules/debt-service-
 import { runStatutoryOutlookBufferBridgeSelfTests } from './modules/statutory-outlook-buffer-bridge/self-tests';
 import { runContingencyOutlookIntegrityBridgeSelfTests } from './modules/contingency-outlook-integrity-bridge/self-tests';
 import { runAppropriationCarryTimingBridgeSelfTests } from './modules/appropriation-carry-timing-bridge/self-tests';
+import { runSovereignCreditOutlookCoherenceSelfTests } from './modules/sovereign-credit-outlook-coherence/self-tests';
+import { runInfrastructureLoadOutlookBridgeSelfTests } from './modules/infrastructure-load-outlook-bridge/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -183,6 +185,8 @@ ok = runSuite('Debt service forward coherence', runDebtServiceForwardCoherenceSe
 ok = runSuite('Statutory outlook buffer bridge', runStatutoryOutlookBufferBridgeSelfTests) && ok;
 ok = runSuite('Contingency outlook integrity bridge', runContingencyOutlookIntegrityBridgeSelfTests) && ok;
 ok = runSuite('Appropriation carry timing bridge', runAppropriationCarryTimingBridgeSelfTests) && ok;
+ok = runSuite('Sovereign credit outlook coherence', runSovereignCreditOutlookCoherenceSelfTests) && ok;
+ok = runSuite('Infrastructure load outlook bridge', runInfrastructureLoadOutlookBridgeSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

@@ -10530,6 +10530,217 @@ export function buildAppropriationCarryTimingBridgeReport(
 }
 
 
+// --- source: sovereign-credit-outlook-coherence/types.ts ---
+export const SOVEREIGN_CREDIT_OUTLOOK_COHERENCE_SCHEMA =
+  'op10m-agent07-sovereign-credit-outlook-coherence-v1';
+
+export interface SovereignCreditOutlookCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface SovereignCreditOutlookCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: SovereignCreditOutlookCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinSovereignCreditOutlookBand: boolean;
+  alignedWithDebtGovernance: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: sovereign-credit-outlook-coherence/compute.ts ---
+  SovereignCreditOutlookCheck,
+  SovereignCreditOutlookCoherenceReport
+} from './types';
+
+const SOVEREIGN_OUTLOOK_TOLERANCE = 6.2;
+
+export function buildSovereignCreditOutlookCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  sovereignCredit: SovereignCreditOutlookReport,
+  outlook: MediumTermFiscalOutlook,
+  debtPortfolioGov: DebtPortfolioGovernanceReport
+): SovereignCreditOutlookCoherenceReport {
+  const headroomGap = Math.abs(outlook.averageHeadroom - sovereignCredit.headroomToDistress * 0.18);
+  const spreadStress = Math.abs(sovereignCredit.impliedSpreadBps * 0.012 - headroomGap * 0.35);
+  const governanceGap = Math.abs(debtPortfolioGov.maxTrancheShare * 10 - spreadStress * 0.42);
+  const aggregateCoherenceGapPoints = Math.round((spreadStress + governanceGap) * 10) / 20;
+
+  const checks: SovereignCreditOutlookCheck[] = [
+    {
+      id: 'SCOC01',
+      label: 'Sovereign credit within outlook band',
+      passed: sovereignCredit.withinOutlookBand || !v1012.debtEnabled || v1012.pressure === 'critical',
+      detail: `spread=${sovereignCredit.impliedSpreadBps}, band=${sovereignCredit.ratingBand}`
+    },
+    {
+      id: 'SCOC02',
+      label: 'Outlook headroom vs credit distress buffer',
+      passed:
+        headroomGap <= SOVEREIGN_OUTLOOK_TOLERANCE + 3 ||
+        outlook.worstPressure !== 'critical' ||
+        v1012.pressure === 'critical',
+      detail: `headroomGap=${headroomGap}, distress=${sovereignCredit.headroomToDistress}`
+    },
+    {
+      id: 'SCOC03',
+      label: 'Spread stress vs portfolio concentration',
+      passed:
+        governanceGap <= SOVEREIGN_OUTLOOK_TOLERANCE + 2 ||
+        debtPortfolioGov.withinGovernanceTargets ||
+        v1012.pressure === 'critical',
+      detail: `governanceGap=${governanceGap}, maxShare=${debtPortfolioGov.maxTrancheShare}`
+    }
+  ];
+
+  const withinSovereignCreditOutlookBand =
+    checks.every(c => c.passed) ||
+    (sovereignCredit.withinOutlookBand && debtPortfolioGov.withinGovernanceTargets) ||
+    sovereignCredit.withinOutlookBand ||
+    v1012.pressure === 'critical';
+
+  const alignedWithDebtGovernance =
+    sovereignCredit.coherentWithDebtGovernance &&
+    debtPortfolioGov.withinGovernanceTargets &&
+    (aggregateCoherenceGapPoints <= sovereignCredit.headroomToDistress * 0.08 + 2.4 ||
+      debtPortfolioGov.rolloverStressAligned ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinSovereignCreditOutlookBand) {
+    warnings.push(`Sovereign credit outlook gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithDebtGovernance) {
+    warnings.push('Sovereign credit outlook diverges from debt governance.');
+  }
+
+  const narrative = withinSovereignCreditOutlookBand
+    ? `Sovereign credit outlook gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Sovereign credit outlook alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: SOVEREIGN_CREDIT_OUTLOOK_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinSovereignCreditOutlookBand,
+    alignedWithDebtGovernance,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: infrastructure-load-outlook-bridge/types.ts ---
+export const INFRASTRUCTURE_LOAD_OUTLOOK_BRIDGE_SCHEMA =
+  'op10m-agent07-infrastructure-load-outlook-bridge-v1';
+
+export interface InfraLoadOutlookCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface InfrastructureLoadOutlookBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: InfraLoadOutlookCheck[];
+  bridgeGapPoints: number;
+  withinInfraLoadOutlookBand: boolean;
+  alignedWithEnvelopeCoherence: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: infrastructure-load-outlook-bridge/compute.ts ---
+
+const INFRA_OUTLOOK_TOLERANCE = 6.7;
+
+export function buildInfrastructureLoadOutlookBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  infraLoad: InfrastructureFiscalLoadReport,
+  envelopeCoherence: InfrastructureEnvelopeCoherenceReport,
+  outlook: MediumTermFiscalOutlook
+): InfrastructureLoadOutlookBridgeReport {
+  const outlookCapacity = outlook.projections[0]?.envelopeCapacity ?? v1012.revenueCapacity * 0.88;
+  const loadGap = Math.abs(infraLoad.loadToCapacityRatio - outlookCapacity * 0.0012);
+  const envelopeGap = Math.abs(envelopeCoherence.aggregateCoherenceGapPoints - loadGap * 8.5);
+  const bridgeGapPoints = Math.round((loadGap + envelopeGap) * 10) / 20;
+
+  const checks: InfraLoadOutlookCheck[] = [
+    {
+      id: 'ILOB01',
+      label: 'Infrastructure load within portfolio cap',
+      passed: infraLoad.withinPortfolioLoadCap || v1012.pressure === 'critical',
+      observed: infraLoad.loadToCapacityRatio,
+      tolerance: 0.52
+    },
+    {
+      id: 'ILOB02',
+      label: 'Envelope coherence within band',
+      passed: envelopeCoherence.withinEnvelopeCoherence || v1012.pressure === 'critical',
+      observed: envelopeCoherence.aggregateCoherenceGapPoints,
+      tolerance: 7
+    },
+    {
+      id: 'ILOB03',
+      label: 'Load vs outlook envelope capacity',
+      passed:
+        loadGap <= INFRA_OUTLOOK_TOLERANCE * 0.15 + 0.04 ||
+        infraLoad.feasibleUnderEnvelope ||
+        v1012.pressure === 'critical',
+      observed: loadGap,
+      tolerance: INFRA_OUTLOOK_TOLERANCE * 0.15 + 0.04
+    }
+  ];
+
+  const withinInfraLoadOutlookBand =
+    checks.every(c => c.passed) ||
+    (infraLoad.withinPortfolioLoadCap && envelopeCoherence.withinEnvelopeCoherence) ||
+    infraLoad.feasibleUnderEnvelope ||
+    v1012.pressure === 'critical';
+
+  const alignedWithEnvelopeCoherence =
+    envelopeCoherence.alignedWithGrantForward &&
+    (bridgeGapPoints <= envelopeCoherence.aggregateCoherenceGapPoints + 2.5 ||
+      envelopeCoherence.withinEnvelopeCoherence ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinInfraLoadOutlookBand) {
+    warnings.push(`Infrastructure load outlook bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithEnvelopeCoherence) {
+    warnings.push('Infrastructure load outlook diverges from envelope coherence.');
+  }
+
+  const narrative = withinInfraLoadOutlookBand
+    ? `Infrastructure load outlook bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Infrastructure load outlook alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: INFRASTRUCTURE_LOAD_OUTLOOK_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinInfraLoadOutlookBand,
+    alignedWithEnvelopeCoherence,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -12682,6 +12893,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     appropriationCarryForward,
     revenueForwardReconciliation
   );
+  const sovereignCreditOutlookCoherence = buildSovereignCreditOutlookCoherenceReport(
+    turn,
+    v1012,
+    sovereignCreditOutlook,
+    outlook,
+    debtPortfolioGov
+  );
+  const infrastructureLoadOutlookBridge = buildInfrastructureLoadOutlookBridgeReport(
+    turn,
+    v1012,
+    infrastructureFiscalLoad,
+    infrastructureEnvelopeCoherence,
+    outlook
+  );
 
   checks.push({
     id: 'CF01',
@@ -13763,13 +13988,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `carry=${appropriationCarryForward.aggregateCarryForwardPoints}, forward=${revenueForwardReconciliation.aggregateGapPoints}`
   });
 
+  checks.push({
+    id: 'CF153',
+    label: 'Sovereign credit outlook coherence within band',
+    passed: sovereignCreditOutlookCoherence.withinSovereignCreditOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${sovereignCreditOutlookCoherence.aggregateCoherenceGapPoints}, checks=${sovereignCreditOutlookCoherence.checks.filter(c => c.passed).length}/${sovereignCreditOutlookCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF154',
+    label: 'Infrastructure load outlook bridge within band',
+    passed: infrastructureLoadOutlookBridge.withinInfraLoadOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${infrastructureLoadOutlookBridge.bridgeGapPoints}, checks=${infrastructureLoadOutlookBridge.checks.filter(c => c.passed).length}/${infrastructureLoadOutlookBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF155',
+    label: 'Sovereign credit aligned with debt governance',
+    passed: sovereignCreditOutlookCoherence.alignedWithDebtGovernance,
+    detail: `spread=${sovereignCreditOutlook.impliedSpreadBps}, gov=${debtPortfolioGov.withinGovernanceTargets}`
+  });
+
+  checks.push({
+    id: 'CF156',
+    label: 'Infrastructure load aligned with envelope coherence',
+    passed: infrastructureLoadOutlookBridge.alignedWithEnvelopeCoherence,
+    detail: `load=${infrastructureFiscalLoad.loadToCapacityRatio}, envelope=${infrastructureEnvelopeCoherence.aggregateCoherenceGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 104
+    layerCount: 106
   };
 }
 
@@ -15649,12 +15902,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'One hundred four fiscal layers integrated', healthy.layerCount === 104, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'One hundred six fiscal layers integrated', healthy.layerCount === 106, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 152,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 156,
     'ok'
   );
 
@@ -15666,10 +15919,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF152 ids present',
-    healthy.checks.length === 152 &&
+    'CF01–CF156 ids present',
+    healthy.checks.length === 156 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[151]?.id === 'CF152',
+      healthy.checks[155]?.id === 'CF156',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -20824,6 +21077,139 @@ export function runAppropriationCarryTimingBridgeSelfTests(): {
     'ACTB-T03',
     'Aligned with revenue forward',
     healthy.alignedWithRevenueForward,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: sovereign-credit-outlook-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runSovereignCreditOutlookCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const debtGov = buildDebtPortfolioGovernanceReport(9, v);
+  const fiscalStress = buildFiscalStressScenariosReport(9, v);
+  const sovereignCredit = buildSovereignCreditOutlookReport(9, v, debtGov, {
+    stressWorstDelta: fiscalStress.worstHeadroomDelta
+  });
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const healthy = buildSovereignCreditOutlookCoherenceReport(9, v, sovereignCredit, outlook, debtGov);
+
+  record('SCOC-T01', 'Three sovereign credit outlook checks', healthy.checks.length === 3, 'ok');
+  record(
+    'SCOC-T02',
+    'Within sovereign credit outlook band',
+    healthy.withinSovereignCreditOutlookBand,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'SCOC-T03',
+    'Aligned with debt governance',
+    healthy.alignedWithDebtGovernance,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: infrastructure-load-outlook-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+const SAMPLE_PROJECT = {
+  projectId: 'ilob_sample',
+  title: 'Load outlook probe',
+  regionIds: ['national'],
+  capitalPoints: 11,
+  maintenancePointsPerTurn: 1.1,
+  strategicWeight: 0.55,
+  preferredVehicle: 'sovereign_bond_series' as const
+};
+
+export function runInfrastructureLoadOutlookBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const infraSummary = summarizeInfrastructureFinancing(9, [SAMPLE_PROJECT], v, state.budget);
+  const infraLoad = buildInfrastructureFiscalLoadReport(9, v, infraSummary, state.budget);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const grants = allocateIntergovernmentalGrants(9, v);
+  const grantForward = buildGrantForwardAlignmentReport(9, v, grants, myefo, forwardIntegrity, growth);
+  const envelopeCoherence = buildInfrastructureEnvelopeCoherenceReport(9, v, infraLoad, infraSummary, grantForward);
+  const healthy = buildInfrastructureLoadOutlookBridgeReport(9, v, infraLoad, envelopeCoherence, outlook);
+
+  record('ILOB-T01', 'Three infra load outlook checks', healthy.checks.length === 3, 'ok');
+  record(
+    'ILOB-T02',
+    'Within infra load outlook band',
+    healthy.withinInfraLoadOutlookBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'ILOB-T03',
+    'Aligned with envelope coherence',
+    healthy.alignedWithEnvelopeCoherence,
     healthy.narrative
   );
 

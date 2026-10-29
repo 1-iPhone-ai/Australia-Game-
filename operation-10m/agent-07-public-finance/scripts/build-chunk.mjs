@@ -168,6 +168,10 @@ const FILES = [
   'contingency-outlook-integrity-bridge/compute.ts',
   'appropriation-carry-timing-bridge/types.ts',
   'appropriation-carry-timing-bridge/compute.ts',
+  'sovereign-credit-outlook-coherence/types.ts',
+  'sovereign-credit-outlook-coherence/compute.ts',
+  'infrastructure-load-outlook-bridge/types.ts',
+  'infrastructure-load-outlook-bridge/compute.ts',
   'infrastructure-financing/types.ts',
   'infrastructure-financing/compute.ts',
   'recurring-commitments/types.ts',
@@ -289,7 +293,9 @@ const FILES = [
   'debt-service-forward-coherence/self-tests.ts',
   'statutory-outlook-buffer-bridge/self-tests.ts',
   'contingency-outlook-integrity-bridge/self-tests.ts',
-  'appropriation-carry-timing-bridge/self-tests.ts'
+  'appropriation-carry-timing-bridge/self-tests.ts',
+  'sovereign-credit-outlook-coherence/self-tests.ts',
+  'infrastructure-load-outlook-bridge/self-tests.ts'
 ];
 
 function stripModulePreamble(source) {
