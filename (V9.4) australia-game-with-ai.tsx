@@ -133510,6 +133510,8 @@ export interface FeelSnapshot {
   systemic?: { chains: Record<string, string>; recoveries: Record<string, string>; labels: Record<string, string> };
   /** V10.7: live priority → urgency|label, resolved keys, top rival contribution per priority (optional). */
   priorities?: { active: Record<string, string>; resolved: string[]; rival: Record<string, string> };
+  /** V10.0 × V9.4 (O111 Agent 110): `${regionId}:${network}` → condition band — presentation diff only. */
+  nationalNetworks?: Record<string, string>;
 }
 
 let V94_SEQ = 0;
@@ -133643,6 +133645,34 @@ export function deriveFeedbackEvents(prev: FeelSnapshot | null, next: FeelSnapsh
     const [mat, name] = val.split('|'); const pv = prev.infraNetworks?.[nid]; if (!pv) return; const [pmat] = pv.split('|');
     if (pmat === mat || inCount >= 1) return; inCount += 1;
     out.push(v94Event('region_state_changed', 'minor', `in_${nid}`, `${name}: ${pmat.replace(/_/g, ' ')} → ${mat.replace(/_/g, ' ')}`, [], { now, turn, icon: UI_ICON.region, tone: mat === 'fragmented' ? 'negative' : 'positive', regions: [] }));
+  });
+  // V10.0 × V9.4 cross-system feel: national interregional network band transitions (mirrors NationalDerivedEvent thresholds).
+  let nsFeelCount = 0;
+  Object.entries(next.nationalNetworks || {}).forEach(([key, band]) => {
+    const pb = prev.nationalNetworks?.[key];
+    if (!pb || pb === band || nsFeelCount >= 2) return;
+    const sep = key.indexOf(':');
+    if (sep <= 0) return;
+    const code = key.slice(0, sep);
+    const net = key.slice(sep + 1) as NationalNetworkKind;
+    if (!REGIONS[code] || !NATIONAL_NETWORKS.includes(net)) return;
+    const after = band as NationalNetworkCondition;
+    const before = pb as NationalNetworkCondition;
+    const worsened = NS_COND_RANK[after] >= 3 && NS_COND_RANK[before] <= 2;
+    const improved = NS_COND_RANK[before] >= 3 && NS_COND_RANK[after] <= 2;
+    if (!worsened && !improved) return;
+    nsFeelCount += 1;
+    const label = NATIONAL_NETWORK_LABEL[net];
+    if (worsened) {
+      out.push(v94Event('region_state_changed', after === 'critical' ? 'critical' : 'normal', `ns_${key}`,
+        `${REGION_NAME(code)} ${label} ${NATIONAL_CONDITION_LABEL[after]}`,
+        [`${NATIONAL_CONDITION_LABEL[before]} → ${NATIONAL_CONDITION_LABEL[after]}`, 'National capacity is under strain — infrastructure and imports can relieve it.'],
+        { now, turn, icon: UI_ICON.crisis, tone: after === 'critical' ? 'critical' : 'warning', regions: [code] }));
+    } else {
+      out.push(v94Event('crisis_resolved', 'normal', `ns_${key}_ok`, `${REGION_NAME(code)} ${label} recovered`,
+        [`${NATIONAL_CONDITION_LABEL[before]} → ${NATIONAL_CONDITION_LABEL[after]}`],
+        { now, turn, icon: UI_ICON.complete, tone: 'positive', regions: [code] }));
+    }
   });
   Object.entries(next.factionBands).forEach(([fid, band]) => {
     const pb = prev.factionBands[fid];
@@ -136512,6 +136542,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
+  { id: 'o111_110', label: 'O111 Agent 110 Cross-System Innovation', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runO111Agent110CrossSystemInnovationSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
@@ -139178,6 +139209,52 @@ export function computeNationalSystems(i: NationalSystemsInputs, prevIn?: Nation
     computeMs: typeof performance !== 'undefined' ? nsR(performance.now() - t0, 2) : 0
   };
   return { state, persisted, derived };
+}
+
+/** V10.0 → V9.4 feel bridge: compact network condition bands for deriveFeedbackEvents (never persisted). */
+export function feelSnapshotNationalNetworksFromState(s: NationalSystemsState | null | undefined): Record<string, string> {
+  if (!s?.regions) return {};
+  const out: Record<string, string> = {};
+  Object.entries(s.regions).forEach(([code, reg]) => {
+    NATIONAL_NETWORKS.forEach(n => { out[`${code}:${n}`] = reg.networks[n].condition; });
+  });
+  return out;
+}
+
+/** O111 Agent 110 — cross-system innovation regression (V10.0 national bands ↔ V9.4 presentation). */
+export function runO111Agent110CrossSystemInnovationSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const fx = createFeelSnapshotFixture;
+  const now = 2_000_000;
+  check('o111_110_ns_feel_bridge', 'National bottleneck band change surfaces in V9.4 feedback (capped, map-lit)', () => {
+    const prev = fx({ nationalNetworks: { 'WA:freight': 'healthy' } });
+    const next = fx({ nationalNetworks: { 'WA:freight': 'bottlenecked' } });
+    const evs = deriveFeedbackEvents(prev, next, now);
+    const hit = evs.find(e => e.subject === 'ns_WA:freight');
+    return (Boolean(hit) && hit!.regions.includes('WA') && hit!.tone === 'warning' && evs.filter(e => e.subject.startsWith('ns_')).length === 1) || JSON.stringify(evs.map(e => [e.subject, e.title]));
+  });
+  check('o111_110_ns_feel_recovery', 'National network recovery emits a positive grouped moment', () => {
+    const prev = fx({ nationalNetworks: { 'VIC:energy': 'critical' } });
+    const next = fx({ nationalNetworks: { 'VIC:energy': 'strained' } });
+    const ev = deriveFeedbackEvents(prev, next, now).find(e => e.subject === 'ns_VIC:energy_ok');
+    return (Boolean(ev) && ev!.kind === 'crisis_resolved' && ev!.regions.includes('VIC')) || 'missing recovery event';
+  });
+  check('o111_110_ns_feel_snapshot', 'feelSnapshotNationalNetworksFromState tracks every region × network', () => {
+    const s = computeNationalSystems(createNationalSystemsFixtureInputs()).state;
+    const snap = feelSnapshotNationalNetworksFromState(s);
+    const expect = Object.keys(REGIONS).length * NATIONAL_NETWORKS.length;
+    return (Object.keys(snap).length === expect && snap['QLD:energy'] === s.regions.QLD.networks.energy.condition) || `${Object.keys(snap).length} vs ${expect}`;
+  });
+  check('o111_110_ns_feel_inert', 'Strained ↔ strained drift does not spam feedback', () => {
+    const prev = fx({ nationalNetworks: { 'NSW:water': 'strained' } });
+    const next = fx({ nationalNetworks: { 'NSW:water': 'strained' } });
+    return deriveFeedbackEvents(prev, next, now).length === 0 || 'unexpected events';
+  });
+  return results;
 }
 
 // ---- Inputs builder (from canonical systems; read-only) --------------------------------------------------
@@ -215107,9 +215184,10 @@ function dispatchGameSettingsChange(
       ...(ndEnabled && ndProfile ? { nationalDirection: JSON.stringify({ p: ndProfile.primaryDirection, b: ndProfile.confidenceBand, r: ndProfile.definingRegions }) } : {}),
       megaprojects: Object.fromEntries(Object.values(mpPersisted?.programs || {}).map(p => { const st = megaprojectStageView(p); const done = st.filter(x => x.status === 'completed'); const def = MEGAPROJECT_DEF_BY_KIND[p.kind];
         return [p.id, JSON.stringify({ d: done.length, t: st.length, title: def.title, stage: done[done.length - 1]?.title || '', regions: done.length === st.length ? def.regionIds : done[done.length - 1]?.requiredRegionIds || [], c: Object.keys(p.contributorTotals).map(a => swrInputs.ownerNames[a] || a) })]; })),
-      industries: Object.fromEntries(Object.values(scState?.regions || {}).flatMap(r => (Object.values(r.industries) as IndustryState[]).filter(x => x.strength >= 25).map(x => [`${r.regionId}:${x.industry}`, x.condition])))
+      industries: Object.fromEntries(Object.values(scState?.regions || {}).flatMap(r => (Object.values(r.industries) as IndustryState[]).filter(x => x.strength >= 25).map(x => [`${r.regionId}:${x.industry}`, x.condition]))),
+      ...(nsEnabled && nsState ? { nationalNetworks: feelSnapshotNationalNetworksFromState(nsState) } : {})
     };
-  }, [scState, inState, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, npEnabled, npState, npView, isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, (gameState as any).crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, (gameState as any).contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
+  }, [scState, inState, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, npEnabled, npState, npView, nsEnabled, nsState, isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, (gameState as any).crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, (gameState as any).contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
   const v94PrevRef = useRef<FeelSnapshot | null>(null);
   useEffect(() => {
     const prev = v94PrevRef.current; v94PrevRef.current = feelSnapshot;
