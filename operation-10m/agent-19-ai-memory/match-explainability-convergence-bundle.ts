@@ -1,15 +1,15 @@
 import {
-  auditMatchExplainabilityConvergenceGate,
-  matchExplainabilityConvergenceAllowed,
-} from './match-explainability-convergence-gate.ts';
+  auditMatchExplainabilityLatticeGate,
+  matchExplainabilityLatticeAllowed,
+} from './match-explainability-lattice-gate.ts';
 import {
-  buildMatchExplainabilityNexusBundle,
-  matchExplainabilityNexusReady,
-} from './match-explainability-nexus-bundle.ts';
+  buildMatchExplainabilityConvergenceBundle,
+  matchExplainabilityConvergenceReady,
+} from './match-explainability-projection-bundle.ts';
 import {
-  buildSessionNexusExportBundle,
-  sessionNexusExportShipped,
-} from './session-nexus-export-bundle.ts';
+  buildSessionConvergenceExportBundle,
+  sessionConvergenceExportShipped,
+} from './session-projection-export-bundle.ts';
 import type { AiActorMemory, AiRelationship, MemoryInfluenceDecisionLike } from './types.ts';
 import type { TurnExplainabilityPack } from './turn-explainability-pack.ts';
 import type { ExplainabilityConfidenceBand } from './explainability-confidence-band.ts';
@@ -19,8 +19,8 @@ export const AGENT19_CONVERGENCE_NARRATIVE_CAP = 10;
 export interface MatchExplainabilityConvergenceBundle {
   convergenceReady: boolean;
   convergenceAllowed: boolean;
-  nexusReady: boolean;
-  nexusExportShipped: boolean;
+  projectionReady: boolean;
+  projectionExportShipped: boolean;
   narrativeLines: string[];
 }
 
@@ -36,28 +36,28 @@ type ConvergenceParams = {
   memoryInfluenceEnabled?: boolean;
 };
 
-/** Convergence bundle: convergence gate and nexus export must both be green. */
+/** Convergence bundle: convergence gate and projection export must both be green. */
 export function buildMatchExplainabilityConvergenceBundle(
   packs: TurnExplainabilityPack[],
   params: ConvergenceParams,
 ): MatchExplainabilityConvergenceBundle {
-  const convergence = auditMatchExplainabilityConvergenceGate(packs, params);
-  const nexus = buildMatchExplainabilityNexusBundle(packs, params);
-  const nexusExport = buildSessionNexusExportBundle(packs, params);
-  const convergenceAllowed = matchExplainabilityConvergenceAllowed(convergence);
-  const nexusReady = matchExplainabilityNexusReady(nexus);
-  const nexusExportShipped = sessionNexusExportShipped(nexusExport);
-  const convergenceReady = convergenceAllowed && nexusReady && nexusExportShipped;
+  const convergence = auditMatchExplainabilityLatticeGate(packs, params);
+  const projection = buildMatchExplainabilityConvergenceBundle(packs, params);
+  const projectionExport = buildSessionConvergenceExportBundle(packs, params);
+  const convergenceAllowed = matchExplainabilityLatticeAllowed(convergence);
+  const projectionReady = matchExplainabilityConvergenceReady(projection);
+  const projectionExportShipped = sessionConvergenceExportShipped(projectionExport);
+  const convergenceReady = convergenceAllowed && projectionReady && projectionExportShipped;
   const narrativeLines = [
-    `Match explainability convergence bundle: ${convergenceReady ? 'READY' : 'PENDING'} (gate ${convergenceAllowed ? 'ok' : 'fail'}, nexus ${nexusReady ? 'ok' : 'fail'}).`,
+    `Match explainability convergence bundle: ${convergenceReady ? 'READY' : 'PENDING'} (gate ${convergenceAllowed ? 'ok' : 'fail'}, projection ${projectionReady ? 'ok' : 'fail'}).`,
     ...convergence.narrativeLines.slice(0, 2),
-    ...nexus.narrativeLines.slice(0, 1),
+    ...projection.narrativeLines.slice(0, 1),
   ].slice(0, AGENT19_CONVERGENCE_NARRATIVE_CAP);
   return {
     convergenceReady,
     convergenceAllowed,
-    nexusReady,
-    nexusExportShipped,
+    projectionReady,
+    projectionExportShipped,
     narrativeLines,
   };
 }

@@ -3,9 +3,9 @@ import {
   matchExplainabilityConvergenceReady,
 } from './match-explainability-convergence-bundle.ts';
 import {
-  buildMatchExplainabilityNexusBundle,
-  matchExplainabilityNexusReady,
-} from './match-explainability-nexus-bundle.ts';
+  buildMatchExplainabilityProjectionBundle,
+  matchExplainabilityProjectionReady,
+} from './match-explainability-convergence-bundle.ts';
 import type { AiActorMemory, AiRelationship, MemoryInfluenceDecisionLike } from './types.ts';
 import type { TurnExplainabilityPack } from './turn-explainability-pack.ts';
 import type { ExplainabilityConfidenceBand } from './explainability-confidence-band.ts';
@@ -13,11 +13,11 @@ import type { ExplainabilityConfidenceBand } from './explainability-confidence-b
 export interface NexusConvergenceBridgeReport {
   aligned: boolean;
   convergenceReady: boolean;
-  nexusReady: boolean;
+  projectionReady: boolean;
   narrativeLines: string[];
 }
 
-/** Convergence-ready should match nexus-ready when convergence export stack passes. */
+/** Projection-ready should match projection-ready when convergence export stack passes. */
 export function auditNexusConvergenceBridge(
   packs: TurnExplainabilityPack[],
   params: {
@@ -33,16 +33,16 @@ export function auditNexusConvergenceBridge(
   },
 ): NexusConvergenceBridgeReport {
   const convergence = buildMatchExplainabilityConvergenceBundle(packs, params);
-  const nexus = buildMatchExplainabilityNexusBundle(packs, params);
+  const projection = buildMatchExplainabilityProjectionBundle(packs, params);
   const convergenceReady = matchExplainabilityConvergenceReady(convergence);
-  const nexusReady = matchExplainabilityNexusReady(nexus);
-  const aligned = convergenceReady === nexusReady;
+  const projectionReady = matchExplainabilityProjectionReady(projection);
+  const aligned = convergenceReady === projectionReady;
   const narrativeLines = [
-    `Nexus/convergence bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (convergence ${convergenceReady ? 'ok' : 'fail'}, nexus ${nexusReady ? 'ok' : 'fail'}).`,
+    `Nexus/convergence bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (convergence ${convergenceReady ? 'ok' : 'fail'}, projection ${projectionReady ? 'ok' : 'fail'}).`,
   ];
-  return { aligned, convergenceReady, nexusReady, narrativeLines };
+  return { aligned, convergenceReady, projectionReady, narrativeLines };
 }
 
 export function nexusConvergenceBridgeHealthy(report: NexusConvergenceBridgeReport): boolean {
-  return report.convergenceReady && report.nexusReady && report.aligned;
+  return report.convergenceReady && report.projectionReady && report.aligned;
 }

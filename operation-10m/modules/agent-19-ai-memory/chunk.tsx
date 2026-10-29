@@ -13909,23 +13909,23 @@ export function nexusRecoveryOrchestratorWithinCap(report: NexusRecoveryOrchestr
 
 
 // --- source: match-explainability-convergence-bundle.ts ---
-  auditMatchExplainabilityConvergenceGate,
-  matchExplainabilityConvergenceAllowed,
-} from './match-explainability-convergence-gate.ts';
-  buildMatchExplainabilityNexusBundle,
-  matchExplainabilityNexusReady,
-} from './match-explainability-nexus-bundle.ts';
-  buildSessionNexusExportBundle,
-  sessionNexusExportShipped,
-} from './session-nexus-export-bundle.ts';
+  auditMatchExplainabilityLatticeGate,
+  matchExplainabilityLatticeAllowed,
+} from './match-explainability-lattice-gate.ts';
+  buildMatchExplainabilityConvergenceBundle,
+  matchExplainabilityConvergenceReady,
+} from './match-explainability-projection-bundle.ts';
+  buildSessionConvergenceExportBundle,
+  sessionConvergenceExportShipped,
+} from './session-projection-export-bundle.ts';
 
 export const AGENT19_CONVERGENCE_NARRATIVE_CAP = 10;
 
 export interface MatchExplainabilityConvergenceBundle {
   convergenceReady: boolean;
   convergenceAllowed: boolean;
-  nexusReady: boolean;
-  nexusExportShipped: boolean;
+  projectionReady: boolean;
+  projectionExportShipped: boolean;
   narrativeLines: string[];
 }
 
@@ -13941,28 +13941,28 @@ type ConvergenceParams = {
   memoryInfluenceEnabled?: boolean;
 };
 
-/** Convergence bundle: convergence gate and nexus export must both be green. */
+/** Convergence bundle: convergence gate and projection export must both be green. */
 export function buildMatchExplainabilityConvergenceBundle(
   packs: TurnExplainabilityPack[],
   params: ConvergenceParams,
 ): MatchExplainabilityConvergenceBundle {
-  const convergence = auditMatchExplainabilityConvergenceGate(packs, params);
-  const nexus = buildMatchExplainabilityNexusBundle(packs, params);
-  const nexusExport = buildSessionNexusExportBundle(packs, params);
-  const convergenceAllowed = matchExplainabilityConvergenceAllowed(convergence);
-  const nexusReady = matchExplainabilityNexusReady(nexus);
-  const nexusExportShipped = sessionNexusExportShipped(nexusExport);
-  const convergenceReady = convergenceAllowed && nexusReady && nexusExportShipped;
+  const convergence = auditMatchExplainabilityLatticeGate(packs, params);
+  const projection = buildMatchExplainabilityConvergenceBundle(packs, params);
+  const projectionExport = buildSessionConvergenceExportBundle(packs, params);
+  const convergenceAllowed = matchExplainabilityLatticeAllowed(convergence);
+  const projectionReady = matchExplainabilityConvergenceReady(projection);
+  const projectionExportShipped = sessionConvergenceExportShipped(projectionExport);
+  const convergenceReady = convergenceAllowed && projectionReady && projectionExportShipped;
   const narrativeLines = [
-    `Match explainability convergence bundle: ${convergenceReady ? 'READY' : 'PENDING'} (gate ${convergenceAllowed ? 'ok' : 'fail'}, nexus ${nexusReady ? 'ok' : 'fail'}).`,
+    `Match explainability convergence bundle: ${convergenceReady ? 'READY' : 'PENDING'} (gate ${convergenceAllowed ? 'ok' : 'fail'}, projection ${projectionReady ? 'ok' : 'fail'}).`,
     ...convergence.narrativeLines.slice(0, 2),
-    ...nexus.narrativeLines.slice(0, 1),
+    ...projection.narrativeLines.slice(0, 1),
   ].slice(0, AGENT19_CONVERGENCE_NARRATIVE_CAP);
   return {
     convergenceReady,
     convergenceAllowed,
-    nexusReady,
-    nexusExportShipped,
+    projectionReady,
+    projectionExportShipped,
     narrativeLines,
   };
 }
@@ -14026,18 +14026,18 @@ export function sessionConvergenceExportShipped(bundle: SessionConvergenceExport
   buildMatchExplainabilityConvergenceBundle,
   matchExplainabilityConvergenceReady,
 } from './match-explainability-convergence-bundle.ts';
-  buildMatchExplainabilityNexusBundle,
-  matchExplainabilityNexusReady,
-} from './match-explainability-nexus-bundle.ts';
+  buildMatchExplainabilityProjectionBundle,
+  matchExplainabilityProjectionReady,
+} from './match-explainability-convergence-bundle.ts';
 
 export interface NexusConvergenceBridgeReport {
   aligned: boolean;
   convergenceReady: boolean;
-  nexusReady: boolean;
+  projectionReady: boolean;
   narrativeLines: string[];
 }
 
-/** Convergence-ready should match nexus-ready when convergence export stack passes. */
+/** Projection-ready should match projection-ready when convergence export stack passes. */
 export function auditNexusConvergenceBridge(
   packs: TurnExplainabilityPack[],
   params: {
@@ -14053,18 +14053,18 @@ export function auditNexusConvergenceBridge(
   },
 ): NexusConvergenceBridgeReport {
   const convergence = buildMatchExplainabilityConvergenceBundle(packs, params);
-  const nexus = buildMatchExplainabilityNexusBundle(packs, params);
+  const projection = buildMatchExplainabilityProjectionBundle(packs, params);
   const convergenceReady = matchExplainabilityConvergenceReady(convergence);
-  const nexusReady = matchExplainabilityNexusReady(nexus);
-  const aligned = convergenceReady === nexusReady;
+  const projectionReady = matchExplainabilityProjectionReady(projection);
+  const aligned = convergenceReady === projectionReady;
   const narrativeLines = [
-    `Nexus/convergence bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (convergence ${convergenceReady ? 'ok' : 'fail'}, nexus ${nexusReady ? 'ok' : 'fail'}).`,
+    `Nexus/convergence bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (convergence ${convergenceReady ? 'ok' : 'fail'}, projection ${projectionReady ? 'ok' : 'fail'}).`,
   ];
-  return { aligned, convergenceReady, nexusReady, narrativeLines };
+  return { aligned, convergenceReady, projectionReady, narrativeLines };
 }
 
 export function nexusConvergenceBridgeHealthy(report: NexusConvergenceBridgeReport): boolean {
-  return report.convergenceReady && report.nexusReady && report.aligned;
+  return report.convergenceReady && report.projectionReady && report.aligned;
 }
 
 
@@ -14101,10 +14101,10 @@ export function auditMatchExplainabilityLatticeGate(
 ): MatchExplainabilityLatticeGateReport {
   const convergence = buildMatchExplainabilityConvergenceBundle(packs, params);
   const convergenceExport = buildSessionConvergenceExportBundle(packs, params);
-  const bridge = auditNexusConvergenceBridge(packs, params);
+  const bridge = auditLatticeConvergenceBridge(packs, params);
   const convergenceReady = matchExplainabilityConvergenceReady(convergence);
   const convergenceExportShipped = sessionConvergenceExportShipped(convergenceExport);
-  const nexusConvergenceHealthy = nexusConvergenceBridgeHealthy(bridge);
+  const nexusConvergenceHealthy = latticeConvergenceBridgeHealthy(bridge);
   const latticeAllowed = convergenceReady && convergenceExportShipped && nexusConvergenceHealthy;
   const narrativeLines = [
     `Match explainability lattice: ${latticeAllowed ? 'ALLOWED' : 'DENIED'} (convergence ${convergenceReady ? 'ok' : 'fail'}, export ${convergenceExportShipped ? 'ok' : 'fail'}).`,
@@ -14126,9 +14126,9 @@ export function matchExplainabilityLatticeAllowed(report: MatchExplainabilityLat
 
 
 // --- source: convergence-recovery-orchestrator.ts ---
-  auditMatchExplainabilityConvergenceGate,
-  matchExplainabilityConvergenceAllowed,
-} from './match-explainability-convergence-gate.ts';
+  auditMatchExplainabilityLatticeGate,
+  matchExplainabilityLatticeAllowed,
+} from './match-explainability-lattice-gate.ts';
 
 export const AGENT19_CONVERGENCE_RECOVERY_CAP = 10;
 
@@ -14156,23 +14156,23 @@ export function buildConvergenceRecoveryOrchestrator(
   packs: TurnExplainabilityPack[],
   params: RecoveryParams,
 ): ConvergenceRecoveryOrchestratorReport {
-  const convergence = auditMatchExplainabilityConvergenceGate(packs, params);
-  const convergenceBlocked = !matchExplainabilityConvergenceAllowed(convergence);
+  const convergence = auditMatchExplainabilityLatticeGate(packs, params);
+  const convergenceBlocked = !matchExplainabilityLatticeAllowed(convergence);
   const steps: string[] = [];
   if (convergenceBlocked) {
-    if (!convergence.nexusReady) {
-      steps.push('Restore nexus bundle: vertex and nexus export must pass.');
+    if (!convergence.resonanceReady) {
+      steps.push('Restore resonance bundle: vertex and resonance export must pass.');
     }
-    if (!convergence.nexusExportShipped) {
-      steps.push('Emit session nexus export before convergence clearance.');
+    if (!convergence.resonanceExportShipped) {
+      steps.push('Emit session resonance export before convergence clearance.');
     }
-    if (!convergence.vertexNexusHealthy) {
-      steps.push('Reconcile vertex/nexus bridge before convergence.');
+    if (!convergence.vertexResonanceHealthy) {
+      steps.push('Reconcile vertex/resonance bridge before convergence.');
     }
-    steps.push(...buildNexusRecoveryOrchestrator(packs, params).steps.slice(0, 3));
-    const nexus = buildMatchExplainabilityNexusBundle(packs, params);
-    if (!nexus.nexusReady) {
-      steps.push('Re-run nexus readiness checklist on turn packs.');
+    steps.push(...buildConvergenceRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const resonance = auditMatchExplainabilityResonanceGate(packs, params);
+    if (!resonance.resonanceReady) {
+      steps.push('Re-run resonance readiness checklist on turn packs.');
     }
   } else {
     steps.push('Convergence gate open — recovery orchestrator idle.');

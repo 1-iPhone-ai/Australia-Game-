@@ -1,9 +1,9 @@
 import {
-  auditMatchExplainabilityConvergenceGate,
-  matchExplainabilityConvergenceAllowed,
-} from './match-explainability-convergence-gate.ts';
-import { buildNexusRecoveryOrchestrator } from './nexus-recovery-orchestrator.ts';
-import { buildMatchExplainabilityNexusBundle } from './match-explainability-nexus-bundle.ts';
+  auditMatchExplainabilityLatticeGate,
+  matchExplainabilityLatticeAllowed,
+} from './match-explainability-lattice-gate.ts';
+import { buildConvergenceRecoveryOrchestrator } from './convergence-recovery-orchestrator.ts';
+import { auditMatchExplainabilityResonanceGate } from './match-explainability-resonance-gate.ts';
 import type { AiActorMemory, AiRelationship, MemoryInfluenceDecisionLike } from './types.ts';
 import type { TurnExplainabilityPack } from './turn-explainability-pack.ts';
 import type { ExplainabilityConfidenceBand } from './explainability-confidence-band.ts';
@@ -34,23 +34,23 @@ export function buildConvergenceRecoveryOrchestrator(
   packs: TurnExplainabilityPack[],
   params: RecoveryParams,
 ): ConvergenceRecoveryOrchestratorReport {
-  const convergence = auditMatchExplainabilityConvergenceGate(packs, params);
-  const convergenceBlocked = !matchExplainabilityConvergenceAllowed(convergence);
+  const convergence = auditMatchExplainabilityLatticeGate(packs, params);
+  const convergenceBlocked = !matchExplainabilityLatticeAllowed(convergence);
   const steps: string[] = [];
   if (convergenceBlocked) {
-    if (!convergence.nexusReady) {
-      steps.push('Restore nexus bundle: vertex and nexus export must pass.');
+    if (!convergence.resonanceReady) {
+      steps.push('Restore resonance bundle: vertex and resonance export must pass.');
     }
-    if (!convergence.nexusExportShipped) {
-      steps.push('Emit session nexus export before convergence clearance.');
+    if (!convergence.resonanceExportShipped) {
+      steps.push('Emit session resonance export before convergence clearance.');
     }
-    if (!convergence.vertexNexusHealthy) {
-      steps.push('Reconcile vertex/nexus bridge before convergence.');
+    if (!convergence.vertexResonanceHealthy) {
+      steps.push('Reconcile vertex/resonance bridge before convergence.');
     }
-    steps.push(...buildNexusRecoveryOrchestrator(packs, params).steps.slice(0, 3));
-    const nexus = buildMatchExplainabilityNexusBundle(packs, params);
-    if (!nexus.nexusReady) {
-      steps.push('Re-run nexus readiness checklist on turn packs.');
+    steps.push(...buildConvergenceRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const resonance = auditMatchExplainabilityResonanceGate(packs, params);
+    if (!resonance.resonanceReady) {
+      steps.push('Re-run resonance readiness checklist on turn packs.');
     }
   } else {
     steps.push('Convergence gate open — recovery orchestrator idle.');
