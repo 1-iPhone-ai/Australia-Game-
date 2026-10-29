@@ -914,6 +914,23 @@ export type {
   TransitionApotheosisBand,
 } from './production-transition-apotheosis';
 
+export {
+  AGENT08_TRANSITION_DEIFICATION_SCHEMA_VERSION,
+  buildFirmProductionTransitionDeification,
+  classifyNationalDeificationBand,
+  computeNationalDeificationPressure,
+  computeNationalProductionTransitionDeification,
+  summarizeRegionalTransitionDeification,
+  runAgent08TransitionDeificationSelfTests,
+} from './production-transition-deification';
+
+export type {
+  FirmProductionTransitionDeification,
+  NationalProductionTransitionDeification,
+  RegionalTransitionDeificationSummary,
+  TransitionDeificationBand,
+} from './production-transition-deification';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -968,6 +985,7 @@ import { runAgent08TransitionEnshrinementSelfTests } from './production-transiti
 import { runAgent08TransitionImmortalizationSelfTests } from './production-transition-immortalization';
 import { runAgent08TransitionTranscendenceSelfTests } from './production-transition-transcendence';
 import { runAgent08TransitionApotheosisSelfTests } from './production-transition-apotheosis';
+import { runAgent08TransitionDeificationSelfTests } from './production-transition-deification';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -1242,6 +1260,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionDeification = runAgent08TransitionDeificationSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -1297,5 +1320,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionImmortalization,
     ...transitionTranscendence,
     ...transitionApotheosis,
+    ...transitionDeification,
   ];
 }
