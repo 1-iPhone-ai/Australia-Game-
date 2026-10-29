@@ -133,6 +133,8 @@ export const AGENT14_HEALTH_ED_PROGRAM_STUBS: readonly {
   { id: 'ps_xp_NT_o10m182_gate', pillar: 'education', regionId: 'NT', fiscalLoadPoints: 18, durationTurns: 5, baseImpact: 9, effectLagTurns: 3 },
   { id: 'ps_xp_NSW_wave26_projection', pillar: 'housing', regionId: 'NSW', fiscalLoadPoints: 16, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
   { id: 'ps_xp_SA_o10m184_gate', pillar: 'healthcare', regionId: 'SA', fiscalLoadPoints: 17, durationTurns: 4, baseImpact: 8, effectLagTurns: 2 },
+  { id: 'ps_xp_QLD_wave27_projection', pillar: 'education', regionId: 'QLD', fiscalLoadPoints: 18, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
+  { id: 'ps_xp_WA_o10m186_gate', pillar: 'housing', regionId: 'WA', fiscalLoadPoints: 16, durationTurns: 4, baseImpact: 7, effectLagTurns: 2 },
 ];
 
 export const AGENT14_ALL_PROGRAM_STUBS = [
