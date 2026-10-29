@@ -25,12 +25,18 @@ const FILES = [
   'engine/progression-signals.ts',
   'engine/unlock-hint-formatter.ts',
   'engine/phase-panel-policy.ts',
+  'sim/onboarding-funnel.ts',
+  'engine/layout-preset-evolution.ts',
   'engine/notification-lane-progression.ts',
   'engine/resolve-panel-visibility.ts',
+  'engine/layout-aware-visibility.ts',
+  'engine/keyboard-shortcut-progression.ts',
+  'engine/contextual-quick-actions.ts',
   'engine/legacy-access.ts',
   'engine/merge-with-v94-contextual-hiding.ts',
   'engine/progression-coach.ts',
   'engine/scale-wave-self-tests.ts',
+  'engine/round3-self-tests.ts',
   'a11y/aria-builders.ts',
   'a11y/focus-management.ts',
   'a11y/live-region-controller.ts',
@@ -44,6 +50,8 @@ const FILES = [
   'react/PanelUnlockCoach.tsx',
   'react/EvolvingUiProgressLab.tsx',
   'react/SimulationUiEvolutionBridge.tsx',
+  'react/ContextualQuickActionRail.tsx',
+  'react/KeyboardHintsOverlay.tsx',
 ];
 
 function stripModulePreamble(source) {
@@ -85,7 +93,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.2.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.3.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -138,6 +146,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
     check(\`agent22_scale_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
+  const round3 = runAgent22Round3SelfTests();
+  for (const r of round3.results) {
+    check(\`agent22_round3_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
   const failed = results.filter(r => !r.passed).length;
   return {
     passed: results.length - failed,
@@ -164,7 +177,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.2.0',
+  moduleVersion: '1.3.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),

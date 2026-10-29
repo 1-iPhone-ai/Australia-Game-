@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 7e8832674018b2ed
+// content-sha256-prefix: 2a7ac3af08196277
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -1106,6 +1106,163 @@ export function listPhasesThatSuppressCategory(category: string): V94Standardize
   return out;
 }
 
+// --- source: sim/onboarding-funnel.ts ---
+export interface OnboardingFunnelStep {
+  id: string;
+  title: string;
+  dismissKey: string;
+  unlocksPanelIds: string[];
+  minDay: number;
+  coachMessage: string;
+}
+
+export const UI_ONBOARDING_FUNNEL: OnboardingFunnelStep[] = [
+  {
+    id: 'funnel_welcome_map',
+    title: 'Explore the map',
+    dismissKey: 'onboarding_map',
+    unlocksPanelIds: ['nav_map', 'modal_travel'],
+    minDay: 1,
+    coachMessage: 'The map is always available — travel unlocks adjacent regions.',
+  },
+  {
+    id: 'funnel_economy_basics',
+    title: 'Markets and workshop',
+    dismissKey: 'onboarding_economy',
+    unlocksPanelIds: ['nav_market', 'nav_workshop', 'quick_actions'],
+    minDay: 2,
+    coachMessage: 'Craft and trade once you have action points to spend.',
+  },
+  {
+    id: 'funnel_standing',
+    title: 'Regional standing',
+    dismissKey: 'onboarding_standing',
+    unlocksPanelIds: ['nav_challenges', 'nav_contracts'],
+    minDay: 4,
+    coachMessage: 'Challenges and contracts depend on regional standing.',
+  },
+  {
+    id: 'funnel_finance_depth',
+    title: 'Credit and investments',
+    dismissKey: 'onboarding_finance',
+    unlocksPanelIds: ['nav_loans', 'nav_investments'],
+    minDay: 6,
+    coachMessage: 'Long-horizon tools unlock after liquidity basics.',
+  },
+  {
+    id: 'funnel_automation',
+    title: 'Assistance tools',
+    dismissKey: 'onboarding_automation',
+    unlocksPanelIds: ['widget_guardian', 'ai_command'],
+    minDay: 8,
+    coachMessage: 'Guardian and command tools appear for advanced assistance.',
+  },
+];
+
+export function listActiveOnboardingSteps(
+  gameDay: number,
+  dismissedKeys: string[]
+): OnboardingFunnelStep[] {
+  const dismissed = new Set(dismissedKeys);
+  return UI_ONBOARDING_FUNNEL.filter(s => gameDay >= s.minDay && !dismissed.has(s.dismissKey));
+}
+
+export function applyOnboardingDismissal(
+  stepId: string,
+  dismissedKeys: string[],
+  rememberedPanelIds: string[]
+): { dismissedKeys: string[]; rememberedPanelIds: string[] } {
+  const step = UI_ONBOARDING_FUNNEL.find(s => s.id === stepId);
+  if (!step) return { dismissedKeys, rememberedPanelIds };
+  const nextDismissed = dismissedKeys.includes(step.dismissKey)
+    ? dismissedKeys
+    : [...dismissedKeys, step.dismissKey];
+  const remember = new Set(rememberedPanelIds);
+  for (const pid of step.unlocksPanelIds) remember.add(pid);
+  return { dismissedKeys: nextDismissed, rememberedPanelIds: [...remember] };
+}
+
+export function panelsHighlightedByOnboarding(
+  gameDay: number,
+  dismissedKeys: string[]
+): string[] {
+  const active = listActiveOnboardingSteps(gameDay, dismissedKeys);
+  return [...new Set(active.flatMap(s => s.unlocksPanelIds))];
+}
+
+// --- source: engine/layout-preset-evolution.ts ---
+export type V94LayoutPreset = 'Clean' | 'Assisted' | 'Advanced' | 'Developer' | 'Current/Custom';
+
+export interface LayoutPresetEvolutionStep {
+  preset: V94LayoutPreset;
+  impliedInterfaceLevel: InterfaceExperienceLevel;
+  enablesPanelTags: string[];
+  suppressesPanelTags: string[];
+  coachSummary: string;
+}
+
+export const LAYOUT_PRESET_EVOLUTION: LayoutPresetEvolutionStep[] = [
+  {
+    preset: 'Clean',
+    impliedInterfaceLevel: 'simple',
+    enablesPanelTags: ['navigation', 'core'],
+    suppressesPanelTags: ['launcher', 'automation', 'diagnostics'],
+    coachSummary: 'Clean layout hides advanced launchers until you need them.',
+  },
+  {
+    preset: 'Assisted',
+    impliedInterfaceLevel: 'guided',
+    enablesPanelTags: ['navigation', 'core', 'launcher', 'crafting'],
+    suppressesPanelTags: ['diagnostics'],
+    coachSummary: 'Assisted layout adds coaching launchers and economy shortcuts.',
+  },
+  {
+    preset: 'Advanced',
+    impliedInterfaceLevel: 'advanced',
+    enablesPanelTags: ['navigation', 'core', 'launcher', 'strategic', 'automation'],
+    suppressesPanelTags: [],
+    coachSummary: 'Advanced layout exposes strategy and automation widgets.',
+  },
+  {
+    preset: 'Developer',
+    impliedInterfaceLevel: 'expert',
+    enablesPanelTags: ['navigation', 'core', 'launcher', 'strategic', 'automation', 'diagnostics'],
+    suppressesPanelTags: [],
+    coachSummary: 'Developer layout includes diagnostics and replay tooling.',
+  },
+];
+
+export function resolveLayoutPresetEvolution(preset: V94LayoutPreset | undefined): LayoutPresetEvolutionStep {
+  const found = LAYOUT_PRESET_EVOLUTION.find(s => s.preset === preset);
+  return found ?? LAYOUT_PRESET_EVOLUTION[1];
+}
+
+export function isPanelTagEnabledForPreset(
+  panelTags: string[] | undefined,
+  preset: V94LayoutPreset | undefined
+): boolean {
+  const step = resolveLayoutPresetEvolution(preset);
+  const tags = panelTags ?? [];
+  if (tags.some(t => step.suppressesPanelTags.includes(t))) return false;
+  if (tags.length === 0) return true;
+  return tags.some(t => step.enablesPanelTags.includes(t));
+}
+
+export function suggestLayoutPresetForInterfaceLevel(level: InterfaceExperienceLevel): V94LayoutPreset {
+  switch (level) {
+    case 'simple':
+      return 'Clean';
+    case 'guided':
+      return 'Assisted';
+    case 'advanced':
+      return 'Advanced';
+    case 'expert':
+      return 'Developer';
+    default:
+      return 'Assisted';
+  }
+}
+
 // --- source: engine/notification-lane-progression.ts ---
 export type NotificationLaneCategory =
   | 'critical'
@@ -1287,6 +1444,197 @@ export function resolveEvolvingPanelVisibilityWithPhase(
     state: phased.state,
     reason: `${base.reason}|${phased.reason}`,
   };
+}
+
+// --- source: engine/layout-aware-visibility.ts ---
+export function resolveEvolvingPanelVisibilityWithLayout(
+  panelId: string,
+  layoutPreset: V94LayoutPreset | undefined,
+  signals: ProgressionSignalSnapshot,
+  policy: EvolvingUiAccessPolicy,
+  config?: EvolvingUiProgressionConfig
+): PanelVisibilityResult {
+  const base = resolveEvolvingPanelVisibility(panelId, signals, policy, config);
+  const panel = EVOLVING_UI_PANEL_BY_ID[panelId];
+  if (!panel || base.state === 'hidden') return base;
+  const tagOk = isPanelTagEnabledForPreset(panel.tags, layoutPreset);
+  if (tagOk) return base;
+  if (base.state === 'visible' || base.state === 'preview') {
+    return { ...base, state: 'preview', reason: `${base.reason}|layout_preset_tag_blocked` };
+  }
+  return { ...base, reason: `${base.reason}|layout_preset_tag_blocked` };
+}
+
+// --- source: engine/keyboard-shortcut-progression.ts ---
+export interface KeyboardShortcutDefinition {
+  id: string;
+  keys: string;
+  actionLabel: string;
+  navTarget?: string;
+  minInterfaceLevel: InterfaceExperienceLevel;
+  allowedPhases: V94StandardizedGamePhase[];
+}
+
+export const EVOLVING_UI_KEYBOARD_SHORTCUTS: KeyboardShortcutDefinition[] = [
+  {
+    id: 'kb_open_map',
+    keys: 'M',
+    actionLabel: 'Open map',
+    navTarget: 'map',
+    minInterfaceLevel: 'simple',
+    allowedPhases: ['human_turn', 'paused'],
+  },
+  {
+    id: 'kb_open_help',
+    keys: '?',
+    actionLabel: 'Open help / mechanics',
+    navTarget: 'help',
+    minInterfaceLevel: 'simple',
+    allowedPhases: ['human_turn', 'paused', 'approval_waiting'],
+  },
+  {
+    id: 'kb_open_market',
+    keys: 'Shift+M',
+    actionLabel: 'Open market',
+    navTarget: 'market',
+    minInterfaceLevel: 'guided',
+    allowedPhases: ['human_turn'],
+  },
+  {
+    id: 'kb_open_contracts',
+    keys: 'C',
+    actionLabel: 'Regional contracts',
+    navTarget: 'contracts',
+    minInterfaceLevel: 'guided',
+    allowedPhases: ['human_turn'],
+  },
+  {
+    id: 'kb_open_investments',
+    keys: 'I',
+    actionLabel: 'Investments',
+    navTarget: 'investments',
+    minInterfaceLevel: 'advanced',
+    allowedPhases: ['human_turn'],
+  },
+  {
+    id: 'kb_open_settings',
+    keys: ',',
+    actionLabel: 'Settings',
+    navTarget: 'settings',
+    minInterfaceLevel: 'simple',
+    allowedPhases: ['human_turn', 'paused', 'main_menu', 'setup'],
+  },
+  {
+    id: 'kb_toggle_show_all_panels',
+    keys: 'Ctrl+Shift+U',
+    actionLabel: 'Toggle show all panels',
+    minInterfaceLevel: 'advanced',
+    allowedPhases: ['human_turn', 'paused'],
+  },
+  {
+    id: 'kb_open_diagnostics',
+    keys: 'Ctrl+Alt+D',
+    actionLabel: 'Diagnostics drawer',
+    navTarget: 'diagnostics',
+    minInterfaceLevel: 'expert',
+    allowedPhases: ['human_turn', 'paused'],
+  },
+];
+
+const LEVEL_RANK: Record<InterfaceExperienceLevel, number> = {
+  simple: 0,
+  guided: 1,
+  advanced: 2,
+  expert: 3,
+};
+
+export function isKeyboardShortcutAvailable(
+  shortcut: KeyboardShortcutDefinition,
+  interfaceLevel: InterfaceExperienceLevel,
+  phase: V94StandardizedGamePhase
+): boolean {
+  if (LEVEL_RANK[interfaceLevel] < LEVEL_RANK[shortcut.minInterfaceLevel]) return false;
+  return shortcut.allowedPhases.includes(phase);
+}
+
+export function listAvailableKeyboardShortcuts(
+  interfaceLevel: InterfaceExperienceLevel,
+  phase: V94StandardizedGamePhase
+): KeyboardShortcutDefinition[] {
+  return EVOLVING_UI_KEYBOARD_SHORTCUTS.filter(s => isKeyboardShortcutAvailable(s, interfaceLevel, phase));
+}
+
+export function resolveShortcutNavTarget(
+  shortcutId: string,
+  interfaceLevel: InterfaceExperienceLevel,
+  phase: V94StandardizedGamePhase
+): string | null {
+  const def = EVOLVING_UI_KEYBOARD_SHORTCUTS.find(s => s.id === shortcutId);
+  if (!def || !isKeyboardShortcutAvailable(def, interfaceLevel, phase)) return null;
+  return def.navTarget ?? null;
+}
+
+// --- source: engine/contextual-quick-actions.ts ---
+export interface ContextualQuickAction {
+  id: string;
+  label: string;
+  navTarget: string;
+  phases: V94StandardizedGamePhase[];
+  minDay: number;
+  priority: number;
+}
+
+/** Contextual quick-action rail entries (complements V9.4 quick_actions dock). */
+export const CONTEXTUAL_QUICK_ACTIONS: ContextualQuickAction[] = [
+  { id: 'qa_travel', label: 'Travel', navTarget: 'travel', phases: ['human_turn'], minDay: 1, priority: 10 },
+  { id: 'qa_map', label: 'Map', navTarget: 'map', phases: ['human_turn', 'paused'], minDay: 1, priority: 5 },
+  { id: 'qa_market', label: 'Market', navTarget: 'market', phases: ['human_turn'], minDay: 2, priority: 20 },
+  { id: 'qa_workshop', label: 'Workshop', navTarget: 'workshop', phases: ['human_turn'], minDay: 2, priority: 25 },
+  { id: 'qa_contracts', label: 'Contracts', navTarget: 'contracts', phases: ['human_turn'], minDay: 4, priority: 30 },
+  { id: 'qa_loans', label: 'Credit', navTarget: 'loans', phases: ['human_turn'], minDay: 5, priority: 40 },
+  { id: 'qa_ask', label: 'Ask AI', navTarget: 'ask_game', phases: ['human_turn', 'approval_waiting'], minDay: 1, priority: 8 },
+  { id: 'qa_progress', label: 'Objectives', navTarget: 'progress', phases: ['human_turn', 'paused'], minDay: 3, priority: 15 },
+  { id: 'qa_replay', label: 'Replay', navTarget: 'replay', phases: ['human_turn', 'post_match'], minDay: 10, priority: 90 },
+];
+
+export function listContextualQuickActions(
+  phase: V94StandardizedGamePhase,
+  gameDay: number,
+  limit = 6
+): ContextualQuickAction[] {
+  return CONTEXTUAL_QUICK_ACTIONS.filter(a => a.phases.includes(phase) && gameDay >= a.minDay)
+    .sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label))
+    .slice(0, limit);
+}
+
+export function contextualActionToNavPatch(action: ContextualQuickAction): Record<string, boolean | string> {
+  return resolveIntentNavToUiPatchInline(action.navTarget);
+}
+
+/** Local mirror to avoid circular imports in bundled chunk ordering. */
+function resolveIntentNavToUiPatchInline(target: string): Record<string, boolean | string> {
+  switch (target) {
+    case 'map':
+      return { showMap: true };
+    case 'travel':
+      return { showTravelModal: true, showMap: true };
+    case 'market':
+      return { showMarket: true };
+    case 'workshop':
+      return { showWorkshop: true };
+    case 'contracts':
+      return { showRegionalContractsModal: true };
+    case 'loans':
+      return { showAdvancedLoans: true };
+    case 'ask_game':
+      return { showAskGameAi: true };
+    case 'progress':
+      return { showProgress: true };
+    case 'replay':
+      return { showReplayViewer: true };
+    default:
+      return {};
+  }
 }
 
 // --- source: engine/legacy-access.ts ---
@@ -1560,6 +1908,80 @@ export function runAgent22ScaleWaveSelfTests(): {
     'sw_notification_lane',
     'automation lane suppressed early',
     !shouldShowNotificationLaneCategory('automation', { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' })
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
+}
+
+// --- source: engine/round3-self-tests.ts ---
+export function runAgent22Round3SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r3_layout_suggest',
+    'suggest Assisted for guided level',
+    suggestLayoutPresetForInterfaceLevel('guided') === 'Assisted'
+  );
+
+  check(
+    'r3_layout_tag',
+    'Clean suppresses launcher tag panels',
+    isPanelTagEnabledForPreset(['launcher'], 'Clean') === false
+  );
+
+  check(
+    'r3_keyboard_expert_diag',
+    'diagnostics shortcut expert-only',
+    listAvailableKeyboardShortcuts('expert', 'human_turn').some(s => s.id === 'kb_open_diagnostics')
+  );
+
+  check(
+    'r3_keyboard_simple_no_invest',
+    'investments shortcut hidden on simple',
+    !listAvailableKeyboardShortcuts('simple', 'human_turn').some(s => s.navTarget === 'investments')
+  );
+
+  check(
+    'r3_contextual_qa',
+    'day 6 human turn includes workshop action',
+    listContextualQuickActions('human_turn', 6).some(a => a.navTarget === 'workshop')
+  );
+
+  check(
+    'r3_layout_visibility',
+    'Clean preset downgrades quick_actions launcher to preview',
+    (() => {
+      const vis = resolveEvolvingPanelVisibilityWithLayout(
+        'quick_actions',
+        'Clean',
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY
+      );
+      return vis.state === 'preview' && vis.reason.includes('layout');
+    })()
+  );
+
+  check(
+    'r3_onboarding_funnel',
+    'dismissal remembers economy panels',
+    (() => {
+      const r = applyOnboardingDismissal('funnel_economy_basics', [], []);
+      return r.rememberedPanelIds.includes('nav_market');
+    })()
+  );
+
+  check(
+    'r3_onboarding_active',
+    'day 3 shows standing funnel step',
+    listActiveOnboardingSteps(3, []).some(s => s.id === 'funnel_economy_basics')
   );
 
   const failed = results.filter(r => !r.passed).length;
@@ -2202,8 +2624,80 @@ export function SimulationUiEvolutionBridge({ result }: SimulationUiEvolutionBri
   );
 }
 
+// --- source: react/ContextualQuickActionRail.tsx ---
+export interface ContextualQuickActionRailProps {
+  phase: V94StandardizedGamePhase;
+  gameDay: number;
+  onNavigate?: (navTarget: string, patch: Record<string, boolean | string>) => void;
+}
+
+export function ContextualQuickActionRail({ phase, gameDay, onNavigate }: ContextualQuickActionRailProps): React.ReactElement {
+  const actions = listContextualQuickActions(phase, gameDay);
+  return (
+    <div data-testid="contextual-quick-action-rail" role="toolbar" aria-label="Contextual quick actions" className="flex flex-wrap gap-1">
+      {actions.map(a => (
+        <button
+          key={a.id}
+          type="button"
+          className="px-2 py-0.5 rounded text-xs border"
+          onClick={() => onNavigate?.(a.navTarget, contextualActionToNavPatch(a))}
+          data-testid={`cqa-${a.id}`}
+        >
+          {a.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// --- source: react/KeyboardHintsOverlay.tsx ---
+export interface KeyboardHintsOverlayProps {
+  interfaceLevel: InterfaceExperienceLevel;
+  phase: V94StandardizedGamePhase;
+  accessibility: AccessibilitySettingsSnapshot;
+  onInvoke?: (shortcutId: string, navTarget: string | null) => void;
+}
+
+export function KeyboardHintsOverlay({
+  interfaceLevel,
+  phase,
+  accessibility,
+  onInvoke,
+}: KeyboardHintsOverlayProps): React.ReactElement | null {
+  const shortcuts = useMemo(
+    () => listAvailableKeyboardShortcuts(interfaceLevel, phase),
+    [interfaceLevel, phase]
+  );
+  if (!accessibility.keyboardNavigationHints || shortcuts.length === 0) return null;
+  const focusClass = buildFocusRingClassName({
+    highContrast: accessibility.highContrastFocusRings,
+    style: accessibility.focusRingStyle,
+  });
+
+  return (
+    <div
+      data-testid="keyboard-hints-overlay"
+      role="complementary"
+      aria-label="Keyboard shortcuts"
+      className="text-xs opacity-90 space-y-0.5"
+    >
+      {shortcuts.slice(0, 6).map(s => (
+        <button
+          key={s.id}
+          type="button"
+          className={`block text-left ${focusClass}`}
+          onClick={() => onInvoke?.(s.id, s.navTarget ?? null)}
+          data-testid={`kb-hint-${s.id}`}
+        >
+          <kbd>{s.keys}</kbd> — {s.actionLabel}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.2.0';
+export const AGENT_22_MODULE_VERSION = '1.3.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -2254,6 +2748,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const scale = runAgent22ScaleWaveSelfTests();
   for (const r of scale.results) {
     check(`agent22_scale_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round3 = runAgent22Round3SelfTests();
+  for (const r of round3.results) {
+    check(`agent22_round3_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;

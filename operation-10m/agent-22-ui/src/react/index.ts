@@ -4,4 +4,6 @@ export { AccessibilityAnnouncer } from './AccessibilityAnnouncer.js';
 export { ShowAllPanelsToggle } from './ShowAllPanelsToggle.js';
 export { PanelUnlockCoach } from './PanelUnlockCoach.js';
 export { EvolvingUiProgressLab } from './EvolvingUiProgressLab.js';
+export { ContextualQuickActionRail } from './ContextualQuickActionRail.js';
+export { KeyboardHintsOverlay } from './KeyboardHintsOverlay.js';
 export { SimulationUiEvolutionBridge } from './SimulationUiEvolutionBridge.js';
