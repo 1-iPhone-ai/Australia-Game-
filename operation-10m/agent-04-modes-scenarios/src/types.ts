@@ -397,6 +397,7 @@ export type O10mMandamusPhase = 'filing' | 'review' | 'mandamus';
 export type O10mProhibitionPhase = 'filing' | 'review' | 'prohibition';
 export type O10mHabeasPhase = 'filing' | 'review' | 'habeas';
 export type O10mQuowarrantoPhase = 'filing' | 'review' | 'quowarranto';
+export type O10mInjunctionPhase = 'filing' | 'review' | 'injunction';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -816,6 +817,17 @@ export interface O10mQuowarrantoSession {
   phaseTag: O10mQuowarrantoPhase;
 }
 
+/** Schema v46 — injunction arc with score accrual between phases. */
+export interface O10mInjunctionSession {
+  injunctionId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  injunctionScore: number;
+  phaseTag: O10mInjunctionPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -840,6 +852,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'injunction_step'
     | 'quowarranto_step'
     | 'habeas_step'
     | 'prohibition_step'
@@ -1048,6 +1061,10 @@ export interface O10mCampaignPlan {
   quowarrantoCursor: number | null;
   quowarrantoPhase: O10mQuowarrantoPhase | null;
   quowarrantoScore: number | null;
+  injunctionId: string | null;
+  injunctionCursor: number | null;
+  injunctionPhase: O10mInjunctionPhase | null;
+  injunctionScore: number | null;
   reason: string;
 }
 
@@ -1159,8 +1176,10 @@ export interface O10mModesPersistedState {
   prohibitionSession?: O10mProhibitionSession | null;
   /** Schema v44 — active habeas arc (mutually exclusive with quowarranto / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   habeasSession?: O10mHabeasSession | null;
-  /** Schema v45 — active quo warranto arc (mutually exclusive with habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v45 — active quo warranto arc (mutually exclusive with injunction / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   quowarrantoSession?: O10mQuowarrantoSession | null;
+  /** Schema v46 — active injunction arc (mutually exclusive with quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  injunctionSession?: O10mInjunctionSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

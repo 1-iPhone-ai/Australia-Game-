@@ -401,6 +401,7 @@ export type O10mMandamusPhase = 'filing' | 'review' | 'mandamus';
 export type O10mProhibitionPhase = 'filing' | 'review' | 'prohibition';
 export type O10mHabeasPhase = 'filing' | 'review' | 'habeas';
 export type O10mQuowarrantoPhase = 'filing' | 'review' | 'quowarranto';
+export type O10mInjunctionPhase = 'filing' | 'review' | 'injunction';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -820,6 +821,17 @@ export interface O10mQuowarrantoSession {
   phaseTag: O10mQuowarrantoPhase;
 }
 
+/** Schema v46 — injunction arc with score accrual between phases. */
+export interface O10mInjunctionSession {
+  injunctionId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  injunctionScore: number;
+  phaseTag: O10mInjunctionPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -844,6 +856,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'injunction_step'
     | 'quowarranto_step'
     | 'habeas_step'
     | 'prohibition_step'
@@ -1052,6 +1065,10 @@ export interface O10mCampaignPlan {
   quowarrantoCursor: number | null;
   quowarrantoPhase: O10mQuowarrantoPhase | null;
   quowarrantoScore: number | null;
+  injunctionId: string | null;
+  injunctionCursor: number | null;
+  injunctionPhase: O10mInjunctionPhase | null;
+  injunctionScore: number | null;
   reason: string;
 }
 
@@ -1163,8 +1180,10 @@ export interface O10mModesPersistedState {
   prohibitionSession?: O10mProhibitionSession | null;
   /** Schema v44 — active habeas arc (mutually exclusive with quowarranto / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   habeasSession?: O10mHabeasSession | null;
-  /** Schema v45 — active quo warranto arc (mutually exclusive with habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v45 — active quo warranto arc (mutually exclusive with injunction / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   quowarrantoSession?: O10mQuowarrantoSession | null;
+  /** Schema v46 — active injunction arc (mutually exclusive with quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  injunctionSession?: O10mInjunctionSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -6077,6 +6096,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Quo warranto finales', 'Score ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_injunction_filing_docket',
+    title: 'Injunction Filing Docket',
+    description: 'Open an injunction arc with low-pressure score pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100547,
+    startingMoney: 4100,
+    startingRegions: ['NT', 'QLD'],
+    badgeId: 'badge_o10m_injunction_filing_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100547),
+      o10mInjunctionFilingDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_ifd_obj_day',
+        label: 'Filing Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Injunction arcs', 'Score pacing', 'Filing phase'],
+  },
+  {
+    id: 'o10m_injunction_review_chamber',
+    title: 'Injunction Review Chamber',
+    description: 'Mid injunction review with accrued score bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100548,
+    startingMoney: 4650,
+    startingRegions: ['WA', 'SA'],
+    startingStanding: { WA: 72, SA: 70 },
+    badgeId: 'badge_o10m_injunction_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100548),
+      regionalStandingEnabled: true,
+      o10mInjunctionReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_irc_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 75',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 75,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Score carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_injunction_relief_finale',
+    title: 'Injunction Relief Finale',
+    description: 'Finale injunction stage — net worth gate with full score bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100549,
+    startingMoney: 5100,
+    startingRegions: ['ACT', 'NSW', 'VIC'],
+    badgeId: 'badge_o10m_injunction_relief_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100549),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mInjunctionReliefFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_irf_obj_net',
+        label: 'Relief Net Worth',
+        description: 'Reach $22,800 net worth',
+        targetType: 'netWorth',
+        targetValue: 22800,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Injunction finales', 'Score ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -8089,6 +8205,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_injunction_route',
+    title: 'Injunction Route',
+    description:
+      'Three-phase injunction arc with score accrual between legs — round-46 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_injunction_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_injunction_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File injunction petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 560 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_injunction_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, VIC: 5 },
+          forcedSettingsPatch: { o10mInjunctionMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_injunction_relief_finale',
+        title: 'Relief Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainInjunctionRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -8915,7 +9065,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 45;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 46;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -9059,6 +9209,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
   };
 }
 
@@ -9123,6 +9274,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       prohibitionSession: merged.prohibitionSession ?? null,
       habeasSession: merged.habeasSession ?? null,
       quowarrantoSession: merged.quowarrantoSession ?? null,
+      injunctionSession: merged.injunctionSession ?? null,
     };
     return upgraded;
   }
@@ -9211,6 +9363,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     prohibitionSession: sanitizeProhibitionSession(o.prohibitionSession),
     habeasSession: sanitizeHabeasSession(o.habeasSession),
     quowarrantoSession: sanitizeQuowarrantoSession(o.quowarrantoSession),
+    injunctionSession: sanitizeInjunctionSession(o.injunctionSession),
   };
 }
 
@@ -9534,6 +9687,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Quo warranto cursor out of range; clamp on next sanitize.');
   }
 
+  const injunction = sanitizeInjunctionSession(state.injunctionSession);
+  if (state.injunctionSession && !injunction) {
+    warnings.push('Injunction session failed sanitization; planner will ignore it.');
+  } else if (injunction && injunction.cursor >= injunction.scenarioIds.length) {
+    warnings.push('Injunction cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -9682,6 +9842,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'prohibitionSession',
   'habeasSession',
   'quowarrantoSession',
+  'injunctionSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -10225,6 +10386,7 @@ export function attachMarathonQueueToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -10342,6 +10504,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceInjunctionSessionAfterRun(next, run);
   next = advanceQuowarrantoSessionAfterRun(next, run);
   next = advanceHabeasSessionAfterRun(next, run);
   next = advanceProhibitionSessionAfterRun(next, run);
@@ -10548,6 +10711,7 @@ export function attachGauntletSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -10815,6 +10979,7 @@ export function attachRelaySessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -11042,6 +11207,7 @@ export function attachCircuitSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -11287,6 +11453,7 @@ export function attachExpeditionSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -11530,6 +11697,7 @@ export function attachOdysseySessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -11772,6 +11940,7 @@ export function attachPilgrimageSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -12015,6 +12184,7 @@ export function attachCaravanSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -12252,6 +12422,7 @@ export function attachVoyageSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -12489,6 +12660,7 @@ export function attachSiegeSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -12726,6 +12898,7 @@ export function attachConvoySessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -12963,6 +13136,7 @@ export function attachEscortSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -13209,6 +13383,7 @@ export function attachExtractionSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -13463,6 +13638,7 @@ export function attachSubjectSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -13717,6 +13893,7 @@ export function attachWitnessSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -13971,6 +14148,7 @@ export function attachTribunalSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -14225,6 +14403,7 @@ export function attachIndictmentSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -14479,6 +14658,7 @@ export function attachAppealSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -14733,6 +14913,7 @@ export function attachClemencySessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -14987,6 +15168,7 @@ export function attachPardonSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,
@@ -15241,6 +15423,7 @@ export function attachAmnestySessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     pardonSession: null,
     clemencySession: null,
     appealSession: null,
@@ -15495,6 +15678,7 @@ export function attachReprieveSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,
@@ -15749,6 +15933,7 @@ export function attachParoleSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     reprieveSession: null,
     amnestySession: null,
     pardonSession: null,
@@ -16003,6 +16188,7 @@ export function attachProbationSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     paroleSession: null,
     reprieveSession: null,
     amnestySession: null,
@@ -16257,6 +16443,7 @@ export function attachCommutationSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     probationSession: null,
     paroleSession: null,
     reprieveSession: null,
@@ -16511,6 +16698,7 @@ export function attachAcquittalSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     commutationSession: null,
     probationSession: null,
     paroleSession: null,
@@ -16765,6 +16953,7 @@ export function attachExonerationSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     acquittalSession: null,
     commutationSession: null,
     probationSession: null,
@@ -17019,6 +17208,7 @@ export function attachExpungementSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     exonerationSession: null,
     acquittalSession: null,
     commutationSession: null,
@@ -17273,6 +17463,7 @@ export function attachVacaturSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     expungementSession: null,
     exonerationSession: null,
     acquittalSession: null,
@@ -17527,6 +17718,7 @@ export function attachRemandSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     vacaturSession: null,
     expungementSession: null,
     exonerationSession: null,
@@ -17781,6 +17973,7 @@ export function attachReversalSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     remandSession: null,
     vacaturSession: null,
     expungementSession: null,
@@ -18035,6 +18228,7 @@ export function attachAnnulmentSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     reversalSession: null,
     remandSession: null,
     vacaturSession: null,
@@ -18291,6 +18485,7 @@ export function attachReinstatementSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     annulmentSession: null,
     reversalSession: null,
     remandSession: null,
@@ -18547,6 +18742,7 @@ export function attachSetAsideSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     reinstatementSession: null,
     annulmentSession: null,
     reversalSession: null,
@@ -18801,6 +18997,7 @@ export function attachQuashSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     setAsideSession: null,
     reinstatementSession: null,
     annulmentSession: null,
@@ -19057,6 +19254,7 @@ export function attachSupersedeSessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     quashSession: null,
     setAsideSession: null,
     reinstatementSession: null,
@@ -20327,6 +20525,7 @@ export function attachQuowarrantoSessionToState(
   return {
     ...state,
     quowarrantoSession: sanitized,
+    injunctionSession: null,
     habeasSession: null,
     prohibitionSession: null,
     mandamusSession: null,
@@ -20459,6 +20658,264 @@ export function quowarrantoSessionSummary(state: O10mModesPersistedState): {
     active: session?.active === true,
     cursor: session?.active ? session.cursor : null,
     quowarrantoScore: session?.quowarrantoScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
+// --- bundled from src/save-format-injunction.ts ---
+export const O10M_INJUNCTION_SCENARIO_CAP = 6;
+export const O10M_INJUNCTION_SCORE_CAP = 1118;
+export const O10M_INJUNCTION_SCORE_MONEY_CAP = 1180;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mInjunctionPhase>(['filing', 'review', 'injunction']);
+
+export function unlockTokenForInjunctionId(injunctionId: string): string | null {
+  if (!injunctionId.startsWith('o10m_injunction_')) return null;
+  return `o10m_unlock_${injunctionId.slice('o10m_injunction_'.length)}`;
+}
+
+export function injunctionPhaseForCursor(cursor: number, scenarioCount: number): O10mInjunctionPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'injunction';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'filing';
+}
+
+export function injunctionScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(145, Math.max(36, Math.floor(run.playerNetWorth / 118) + standingSlice));
+}
+
+export function sanitizeInjunctionSession(raw: unknown): O10mInjunctionSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const injunctionId =
+    typeof o.injunctionId === 'string' && o.injunctionId.startsWith('o10m_injunction_')
+      ? o.injunctionId
+      : null;
+  if (!injunctionId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : injunctionId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_INJUNCTION_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const injunctionScore = Math.min(
+    O10M_INJUNCTION_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.injunctionScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mInjunctionPhase)
+      ? (phaseRaw as O10mInjunctionPhase)
+      : injunctionPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    injunctionId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    injunctionScore,
+    phaseTag,
+  };
+}
+
+export function createInjunctionSession(params: {
+  injunctionId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mInjunctionSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.injunctionId.startsWith('o10m_injunction_')) {
+    return { session: null, warnings: ['Injunction ids must start with o10m_injunction_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_INJUNCTION_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Injunction arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      injunctionId: params.injunctionId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      injunctionScore: 0,
+      phaseTag: injunctionPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachInjunctionSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mInjunctionSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeInjunctionSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    injunctionSession: sanitized,
+    quowarrantoSession: null,
+    habeasSession: null,
+    prohibitionSession: null,
+    mandamusSession: null,
+    certiorariSession: null,
+    supersedeSession: null,
+    quashSession: null,
+    setAsideSession: null,
+    reinstatementSession: null,
+    annulmentSession: null,
+    reversalSession: null,
+    remandSession: null,
+    vacaturSession: null,
+    expungementSession: null,
+    exonerationSession: null,
+    acquittalSession: null,
+    commutationSession: null,
+    probationSession: null,
+    paroleSession: null,
+    reprieveSession: null,
+    amnestySession: null,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearInjunctionSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, injunctionSession: null };
+}
+
+export function getInjunctionScenarioAtCursor(
+  session: O10mInjunctionSession | null | undefined,
+): string | null {
+  const injunction = sanitizeInjunctionSession(session);
+  if (!injunction || !injunction.active) return null;
+  return injunction.scenarioIds[injunction.cursor] ?? null;
+}
+
+export function buildInjunctionScenarioStartOverrides(
+  session: O10mInjunctionSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const injunction = sanitizeInjunctionSession(session);
+  if (!injunction) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_INJUNCTION_SCORE_MONEY_CAP,
+    Math.floor(injunction.injunctionScore * 0.91),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveInjunctionId: injunction.injunctionId,
+      o10mActiveInjunctionStep: injunction.cursor,
+      o10mActiveInjunctionPhase: injunction.phaseTag,
+      o10mInjunctionScore: injunction.injunctionScore,
+    },
+  };
+}
+
+export function advanceInjunctionSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeInjunctionSession(state.injunctionSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const injunctionScore = Math.min(
+    O10M_INJUNCTION_SCORE_CAP,
+    session.injunctionScore + injunctionScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      injunctionSession: {
+        ...session,
+        cursor,
+        injunctionScore,
+        phaseTag: injunctionPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForInjunctionId(session.injunctionId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    injunctionSession: { ...session, active: false, injunctionScore, phaseTag: 'injunction' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function injunctionSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  injunctionScore: number;
+  phase: O10mInjunctionPhase | null;
+} {
+  const session = sanitizeInjunctionSession(state.injunctionSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    injunctionScore: session?.injunctionScore ?? 0,
     phase: session?.active ? session.phaseTag : null,
   };
 }
@@ -20625,9 +21082,31 @@ const emptyQueuePlan = {
   quowarrantoCursor: null as number | null,
   quowarrantoPhase: null as O10mQuowarrantoPhase | null,
   quowarrantoScore: null as number | null,
+  injunctionId: null as string | null,
+  injunctionCursor: null as number | null,
+  injunctionPhase: null as O10mInjunctionPhase | null,
+  injunctionScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const injunction = sanitizeInjunctionSession(state.injunctionSession);
+  const injunctionScenario = getInjunctionScenarioAtCursor(injunction);
+  if (injunction && injunction.active && injunctionScenario) {
+    return {
+      kind: 'injunction_step',
+      scenarioId: injunctionScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      injunctionId: injunction.injunctionId,
+      injunctionCursor: injunction.cursor,
+      injunctionPhase: injunction.phaseTag,
+      injunctionScore: injunction.injunctionScore,
+      reason: `Injunction "${injunction.label}" ${injunction.phaseTag} phase ${injunction.cursor + 1}/${injunction.scenarioIds.length} (score ${injunction.injunctionScore}).`,
+    };
+  }
+
   const quowarranto = sanitizeQuowarrantoSession(state.quowarrantoSession);
   const quowarrantoScenario = getQuowarrantoScenarioAtCursor(quowarranto);
   if (quowarranto && quowarranto.active && quowarrantoScenario) {
@@ -21472,6 +21951,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   prohibitionActive: boolean;
   habeasActive: boolean;
   quowarrantoActive: boolean;
+  injunctionActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -21520,6 +22000,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const prohibition = prohibitionSessionSummary(state);
   const habeas = habeasSessionSummary(state);
   const quowarranto = quowarrantoSessionSummary(state);
+  const injunction = injunctionSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -21566,6 +22047,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     prohibitionActive: prohibition.active,
     habeasActive: habeas.active,
     quowarrantoActive: quowarranto.active,
+    injunctionActive: injunction.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -21584,7 +22066,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 46, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 47, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -21940,16 +22422,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const quowarrantoState = quowarranto ? attachQuowarrantoSessionToState(createEmptyO10mModesPersistedState(), quowarranto) : null;
   push('agent04_chunk_53', quowarrantoState !== null && planNextCampaignAction(quowarrantoState!).kind === 'quowarranto_step');
 
+  const injunction = createInjunctionSession({
+    injunctionId: 'o10m_injunction_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_injunction_filing_docket'],
+  }).session;
+  const injunctionState = injunction ? attachInjunctionSessionToState(createEmptyO10mModesPersistedState(), injunction) : null;
+  push('agent04_chunk_54', injunctionState !== null && planNextCampaignAction(injunctionState!).kind === 'injunction_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v46',
+  schemaVersion: 'op10m-agent04-v47',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 45,
+  saveSchemaVersion: 46,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

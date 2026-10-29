@@ -148,6 +148,7 @@ export function attachConvoySessionToState(
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,

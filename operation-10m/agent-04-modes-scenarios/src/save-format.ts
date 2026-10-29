@@ -45,6 +45,7 @@ import { sanitizeMandamusSession } from './save-format-mandamus.js';
 import { sanitizeProhibitionSession } from './save-format-prohibition.js';
 import { sanitizeHabeasSession } from './save-format-habeas.js';
 import { sanitizeQuowarrantoSession } from './save-format-quowarranto.js';
+import { sanitizeInjunctionSession } from './save-format-injunction.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -63,7 +64,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 45;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 46;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -207,6 +208,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     prohibitionSession: null,
     habeasSession: null,
     quowarrantoSession: null,
+    injunctionSession: null,
   };
 }
 
@@ -271,6 +273,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       prohibitionSession: merged.prohibitionSession ?? null,
       habeasSession: merged.habeasSession ?? null,
       quowarrantoSession: merged.quowarrantoSession ?? null,
+      injunctionSession: merged.injunctionSession ?? null,
     };
     return upgraded;
   }
@@ -359,6 +362,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     prohibitionSession: sanitizeProhibitionSession(o.prohibitionSession),
     habeasSession: sanitizeHabeasSession(o.habeasSession),
     quowarrantoSession: sanitizeQuowarrantoSession(o.quowarrantoSession),
+    injunctionSession: sanitizeInjunctionSession(o.injunctionSession),
   };
 }
 
@@ -680,6 +684,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Quo warranto session failed sanitization; planner will ignore it.');
   } else if (quowarranto && quowarranto.cursor >= quowarranto.scenarioIds.length) {
     warnings.push('Quo warranto cursor out of range; clamp on next sanitize.');
+  }
+
+  const injunction = sanitizeInjunctionSession(state.injunctionSession);
+  if (state.injunctionSession && !injunction) {
+    warnings.push('Injunction session failed sanitization; planner will ignore it.');
+  } else if (injunction && injunction.cursor >= injunction.scenarioIds.length) {
+    warnings.push('Injunction cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

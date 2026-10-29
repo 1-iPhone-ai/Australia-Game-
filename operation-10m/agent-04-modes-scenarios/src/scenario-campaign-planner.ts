@@ -117,6 +117,11 @@ import {
   sanitizeReversalSession,
 } from './save-format-reversal.js';
 import {
+  getInjunctionScenarioAtCursor,
+  injunctionSessionSummary,
+  sanitizeInjunctionSession,
+} from './save-format-injunction.js';
+import {
   getQuowarrantoScenarioAtCursor,
   quowarrantoSessionSummary,
   sanitizeQuowarrantoSession,
@@ -245,6 +250,7 @@ import type {
   O10mProhibitionPhase,
   O10mHabeasPhase,
   O10mQuowarrantoPhase,
+  O10mInjunctionPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -411,9 +417,31 @@ const emptyQueuePlan = {
   quowarrantoCursor: null as number | null,
   quowarrantoPhase: null as O10mQuowarrantoPhase | null,
   quowarrantoScore: null as number | null,
+  injunctionId: null as string | null,
+  injunctionCursor: null as number | null,
+  injunctionPhase: null as O10mInjunctionPhase | null,
+  injunctionScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const injunction = sanitizeInjunctionSession(state.injunctionSession);
+  const injunctionScenario = getInjunctionScenarioAtCursor(injunction);
+  if (injunction && injunction.active && injunctionScenario) {
+    return {
+      kind: 'injunction_step',
+      scenarioId: injunctionScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      injunctionId: injunction.injunctionId,
+      injunctionCursor: injunction.cursor,
+      injunctionPhase: injunction.phaseTag,
+      injunctionScore: injunction.injunctionScore,
+      reason: `Injunction "${injunction.label}" ${injunction.phaseTag} phase ${injunction.cursor + 1}/${injunction.scenarioIds.length} (score ${injunction.injunctionScore}).`,
+    };
+  }
+
   const quowarranto = sanitizeQuowarrantoSession(state.quowarrantoSession);
   const quowarrantoScenario = getQuowarrantoScenarioAtCursor(quowarranto);
   if (quowarranto && quowarranto.active && quowarrantoScenario) {
@@ -1258,6 +1286,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   prohibitionActive: boolean;
   habeasActive: boolean;
   quowarrantoActive: boolean;
+  injunctionActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -1306,6 +1335,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const prohibition = prohibitionSessionSummary(state);
   const habeas = habeasSessionSummary(state);
   const quowarranto = quowarrantoSessionSummary(state);
+  const injunction = injunctionSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -1352,6 +1382,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     prohibitionActive: prohibition.active,
     habeasActive: habeas.active,
     quowarrantoActive: quowarranto.active,
+    injunctionActive: injunction.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
