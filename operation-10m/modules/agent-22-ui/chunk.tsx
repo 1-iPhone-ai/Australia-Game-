@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 893ecef55cb11d85
+// content-sha256-prefix: d188279462844ed3
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -999,6 +999,10 @@ export interface DayAdvanceUiEvolutionResult {
   quadDeferredQueueDayCoachCopy: string | null;
   coverageVisibleBreadthDayCoachCopy: string | null;
   pacingImmediateBatchDayCoachCopy: string | null;
+  seventhUnlockHeadlineDayCoachCopy: string | null;
+  pentDeferredQueueDayCoachCopy: string | null;
+  previewPanelBreadthDayCoachCopy: string | null;
+  pacingDeferredPairDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1918,6 +1922,27 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const seventhUnlockHeadlineDayCoach = buildSeventhUnlockHeadlineDayCoach({
+    newlyUnlockedPanelIds,
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const pentDeferredQueueDayCoach = buildPentDeferredQueueDayCoach({
+    combinedQueueDepth: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const previewPanelBreadthDayCoach = buildPreviewPanelBreadthDayCoach({
+    snapshot: coverage,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const pacingDeferredPairDayCoach = buildPacingDeferredPairDayCoach({
+    pacingDeferredCount: pacing.deferredCount,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -2088,6 +2113,10 @@ export function tickEvolvingUiOnDayAdvance(
     quadDeferredQueueDayCoachCopy: quadDeferredQueueDayCoach.coachCopy,
     coverageVisibleBreadthDayCoachCopy: coverageVisibleBreadthDayCoach.coachCopy,
     pacingImmediateBatchDayCoachCopy: pacingImmediateBatchDayCoach.coachCopy,
+    seventhUnlockHeadlineDayCoachCopy: seventhUnlockHeadlineDayCoach.coachCopy,
+    pentDeferredQueueDayCoachCopy: pentDeferredQueueDayCoach.coachCopy,
+    previewPanelBreadthDayCoachCopy: previewPanelBreadthDayCoach.coachCopy,
+    pacingDeferredPairDayCoachCopy: pacingDeferredPairDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -8151,6 +8180,267 @@ export function buildPacingImmediateBatchDayCoach(input: {
     immediateCount: input.immediateAnnouncementCount,
     coachCopy: `Day ${input.nextGameDay}: Pacing released ${input.immediateAnnouncementCount} coach lines for immediate live-region delivery.`,
   };
+}
+
+// --- source: engine/seventh-unlock-headline-day-coach.ts ---
+export interface SeventhUnlockHeadlineDayCoach {
+  panelId: string | null;
+  coachCopy: string | null;
+}
+
+export function buildSeventhUnlockHeadlineDayCoach(input: {
+  newlyUnlockedPanelIds: string[];
+  signals: ProgressionSignalSnapshot;
+  nextGameDay: number;
+}): SeventhUnlockHeadlineDayCoach {
+  const panelId = input.newlyUnlockedPanelIds[6];
+  if (!panelId) {
+    return { panelId: null, coachCopy: null };
+  }
+  const panel = EVOLVING_UI_PANEL_BY_ID[panelId];
+  if (!panel) {
+    return { panelId, coachCopy: null };
+  }
+  return {
+    panelId,
+    coachCopy: `Day ${input.nextGameDay}: Seventh unlock today — ${buildCoachHeadline(panel, input.signals)}`,
+  };
+}
+
+// --- source: engine/pent-deferred-queue-day-coach.ts ---
+export interface PentDeferredQueueDayCoach {
+  queueDepth: number;
+  coachCopy: string | null;
+}
+
+export function buildPentDeferredQueueDayCoach(input: {
+  combinedQueueDepth: number;
+  nextGameDay: number;
+}): PentDeferredQueueDayCoach {
+  if (input.combinedQueueDepth !== 5) {
+    return { queueDepth: input.combinedQueueDepth, coachCopy: null };
+  }
+  return {
+    queueDepth: 5,
+    coachCopy: `Day ${input.nextGameDay}: Five coach announcements remain queued — day-advance pacing will drip them across upcoming ticks.`,
+  };
+}
+
+// --- source: engine/preview-panel-breadth-day-coach.ts ---
+export interface PreviewPanelBreadthDayCoach {
+  previewCount: number;
+  coachCopy: string | null;
+}
+
+export function buildPreviewPanelBreadthDayCoach(input: {
+  snapshot: ProgressionCoverageSnapshot;
+  nextGameDay: number;
+}): PreviewPanelBreadthDayCoach {
+  if (input.nextGameDay > 13 || input.snapshot.preview < 3) {
+    return { previewCount: input.snapshot.preview, coachCopy: null };
+  }
+  return {
+    previewCount: input.snapshot.preview,
+    coachCopy: `Day ${input.nextGameDay}: ${input.snapshot.preview} panels in preview mode — unlock coaching stays readable without full layout weight.`,
+  };
+}
+
+// --- source: engine/pacing-deferred-pair-day-coach.ts ---
+export interface PacingDeferredPairDayCoach {
+  deferredCount: number;
+  coachCopy: string | null;
+}
+
+export function buildPacingDeferredPairDayCoach(input: {
+  pacingDeferredCount: number;
+  nextGameDay: number;
+}): PacingDeferredPairDayCoach {
+  if (input.pacingDeferredCount !== 2) {
+    return { deferredCount: input.pacingDeferredCount, coachCopy: null };
+  }
+  return {
+    deferredCount: 2,
+    coachCopy: `Day ${input.nextGameDay}: Pacing held back two coach lines for the next calm delivery window.`,
+  };
+}
+
+// --- source: engine/round46-self-tests.ts ---
+export function runAgent22Round46SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const sevenIds = EVOLVING_UI_PANEL_REGISTRY.slice(0, 7).map(p => p.id);
+
+  check(
+    'r46_seventh_unlock',
+    'seventh unlock headline day coach',
+    (() => {
+      const coach = buildSeventhUnlockHeadlineDayCoach({
+        newlyUnlockedPanelIds: sevenIds,
+        signals: { gameDay: 9, turnCount: 9, interfaceLevel: 'guided' },
+        nextGameDay: 9,
+      });
+      return coach.panelId === sevenIds[6] && Boolean(coach.coachCopy?.includes('Day 9'));
+    })()
+  );
+
+  check(
+    'r46_pent_deferred',
+    'pent deferred queue day coach',
+    (() => {
+      const coach = buildPentDeferredQueueDayCoach({ combinedQueueDepth: 5, nextGameDay: 10 });
+      return coach.queueDepth === 5 && Boolean(coach.coachCopy?.includes('Day 10'));
+    })()
+  );
+
+  check(
+    'r46_preview_breadth',
+    'preview panel breadth day coach',
+    (() => {
+      const coach = buildPreviewPanelBreadthDayCoach({
+        snapshot: {
+          visible: 4,
+          preview: 3,
+          hidden: 6,
+          total: 13,
+          coverageRatio: 0.3,
+          coachCopy: null,
+          tierLabel: 'mid',
+        },
+        nextGameDay: 11,
+      });
+      return coach.previewCount === 3 && Boolean(coach.coachCopy?.includes('Day 11'));
+    })()
+  );
+
+  check(
+    'r46_pacing_deferred_pair',
+    'pacing deferred pair day coach',
+    (() => {
+      const coach = buildPacingDeferredPairDayCoach({ pacingDeferredCount: 2, nextGameDay: 6 });
+      return coach.deferredCount === 2 && Boolean(coach.coachCopy?.includes('Day 6'));
+    })()
+  );
+
+  check(
+    'r46_tick_seventh_unlock',
+    'tick exposes seventh unlock headline day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.seventhUnlockHeadlineDayCoachCopy === 'string' || r.seventhUnlockHeadlineDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r46_tick_pent_deferred',
+    'tick exposes pent deferred queue day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.pentDeferredQueueDayCoachCopy === 'string' || r.pentDeferredQueueDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r46_tick_preview_breadth',
+    'tick exposes preview panel breadth day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.previewPanelBreadthDayCoachCopy === 'string' || r.previewPanelBreadthDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r46_tick_pacing_pair',
+    'tick exposes pacing deferred pair day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.pacingDeferredPairDayCoachCopy === 'string' || r.pacingDeferredPairDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r46_seventh_unlock_short',
+    'seventh unlock null with fewer than seven unlocks',
+    (() => {
+      const coach = buildSeventhUnlockHeadlineDayCoach({
+        newlyUnlockedPanelIds: sevenIds.slice(0, 6),
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        nextGameDay: 2,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r46_pent_not_five',
+    'pent deferred null when depth not five',
+    (() => {
+      const coach = buildPentDeferredQueueDayCoach({ combinedQueueDepth: 4, nextGameDay: 1 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r46_preview_low',
+    'preview breadth null when preview below threshold',
+    (() => {
+      const coach = buildPreviewPanelBreadthDayCoach({
+        snapshot: {
+          visible: 2,
+          preview: 2,
+          hidden: 9,
+          total: 13,
+          coverageRatio: 0.2,
+          coachCopy: null,
+          tierLabel: 'early',
+        },
+        nextGameDay: 8,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r46_pacing_not_pair',
+    'pacing deferred pair null when count not two',
+    (() => {
+      const coach = buildPacingDeferredPairDayCoach({ pacingDeferredCount: 1, nextGameDay: 2 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round45-self-tests.ts ---
@@ -16736,6 +17026,18 @@ export function SimulationUiEvolutionBridge({
       {result.pacingImmediateBatchDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-pacing-immediate-batch-day">{result.pacingImmediateBatchDayCoachCopy}</div>
       ) : null}
+      {result.seventhUnlockHeadlineDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-seventh-unlock-headline-day">{result.seventhUnlockHeadlineDayCoachCopy}</div>
+      ) : null}
+      {result.pentDeferredQueueDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-pent-deferred-day">{result.pentDeferredQueueDayCoachCopy}</div>
+      ) : null}
+      {result.previewPanelBreadthDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-preview-panel-breadth-day">{result.previewPanelBreadthDayCoachCopy}</div>
+      ) : null}
+      {result.pacingDeferredPairDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-pacing-deferred-pair-day">{result.pacingDeferredPairDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -19313,8 +19615,96 @@ export function PacingImmediateBatchDayCoachStrip({
   );
 }
 
+// --- source: react/SeventhUnlockHeadlineDayCoachStrip.tsx ---
+export function SeventhUnlockHeadlineDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: SeventhUnlockHeadlineDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="seventh-unlock-headline-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-emerald-950/60 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/PentDeferredQueueDayCoachStrip.tsx ---
+export function PentDeferredQueueDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: PentDeferredQueueDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="pent-deferred-queue-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-indigo-950/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/PreviewPanelBreadthDayCoachStrip.tsx ---
+export function PreviewPanelBreadthDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: PreviewPanelBreadthDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="preview-panel-breadth-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-yellow-800/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/PacingDeferredPairDayCoachStrip.tsx ---
+export function PacingDeferredPairDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: PacingDeferredPairDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="pacing-deferred-pair-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-pink-700/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.45.0';
+export const AGENT_22_MODULE_VERSION = '1.46.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -19465,6 +19855,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round46 = runAgent22Round46SelfTests();
+  for (const r of round46.results) {
+    check(`agent22_round46_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round45 = runAgent22Round45SelfTests();
