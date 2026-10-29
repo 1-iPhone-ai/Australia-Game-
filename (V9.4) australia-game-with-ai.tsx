@@ -24060,6 +24060,85 @@ export function buildReplayMatchSummary(file: ReplayFile): string {
   return parts.join(' ');
 }
 
+/** Agent 78 — player-facing replay headline (summary + progress + integrity badge). */
+export function buildReplayExperienceHeadline(
+  file: ReplayFile,
+  compatibility?: ReplayCompatibilityReport | null
+): { summary: string; progressLabel: string; integrityLabel: string } {
+  const events = file.events || [];
+  const chapters = file.chapters && file.chapters.length > 0 ? file.chapters : detectReplayChapters(file);
+  const turningPoints = file.turningPoints && file.turningPoints.length > 0 ? file.turningPoints : detectReplayTurningPoints(file);
+  const compat = compatibility || emptyReplayCompatibility();
+  let integrityLabel = 'Replay healthy';
+  if (file.truncated) integrityLabel = 'Recording truncated';
+  else if (compat.status === 'unsupported') integrityLabel = 'Unsupported schema';
+  else if (compat.integrityStatus === 'corrupt') integrityLabel = 'Integrity issue';
+  else if (compat.integrityStatus === 'degraded') integrityLabel = 'Degraded replay';
+  else if (!compat.canDeterministicReexecute) integrityLabel = 'Recorded playback only';
+  const progressLabel = `${events.length} events · ${chapters.length} chapters · ${turningPoints.length} turning points`;
+  return { summary: buildReplayMatchSummary(file), progressLabel, integrityLabel };
+}
+
+export type ReplayNavigationTargetKind = 'turning_point' | 'chapter' | 'bookmark' | 'checkpoint';
+
+export interface ReplayNavigationTarget {
+  kind: ReplayNavigationTargetKind;
+  id: string;
+  label: string;
+  sequence: number;
+  eventIndex: number;
+}
+
+/** Agent 78 — ordered jump targets for Watch-tab "highlights" navigation (read-only). */
+export function resolveReplayNavigationTargets(
+  file: ReplayFile,
+  eventIndex: number,
+  options?: { includeBookmarks?: boolean; maxNearby?: number }
+): { previous: ReplayNavigationTarget | null; next: ReplayNavigationTarget | null; nearby: ReplayNavigationTarget[] } {
+  const events = file.events || [];
+  const clampedIndex = Math.max(0, Math.min(events.length - 1, eventIndex));
+  const currentSeq = events[clampedIndex]?.sequence ?? 0;
+  const targets: ReplayNavigationTarget[] = [];
+  const pushTarget = (kind: ReplayNavigationTargetKind, id: string, label: string, sequence: number) => {
+    const eventIndex = events.findIndex(ev => ev.sequence >= sequence);
+    if (eventIndex < 0) return;
+    targets.push({ kind, id, label, sequence, eventIndex });
+  };
+  const turningPoints = file.turningPoints && file.turningPoints.length > 0 ? file.turningPoints : detectReplayTurningPoints(file);
+  turningPoints.forEach(tp => pushTarget('turning_point', tp.id, tp.title, tp.sequence));
+  const chapters = file.chapters && file.chapters.length > 0 ? file.chapters : detectReplayChapters(file);
+  chapters.forEach(ch => pushTarget('chapter', ch.id, ch.title, ch.startSequence));
+  (file.checkpoints || []).forEach(cp => pushTarget('checkpoint', cp.id, cp.label || cp.kind, cp.sequence));
+  if (options?.includeBookmarks !== false) {
+    (file.bookmarks || []).forEach(bm => pushTarget('bookmark', bm.id, bm.title || 'Bookmark', bm.sequence));
+  }
+  const deduped = Array.from(
+    targets.reduce((map, t) => {
+      const key = `${t.sequence}:${t.kind}`;
+      if (!map.has(key)) map.set(key, t);
+      return map;
+    }, new Map<string, ReplayNavigationTarget>()).values()
+  ).sort((a, b) => a.sequence - b.sequence || a.label.localeCompare(b.label));
+  const previous = [...deduped].reverse().find(t => t.sequence < currentSeq) || null;
+  const next = deduped.find(t => t.sequence > currentSeq) || null;
+  const maxNearby = options?.maxNearby ?? 6;
+  const nearby = deduped
+    .filter(t => Math.abs(t.eventIndex - clampedIndex) <= Math.max(3, maxNearby))
+    .slice(0, maxNearby);
+  return { previous, next, nearby };
+}
+
+export const REPLAY_STUDIO_KEYBOARD_BINDINGS: ReadonlyArray<{ keys: string; action: string }> = [
+  { keys: 'Space', action: 'Play or pause' },
+  { keys: '← / →', action: 'Previous or next event' },
+  { keys: 'Shift + ← / →', action: 'Previous or next turn' },
+  { keys: 'Home / End', action: 'Jump to match start or end' }
+];
+
+export function formatReplayKeyboardHelp(separator = ' · '): string {
+  return REPLAY_STUDIO_KEYBOARD_BINDINGS.map(b => `${b.keys}: ${b.action}`).join(separator);
+}
+
 export const REPLAY_CRITICAL_LEDGER_CATEGORIES: ReadonlySet<string> = new Set([
   'action', 'decision', 'approval', 'treasury', 'match_lifecycle', 'copilot_action', 'copilot_event', 'guardian_event'
 ]);
@@ -60267,6 +60346,79 @@ export function runReplayStudioSelfTests(): { success: boolean; summary: string;
   return {
     success: passed === results.length,
     summary: `Replay Studio Self-Tests: ${passed}/${results.length} passed`,
+    results
+  };
+}
+
+/** Agent 78 — Replay Experience (player UX helpers; complements runReplayStudioSelfTests). */
+export function runReplayExperienceSelfTests(): { success: boolean; summary: string; results: Array<{ name: string; passed: boolean; detail: string }> } {
+  const results: Array<{ name: string; passed: boolean; detail: string }> = [];
+  const record = (name: string, passed: boolean, detail: string) => results.push({ name, passed, detail });
+
+  record(
+    'keyboard_bindings_documented',
+    REPLAY_STUDIO_KEYBOARD_BINDINGS.length >= 4 && REPLAY_STUDIO_KEYBOARD_BINDINGS.every(b => b.keys && b.action),
+    String(REPLAY_STUDIO_KEYBOARD_BINDINGS.length)
+  );
+  const help = formatReplayKeyboardHelp();
+  record('keyboard_help_includes_play', help.toLowerCase().includes('play'), help.slice(0, 80));
+
+  record(
+    'dashboard_tab_labels_complete',
+    REPLAY_DASHBOARD_TAB_ORDER.every(tab => Boolean(REPLAY_DASHBOARD_TAB_LABELS[tab])),
+    REPLAY_DASHBOARD_TAB_ORDER.join(',')
+  );
+
+  const ev = (seq: number, category: ReplayEventCategory): ReplayEvent => ({
+    id: `rxp_${seq}`,
+    sequence: seq,
+    category,
+    day: Math.max(1, Math.floor(seq / 2) + 1),
+    turn: seq,
+    actorId: 'player',
+    teamId: 'team_player',
+    summary: `${category} ${seq}`,
+    payload: {},
+    timestamp: seq
+  });
+  const file: ReplayFile = {
+    schemaVersion: REPLAY_SCHEMA_VERSION,
+    gameVersion: VERSION_CONSTANTS.GAME_VERSION,
+    matchId: 'rxp_selftest',
+    createdAt: 1,
+    initialConfig: {
+      gameSettings: createDefaultGameSettings(),
+      actorsById: { player: { id: 'player', money: 5000, netWorth: 5000, region: 'NSW' } as ActorState },
+      teamsById: {},
+      selectedMode: 'ai',
+      aiDifficulty: 'medium',
+      aiSeed: 1,
+      worldSeed: 1
+    },
+    events: [ev(0, 'human_action'), ev(1, 'ai_decision'), ev(2, 'day_transition'), ev(3, 'match_result')],
+    checkpoints: [{ id: 'c0', sequence: 0, day: 1, turn: 0, label: 'Start', kind: 'match_start' }],
+    finalResult: { winnerTeamId: 'team_player', winnerActorId: null, reason: 'test', day: 2, turn: 3, scoresByTeam: {} },
+    randomDraws: [],
+    bookmarks: [{ id: 'bm1', replayId: 'rxp_selftest', sequence: 2, title: 'Day change', createdAt: 1 }],
+    branches: []
+  };
+  file.checksum = computeReplayChecksum(file);
+  file.turningPoints = detectReplayTurningPoints(file);
+  file.chapters = detectReplayChapters(file);
+
+  const headline = buildReplayExperienceHeadline(file, migrateReplayFileWithReport(file).compatibility);
+  record('experience_headline_progress', headline.progressLabel.includes('events') && headline.summary.length > 10, headline.progressLabel);
+
+  const navStart = resolveReplayNavigationTargets(file, 0);
+  record('navigation_next_from_start', navStart.next !== null && (navStart.next.eventIndex > 0 || navStart.next.sequence > 0), navStart.next?.label || 'none');
+  const navMid = resolveReplayNavigationTargets(file, 2);
+  record('navigation_has_previous_mid', navMid.previous !== null, navMid.previous?.label || 'none');
+
+  const passed = results.filter(r => r.passed).length;
+  const success = passed === results.length;
+  return {
+    success,
+    summary: `Replay Experience Self-Tests: ${passed}/${results.length} passed`,
     results
   };
 }
@@ -136530,6 +136682,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'gi21', label: 'Game Intelligence 2.1', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runGameIntelligence21SelfTests() },
   { id: 'gi2', label: 'Game Intelligence 2', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runGameIntelligence2SelfTests() },
   { id: 'replay', label: 'Replay Studio', tier: 'quick', section: 'Replay Integrity', severity: 'CRITICAL', run: () => runReplayStudioSelfTests() },
+  { id: 'rxp', label: 'Replay Experience', tier: 'quick', section: 'Replay Integrity', severity: 'MAJOR', run: () => runReplayExperienceSelfTests().results },
   { id: 'intent', label: 'Player Intent', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runPlayerIntentLayerSelfTests() },
   { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
   { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
@@ -238991,6 +239144,8 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
     const chapters = file ? (file.chapters && file.chapters.length ? file.chapters : detectReplayChapters(file)) : [];
     const integrityDash = file ? classifyReplayIntegrityDashboard(file, replayCompatibility || undefined) : null;
     const compatibility = replayCompatibility || (file ? migrateReplayFileWithReport(file).compatibility : emptyReplayCompatibility());
+    const experienceHeadline = file ? buildReplayExperienceHeadline(file, compatibility) : null;
+    const replayNavTargets = file ? resolveReplayNavigationTargets(file, replayPlaybackIndex) : null;
     const matchesFilter = (ev: ReplayEvent): boolean => {
       const f = replayTimelineFilter;
       if (f === 'all') return true;
@@ -239150,11 +239305,17 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-2xl font-bold">Replay Studio</h3>
-                <div className="text-sm opacity-75">
+                <div className="text-sm opacity-75 space-y-1">
                   {file
                     ? `Match ${file.matchId} — v${file.gameVersion || GAME_VERSION}. Isolated playback never changes the live match.`
                     : 'Load a replay, import a file, or watch the in-progress recording.'}
                   {file?.finalResult && <> Result: {file.finalResult.reason} (day {file.finalResult.day}).</>}
+                  {experienceHeadline && (
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-600">{experienceHeadline.integrityLabel}</span>
+                      <span className="opacity-80">{experienceHeadline.progressLabel}</span>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -239192,7 +239353,22 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
             )}
             {file && replayDashboardTab === 'watch' && (
               <div className="space-y-4">
-                <div className="text-sm opacity-80">{buildReplayMatchSummary(file)}</div>
+                <div className="text-sm opacity-80">{experienceHeadline?.summary || buildReplayMatchSummary(file)}</div>
+                <p className="text-[11px] opacity-60" aria-label="Replay keyboard shortcuts">{formatReplayKeyboardHelp()}</p>
+                {replayNavTargets && (replayNavTargets.previous || replayNavTargets.next) && (
+                  <div className="flex flex-wrap gap-2 text-xs" aria-label="Highlight navigation">
+                    {replayNavTargets.previous && (
+                      <button onClick={() => seekTo(replayNavTargets.previous!.eventIndex)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded`}>
+                        ← {replayNavTargets.previous.label}
+                      </button>
+                    )}
+                    {replayNavTargets.next && (
+                      <button onClick={() => seekTo(replayNavTargets.next!.eventIndex)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded`}>
+                        {replayNavTargets.next.label} →
+                      </button>
+                    )}
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2" role="toolbar" aria-label="Replay playback controls">
                   <button aria-label="Play or pause" onClick={() => { setReplayPlaybackPlaying(p => !p); setReplayPlaybackStatus(s => s === 'playing' ? 'paused' : 'playing'); }} className={`${themeStyles.button} px-3 py-1.5 rounded text-sm font-semibold`}>{replayPlaybackPlaying ? 'Pause' : 'Play'}</button>
                   <button aria-label="Restart" onClick={() => seekTo(0)} className={`${themeStyles.buttonSecondary} px-3 py-1.5 rounded text-sm`}>Restart</button>
@@ -239232,13 +239408,28 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
                   <button onClick={() => setReplayShowTurningPoints(v => !v)} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded`}>Jump to Turning Points</button>
                 </div>
                 {replayShowTurningPoints && (
-                  <div className={`${themeStyles.border} border rounded p-2 text-xs space-y-1`} aria-label="Turning points">
-                    {turningPoints.length === 0 && <div className="opacity-60">No turning points detected.</div>}
-                    {turningPoints.slice(0, 12).map(tp => (
-                      <button key={tp.id} onClick={() => { seekByPredicate(ev => ev.sequence === tp.sequence); setReplayShowTurningPoints(false); }} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded w-full text-left`}>
-                        {tp.title} — Day {tp.day}, Turn {tp.turn}
-                      </button>
-                    ))}
+                  <div className={`${themeStyles.border} border rounded p-2 text-xs space-y-2`} aria-label="Turning points and chapters">
+                    {turningPoints.length === 0 && chapters.length === 0 && <div className="opacity-60">No highlights detected.</div>}
+                    {chapters.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="font-semibold opacity-80">Chapters</div>
+                        {chapters.slice(0, 8).map(ch => (
+                          <button key={ch.id} onClick={() => { seekByPredicate(ev => ev.sequence >= ch.startSequence); setReplayShowTurningPoints(false); }} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded w-full text-left`}>
+                            {ch.title} — Days {ch.startDay}–{ch.endDay}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {turningPoints.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="font-semibold opacity-80">Turning points</div>
+                        {turningPoints.slice(0, 12).map(tp => (
+                          <button key={tp.id} onClick={() => { seekByPredicate(ev => ev.sequence === tp.sequence); setReplayShowTurningPoints(false); }} className={`${themeStyles.buttonSecondary} px-2 py-1 rounded w-full text-left`}>
+                            {tp.title} — Day {tp.day}, Turn {tp.turn}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="relative w-full h-72 bg-gray-800 rounded-lg overflow-hidden" aria-label="Replay map">
