@@ -57,6 +57,7 @@ const FILES = [
   'trade-flow-cohesion.ts',
   'o10-237-wave53-sovereign-handoff-depth.ts',
   'o10-240-wave54-sovereign-handoff-lattice.ts',
+  'o10-247-wave55-sovereign-handoff-depth-stacking.ts',
   'domestic-consequences.ts',
   'household-bridge.ts',
   'trade-turn.ts',
