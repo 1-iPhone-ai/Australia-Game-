@@ -8,6 +8,10 @@ export interface Agent12TransportSnapshot {
   fuelSurchargeActive: boolean;
   portBacklogBand: 'clear' | 'moderate' | 'severe';
   logisticsInflationScenarioActive: boolean;
+  /** Round 28: logistics inflation latch across freight cycles. */
+  logisticsInflationLatch?: boolean;
+  /** Round 28: freight congestion band. */
+  freightCongestionBand?: 'clear' | 'building' | 'gridlocked';
   /** Round 17: V10.12 utilities grid thin capacity margin (distinct from freight). */
   utilitiesGridCapacityMarginThin?: boolean;
   /** Round 17: severe rolling utility outages feeding tariff CPI metadata. */
@@ -51,6 +55,12 @@ export function mergeAgent12IntoMacroFinancialInputs(
   }
   if (snapshot.utilitiesOutageBandSevere) {
     highInflationScenario = true;
+  }
+  if (snapshot.logisticsInflationLatch && snapshot.freightCongestionBand === 'gridlocked') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.freightCongestionBand === 'building' && snapshot.fuelSurchargeActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   let systemicLiquidityBand = base.systemicLiquidityBand;

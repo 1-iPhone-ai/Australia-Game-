@@ -11,6 +11,10 @@ export interface Agent14HousingSnapshot {
   inlineMergeTrajectoryBand?: 'on_track' | 'lagging' | 'blocked';
   /** Round 18: turn-boundary inline activation monitor in critical band. */
   inlineActivationBoundaryCritical?: boolean;
+  /** Round 28: shelter essential inflation latch. */
+  shelterEssentialInflationLatch?: boolean;
+  /** Round 28: mortgage wellbeing stress band. */
+  mortgageWellbeingStressBand?: 'stable' | 'strained' | 'acute';
 }
 
 export function mergeAgent14IntoMacroFinancialInputs(
@@ -42,6 +46,12 @@ export function mergeAgent14IntoMacroFinancialInputs(
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
+  if (snapshot.shelterEssentialInflationLatch && snapshot.mortgageWellbeingStressBand === 'acute') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  } else if (snapshot.mortgageWellbeingStressBand === 'strained' && snapshot.essentialServicesInflationFlag) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
   let householdAffordability = base.householdAffordability;
   if (
     snapshot.mortgageStressBand === 'severe' &&
@@ -65,7 +75,8 @@ export function mergeAgent14IntoMacroFinancialInputs(
     highInflationScenario:
       base.highInflationScenario ||
       snapshot.inlineMergeTrajectoryBand === 'blocked' ||
-      snapshot.inlineActivationBoundaryCritical === true,
+      snapshot.inlineActivationBoundaryCritical === true ||
+      snapshot.mortgageWellbeingStressBand === 'acute',
   };
 }
 

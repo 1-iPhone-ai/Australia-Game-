@@ -937,6 +937,46 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'events', 'macro', 'round27'],
   },
+  {
+    id: 'freight_logistics_congestion_stack',
+    label: 'Freight logistics congestion stack',
+    description: 'Critical freight with gridlocked congestion and fuel surcharges.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'strained',
+      inflationSettingMultiplier: 1.29,
+    },
+    tags: ['inflation', 'transport', 'round28'],
+  },
+  {
+    id: 'housing_wellbeing_essential_stress',
+    label: 'Housing wellbeing essential stress',
+    description: 'Acute mortgage wellbeing stress with essential services inflation.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.32,
+      publicStability: 38,
+    },
+    tags: ['inflation', 'housing', 'round28'],
+  },
+  {
+    id: 'transport_housing_fusion_stress',
+    label: 'Transport & housing fusion stress',
+    description: 'Gridlocked logistics colliding with acute shelter essential stress.',
+    patch: {
+      inflationSettingMultiplier: 1.39,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 32,
+    },
+    tags: ['inflation', 'transport', 'housing', 'round28'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
