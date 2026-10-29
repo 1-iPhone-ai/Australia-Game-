@@ -1,5 +1,5 @@
 {
-  "scannedAt": "2026-10-29T11:50:45.315Z",
+  "scannedAt": "2026-10-29T12:03:02.556Z",
   "canonicalBase": "origin/australia-game-upgrade",
   "baselineCommit": "bc1adf3",
   "originOp10mHeadCount": 33,
@@ -15,7 +15,7 @@
       "chunkPath": "operation-10m/agent-01-strategic-gameplay/chunk.tsx",
       "markerModuleId": "agent-01-strategic-gameplay",
       "assemblyReady": true,
-      "contentSha256": "7e116d46f9dbc2e1203e7ea4e4e66e7aa24fe54600ccab3402506b3bb7a1d987",
+      "contentSha256": "761abcd4cfda8140a374eb29d2896c1e81cdec6c3f19c48ab7bc39718d704297",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -35,7 +35,7 @@
       "chunkPath": "operation-10m/modules/agent-03-research-tech/chunk.tsx",
       "markerModuleId": "agent-03-research-tech",
       "assemblyReady": true,
-      "contentSha256": "e68d0d84e4b33bd1d5a81516f8bd2c404f6e88ad1ec28c93bd3e73f8d4886043",
+      "contentSha256": "2796c4294b7ee500cf3049e207e1cadf46452a16a541ec1708079797c2a83815",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -45,7 +45,7 @@
       "chunkPath": "operation-10m/modules/agent-04-modes-scenarios/chunk.tsx",
       "markerModuleId": "agent-04-modes-scenarios",
       "assemblyReady": true,
-      "contentSha256": "1d66a3eb3298c7bc3e4be0b8916ea28a5f4ed51f91a160e3744ed4507c6a96af",
+      "contentSha256": "f26543a8e5a8390f5dc711c03e307dbb718460c826a08def2ab23d3cbbf58b73",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -55,7 +55,7 @@
       "chunkPath": "operation-10m/agent-05-events/chunk.tsx",
       "markerModuleId": "agent-05-events",
       "assemblyReady": true,
-      "contentSha256": "9ab3350388829049441a05f9e81e94e58db214c5f5e4683653fc539b6c96b30d",
+      "contentSha256": "a31bbd3967a44a2ce33223e87e7c37244a59cb423c6f1adc4445d7d7eef603a6",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -65,7 +65,7 @@
       "chunkPath": "operation-10m/modules/agent-06-macroeconomy/chunk.tsx",
       "markerModuleId": "agent-06-macroeconomy",
       "assemblyReady": true,
-      "contentSha256": "8347dc866bb55363e770435f2f0f2723adb68c7ea7091b0543d4094e5903877d",
+      "contentSha256": "bdca9997bb7fd677b8f2bad3d739cef1c0e6c85c96e95db1203d2d522d32baa9",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -75,7 +75,7 @@
       "chunkPath": "operation-10m/modules/agent-07-public-finance/chunk.tsx",
       "markerModuleId": "agent-07-public-finance",
       "assemblyReady": true,
-      "contentSha256": "c00a2730dcad6592c28ad968959942644b93375d750eb7bce024851b0c140b21",
+      "contentSha256": "4c8531f5fac6a2fe70b69c5dcebc228c63671104e542a41e4a7e336d7e4ac51c",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -85,7 +85,7 @@
       "chunkPath": "operation-10m/modules/agent-08-companies/chunk.tsx",
       "markerModuleId": "agent-08-companies",
       "assemblyReady": true,
-      "contentSha256": "5d06878ce589c0cdc73d85bb2bda252c43eb455c288d7a0b56ada29d57b72093",
+      "contentSha256": "9eb1adb7437c1ea0ed426f3b6ea09fcac25d10e6dc5efbe87ddadb5a6017ed1c",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -95,7 +95,7 @@
       "chunkPath": "operation-10m/modules/agent-09-population/chunk.tsx",
       "markerModuleId": "agent-09-population",
       "assemblyReady": true,
-      "contentSha256": "8b2634800acafa29631bcd8e253293d18ebb2fdbadc324fe87ce817ae197adb7",
+      "contentSha256": "c93253ce06086d9dada6c9ac5051722d58184f48d37bcb14019863cfbc0ec926",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -115,7 +115,7 @@
       "chunkPath": "operation-10m/modules/agent-10-finance/chunk.tsx",
       "markerModuleId": "agent-10-finance",
       "assemblyReady": false,
-      "contentSha256": "4e0a932ca6aea14727ae301930107b8eb1c124d722960bfa4279dbbeb3b7901c",
+      "contentSha256": "cbe09fc42bf8754657db623742909c01ef96544f94866fcb0b4a624cadd2b93c",
       "defaultSlot": "pre-final-export",
       "duplicateModuleIdOf": "origin/op10m/agent-10-finance",
       "skipReason": "duplicate moduleId (branch not primary)"
@@ -127,7 +127,7 @@
       "chunkPath": "operation-10m/modules/agent-11-cities/chunk.tsx",
       "markerModuleId": "agent-11-cities",
       "assemblyReady": true,
-      "contentSha256": "9986138ac2dff007e2c46281149fb5b10819951ab71ba4071e1f862c124f28b4",
+      "contentSha256": "3f8a67428bf441817414ba8f8aa4616a76dea8afc2336e2125df7d46ce1a6d7e",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -147,7 +147,7 @@
       "chunkPath": "operation-10m/modules/agent-12-infrastructure/chunk.tsx",
       "markerModuleId": "agent-12-infrastructure",
       "assemblyReady": false,
-      "contentSha256": "c40c4b27eb7e9a34604ac17369923f08abbfaa76727a34de39ed6d785ff47378",
+      "contentSha256": "30ad44956c46f2e5a35d7be3d97a811667c8107339bcfca834af89add95a0178",
       "defaultSlot": "pre-final-export",
       "duplicateModuleIdOf": "origin/op10m/agent-12-infrastructure",
       "skipReason": "duplicate moduleId (branch not primary)"
@@ -169,7 +169,7 @@
       "chunkPath": "operation-10m/agent-13-energy/chunk.tsx",
       "markerModuleId": "agent-13-energy",
       "assemblyReady": true,
-      "contentSha256": "ac9c099d7c10d9ad7bfa19f917e42abaa3904b79897554354f51930f381c9ff9",
+      "contentSha256": "16b879bec31bd86f4190793a588c61796ab11d01db6fcf9848b7f4f4f622d102",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -179,7 +179,7 @@
       "chunkPath": "operation-10m/agent-13-energy/chunk.tsx",
       "markerModuleId": "agent-13-energy",
       "assemblyReady": false,
-      "contentSha256": "ac9c099d7c10d9ad7bfa19f917e42abaa3904b79897554354f51930f381c9ff9",
+      "contentSha256": "16b879bec31bd86f4190793a588c61796ab11d01db6fcf9848b7f4f4f622d102",
       "defaultSlot": "pre-final-export",
       "duplicateModuleIdOf": "origin/op10m/agent-13-energy",
       "skipReason": "duplicate moduleId (branch not primary)"
@@ -201,7 +201,7 @@
       "chunkPath": "operation-10m/modules/agent-14-housing/chunk.tsx",
       "markerModuleId": "agent-14-housing",
       "assemblyReady": false,
-      "contentSha256": "bf4e6c45f6f92708b2b0db2ee8241adf560f5bbf30071a7a018979755cb35c60",
+      "contentSha256": "08fc26b9bf74d5aa333b3aec58ff5012f8d76e73d74feb5917df947886dda7df",
       "defaultSlot": "pre-final-export",
       "duplicateModuleIdOf": "origin/op10m/agent-14-housing",
       "skipReason": "duplicate moduleId (branch not primary)"
@@ -213,7 +213,7 @@
       "chunkPath": "operation-10m/modules/agent-15-trade/chunk.tsx",
       "markerModuleId": "agent-15-trade",
       "assemblyReady": true,
-      "contentSha256": "ac948d2300f14d011f8b80d301c9a887722cbdd10649b94b265579b3eddd2565",
+      "contentSha256": "e4ec6cad3f4611b0f80ed045542ee37e98f0ccf72bd3ca98317569504a8cf72a",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -223,7 +223,7 @@
       "chunkPath": "operation-10m/modules/agent-16-guardian/chunk.tsx",
       "markerModuleId": "agent-16-guardian",
       "assemblyReady": true,
-      "contentSha256": "d432df03a32483ba7a0d257455c357630aba3ac8272e0b30e9aa45f185500047",
+      "contentSha256": "5d09e54aeb1822afa7f679d5e0f8202f2da640219010234689a55e420269b93d",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -233,7 +233,7 @@
       "chunkPath": "operation-10m/modules/agent-17-command-center/chunk.tsx",
       "markerModuleId": "agent-17-command-center",
       "assemblyReady": true,
-      "contentSha256": "1e8b6b24e96af262b5d326b77e377761b5c49facda410741ed9b1be2012aae76",
+      "contentSha256": "907f97724d32a1e83fae5d09bdd01c3231df08d5c1f270cedd4ee08f5ac8ca80",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -243,7 +243,7 @@
       "chunkPath": "operation-10m/modules/agent-18-team-ai/chunk.tsx",
       "markerModuleId": "agent-18-team-ai",
       "assemblyReady": true,
-      "contentSha256": "4949a05756b68514e318dd1b48c01e3c4b3a4fdccfdd539cf6192bc2f29ea0e4",
+      "contentSha256": "71626db6b23832181dc1198cb6db6c9afa912fa391d0b88d1d3cd7161aa78675",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -275,7 +275,7 @@
       "chunkPath": "operation-10m/modules/agent-20-automation/chunk.tsx",
       "markerModuleId": "agent-20-automation",
       "assemblyReady": true,
-      "contentSha256": "ed294a827cf08c98d8f6d7dadff2f2cb6043ac5be004bb524e4739e9cd7bb4e7",
+      "contentSha256": "30c6823358ae41e1bcdb772daa26619f441db1e45fe0b1931b06ae543687a84a",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -285,7 +285,7 @@
       "chunkPath": "operation-10m/modules/agent-21-forecasting/chunk.tsx",
       "markerModuleId": "agent-21-forecasting",
       "assemblyReady": true,
-      "contentSha256": "fcffcf1d77ea9974ecbd4c05df7d302d6d5bc9637490f0fed73951fb77e8dd90",
+      "contentSha256": "50b8f33f40a84214745fde72f92e1d8e938e30d235d0e026ec5e11fc2e99f3f2",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -295,7 +295,7 @@
       "chunkPath": "operation-10m/modules/agent-22-ui/chunk.tsx",
       "markerModuleId": "agent-22-ui",
       "assemblyReady": true,
-      "contentSha256": "dddbb0c6ece59070e0157c6434f690e6c13962acc9a2e2d564b53bf201ac3454",
+      "contentSha256": "b2732c85ad9a3ff2c5c313c70bf4a3e06937ea6ccbb6d655112c21889171bdf3",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -325,7 +325,7 @@
       "chunkPath": "operation-10m/modules/agent-24-history/chunk.tsx",
       "markerModuleId": "agent-24-history",
       "assemblyReady": false,
-      "contentSha256": "c50baf38b249e02683acf3ebf71df56bfa07e096be600ebc717bcbc52f582278",
+      "contentSha256": "4ce5b02ee5e489a8f3aa2e74c9e57b0938c7d784b40055a459843d9b525e8845",
       "defaultSlot": "pre-final-export",
       "duplicateModuleIdOf": "origin/op10m/agent-24-history",
       "skipReason": "duplicate moduleId (branch not primary)"
