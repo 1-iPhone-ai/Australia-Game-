@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/41' &&
+      infra.schemaVersion === 'agent12/42' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -214,8 +214,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalDesalinationBrineExportIndex >= 5 &&
       infra.nationalWildlifeRescueAirliftStagingIndex >= 6 &&
       infra.urbanEvFreightChargingLogisticsShare >= 0.03 &&
-      infra.nationalUrbanEvFreightChargingLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} brine=${infra.nationalDesalinationBrineExportIndex.toFixed(1)} wildlife=${infra.nationalWildlifeRescueAirliftStagingIndex.toFixed(1)} evfreight=${infra.nationalUrbanEvFreightChargingLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalUrbanEvFreightChargingLogisticsThroughputIndex >= 2 &&
+      infra.nationalMoltenSaltSolarExportIndex >= 5 &&
+      infra.nationalAlpineSkiResortSupplyStagingIndex >= 6 &&
+      infra.railAutonomousShuntingLogisticsShare >= 0.03 &&
+      infra.nationalRailAutonomousShuntingLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} csp=${infra.nationalMoltenSaltSolarExportIndex.toFixed(1)} ski=${infra.nationalAlpineSkiResortSupplyStagingIndex.toFixed(1)} shunt=${infra.nationalRailAutonomousShuntingLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;

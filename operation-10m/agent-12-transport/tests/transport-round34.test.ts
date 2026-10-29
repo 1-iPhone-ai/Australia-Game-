@@ -37,13 +37,13 @@ describe('Agent 12 round 34 catalog', () => {
 });
 
 describe('Agent 12 round 34 systems', () => {
-  it('returns agent12/41 with titanium sponge, heatwave rail, livestock yard', () => {
+  it('returns agent12/42 with titanium sponge, heatwave rail, livestock yard', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(310), {
       titaniumSpongeExportPolicy: 'accelerate',
       heatwaveRailSpeedRestrictionPolicy: 'relax',
       automatedLivestockExportYardPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/41');
+    assert.equal(state.schemaVersion, 'agent12/42');
     assert.ok(state.nationalTitaniumSpongeExportIndex >= 5);
     assert.ok(state.nationalHeatwaveRailSpeedRestrictionIndex >= 6);
     assert.ok(state.automatedLivestockExportYardShare >= 0.03);

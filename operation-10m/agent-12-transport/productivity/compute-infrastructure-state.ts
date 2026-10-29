@@ -635,6 +635,23 @@ import {
   nationalUrbanEvFreightChargingLogisticsThroughputIndex,
   urbanEvFreightChargingLogisticsProductivityMultiplier,
 } from './urban-ev-freight-charging-logistics-index.ts';
+import {
+  computeMoltenSaltSolarExportByRegion,
+  moltenSaltSolarExportProductivityMultiplier,
+  nationalMoltenSaltSolarExportIndex,
+} from '../network/molten-salt-solar-export-index.ts';
+import {
+  alpineSkiResortSupplyStagingProductivityMultiplier,
+  computeAlpineSkiResortSupplyStagingByRegion,
+  computeAlpineSkiResortSupplyStagingShare,
+  nationalAlpineSkiResortSupplyStagingIndex,
+} from '../operations/alpine-ski-resort-supply-staging-index.ts';
+import {
+  computeRailAutonomousShuntingLogisticsShare,
+  computeRailAutonomousShuntingLogisticsThroughputByRegion,
+  nationalRailAutonomousShuntingLogisticsThroughputIndex,
+  railAutonomousShuntingLogisticsProductivityMultiplier,
+} from './rail-autonomous-shunting-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1962,6 +1979,35 @@ export function computeTransportInfrastructureState(
     urbanEvFreightChargingLogisticsShare,
     options?.urbanEvFreightChargingLogisticsPolicy ?? 'baseline',
   );
+  const moltenSaltSolarExportByRegion = computeMoltenSaltSolarExportByRegion(ops);
+  const nationalMoltenSalt = nationalMoltenSaltSolarExportIndex(moltenSaltSolarExportByRegion);
+  const moltenSaltMult = moltenSaltSolarExportProductivityMultiplier(
+    nationalMoltenSalt,
+    options?.moltenSaltSolarExportPolicy ?? 'baseline',
+  );
+  const alpineSkiResortSupplyStagingByRegion = computeAlpineSkiResortSupplyStagingByRegion(ops, networkStress);
+  const nationalAlpineSki = nationalAlpineSkiResortSupplyStagingIndex(alpineSkiResortSupplyStagingByRegion);
+  const alpineSkiResortSupplyStagingShare = computeAlpineSkiResortSupplyStagingShare(
+    ops,
+    options?.alpineSkiResortSupplyStagingPolicy ?? 'baseline',
+  );
+  const alpineSkiMult = alpineSkiResortSupplyStagingProductivityMultiplier(
+    alpineSkiResortSupplyStagingShare,
+    options?.alpineSkiResortSupplyStagingPolicy ?? 'baseline',
+  );
+  const railAutonomousShuntingLogisticsThroughputByRegion =
+    computeRailAutonomousShuntingLogisticsThroughputByRegion(ops);
+  const nationalRailShunting = nationalRailAutonomousShuntingLogisticsThroughputIndex(
+    railAutonomousShuntingLogisticsThroughputByRegion,
+  );
+  const railAutonomousShuntingLogisticsShare = computeRailAutonomousShuntingLogisticsShare(
+    ops,
+    options?.railAutonomousShuntingLogisticsPolicy ?? 'baseline',
+  );
+  const railShuntingMult = railAutonomousShuntingLogisticsProductivityMultiplier(
+    railAutonomousShuntingLogisticsShare,
+    options?.railAutonomousShuntingLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -2039,6 +2085,9 @@ export function computeTransportInfrastructureState(
     const desalBrineBoost = (desalinationBrineExportByRegion[code] - 5) * 0.0028;
     const wildlifeRescueBoost = (wildlifeRescueAirliftStagingByRegion[code] - 6) * 0.0024;
     const evFreightChargingBoost = (urbanEvFreightChargingLogisticsThroughputByRegion[code] - 2) * 0.002;
+    const moltenSaltBoost = (moltenSaltSolarExportByRegion[code] - 5) * 0.0027;
+    const alpineSkiBoost = (alpineSkiResortSupplyStagingByRegion[code] - 6) * 0.0023;
+    const railShuntingBoost = (railAutonomousShuntingLogisticsThroughputByRegion[code] - 2) * 0.0019;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -2115,7 +2164,10 @@ export function computeTransportInfrastructureState(
         lithiumHydroxideBoost +
         desalBrineBoost +
         wildlifeRescueBoost +
-        evFreightChargingBoost) *
+        evFreightChargingBoost +
+        moltenSaltBoost +
+        alpineSkiBoost +
+        railShuntingBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -2190,7 +2242,10 @@ export function computeTransportInfrastructureState(
       lithiumHydroxideMult *
       desalBrineMult *
       wildlifeRescueMult *
-      evFreightChargingMult;
+      evFreightChargingMult *
+      moltenSaltMult *
+      alpineSkiMult *
+      railShuntingMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -2288,7 +2343,10 @@ export function computeTransportInfrastructureState(
     nationalLithiumHydroxide * 0.003 +
     nationalDesalBrine * 0.003 +
     nationalWildlifeRescue * 0.003 +
-    nationalEvFreightCharging * 0.003;
+    nationalEvFreightCharging * 0.003 +
+    nationalMoltenSalt * 0.003 +
+    nationalAlpineSki * 0.003 +
+    nationalRailShunting * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -2303,7 +2361,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/41',
+    schemaVersion: 'agent12/42',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -2597,6 +2655,14 @@ export function computeTransportInfrastructureState(
     urbanEvFreightChargingLogisticsShare,
     nationalUrbanEvFreightChargingLogisticsThroughputIndex: nationalEvFreightCharging,
     urbanEvFreightChargingLogisticsThroughputByRegion,
+    nationalMoltenSaltSolarExportIndex: nationalMoltenSalt,
+    moltenSaltSolarExportByRegion,
+    alpineSkiResortSupplyStagingShare,
+    nationalAlpineSkiResortSupplyStagingIndex: nationalAlpineSki,
+    alpineSkiResortSupplyStagingByRegion,
+    railAutonomousShuntingLogisticsShare,
+    nationalRailAutonomousShuntingLogisticsThroughputIndex: nationalRailShunting,
+    railAutonomousShuntingLogisticsThroughputByRegion,
     computeMs,
   };
 }

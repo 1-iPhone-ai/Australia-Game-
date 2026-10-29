@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 41
+
+- Schema **`agent12/42`**: molten salt solar export throughput, alpine ski resort supply staging readiness, rail autonomous shunting logistics share (`moltenSaltSolarExportPolicy`, `alpineSkiResortSupplyStagingPolicy`, `railAutonomousShuntingLogisticsPolicy`)
+- Catalog: **563** assets, **137** corridors, **223** scenarios
+- Systems: `network/molten-salt-solar-export-index.ts`, `operations/alpine-ski-resort-supply-staging-index.ts`, `productivity/rail-autonomous-shunting-logistics-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 40
 
 - Schema **`agent12/41`**: desalination brine export throughput, wildlife rescue airlift staging readiness, urban EV freight charging logistics share (`desalinationBrineExportPolicy`, `wildlifeRescueAirliftStagingPolicy`, `urbanEvFreightChargingLogisticsPolicy`)

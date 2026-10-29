@@ -37,13 +37,13 @@ describe('Agent 12 round 30 catalog', () => {
 });
 
 describe('Agent 12 round 30 systems', () => {
-  it('returns agent12/41 with nickel precursor, island sealift, inland terminal auto', () => {
+  it('returns agent12/42 with nickel precursor, island sealift, inland terminal auto', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(270), {
       nickelCobaltBatteryPrecursorPolicy: 'accelerate',
       remoteIslandSealiftPolicy: 'surge',
       railInlandTerminalAutomationPolicy: 'deploy',
     });
-    assert.equal(state.schemaVersion, 'agent12/41');
+    assert.equal(state.schemaVersion, 'agent12/42');
     assert.ok(state.nationalNickelCobaltBatteryPrecursorIndex >= 5);
     assert.ok(state.nationalRemoteIslandSealiftIndex >= 6);
     assert.ok(state.railInlandTerminalAutomationShare >= 0.03);

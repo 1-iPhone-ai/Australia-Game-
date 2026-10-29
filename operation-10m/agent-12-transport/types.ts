@@ -393,8 +393,14 @@ export type WildlifeRescueAirliftStagingPolicy = 'baseline' | 'surge';
 
 export type UrbanEvFreightChargingLogisticsPolicy = 'baseline' | 'expand';
 
+export type MoltenSaltSolarExportPolicy = 'baseline' | 'accelerate';
+
+export type AlpineSkiResortSupplyStagingPolicy = 'baseline' | 'surge';
+
+export type RailAutonomousShuntingLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/41';
+  schemaVersion: 'agent12/42';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -688,6 +694,14 @@ export interface TransportInfrastructureState {
   urbanEvFreightChargingLogisticsShare: number;
   nationalUrbanEvFreightChargingLogisticsThroughputIndex: number;
   urbanEvFreightChargingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalMoltenSaltSolarExportIndex: number;
+  moltenSaltSolarExportByRegion: Record<AuRegionCode, number>;
+  alpineSkiResortSupplyStagingShare: number;
+  nationalAlpineSkiResortSupplyStagingIndex: number;
+  alpineSkiResortSupplyStagingByRegion: Record<AuRegionCode, number>;
+  railAutonomousShuntingLogisticsShare: number;
+  nationalRailAutonomousShuntingLogisticsThroughputIndex: number;
+  railAutonomousShuntingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -801,6 +815,9 @@ export interface TransportInfrastructureOptions {
   desalinationBrineExportPolicy?: DesalinationBrineExportPolicy;
   wildlifeRescueAirliftStagingPolicy?: WildlifeRescueAirliftStagingPolicy;
   urbanEvFreightChargingLogisticsPolicy?: UrbanEvFreightChargingLogisticsPolicy;
+  moltenSaltSolarExportPolicy?: MoltenSaltSolarExportPolicy;
+  alpineSkiResortSupplyStagingPolicy?: AlpineSkiResortSupplyStagingPolicy;
+  railAutonomousShuntingLogisticsPolicy?: RailAutonomousShuntingLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
