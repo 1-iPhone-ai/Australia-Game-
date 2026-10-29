@@ -6,7 +6,7 @@ Wave baseline (coord): **`4404bf0f`** / **2,684,235** projected.
 
 | Role | SHA | Subject |
 |------|-----|---------|
-| Wave **48** feat (gate) | *(see origin after push)* | `feat(agent-22-ui): O10-227 · wave 48 · round 48 (v1.48.0)` |
+| Wave **48** feat (gate) | **`e18325ed`** | `feat(agent-22-ui): O10-227 · wave 48 · round 48 (v1.48.0)` |
 
 ## Tests
 
