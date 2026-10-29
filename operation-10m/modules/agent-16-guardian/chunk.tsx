@@ -88,6 +88,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   containmentBurdenIndex: number;
   humanRelayPressure: number;
   recoveryHeadroomScore: number;
+  advisoryDepletionIndex: number;
+  operatorBandwidthScore: number;
+  continuityMarginScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -724,6 +727,61 @@ export function buildGuardianDepthResilienceReport(snapshot: GuardianCoPilotMoni
   return lines.slice(0, 3);
 }
 
+export function computeAdvisoryDepletionIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let depletion = 0;
+  if (snapshot.recoveryHeadroomScore < 50) depletion += Math.min(25, 50 - snapshot.recoveryHeadroomScore);
+  if (snapshot.recoveryHeadroomScore < 35) depletion += 10;
+  if (snapshot.containmentBurdenIndex >= 50) depletion += 20;
+  if (snapshot.containmentBurdenIndex >= 70) depletion += 10;
+  if (snapshot.humanRelayPressure >= 45) depletion += 15;
+  if (snapshot.advisorySaturationIndex >= 55) depletion += 15;
+  if (snapshot.guardianReplayCount >= 2) depletion += 10;
+  if (snapshot.blockedContinueCount >= 1) depletion += 10;
+  if (snapshot.actionBurnPressure >= 50) depletion += 10;
+  return Math.min(100, depletion);
+}
+
+export function computeOperatorBandwidthScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.humanRelayPressure >= 40) score -= Math.min(30, Math.round(snapshot.humanRelayPressure * 0.35));
+  if (snapshot.advisoryDepletionIndex >= 45) score -= Math.min(25, Math.round(snapshot.advisoryDepletionIndex * 0.3));
+  if (snapshot.takeoverSessionActive) score -= 15;
+  if (snapshot.teamPlanPending) score -= 10;
+  if (snapshot.guardianConfirmationLikelyRequired) score -= 10;
+  if (snapshot.copilotHoldsControl && snapshot.automationReadinessScore < 40) score -= 15;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeContinuityMarginScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.advisoryDepletionIndex >= 40) score -= Math.min(30, Math.round(snapshot.advisoryDepletionIndex * 0.35));
+  if (snapshot.operatorBandwidthScore < 50) score -= Math.min(25, 50 - snapshot.operatorBandwidthScore);
+  if (snapshot.recoveryHeadroomScore < 45) score -= 15;
+  if (snapshot.governanceCoherenceScore < 45) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthContinuityReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.advisoryDepletionIndex >= 55) {
+    lines.push(
+      `Advisory depletion ${snapshot.advisoryDepletionIndex} — sustained advisory load may exhaust operator attention`
+    );
+  }
+  if (snapshot.operatorBandwidthScore < 45) {
+    lines.push(
+      `Operator bandwidth ${snapshot.operatorBandwidthScore} — reduce parallel Guardian and Co-Pilot demands`
+    );
+  }
+  if (snapshot.continuityMarginScore < 40) {
+    lines.push(
+      `Continuity margin ${snapshot.continuityMarginScore} — fragile margin to maintain advisory coverage across turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -775,9 +833,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withBurden: GuardianCoPilotMonitorSnapshot = { ...withLatch, containmentBurdenIndex };
   const humanRelayPressure = computeHumanRelayPressure(withBurden);
   const withRelay: GuardianCoPilotMonitorSnapshot = { ...withBurden, humanRelayPressure };
-  return {
+  const withRecovery: GuardianCoPilotMonitorSnapshot = {
     ...withRelay,
     recoveryHeadroomScore: computeRecoveryHeadroomScore(withRelay),
+    advisoryDepletionIndex: 0,
+    operatorBandwidthScore: 100,
+    continuityMarginScore: 100,
+  };
+  const advisoryDepletionIndex = computeAdvisoryDepletionIndex(withRecovery);
+  const withDepletion: GuardianCoPilotMonitorSnapshot = { ...withRecovery, advisoryDepletionIndex };
+  const operatorBandwidthScore = computeOperatorBandwidthScore(withDepletion);
+  const withBandwidth: GuardianCoPilotMonitorSnapshot = { ...withDepletion, operatorBandwidthScore };
+  return {
+    ...withBandwidth,
+    continuityMarginScore: computeContinuityMarginScore(withBandwidth),
   };
 }
 
@@ -960,6 +1029,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       actionBurnPressure: 55,
     } as GuardianCoPilotMonitorSnapshot;
     return computeRecoveryHeadroomScore(snap) < 35;
+  });
+  ok('gd_advisory_depletion', () => {
+    const snap = {
+      recoveryHeadroomScore: 30,
+      containmentBurdenIndex: 72,
+      humanRelayPressure: 55,
+      advisorySaturationIndex: 60,
+      guardianReplayCount: 3,
+      blockedContinueCount: 2,
+      actionBurnPressure: 55,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAdvisoryDepletionIndex(snap) >= 70;
+  });
+  ok('gd_operator_bandwidth', () => {
+    const snap = {
+      humanRelayPressure: 70,
+      advisoryDepletionIndex: 65,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianConfirmationLikelyRequired: true,
+      copilotHoldsControl: true,
+      automationReadinessScore: 30,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeOperatorBandwidthScore(snap) < 40;
+  });
+  ok('gd_continuity_margin', () => {
+    const snap = {
+      advisoryDepletionIndex: 70,
+      operatorBandwidthScore: 35,
+      recoveryHeadroomScore: 30,
+      governanceCoherenceScore: 35,
+      liquidityStressIndex: 60,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeContinuityMarginScore(snap) < 35;
   });
   return out;
 }
@@ -1938,6 +2041,138 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_6: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_6_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_6.length;
 
 
+// --- source: monitor-rules-scale-wave-7.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_7: AdvisoryMonitorRule[] = [
+  {
+    id: 'advisory_depletion_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Advisory Depletion High',
+    detailTemplate: 'Advisory depletion is in the high band — pause non-essential automation',
+    evidenceFields: ['advisoryDepletionIndex', 'recoveryHeadroomScore', 'containmentBurdenIndex'],
+    evaluate: s => s.advisoryDepletionIndex >= 70,
+  },
+  {
+    id: 'advisory_depletion_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Advisory Depletion Elevated',
+    detailTemplate: 'Advisory depletion is elevated — expect slower operator response cycles',
+    evidenceFields: ['advisoryDepletionIndex', 'humanRelayPressure'],
+    evaluate: s => s.advisoryDepletionIndex >= 45 && s.advisoryDepletionIndex < 70,
+  },
+  {
+    id: 'operator_bandwidth_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Operator Bandwidth Low',
+    detailTemplate: 'Operator bandwidth is critically low — defer stacked confirmations',
+    evidenceFields: ['operatorBandwidthScore', 'humanRelayPressure', 'advisoryDepletionIndex'],
+    evaluate: s => s.operatorBandwidthScore < 35,
+  },
+  {
+    id: 'operator_bandwidth_constrained',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Operator Bandwidth Constrained',
+    detailTemplate: 'Operator bandwidth is constrained — batch Guardian advisories when possible',
+    evidenceFields: ['operatorBandwidthScore', 'teamPlanPending', 'takeoverSessionActive'],
+    evaluate: s => s.operatorBandwidthScore >= 35 && s.operatorBandwidthScore < 55,
+    followUp: 'Advisory only — review takeover and team plan queues manually.',
+  },
+  {
+    id: 'continuity_margin_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Continuity Margin Low',
+    detailTemplate: 'Little continuity margin remains across turns of advisory load',
+    evidenceFields: ['continuityMarginScore', 'advisoryDepletionIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.continuityMarginScore < 35,
+  },
+  {
+    id: 'continuity_margin_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Continuity While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate continuity margin',
+    evidenceFields: ['continuityMarginScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.continuityMarginScore >= 35 && s.continuityMarginScore < 55,
+  },
+  {
+    id: 'continuity_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Continuity Envelope Pressured',
+    detailTemplate: 'Advisory depletion and low operator bandwidth align in the pressured continuity band',
+    evidenceFields: ['advisoryDepletionIndex', 'operatorBandwidthScore', 'continuityMarginScore'],
+    evaluate: s => s.advisoryDepletionIndex >= 55 && s.operatorBandwidthScore < 50,
+  },
+  {
+    id: 'rival_continuity_depletion',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Advisory Depletion',
+    detailTemplate: 'Rival victory progress plus elevated advisory depletion',
+    evidenceFields: ['rivalVictoryProgressPct', 'advisoryDepletionIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.7 &&
+      s.advisoryDepletionIndex >= 50,
+  },
+  {
+    id: 'team_plan_continuity_margin',
+    category: 'team',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Team Plan Continuity Margin',
+    detailTemplate: 'Pending team plan while continuity margin is low',
+    evidenceFields: ['teamPlanPending', 'continuityMarginScore', 'operatorBandwidthScore'],
+    evaluate: s => s.teamPlanPending && s.continuityMarginScore < 45,
+  },
+  {
+    id: 'guardian_continuity_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Continuity Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low continuity margin',
+    evidenceFields: ['guardianRiskBand', 'continuityMarginScore', 'advisoryDepletionIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.continuityMarginScore < 40,
+  },
+  {
+    id: 'copilot_depletion_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Advisory Depletion',
+    detailTemplate: 'Autonomous Co-Pilot while advisory depletion is high',
+    evidenceFields: ['copilotAutonomousActive', 'advisoryDepletionIndex', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.advisoryDepletionIndex >= 55,
+  },
+  {
+    id: 'contracts_continuity_margin',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Continuity Margin',
+    detailTemplate: 'Expiring contracts while continuity margin is low',
+    evidenceFields: ['expiringContractCount', 'continuityMarginScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.continuityMarginScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_7_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_7.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -2173,6 +2408,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_4,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_5,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_6,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_7,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -2507,6 +2743,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     containmentBurdenIndex: 0,
     humanRelayPressure: 0,
     recoveryHeadroomScore: 100,
+    advisoryDepletionIndex: 0,
+    operatorBandwidthScore: 100,
+    continuityMarginScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -2581,6 +2820,9 @@ export function createAdvisoryOpsFixtureSnapshot(
     containmentBurdenIndex: 0,
     humanRelayPressure: 0,
     recoveryHeadroomScore: 100,
+    advisoryDepletionIndex: 0,
+    operatorBandwidthScore: 100,
+    continuityMarginScore: 100,
     ...overrides,
   };
   if (snap.objectiveTargetRegion && !snap.objectiveRegion) {
@@ -3146,6 +3388,72 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['resilience_envelope_pressured', 'guardian_resilience_envelope_critical'],
     notes: 'Pressured resilience envelope with critical Guardian band',
   },
+  {
+    id: 'sc_advisory_depletion_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 18,
+      minCashReserve: 500,
+      debt: 1300,
+      maxSpendPerAction: 8500,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['advisory_depletion_high', 'operator_bandwidth_low'],
+    notes: 'High advisory depletion with critical operator bandwidth',
+  },
+  {
+    id: 'sc_continuity_margin_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 32,
+      minCashReserve: 500,
+      debt: 950,
+      maxSpendPerAction: 7200,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 12,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+    },
+    expectRuleIds: ['continuity_margin_low', 'contracts_continuity_margin'],
+    notes: 'Low continuity margin with expiring contracts',
+  },
+  {
+    id: 'sc_continuity_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 22,
+      minCashReserve: 500,
+      debt: 1100,
+      maxSpendPerAction: 7800,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['continuity_envelope_pressured', 'guardian_continuity_envelope_critical'],
+    notes: 'Pressured continuity envelope with critical Guardian band',
+  },
 ];
 
 
@@ -3321,8 +3629,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 6 scale wave brings monitor catalog to 106+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 106;
+  check(results, 'a16_expansion_count', 'Round 7 scale wave brings monitor catalog to 118+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 118;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -3425,6 +3733,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       teamPlanPending: true,
     });
     const report = buildGuardianDepthResilienceReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round7_metrics', 'Round 7 continuity envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 20,
+      minCashReserve: 500,
+      debt: 1100,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.advisoryDepletionIndex >= 40 &&
+      snap.operatorBandwidthScore <= 100 &&
+      snap.continuityMarginScore <= 100
+    );
+  });
+
+  check(results, 'a16_continuity_report', 'Guardian depth continuity report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 20,
+      minCashReserve: 500,
+      debt: 1100,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthContinuityReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 

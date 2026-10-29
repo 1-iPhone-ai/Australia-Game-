@@ -353,6 +353,61 @@ export function buildGuardianDepthResilienceReport(snapshot: GuardianCoPilotMoni
   return lines.slice(0, 3);
 }
 
+export function computeAdvisoryDepletionIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let depletion = 0;
+  if (snapshot.recoveryHeadroomScore < 50) depletion += Math.min(25, 50 - snapshot.recoveryHeadroomScore);
+  if (snapshot.recoveryHeadroomScore < 35) depletion += 10;
+  if (snapshot.containmentBurdenIndex >= 50) depletion += 20;
+  if (snapshot.containmentBurdenIndex >= 70) depletion += 10;
+  if (snapshot.humanRelayPressure >= 45) depletion += 15;
+  if (snapshot.advisorySaturationIndex >= 55) depletion += 15;
+  if (snapshot.guardianReplayCount >= 2) depletion += 10;
+  if (snapshot.blockedContinueCount >= 1) depletion += 10;
+  if (snapshot.actionBurnPressure >= 50) depletion += 10;
+  return Math.min(100, depletion);
+}
+
+export function computeOperatorBandwidthScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.humanRelayPressure >= 40) score -= Math.min(30, Math.round(snapshot.humanRelayPressure * 0.35));
+  if (snapshot.advisoryDepletionIndex >= 45) score -= Math.min(25, Math.round(snapshot.advisoryDepletionIndex * 0.3));
+  if (snapshot.takeoverSessionActive) score -= 15;
+  if (snapshot.teamPlanPending) score -= 10;
+  if (snapshot.guardianConfirmationLikelyRequired) score -= 10;
+  if (snapshot.copilotHoldsControl && snapshot.automationReadinessScore < 40) score -= 15;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeContinuityMarginScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.advisoryDepletionIndex >= 40) score -= Math.min(30, Math.round(snapshot.advisoryDepletionIndex * 0.35));
+  if (snapshot.operatorBandwidthScore < 50) score -= Math.min(25, 50 - snapshot.operatorBandwidthScore);
+  if (snapshot.recoveryHeadroomScore < 45) score -= 15;
+  if (snapshot.governanceCoherenceScore < 45) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthContinuityReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.advisoryDepletionIndex >= 55) {
+    lines.push(
+      `Advisory depletion ${snapshot.advisoryDepletionIndex} — sustained advisory load may exhaust operator attention`
+    );
+  }
+  if (snapshot.operatorBandwidthScore < 45) {
+    lines.push(
+      `Operator bandwidth ${snapshot.operatorBandwidthScore} — reduce parallel Guardian and Co-Pilot demands`
+    );
+  }
+  if (snapshot.continuityMarginScore < 40) {
+    lines.push(
+      `Continuity margin ${snapshot.continuityMarginScore} — fragile margin to maintain advisory coverage across turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -404,9 +459,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withBurden: GuardianCoPilotMonitorSnapshot = { ...withLatch, containmentBurdenIndex };
   const humanRelayPressure = computeHumanRelayPressure(withBurden);
   const withRelay: GuardianCoPilotMonitorSnapshot = { ...withBurden, humanRelayPressure };
-  return {
+  const withRecovery: GuardianCoPilotMonitorSnapshot = {
     ...withRelay,
     recoveryHeadroomScore: computeRecoveryHeadroomScore(withRelay),
+    advisoryDepletionIndex: 0,
+    operatorBandwidthScore: 100,
+    continuityMarginScore: 100,
+  };
+  const advisoryDepletionIndex = computeAdvisoryDepletionIndex(withRecovery);
+  const withDepletion: GuardianCoPilotMonitorSnapshot = { ...withRecovery, advisoryDepletionIndex };
+  const operatorBandwidthScore = computeOperatorBandwidthScore(withDepletion);
+  const withBandwidth: GuardianCoPilotMonitorSnapshot = { ...withDepletion, operatorBandwidthScore };
+  return {
+    ...withBandwidth,
+    continuityMarginScore: computeContinuityMarginScore(withBandwidth),
   };
 }
 
@@ -589,6 +655,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       actionBurnPressure: 55,
     } as GuardianCoPilotMonitorSnapshot;
     return computeRecoveryHeadroomScore(snap) < 35;
+  });
+  ok('gd_advisory_depletion', () => {
+    const snap = {
+      recoveryHeadroomScore: 30,
+      containmentBurdenIndex: 72,
+      humanRelayPressure: 55,
+      advisorySaturationIndex: 60,
+      guardianReplayCount: 3,
+      blockedContinueCount: 2,
+      actionBurnPressure: 55,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAdvisoryDepletionIndex(snap) >= 70;
+  });
+  ok('gd_operator_bandwidth', () => {
+    const snap = {
+      humanRelayPressure: 70,
+      advisoryDepletionIndex: 65,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianConfirmationLikelyRequired: true,
+      copilotHoldsControl: true,
+      automationReadinessScore: 30,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeOperatorBandwidthScore(snap) < 40;
+  });
+  ok('gd_continuity_margin', () => {
+    const snap = {
+      advisoryDepletionIndex: 70,
+      operatorBandwidthScore: 35,
+      recoveryHeadroomScore: 30,
+      governanceCoherenceScore: 35,
+      liquidityStressIndex: 60,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeContinuityMarginScore(snap) < 35;
   });
   return out;
 }

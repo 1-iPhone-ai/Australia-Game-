@@ -84,6 +84,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   containmentBurdenIndex: number;
   humanRelayPressure: number;
   recoveryHeadroomScore: number;
+  advisoryDepletionIndex: number;
+  operatorBandwidthScore: number;
+  continuityMarginScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {

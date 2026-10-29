@@ -26,6 +26,7 @@ import {
   buildGuardianDepthInterlockReport,
   buildGuardianDepthStabilityReport,
   buildGuardianDepthResilienceReport,
+  buildGuardianDepthContinuityReport,
   runGuardianDepthUnitSelfTests,
 } from './guardian-depth.js';
 import type { AdvisoryRecommendation, Agent16SelfTestResult, AiSuggestedAction } from './types.js';
@@ -200,8 +201,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 6 scale wave brings monitor catalog to 106+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 106;
+  check(results, 'a16_expansion_count', 'Round 7 scale wave brings monitor catalog to 118+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 118;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -304,6 +305,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       teamPlanPending: true,
     });
     const report = buildGuardianDepthResilienceReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round7_metrics', 'Round 7 continuity envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 20,
+      minCashReserve: 500,
+      debt: 1100,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.advisoryDepletionIndex >= 40 &&
+      snap.operatorBandwidthScore <= 100 &&
+      snap.continuityMarginScore <= 100
+    );
+  });
+
+  check(results, 'a16_continuity_report', 'Guardian depth continuity report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 20,
+      minCashReserve: 500,
+      debt: 1100,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthContinuityReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 
