@@ -44,9 +44,19 @@ import {
 } from './export-capacity-allocation.ts';
 import {
   computeTradeReconciliationSnapshot,
+  createEmptyTradeReconciliationSnapshot,
   deriveReconciliationPartnerModifiers,
 } from './trade-reconciliation.ts';
 import { computeMaritimeRiskSnapshot, maritimeRiskExportScale } from './maritime-risk-premium.ts';
+import {
+  computePreferentialUtilizationSnapshot,
+  preferentialUtilizationExportScale,
+} from './preferential-access-utilization.ts';
+import {
+  computeTradeEnforcementSnapshot,
+  deriveEnforcementPartnerModifiers,
+  enforcementExportScale,
+} from './trade-enforcement-intensity.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
   validateScenarioShockCatalog,
@@ -683,6 +693,74 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     }).snapshot;
     gtelAssert(stressed.premiumIndex > calm.premiumIndex, 'expected higher maritime premium');
     gtelAssert(maritimeRiskExportScale(stressed) <= maritimeRiskExportScale(calm) + 0.01, 'expected maritime scale drag');
+  });
+
+  ok('preferential utilization rises with ratified agreements', () => {
+    let persisted = createEmptyGTELPersisted();
+    const draft = createTradeAgreementFromTemplate('fta_asia_bulk', 4, ['rival_east']);
+    gtelAssert(!!draft, 'expected agreement draft');
+    persisted = { ...persisted, agreements: [ratifyTradeAgreement(draft!, 5)] };
+    const partners = GTEL_PARTNER_DEFS.map(p => ({ ...p, access: 'preferred' as const, accessScore: 0.82 }));
+    const sparse = computePreferentialUtilizationSnapshot({
+      turn: 6,
+      partners,
+      persisted: createEmptyGTELPersisted(),
+      tradeReconciliation: createEmptyTradeReconciliationSnapshot(),
+      marketDiversification: {
+        concentrationIndex: 0.55,
+        band: 'balanced',
+        dominantPartnerId: 'asia_pacific',
+        effectivePartnerCount: 3.2,
+        summary: 'test',
+      },
+      exportCapacity: createEmptyExportCapacitySnapshot(),
+    });
+    const rich = computePreferentialUtilizationSnapshot({
+      turn: 6,
+      partners,
+      persisted,
+      tradeReconciliation: {
+        ...createEmptyTradeReconciliationSnapshot(),
+        band: 'substantive',
+        progress: 0.58,
+      },
+      marketDiversification: {
+        concentrationIndex: 0.55,
+        band: 'balanced',
+        dominantPartnerId: 'asia_pacific',
+        effectivePartnerCount: 3.2,
+        summary: 'test',
+      },
+      exportCapacity: createEmptyExportCapacitySnapshot(),
+    });
+    gtelAssert(rich.snapshot.utilizationRate > sparse.snapshot.utilizationRate, 'expected higher FTA utilisation');
+    gtelAssert(preferentialUtilizationExportScale(rich.snapshot) >= preferentialUtilizationExportScale(sparse.snapshot), 'expected export scale lift');
+  });
+
+  ok('trade enforcement intensifies with compliance gaps', () => {
+    const light = computeTradeEnforcementSnapshot({
+      openDisputeCount: 0,
+      tradeCompliance: { band: 'strong', score: 0.82, lastReviewTurn: 1, violationsWindow: 0, openDisputes: 0, findings: [] },
+      tradeRetaliation: createEmptyTradeRetaliationSnapshot(),
+      tradeReconciliation: createEmptyTradeReconciliationSnapshot(),
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const heavy = computeTradeEnforcementSnapshot({
+      openDisputeCount: 3,
+      tradeCompliance: { band: 'critical', score: 0.38, lastReviewTurn: 1, violationsWindow: 4, openDisputes: 3, findings: ['gap'] },
+      tradeRetaliation: computeTradeRetaliationSnapshot({
+        openDisputeCount: 3,
+        activeSanctionCount: 2,
+        engagement: { tracks: {}, summitPulse: 0.1, summary: 'test' },
+        persisted: createEmptyGTELPersisted(),
+      }).snapshot,
+      tradeReconciliation: createEmptyTradeReconciliationSnapshot(),
+      persisted: { ...createEmptyGTELPersisted(), enforcementIntensitySmoothing: 0.55 },
+    }).snapshot;
+    gtelAssert(heavy.intensity > light.intensity, 'expected higher enforcement intensity');
+    const mods = deriveEnforcementPartnerModifiers(heavy);
+    gtelAssert(mods.domesticStress > 0, 'expected enforcement domestic stress');
+    gtelAssert(enforcementExportScale(heavy) <= enforcementExportScale(light) + 0.01, 'expected enforcement throughput drag');
   });
 
   return { passed, failed };

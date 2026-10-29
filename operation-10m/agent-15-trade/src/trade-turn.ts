@@ -110,6 +110,20 @@ import {
   maritimeRiskWorldEvent,
 } from './maritime-risk-premium.ts';
 import {
+  applyPreferentialUtilizationToCommodityQuotes,
+  computePreferentialUtilizationSnapshot,
+  preferentialUtilizationExportScale,
+  preferentialUtilizationGiNotes,
+  preferentialUtilizationWorldEvent,
+} from './preferential-access-utilization.ts';
+import {
+  computeTradeEnforcementSnapshot,
+  deriveEnforcementPartnerModifiers,
+  enforcementExportScale,
+  tradeEnforcementGiNotes,
+  tradeEnforcementWorldEvent,
+} from './trade-enforcement-intensity.ts';
+import {
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -183,6 +197,17 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const tradeReconciliation = reconciliationStep.snapshot;
   const financeDisputeCount = reconciliationEffectiveDisputeCount(openDisputesEarly, tradeReconciliation);
 
+  const enforcementStep = computeTradeEnforcementSnapshot({
+    openDisputeCount: openDisputesEarly,
+    tradeCompliance: persisted.tradeCompliance,
+    tradeRetaliation,
+    tradeReconciliation,
+    persisted,
+  });
+  persisted = enforcementStep.persisted;
+  const enforcementMods = deriveEnforcementPartnerModifiers(enforcementStep.snapshot);
+  const tradeEnforcement = enforcementStep.snapshot;
+
   const names = input.actorNames || {};
   const dip = deriveDiplomaticTradeModifiers(input.diplomacyState, turn, names);
   const agr = deriveTradeAgreementModifiers(persisted, turn);
@@ -201,8 +226,11 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     mergePartnerDeltas(
       mergePartnerDeltas(trust.partnerDeltas, policy.partnerDeltas),
       mergePartnerDeltas(
-        mergePartnerDeltas(engagement.partnerDeltas, retaliationMods.partnerDeltas),
-        mergePartnerDeltas(deescalationMods.partnerDeltas, reconciliationMods.partnerDeltas),
+        mergePartnerDeltas(
+          mergePartnerDeltas(engagement.partnerDeltas, retaliationMods.partnerDeltas),
+          mergePartnerDeltas(deescalationMods.partnerDeltas, reconciliationMods.partnerDeltas),
+        ),
+        enforcementMods.partnerDeltas,
       ),
     ),
   );
@@ -253,6 +281,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   if (deescalationEvent) worldEvents.push(deescalationEvent);
   const reconciliationEvent = tradeReconciliationWorldEvent(tradeReconciliation, turn);
   if (reconciliationEvent) worldEvents.push(reconciliationEvent);
+  const enforcementEvent = tradeEnforcementWorldEvent(tradeEnforcement, turn);
+  if (enforcementEvent) worldEvents.push(enforcementEvent);
 
   const partners: GTELPartnerMarket[] = GTEL_PARTNER_DEFS.map(def => {
     const prevBand = persisted.partnerAccess[def.id] || 'normal';
@@ -423,6 +453,20 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const maritimeEvent = maritimeRiskWorldEvent(maritimeRisk, turn);
   if (maritimeEvent) worldEvents.push(maritimeEvent);
 
+  const utilizationStep = computePreferentialUtilizationSnapshot({
+    turn,
+    partners,
+    persisted,
+    tradeReconciliation,
+    marketDiversification,
+    exportCapacity,
+  });
+  persisted = utilizationStep.persisted;
+  const preferentialUtilization = utilizationStep.snapshot;
+  commodities = applyPreferentialUtilizationToCommodityQuotes(commodities, preferentialUtilization);
+  const utilizationEvent = preferentialUtilizationWorldEvent(preferentialUtilization, turn);
+  if (utilizationEvent) worldEvents.push(utilizationEvent);
+
   const tradeBalanceAdjusted = computeTradeBalanceSnapshot({
     commodities,
     partners,
@@ -438,6 +482,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         foreignExchangeExportScale(foreignExchange) *
         exportCapacityExportScale(exportCapacity) *
         maritimeRiskExportScale(maritimeRisk) *
+        preferentialUtilizationExportScale(preferentialUtilization) *
+        enforcementExportScale(tradeEnforcement) *
         10,
     ) / 10;
 
@@ -497,7 +543,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       deescalationMods.domesticStressRelief -
       reconciliationMods.domesticStressRelief +
       exportCapacityDomesticStress(exportCapacity) +
-      maritimeRiskDomesticStress(maritimeRisk),
+      maritimeRiskDomesticStress(maritimeRisk) +
+      enforcementMods.domesticStress,
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -526,6 +573,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.exportCapacitySmoothing,
     persisted.reconciliationProgressSmoothing,
     persisted.maritimeRiskSmoothing,
+    persisted.preferentialUtilizationSmoothing,
+    persisted.enforcementIntensitySmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -586,6 +635,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     exportCapacity,
     tradeReconciliation,
     maritimeRisk,
+    preferentialUtilization,
+    tradeEnforcement,
     inputHash,
   };
 
@@ -625,6 +676,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...exportCapacityGiNotes(state.exportCapacity));
   lines.push(...tradeReconciliationGiNotes(state.tradeReconciliation));
   lines.push(...maritimeRiskGiNotes(state.maritimeRisk));
+  lines.push(...preferentialUtilizationGiNotes(state.preferentialUtilization));
+  lines.push(...tradeEnforcementGiNotes(state.tradeEnforcement));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }

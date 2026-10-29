@@ -41,6 +41,8 @@ const FILES = [
   'export-capacity-allocation.ts',
   'trade-reconciliation.ts',
   'maritime-risk-premium.ts',
+  'preferential-access-utilization.ts',
+  'trade-enforcement-intensity.ts',
   'domestic-consequences.ts',
   'household-bridge.ts',
   'trade-turn.ts',

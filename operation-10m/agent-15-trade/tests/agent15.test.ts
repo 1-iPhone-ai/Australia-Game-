@@ -17,6 +17,10 @@ import {
   scheduledScenarioIdForTurn,
 } from '../src/commodity-shock-scenarios.ts';
 import { createEmptyGTELPersisted } from '../src/persist.ts';
+import {
+  createTradeAgreementFromTemplate,
+  ratifyTradeAgreement,
+} from '../src/trade-agreements.ts';
 import { advanceGlobalTradeEconomyTurn, buildGlobalTradeGi3Notes } from '../src/trade-turn.ts';
 
 test('trade agreement templates are unique', () => {
@@ -43,7 +47,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 29);
+  assert.ok(r.passed >= 31);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -446,4 +450,56 @@ test('round 9: congested logistics raises maritime premium vs calm baseline', ()
     persisted: createEmptyGTELPersisted(),
   });
   assert.ok(congested.state.maritimeRisk.premiumIndex >= calm.state.maritimeRisk.premiumIndex - 0.02);
+});
+
+test('round 10: preferential utilization and trade enforcement on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  const draft = createTradeAgreementFromTemplate('fta_asia_bulk', 4, ['rival_east']);
+  assert.ok(draft);
+  persisted = { ...persisted, agreements: [ratifyTradeAgreement(draft!, 5)] };
+  persisted.preferentialUtilizationSmoothing = 0.62;
+  persisted.enforcementIntensitySmoothing = 0.42;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 37,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 110 } } },
+    persisted,
+  });
+  assert.ok(r.state.preferentialUtilization);
+  assert.ok(['underused', 'balanced', 'high', 'saturated'].includes(r.state.preferentialUtilization.band));
+  assert.ok(r.state.tradeEnforcement);
+  assert.ok(['light', 'active', 'intensive', 'sweep'].includes(r.state.tradeEnforcement.band));
+  assert.ok(r.persisted.preferentialUtilizationSmoothing != null);
+  assert.ok(r.persisted.enforcementIntensitySmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Preferential FTA utilisation/i.test(n)));
+  assert.ok(notes.some(n => /Trade enforcement/i.test(n)));
+});
+
+test('round 10: heavy enforcement reduces throughput vs light baseline', () => {
+  const light = advanceGlobalTradeEconomyTurn({
+    turn: 38,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 80 } } },
+    persisted: createEmptyGTELPersisted(),
+  });
+  let persisted = createEmptyGTELPersisted();
+  persisted.enforcementIntensitySmoothing = 0.78;
+  const heavy = advanceGlobalTradeEconomyTurn({
+    turn: 38,
+    diplomacyState: {
+      deals: Array.from({ length: 4 }, (_, i) => ({
+        id: `v${i}`,
+        type: 'resource_trade',
+        status: 'violated',
+        participants: ['player', 'ai'],
+        compliance: 'violated',
+      })),
+      events: [{ kind: 'violation', turn: 37, text: 'breach' }],
+    },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 80 } } },
+    persisted,
+  });
+  assert.ok(heavy.state.tradeEnforcement.intensity >= light.state.tradeEnforcement.intensity - 0.02);
+  assert.ok(heavy.state.exportThroughput <= light.state.exportThroughput + 0.01);
 });

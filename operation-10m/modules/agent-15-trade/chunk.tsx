@@ -142,6 +142,10 @@ export interface GTELPersisted {
   reconciliationProgressSmoothing?: number;
   /** Smoothed maritime insurance / war-risk premium (0–1). */
   maritimeRiskSmoothing?: number;
+  /** Smoothed preferential FTA lane utilisation (0–1). */
+  preferentialUtilizationSmoothing?: number;
+  /** Smoothed customs enforcement intensity (0–1). */
+  enforcementIntensitySmoothing?: number;
 }
 
 export interface GTELState {
@@ -173,6 +177,8 @@ export interface GTELState {
   exportCapacity: GTELExportCapacitySnapshot;
   tradeReconciliation: GTELTradeReconciliationSnapshot;
   maritimeRisk: GTELMaritimeRiskSnapshot;
+  preferentialUtilization: GTELPreferentialUtilizationSnapshot;
+  tradeEnforcement: GTELTradeEnforcementSnapshot;
   inputHash: string;
 }
 
@@ -480,6 +486,26 @@ export interface GTELMaritimeRiskSnapshot {
   summary: string;
 }
 
+export type GTELPreferentialUtilizationBand = 'underused' | 'balanced' | 'high' | 'saturated';
+
+export interface GTELPreferentialUtilizationSnapshot {
+  utilizationRate: number;
+  band: GTELPreferentialUtilizationBand;
+  activeAgreementCount: number;
+  boostedCommodities: GTELCommodityId[];
+  summary: string;
+}
+
+export type GTELTradeEnforcementBand = 'light' | 'active' | 'intensive' | 'sweep';
+
+export interface GTELTradeEnforcementSnapshot {
+  intensity: number;
+  band: GTELTradeEnforcementBand;
+  probeLoad: number;
+  clearanceDelayTurns: number;
+  summary: string;
+}
+
 export interface GlobalTradeEconomyPanelProps {
   state: GTELState | null;
   theme?: { isDark?: boolean };
@@ -643,6 +669,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     exportCapacitySmoothing: 0.62,
     reconciliationProgressSmoothing: 0.24,
     maritimeRiskSmoothing: 0.22,
+    preferentialUtilizationSmoothing: 0.48,
+    enforcementIntensitySmoothing: 0.26,
   };
 }
 
@@ -805,6 +833,10 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   base.exportCapacitySmoothing = sanitizeExportCapacitySmoothing(r.exportCapacitySmoothing);
   base.reconciliationProgressSmoothing = sanitizeReconciliationProgressSmoothing(r.reconciliationProgressSmoothing);
   base.maritimeRiskSmoothing = sanitizeMaritimeRiskSmoothing(r.maritimeRiskSmoothing);
+  base.preferentialUtilizationSmoothing = sanitizePreferentialUtilizationSmoothing(
+    r.preferentialUtilizationSmoothing,
+  );
+  base.enforcementIntensitySmoothing = sanitizeEnforcementIntensitySmoothing(r.enforcementIntensitySmoothing);
   return base;
 }
 
@@ -4099,6 +4131,348 @@ export function maritimeRiskGiNotes(maritime: GTELMaritimeRiskSnapshot | null | 
 }
 
 
+// --- source: preferential-access-utilization.ts ---
+  GTELCommodityId,
+  GTELCommodityQuote,
+  GTELExportCapacitySnapshot,
+  GTELMarketDiversificationSnapshot,
+  GTELPartnerMarket,
+  GTELPersisted,
+  GTELPreferentialUtilizationSnapshot,
+  GTELTradeReconciliationSnapshot,
+  GTELTurnResult,
+  TradeAgreementRecord,
+} from './types.ts';
+
+export type GTELPreferentialUtilizationBand = GTELPreferentialUtilizationSnapshot['band'];
+
+function utilizationBand(rate: number): GTELPreferentialUtilizationBand {
+  if (rate >= 0.82) return 'saturated';
+  if (rate >= 0.62) return 'high';
+  if (rate >= 0.38) return 'balanced';
+  return 'underused';
+}
+
+export function sanitizePreferentialUtilizationSmoothing(raw: unknown): number {
+  return gtelClamp(gtelNum(raw, 0.48), 0.18, 0.92);
+}
+
+export function createEmptyPreferentialUtilizationSnapshot(): GTELPreferentialUtilizationSnapshot {
+  return {
+    utilizationRate: 0.48,
+    band: 'balanced',
+    activeAgreementCount: 0,
+    boostedCommodities: [],
+    summary: 'Preferential FTA lanes are lightly used relative to headline access.',
+  };
+}
+
+export function advancePreferentialUtilizationSmoothing(
+  persisted: GTELPersisted,
+  rawRate: number,
+): GTELPersisted {
+  const prev = sanitizePreferentialUtilizationSmoothing(persisted.preferentialUtilizationSmoothing);
+  const next = gtelClamp(prev * 0.73 + gtelClamp(rawRate, 0.18, 0.92) * 0.27, 0.18, 0.92);
+  return { ...persisted, preferentialUtilizationSmoothing: Math.round(next * 1000) / 1000 };
+}
+
+function activeRatifiedAgreements(persisted: GTELPersisted, turn: number): TradeAgreementRecord[] {
+  return persisted.agreements.filter(
+    a => a.status === 'ratified' && (a.expiresTurn == null || turn <= a.expiresTurn),
+  );
+}
+
+export function computePreferentialUtilizationSnapshot(input: {
+  turn: number;
+  partners: GTELPartnerMarket[];
+  persisted: GTELPersisted;
+  tradeReconciliation: GTELTradeReconciliationSnapshot;
+  marketDiversification: GTELMarketDiversificationSnapshot;
+  exportCapacity: GTELExportCapacitySnapshot;
+}): { snapshot: GTELPreferentialUtilizationSnapshot; persisted: GTELPersisted } {
+  const active = activeRatifiedAgreements(input.persisted, input.turn);
+  const preferredPartners = input.partners.filter(
+    p => p.id !== 'domestic_premium' && (p.access === 'preferred' || p.access === 'normal'),
+  );
+  const accessLift =
+    preferredPartners.length > 0
+      ? preferredPartners.reduce((acc, p) => acc + p.accessScore, 0) / preferredPartners.length
+      : 0.45;
+  const agreementLift = gtelClamp(active.length * 0.09, 0, 0.28);
+  const reconciliationLift =
+    input.tradeReconciliation.band === 'settled'
+      ? 0.12
+      : input.tradeReconciliation.band === 'substantive'
+        ? 0.08
+        : input.tradeReconciliation.band === 'procedural'
+          ? 0.04
+          : 0;
+  const capacityDrag =
+    input.exportCapacity.band === 'saturated'
+      ? 0.1
+      : input.exportCapacity.band === 'tight'
+        ? 0.06
+        : 0.02;
+  const concentrationDrag =
+    input.marketDiversification.band === 'critical'
+      ? 0.08
+      : input.marketDiversification.band === 'concentrated'
+        ? 0.05
+        : 0.02;
+  const rawRate = gtelClamp(
+    0.32 + accessLift * 0.35 + agreementLift + reconciliationLift - capacityDrag - concentrationDrag,
+    0.18,
+    0.92,
+  );
+  const persisted = advancePreferentialUtilizationSmoothing(input.persisted, rawRate);
+  const utilizationRate = sanitizePreferentialUtilizationSmoothing(persisted.preferentialUtilizationSmoothing);
+  const band = utilizationBand(utilizationRate);
+
+  const boostedSet = new Set<GTELCommodityId>();
+  active.forEach(a => {
+    a.tariffLines.forEach(line => {
+      if (GTEL_COMMODITIES.includes(line.commodity)) boostedSet.add(line.commodity);
+    });
+  });
+  const boostedCommodities = [...boostedSet].slice(0, 5);
+
+  const summary =
+    band === 'saturated'
+      ? 'FTA preferential lanes are running hot — quota clerks are prioritising ratified tariff lines.'
+      : band === 'high'
+        ? 'Exporters are actively filling preferential access windows under ratified agreements.'
+        : band === 'underused'
+          ? 'Headline FTA access is under-utilised; paperwork and partner friction are leaving quota on the table.'
+          : 'Preferential lane usage is broadly aligned with ratified agreement coverage.';
+
+  return {
+    snapshot: {
+      utilizationRate: Math.round(utilizationRate * 1000) / 1000,
+      band,
+      activeAgreementCount: active.length,
+      boostedCommodities,
+      summary,
+    },
+    persisted,
+  };
+}
+
+export function applyPreferentialUtilizationToCommodityQuotes(
+  commodities: GTELCommodityQuote[],
+  snapshot: GTELPreferentialUtilizationSnapshot,
+): GTELCommodityQuote[] {
+  if (snapshot.band === 'balanced' || snapshot.band === 'underused') return commodities;
+  const boost =
+    snapshot.band === 'saturated' ? 0.016 : snapshot.band === 'high' ? 0.01 : 0;
+  const boosted = new Set(snapshot.boostedCommodities);
+  return commodities.map(c => {
+    if (!boosted.has(c.commodity)) return c;
+    const effectiveIndex = gtelClamp(Math.round(c.effectiveIndex * (1 + boost)) * 10 / 10, 45, 175);
+    return {
+      ...c,
+      effectiveIndex,
+      evidence: [...c.evidence, 'Preferential FTA utilisation lifted this commodity quote'],
+    };
+  });
+}
+
+export function preferentialUtilizationExportScale(snapshot: GTELPreferentialUtilizationSnapshot): number {
+  if (snapshot.band === 'underused') return gtelClamp(0.97 + snapshot.utilizationRate * 0.02, 0.96, 0.99);
+  if (snapshot.band === 'saturated') return gtelClamp(1.02 + snapshot.utilizationRate * 0.03, 1, 1.05);
+  if (snapshot.band === 'high') return gtelClamp(1 + snapshot.utilizationRate * 0.02, 0.99, 1.04);
+  return gtelClamp(0.99 + snapshot.utilizationRate * 0.015, 0.98, 1.02);
+}
+
+export function preferentialUtilizationWorldEvent(
+  snapshot: GTELPreferentialUtilizationSnapshot,
+  turn: number,
+): GTELTurnResult['worldEvents'][0] | null {
+  if (snapshot.band !== 'high' && snapshot.band !== 'saturated') return null;
+  if (snapshot.activeAgreementCount < 1) return null;
+  return {
+    id: `gtel_preferential_${turn}`,
+    turn,
+    kind: 'trade',
+    title: 'Preferential FTA lanes filling',
+    summary: snapshot.summary,
+    regionIds: ['WA', 'QLD', 'NSW'],
+  };
+}
+
+export function preferentialUtilizationGiNotes(
+  utilization: GTELPreferentialUtilizationSnapshot | null | undefined,
+): string[] {
+  if (!utilization) return [];
+  return [
+    `Preferential FTA utilisation: ${utilization.band.replace(/_/g, ' ')} (${Math.round(utilization.utilizationRate * 100)}%).`,
+    utilization.summary,
+  ];
+}
+
+
+// --- source: trade-enforcement-intensity.ts ---
+  GTELPartnerId,
+  GTELPersisted,
+  GTELTradeComplianceRecord,
+  GTELTradeEnforcementSnapshot,
+  GTELTradeReconciliationSnapshot,
+  GTELTradeRetaliationSnapshot,
+  GTELTurnResult,
+} from './types.ts';
+
+export type GTELTradeEnforcementBand = GTELTradeEnforcementSnapshot['band'];
+
+function enforcementBand(intensity: number): GTELTradeEnforcementBand {
+  if (intensity >= 0.72) return 'sweep';
+  if (intensity >= 0.48) return 'intensive';
+  if (intensity >= 0.28) return 'active';
+  return 'light';
+}
+
+export function sanitizeEnforcementIntensitySmoothing(raw: unknown): number {
+  return gtelClamp(gtelNum(raw, 0.26), 0.08, 0.88);
+}
+
+export function createEmptyTradeEnforcementSnapshot(): GTELTradeEnforcementSnapshot {
+  return {
+    intensity: 0.26,
+    band: 'light',
+    probeLoad: 0.05,
+    clearanceDelayTurns: 0,
+    summary: 'Customs enforcement is at routine inspection levels.',
+  };
+}
+
+export function advanceEnforcementIntensitySmoothing(
+  persisted: GTELPersisted,
+  rawIntensity: number,
+): GTELPersisted {
+  const prev = sanitizeEnforcementIntensitySmoothing(persisted.enforcementIntensitySmoothing);
+  const next = gtelClamp(prev * 0.71 + gtelClamp(rawIntensity, 0.08, 0.88) * 0.29, 0.08, 0.88);
+  return { ...persisted, enforcementIntensitySmoothing: Math.round(next * 1000) / 1000 };
+}
+
+export function computeTradeEnforcementSnapshot(input: {
+  openDisputeCount: number;
+  tradeCompliance: GTELTradeComplianceRecord;
+  tradeRetaliation: GTELTradeRetaliationSnapshot;
+  tradeReconciliation: GTELTradeReconciliationSnapshot;
+  persisted: GTELPersisted;
+}): { snapshot: GTELTradeEnforcementSnapshot; persisted: GTELPersisted } {
+  const complianceGap =
+    input.tradeCompliance.band === 'critical'
+      ? 0.28
+      : input.tradeCompliance.band === 'weak'
+        ? 0.18
+        : input.tradeCompliance.band === 'adequate'
+          ? 0.08
+          : 0.03;
+  const disputeLoad = gtelClamp(input.openDisputeCount * 0.12, 0, 0.36);
+  const retaliationLoad =
+    input.tradeRetaliation.band === 'escalating'
+      ? 0.2
+      : input.tradeRetaliation.band === 'active'
+        ? 0.12
+        : input.tradeRetaliation.band === 'watch'
+          ? 0.05
+          : 0.02;
+  const reconciliationRelief =
+    input.tradeReconciliation.band === 'settled'
+      ? 0.14
+      : input.tradeReconciliation.band === 'substantive'
+        ? 0.08
+        : input.tradeReconciliation.band === 'procedural'
+          ? 0.04
+          : 0;
+  const rawIntensity = gtelClamp(
+    0.14 + complianceGap + disputeLoad + retaliationLoad - reconciliationRelief,
+    0.08,
+    0.88,
+  );
+  const persisted = advanceEnforcementIntensitySmoothing(input.persisted, rawIntensity);
+  const intensity = sanitizeEnforcementIntensitySmoothing(persisted.enforcementIntensitySmoothing);
+  const band = enforcementBand(intensity);
+  const probeLoad = gtelClamp(0.04 + intensity * 0.22, 0.04, 0.26);
+  const clearanceDelayTurns =
+    band === 'sweep' ? 2 : band === 'intensive' ? 1 : band === 'active' ? 1 : 0;
+
+  const summary =
+    band === 'sweep'
+      ? 'Partner customs agencies are running sweeping compliance probes on export declarations.'
+      : band === 'intensive'
+        ? 'Rules-of-origin audits and document checks are delaying several export lanes.'
+        : band === 'active'
+          ? 'Enforcement activity is elevated but still targeted rather than economy-wide.'
+          : 'Customs enforcement is at routine inspection levels.';
+
+  return {
+    snapshot: {
+      intensity: Math.round(intensity * 1000) / 1000,
+      band,
+      probeLoad: Math.round(probeLoad * 1000) / 1000,
+      clearanceDelayTurns,
+      summary,
+    },
+    persisted,
+  };
+}
+
+export function deriveEnforcementPartnerModifiers(snapshot: GTELTradeEnforcementSnapshot): {
+  partnerDeltas: Partial<Record<GTELPartnerId, number>>;
+  domesticStress: number;
+} {
+  const partnerDeltas: Partial<Record<GTELPartnerId, number>> = {};
+  if (snapshot.band === 'light') {
+    return { partnerDeltas, domesticStress: 0 };
+  }
+  const penalty =
+    snapshot.band === 'sweep' ? -0.06 : snapshot.band === 'intensive' ? -0.04 : -0.02;
+  (['asia_pacific', 'europe', 'north_america', 'india_ocean'] as GTELPartnerId[]).forEach(id => {
+    partnerDeltas[id] = penalty;
+  });
+  const domesticStress =
+    snapshot.band === 'sweep'
+      ? gtelClamp(snapshot.intensity * 0.1, 0.04, 0.09)
+      : snapshot.band === 'intensive'
+        ? gtelClamp(snapshot.intensity * 0.07, 0.02, 0.06)
+        : gtelClamp(snapshot.intensity * 0.04, 0, 0.04);
+  return { partnerDeltas, domesticStress };
+}
+
+export function enforcementExportScale(snapshot: GTELTradeEnforcementSnapshot): number {
+  if (snapshot.band === 'light') return gtelClamp(1 - snapshot.probeLoad * 0.08, 0.97, 1);
+  if (snapshot.band === 'sweep') return gtelClamp(0.86 + (1 - snapshot.intensity) * 0.08, 0.82, 0.9);
+  if (snapshot.band === 'intensive') return gtelClamp(0.9 + (1 - snapshot.intensity) * 0.06, 0.86, 0.94);
+  return gtelClamp(0.94 + (1 - snapshot.intensity) * 0.04, 0.9, 0.98);
+}
+
+export function tradeEnforcementWorldEvent(
+  snapshot: GTELTradeEnforcementSnapshot,
+  turn: number,
+): GTELTurnResult['worldEvents'][0] | null {
+  if (snapshot.band !== 'intensive' && snapshot.band !== 'sweep') return null;
+  if (snapshot.intensity < 0.45) return null;
+  return {
+    id: `gtel_enforcement_${turn}`,
+    turn,
+    kind: 'trade',
+    title: 'Trade enforcement surge',
+    summary: snapshot.summary,
+    regionIds: ['NSW', 'VIC', 'QLD'],
+  };
+}
+
+export function tradeEnforcementGiNotes(
+  enforcement: GTELTradeEnforcementSnapshot | null | undefined,
+): string[] {
+  if (!enforcement) return [];
+  return [
+    `Trade enforcement: ${enforcement.band} (${Math.round(enforcement.intensity * 100)}% intensity).`,
+    enforcement.summary,
+  ];
+}
+
+
 // --- source: domestic-consequences.ts ---
   GTELCommodityQuote,
   GTELDomesticCoupling,
@@ -4301,6 +4675,18 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   maritimeRiskGiNotes,
   maritimeRiskWorldEvent,
 } from './maritime-risk-premium.ts';
+  applyPreferentialUtilizationToCommodityQuotes,
+  computePreferentialUtilizationSnapshot,
+  preferentialUtilizationExportScale,
+  preferentialUtilizationGiNotes,
+  preferentialUtilizationWorldEvent,
+} from './preferential-access-utilization.ts';
+  computeTradeEnforcementSnapshot,
+  deriveEnforcementPartnerModifiers,
+  enforcementExportScale,
+  tradeEnforcementGiNotes,
+  tradeEnforcementWorldEvent,
+} from './trade-enforcement-intensity.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -4371,6 +4757,17 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const tradeReconciliation = reconciliationStep.snapshot;
   const financeDisputeCount = reconciliationEffectiveDisputeCount(openDisputesEarly, tradeReconciliation);
 
+  const enforcementStep = computeTradeEnforcementSnapshot({
+    openDisputeCount: openDisputesEarly,
+    tradeCompliance: persisted.tradeCompliance,
+    tradeRetaliation,
+    tradeReconciliation,
+    persisted,
+  });
+  persisted = enforcementStep.persisted;
+  const enforcementMods = deriveEnforcementPartnerModifiers(enforcementStep.snapshot);
+  const tradeEnforcement = enforcementStep.snapshot;
+
   const names = input.actorNames || {};
   const dip = deriveDiplomaticTradeModifiers(input.diplomacyState, turn, names);
   const agr = deriveTradeAgreementModifiers(persisted, turn);
@@ -4389,8 +4786,11 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     mergePartnerDeltas(
       mergePartnerDeltas(trust.partnerDeltas, policy.partnerDeltas),
       mergePartnerDeltas(
-        mergePartnerDeltas(engagement.partnerDeltas, retaliationMods.partnerDeltas),
-        mergePartnerDeltas(deescalationMods.partnerDeltas, reconciliationMods.partnerDeltas),
+        mergePartnerDeltas(
+          mergePartnerDeltas(engagement.partnerDeltas, retaliationMods.partnerDeltas),
+          mergePartnerDeltas(deescalationMods.partnerDeltas, reconciliationMods.partnerDeltas),
+        ),
+        enforcementMods.partnerDeltas,
       ),
     ),
   );
@@ -4441,6 +4841,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   if (deescalationEvent) worldEvents.push(deescalationEvent);
   const reconciliationEvent = tradeReconciliationWorldEvent(tradeReconciliation, turn);
   if (reconciliationEvent) worldEvents.push(reconciliationEvent);
+  const enforcementEvent = tradeEnforcementWorldEvent(tradeEnforcement, turn);
+  if (enforcementEvent) worldEvents.push(enforcementEvent);
 
   const partners: GTELPartnerMarket[] = GTEL_PARTNER_DEFS.map(def => {
     const prevBand = persisted.partnerAccess[def.id] || 'normal';
@@ -4611,6 +5013,20 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const maritimeEvent = maritimeRiskWorldEvent(maritimeRisk, turn);
   if (maritimeEvent) worldEvents.push(maritimeEvent);
 
+  const utilizationStep = computePreferentialUtilizationSnapshot({
+    turn,
+    partners,
+    persisted,
+    tradeReconciliation,
+    marketDiversification,
+    exportCapacity,
+  });
+  persisted = utilizationStep.persisted;
+  const preferentialUtilization = utilizationStep.snapshot;
+  commodities = applyPreferentialUtilizationToCommodityQuotes(commodities, preferentialUtilization);
+  const utilizationEvent = preferentialUtilizationWorldEvent(preferentialUtilization, turn);
+  if (utilizationEvent) worldEvents.push(utilizationEvent);
+
   const tradeBalanceAdjusted = computeTradeBalanceSnapshot({
     commodities,
     partners,
@@ -4626,6 +5042,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         foreignExchangeExportScale(foreignExchange) *
         exportCapacityExportScale(exportCapacity) *
         maritimeRiskExportScale(maritimeRisk) *
+        preferentialUtilizationExportScale(preferentialUtilization) *
+        enforcementExportScale(tradeEnforcement) *
         10,
     ) / 10;
 
@@ -4685,7 +5103,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       deescalationMods.domesticStressRelief -
       reconciliationMods.domesticStressRelief +
       exportCapacityDomesticStress(exportCapacity) +
-      maritimeRiskDomesticStress(maritimeRisk),
+      maritimeRiskDomesticStress(maritimeRisk) +
+      enforcementMods.domesticStress,
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -4714,6 +5133,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.exportCapacitySmoothing,
     persisted.reconciliationProgressSmoothing,
     persisted.maritimeRiskSmoothing,
+    persisted.preferentialUtilizationSmoothing,
+    persisted.enforcementIntensitySmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -4774,6 +5195,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     exportCapacity,
     tradeReconciliation,
     maritimeRisk,
+    preferentialUtilization,
+    tradeEnforcement,
     inputHash,
   };
 
@@ -4813,6 +5236,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...exportCapacityGiNotes(state.exportCapacity));
   lines.push(...tradeReconciliationGiNotes(state.tradeReconciliation));
   lines.push(...maritimeRiskGiNotes(state.maritimeRisk));
+  lines.push(...preferentialUtilizationGiNotes(state.preferentialUtilization));
+  lines.push(...tradeEnforcementGiNotes(state.tradeEnforcement));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
@@ -4844,8 +5269,16 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   exportCapacityExportScale,
 } from './export-capacity-allocation.ts';
   computeTradeReconciliationSnapshot,
+  createEmptyTradeReconciliationSnapshot,
   deriveReconciliationPartnerModifiers,
 } from './trade-reconciliation.ts';
+  computePreferentialUtilizationSnapshot,
+  preferentialUtilizationExportScale,
+} from './preferential-access-utilization.ts';
+  computeTradeEnforcementSnapshot,
+  deriveEnforcementPartnerModifiers,
+  enforcementExportScale,
+} from './trade-enforcement-intensity.ts';
   validateScenarioShockCatalog,
   triggerCommodityShockScenario,
   COMMODITY_SHOCK_SCENARIOS,
@@ -5479,6 +5912,74 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     }).snapshot;
     gtelAssert(stressed.premiumIndex > calm.premiumIndex, 'expected higher maritime premium');
     gtelAssert(maritimeRiskExportScale(stressed) <= maritimeRiskExportScale(calm) + 0.01, 'expected maritime scale drag');
+  });
+
+  ok('preferential utilization rises with ratified agreements', () => {
+    let persisted = createEmptyGTELPersisted();
+    const draft = createTradeAgreementFromTemplate('fta_asia_bulk', 4, ['rival_east']);
+    gtelAssert(!!draft, 'expected agreement draft');
+    persisted = { ...persisted, agreements: [ratifyTradeAgreement(draft!, 5)] };
+    const partners = GTEL_PARTNER_DEFS.map(p => ({ ...p, access: 'preferred' as const, accessScore: 0.82 }));
+    const sparse = computePreferentialUtilizationSnapshot({
+      turn: 6,
+      partners,
+      persisted: createEmptyGTELPersisted(),
+      tradeReconciliation: createEmptyTradeReconciliationSnapshot(),
+      marketDiversification: {
+        concentrationIndex: 0.55,
+        band: 'balanced',
+        dominantPartnerId: 'asia_pacific',
+        effectivePartnerCount: 3.2,
+        summary: 'test',
+      },
+      exportCapacity: createEmptyExportCapacitySnapshot(),
+    });
+    const rich = computePreferentialUtilizationSnapshot({
+      turn: 6,
+      partners,
+      persisted,
+      tradeReconciliation: {
+        ...createEmptyTradeReconciliationSnapshot(),
+        band: 'substantive',
+        progress: 0.58,
+      },
+      marketDiversification: {
+        concentrationIndex: 0.55,
+        band: 'balanced',
+        dominantPartnerId: 'asia_pacific',
+        effectivePartnerCount: 3.2,
+        summary: 'test',
+      },
+      exportCapacity: createEmptyExportCapacitySnapshot(),
+    });
+    gtelAssert(rich.snapshot.utilizationRate > sparse.snapshot.utilizationRate, 'expected higher FTA utilisation');
+    gtelAssert(preferentialUtilizationExportScale(rich.snapshot) >= preferentialUtilizationExportScale(sparse.snapshot), 'expected export scale lift');
+  });
+
+  ok('trade enforcement intensifies with compliance gaps', () => {
+    const light = computeTradeEnforcementSnapshot({
+      openDisputeCount: 0,
+      tradeCompliance: { band: 'strong', score: 0.82, lastReviewTurn: 1, violationsWindow: 0, openDisputes: 0, findings: [] },
+      tradeRetaliation: createEmptyTradeRetaliationSnapshot(),
+      tradeReconciliation: createEmptyTradeReconciliationSnapshot(),
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const heavy = computeTradeEnforcementSnapshot({
+      openDisputeCount: 3,
+      tradeCompliance: { band: 'critical', score: 0.38, lastReviewTurn: 1, violationsWindow: 4, openDisputes: 3, findings: ['gap'] },
+      tradeRetaliation: computeTradeRetaliationSnapshot({
+        openDisputeCount: 3,
+        activeSanctionCount: 2,
+        engagement: { tracks: {}, summitPulse: 0.1, summary: 'test' },
+        persisted: createEmptyGTELPersisted(),
+      }).snapshot,
+      tradeReconciliation: createEmptyTradeReconciliationSnapshot(),
+      persisted: { ...createEmptyGTELPersisted(), enforcementIntensitySmoothing: 0.55 },
+    }).snapshot;
+    gtelAssert(heavy.intensity > light.intensity, 'expected higher enforcement intensity');
+    const mods = deriveEnforcementPartnerModifiers(heavy);
+    gtelAssert(mods.domesticStress > 0, 'expected enforcement domestic stress');
+    gtelAssert(enforcementExportScale(heavy) <= enforcementExportScale(light) + 0.01, 'expected enforcement throughput drag');
   });
 
   return { passed, failed };

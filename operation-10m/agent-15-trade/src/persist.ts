@@ -14,6 +14,8 @@ import { sanitizeDeescalationMomentumSmoothing } from './trade-deescalation.ts';
 import { sanitizeExportCapacitySmoothing } from './export-capacity-allocation.ts';
 import { sanitizeReconciliationProgressSmoothing } from './trade-reconciliation.ts';
 import { sanitizeMaritimeRiskSmoothing } from './maritime-risk-premium.ts';
+import { sanitizePreferentialUtilizationSmoothing } from './preferential-access-utilization.ts';
+import { sanitizeEnforcementIntensitySmoothing } from './trade-enforcement-intensity.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -46,6 +48,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     exportCapacitySmoothing: 0.62,
     reconciliationProgressSmoothing: 0.24,
     maritimeRiskSmoothing: 0.22,
+    preferentialUtilizationSmoothing: 0.48,
+    enforcementIntensitySmoothing: 0.26,
   };
 }
 
@@ -208,5 +212,9 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   base.exportCapacitySmoothing = sanitizeExportCapacitySmoothing(r.exportCapacitySmoothing);
   base.reconciliationProgressSmoothing = sanitizeReconciliationProgressSmoothing(r.reconciliationProgressSmoothing);
   base.maritimeRiskSmoothing = sanitizeMaritimeRiskSmoothing(r.maritimeRiskSmoothing);
+  base.preferentialUtilizationSmoothing = sanitizePreferentialUtilizationSmoothing(
+    r.preferentialUtilizationSmoothing,
+  );
+  base.enforcementIntensitySmoothing = sanitizeEnforcementIntensitySmoothing(r.enforcementIntensitySmoothing);
   return base;
 }

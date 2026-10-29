@@ -138,6 +138,10 @@ export interface GTELPersisted {
   reconciliationProgressSmoothing?: number;
   /** Smoothed maritime insurance / war-risk premium (0–1). */
   maritimeRiskSmoothing?: number;
+  /** Smoothed preferential FTA lane utilisation (0–1). */
+  preferentialUtilizationSmoothing?: number;
+  /** Smoothed customs enforcement intensity (0–1). */
+  enforcementIntensitySmoothing?: number;
 }
 
 export interface GTELState {
@@ -169,6 +173,8 @@ export interface GTELState {
   exportCapacity: GTELExportCapacitySnapshot;
   tradeReconciliation: GTELTradeReconciliationSnapshot;
   maritimeRisk: GTELMaritimeRiskSnapshot;
+  preferentialUtilization: GTELPreferentialUtilizationSnapshot;
+  tradeEnforcement: GTELTradeEnforcementSnapshot;
   inputHash: string;
 }
 
@@ -473,6 +479,26 @@ export interface GTELMaritimeRiskSnapshot {
   band: GTELMaritimeRiskBand;
   insuranceLoad: number;
   laneReliability: number;
+  summary: string;
+}
+
+export type GTELPreferentialUtilizationBand = 'underused' | 'balanced' | 'high' | 'saturated';
+
+export interface GTELPreferentialUtilizationSnapshot {
+  utilizationRate: number;
+  band: GTELPreferentialUtilizationBand;
+  activeAgreementCount: number;
+  boostedCommodities: GTELCommodityId[];
+  summary: string;
+}
+
+export type GTELTradeEnforcementBand = 'light' | 'active' | 'intensive' | 'sweep';
+
+export interface GTELTradeEnforcementSnapshot {
+  intensity: number;
+  band: GTELTradeEnforcementBand;
+  probeLoad: number;
+  clearanceDelayTurns: number;
   summary: string;
 }
 
