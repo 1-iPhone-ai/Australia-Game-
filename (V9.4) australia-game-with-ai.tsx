@@ -86260,6 +86260,38 @@ export function modalTabWouldLeave(trap: boolean, atEdge: boolean): boolean {
   return !trap && atEdge;
 }
 
+/** A control the browser will actually Tab to. Disabled and tabindex="-1" nodes are not stops. */
+export function isModalTabStop(el: { tabIndex?: number | null; disabled?: boolean; hasAttribute?: (name: string) => boolean; getAttribute?: (name: string) => string | null }): boolean {
+  if (typeof el.tabIndex === 'number' && el.tabIndex < 0) return false;
+  if (el.disabled === true) return false;
+  if (typeof el.hasAttribute === 'function' && (el.hasAttribute('disabled') || el.hasAttribute('hidden'))) return false;
+  if (typeof el.getAttribute === 'function' && el.getAttribute('aria-hidden') === 'true') return false;
+  return true;
+}
+
+/**
+ * Where Tab should move while a dialog is open.
+ * Null means the browser may move to another stop inside the dialog.
+ * The default of trapFocusInModals is not decided here.
+ */
+export function modalTabWrapTarget<T>(input: {
+  trap: boolean;
+  tabbables: readonly T[];
+  active: T | null;
+  activeInside: boolean;
+  shiftKey: boolean;
+}): T | null {
+  if (!input.trap || input.tabbables.length === 0) return null;
+  const first = input.tabbables[0];
+  const last = input.tabbables[input.tabbables.length - 1];
+  if (input.shiftKey) {
+    if (!input.activeInside || input.active === first) return last;
+    return null;
+  }
+  if (!input.activeInside || input.active === last) return first;
+  return null;
+}
+
 export function useModalAccessibility(options: ModalAccessibilityOptions) {
   const { activeModalId, isOpen, onEscape, trapFocus = true, restoreFocusOnClose = true } = options;
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -86279,11 +86311,14 @@ export function useModalAccessibility(options: ModalAccessibilityOptions) {
   const onEscapeRef = useRef(onEscape);
   useEffect(() => { onEscapeRef.current = onEscape; }, [onEscape]);
 
+  const shiftTabRef = useRef(false);
+  const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+  const tabStopsIn = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLElement>(focusableSelector)).filter(isModalTabStop);
+
   // Autofocus: once per open.
   useEffect(() => {
     if (!isOpen || !containerRef.current || !trapFocus) return;
-    const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-    const first = containerRef.current.querySelector<HTMLElement>(focusableSelector);
+    const first = tabStopsIn(containerRef.current)[0];
     if (first) first.focus();
   }, [isOpen, trapFocus]);
 
@@ -86291,8 +86326,14 @@ export function useModalAccessibility(options: ModalAccessibilityOptions) {
     if (!isOpen || !containerRef.current || !trapFocus) return;
 
     const element = containerRef.current;
-    const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-    const focusables = Array.from(element.querySelectorAll<HTMLElement>(focusableSelector));
+
+    const wrapTab = (active: HTMLElement | null, shiftKey: boolean): HTMLElement | null => modalTabWrapTarget({
+      trap: true,
+      tabbables: tabStopsIn(element),
+      active,
+      activeInside: Boolean(active && element.contains(active)),
+      shiftKey
+    });
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && onEscapeRef.current) {
@@ -86305,25 +86346,31 @@ export function useModalAccessibility(options: ModalAccessibilityOptions) {
         return;
       }
 
-      if (e.key === 'Tab' && focusables.length > 0) {
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        if (e.shiftKey) {
-          if (document.activeElement === first) {
-            e.preventDefault?.();
-            last.focus();
-          }
-        } else {
-          if (document.activeElement === last) {
-            e.preventDefault?.();
-            first.focus();
-          }
-        }
-      }
+      if (e.key !== 'Tab') return;
+      shiftTabRef.current = e.shiftKey;
+      const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const destination = wrapTab(active, e.shiftKey);
+      if (!destination) return;
+      e.preventDefault?.();
+      try { destination.focus(); } catch (_) {}
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    // If Tab's default action still moves outside, pull focus back into this dialog.
+    const handleFocusIn = (event: FocusEvent) => {
+      const node = event.target;
+      if (!(node instanceof Node) || element.contains(node)) return;
+      const destination = wrapTab(null, shiftTabRef.current);
+      if (!destination) return;
+      event.preventDefault?.();
+      try { destination.focus(); } catch (_) {}
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    document.addEventListener('focusin', handleFocusIn, true);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+      document.removeEventListener('focusin', handleFocusIn, true);
+    };
   }, [isOpen, trapFocus, restoreFocusOnClose]);
 
   const prevIsOpenRef = useRef(isOpen);
@@ -137112,6 +137159,19 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number; pr
     const off = modalShouldTrapFocus({ trapFocusInModals: false });
     const fallback = modalShouldTrapFocus(undefined);
     return (on && !off && fallback && modalTabWouldLeave(on, true) === false && modalTabWouldLeave(off, true) === true) || `on=${on} off=${off}`;
+  });
+  check('u_modal_tab_wraps_inside_dialog', 'Tab on the last dialog control wraps when trapping is on (SIM-058)', () => {
+    const controls = ['first', 'middle', 'last'];
+    const forward = modalTabWrapTarget({ trap: true, tabbables: controls, active: 'last', activeInside: true, shiftKey: false });
+    const backward = modalTabWrapTarget({ trap: true, tabbables: controls, active: 'first', activeInside: true, shiftKey: true });
+    const middle = modalTabWrapTarget({ trap: true, tabbables: controls, active: 'middle', activeInside: true, shiftKey: false });
+    const released = modalTabWrapTarget({ trap: false, tabbables: controls, active: 'last', activeInside: true, shiftKey: false });
+    const escaped = modalTabWrapTarget({ trap: true, tabbables: controls, active: 'page', activeInside: false, shiftKey: false });
+    const hook = Function.prototype.toString.call(useModalAccessibility);
+    const requeries = hook.includes('modalTabWrapTarget') && hook.includes('focusin') && hook.includes('tabStopsIn(element)') && !hook.includes('const focusables =');
+    const stops = isModalTabStop({ tabIndex: 0 }) && !isModalTabStop({ tabIndex: -1 }) && !isModalTabStop({ tabIndex: 0, disabled: true });
+    const ok = forward === 'first' && backward === 'last' && middle === null && released === null && escaped === 'first' && requeries && stops;
+    return ok || JSON.stringify({ forward, backward, middle, released, escaped, requeries, stops });
   });
   check('u_stress_yields_and_lab_restores_rng', 'Long stress yields and a mid-match lab run restores RNG (UI-008)', () => {
     const before = JSON.stringify([globalRngRegistry.exportStreamStates(), globalDeterministicCounters]);
