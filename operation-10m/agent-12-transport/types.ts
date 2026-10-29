@@ -145,6 +145,59 @@ export interface TransportProductivityInputs {
   activeProjectIds?: ReadonlySet<string>;
 }
 
+/** Strategic corridor identity formed from operational catalog assets. */
+export interface TransportCorridorDefinition {
+  id: string;
+  name: string;
+  networkKind: StrategicNetworkKind;
+  regionSequence: AuRegionCode[];
+  /** At least one operational asset in each listed region must match a tag. */
+  requiredTagsByRegion: Partial<Record<AuRegionCode, string[]>>;
+  productivitySynergyPoints: number;
+  logisticsRelief: number;
+}
+
+/** Turn-scoped stress on networks / regions (flood, strike, deferred maintenance wave). */
+export interface TransportStressScenario {
+  id: string;
+  label: string;
+  description: string;
+  targetRegions: AuRegionCode[];
+  networkKind?: StrategicNetworkKind;
+  utilizationAdd: number;
+  /** Shifts effective condition down by N steps (max 2). */
+  conditionPenaltySteps: number;
+  affectedCategories?: TransportAssetCategory[];
+}
+
+export interface CorridorActivation {
+  corridorId: string;
+  name: string;
+  active: boolean;
+  matchedRegions: AuRegionCode[];
+  missingRegions: AuRegionCode[];
+  synergyPoints: number;
+}
+
+export interface TransportInfrastructureState {
+  schemaVersion: 'agent12/2';
+  turn: number;
+  productivity: NationalTransportProductivityReport;
+  activeCorridors: CorridorActivation[];
+  corridorSynergyPoints: number;
+  intermodalSynergyByRegion: Record<AuRegionCode, number>;
+  appliedScenarioIds: string[];
+  bottleneckAssetIds: string[];
+  maintenanceWarnings: string[];
+  computeMs: number;
+}
+
+export interface TransportInfrastructureOptions {
+  activeScenarioIds?: ReadonlySet<string>;
+  /** 0–100 deferred maintenance score per asset id. */
+  maintenanceBacklogByAssetId?: ReadonlyMap<string, number>;
+}
+
 export interface V94ProjectSnapshot {
   id: string;
   projectType: string;

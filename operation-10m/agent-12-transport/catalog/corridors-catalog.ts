@@ -1,0 +1,167 @@
+import type { AuRegionCode, StrategicNetworkKind, TransportCorridorDefinition } from '../types.ts';
+
+export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_east_coast_freight',
+    name: 'East Coast Freight Chain',
+    networkKind: 'freight',
+    regionSequence: ['QLD', 'NSW', 'VIC'],
+    requiredTagsByRegion: {
+      QLD: ['national_highway', 'freight'],
+      NSW: ['freight', 'motorway'],
+      VIC: ['motorway', 'port_access'],
+    },
+    productivitySynergyPoints: 8,
+    logisticsRelief: 0.06,
+  },
+  {
+    id: 'corr_sydney_melbourne_mobility',
+    name: 'Sydney–Melbourne Mobility Spine',
+    networkKind: 'mobility',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['freight', 'national_highway'],
+      VIC: ['motorway'],
+    },
+    productivitySynergyPoints: 6.5,
+    logisticsRelief: 0.04,
+  },
+  {
+    id: 'corr_transcontinental_road',
+    name: 'Transcontinental Road Link',
+    networkKind: 'freight',
+    regionSequence: ['WA', 'SA', 'NSW'],
+    requiredTagsByRegion: {
+      WA: ['mining', 'port_access'],
+      SA: ['transcontinental', 'east_west'],
+      NSW: ['national_highway'],
+    },
+    productivitySynergyPoints: 7,
+    logisticsRelief: 0.05,
+  },
+  {
+    id: 'corr_pilbara_export',
+    name: 'Pilbara Export System',
+    networkKind: 'trade',
+    regionSequence: ['WA'],
+    requiredTagsByRegion: {
+      WA: ['mining', 'bulk', 'heavy_haul'],
+    },
+    productivitySynergyPoints: 9,
+    logisticsRelief: 0.07,
+  },
+  {
+    id: 'corr_qld_inland_rail',
+    name: 'Queensland Inland Rail Feed',
+    networkKind: 'freight',
+    regionSequence: ['QLD', 'NSW'],
+    requiredTagsByRegion: {
+      QLD: ['inland_rail', 'freight'],
+      NSW: ['freight_rail', 'intercapital'],
+    },
+    productivitySynergyPoints: 7.5,
+    logisticsRelief: 0.055,
+  },
+  {
+    id: 'corr_northern_gateway',
+    name: 'Northern Gateway (Darwin)',
+    networkKind: 'trade',
+    regionSequence: ['NT', 'QLD'],
+    requiredTagsByRegion: {
+      NT: ['remote', 'gateway'],
+      QLD: ['multimodal', 'port'],
+    },
+    productivitySynergyPoints: 5.5,
+    logisticsRelief: 0.045,
+  },
+  {
+    id: 'corr_southeast_ports',
+    name: 'South-East Container Ports Triangle',
+    networkKind: 'trade',
+    regionSequence: ['NSW', 'VIC', 'SA'],
+    requiredTagsByRegion: {
+      NSW: ['container'],
+      VIC: ['container'],
+      SA: ['grain'],
+    },
+    productivitySynergyPoints: 6,
+    logisticsRelief: 0.04,
+  },
+  {
+    id: 'corr_tas_bass_link',
+    name: 'Tasmanian Bass Strait Supply',
+    networkKind: 'freight',
+    regionSequence: ['TAS', 'VIC'],
+    requiredTagsByRegion: {
+      TAS: ['regional', 'island'],
+      VIC: ['container', 'intermodal'],
+    },
+    productivitySynergyPoints: 4,
+    logisticsRelief: 0.03,
+  },
+  {
+    id: 'corr_act_capital_feed',
+    name: 'Capital Region Feed',
+    networkKind: 'mobility',
+    regionSequence: ['ACT', 'NSW'],
+    requiredTagsByRegion: {
+      ACT: ['capital', 'retail'],
+      NSW: ['motorway', 'intermodal'],
+    },
+    productivitySynergyPoints: 3.5,
+    logisticsRelief: 0.025,
+  },
+  {
+    id: 'corr_wa_perth_port_ring',
+    name: 'Perth Port Ring',
+    networkKind: 'trade',
+    regionSequence: ['WA'],
+    requiredTagsByRegion: {
+      WA: ['port_access', 'container'],
+    },
+    productivitySynergyPoints: 5,
+    logisticsRelief: 0.035,
+  },
+  {
+    id: 'corr_sa_adelaide_hub',
+    name: 'Adelaide Intermodal Hub',
+    networkKind: 'freight',
+    regionSequence: ['SA'],
+    requiredTagsByRegion: {
+      SA: ['intermodal', 'gauge_standard'],
+    },
+    productivitySynergyPoints: 4.5,
+    logisticsRelief: 0.03,
+  },
+  {
+    id: 'corr_national_remote_logistics',
+    name: 'Remote Logistics Resilience',
+    networkKind: 'freight',
+    regionSequence: ['NT', 'WA', 'QLD'],
+    requiredTagsByRegion: {
+      NT: ['remote'],
+      WA: ['remote'],
+      QLD: ['grain_corridor'],
+    },
+    productivitySynergyPoints: 5,
+    logisticsRelief: 0.04,
+  },
+];
+
+export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
+  const out: Record<StrategicNetworkKind, TransportCorridorDefinition[]> = {
+    freight: [],
+    trade: [],
+    mobility: [],
+  };
+  for (const c of TRANSPORT_CORRIDORS) out[c.networkKind].push(c);
+  return out;
+}
+
+export function getCorridorById(id: string): TransportCorridorDefinition | undefined {
+  return TRANSPORT_CORRIDORS.find((c) => c.id === id);
+}
+
+export function corridorTouchesRegion(corridor: TransportCorridorDefinition, region: AuRegionCode): boolean {
+  return corridor.regionSequence.includes(region);
+}

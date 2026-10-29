@@ -1,4 +1,5 @@
 import { getAgent12TransportCatalog, getCatalogIntegrityReport, getDefaultOperationalAssetIds } from './catalog/all-catalog.ts';
+import { computeTransportInfrastructureState, defaultInfrastructureInputs } from './productivity/compute-infrastructure-state.ts';
 import { computeNationalTransportProductivity } from './productivity/compute-national-productivity.ts';
 
 export interface SelfCheckResult {
@@ -13,7 +14,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   const integrity = getCatalogIntegrityReport();
   results.push({
     id: 'catalog_integrity',
-    ok: integrity.duplicateIds.length === 0 && integrity.invalidRegions.length === 0 && integrity.totalAssets >= 30,
+    ok: integrity.duplicateIds.length === 0 && integrity.invalidRegions.length === 0 && integrity.totalAssets >= 50,
     detail: JSON.stringify(integrity),
   });
 
@@ -61,6 +62,16 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
     id: 'compute_performance',
     ok: baseline.computeMs < 500,
     detail: `${baseline.computeMs.toFixed(2)}ms`,
+  });
+
+  const infra = computeTransportInfrastructureState(defaultInfrastructureInputs(5));
+  results.push({
+    id: 'infrastructure_state_v2',
+    ok:
+      infra.schemaVersion === 'agent12/2' &&
+      infra.corridorSynergyPoints > 0 &&
+      infra.activeCorridors.some((c) => c.active),
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} scenarios=${infra.appliedScenarioIds.length}`,
   });
 
   return results;

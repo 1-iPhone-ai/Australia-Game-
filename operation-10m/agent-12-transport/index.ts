@@ -8,12 +8,21 @@ export {
   getDefaultOperationalAssetIds,
   getCatalogIntegrityReport,
 } from './catalog/all-catalog.ts';
+export { TRANSPORT_CORRIDORS } from './catalog/corridors-catalog.ts';
+export { TRANSPORT_STRESS_SCENARIOS } from './catalog/scenarios-catalog.ts';
+export { SCALE_WAVE_ASSETS } from './catalog/scale-wave-assets.ts';
 export {
   computeNationalTransportProductivity,
   computeAssetProductivityContribution,
   formatRegionalProductivitySummary,
 } from './productivity/compute-national-productivity.ts';
 export * from './productivity/formulas.ts';
+export {
+  computeTransportInfrastructureState,
+  defaultInfrastructureInputs,
+} from './productivity/compute-infrastructure-state.ts';
+export { computeIntermodalSynergyByRegion } from './productivity/intermodal-synergy.ts';
+export { evaluateAllCorridors } from './network/evaluate-corridors.ts';
 export {
   deriveOperationalAssetsFromProjects,
   mapReportToMacroProductivityDeltas,

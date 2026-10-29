@@ -17,13 +17,21 @@ const MODULE_ID = 'agent-12-infrastructure';
 
 const FILES = [
   'types.ts',
+  'operations/maintenance-backlog.ts',
+  'catalog/corridors-catalog.ts',
+  'catalog/scenarios-catalog.ts',
   'productivity/formulas.ts',
   'catalog/roads-catalog.ts',
   'catalog/rail-catalog.ts',
   'catalog/ports-catalog.ts',
   'catalog/logistics-catalog.ts',
+  'catalog/scale-wave-assets.ts',
   'catalog/all-catalog.ts',
+  'network/evaluate-corridors.ts',
+  'scenarios/apply-transport-scenarios.ts',
+  'productivity/intermodal-synergy.ts',
   'productivity/compute-national-productivity.ts',
+  'productivity/compute-infrastructure-state.ts',
   'run-self-checks.ts',
 ];
 
