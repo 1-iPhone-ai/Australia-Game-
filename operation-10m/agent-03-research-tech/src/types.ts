@@ -162,12 +162,13 @@ export interface ResearchBranchEmphasisState {
   setTurn: number;
 }
 
-export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v15' as const;
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v16' as const;
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
 export type ResearchProgressSchemaVersion =
   | typeof RESEARCH_PROGRESS_SCHEMA_VERSION
+  | 'op10m-agent03-v15'
   | 'op10m-agent03-v14'
   | 'op10m-agent03-v13'
   | 'op10m-agent03-v12'
@@ -609,6 +610,45 @@ export interface ResearchStrategicDeliveryOutlook {
   links: ResearchStrategicDeliveryLink[];
 }
 
+export type ResearchStrategicDeliveryBand = 35 | 50 | 65 | 80;
+
+export interface ResearchStrategicDeliveryBandEvent {
+  seq: number;
+  turn: number;
+  band: ResearchStrategicDeliveryBand;
+  nationalDeliveryScore: number;
+  horizonTurns: number;
+  phase: 'escalation' | 'de-escalation';
+}
+
+export interface ResearchStrategicDeliverySnapshot {
+  capturedAtTurn: number;
+  nationalDeliveryScore: number;
+  projectedDeliveryScore: number;
+  horizonTurns: number;
+  executionMomentum: number;
+  peakBand: ResearchStrategicDeliveryBand | 0;
+  digest: string;
+}
+
+export interface ResearchScaleWaveMaturityLink {
+  branchId: ResearchBranchId;
+  maturityPosture: 'leading' | 'aligned' | 'lagging';
+  synergyDelta: number;
+}
+
+export interface ResearchScaleWaveMaturityOutlook {
+  active: boolean;
+  baseTurn: number;
+  horizonTurns: number;
+  nationalMaturityScore: number;
+  projectedMaturityScore: number;
+  synergyHeadroom: number;
+  deliveryMomentum: number;
+  tierFiveUnlockedCount: number;
+  links: ResearchScaleWaveMaturityLink[];
+}
+
 export interface ResearchProgressState {
   schemaVersion: ResearchProgressSchemaVersion;
   revision: number;
@@ -635,6 +675,7 @@ export interface ResearchProgressState {
   horizonConvergenceOutlook?: ResearchHorizonConvergenceOutlook | null;
   researchExecutionOutlook?: ResearchExecutionOutlook | null;
   strategicDeliveryOutlook?: ResearchStrategicDeliveryOutlook | null;
+  scaleWaveMaturityOutlook?: ResearchScaleWaveMaturityOutlook | null;
   unlockSeq: number;
   branchEmphasis?: ResearchBranchEmphasisState[];
   emphasisRevision?: number;
@@ -666,6 +707,8 @@ export interface ResearchProgressState {
   horizonConvergenceSnapshot?: ResearchHorizonConvergenceSnapshot | null;
   researchExecutionBandLog?: ResearchExecutionBandEvent[];
   researchExecutionSnapshot?: ResearchExecutionSnapshot | null;
+  strategicDeliveryBandLog?: ResearchStrategicDeliveryBandEvent[];
+  strategicDeliverySnapshot?: ResearchStrategicDeliverySnapshot | null;
 }
 
 export interface StrategyHookDefinition {

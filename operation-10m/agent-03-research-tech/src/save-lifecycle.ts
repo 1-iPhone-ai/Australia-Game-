@@ -19,6 +19,7 @@ import type {
   ResearchDiffusionForecastBandEvent,
   ResearchHorizonConvergenceBandEvent,
   ResearchExecutionBandEvent,
+  ResearchStrategicDeliveryBandEvent,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { RESEARCH_UNLOCK_EVENT_LOG_CAP } from './unlock-event-log.ts';
@@ -34,6 +35,7 @@ import { RESEARCH_PORTFOLIO_BALANCE_LOG_CAP } from './portfolio-balance-log.ts';
 import { RESEARCH_DIFFUSION_FORECAST_BAND_LOG_CAP } from './diffusion-forecast-band-log.ts';
 import { RESEARCH_HORIZON_CONVERGENCE_BAND_LOG_CAP } from './horizon-convergence-band-log.ts';
 import { RESEARCH_EXECUTION_BAND_LOG_CAP } from './research-execution-band-log.ts';
+import { RESEARCH_STRATEGIC_DELIVERY_BAND_LOG_CAP } from './strategic-delivery-band-log.ts';
 import { mergeIntegrationRiskSnapshots } from './integration-risk-snapshot.ts';
 import { mergeScaleWaveSnapshots } from './scale-wave-snapshot.ts';
 import { mergeSynergySnapshots } from './synergy-snapshot.ts';
@@ -43,6 +45,7 @@ import { mergePortfolioBalanceSnapshots } from './portfolio-balance-snapshot.ts'
 import { mergeDiffusionForecastSnapshots } from './diffusion-forecast-snapshot.ts';
 import { mergeHorizonConvergenceSnapshots } from './horizon-convergence-snapshot.ts';
 import { mergeResearchExecutionSnapshots } from './research-execution-snapshot.ts';
+import { mergeStrategicDeliverySnapshots } from './strategic-delivery-snapshot.ts';
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
@@ -188,6 +191,18 @@ function mergeResearchExecutionBandLogs(
     byKey.set(key, ev);
   }
   return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_EXECUTION_BAND_LOG_CAP);
+}
+
+function mergeStrategicDeliveryBandLogs(
+  local: ResearchStrategicDeliveryBandEvent[] | undefined,
+  remote: ResearchStrategicDeliveryBandEvent[] | undefined
+): ResearchStrategicDeliveryBandEvent[] {
+  const byKey = new Map<string, ResearchStrategicDeliveryBandEvent>();
+  for (const ev of [...(local ?? []), ...(remote ?? [])]) {
+    const key = `${ev.seq}:${ev.band}:${ev.phase}`;
+    byKey.set(key, ev);
+  }
+  return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_STRATEGIC_DELIVERY_BAND_LOG_CAP);
 }
 
 function stableCoreSnapshot(core: ResearchProgressPersistedCore): Record<string, unknown> {
@@ -343,6 +358,15 @@ export function mergeResearchPersistedCores(
         local.researchExecutionSnapshot ?? undefined,
         remote.researchExecutionSnapshot ?? undefined
       ) ?? null,
+    strategicDeliveryBandLog: mergeStrategicDeliveryBandLogs(
+      local.strategicDeliveryBandLog,
+      remote.strategicDeliveryBandLog
+    ),
+    strategicDeliverySnapshot:
+      mergeStrategicDeliverySnapshots(
+        local.strategicDeliverySnapshot ?? undefined,
+        remote.strategicDeliverySnapshot ?? undefined
+      ) ?? null,
     lastReconciledAtTurn: Math.max(local.lastReconciledAtTurn ?? 0, remote.lastReconciledAtTurn ?? 0),
   });
 }
@@ -389,6 +413,8 @@ export function reconcileResearchProgressOnLoad(
         horizonConvergenceSnapshot: persist.horizonConvergenceSnapshot,
         researchExecutionBandLog: persist.researchExecutionBandLog,
         researchExecutionSnapshot: persist.researchExecutionSnapshot,
+        strategicDeliveryBandLog: persist.strategicDeliveryBandLog,
+        strategicDeliverySnapshot: persist.strategicDeliverySnapshot,
       },
       persist,
     };
@@ -427,6 +453,8 @@ export function reconcileResearchProgressOnLoad(
     horizonConvergenceSnapshot: mergedCore.horizonConvergenceSnapshot,
     researchExecutionBandLog: mergedCore.researchExecutionBandLog,
     researchExecutionSnapshot: mergedCore.researchExecutionSnapshot,
+    strategicDeliveryBandLog: mergedCore.strategicDeliveryBandLog,
+    strategicDeliverySnapshot: mergedCore.strategicDeliverySnapshot,
     lastReconciledAtTurn: ctx.turn,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
   };
@@ -466,6 +494,8 @@ export function reconcileResearchProgressOnLoad(
       horizonConvergenceSnapshot: persist.horizonConvergenceSnapshot,
       researchExecutionBandLog: persist.researchExecutionBandLog,
       researchExecutionSnapshot: persist.researchExecutionSnapshot,
+      strategicDeliveryBandLog: persist.strategicDeliveryBandLog,
+      strategicDeliverySnapshot: persist.strategicDeliverySnapshot,
     },
     persist,
   };

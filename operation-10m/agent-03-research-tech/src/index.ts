@@ -46,4 +46,7 @@ export * from './research-execution-outlook.ts';
 export * from './research-execution-band-log.ts';
 export * from './research-execution-snapshot.ts';
 export * from './strategic-delivery-outlook.ts';
+export * from './strategic-delivery-band-log.ts';
+export * from './strategic-delivery-snapshot.ts';
+export * from './scale-wave-maturity-outlook.ts';
 export * from './compute.ts';
