@@ -33,6 +33,7 @@ import {
   attachAnnulmentSessionToState,
   attachReinstatementSessionToState,
   attachSetAsideSessionToState,
+  attachQuashSessionToState,
   attachGauntletSessionToState,
   attachMarathonQueueToState,
   attachRelaySessionToState,
@@ -69,6 +70,7 @@ import {
   createAnnulmentSession,
   createReinstatementSession,
   createSetAsideSession,
+  createQuashSession,
   createGauntletSession,
   createMarathonQueue,
   createRelaySession,
@@ -244,6 +246,22 @@ describe('scenario campaign planner round 4', () => {
     state = attachReprieveSessionToState(state, reprieve!);
     state = attachParoleSessionToState(state, parole!);
     assert.equal(planNextCampaignAction(state).kind, 'parole_step');
+  });
+
+  it('prefers active quash over set-aside, reinstatement, annulment, reversal, remand, vacatur, expungement, exoneration, acquittal, commutation, probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: quash } = createQuashSession({
+      quashId: 'o10m_quash_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_quash_filing_docket', 'o10m_quash_review_chamber'],
+    });
+    const { session: setAside } = createSetAsideSession({
+      setAsideId: 'o10m_setaside_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_setaside_filing_docket', 'o10m_setaside_review_chamber'],
+    });
+    let state = attachSetAsideSessionToState(createEmptyO10mModesPersistedState(), setAside!);
+    state = attachQuashSessionToState(state, quash!);
+    assert.equal(planNextCampaignAction(state).kind, 'quash_step');
   });
 
   it('prefers active set-aside over reinstatement, annulment, reversal, remand, vacatur, expungement, exoneration, acquittal, commutation, probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {

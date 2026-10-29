@@ -139,6 +139,7 @@ export function attachPardonSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,

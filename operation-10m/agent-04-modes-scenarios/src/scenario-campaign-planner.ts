@@ -117,6 +117,11 @@ import {
   sanitizeReversalSession,
 } from './save-format-reversal.js';
 import {
+  getQuashScenarioAtCursor,
+  quashSessionSummary,
+  sanitizeQuashSession,
+} from './save-format-quash.js';
+import {
   getSetAsideScenarioAtCursor,
   setAsideSessionSummary,
   sanitizeSetAsideSession,
@@ -203,6 +208,7 @@ import type {
   O10mAnnulmentPhase,
   O10mReinstatementPhase,
   O10mSetAsidePhase,
+  O10mQuashPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -341,9 +347,31 @@ const emptyQueuePlan = {
   setAsideCursor: null as number | null,
   setAsidePhase: null as O10mSetAsidePhase | null,
   setAsideScore: null as number | null,
+  quashId: null as string | null,
+  quashCursor: null as number | null,
+  quashPhase: null as O10mQuashPhase | null,
+  quashScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const quash = sanitizeQuashSession(state.quashSession);
+  const quashScenario = getQuashScenarioAtCursor(quash);
+  if (quash && quash.active && quashScenario) {
+    return {
+      kind: 'quash_step',
+      scenarioId: quashScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      quashId: quash.quashId,
+      quashCursor: quash.cursor,
+      quashPhase: quash.phaseTag,
+      quashScore: quash.quashScore,
+      reason: `Quash "${quash.label}" ${quash.phaseTag} phase ${quash.cursor + 1}/${quash.scenarioIds.length} (score ${quash.quashScore}).`,
+    };
+  }
+
   const setAside = sanitizeSetAsideSession(state.setAsideSession);
   const setAsideScenario = getSetAsideScenarioAtCursor(setAside);
   if (setAside && setAside.active && setAsideScenario) {
@@ -1055,6 +1083,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   annulmentActive: boolean;
   reinstatementActive: boolean;
   setAsideActive: boolean;
+  quashActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -1096,6 +1125,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const annulment = annulmentSessionSummary(state);
   const reinstatement = reinstatementSessionSummary(state);
   const setAside = setAsideSessionSummary(state);
+  const quash = quashSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -1135,6 +1165,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     annulmentActive: annulment.active,
     reinstatementActive: reinstatement.active,
     setAsideActive: setAside.active,
+    quashActive: quash.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

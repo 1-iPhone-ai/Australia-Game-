@@ -38,6 +38,7 @@ import { sanitizeReversalSession } from './save-format-reversal.js';
 import { sanitizeAnnulmentSession } from './save-format-annulment.js';
 import { sanitizeReinstatementSession } from './save-format-reinstatement.js';
 import { sanitizeSetAsideSession } from './save-format-setaside.js';
+import { sanitizeQuashSession } from './save-format-quash.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -56,7 +57,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 38;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 39;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -193,6 +194,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
   };
 }
 
@@ -250,6 +252,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       annulmentSession: merged.annulmentSession ?? null,
       reinstatementSession: merged.reinstatementSession ?? null,
       setAsideSession: merged.setAsideSession ?? null,
+      quashSession: merged.quashSession ?? null,
     };
     return upgraded;
   }
@@ -331,6 +334,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     annulmentSession: sanitizeAnnulmentSession(o.annulmentSession),
     reinstatementSession: sanitizeReinstatementSession(o.reinstatementSession),
     setAsideSession: sanitizeSetAsideSession(o.setAsideSession),
+    quashSession: sanitizeQuashSession(o.quashSession),
   };
 }
 
@@ -603,6 +607,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Set-aside session failed sanitization; planner will ignore it.');
   } else if (setAside && setAside.cursor >= setAside.scenarioIds.length) {
     warnings.push('Set-aside cursor out of range; clamp on next sanitize.');
+  }
+
+  const quash = sanitizeQuashSession(state.quashSession);
+  if (state.quashSession && !quash) {
+    warnings.push('Quash session failed sanitization; planner will ignore it.');
+  } else if (quash && quash.cursor >= quash.scenarioIds.length) {
+    warnings.push('Quash cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

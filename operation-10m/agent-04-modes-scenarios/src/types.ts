@@ -390,6 +390,7 @@ export type O10mReversalPhase = 'motion' | 'review' | 'reversal';
 export type O10mAnnulmentPhase = 'filing' | 'review' | 'annulment';
 export type O10mReinstatementPhase = 'filing' | 'review' | 'reinstatement';
 export type O10mSetAsidePhase = 'filing' | 'review' | 'setAside';
+export type O10mQuashPhase = 'filing' | 'review' | 'quash';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -732,6 +733,17 @@ export interface O10mSetAsideSession {
   phaseTag: O10mSetAsidePhase;
 }
 
+/** Schema v39 — quash arc with score accrual between phases. */
+export interface O10mQuashSession {
+  quashId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  quashScore: number;
+  phaseTag: O10mQuashPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -756,6 +768,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'quash_step'
     | 'setaside_step'
     | 'reinstatement_step'
     | 'annulment_step'
@@ -929,6 +942,10 @@ export interface O10mCampaignPlan {
   setAsideCursor: number | null;
   setAsidePhase: O10mSetAsidePhase | null;
   setAsideScore: number | null;
+  quashId: string | null;
+  quashCursor: number | null;
+  quashPhase: O10mQuashPhase | null;
+  quashScore: number | null;
   reason: string;
 }
 
@@ -1026,8 +1043,10 @@ export interface O10mModesPersistedState {
   annulmentSession?: O10mAnnulmentSession | null;
   /** Schema v37 — active reinstatement arc (mutually exclusive with set-aside / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   reinstatementSession?: O10mReinstatementSession | null;
-  /** Schema v38 — active set-aside arc (mutually exclusive with reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v38 — active set-aside arc (mutually exclusive with quash / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   setAsideSession?: O10mSetAsideSession | null;
+  /** Schema v39 — active quash arc (mutually exclusive with set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  quashSession?: O10mQuashSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

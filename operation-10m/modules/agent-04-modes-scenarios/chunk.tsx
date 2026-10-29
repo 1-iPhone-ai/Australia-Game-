@@ -394,6 +394,7 @@ export type O10mReversalPhase = 'motion' | 'review' | 'reversal';
 export type O10mAnnulmentPhase = 'filing' | 'review' | 'annulment';
 export type O10mReinstatementPhase = 'filing' | 'review' | 'reinstatement';
 export type O10mSetAsidePhase = 'filing' | 'review' | 'setAside';
+export type O10mQuashPhase = 'filing' | 'review' | 'quash';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -736,6 +737,17 @@ export interface O10mSetAsideSession {
   phaseTag: O10mSetAsidePhase;
 }
 
+/** Schema v39 — quash arc with score accrual between phases. */
+export interface O10mQuashSession {
+  quashId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  quashScore: number;
+  phaseTag: O10mQuashPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -760,6 +772,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'quash_step'
     | 'setaside_step'
     | 'reinstatement_step'
     | 'annulment_step'
@@ -933,6 +946,10 @@ export interface O10mCampaignPlan {
   setAsideCursor: number | null;
   setAsidePhase: O10mSetAsidePhase | null;
   setAsideScore: number | null;
+  quashId: string | null;
+  quashCursor: number | null;
+  quashPhase: O10mQuashPhase | null;
+  quashScore: number | null;
   reason: string;
 }
 
@@ -1030,8 +1047,10 @@ export interface O10mModesPersistedState {
   annulmentSession?: O10mAnnulmentSession | null;
   /** Schema v37 — active reinstatement arc (mutually exclusive with set-aside / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   reinstatementSession?: O10mReinstatementSession | null;
-  /** Schema v38 — active set-aside arc (mutually exclusive with reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v38 — active set-aside arc (mutually exclusive with quash / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   setAsideSession?: O10mSetAsideSession | null;
+  /** Schema v39 — active quash arc (mutually exclusive with set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  quashSession?: O10mQuashSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -5265,6 +5284,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Set-aside finales', 'Score ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_quash_filing_docket',
+    title: 'Quash Filing Docket',
+    description: 'Open a quash arc with low-pressure score pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100526,
+    startingMoney: 3750,
+    startingRegions: ['ACT', 'NSW'],
+    badgeId: 'badge_o10m_quash_filing_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100526),
+      o10mQuashFilingDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_qfd_obj_day',
+        label: 'Filing Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Quash arcs', 'Score pacing', 'Filing phase'],
+  },
+  {
+    id: 'o10m_quash_review_chamber',
+    title: 'Quash Review Chamber',
+    description: 'Mid quash review with accrued score bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100527,
+    startingMoney: 4300,
+    startingRegions: ['TAS', 'VIC'],
+    startingStanding: { TAS: 70, VIC: 68 },
+    badgeId: 'badge_o10m_quash_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100527),
+      regionalStandingEnabled: true,
+      o10mQuashReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_qrc_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 75',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 75,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Score carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_quash_vacate_finale',
+    title: 'Quash Vacate Finale',
+    description: 'Finale quash stage — net worth gate with full score bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100528,
+    startingMoney: 4750,
+    startingRegions: ['NT', 'WA', 'SA'],
+    badgeId: 'badge_o10m_quash_vacate_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100528),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mQuashVacateFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_qvf_obj_net',
+        label: 'Vacate Net Worth',
+        description: 'Reach $21,200 net worth',
+        targetType: 'netWorth',
+        targetValue: 21200,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Quash finales', 'Score ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -7039,6 +7155,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_quash_route',
+    title: 'Quash Route',
+    description:
+      'Three-phase quash arc with score accrual between legs — round-39 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_quash_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_quash_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File quash motion before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 490 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_quash_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 6, QLD: 5 },
+          forcedSettingsPatch: { o10mQuashMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_quash_vacate_finale',
+        title: 'Vacate Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainQuashRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -7865,7 +8015,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 38;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 39;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -8002,6 +8152,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
   };
 }
 
@@ -8059,6 +8210,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       annulmentSession: merged.annulmentSession ?? null,
       reinstatementSession: merged.reinstatementSession ?? null,
       setAsideSession: merged.setAsideSession ?? null,
+      quashSession: merged.quashSession ?? null,
     };
     return upgraded;
   }
@@ -8140,6 +8292,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     annulmentSession: sanitizeAnnulmentSession(o.annulmentSession),
     reinstatementSession: sanitizeReinstatementSession(o.reinstatementSession),
     setAsideSession: sanitizeSetAsideSession(o.setAsideSession),
+    quashSession: sanitizeQuashSession(o.quashSession),
   };
 }
 
@@ -8414,6 +8567,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Set-aside cursor out of range; clamp on next sanitize.');
   }
 
+  const quash = sanitizeQuashSession(state.quashSession);
+  if (state.quashSession && !quash) {
+    warnings.push('Quash session failed sanitization; planner will ignore it.');
+  } else if (quash && quash.cursor >= quash.scenarioIds.length) {
+    warnings.push('Quash cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -8555,6 +8715,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'annulmentSession',
   'reinstatementSession',
   'setAsideSession',
+  'quashSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -9091,6 +9252,7 @@ export function attachMarathonQueueToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -9208,6 +9370,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceQuashSessionAfterRun(next, run);
   next = advanceSetAsideSessionAfterRun(next, run);
   next = advanceReinstatementSessionAfterRun(next, run);
   next = advanceAnnulmentSessionAfterRun(next, run);
@@ -9400,6 +9563,7 @@ export function attachGauntletSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -9660,6 +9824,7 @@ export function attachRelaySessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -9880,6 +10045,7 @@ export function attachCircuitSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -10118,6 +10284,7 @@ export function attachExpeditionSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -10354,6 +10521,7 @@ export function attachOdysseySessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -10589,6 +10757,7 @@ export function attachPilgrimageSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -10825,6 +10994,7 @@ export function attachCaravanSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -11055,6 +11225,7 @@ export function attachVoyageSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -11285,6 +11456,7 @@ export function attachSiegeSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -11515,6 +11687,7 @@ export function attachConvoySessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -11745,6 +11918,7 @@ export function attachEscortSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -11984,6 +12158,7 @@ export function attachExtractionSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -12231,6 +12406,7 @@ export function attachSubjectSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -12478,6 +12654,7 @@ export function attachWitnessSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -12725,6 +12902,7 @@ export function attachTribunalSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -12972,6 +13150,7 @@ export function attachIndictmentSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -13219,6 +13398,7 @@ export function attachAppealSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -13466,6 +13646,7 @@ export function attachClemencySessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -13713,6 +13894,7 @@ export function attachPardonSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,
@@ -13960,6 +14142,7 @@ export function attachAmnestySessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     pardonSession: null,
     clemencySession: null,
     appealSession: null,
@@ -14207,6 +14390,7 @@ export function attachReprieveSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,
@@ -14454,6 +14638,7 @@ export function attachParoleSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     reprieveSession: null,
     amnestySession: null,
     pardonSession: null,
@@ -14701,6 +14886,7 @@ export function attachProbationSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     paroleSession: null,
     reprieveSession: null,
     amnestySession: null,
@@ -14948,6 +15134,7 @@ export function attachCommutationSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     probationSession: null,
     paroleSession: null,
     reprieveSession: null,
@@ -15195,6 +15382,7 @@ export function attachAcquittalSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     commutationSession: null,
     probationSession: null,
     paroleSession: null,
@@ -15442,6 +15630,7 @@ export function attachExonerationSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     acquittalSession: null,
     commutationSession: null,
     probationSession: null,
@@ -15689,6 +15878,7 @@ export function attachExpungementSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     exonerationSession: null,
     acquittalSession: null,
     commutationSession: null,
@@ -15936,6 +16126,7 @@ export function attachVacaturSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     expungementSession: null,
     exonerationSession: null,
     acquittalSession: null,
@@ -16183,6 +16374,7 @@ export function attachRemandSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     vacaturSession: null,
     expungementSession: null,
     exonerationSession: null,
@@ -16430,6 +16622,7 @@ export function attachReversalSessionToState(
     annulmentSession: null,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     remandSession: null,
     vacaturSession: null,
     expungementSession: null,
@@ -16677,6 +16870,7 @@ export function attachAnnulmentSessionToState(
     annulmentSession: sanitized,
     reinstatementSession: null,
     setAsideSession: null,
+    quashSession: null,
     reversalSession: null,
     remandSession: null,
     vacaturSession: null,
@@ -16926,6 +17120,7 @@ export function attachReinstatementSessionToState(
     ...state,
     reinstatementSession: sanitized,
     setAsideSession: null,
+    quashSession: null,
     annulmentSession: null,
     reversalSession: null,
     remandSession: null,
@@ -17175,6 +17370,7 @@ export function attachSetAsideSessionToState(
   return {
     ...state,
     setAsideSession: sanitized,
+    quashSession: null,
     reinstatementSession: null,
     annulmentSession: null,
     reversalSession: null,
@@ -17300,6 +17496,255 @@ export function setAsideSessionSummary(state: O10mModesPersistedState): {
     active: session?.active === true,
     cursor: session?.active ? session.cursor : null,
     setAsideScore: session?.setAsideScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
+// --- bundled from src/save-format-quash.ts ---
+export const O10M_QUASH_SCENARIO_CAP = 6;
+export const O10M_QUASH_SCORE_CAP = 1050;
+export const O10M_QUASH_SCORE_MONEY_CAP = 1130;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mQuashPhase>(['filing', 'review', 'quash']);
+
+export function unlockTokenForQuashId(quashId: string): string | null {
+  if (!quashId.startsWith('o10m_quash_')) return null;
+  return `o10m_unlock_${quashId.slice('o10m_quash_'.length)}`;
+}
+
+export function quashPhaseForCursor(cursor: number, scenarioCount: number): O10mQuashPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'quash';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'filing';
+}
+
+export function quashScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(138, Math.max(33, Math.floor(run.playerNetWorth / 132) + standingSlice));
+}
+
+export function sanitizeQuashSession(raw: unknown): O10mQuashSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const quashId =
+    typeof o.quashId === 'string' && o.quashId.startsWith('o10m_quash_') ? o.quashId : null;
+  if (!quashId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : quashId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_QUASH_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const quashScore = Math.min(
+    O10M_QUASH_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.quashScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mQuashPhase)
+      ? (phaseRaw as O10mQuashPhase)
+      : quashPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    quashId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    quashScore,
+    phaseTag,
+  };
+}
+
+export function createQuashSession(params: {
+  quashId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mQuashSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.quashId.startsWith('o10m_quash_')) {
+    return { session: null, warnings: ['Quash ids must start with o10m_quash_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_QUASH_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Quash arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      quashId: params.quashId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      quashScore: 0,
+      phaseTag: quashPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachQuashSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mQuashSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeQuashSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    quashSession: sanitized,
+    setAsideSession: null,
+    reinstatementSession: null,
+    annulmentSession: null,
+    reversalSession: null,
+    remandSession: null,
+    vacaturSession: null,
+    expungementSession: null,
+    exonerationSession: null,
+    acquittalSession: null,
+    commutationSession: null,
+    probationSession: null,
+    paroleSession: null,
+    reprieveSession: null,
+    amnestySession: null,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearQuashSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, quashSession: null };
+}
+
+export function getQuashScenarioAtCursor(
+  session: O10mQuashSession | null | undefined,
+): string | null {
+  const quash = sanitizeQuashSession(session);
+  if (!quash || !quash.active) return null;
+  return quash.scenarioIds[quash.cursor] ?? null;
+}
+
+export function buildQuashScenarioStartOverrides(
+  session: O10mQuashSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const quash = sanitizeQuashSession(session);
+  if (!quash) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_QUASH_SCORE_MONEY_CAP,
+    Math.floor(quash.quashScore * 0.87),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveQuashId: quash.quashId,
+      o10mActiveQuashStep: quash.cursor,
+      o10mActiveQuashPhase: quash.phaseTag,
+      o10mQuashScore: quash.quashScore,
+    },
+  };
+}
+
+export function advanceQuashSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeQuashSession(state.quashSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const quashScore = Math.min(
+    O10M_QUASH_SCORE_CAP,
+    session.quashScore + quashScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      quashSession: {
+        ...session,
+        cursor,
+        quashScore,
+        phaseTag: quashPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForQuashId(session.quashId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    quashSession: { ...session, active: false, quashScore, phaseTag: 'quash' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function quashSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  quashScore: number;
+  phase: O10mQuashPhase | null;
+} {
+  const session = sanitizeQuashSession(state.quashSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    quashScore: session?.quashScore ?? 0,
     phase: session?.active ? session.phaseTag : null,
   };
 }
@@ -17438,9 +17883,31 @@ const emptyQueuePlan = {
   setAsideCursor: null as number | null,
   setAsidePhase: null as O10mSetAsidePhase | null,
   setAsideScore: null as number | null,
+  quashId: null as string | null,
+  quashCursor: null as number | null,
+  quashPhase: null as O10mQuashPhase | null,
+  quashScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const quash = sanitizeQuashSession(state.quashSession);
+  const quashScenario = getQuashScenarioAtCursor(quash);
+  if (quash && quash.active && quashScenario) {
+    return {
+      kind: 'quash_step',
+      scenarioId: quashScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      quashId: quash.quashId,
+      quashCursor: quash.cursor,
+      quashPhase: quash.phaseTag,
+      quashScore: quash.quashScore,
+      reason: `Quash "${quash.label}" ${quash.phaseTag} phase ${quash.cursor + 1}/${quash.scenarioIds.length} (score ${quash.quashScore}).`,
+    };
+  }
+
   const setAside = sanitizeSetAsideSession(state.setAsideSession);
   const setAsideScenario = getSetAsideScenarioAtCursor(setAside);
   if (setAside && setAside.active && setAsideScenario) {
@@ -18152,6 +18619,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   annulmentActive: boolean;
   reinstatementActive: boolean;
   setAsideActive: boolean;
+  quashActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -18193,6 +18661,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const annulment = annulmentSessionSummary(state);
   const reinstatement = reinstatementSessionSummary(state);
   const setAside = setAsideSessionSummary(state);
+  const quash = quashSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -18232,6 +18701,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     annulmentActive: annulment.active,
     reinstatementActive: reinstatement.active,
     setAsideActive: setAside.active,
+    quashActive: quash.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -18250,7 +18720,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 39, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 40, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -18550,16 +19020,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const setAsideState = setAside ? attachSetAsideSessionToState(createEmptyO10mModesPersistedState(), setAside) : null;
   push('agent04_chunk_46', setAsideState !== null && planNextCampaignAction(setAsideState!).kind === 'setaside_step');
 
+  const quash = createQuashSession({
+    quashId: 'o10m_quash_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_quash_filing_docket'],
+  }).session;
+  const quashState = quash ? attachQuashSessionToState(createEmptyO10mModesPersistedState(), quash) : null;
+  push('agent04_chunk_47', quashState !== null && planNextCampaignAction(quashState!).kind === 'quash_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v39',
+  schemaVersion: 'op10m-agent04-v40',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 38,
+  saveSchemaVersion: 39,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

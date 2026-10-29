@@ -23,7 +23,7 @@ import {
 describe('save format round 2', () => {
   it('uses stable gameState key and schema version', () => {
     assert.equal(O10M_MODES_GAME_STATE_KEY, 'o10mModesProgress');
-    assert.equal(O10M_MODES_SAVE_SCHEMA_VERSION, 38);
+    assert.equal(O10M_MODES_SAVE_SCHEMA_VERSION, 39);
   });
 
   it('sanitizes and validates a persisted mid-chain snapshot', () => {
