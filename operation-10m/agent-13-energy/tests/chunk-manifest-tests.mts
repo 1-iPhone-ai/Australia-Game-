@@ -236,6 +236,8 @@ const REQUIRED_EXPORTS = [
   'V1014_RENEWABLE_EXPORT_CONTINUITY_SOVEREIGN_SECURITY_TURN_SCENARIOS',
   'runAgent13NationalExportOrchestrationSovereignContinuityScaleSelfTests',
   'runAgent13NationalExportOrchestrationSovereignContinuityTurnScenario',
+  'runAgent13SovereignExportResilienceNationalSecurityScaleSelfTests',
+  'runAgent13SovereignExportResilienceNationalSecurityTurnScenario',
   'V1014_NATIONAL_EXPORT_ORCHESTRATION_SOVEREIGN_CONTINUITY_TURN_SCENARIOS',
   'executeAgent13IndustrialEnergyTurnHook',
   'V1014_INTERREGIONAL_GRID_LINKS',
