@@ -19,10 +19,13 @@ const FILES = [
   'types/access-policy.ts',
   'registry/modal-panel-definitions.ts',
   'registry/progression-milestones.ts',
+  'registry/launcher-panel-definitions.ts',
   'registry/panel-definitions.ts',
+  'sim/evolution-hooks.ts',
   'engine/progression-signals.ts',
   'engine/unlock-hint-formatter.ts',
   'engine/phase-panel-policy.ts',
+  'engine/notification-lane-progression.ts',
   'engine/resolve-panel-visibility.ts',
   'engine/legacy-access.ts',
   'engine/merge-with-v94-contextual-hiding.ts',
@@ -40,6 +43,7 @@ const FILES = [
   'react/ShowAllPanelsToggle.tsx',
   'react/PanelUnlockCoach.tsx',
   'react/EvolvingUiProgressLab.tsx',
+  'react/SimulationUiEvolutionBridge.tsx',
 ];
 
 function stripModulePreamble(source) {
@@ -81,7 +85,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.1.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.2.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -145,9 +149,27 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
 }`);
 
 const body = bodyParts.join('\n');
-const hash = createHash('sha256').update(body).digest('hex').slice(0, 16);
+const contentSha256 = createHash('sha256').update(body).digest('hex');
+const hash = contentSha256.slice(0, 16);
 const chunk = `// OP10M_MODULE_BEGIN agent-22-ui\n// content-sha256-prefix: ${hash}\n${body}\n// OP10M_MODULE_END agent-22-ui\n`;
 
 fs.mkdirSync(outDir, { recursive: true });
 fs.writeFileSync(outFile, chunk, 'utf8');
-console.log('Wrote', outFile, `(${chunk.split('\n').length} lines, sha256~${hash})`);
+
+const manifest = {
+  moduleId: 'agent-22-ui',
+  slot: 'post-v10z',
+  touchesSaveFormat: false,
+  proposedGameSettingsField: 'evolvingUi',
+  contentSha256,
+  chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
+  selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
+  moduleVersion: '1.2.0',
+};
+fs.writeFileSync(
+  path.join(outDir, 'module.manifest.json'),
+  `${JSON.stringify(manifest, null, 2)}\n`,
+  'utf8'
+);
+
+console.log('Wrote', outFile, `(${chunk.split('\n').length} lines, sha256~${hash}, manifest ${contentSha256.slice(0, 12)}…)`);

@@ -14,5 +14,8 @@ export * from './engine/unlock-hint-formatter.js';
 export * from './engine/phase-panel-policy.js';
 export * from './engine/scale-wave-self-tests.js';
 export * from './registry/modal-panel-definitions.js';
+export * from './engine/notification-lane-progression.js';
+export * from './sim/evolution-hooks.js';
+export * from './registry/launcher-panel-definitions.js';
 export * from './react/index.js';
 export { ALL_STORY_FIXTURES } from './fixtures/stories/index.js';

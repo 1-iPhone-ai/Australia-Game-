@@ -5,6 +5,7 @@
 - Path: `operation-10m/modules/agent-22-ui/chunk.tsx`
 - Markers: `OP10M_MODULE_BEGIN agent-22-ui` … `OP10M_MODULE_END agent-22-ui`
 - Regenerate: `npm run build:agent22-chunk` (from this directory)
+- Manifest: `operation-10m/modules/agent-22-ui/module.manifest.json` (`contentSha256` of bundled body)
 
 ## Export surface (`src/index.ts`)
 

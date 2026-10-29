@@ -6,6 +6,8 @@ import { buildUnlockHintForPanel } from '../engine/unlock-hint-formatter.js';
 import { resolveEvolvingPanelVisibilityWithPhase } from '../engine/resolve-panel-visibility.js';
 import { DEFAULT_EVOLVING_UI_ACCESS_POLICY } from '../types/access-policy.js';
 import { EVOLVING_UI_PANEL_BY_ID } from '../registry/panel-definitions.js';
+import { tickEvolvingUiOnDayAdvance } from '../sim/evolution-hooks.js';
+import { shouldShowNotificationLaneCategory } from '../engine/notification-lane-progression.js';
 
 export function runAgent22ScaleWaveSelfTests(): {
   passed: number;
@@ -57,6 +59,25 @@ export function runAgent22ScaleWaveSelfTests(): {
     'sw_guardian_phase',
     'guardian warning modal stays visible in save_load phase policy',
     applyPhasePolicyToVisibility('save_load', 'modal_guardian_warning', 'automation', 'hidden').state === 'visible'
+  );
+
+  check(
+    'sw_day_tick',
+    'day advance unlocks market panel',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'guided' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY
+      );
+      return r.newlyUnlockedPanelIds.length >= 0 && r.visiblePanelCount > 0;
+    })()
+  );
+
+  check(
+    'sw_notification_lane',
+    'automation lane suppressed early',
+    !shouldShowNotificationLaneCategory('automation', { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' })
   );
 
   const failed = results.filter(r => !r.passed).length;
