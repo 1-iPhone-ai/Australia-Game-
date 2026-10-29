@@ -20,6 +20,10 @@ import {
   runAgent14HousingScenarioSweep,
   simulateAgent14HousingScenario,
 } from './scenario-sweep.ts';
+import { computeNationalServiceAccessLens } from './service-access-lens.ts';
+import { evaluateAgent14WellbeingWarnings } from './wellbeing-guardian-warnings.ts';
+import { recommendAgent14ProgramSequence } from './program-sequencing.ts';
+import { forecastAgent14WellbeingTurns, forecastFromInputs, listAgent14ScenarioIds } from './wellbeing-forecast.ts';
 
 export interface Agent14SelfTestResult {
   id: string;
@@ -433,6 +437,171 @@ export function runAgent14WellbeingSelfTests(): {
         adv.inputs.housingWellbeing!.nationalAffordabilityIndex >= 0 &&
         adv.inputs.housingWellbeing!.nationalAffordabilityIndex <= 100,
       `aff=${adv.inputs.housingWellbeing?.nationalAffordabilityIndex}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 5, fiscalHeadroom: 55, stateCapacityLoad: 45 },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave3_service_access_lens',
+      'Turn advance attaches national service access lens',
+      adv.inputs.serviceAccessLens !== undefined &&
+        adv.inputs.serviceAccessLens!.nationalComposite > 0 &&
+        adv.inputs.serviceAccessLens!.pillarNational.healthcare.accessIndex > 0,
+      `composite=${adv.inputs.serviceAccessLens?.nationalComposite} band=${adv.inputs.serviceAccessLens?.nationalBand}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 3, fiscalHeadroom: 25, stateCapacityLoad: 75, workforceReadiness: 'weak' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      newCommitments: Array.from({ length: 6 }, (_, i) =>
+        makeSpendingCommitment({
+          id: `sat_${i}`,
+          programId: 'p',
+          pillar: 'housing',
+          regionId: 'NSW',
+          committedTurn: 3,
+          fiscalLoadPoints: 30,
+          durationTurns: 5,
+          baseImpact: 6,
+        })
+      ),
+      enforceCapacity: false,
+    });
+    check(
+      results,
+      'wave3_wellbeing_warnings',
+      'Strained inputs produce guardian warning bundle',
+      adv.inputs.wellbeingWarnings !== undefined &&
+        adv.inputs.wellbeingWarnings!.warnings.length >= 1,
+      `surface=${adv.inputs.wellbeingWarnings?.shouldSurface} n=${adv.inputs.wellbeingWarnings?.warnings.length}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 60, stateCapacityLoad: 40 },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave3_program_recommendations',
+      'Program sequencing returns ranked recommendations',
+      (adv.inputs.programRecommendations?.length ?? 0) >= 3 &&
+        adv.inputs.programRecommendations![0].rank === 1,
+      `n=${adv.inputs.programRecommendations?.length} first=${adv.inputs.programRecommendations?.[0]?.programId}`
+    );
+  }
+
+  {
+    const fc = forecastAgent14WellbeingTurns('baseline_steady', 6);
+    check(
+      results,
+      'wave3_forecast_scenario',
+      'Scenario forecast returns horizon points',
+      fc.points.length === 6 && fc.points[0].turn >= 1,
+      `scenario=${fc.scenarioId} turns=${fc.points.length}`
+    );
+  }
+
+  {
+    const pts = forecastFromInputs({ turn: 1, fiscalHeadroom: 50, stateCapacityLoad: 45 }, 4);
+    check(
+      results,
+      'wave3_forecast_inputs',
+      'Input forecast monotonic turn labels',
+      pts.length === 4 && pts[3].turn === 4,
+      `t4 aff=${pts[3].affordabilityIndex}`
+    );
+  }
+
+  check(
+    results,
+    'wave3_scenario_catalog_size',
+    'Eight housing scenarios registered',
+    listAgent14ScenarioIds().length === 8,
+    `ids=${listAgent14ScenarioIds().join(',')}`
+  );
+
+  {
+    const sim = simulateAgent14HousingScenario('capacity_saturated', 6);
+    check(
+      results,
+      'wave3_capacity_saturated_scenario',
+      'Saturated scenario runs with rejections or binding',
+      sim.turns.length === 6 &&
+        (sim.turns[5].capacity.bindingConstraint !== 'none' ||
+          sim.turns[5].activeProgramCount >= 3),
+      `binding=${sim.turns[5].capacity.bindingConstraint} active=${sim.turns[5].activeProgramCount}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 2, fiscalHeadroom: 48, stateCapacityLoad: 50 },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const lens = adv.inputs.serviceAccessLens!;
+    const wb = adv.inputs.housingWellbeing!;
+    const direct = evaluateAgent14WellbeingWarnings(adv.inputs.capacity, wb, lens);
+    check(
+      results,
+      'wave3_warnings_idempotent',
+      'Standalone warning evaluator matches turn bundle shape',
+      direct.warnings.length === adv.inputs.wellbeingWarnings!.warnings.length,
+      `n=${direct.warnings.length}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 7, fiscalHeadroom: 68, stateCapacityLoad: 32 },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const recs = recommendAgent14ProgramSequence(
+      7,
+      adv.inputs.capacity,
+      adv.inputs.housingWellbeing!,
+      adv.inputs.serviceAccessLens!,
+      4
+    );
+    check(
+      results,
+      'wave3_recommendations_sorted',
+      'Recommendations have contiguous ranks',
+      recs.every((r, i) => r.rank === i + 1),
+      recs.map((r) => r.programId).join(',')
+    );
+  }
+
+  {
+    const cap = computePublicServiceCapacity({ turn: 1, fiscalHeadroom: 55 }, []);
+    const spend = advanceDelayedSpendingEffects(1, createInitialDelayedSpendingPersisted()).effects;
+    const lens = computeNationalServiceAccessLens(1, cap, spend, { NSW: 0.08, NT: 0.55 });
+    check(
+      results,
+      'wave3_access_lens_equity',
+      'Service access lens computes equity gap',
+      lens.equityGap >= 0 && lens.regions.NSW!.compositeIndex >= lens.regions.NT!.compositeIndex - 5,
+      `gap=${lens.equityGap} NSW=${lens.regions.NSW?.compositeIndex} NT=${lens.regions.NT?.compositeIndex}`
+    );
+  }
+
+  for (const id of ['crisis_recovery', 'mixed_pillar_push'] as const) {
+    const sim = simulateAgent14HousingScenario(id, 8);
+    const last = sim.turns[7];
+    check(
+      results,
+      `wave3_scenario_${id}`,
+      `Scenario ${id} completes 8 turns with access lens`,
+      last.serviceAccessLens !== undefined && last.programRecommendations!.length >= 3,
+      `composite=${last.serviceAccessLens?.nationalComposite}`
     );
   }
 

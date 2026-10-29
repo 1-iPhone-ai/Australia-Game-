@@ -1,6 +1,6 @@
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.2-housing-depth' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.3-scale-wave-3' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -89,6 +89,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   capacity: PublicServiceCapacitySnapshot;
   spending: DelayedSpendingTurnEffects;
   housingWellbeing?: NationalHousingWellbeingSnapshot;
+  serviceAccessLens?: NationalServiceAccessLens;
+  wellbeingWarnings?: Agent14WellbeingWarningBundle;
+  programRecommendations?: ProgramSequencingRecommendation[];
 }
 
 export type HousingPipelineStage =
@@ -123,4 +126,69 @@ export interface NationalHousingWellbeingSnapshot {
   regionalEquityGap: number;
   regions: Record<string, RegionalHousingPipelineState>;
   narrativeSummary: string;
+}
+
+export type ServiceAccessBand = 'critical' | 'weak' | 'adequate' | 'strong';
+
+export interface PillarAccessSlice {
+  pillar: PublicServicePillar;
+  accessIndex: number;
+  band: ServiceAccessBand;
+  backlogPressure: number;
+}
+
+export interface RegionalServiceAccessState {
+  regionId: string;
+  pillars: Record<PublicServicePillar, PillarAccessSlice>;
+  compositeIndex: number;
+}
+
+export interface NationalServiceAccessLens {
+  turn: number;
+  nationalComposite: number;
+  nationalBand: ServiceAccessBand;
+  pillarNational: Record<PublicServicePillar, PillarAccessSlice>;
+  regions: Record<string, RegionalServiceAccessState>;
+  equityGap: number;
+}
+
+export type WellbeingWarningSeverity = 'info' | 'watch' | 'elevated' | 'critical';
+
+export interface Agent14WellbeingWarning {
+  id: string;
+  severity: WellbeingWarningSeverity;
+  pillar: PublicServicePillar | 'cross';
+  regionId?: string;
+  title: string;
+  summary: string;
+  assumptions: string[];
+}
+
+export interface Agent14WellbeingWarningBundle {
+  shouldSurface: boolean;
+  warnings: Agent14WellbeingWarning[];
+}
+
+export interface ProgramSequencingRecommendation {
+  rank: number;
+  programId: string;
+  regionId: string;
+  pillar: PublicServicePillar;
+  rationale: string;
+  expectedLagTurns: number;
+  fitsCapacity: boolean;
+}
+
+export interface WellbeingTurnForecastPoint {
+  turn: number;
+  affordabilityIndex: number;
+  deliveryCapacityIndex: number;
+  fiscalLoad: number;
+  equityGap: number;
+}
+
+export interface WellbeingMultiTurnForecast {
+  scenarioId: string;
+  horizonTurns: number;
+  points: WellbeingTurnForecastPoint[];
 }

@@ -1,6 +1,10 @@
+import { AGENT14_CORE_REGIONS, AGENT14_HOUSING_REGION_BASELINE } from './constants.ts';
 import { advanceDelayedSpendingEffects, commitSpendingProgram } from './delayed-spending-effects.ts';
 import { computeAllRegionalHousingPipelines } from './housing-delivery-pipeline.ts';
 import { computeNationalHousingWellbeingSnapshot } from './national-wellbeing-snapshot.ts';
+import { recommendAgent14ProgramSequence } from './program-sequencing.ts';
+import { computeNationalServiceAccessLens } from './service-access-lens.ts';
+import { evaluateAgent14WellbeingWarnings } from './wellbeing-guardian-warnings.ts';
 import {
   canAcceptSpendingCommitment,
   computePublicServiceCapacity,
@@ -61,6 +65,28 @@ export function advancePublicServicesTurn(
   );
   const housingWellbeing = computeNationalHousingWellbeingSnapshot(turn, regionalPipelines);
 
+  const remoteShareByRegion = Object.fromEntries(
+    AGENT14_CORE_REGIONS.map((r) => [r, AGENT14_HOUSING_REGION_BASELINE[r].remoteShare])
+  );
+  const serviceAccessLens = computeNationalServiceAccessLens(
+    turn,
+    capacity,
+    effects,
+    remoteShareByRegion
+  );
+  const wellbeingWarnings = evaluateAgent14WellbeingWarnings(
+    capacity,
+    housingWellbeing,
+    serviceAccessLens
+  );
+  const programRecommendations = recommendAgent14ProgramSequence(
+    turn,
+    capacity,
+    housingWellbeing,
+    serviceAccessLens,
+    6
+  );
+
   const enriched: EnrichedPublicServiceTurnInputs = {
     ...args.inputs,
     turn,
@@ -74,6 +100,9 @@ export function advancePublicServicesTurn(
     capacity,
     spending: effects,
     housingWellbeing,
+    serviceAccessLens,
+    wellbeingWarnings,
+    programRecommendations,
   };
 
   return { inputs: enriched, spendingPersisted, rejectedCommitments };

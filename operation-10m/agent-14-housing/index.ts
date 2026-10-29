@@ -6,4 +6,8 @@ export * from './public-service-capacity.ts';
 export * from './delayed-spending-effects.ts';
 export * from './turn-advance.ts';
 export * from './scenario-sweep.ts';
+export * from './service-access-lens.ts';
+export * from './wellbeing-guardian-warnings.ts';
+export * from './program-sequencing.ts';
+export * from './wellbeing-forecast.ts';
 export { runAgent14WellbeingSelfTests } from './self-tests.ts';

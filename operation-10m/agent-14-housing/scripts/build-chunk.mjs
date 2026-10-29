@@ -21,6 +21,10 @@ const FILES = [
   'delayed-spending-effects.ts',
   'turn-advance.ts',
   'scenario-sweep.ts',
+  'service-access-lens.ts',
+  'wellbeing-guardian-warnings.ts',
+  'program-sequencing.ts',
+  'wellbeing-forecast.ts',
   'self-tests.ts',
 ];
 

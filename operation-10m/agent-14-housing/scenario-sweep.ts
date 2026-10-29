@@ -13,7 +13,10 @@ export type Agent14HousingScenarioId =
   | 'fiscal_austerity'
   | 'remote_equity_stress'
   | 'housing_acceleration'
-  | 'workforce_blocking';
+  | 'workforce_blocking'
+  | 'crisis_recovery'
+  | 'mixed_pillar_push'
+  | 'capacity_saturated';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -53,6 +56,33 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
     label: 'Workforce blocking',
     baseInputs: { fiscalHeadroom: 52, stateCapacityLoad: 50, workforceReadiness: 'blocking', workforceSpecialistGap: 72 },
     launchProgramIds: ['ps_h_TAS_affordable'],
+  },
+  {
+    id: 'crisis_recovery',
+    label: 'Crisis recovery',
+    baseInputs: { fiscalHeadroom: 32, stateCapacityLoad: 78, workforceReadiness: 'weak', workforceSpecialistGap: 55 },
+    launchProgramIds: ['ps_h_QLD_regional_release', 'ps_h_SA_modular'],
+  },
+  {
+    id: 'mixed_pillar_push',
+    label: 'Mixed pillar push',
+    baseInputs: { fiscalHeadroom: 62, stateCapacityLoad: 38, workforceReadiness: 'balanced' },
+    launchProgramIds: ['ps_h_NSW_social_accel', 'ps_h_WA_remote_housing', 'ps_h_ACT_density'],
+  },
+  {
+    id: 'capacity_saturated',
+    label: 'Capacity saturated',
+    baseInputs: { fiscalHeadroom: 35, stateCapacityLoad: 80, workforceReadiness: 'strained', workforceSpecialistGap: 60 },
+    launchProgramIds: [
+      'ps_h_NSW_social_accel',
+      'ps_h_VIC_planning_reform',
+      'ps_h_QLD_regional_release',
+      'ps_h_WA_remote_housing',
+      'ps_h_NT_remote_housing',
+      'ps_h_TAS_affordable',
+      'ps_h_SA_modular',
+      'ps_h_ACT_density',
+    ],
   },
 ];
 

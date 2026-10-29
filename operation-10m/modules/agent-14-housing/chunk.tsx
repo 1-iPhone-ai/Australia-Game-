@@ -5,7 +5,7 @@
 // --- source: types.ts ---
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.2-housing-depth' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.3-scale-wave-3' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -94,6 +94,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   capacity: PublicServiceCapacitySnapshot;
   spending: DelayedSpendingTurnEffects;
   housingWellbeing?: NationalHousingWellbeingSnapshot;
+  serviceAccessLens?: NationalServiceAccessLens;
+  wellbeingWarnings?: Agent14WellbeingWarningBundle;
+  programRecommendations?: ProgramSequencingRecommendation[];
 }
 
 export type HousingPipelineStage =
@@ -128,6 +131,71 @@ export interface NationalHousingWellbeingSnapshot {
   regionalEquityGap: number;
   regions: Record<string, RegionalHousingPipelineState>;
   narrativeSummary: string;
+}
+
+export type ServiceAccessBand = 'critical' | 'weak' | 'adequate' | 'strong';
+
+export interface PillarAccessSlice {
+  pillar: PublicServicePillar;
+  accessIndex: number;
+  band: ServiceAccessBand;
+  backlogPressure: number;
+}
+
+export interface RegionalServiceAccessState {
+  regionId: string;
+  pillars: Record<PublicServicePillar, PillarAccessSlice>;
+  compositeIndex: number;
+}
+
+export interface NationalServiceAccessLens {
+  turn: number;
+  nationalComposite: number;
+  nationalBand: ServiceAccessBand;
+  pillarNational: Record<PublicServicePillar, PillarAccessSlice>;
+  regions: Record<string, RegionalServiceAccessState>;
+  equityGap: number;
+}
+
+export type WellbeingWarningSeverity = 'info' | 'watch' | 'elevated' | 'critical';
+
+export interface Agent14WellbeingWarning {
+  id: string;
+  severity: WellbeingWarningSeverity;
+  pillar: PublicServicePillar | 'cross';
+  regionId?: string;
+  title: string;
+  summary: string;
+  assumptions: string[];
+}
+
+export interface Agent14WellbeingWarningBundle {
+  shouldSurface: boolean;
+  warnings: Agent14WellbeingWarning[];
+}
+
+export interface ProgramSequencingRecommendation {
+  rank: number;
+  programId: string;
+  regionId: string;
+  pillar: PublicServicePillar;
+  rationale: string;
+  expectedLagTurns: number;
+  fitsCapacity: boolean;
+}
+
+export interface WellbeingTurnForecastPoint {
+  turn: number;
+  affordabilityIndex: number;
+  deliveryCapacityIndex: number;
+  fiscalLoad: number;
+  equityGap: number;
+}
+
+export interface WellbeingMultiTurnForecast {
+  scenarioId: string;
+  horizonTurns: number;
+  points: WellbeingTurnForecastPoint[];
 }
 
 
@@ -539,7 +607,7 @@ export function canAcceptSpendingCommitment(
 // --- source: delayed-spending-effects.ts ---
 export function createInitialDelayedSpendingPersisted(): DelayedSpendingPersisted {
   return {
-    schemaVersion: '10.14.2-housing-depth' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.3-scale-wave-3' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     active: [],
     history: [],
   };
@@ -561,7 +629,7 @@ export function sanitizeDelayedSpendingPersisted(
         .slice(0, AGENT14_LIMITS.maxActiveCommitments)
     : [];
   return {
-    schemaVersion: '10.14.2-housing-depth' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.3-scale-wave-3' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     active,
     history: Array.isArray(raw.history) ? raw.history.slice(-AGENT14_LIMITS.maxHistory) : [],
   };
@@ -725,6 +793,28 @@ export function advancePublicServicesTurn(
   );
   const housingWellbeing = computeNationalHousingWellbeingSnapshot(turn, regionalPipelines);
 
+  const remoteShareByRegion = Object.fromEntries(
+    AGENT14_CORE_REGIONS.map((r) => [r, AGENT14_HOUSING_REGION_BASELINE[r].remoteShare])
+  );
+  const serviceAccessLens = computeNationalServiceAccessLens(
+    turn,
+    capacity,
+    effects,
+    remoteShareByRegion
+  );
+  const wellbeingWarnings = evaluateAgent14WellbeingWarnings(
+    capacity,
+    housingWellbeing,
+    serviceAccessLens
+  );
+  const programRecommendations = recommendAgent14ProgramSequence(
+    turn,
+    capacity,
+    housingWellbeing,
+    serviceAccessLens,
+    6
+  );
+
   const enriched: EnrichedPublicServiceTurnInputs = {
     ...args.inputs,
     turn,
@@ -738,6 +828,9 @@ export function advancePublicServicesTurn(
     capacity,
     spending: effects,
     housingWellbeing,
+    serviceAccessLens,
+    wellbeingWarnings,
+    programRecommendations,
   };
 
   return { inputs: enriched, spendingPersisted, rejectedCommitments };
@@ -750,7 +843,10 @@ export type Agent14HousingScenarioId =
   | 'fiscal_austerity'
   | 'remote_equity_stress'
   | 'housing_acceleration'
-  | 'workforce_blocking';
+  | 'workforce_blocking'
+  | 'crisis_recovery'
+  | 'mixed_pillar_push'
+  | 'capacity_saturated';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -790,6 +886,33 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
     label: 'Workforce blocking',
     baseInputs: { fiscalHeadroom: 52, stateCapacityLoad: 50, workforceReadiness: 'blocking', workforceSpecialistGap: 72 },
     launchProgramIds: ['ps_h_TAS_affordable'],
+  },
+  {
+    id: 'crisis_recovery',
+    label: 'Crisis recovery',
+    baseInputs: { fiscalHeadroom: 32, stateCapacityLoad: 78, workforceReadiness: 'weak', workforceSpecialistGap: 55 },
+    launchProgramIds: ['ps_h_QLD_regional_release', 'ps_h_SA_modular'],
+  },
+  {
+    id: 'mixed_pillar_push',
+    label: 'Mixed pillar push',
+    baseInputs: { fiscalHeadroom: 62, stateCapacityLoad: 38, workforceReadiness: 'balanced' },
+    launchProgramIds: ['ps_h_NSW_social_accel', 'ps_h_WA_remote_housing', 'ps_h_ACT_density'],
+  },
+  {
+    id: 'capacity_saturated',
+    label: 'Capacity saturated',
+    baseInputs: { fiscalHeadroom: 35, stateCapacityLoad: 80, workforceReadiness: 'strained', workforceSpecialistGap: 60 },
+    launchProgramIds: [
+      'ps_h_NSW_social_accel',
+      'ps_h_VIC_planning_reform',
+      'ps_h_QLD_regional_release',
+      'ps_h_WA_remote_housing',
+      'ps_h_NT_remote_housing',
+      'ps_h_TAS_affordable',
+      'ps_h_SA_modular',
+      'ps_h_ACT_density',
+    ],
   },
 ];
 
@@ -872,6 +995,332 @@ export function runAgent14HousingScenarioSweep(): Array<{
     });
   }
   return out;
+}
+
+
+// --- source: service-access-lens.ts ---
+function clamp(n: number, lo = 0, hi = 100): number {
+  if (!Number.isFinite(n)) return lo;
+  return Math.max(lo, Math.min(hi, Math.round(n * 10) / 10));
+}
+
+function bandFromIndex(index: number): ServiceAccessBand {
+  if (index >= 72) return 'strong';
+  if (index >= 55) return 'adequate';
+  if (index >= 38) return 'weak';
+  return 'critical';
+}
+
+function pillarSlice(
+  pillar: PublicServicePillar,
+  base: number,
+  capacity: PublicServiceCapacitySnapshot,
+  spending: DelayedSpendingTurnEffects,
+  regionalDelta: number
+): PillarAccessSlice {
+  const capSlice = capacity.byPillar[pillar];
+  const boost = spending.completedProjectBoost[pillar];
+  let accessIndex = base;
+  accessIndex += boost * 8;
+  accessIndex += (capSlice.capacityIndex - 50) * 0.25;
+  accessIndex += regionalDelta * 1.5;
+  accessIndex -= capSlice.loadRatio > 1 ? (capSlice.loadRatio - 1) * 12 : 0;
+  accessIndex = clamp(accessIndex);
+  const backlogPressure = clamp(100 - accessIndex + capSlice.loadRatio * 15);
+  return { pillar, accessIndex, band: bandFromIndex(accessIndex), backlogPressure };
+}
+
+export function computeRegionalServiceAccess(
+  regionId: string,
+  capacity: PublicServiceCapacitySnapshot,
+  spending: DelayedSpendingTurnEffects,
+  remoteShare: number
+): RegionalServiceAccessState {
+  const delta = spending.regionalKpiDelta[regionId] ?? {};
+  const remotePenalty = remoteShare * 18;
+  const housing = pillarSlice(
+    'housing',
+    58 - remotePenalty,
+    capacity,
+    spending,
+    delta.housing ?? 0
+  );
+  const healthcare = pillarSlice(
+    'healthcare',
+    62 - remotePenalty * 0.9,
+    capacity,
+    spending,
+    delta.healthcare ?? 0
+  );
+  const education = pillarSlice(
+    'education',
+    60 - remotePenalty * 0.85,
+    capacity,
+    spending,
+    delta.education ?? 0
+  );
+  const compositeIndex = clamp((housing.accessIndex + healthcare.accessIndex + education.accessIndex) / 3);
+  return {
+    regionId,
+    pillars: { housing, healthcare, education },
+    compositeIndex,
+  };
+}
+
+export function computeNationalServiceAccessLens(
+  turn: number,
+  capacity: PublicServiceCapacitySnapshot,
+  spending: DelayedSpendingTurnEffects,
+  remoteShareByRegion: Record<string, number>
+): NationalServiceAccessLens {
+  const regions: Record<string, RegionalServiceAccessState> = {};
+  const composites: number[] = [];
+  for (const r of AGENT14_CORE_REGIONS) {
+    const st = computeRegionalServiceAccess(
+      r,
+      capacity,
+      spending,
+      remoteShareByRegion[r] ?? 0.1
+    );
+    regions[r] = st;
+    composites.push(st.compositeIndex);
+  }
+  const nationalComposite =
+    composites.length > 0 ? clamp(composites.reduce((a, b) => a + b, 0) / composites.length) : 50;
+  const equityGap = clamp(Math.max(...composites) - Math.min(...composites));
+
+  const pillarNational = {} as Record<PublicServicePillar, PillarAccessSlice>;
+  for (const pillar of ['housing', 'healthcare', 'education'] as PublicServicePillar[]) {
+    const avg =
+      AGENT14_CORE_REGIONS.reduce((s, rid) => s + regions[rid]!.pillars[pillar].accessIndex, 0) /
+      AGENT14_CORE_REGIONS.length;
+    pillarNational[pillar] = {
+      pillar,
+      accessIndex: clamp(avg),
+      band: bandFromIndex(avg),
+      backlogPressure: clamp(100 - avg),
+    };
+  }
+
+  return {
+    turn,
+    nationalComposite,
+    nationalBand: bandFromIndex(nationalComposite),
+    pillarNational,
+    regions,
+    equityGap,
+  };
+}
+
+
+// --- source: wellbeing-guardian-warnings.ts ---
+export function evaluateAgent14WellbeingWarnings(
+  capacity: PublicServiceCapacitySnapshot,
+  housing: NationalHousingWellbeingSnapshot,
+  access: NationalServiceAccessLens
+): Agent14WellbeingWarningBundle {
+  const warnings: Agent14WellbeingWarning[] = [];
+  const assumptions = [
+    'Warn-only V10.14 modular slice; does not block player actions.',
+    'Uses capacity, housing pipeline, and service access lens only.',
+  ];
+
+  if (capacity.bindingConstraint === 'fiscal_absorption') {
+    warnings.push({
+      id: 'warn_fiscal_absorption',
+      severity: 'elevated',
+      pillar: 'cross',
+      title: 'Fiscal absorption saturated',
+      summary: `Public program fiscal load (${capacity.fiscalLoadScheduledThisTurn}) exceeds absorption cap (${capacity.fiscalAbsorptionCap}). Delay new commitments or relieve load.`,
+      assumptions,
+    });
+  }
+
+  if (capacity.bindingConstraint === 'program_slots') {
+    warnings.push({
+      id: 'warn_program_slots',
+      severity: 'watch',
+      pillar: 'cross',
+      title: 'National program slots full',
+      summary: `All ${capacity.nationalProgramSlots} national program slots are in use; sequencing required before new housing/health/education packages.`,
+      assumptions,
+    });
+  }
+
+  if (housing.regionalEquityGap >= 40) {
+    warnings.push({
+      id: 'warn_housing_equity',
+      severity: 'elevated',
+      pillar: 'housing',
+      title: 'Regional housing equity gap',
+      summary: `Affordability equity gap ${housing.regionalEquityGap} exceeds tolerance; remote and backlog-heavy regions lag capitals.`,
+      assumptions,
+    });
+  }
+
+  if (housing.affordabilityStress === 'severe') {
+    warnings.push({
+      id: 'warn_affordability_severe',
+      severity: 'critical',
+      pillar: 'housing',
+      title: 'Severe affordability stress',
+      summary: `National affordability index ${housing.nationalAffordabilityIndex} (${housing.affordabilityStress}).`,
+      assumptions,
+    });
+  }
+
+  for (const pillar of ['healthcare', 'education', 'housing'] as const) {
+    const p = access.pillarNational[pillar];
+    if (p.band === 'critical' || p.band === 'weak') {
+      warnings.push({
+        id: `warn_${pillar}_access`,
+        severity: p.band === 'critical' ? 'critical' : 'watch',
+        pillar,
+        title: `${pillar} access strain`,
+        summary: `National ${pillar} access index ${p.accessIndex} (${p.band}); backlog pressure ${p.backlogPressure}.`,
+        assumptions,
+      });
+    }
+  }
+
+  if (access.equityGap >= 35) {
+    warnings.push({
+      id: 'warn_service_equity',
+      severity: 'watch',
+      pillar: 'cross',
+      title: 'Service access equity divergence',
+      summary: `Cross-pillar regional composite equity gap ${access.equityGap}.`,
+      assumptions,
+    });
+  }
+
+  const shouldSurface = warnings.some((w) => w.severity === 'critical' || w.severity === 'elevated');
+  return { shouldSurface, warnings: warnings.slice(0, 8) };
+}
+
+
+// --- source: program-sequencing.ts ---
+export function recommendAgent14ProgramSequence(
+  turn: number,
+  capacity: PublicServiceCapacitySnapshot,
+  housing: NationalHousingWellbeingSnapshot,
+  access: NationalServiceAccessLens,
+  limit = 5
+): ProgramSequencingRecommendation[] {
+  const recs: ProgramSequencingRecommendation[] = [];
+  const worstRegions = Object.values(housing.regions)
+    .sort((a, b) => a.affordabilityIndex - b.affordabilityIndex)
+    .slice(0, 4)
+    .map((r) => r.regionId);
+
+  const pillarPriority: PublicServicePillar[] =
+    access.pillarNational.healthcare.band === 'critical' || access.pillarNational.healthcare.band === 'weak'
+      ? ['healthcare', 'housing', 'education']
+      : access.pillarNational.education.band === 'critical' || access.pillarNational.education.band === 'weak'
+        ? ['education', 'housing', 'healthcare']
+        : ['housing', 'healthcare', 'education'];
+
+  let rank = 1;
+  for (const regionId of worstRegions) {
+    for (const pillar of pillarPriority) {
+      const stub = AGENT14_HOUSING_PROGRAM_STUBS.find(
+        (p) => p.regionId === (regionId as Agent14CoreRegion) && pillar === 'housing'
+      );
+      if (!stub && pillar !== 'housing') continue;
+      const programId =
+        stub?.id ??
+        `ps_seq_${regionId}_${pillar}_${turn}`;
+      const commitment =
+        commitmentFromProgramStub(stub?.id ?? AGENT14_HOUSING_PROGRAM_STUBS[0]!.id, turn, rank) ??
+        null;
+      const fitsCapacity = commitment
+        ? canAcceptSpendingCommitment(capacity, commitment).allowed
+        : false;
+      recs.push({
+        rank,
+        programId,
+        regionId,
+        pillar,
+        rationale:
+          pillar === 'housing'
+            ? `Backlog ${housing.regions[regionId]?.planningBacklogMonths ?? '?'}m in ${regionId}; affordability ${housing.regions[regionId]?.affordabilityIndex ?? '?'}`
+            : `${pillar} national band ${access.pillarNational[pillar].band}; uplift ${regionId} composite ${access.regions[regionId]?.compositeIndex ?? '?'}`,
+        expectedLagTurns: stub?.effectLagTurns ?? 2,
+        fitsCapacity,
+      });
+      rank += 1;
+      if (recs.length >= limit) return recs;
+    }
+  }
+
+  for (const stub of AGENT14_HOUSING_PROGRAM_STUBS) {
+    if (recs.some((r) => r.programId === stub.id)) continue;
+    const baseline = AGENT14_HOUSING_REGION_BASELINE[stub.regionId];
+    const commitment = commitmentFromProgramStub(stub.id, turn, rank)!;
+    recs.push({
+      rank,
+      programId: stub.id,
+      regionId: stub.regionId,
+      pillar: 'housing',
+      rationale: `Catalog stub; remote ${baseline.remoteShare} planning ${baseline.planningBacklogMonths}m`,
+      expectedLagTurns: stub.effectLagTurns,
+      fitsCapacity: canAcceptSpendingCommitment(capacity, commitment).allowed,
+    });
+    rank += 1;
+    if (recs.length >= limit) break;
+  }
+
+  return recs;
+}
+
+
+// --- source: wellbeing-forecast.ts ---
+export function forecastAgent14WellbeingTurns(
+  scenarioId: Agent14HousingScenarioId,
+  horizonTurns: number,
+  startTurn = 1
+): WellbeingMultiTurnForecast {
+  const sim = simulateAgent14HousingScenario(scenarioId, startTurn + horizonTurns - 1);
+  const points: WellbeingTurnForecastPoint[] = sim.turns.slice(-horizonTurns).map((inp) => ({
+    turn: inp.turn,
+    affordabilityIndex: inp.housingWellbeing?.nationalAffordabilityIndex ?? 0,
+    deliveryCapacityIndex: inp.capacity.deliveryCapacityIndex,
+    fiscalLoad: inp.fiscalLoadFromActivePrograms,
+    equityGap: inp.housingWellbeing?.regionalEquityGap ?? 0,
+  }));
+  return { scenarioId, horizonTurns, points };
+}
+
+export function forecastFromInputs(
+  baseInputs: CapacityAndSpendingInputs,
+  horizonTurns: number
+): WellbeingTurnForecastPoint[] {
+  const remoteShareByRegion = Object.fromEntries(
+    Object.entries(AGENT14_HOUSING_REGION_BASELINE).map(([k, v]) => [k, v.remoteShare])
+  );
+  void remoteShareByRegion;
+  let spendingPersisted = null;
+  const points: WellbeingTurnForecastPoint[] = [];
+  const start = Math.max(1, baseInputs.turn || 1);
+  for (let t = start; t < start + horizonTurns; t += 1) {
+    const r = advancePublicServicesTurn({
+      inputs: { ...baseInputs, turn: t },
+      spendingPersisted,
+    });
+    spendingPersisted = r.spendingPersisted;
+    points.push({
+      turn: t,
+      affordabilityIndex: r.inputs.housingWellbeing?.nationalAffordabilityIndex ?? 0,
+      deliveryCapacityIndex: r.inputs.capacity.deliveryCapacityIndex,
+      fiscalLoad: r.inputs.fiscalLoadFromActivePrograms,
+      equityGap: r.inputs.housingWellbeing?.regionalEquityGap ?? 0,
+    });
+  }
+  return points;
+}
+
+export function listAgent14ScenarioIds(): Agent14HousingScenarioId[] {
+  return AGENT14_HOUSING_SCENARIOS.map((s) => s.id);
 }
 
 
@@ -1288,6 +1737,171 @@ export function runAgent14WellbeingSelfTests(): {
         adv.inputs.housingWellbeing!.nationalAffordabilityIndex >= 0 &&
         adv.inputs.housingWellbeing!.nationalAffordabilityIndex <= 100,
       `aff=${adv.inputs.housingWellbeing?.nationalAffordabilityIndex}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 5, fiscalHeadroom: 55, stateCapacityLoad: 45 },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave3_service_access_lens',
+      'Turn advance attaches national service access lens',
+      adv.inputs.serviceAccessLens !== undefined &&
+        adv.inputs.serviceAccessLens!.nationalComposite > 0 &&
+        adv.inputs.serviceAccessLens!.pillarNational.healthcare.accessIndex > 0,
+      `composite=${adv.inputs.serviceAccessLens?.nationalComposite} band=${adv.inputs.serviceAccessLens?.nationalBand}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 3, fiscalHeadroom: 25, stateCapacityLoad: 75, workforceReadiness: 'weak' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      newCommitments: Array.from({ length: 6 }, (_, i) =>
+        makeSpendingCommitment({
+          id: `sat_${i}`,
+          programId: 'p',
+          pillar: 'housing',
+          regionId: 'NSW',
+          committedTurn: 3,
+          fiscalLoadPoints: 30,
+          durationTurns: 5,
+          baseImpact: 6,
+        })
+      ),
+      enforceCapacity: false,
+    });
+    check(
+      results,
+      'wave3_wellbeing_warnings',
+      'Strained inputs produce guardian warning bundle',
+      adv.inputs.wellbeingWarnings !== undefined &&
+        adv.inputs.wellbeingWarnings!.warnings.length >= 1,
+      `surface=${adv.inputs.wellbeingWarnings?.shouldSurface} n=${adv.inputs.wellbeingWarnings?.warnings.length}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 60, stateCapacityLoad: 40 },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave3_program_recommendations',
+      'Program sequencing returns ranked recommendations',
+      (adv.inputs.programRecommendations?.length ?? 0) >= 3 &&
+        adv.inputs.programRecommendations![0].rank === 1,
+      `n=${adv.inputs.programRecommendations?.length} first=${adv.inputs.programRecommendations?.[0]?.programId}`
+    );
+  }
+
+  {
+    const fc = forecastAgent14WellbeingTurns('baseline_steady', 6);
+    check(
+      results,
+      'wave3_forecast_scenario',
+      'Scenario forecast returns horizon points',
+      fc.points.length === 6 && fc.points[0].turn >= 1,
+      `scenario=${fc.scenarioId} turns=${fc.points.length}`
+    );
+  }
+
+  {
+    const pts = forecastFromInputs({ turn: 1, fiscalHeadroom: 50, stateCapacityLoad: 45 }, 4);
+    check(
+      results,
+      'wave3_forecast_inputs',
+      'Input forecast monotonic turn labels',
+      pts.length === 4 && pts[3].turn === 4,
+      `t4 aff=${pts[3].affordabilityIndex}`
+    );
+  }
+
+  check(
+    results,
+    'wave3_scenario_catalog_size',
+    'Eight housing scenarios registered',
+    listAgent14ScenarioIds().length === 8,
+    `ids=${listAgent14ScenarioIds().join(',')}`
+  );
+
+  {
+    const sim = simulateAgent14HousingScenario('capacity_saturated', 6);
+    check(
+      results,
+      'wave3_capacity_saturated_scenario',
+      'Saturated scenario runs with rejections or binding',
+      sim.turns.length === 6 &&
+        (sim.turns[5].capacity.bindingConstraint !== 'none' ||
+          sim.turns[5].activeProgramCount >= 3),
+      `binding=${sim.turns[5].capacity.bindingConstraint} active=${sim.turns[5].activeProgramCount}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 2, fiscalHeadroom: 48, stateCapacityLoad: 50 },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const lens = adv.inputs.serviceAccessLens!;
+    const wb = adv.inputs.housingWellbeing!;
+    const direct = evaluateAgent14WellbeingWarnings(adv.inputs.capacity, wb, lens);
+    check(
+      results,
+      'wave3_warnings_idempotent',
+      'Standalone warning evaluator matches turn bundle shape',
+      direct.warnings.length === adv.inputs.wellbeingWarnings!.warnings.length,
+      `n=${direct.warnings.length}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 7, fiscalHeadroom: 68, stateCapacityLoad: 32 },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const recs = recommendAgent14ProgramSequence(
+      7,
+      adv.inputs.capacity,
+      adv.inputs.housingWellbeing!,
+      adv.inputs.serviceAccessLens!,
+      4
+    );
+    check(
+      results,
+      'wave3_recommendations_sorted',
+      'Recommendations have contiguous ranks',
+      recs.every((r, i) => r.rank === i + 1),
+      recs.map((r) => r.programId).join(',')
+    );
+  }
+
+  {
+    const cap = computePublicServiceCapacity({ turn: 1, fiscalHeadroom: 55 }, []);
+    const spend = advanceDelayedSpendingEffects(1, createInitialDelayedSpendingPersisted()).effects;
+    const lens = computeNationalServiceAccessLens(1, cap, spend, { NSW: 0.08, NT: 0.55 });
+    check(
+      results,
+      'wave3_access_lens_equity',
+      'Service access lens computes equity gap',
+      lens.equityGap >= 0 && lens.regions.NSW!.compositeIndex >= lens.regions.NT!.compositeIndex - 5,
+      `gap=${lens.equityGap} NSW=${lens.regions.NSW?.compositeIndex} NT=${lens.regions.NT?.compositeIndex}`
+    );
+  }
+
+  for (const id of ['crisis_recovery', 'mixed_pillar_push'] as const) {
+    const sim = simulateAgent14HousingScenario(id, 8);
+    const last = sim.turns[7];
+    check(
+      results,
+      `wave3_scenario_${id}`,
+      `Scenario ${id} completes 8 turns with access lens`,
+      last.serviceAccessLens !== undefined && last.programRecommendations!.length >= 3,
+      `composite=${last.serviceAccessLens?.nationalComposite}`
     );
   }
 
