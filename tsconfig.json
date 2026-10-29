@@ -12,5 +12,5 @@
     "isolatedModules": true,
     "types": ["vite/client"]
   },
-  "include": ["src", "(V9.4) australia-game-with-ai.tsx"]
+  "include": ["src", "(V9.4) australia-game-with-ai.tsx", "src/**/*.test.ts"]
 }

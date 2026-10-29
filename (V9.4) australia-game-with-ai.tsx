@@ -113735,7 +113735,7 @@ export function runTeamOsScenarioSelfTests(): V9SelfTestResult[] {
     mid.settle(calm(), cmdOf(MAIN));
     mid.settle(hot({ turn: 9, mateMoney: 2000 }));
     const s = mid.stored.byTeam.team_player;
-    const loaded = sanitizeTeamOperatingSystemState(JSON.parse(JSON.stringify(serializeTeamOperatingSystemState(mid.stored)) && serializeTeamOperatingSystemState(mid.stored))).byTeam.team_player;
+    const loaded = sanitizeTeamOperatingSystemState(JSON.parse(JSON.stringify(mid.stored))).byTeam.team_player;
     if (ser(loaded) !== ser(s)) return 'loaded state differs';
     const again = evaluateTeamOperatingSystem(loaded, hot({ turn: 9, mateMoney: 2000 }));
     void rt;
