@@ -115,3 +115,101 @@ export interface OP10M_A11_Persisted {
 }
 
 export type OP10M_A11_SelfTestResult = { id: string; passed: boolean; detail: string };
+
+/** Intercity / regional infrastructure slice (schema 10m.a11.2). */
+export const OP10M_A11_INFRA_SCHEMA_VERSION = '10m.a11.2' as const;
+
+export type OP10M_A11_LinkKind =
+  | 'passenger_rail'
+  | 'freight_rail'
+  | 'highway'
+  | 'domestic_air'
+  | 'sea_freight';
+
+export type OP10M_A11_LinkHealth = 'severed' | 'degraded' | 'operational' | 'strong' | 'redundant';
+
+export type OP10M_A11_BottleneckSeverity = 'watch' | 'meaningful' | 'critical';
+
+export type OP10M_A11_DependencyCriticality = 'low' | 'medium' | 'high' | 'essential';
+
+export type OP10M_A11_InfraDerivedKind =
+  | 'regional_bottleneck_emerged'
+  | 'regional_bottleneck_eased'
+  | 'intercity_chokepoint'
+  | 'intercity_dependency_critical';
+
+export interface OP10M_A11_IntercityLinkSlice {
+  linkId: string;
+  kind: OP10M_A11_LinkKind;
+  cityA: string;
+  cityB: string;
+  regionA: OP10M_A11_RegionId;
+  regionB: OP10M_A11_RegionId;
+  utilization: number;
+  health: OP10M_A11_LinkHealth;
+  strategic: boolean;
+  redundancyGroup: string;
+}
+
+export interface OP10M_A11_RegionTransportNeed {
+  regionId: OP10M_A11_RegionId;
+  category: 'transport' | 'energy' | 'water';
+  severity: 'low' | 'moderate' | 'high' | 'critical';
+  status: 'open' | 'mitigated';
+}
+
+export interface OP10M_A11_InfraInputs {
+  turn: number;
+  links: OP10M_A11_IntercityLinkSlice[];
+  cities: OP10M_A11_CityGrowthSlice[];
+  transportNeeds: OP10M_A11_RegionTransportNeed[];
+  regions: Partial<Record<OP10M_A11_RegionId, Pick<OP10M_A11_RegionSlice, 'infrastructureQuality'>>>;
+  networkFreight: number;
+  networkDigital: number;
+}
+
+export interface OP10M_A11_RegionalBottleneck {
+  regionId: OP10M_A11_RegionId;
+  severity: OP10M_A11_BottleneckSeverity;
+  bindScore: number;
+  drivers: string[];
+  explanation: string;
+}
+
+export interface OP10M_A11_IntercityDependencyEdge {
+  linkId: string;
+  criticality: OP10M_A11_DependencyCriticality;
+  dependentRegions: OP10M_A11_RegionId[];
+  chokePoint: boolean;
+  explanation: string;
+}
+
+export interface OP10M_A11_InfraDerivedEvent {
+  id: string;
+  turn: number;
+  kind: OP10M_A11_InfraDerivedKind;
+  regionIds: OP10M_A11_RegionId[];
+  linkId: string | null;
+  text: string;
+  significance: 'minor' | 'meaningful' | 'major';
+}
+
+export interface OP10M_A11_InfraState {
+  schemaVersion: typeof OP10M_A11_INFRA_SCHEMA_VERSION;
+  revision: number;
+  turn: number;
+  bottlenecks: OP10M_A11_RegionalBottleneck[];
+  dependencies: OP10M_A11_IntercityDependencyEdge[];
+  corridorStressIndex: number;
+  summary: string;
+  inputHash: string;
+}
+
+export interface OP10M_A11_InfraPersisted {
+  schemaVersion: typeof OP10M_A11_INFRA_SCHEMA_VERSION;
+  revision: number;
+  initializedTurn: number | null;
+  lastStressIndex: number;
+  stressedLinkIds: string[];
+  inputHash: string;
+}

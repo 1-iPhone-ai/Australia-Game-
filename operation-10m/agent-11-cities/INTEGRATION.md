@@ -19,7 +19,9 @@ All symbols are prefixed `OP10M_A11_` for grep-safe assembly.
 | Export | Role |
 |--------|------|
 | `recomputeOP10M_A11_RegionalUrbanLayer` | Turn tick: inequality indices, spillovers, derived events |
+| `recomputeOP10M_A11_IntercityInfraLayer` | Turn tick: regional bottlenecks + intercity dependency/choke analysis |
 | `validateOP10M_A11_State` | Save/load guard |
+| `validateOP10M_A11_InfraState` | Infra slice save/load guard |
 | `runOP10M_A11_SelfTests` | Regression gate |
 
 ## Assembly notes (Agent 25)
@@ -27,7 +29,8 @@ All symbols are prefixed `OP10M_A11_` for grep-safe assembly.
 1. Insert types + functions after §20AK self-tests block (before duplicate AI patterns if deduping).
 2. Wire turn processor: call `recomputeOP10M_A11_RegionalUrbanLayer` immediately after `recomputeV1014_CITIES_CityRegionalState`.
 3. Persist under `gameState.op10mAgent11RegionalUrban` (new key; migrate empty → `createEmptyOP10M_A11_Persisted()`).
-4. Register `runOP10M_A11_SelfTests` in quick regression suite beside `runV1014_CITIES_CityRegionalIntercitySelfTests`.
+4. Persist infra slice under `gameState.op10mAgent11IntercityInfra` (`createEmptyOP10M_A11_InfraPersisted()`).
+5. Register `runOP10M_A11_SelfTests` in quick regression suite beside `runV1014_CITIES_CityRegionalIntercitySelfTests`.
 
 ## Tests
 

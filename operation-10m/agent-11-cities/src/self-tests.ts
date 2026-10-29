@@ -16,6 +16,13 @@ import {
 } from './recompute.ts';
 import { op10mA11MetroRegionalGap, op10mA11AggregateUrbanGrowthByRegion } from './urban-growth-dynamics.ts';
 import { op10mA11NationalLocalCoupling } from './urban-national-links.ts';
+import {
+  buildOP10M_A11_InfraInputsFromFixtures,
+  createEmptyOP10M_A11_InfraPersisted,
+  recomputeOP10M_A11_IntercityInfraLayer,
+  validateOP10M_A11_InfraState,
+} from './recompute-intercity-infra.ts';
+import { op10mA11CorridorStressIndex } from './intercity-dependencies.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -176,6 +183,93 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_10',
     first.state.regions.NT.lagging && first.state.regions.NT.spilloverBand !== 'integrated',
     first.state.regions.NT.narrative,
+  );
+
+  const infraLinks = [
+    {
+      linkId: 'link_highway_sydney__melbourne',
+      kind: 'highway' as const,
+      cityA: 'sydney',
+      cityB: 'melbourne',
+      regionA: 'NSW' as const,
+      regionB: 'VIC' as const,
+      utilization: 88,
+      health: 'degraded' as const,
+      strategic: true,
+      redundancyGroup: 'highway_east_core',
+    },
+    {
+      linkId: 'link_freight_rail_sydney__melbourne',
+      kind: 'freight_rail' as const,
+      cityA: 'sydney',
+      cityB: 'melbourne',
+      regionA: 'NSW' as const,
+      regionB: 'VIC' as const,
+      utilization: 82,
+      health: 'degraded' as const,
+      strategic: true,
+      redundancyGroup: 'highway_east_core',
+    },
+  ];
+
+  const infraInputs = buildOP10M_A11_InfraInputsFromFixtures({
+    turn: 5,
+    cities: sampleCities,
+    links: infraLinks,
+    transportNeeds: [
+      { regionId: 'NSW', category: 'transport', severity: 'critical', status: 'open' },
+      { regionId: 'NT', category: 'transport', severity: 'high', status: 'open' },
+    ],
+    regions: {
+      NSW: { infrastructureQuality: 38 },
+      NT: { infrastructureQuality: 36 },
+    },
+    networkFreight: 44,
+    networkDigital: 48,
+  });
+
+  const infra1 = recomputeOP10M_A11_IntercityInfraLayer(infraInputs, null);
+  push(
+    out,
+    'a11_11',
+    validateOP10M_A11_InfraState(infra1.state).length === 0 && infra1.state.bottlenecks.some((b) => b.regionId === 'NSW'),
+    infra1.state.summary,
+  );
+
+  push(
+    out,
+    'a11_12',
+    infra1.state.dependencies.some((d) => d.chokePoint) &&
+      infra1.derived.some((d) => d.kind === 'intercity_chokepoint'),
+    `deps ${infra1.state.dependencies.length}`,
+  );
+
+  const stress = op10mA11CorridorStressIndex(infraLinks);
+  push(out, 'a11_13', stress >= 50, `corridor stress ${stress}`);
+
+  const infra2 = recomputeOP10M_A11_IntercityInfraLayer(
+    buildOP10M_A11_InfraInputsFromFixtures({
+      ...infraInputs,
+      turn: 6,
+      links: infraLinks.map((l) => ({ ...l, utilization: 40, health: 'strong' as const })),
+    }),
+    infra1.persisted,
+  );
+  push(
+    out,
+    'a11_14',
+    infra2.state.corridorStressIndex < infra1.state.corridorStressIndex,
+    `stress ${infra1.state.corridorStressIndex} → ${infra2.state.corridorStressIndex}`,
+  );
+
+  const emptyInfra = createEmptyOP10M_A11_InfraPersisted();
+  push(out, 'a11_15', emptyInfra.revision === 0, 'empty infra persisted');
+
+  push(
+    out,
+    'a11_16',
+    infra1.state.dependencies.every((d) => d.dependentRegions.length === 2),
+    'dependency region pairs',
   );
 
   return out;

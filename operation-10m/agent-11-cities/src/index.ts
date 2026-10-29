@@ -4,4 +4,7 @@ export * from './urban-growth-dynamics.ts';
 export * from './urban-national-links.ts';
 export * from './regional-inequality.ts';
 export * from './recompute.ts';
+export * from './infrastructure-bottlenecks.ts';
+export * from './intercity-dependencies.ts';
+export * from './recompute-intercity-infra.ts';
 export * from './self-tests.ts';
