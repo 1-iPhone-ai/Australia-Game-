@@ -21,6 +21,7 @@ import type {
   ResearchExecutionBandEvent,
   ResearchStrategicDeliveryBandEvent,
   ResearchScaleWaveMaturityBandEvent,
+  ResearchNationalIntegrationBandEvent,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { RESEARCH_UNLOCK_EVENT_LOG_CAP } from './unlock-event-log.ts';
@@ -38,6 +39,7 @@ import { RESEARCH_HORIZON_CONVERGENCE_BAND_LOG_CAP } from './horizon-convergence
 import { RESEARCH_EXECUTION_BAND_LOG_CAP } from './research-execution-band-log.ts';
 import { RESEARCH_STRATEGIC_DELIVERY_BAND_LOG_CAP } from './strategic-delivery-band-log.ts';
 import { RESEARCH_SCALE_WAVE_MATURITY_BAND_LOG_CAP } from './scale-wave-maturity-band-log.ts';
+import { RESEARCH_NATIONAL_INTEGRATION_BAND_LOG_CAP } from './national-integration-band-log.ts';
 import { mergeIntegrationRiskSnapshots } from './integration-risk-snapshot.ts';
 import { mergeScaleWaveSnapshots } from './scale-wave-snapshot.ts';
 import { mergeSynergySnapshots } from './synergy-snapshot.ts';
@@ -49,6 +51,7 @@ import { mergeHorizonConvergenceSnapshots } from './horizon-convergence-snapshot
 import { mergeResearchExecutionSnapshots } from './research-execution-snapshot.ts';
 import { mergeStrategicDeliverySnapshots } from './strategic-delivery-snapshot.ts';
 import { mergeScaleWaveMaturitySnapshots } from './scale-wave-maturity-snapshot.ts';
+import { mergeNationalIntegrationSnapshots } from './national-integration-snapshot.ts';
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
@@ -218,6 +221,18 @@ function mergeScaleWaveMaturityBandLogs(
     byKey.set(key, ev);
   }
   return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_SCALE_WAVE_MATURITY_BAND_LOG_CAP);
+}
+
+function mergeNationalIntegrationBandLogs(
+  local: ResearchNationalIntegrationBandEvent[] | undefined,
+  remote: ResearchNationalIntegrationBandEvent[] | undefined
+): ResearchNationalIntegrationBandEvent[] {
+  const byKey = new Map<string, ResearchNationalIntegrationBandEvent>();
+  for (const ev of [...(local ?? []), ...(remote ?? [])]) {
+    const key = `${ev.seq}:${ev.band}:${ev.phase}`;
+    byKey.set(key, ev);
+  }
+  return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_NATIONAL_INTEGRATION_BAND_LOG_CAP);
 }
 
 function stableCoreSnapshot(core: ResearchProgressPersistedCore): Record<string, unknown> {
@@ -391,6 +406,15 @@ export function mergeResearchPersistedCores(
         local.scaleWaveMaturitySnapshot ?? undefined,
         remote.scaleWaveMaturitySnapshot ?? undefined
       ) ?? null,
+    nationalIntegrationBandLog: mergeNationalIntegrationBandLogs(
+      local.nationalIntegrationBandLog,
+      remote.nationalIntegrationBandLog
+    ),
+    nationalIntegrationSnapshot:
+      mergeNationalIntegrationSnapshots(
+        local.nationalIntegrationSnapshot ?? undefined,
+        remote.nationalIntegrationSnapshot ?? undefined
+      ) ?? null,
     lastReconciledAtTurn: Math.max(local.lastReconciledAtTurn ?? 0, remote.lastReconciledAtTurn ?? 0),
   });
 }
@@ -441,6 +465,8 @@ export function reconcileResearchProgressOnLoad(
         strategicDeliverySnapshot: persist.strategicDeliverySnapshot,
         scaleWaveMaturityBandLog: persist.scaleWaveMaturityBandLog,
         scaleWaveMaturitySnapshot: persist.scaleWaveMaturitySnapshot,
+        nationalIntegrationBandLog: persist.nationalIntegrationBandLog,
+        nationalIntegrationSnapshot: persist.nationalIntegrationSnapshot,
       },
       persist,
     };
@@ -483,6 +509,8 @@ export function reconcileResearchProgressOnLoad(
     strategicDeliverySnapshot: mergedCore.strategicDeliverySnapshot,
     scaleWaveMaturityBandLog: mergedCore.scaleWaveMaturityBandLog,
     scaleWaveMaturitySnapshot: mergedCore.scaleWaveMaturitySnapshot,
+    nationalIntegrationBandLog: mergedCore.nationalIntegrationBandLog,
+    nationalIntegrationSnapshot: mergedCore.nationalIntegrationSnapshot,
     lastReconciledAtTurn: ctx.turn,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
   };
@@ -526,6 +554,8 @@ export function reconcileResearchProgressOnLoad(
       strategicDeliverySnapshot: persist.strategicDeliverySnapshot,
       scaleWaveMaturityBandLog: persist.scaleWaveMaturityBandLog,
       scaleWaveMaturitySnapshot: persist.scaleWaveMaturitySnapshot,
+      nationalIntegrationBandLog: persist.nationalIntegrationBandLog,
+      nationalIntegrationSnapshot: persist.nationalIntegrationSnapshot,
     },
     persist,
   };

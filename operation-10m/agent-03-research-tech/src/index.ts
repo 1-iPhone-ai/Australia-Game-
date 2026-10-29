@@ -52,4 +52,7 @@ export * from './scale-wave-maturity-outlook.ts';
 export * from './scale-wave-maturity-band-log.ts';
 export * from './scale-wave-maturity-snapshot.ts';
 export * from './national-integration-outlook.ts';
+export * from './national-integration-band-log.ts';
+export * from './national-integration-snapshot.ts';
+export * from './scale-wave-projection-outlook.ts';
 export * from './compute.ts';

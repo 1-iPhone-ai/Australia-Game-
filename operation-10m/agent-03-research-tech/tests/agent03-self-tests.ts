@@ -1324,6 +1324,73 @@ tests.push(
 );
 
 tests.push(
+  test('scale_wave_projection_outlook_derived', () => {
+    const inputs = baseInputs({ turn: 36 });
+    const state = computeResearchProgress(inputs, null);
+    const outlook = state.scaleWaveProjectionOutlook;
+    assert(outlook != null);
+    assert(outlook?.waveOrdinal === 18);
+    assert(typeof outlook?.projectionReadinessScore === 'number');
+    assert(detectForeignSaveFields({ scaleWaveProjectionOutlook: outlook }).includes('scaleWaveProjectionOutlook'));
+  })
+);
+
+tests.push(
+  test('save_v17_migrates_to_v18_with_national_integration_fields', () => {
+    const v17 = {
+      schemaVersion: 'op10m-agent03-v17',
+      turn: 32,
+      revision: 3,
+      unlockedNodes: [],
+      institutionUpgrades: [],
+      unlockSeq: 0,
+      branchEmphasis: [],
+      emphasisRevision: 1,
+      migrationLog: [{ fromVersion: 'op10m-agent03-v16', toVersion: 'op10m-agent03-v17', turn: 31 }],
+      saveKind: 'manual',
+      updatedAtTurn: 32,
+      sessionId: 'v17',
+      persistRevision: 17,
+      unlockEventLog: [],
+      lastReconciledAtTurn: 32,
+      emphasisChangeLog: [],
+      institutionTierSnapshot: { capturedAtTurn: 32, tiers: {}, digest: 'abc', nationalIntegrationCount: 0, strategicOrAboveCount: 0 },
+      readinessMilestoneLog: [],
+      readinessBranchSnapshot: null,
+      integrationRiskLog: [],
+      integrationRiskSnapshot: null,
+      scaleWaveSnapshot: null,
+      synergyThresholdLog: [],
+      synergySnapshot: null,
+      commercializationMilestoneLog: [],
+      commercializationSnapshot: null,
+      diffusionIntegrationLog: [],
+      diffusionIntegrationSnapshot: null,
+      portfolioBalanceLog: [],
+      portfolioBalanceSnapshot: null,
+      diffusionForecastBandLog: [],
+      diffusionForecastSnapshot: null,
+      horizonConvergenceBandLog: [],
+      horizonConvergenceSnapshot: null,
+      researchExecutionBandLog: [],
+      researchExecutionSnapshot: null,
+      strategicDeliveryBandLog: [],
+      strategicDeliverySnapshot: null,
+      scaleWaveMaturityBandLog: [],
+      scaleWaveMaturitySnapshot: null,
+    };
+    const core = migrateResearchProgressSave(v17);
+    assert(core?.schemaVersion === 'op10m-agent03-v18');
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v17'));
+    assert(Array.isArray(core?.nationalIntegrationBandLog));
+    assert(core?.nationalIntegrationSnapshot === null);
+    const state = computeResearchProgress(baseInputs({ turn: 33 }), core);
+    assert(typeof state.nationalIntegrationSnapshot?.digest === 'string');
+    assert(Array.isArray(state.nationalIntegrationBandLog));
+  })
+);
+
+tests.push(
   test('agent25_chunk_markers_and_hash', () => {
     const moduleId = 'agent-03-research-tech';
     const chunkPath = resolve(process.cwd(), 'operation-10m/modules/agent-03-research-tech/chunk.tsx');
