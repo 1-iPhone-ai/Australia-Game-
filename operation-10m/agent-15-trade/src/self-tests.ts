@@ -149,6 +149,16 @@ import {
   createEmptyBilateralSettlementReconciliationSnapshot,
   bilateralSettlementReconciliationExportScale,
 } from './bilateral-settlement-reconciliation.ts';
+import {
+  computeTradeSettlementContinuitySnapshot,
+  createEmptyTradeSettlementContinuitySnapshot,
+  tradeSettlementContinuityExportScale,
+} from './trade-settlement-continuity.ts';
+import {
+  computeForwardBookAnchorStabilizationSnapshot,
+  createEmptyForwardBookAnchorStabilizationSnapshot,
+  forwardBookAnchorStabilizationExportScale,
+} from './forward-book-anchor-stabilization.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -1281,6 +1291,46 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       bilateralSettlementReconciliationExportScale(settled) >= bilateralSettlementReconciliationExportScale(unsettled),
       'expected settlement scale lift',
+    );
+  });
+
+  ok('trade settlement continuity improves when settlement is settled and rollover seamless', () => {
+    const settlement = { ...createEmptyBilateralSettlementReconciliationSnapshot(), score: 0.76, band: 'settled' as const, rolloverAlignment: 0.72 };
+    const rollover = { ...createEmptyForwardSlotRolloverSnapshot(), score: 0.74, band: 'seamless' as const, openSlotCarry: 0.1 };
+    const anchored = computeTradeSettlementContinuitySnapshot({
+      bilateralSettlementReconciliation: settlement,
+      forwardSlotRollover: rollover,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const broken = computeTradeSettlementContinuitySnapshot({
+      bilateralSettlementReconciliation: { ...settlement, score: 0.3, band: 'unsettled', rolloverAlignment: 0.28 },
+      forwardSlotRollover: { ...rollover, score: 0.26, band: 'blocked', openSlotCarry: 0.44 },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(anchored.score > broken.score, 'expected stronger continuity when settled');
+    gtelAssert(
+      tradeSettlementContinuityExportScale(anchored) >= tradeSettlementContinuityExportScale(broken),
+      'expected continuity scale lift',
+    );
+  });
+
+  ok('forward book anchor stabilization improves when continuity is anchored', () => {
+    const continuity = { ...createEmptyTradeSettlementContinuitySnapshot(), score: 0.78, band: 'anchored' as const, settlementCarry: 0.12 };
+    const harmonization = { ...createEmptyCommitmentLedgerHarmonizationSnapshot(), score: 0.72, band: 'aligned' as const };
+    const locked = computeForwardBookAnchorStabilizationSnapshot({
+      tradeSettlementContinuity: continuity,
+      commitmentLedgerHarmonization: harmonization,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const unmoored = computeForwardBookAnchorStabilizationSnapshot({
+      tradeSettlementContinuity: { ...continuity, score: 0.28, band: 'broken', settlementCarry: 0.48 },
+      commitmentLedgerHarmonization: { ...harmonization, score: 0.32, band: 'fractured' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(locked.score > unmoored.score, 'expected stronger anchor when continuity anchored');
+    gtelAssert(
+      forwardBookAnchorStabilizationExportScale(locked) >= forwardBookAnchorStabilizationExportScale(unmoored),
+      'expected anchor scale lift',
     );
   });
 

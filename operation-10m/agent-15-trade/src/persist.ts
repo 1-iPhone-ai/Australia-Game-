@@ -34,6 +34,8 @@ import { sanitizeBilateralCargoSchedulingSmoothing } from './bilateral-cargo-sch
 import { sanitizeCommitmentTurnCloseoutSmoothing } from './commitment-turn-closeout.ts';
 import { sanitizeForwardSlotRolloverSmoothing } from './forward-slot-rollover.ts';
 import { sanitizeBilateralSettlementReconciliationSmoothing } from './bilateral-settlement-reconciliation.ts';
+import { sanitizeTradeSettlementContinuitySmoothing } from './trade-settlement-continuity.ts';
+import { sanitizeForwardBookAnchorStabilizationSmoothing } from './forward-book-anchor-stabilization.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -86,6 +88,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     commitmentTurnCloseoutSmoothing: 0.52,
     forwardSlotRolloverSmoothing: 0.52,
     bilateralSettlementReconciliationSmoothing: 0.52,
+    tradeSettlementContinuitySmoothing: 0.52,
+    forwardBookAnchorStabilizationSmoothing: 0.52,
   };
 }
 
@@ -285,6 +289,12 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   base.forwardSlotRolloverSmoothing = sanitizeForwardSlotRolloverSmoothing(r.forwardSlotRolloverSmoothing);
   base.bilateralSettlementReconciliationSmoothing = sanitizeBilateralSettlementReconciliationSmoothing(
     r.bilateralSettlementReconciliationSmoothing,
+  );
+  base.tradeSettlementContinuitySmoothing = sanitizeTradeSettlementContinuitySmoothing(
+    r.tradeSettlementContinuitySmoothing,
+  );
+  base.forwardBookAnchorStabilizationSmoothing = sanitizeForwardBookAnchorStabilizationSmoothing(
+    r.forwardBookAnchorStabilizationSmoothing,
   );
   return base;
 }

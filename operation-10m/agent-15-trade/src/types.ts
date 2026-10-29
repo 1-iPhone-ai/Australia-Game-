@@ -178,6 +178,10 @@ export interface GTELPersisted {
   forwardSlotRolloverSmoothing?: number;
   /** Smoothed bilateral settlement reconciliation score (0–1). */
   bilateralSettlementReconciliationSmoothing?: number;
+  /** Smoothed trade settlement continuity score (0–1). */
+  tradeSettlementContinuitySmoothing?: number;
+  /** Smoothed forward book anchor stabilization score (0–1). */
+  forwardBookAnchorStabilizationSmoothing?: number;
 }
 
 export interface GTELState {
@@ -229,6 +233,8 @@ export interface GTELState {
   commitmentTurnCloseout: GTELCommitmentTurnCloseoutSnapshot;
   forwardSlotRollover: GTELForwardSlotRolloverSnapshot;
   bilateralSettlementReconciliation: GTELBilateralSettlementReconciliationSnapshot;
+  tradeSettlementContinuity: GTELTradeSettlementContinuitySnapshot;
+  forwardBookAnchorStabilization: GTELForwardBookAnchorStabilizationSnapshot;
   inputHash: string;
 }
 
@@ -733,6 +739,26 @@ export interface GTELBilateralSettlementReconciliationSnapshot {
   band: GTELBilateralSettlementReconciliationBand;
   rolloverAlignment: number;
   schedulingSupport: number;
+  summary: string;
+}
+
+export type GTELTradeSettlementContinuityBand = 'anchored' | 'tracking' | 'drifting' | 'broken';
+
+export interface GTELTradeSettlementContinuitySnapshot {
+  score: number;
+  band: GTELTradeSettlementContinuityBand;
+  settlementCarry: number;
+  rolloverSupport: number;
+  summary: string;
+}
+
+export type GTELForwardBookAnchorStabilizationBand = 'locked' | 'firm' | 'soft' | 'unmoored';
+
+export interface GTELForwardBookAnchorStabilizationSnapshot {
+  score: number;
+  band: GTELForwardBookAnchorStabilizationBand;
+  continuitySupport: number;
+  harmonizationLift: number;
   summary: string;
 }
 

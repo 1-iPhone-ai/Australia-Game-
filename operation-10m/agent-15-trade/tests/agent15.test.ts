@@ -47,7 +47,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 45);
+  assert.ok(r.passed >= 47);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -910,5 +910,49 @@ test('round 19: unsettled closeout weakens rollover vs clean baseline', () => {
   });
   assert.ok(
     clean.state.forwardSlotRollover.score >= stressed.state.forwardSlotRollover.score - 0.14,
+  );
+});
+
+test('round 20: settlement continuity and forward book anchor on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.tradeSettlementContinuitySmoothing = 0.55;
+  persisted.forwardBookAnchorStabilizationSmoothing = 0.53;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 57,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 100 } } },
+    persisted,
+  });
+  assert.ok(r.state.tradeSettlementContinuity);
+  assert.ok(['anchored', 'tracking', 'drifting', 'broken'].includes(r.state.tradeSettlementContinuity.band));
+  assert.ok(r.state.forwardBookAnchorStabilization);
+  assert.ok(['locked', 'firm', 'soft', 'unmoored'].includes(r.state.forwardBookAnchorStabilization.band));
+  assert.ok(r.persisted.tradeSettlementContinuitySmoothing != null);
+  assert.ok(r.persisted.forwardBookAnchorStabilizationSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Trade settlement continuity/i.test(n)));
+  assert.ok(notes.some(n => /Forward book anchor stabilization/i.test(n)));
+});
+
+test('round 20: broken settlement continuity weakens book anchor vs anchored baseline', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.tradeSettlementContinuitySmoothing = 0.76;
+  persisted.commitmentLedgerHarmonizationSmoothing = 0.7;
+  const anchored = advanceGlobalTradeEconomyTurn({
+    turn: 58,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 85 } } },
+    persisted: { ...persisted },
+  });
+  persisted.tradeSettlementContinuitySmoothing = 0.24;
+  persisted.commitmentLedgerHarmonizationSmoothing = 0.22;
+  const broken = advanceGlobalTradeEconomyTurn({
+    turn: 58,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 190 } } },
+    persisted: { ...persisted },
+  });
+  assert.ok(
+    anchored.state.forwardBookAnchorStabilization.score >= broken.state.forwardBookAnchorStabilization.score - 0.14,
   );
 });
