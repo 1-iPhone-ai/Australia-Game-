@@ -107,6 +107,13 @@ import {
   type V1014RegionalLandfillWasteEnergyLedger,
 } from './landfill-waste-district-heat-ledger';
 import {
+  advanceRegionalWaterEnergyNexus,
+  computeRegionalDroughtDesalLedger,
+  scoreAgent13DesalNexusGIAlignment,
+  type V1014RegionalDroughtDesalLedger,
+  type V1014RegionalWaterEnergyNexusLedger,
+} from './drought-desal-water-energy-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25615,6 +25622,10 @@ export interface V1014RegionalEnergyProfile {
   landfillMethaneRelief: number;
   districtRenewableHeatBand: string;
   districtHeatRelief: number;
+  droughtDesalBand: string;
+  droughtDesalRelief: number;
+  waterEnergyNexusBand: string;
+  waterEnergyNexusRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25677,6 +25688,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalShoreMarineEnergyLedgers: Record<string, V1014RegionalShoreMarineEnergyLedger>;
   regionalLandfillWasteEnergyLedgers: Record<string, V1014RegionalLandfillWasteEnergyLedger>;
   regionalDistrictRenewableHeatLedgers: Record<string, V1014RegionalDistrictRenewableHeatLedger>;
+  regionalDroughtDesalLedgers: Record<string, V1014RegionalDroughtDesalLedger>;
+  regionalWaterEnergyNexusLedgers: Record<string, V1014RegionalWaterEnergyNexusLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25710,6 +25723,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalShoreMarineMemory: Record<string, { shoreIndex: number }>;
   regionalLandfillWasteMemory: Record<string, { captureBalance: number; methaneIndex: number }>;
   regionalDistrictHeatMemory: Record<string, { thermalIndex: number }>;
+  regionalDroughtDesalMemory: Record<string, { reserveBalance: number; waterSecurityIndex: number }>;
+  regionalWaterNexusMemory: Record<string, { nexusIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25755,6 +25770,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalShoreMarineMemory: {},
     regionalLandfillWasteMemory: {},
     regionalDistrictHeatMemory: {},
+    regionalDroughtDesalMemory: {},
+    regionalWaterNexusMemory: {},
     history: [],
   };
 }
@@ -25811,6 +25828,10 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalLandfillWasteMemory === 'object' && raw.regionalLandfillWasteMemory ? raw.regionalLandfillWasteMemory : {},
     regionalDistrictHeatMemory:
       typeof raw.regionalDistrictHeatMemory === 'object' && raw.regionalDistrictHeatMemory ? raw.regionalDistrictHeatMemory : {},
+    regionalDroughtDesalMemory:
+      typeof raw.regionalDroughtDesalMemory === 'object' && raw.regionalDroughtDesalMemory ? raw.regionalDroughtDesalMemory : {},
+    regionalWaterNexusMemory:
+      typeof raw.regionalWaterNexusMemory === 'object' && raw.regionalWaterNexusMemory ? raw.regionalWaterNexusMemory : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -25943,6 +25964,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalShoreMarineEnergyLedgers: {},
       regionalLandfillWasteEnergyLedgers: {},
       regionalDistrictRenewableHeatLedgers: {},
+      regionalDroughtDesalLedgers: {},
+      regionalWaterEnergyNexusLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -25979,6 +26002,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const shoreMarineEnergyLedgers: Record<string, V1014RegionalShoreMarineEnergyLedger> = {};
   const landfillWasteEnergyLedgers: Record<string, V1014RegionalLandfillWasteEnergyLedger> = {};
   const districtRenewableHeatLedgers: Record<string, V1014RegionalDistrictRenewableHeatLedger> = {};
+  const droughtDesalLedgers: Record<string, V1014RegionalDroughtDesalLedger> = {};
+  const waterEnergyNexusLedgers: Record<string, V1014RegionalWaterEnergyNexusLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26024,6 +26049,10 @@ export function computeIndustrialEnergyEnvironmentalState(
     ...persisted.regionalLandfillWasteMemory,
   };
   const nextDistrictHeatMemory: Record<string, { thermalIndex: number }> = { ...persisted.regionalDistrictHeatMemory };
+  const nextDroughtDesalMemory: Record<string, { reserveBalance: number; waterSecurityIndex: number }> = {
+    ...persisted.regionalDroughtDesalMemory,
+  };
+  const nextWaterNexusMemory: Record<string, { nexusIndex: number }> = { ...persisted.regionalWaterNexusMemory };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
 
@@ -26342,6 +26371,28 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextDistrictHeatMemory[regionId] = districtHeatStep.next;
     districtRenewableHeatLedgers[regionId] = districtHeatStep.ledger;
 
+    const desalStep = computeRegionalDroughtDesalLedger({
+      regionId,
+      waterStressPressure: waterStep.ledger.pressureAdd,
+      renewableShareScore,
+      districtHeatRelief: districtHeatStep.ledger.districtHeatRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextDroughtDesalMemory[regionId] || null,
+    });
+    nextDroughtDesalMemory[regionId] = desalStep.next;
+    droughtDesalLedgers[regionId] = desalStep.ledger;
+
+    const waterNexusStep = advanceRegionalWaterEnergyNexus({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      desalBand: desalStep.ledger.band,
+      agrivoltaicsLandRelief: agriStep.ledger.agrivoltaicsLandRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextWaterNexusMemory[regionId] || null,
+    });
+    nextWaterNexusMemory[regionId] = waterNexusStep.next;
+    waterEnergyNexusLedgers[regionId] = waterNexusStep.ledger;
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -26373,6 +26424,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= shoreMarineStep.ledger.shoreMarineEnergyRelief;
     pressure -= landfillStep.ledger.landfillMethaneRelief;
     pressure -= districtHeatStep.ledger.districtHeatRelief;
+    pressure -= desalStep.ledger.droughtDesalRelief;
+    pressure -= waterNexusStep.ledger.waterEnergyNexusRelief;
     if (biodiversityStep.ledger.band === 'critical_loss') pressure += 5;
     pressure -= gridRecovery.pressureRelief;
     pressure -= storageFlex.gridStressRelief;
@@ -26429,6 +26482,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       shoreMarineStep.ledger.summary,
       landfillStep.ledger.summary,
       districtHeatStep.ledger.summary,
+      desalStep.ledger.summary,
+      waterNexusStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -26557,6 +26612,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       landfillMethaneRelief: landfillStep.ledger.landfillMethaneRelief,
       districtRenewableHeatBand: districtHeatStep.ledger.band,
       districtHeatRelief: districtHeatStep.ledger.districtHeatRelief,
+      droughtDesalBand: desalStep.ledger.band,
+      droughtDesalRelief: desalStep.ledger.droughtDesalRelief,
+      waterEnergyNexusBand: waterNexusStep.ledger.band,
+      waterEnergyNexusRelief: waterNexusStep.ledger.waterEnergyNexusRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -26648,6 +26707,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalShoreMarineEnergyLedgers: shoreMarineEnergyLedgers,
     regionalLandfillWasteEnergyLedgers: landfillWasteEnergyLedgers,
     regionalDistrictRenewableHeatLedgers: districtRenewableHeatLedgers,
+    regionalDroughtDesalLedgers: droughtDesalLedgers,
+    regionalWaterEnergyNexusLedgers: waterEnergyNexusLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -26681,6 +26742,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalShoreMarineMemory: nextShoreMarineMemory,
     regionalLandfillWasteMemory: nextLandfillWasteMemory,
     regionalDistrictHeatMemory: nextDistrictHeatMemory,
+    regionalDroughtDesalMemory: nextDroughtDesalMemory,
+    regionalWaterNexusMemory: nextWaterNexusMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -27140,6 +27203,38 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     districtBand: rr14.state.regions.VIC?.districtRenewableHeatBand,
   });
   check('LANDFILL DISTRICT GI alignment', giLf.relevanceDelta > 0.5, giLf.reason || '');
+
+  const desalInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'solar_powered_desalination',
+      'brackish_groundwater_desal',
+      'advanced_water_recycling',
+      'drought_reserve_storage',
+      'pumped_water_storage_coupling',
+      'irrigation_electrification_hub',
+      'effluent_energy_recovery',
+      'basin_pumping_orchestration',
+    ],
+  };
+  const rr15 = computeIndustrialEnergyEnvironmentalState(desalInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check('DESAL ledger tracked', !!rr15.state.regionalDroughtDesalLedgers.SA?.band, rr15.state.regionalDroughtDesalLedgers.SA?.band || '');
+  check(
+    'WATER nexus relief',
+    (rr15.state.regions.SA?.waterEnergyNexusRelief || 0) > 0,
+    String(rr15.state.regions.SA?.waterEnergyNexusRelief),
+  );
+  check(
+    'DESAL memory persisted',
+    !!rr15.persisted.regionalDroughtDesalMemory.SA,
+    String(rr15.persisted.regionalDroughtDesalMemory.SA?.waterSecurityIndex),
+  );
+  const giDesal = scoreAgent13DesalNexusGIAlignment({
+    actionText: 'Solar desal with irrigation electrification and pumped water storage',
+    desalBand: rr15.state.regions.SA?.droughtDesalBand,
+    nexusBand: rr15.state.regions.SA?.waterEnergyNexusBand,
+  });
+  check('DESAL NEXUS GI alignment', giDesal.relevanceDelta > 0.5, giDesal.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

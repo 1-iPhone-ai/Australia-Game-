@@ -55,6 +55,11 @@ import {
   V1014_LANDFILL_DISTRICT_TURN_SCENARIOS,
 } from '../modules/landfill-waste-district-heat-ledger.ts';
 import {
+  runAgent13DesalNexusScaleSelfTests,
+  runAgent13DesalNexusTurnScenario,
+  V1014_DESAL_NEXUS_TURN_SCENARIOS,
+} from '../modules/drought-desal-water-energy-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -228,6 +233,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const lfTurn = runAgent13LandfillDistrictTurnScenario(V1014_LANDFILL_DISTRICT_TURN_SCENARIOS[0]);
   ok(lfTurn.passed);
+
+  const desalNexus = runAgent13DesalNexusScaleSelfTests();
+  ok(desalNexus.failed === 0 && desalNexus.passed >= 7);
+
+  const desalTurn = runAgent13DesalNexusTurnScenario(V1014_DESAL_NEXUS_TURN_SCENARIOS[0]);
+  ok(desalTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
