@@ -1,0 +1,14 @@
+{
+  "name": "@operation-10m/agent-04-modes-scenarios",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --import tsx --test tests/**/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.0",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3"
+  }
+}
