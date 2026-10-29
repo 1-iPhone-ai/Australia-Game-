@@ -1,60 +1,107 @@
-# Operation 10M — Integration (Agent 05 slice)
+# Operation 10M — Integration contracts
 
-Agent 05 owns **state-triggered narrative chains** outside canonical V9.4 until Agent 25 assembly.
+**Canonical artifact:** `(V9.4) australia-game-with-ai.tsx` on branch `australia-game-upgrade`.
 
-## Module root
+**Only Agent 25** (Build Integration / Release) may modify the canonical TSX, and only via the controlled assembly pipeline on integration branches (`op10m/agent-25-integration`, `op10m/integration/*`). Module workers must not edit the canonical file.
 
-`operation-10m/agent-05-events/`
+## Audited functional LOC
 
-## Public surface (assembly targets)
+- **Metric:** cloc **code** lines, languages `TypeScript` + `TSX` only.
+- **Tool:** `node scripts/measure-loc.mjs` (wraps `cloc@2.11.0`).
+- **Baseline (2026-10-29):** 217,173 audited functional; 241,579 physical lines.
+- **Gate:** 10,000,000 audited functional in the single self-contained TSX (no local module imports in the shipped artifact).
 
-| Export | Role |
-|--------|------|
-| `OP10M_AGENT05_MODULE_ID` | Stable integrator key |
-| `OP10M_AGENT05_CHAIN_CATALOG` | 1800 chain descriptors (600 + 240 + 360 + 320 + 280 compute-turn) |
-| `createDefaultOp10mSimulationSlice` | Minimal mutable sim slice for hooks |
-| `createDefaultOp10mNarrativeEngineState` | Persistent narrative runtime state |
-| `sanitizeOp10mNarrativeEngineState` | Save/load hygiene |
-| `executeOp10mNarrativeComputeTurnHook` | Agent 02 turn/compute alignment: deferred drain → depth → narrative tick → digest |
-| `evaluateOp10mNarrativeTick` | Turn/day advance: eligibility, cooldowns, passive modifiers, pending UI |
-| `resolveOp10mNarrativeResponse` | Player choice → **real** money/stability/flags/crisis counters |
-| `OP10M_AGENT05_REGIONAL_HOOK_CATALOG` | 120 rupture-triggered cross-region hooks (contagion + deep follow-up arming) |
-| `evaluateRegionalNarrativeHooks` | Standalone regional pass (also wired via `regionalHooks` tick option) |
-| `runOp10mNarrativeSelfTests` | Lightweight integrity harness |
+## Worker module layout
 
-## V9.4 alignment (read-only contract)
+Each agent owns a directory under `operation-10m/modules/agent-NN-<slug>/`:
 
-Maps to existing concepts without editing V9.4:
-
-- `Op10mSimulationSlice.flags` ↔ scenario/campaign flags & content flags
-- `activeCrisisCount` ↔ `crisisChainState` active chains
-- `nationalStability` / `regionalStability` ↔ `publicStabilityState`
-- Chain phases ↔ Agent 05 `signal → pressure → rupture → recovery` narrative beats
-- Cooldown entries ↔ per-template / per-chain cooldown fields in crisis content
-
-## Assembly hook (Agent 25)
-
-1. Mount `agent05NarrativeState` on game save (default via `createDefaultOp10mNarrativeEngineState`).
-2. After day/turn simulation step, call `executeOp10mNarrativeComputeTurnHook({ turn, day, simulation, narrative, catalog, regionalHooks })` **or** `evaluateOp10mNarrativeTick` when only the narrative slice is needed.
-3. Write back **both** returned `simulation` fields (money, stability, flags, crises) and `narrative` sub-state.
-4. UI routes pending `pendingResponses` to dilemma/crisis modals; resolve via `resolveOp10mNarrativeResponse`.
-
-## Assembly chunk (Agent 25)
-
-- Path: `operation-10m/agent-05-events/chunk.tsx`
-- Markers: `// OP10M_MODULE_BEGIN agent-05-events` … `// OP10M_MODULE_END agent-05-events`
-- Regenerate: `npm run bundle:agent05` (concatenates `src/` + generated catalogs; strips imports)
-- Inline self-test: `runOp10mAgent05EventsAssemblySelfTests()`
-
-## Regeneration
-
-```bash
-npm run generate:agent05
-npm run generate:agent05-regional
+```
+operation-10m/modules/agent-07-public-finance/
+  module.manifest.json    # slot id, dependencies, content hash
+  chunk.tsx               # TSX body only (no duplicate React import)
+  tests.fixture.json      # optional save/replay fixtures for Agent 25 validation
 ```
 
-## Verification
+### Module file rules
+
+1. **No** top-level `import` from npm or local paths except types inlined in the chunk (the assembled file keeps **one** React import block in SECTION 1).
+2. Wrap contributed code in markers:
+
+```tsx
+// OP10M_MODULE_BEGIN agent-07-public-finance
+// ... exports and functions ...
+// OP10M_MODULE_END agent-07-public-finance
+```
+
+3. Export names must be **globally unique** in the assembled file (assembly fails on collision).
+4. Do not copy-paste existing canonical sections; extend via new symbols wired from SECTION 7+ hooks documented in your agent brief.
+5. Register the module in `operation-10m/assembly/manifest.json` (Agent 25 merges manifest updates on integration branch only).
+
+## Assembly slots
+
+Insertion uses stable **section anchors** parsed from canonical comments (`// SECTION …`). Default expansion region for new national-system modules:
+
+| Slot ID | Insert after section | Before section |
+|---------|----------------------|----------------|
+| `post-v10z` | `20Z: V10.7 DYNAMIC NATIONAL PRIORITIES` | `20AA: V10.8 REGIONAL COMPETITION` |
+| `pre-final-export` | `21B: RELIABILITY UPGRADE` | `22: FINAL EXPORT` |
+| `append-only-self-tests` | `21B: RELIABILITY UPGRADE` | `22: FINAL EXPORT` |
+
+Custom slots require Agent 25 approval and a manifest schema update.
+
+## Deterministic assembly (no double-count)
 
 ```bash
-npm run test:agent05
+node operation-10m/assembly/assemble.mjs --dry-run
+node operation-10m/assembly/assemble.mjs --out build/australia-game-assembled.tsx
 ```
+
+Pipeline guarantees:
+
+1. Modules sorted by `moduleId` in manifest (stable order).
+2. Each module’s SHA-256 content hash recorded; **duplicate hash rejected**.
+3. Canonical base read once; modules spliced at anchors; **no second paste** of the same `moduleId`.
+4. Post-merge audits: `audit-duplication.mjs`, `validate-manifest.mjs`, `measure-loc.mjs`.
+
+Agent 25 copies assembled output to canonical only after audits pass on `op10m/agent-25-integration`.
+
+## Save / migration validation
+
+Before promoting assembly:
+
+```bash
+node operation-10m/assembly/audit-save-migrations.mjs
+```
+
+Checks:
+
+- Every `export function migrate*` in canonical has bounded complexity markers (returns typed result, no unbounded loops on raw save objects).
+- Module manifests listing `touchesSaveFormat: true` must include a fixture under `tests.fixture.json`.
+- Agent 25 runs fixture dry-runs (static parse + symbol presence) until a headless save harness lands.
+
+## Conflict resolution
+
+- Module workers branch: `op10m/agent-NN-<slug>` off `australia-game-upgrade`.
+- Integration merges happen **only** on Agent 25 branches; conflicts in `operation-10m/modules/**` resolve in worker PRs; conflicts in canonical resolve only via re-assembly from manifest, never manual edits in worker PRs.
+
+## Scale benchmarks
+
+```bash
+node operation-10m/assembly/benchmark-scale.mjs
+```
+
+Records read/hash/line-scan timings for the canonical file to track feasibility toward multi-million-line assembly.
+
+## PR policy
+
+No worker or coordinator **closes or triages** PRs. Agent 25 opens integration PRs ready for review; merges require explicit user authorization.
+
+## Related paths
+
+| Path | Purpose |
+|------|---------|
+| `scripts/measure-loc.mjs` | cloc gate measurement |
+| `operation-10m/assembly/manifest.json` | module registry |
+| `operation-10m/assembly/assemble.mjs` | deterministic merge |
+| `operation-10m/assembly/audit-duplication.mjs` | baseline / CI duplication audit |
+| Project store `internal/source-map/` | section map and ownership (Agent 25) |
