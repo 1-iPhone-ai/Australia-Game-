@@ -60,6 +60,10 @@ import {
   OP10M_AGENT25_ASSEMBLY_WAVE_READY_FLAG,
   OP10M_SCALE_WAVE_BUNDLE_LATCH_FLAG,
 } from './compute-turn-scale-wave-bundle-latch-coordinator.ts';
+import {
+  OP10M_AGENT25_BUNDLE_CATALOG_SEALED_FLAG,
+  OP10M_SCALE_WAVE_CATALOG_COMMIT_FLAG,
+} from './compute-turn-scale-wave-catalog-commit-coordinator.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -360,6 +364,16 @@ export function evaluateRequirements(
       case 'agent25_assembly_wave_ready':
         if (!sim.flags[OP10M_AGENT25_ASSEMBLY_WAVE_READY_FLAG]) {
           return { ok: false, reason: 'agent25 assembly wave not ready' };
+        }
+        break;
+      case 'scale_wave_catalog_commit':
+        if (!sim.flags[OP10M_SCALE_WAVE_CATALOG_COMMIT_FLAG]) {
+          return { ok: false, reason: 'scale wave catalog not committed' };
+        }
+        break;
+      case 'agent25_bundle_catalog_sealed':
+        if (!sim.flags[OP10M_AGENT25_BUNDLE_CATALOG_SEALED_FLAG]) {
+          return { ok: false, reason: 'agent25 bundle catalog not sealed' };
         }
         break;
       default:

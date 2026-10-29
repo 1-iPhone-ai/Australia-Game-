@@ -97,6 +97,8 @@ export function createDefaultOp10mNarrativeEngineState(): Op10mNarrativeEngineSt
       chunkManifestSealedPasses: 0,
       scaleWaveBundleLatches: 0,
       agent25AssemblyWaveReadyPasses: 0,
+      scaleWaveCatalogCommits: 0,
+      agent25BundleCatalogSealedPasses: 0,
     },
     regional: createDefaultRegionalContagionLedger(),
   };
@@ -182,6 +184,11 @@ export function sanitizeOp10mNarrativeEngineState(raw: unknown): Op10mNarrativeE
     base.telemetry.agent25AssemblyWaveReadyPasses = Math.max(
       0,
       Number(t.agent25AssemblyWaveReadyPasses) || 0
+    );
+    base.telemetry.scaleWaveCatalogCommits = Math.max(0, Number(t.scaleWaveCatalogCommits) || 0);
+    base.telemetry.agent25BundleCatalogSealedPasses = Math.max(
+      0,
+      Number(t.agent25BundleCatalogSealedPasses) || 0
     );
   }
 

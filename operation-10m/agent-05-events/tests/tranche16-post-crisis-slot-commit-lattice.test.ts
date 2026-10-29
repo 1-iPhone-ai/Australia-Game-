@@ -18,12 +18,12 @@ describe('Tranche 16 post-crisis-slot-commit lattice catalog', () => {
   it('adds 320 post-crisis-slot-commit lattice chains', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE16_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche16Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 5640);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 5960);
   });
 
   it('uses op10m_t16 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 5640);
+    assert.equal(ids.size, 5960);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE16) {
       assert.match(c.chainId, /^op10m_t16_/);
     }
