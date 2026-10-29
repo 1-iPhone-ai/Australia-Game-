@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
 // @ts-nocheck
-// content-sha256-prefix: 1158d7369f7cf0a7
+// content-sha256-prefix: f204783f6e70c78e
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -5100,6 +5100,115 @@ export function gateBatchNationalTickSessionWaveAssemblyBatch(
   };
 }
 
+// --- src/batch-national-tick-session-wave-assembly-batch-gate-export.ts ---
+
+export interface BatchNationalTickSessionWaveAssemblyBatchGateExport {
+  ok: boolean;
+  exportAllOk: boolean;
+  parityOk: boolean;
+  batchDigest: string;
+  runCount: number;
+  gateDigest: string;
+}
+
+export function computeBatchNationalTickSessionWaveAssemblyBatchGateDigest(
+  gateExport: BatchNationalTickSessionWaveAssemblyBatchGateExport,
+): string {
+  return fnv1a64Hex(
+    JSON.stringify({
+      ok: gateExport.ok,
+      batchDigest: gateExport.batchDigest,
+      runCount: gateExport.runCount,
+    }),
+  );
+}
+
+/**
+ * Round 22: flatten assembly batch gate for Agent 25 post–O10-174 integration hooks.
+ */
+export function exportBatchNationalTickSessionWaveAssemblyBatchGate(
+  gate: BatchNationalTickSessionWaveAssemblyBatchGateResult,
+): BatchNationalTickSessionWaveAssemblyBatchGateExport {
+  const gateExport: BatchNationalTickSessionWaveAssemblyBatchGateExport = {
+    ok: gate.ok,
+    exportAllOk: gate.exportAllOk,
+    parityOk: gate.parityOk,
+    batchDigest: gate.export.batchDigest,
+    runCount: gate.export.runCount,
+    gateDigest: '',
+  };
+  gateExport.gateDigest = computeBatchNationalTickSessionWaveAssemblyBatchGateDigest(gateExport);
+  return gateExport;
+}
+
+// --- src/batch-national-tick-session-wave-assembly-batch-gate-export-compare.ts ---
+
+export interface BatchNationalTickSessionWaveAssemblyBatchGateExportCompareResult {
+  ok: boolean;
+  gateDigestMatch: boolean;
+  batchDigestMatch: boolean;
+  okFlagMatch: boolean;
+}
+
+/**
+ * Round 22: compare two assembly batch gate exports (twin-run / regression checks).
+ */
+export function compareBatchNationalTickSessionWaveAssemblyBatchGateExports(
+  baseline: BatchNationalTickSessionWaveAssemblyBatchGateExport,
+  candidate: BatchNationalTickSessionWaveAssemblyBatchGateExport,
+): BatchNationalTickSessionWaveAssemblyBatchGateExportCompareResult {
+  const gateDigestMatch = baseline.gateDigest === candidate.gateDigest;
+  const batchDigestMatch = baseline.batchDigest === candidate.batchDigest;
+  const okFlagMatch = baseline.ok === candidate.ok;
+  return {
+    ok: gateDigestMatch && batchDigestMatch && okFlagMatch,
+    gateDigestMatch,
+    batchDigestMatch,
+    okFlagMatch,
+  };
+}
+
+// --- src/batch-national-tick-session-wave-assembly-batch-integration-audit.ts ---
+
+export interface BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditResult {
+  ok: boolean;
+  gate: BatchNationalTickSessionWaveAssemblyBatchGateResult;
+  gateExport: BatchNationalTickSessionWaveAssemblyBatchGateExport;
+  integrationDigest: string;
+}
+
+export function computeBatchNationalTickSessionWaveAssemblyBatchIntegrationDigest(
+  gateExport: BatchNationalTickSessionWaveAssemblyBatchGateExport,
+): string {
+  return fnv1a64Hex(
+    JSON.stringify({
+      gate: gateExport.gateDigest,
+      batch: gateExport.batchDigest,
+      ok: gateExport.ok,
+    }),
+  );
+}
+
+/**
+ * Round 22: post-integration audit — gated batch run plus export digest for assembly manifest.
+ */
+export function auditBatchNationalTickSessionWaveAssemblyBatchIntegration(
+  engine: TurnTimeEngine,
+  budget: TurnAdvanceBudgetState,
+  tickBatches: readonly (readonly NationalTickSessionWaveTickSpec[])[],
+): BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditResult {
+  const gate = gateBatchNationalTickSessionWaveAssemblyBatch(engine, budget, tickBatches);
+  const gateExport = exportBatchNationalTickSessionWaveAssemblyBatchGate(gate);
+  const integrationDigest =
+    computeBatchNationalTickSessionWaveAssemblyBatchIntegrationDigest(gateExport);
+  return {
+    ok: gateExport.ok,
+    gate,
+    gateExport,
+    integrationDigest,
+  };
+}
+
 // --- src/fast-forward.ts ---
 
 export interface FastForwardResult {
@@ -5250,7 +5359,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '3.0.0';
+export const AGENT_02_MODULE_VERSION = '3.1.0';
 
 
 
@@ -6009,6 +6118,24 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
     name: 'national tick session wave assembly batch gate',
 
     passed: gateBatchNationalTickSessionWaveAssemblyBatch(
+
+      new TurnTimeEngine(),
+
+      createTurnAdvanceBudget(2),
+
+      [[{ maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } }]],
+
+    ).ok,
+
+  });
+
+  results.push({
+
+    id: 'agent02_national_tick_session_wave_assembly_batch_integration_audit',
+
+    name: 'national tick session wave assembly batch integration audit',
+
+    passed: auditBatchNationalTickSessionWaveAssemblyBatchIntegration(
 
       new TurnTimeEngine(),
 
