@@ -30,6 +30,7 @@ import {
   attachVacaturSessionToState,
   attachRemandSessionToState,
   attachReversalSessionToState,
+  attachAnnulmentSessionToState,
   attachGauntletSessionToState,
   attachMarathonQueueToState,
   attachRelaySessionToState,

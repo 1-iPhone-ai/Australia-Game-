@@ -20,6 +20,7 @@ import { advanceExpungementSessionAfterRun } from './save-format-expungement.js'
 import { advanceVacaturSessionAfterRun } from './save-format-vacatur.js';
 import { advanceRemandSessionAfterRun } from './save-format-remand.js';
 import { advanceReversalSessionAfterRun } from './save-format-reversal.js';
+import { advanceAnnulmentSessionAfterRun } from './save-format-annulment.js';
 import { advanceExonerationSessionAfterRun } from './save-format-exoneration.js';
 import { advanceAcquittalSessionAfterRun } from './save-format-acquittal.js';
 import { advanceCommutationSessionAfterRun } from './save-format-commutation.js';
@@ -161,6 +162,7 @@ export function attachMarathonQueueToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -278,6 +280,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceAnnulmentSessionAfterRun(next, run);
   next = advanceReversalSessionAfterRun(next, run);
   next = advanceRemandSessionAfterRun(next, run);
   next = advanceVacaturSessionAfterRun(next, run);

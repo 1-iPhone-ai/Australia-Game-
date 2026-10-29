@@ -117,6 +117,11 @@ import {
   sanitizeReversalSession,
 } from './save-format-reversal.js';
 import {
+  getAnnulmentScenarioAtCursor,
+  annulmentSessionSummary,
+  sanitizeAnnulmentSession,
+} from './save-format-annulment.js';
+import {
   getExonerationScenarioAtCursor,
   exonerationSessionSummary,
   sanitizeExonerationSession,
@@ -185,6 +190,7 @@ import type {
   O10mVacaturPhase,
   O10mRemandPhase,
   O10mReversalPhase,
+  O10mAnnulmentPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -311,9 +317,31 @@ const emptyQueuePlan = {
   reversalCursor: null as number | null,
   reversalPhase: null as O10mReversalPhase | null,
   reversalScore: null as number | null,
+  annulmentId: null as string | null,
+  annulmentCursor: null as number | null,
+  annulmentPhase: null as O10mAnnulmentPhase | null,
+  annulmentScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const annulment = sanitizeAnnulmentSession(state.annulmentSession);
+  const annulmentScenario = getAnnulmentScenarioAtCursor(annulment);
+  if (annulment && annulment.active && annulmentScenario) {
+    return {
+      kind: 'annulment_step',
+      scenarioId: annulmentScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      annulmentId: annulment.annulmentId,
+      annulmentCursor: annulment.cursor,
+      annulmentPhase: annulment.phaseTag,
+      annulmentScore: annulment.annulmentScore,
+      reason: `Annulment "${annulment.label}" ${annulment.phaseTag} phase ${annulment.cursor + 1}/${annulment.scenarioIds.length} (score ${annulment.annulmentScore}).`,
+    };
+  }
+
   const reversal = sanitizeReversalSession(state.reversalSession);
   const reversalScenario = getReversalScenarioAtCursor(reversal);
   if (reversal && reversal.active && reversalScenario) {
@@ -968,6 +996,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   vacaturActive: boolean;
   remandActive: boolean;
   reversalActive: boolean;
+  annulmentActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -1006,6 +1035,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const vacatur = vacaturSessionSummary(state);
   const remand = remandSessionSummary(state);
   const reversal = reversalSessionSummary(state);
+  const annulment = annulmentSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -1042,6 +1072,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     vacaturActive: vacatur.active,
     remandActive: remand.active,
     reversalActive: reversal.active,
+    annulmentActive: annulment.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

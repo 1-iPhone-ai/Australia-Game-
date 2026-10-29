@@ -391,6 +391,7 @@ export type O10mExpungementPhase = 'filing' | 'review' | 'expungement';
 export type O10mVacaturPhase = 'petition' | 'review' | 'vacatur';
 export type O10mRemandPhase = 'order' | 'review' | 'remand';
 export type O10mReversalPhase = 'motion' | 'review' | 'reversal';
+export type O10mAnnulmentPhase = 'filing' | 'review' | 'annulment';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -700,6 +701,17 @@ export interface O10mReversalSession {
   phaseTag: O10mReversalPhase;
 }
 
+/** Schema v36 — annulment arc with score accrual between phases. */
+export interface O10mAnnulmentSession {
+  annulmentId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  annulmentScore: number;
+  phaseTag: O10mAnnulmentPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -724,6 +736,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'annulment_step'
     | 'reversal_step'
     | 'remand_step'
     | 'vacatur_step'
@@ -882,6 +895,10 @@ export interface O10mCampaignPlan {
   reversalCursor: number | null;
   reversalPhase: O10mReversalPhase | null;
   reversalScore: number | null;
+  annulmentId: string | null;
+  annulmentCursor: number | null;
+  annulmentPhase: O10mAnnulmentPhase | null;
+  annulmentScore: number | null;
   reason: string;
 }
 
@@ -973,8 +990,10 @@ export interface O10mModesPersistedState {
   vacaturSession?: O10mVacaturSession | null;
   /** Schema v34 — active remand arc (mutually exclusive with reversal / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   remandSession?: O10mRemandSession | null;
-  /** Schema v35 — active reversal arc (mutually exclusive with remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v35 — active reversal arc (mutually exclusive with annulment / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   reversalSession?: O10mReversalSession | null;
+  /** Schema v36 — active annulment arc (mutually exclusive with reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  annulmentSession?: O10mAnnulmentSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -4917,6 +4936,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Reversal finales', 'Score ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_annulment_filing_docket',
+    title: 'Annulment Filing Docket',
+    description: 'Open an annulment arc with low-pressure score pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100517,
+    startingMoney: 3600,
+    startingRegions: ['TAS', 'VIC'],
+    badgeId: 'badge_o10m_annulment_filing_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100517),
+      o10mAnnulmentFilingDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_afd_obj_day',
+        label: 'Filing Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Annulment arcs', 'Score pacing', 'Filing phase'],
+  },
+  {
+    id: 'o10m_annulment_review_chamber',
+    title: 'Annulment Review Chamber',
+    description: 'Mid-annulment review with accrued score bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100518,
+    startingMoney: 4150,
+    startingRegions: ['NSW', 'WA'],
+    startingStanding: { NSW: 69, WA: 67 },
+    badgeId: 'badge_o10m_annulment_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100518),
+      regionalStandingEnabled: true,
+      o10mAnnulmentReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_arc3_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 75',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 75,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Score carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_annulment_nullity_finale',
+    title: 'Annulment Nullity Finale',
+    description: 'Finale annulment stage — net worth gate with full score bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100519,
+    startingMoney: 4600,
+    startingRegions: ['QLD', 'NT', 'SA'],
+    badgeId: 'badge_o10m_annulment_nullity_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100519),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mAnnulmentNullityFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_anf_obj_net',
+        label: 'Nullity Net Worth',
+        description: 'Reach $20,600 net worth',
+        targetType: 'netWorth',
+        targetValue: 20600,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Annulment finales', 'Score ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -6589,6 +6705,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_annulment_route',
+    title: 'Annulment Route',
+    description:
+      'Three-phase annulment arc with score accrual between legs — round-36 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_annulment_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_annulment_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File annulment petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 460 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_annulment_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 6, NSW: 5 },
+          forcedSettingsPatch: { o10mAnnulmentMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_annulment_nullity_finale',
+        title: 'Nullity Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainAnnulmentRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -7415,7 +7565,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 35;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 36;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -7549,6 +7699,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
   };
 }
 
@@ -7603,6 +7754,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       vacaturSession: merged.vacaturSession ?? null,
       remandSession: merged.remandSession ?? null,
       reversalSession: merged.reversalSession ?? null,
+      annulmentSession: merged.annulmentSession ?? null,
     };
     return upgraded;
   }
@@ -7681,6 +7833,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     vacaturSession: sanitizeVacaturSession(o.vacaturSession),
     remandSession: sanitizeRemandSession(o.remandSession),
     reversalSession: sanitizeReversalSession(o.reversalSession),
+    annulmentSession: sanitizeAnnulmentSession(o.annulmentSession),
   };
 }
 
@@ -7934,6 +8087,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Reversal cursor out of range; clamp on next sanitize.');
   }
 
+  const annulment = sanitizeAnnulmentSession(state.annulmentSession);
+  if (state.annulmentSession && !annulment) {
+    warnings.push('Annulment session failed sanitization; planner will ignore it.');
+  } else if (annulment && annulment.cursor >= annulment.scenarioIds.length) {
+    warnings.push('Annulment cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -8072,6 +8232,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'vacaturSession',
   'remandSession',
   'reversalSession',
+  'annulmentSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -8605,6 +8766,7 @@ export function attachMarathonQueueToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -8722,6 +8884,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceAnnulmentSessionAfterRun(next, run);
   next = advanceReversalSessionAfterRun(next, run);
   next = advanceRemandSessionAfterRun(next, run);
   next = advanceVacaturSessionAfterRun(next, run);
@@ -8908,6 +9071,7 @@ export function attachGauntletSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -9165,6 +9329,7 @@ export function attachRelaySessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -9382,6 +9547,7 @@ export function attachCircuitSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -9617,6 +9783,7 @@ export function attachExpeditionSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -9850,6 +10017,7 @@ export function attachOdysseySessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -10082,6 +10250,7 @@ export function attachPilgrimageSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -10315,6 +10484,7 @@ export function attachCaravanSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -10542,6 +10712,7 @@ export function attachVoyageSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -10769,6 +10940,7 @@ export function attachSiegeSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -10996,6 +11168,7 @@ export function attachConvoySessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -11223,6 +11396,7 @@ export function attachEscortSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -11459,6 +11633,7 @@ export function attachExtractionSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -11703,6 +11878,7 @@ export function attachSubjectSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -11947,6 +12123,7 @@ export function attachWitnessSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -12191,6 +12368,7 @@ export function attachTribunalSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -12435,6 +12613,7 @@ export function attachIndictmentSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -12679,6 +12858,7 @@ export function attachAppealSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -12923,6 +13103,7 @@ export function attachClemencySessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -13167,6 +13348,7 @@ export function attachPardonSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,
@@ -13411,6 +13593,7 @@ export function attachAmnestySessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     pardonSession: null,
     clemencySession: null,
     appealSession: null,
@@ -13655,6 +13838,7 @@ export function attachReprieveSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,
@@ -13899,6 +14083,7 @@ export function attachParoleSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     reprieveSession: null,
     amnestySession: null,
     pardonSession: null,
@@ -14143,6 +14328,7 @@ export function attachProbationSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     paroleSession: null,
     reprieveSession: null,
     amnestySession: null,
@@ -14387,6 +14573,7 @@ export function attachCommutationSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     probationSession: null,
     paroleSession: null,
     reprieveSession: null,
@@ -14631,6 +14818,7 @@ export function attachAcquittalSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     commutationSession: null,
     probationSession: null,
     paroleSession: null,
@@ -14875,6 +15063,7 @@ export function attachExonerationSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     acquittalSession: null,
     commutationSession: null,
     probationSession: null,
@@ -15119,6 +15308,7 @@ export function attachExpungementSessionToState(
     vacaturSession: null,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     exonerationSession: null,
     acquittalSession: null,
     commutationSession: null,
@@ -15363,6 +15553,7 @@ export function attachVacaturSessionToState(
     vacaturSession: sanitized,
     remandSession: null,
     reversalSession: null,
+    annulmentSession: null,
     expungementSession: null,
     exonerationSession: null,
     acquittalSession: null,
@@ -15607,6 +15798,7 @@ export function attachRemandSessionToState(
     ...state,
     remandSession: sanitized,
     reversalSession: null,
+    annulmentSession: null,
     vacaturSession: null,
     expungementSession: null,
     exonerationSession: null,
@@ -15851,6 +16043,7 @@ export function attachReversalSessionToState(
   return {
     ...state,
     reversalSession: sanitized,
+    annulmentSession: null,
     remandSession: null,
     vacaturSession: null,
     expungementSession: null,
@@ -15977,6 +16170,252 @@ export function reversalSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-annulment.ts ---
+export const O10M_ANNULMENT_SCENARIO_CAP = 6;
+export const O10M_ANNULMENT_SCORE_CAP = 1020;
+export const O10M_ANNULMENT_SCORE_MONEY_CAP = 1100;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mAnnulmentPhase>(['filing', 'review', 'annulment']);
+
+export function unlockTokenForAnnulmentId(annulmentId: string): string | null {
+  if (!annulmentId.startsWith('o10m_annulment_')) return null;
+  return `o10m_unlock_${annulmentId.slice('o10m_annulment_'.length)}`;
+}
+
+export function annulmentPhaseForCursor(cursor: number, scenarioCount: number): O10mAnnulmentPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'annulment';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'filing';
+}
+
+export function annulmentScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(134, Math.max(30, Math.floor(run.playerNetWorth / 138) + standingSlice));
+}
+
+export function sanitizeAnnulmentSession(raw: unknown): O10mAnnulmentSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const annulmentId =
+    typeof o.annulmentId === 'string' && o.annulmentId.startsWith('o10m_annulment_') ? o.annulmentId : null;
+  if (!annulmentId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : annulmentId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_ANNULMENT_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const annulmentScore = Math.min(
+    O10M_ANNULMENT_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.annulmentScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mAnnulmentPhase)
+      ? (phaseRaw as O10mAnnulmentPhase)
+      : annulmentPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    annulmentId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    annulmentScore,
+    phaseTag,
+  };
+}
+
+export function createAnnulmentSession(params: {
+  annulmentId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mAnnulmentSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.annulmentId.startsWith('o10m_annulment_')) {
+    return { session: null, warnings: ['Annulment ids must start with o10m_annulment_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_ANNULMENT_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Annulment arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      annulmentId: params.annulmentId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      annulmentScore: 0,
+      phaseTag: annulmentPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachAnnulmentSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mAnnulmentSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeAnnulmentSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    annulmentSession: sanitized,
+    reversalSession: null,
+    remandSession: null,
+    vacaturSession: null,
+    expungementSession: null,
+    exonerationSession: null,
+    acquittalSession: null,
+    commutationSession: null,
+    probationSession: null,
+    paroleSession: null,
+    reprieveSession: null,
+    amnestySession: null,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearAnnulmentSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, annulmentSession: null };
+}
+
+export function getAnnulmentScenarioAtCursor(
+  session: O10mAnnulmentSession | null | undefined,
+): string | null {
+  const annulment = sanitizeAnnulmentSession(session);
+  if (!annulment || !annulment.active) return null;
+  return annulment.scenarioIds[annulment.cursor] ?? null;
+}
+
+export function buildAnnulmentScenarioStartOverrides(
+  session: O10mAnnulmentSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const annulment = sanitizeAnnulmentSession(session);
+  if (!annulment) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_ANNULMENT_SCORE_MONEY_CAP,
+    Math.floor(annulment.annulmentScore * 0.87),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveAnnulmentId: annulment.annulmentId,
+      o10mActiveAnnulmentStep: annulment.cursor,
+      o10mActiveAnnulmentPhase: annulment.phaseTag,
+      o10mAnnulmentScore: annulment.annulmentScore,
+    },
+  };
+}
+
+export function advanceAnnulmentSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeAnnulmentSession(state.annulmentSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const annulmentScore = Math.min(
+    O10M_ANNULMENT_SCORE_CAP,
+    session.annulmentScore + annulmentScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      annulmentSession: {
+        ...session,
+        cursor,
+        annulmentScore,
+        phaseTag: annulmentPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForAnnulmentId(session.annulmentId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    annulmentSession: { ...session, active: false, annulmentScore, phaseTag: 'annulment' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function annulmentSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  annulmentScore: number;
+  phase: O10mAnnulmentPhase | null;
+} {
+  const session = sanitizeAnnulmentSession(state.annulmentSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    annulmentScore: session?.annulmentScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -16099,9 +16538,31 @@ const emptyQueuePlan = {
   reversalCursor: null as number | null,
   reversalPhase: null as O10mReversalPhase | null,
   reversalScore: null as number | null,
+  annulmentId: null as string | null,
+  annulmentCursor: null as number | null,
+  annulmentPhase: null as O10mAnnulmentPhase | null,
+  annulmentScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const annulment = sanitizeAnnulmentSession(state.annulmentSession);
+  const annulmentScenario = getAnnulmentScenarioAtCursor(annulment);
+  if (annulment && annulment.active && annulmentScenario) {
+    return {
+      kind: 'annulment_step',
+      scenarioId: annulmentScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      annulmentId: annulment.annulmentId,
+      annulmentCursor: annulment.cursor,
+      annulmentPhase: annulment.phaseTag,
+      annulmentScore: annulment.annulmentScore,
+      reason: `Annulment "${annulment.label}" ${annulment.phaseTag} phase ${annulment.cursor + 1}/${annulment.scenarioIds.length} (score ${annulment.annulmentScore}).`,
+    };
+  }
+
   const reversal = sanitizeReversalSession(state.reversalSession);
   const reversalScenario = getReversalScenarioAtCursor(reversal);
   if (reversal && reversal.active && reversalScenario) {
@@ -16756,6 +17217,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   vacaturActive: boolean;
   remandActive: boolean;
   reversalActive: boolean;
+  annulmentActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -16794,6 +17256,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const vacatur = vacaturSessionSummary(state);
   const remand = remandSessionSummary(state);
   const reversal = reversalSessionSummary(state);
+  const annulment = annulmentSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -16830,6 +17293,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     vacaturActive: vacatur.active,
     remandActive: remand.active,
     reversalActive: reversal.active,
+    annulmentActive: annulment.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -16848,7 +17312,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 36, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 37, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -17124,16 +17588,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const reversalState = reversal ? attachReversalSessionToState(createEmptyO10mModesPersistedState(), reversal) : null;
   push('agent04_chunk_43', reversalState !== null && planNextCampaignAction(reversalState!).kind === 'reversal_step');
 
+  const annulment = createAnnulmentSession({
+    annulmentId: 'o10m_annulment_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_annulment_filing_docket'],
+  }).session;
+  const annulmentState = annulment ? attachAnnulmentSessionToState(createEmptyO10mModesPersistedState(), annulment) : null;
+  push('agent04_chunk_44', annulmentState !== null && planNextCampaignAction(annulmentState!).kind === 'annulment_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v36',
+  schemaVersion: 'op10m-agent04-v37',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 35,
+  saveSchemaVersion: 36,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;
