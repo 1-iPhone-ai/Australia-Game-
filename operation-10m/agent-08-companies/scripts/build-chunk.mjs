@@ -57,6 +57,7 @@ const FILES = [
   'production-transition-finalization.ts',
   'production-transition-closure.ts',
   'production-transition-completion.ts',
+  'production-transition-resolution.ts',
   'chunk-exports.ts',
 ];
 
