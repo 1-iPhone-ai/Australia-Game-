@@ -17,11 +17,18 @@ export * from './core/resilience-spread.ts';
 export * from './core/dependency-profile.ts';
 export * from './core/heat-summary.ts';
 export * from './core/parity-gap.ts';
+export * from './core/corridor-stress.ts';
+export * from './core/network-coupling.ts';
+export * from './core/dependency-chokepoint.ts';
+export * from './core/needs-imbalance.ts';
+export * from './core/map-pulse.ts';
 export * from './ui/charts.tsx';
 export * from './ui/compare-insights.tsx';
 export * from './ui/map-legend.tsx';
 export * from './ui/network-depth-panel.tsx';
 export * from './ui/regions-depth-strip.tsx';
+export * from './ui/corridor-stress-strip.tsx';
+export * from './ui/needs-imbalance-card.tsx';
 export * from './ui/region-position-map.tsx';
 export * from './ui/dashboard-modal.tsx';
 export {

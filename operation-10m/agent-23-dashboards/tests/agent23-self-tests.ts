@@ -8,6 +8,11 @@ import { nrDashBuildConstraintProfile } from '../core/constraint-profile.ts';
 import { nrDashBuildDependencyProfile } from '../core/dependency-profile.ts';
 import { nrDashBuildHeatRowSummaries } from '../core/heat-summary.ts';
 import { nrDashBuildParityGapRows, nrDashTopParityOutliers } from '../core/parity-gap.ts';
+import { nrDashBuildCorridorStressRows, nrDashTopCorridorStress } from '../core/corridor-stress.ts';
+import { nrDashBuildNetworkCoupling } from '../core/network-coupling.ts';
+import { nrDashBuildDependencyChokepoints } from '../core/dependency-chokepoint.ts';
+import { nrDashBuildNeedsImbalance } from '../core/needs-imbalance.ts';
+import { nrDashApplyMapPulse, nrDashBuildMapPulseRows, nrDashHottestPulseRegion } from '../core/map-pulse.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -240,6 +245,45 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   check('a23_parity_gap', 'Parity gap rows align to region count', () => {
     const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
     return nrDashBuildParityGapRows(snap).length === 8 && nrDashTopParityOutliers(snap, 2).length <= 2;
+  });
+
+  check('a23_corridor_stress', 'Corridor stress ranks NSW adjacency high', () => {
+    const rows = nrDashTopCorridorStress(createAgent23NsFixture(), 3);
+    return rows.length === 3 && rows.some(r => r.corridorKey.includes('NSW'));
+  });
+
+  check('a23_network_coupling', 'Network coupling reports NSW strained cell', () => {
+    const c = nrDashBuildNetworkCoupling(createAgent23NsFixture())!;
+    const nsw = c.rows.find(r => r.regionId === 'NSW');
+    return c.meanCoupling >= 0 && Boolean(nsw && nsw.strainedCount >= 1);
+  });
+
+  check('a23_dep_chokepoint', 'Dependency chokepoints preserve fixture order by score', () => {
+    const rows = nrDashBuildDependencyChokepoints(createAgent23NsFixture());
+    return rows.length === 3 && rows[0].chokeScore >= rows[rows.length - 1].chokeScore;
+  });
+
+  check('a23_needs_imbalance', 'Needs imbalance totals match snapshot rows', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const im = nrDashBuildNeedsImbalance(snap)!;
+    const expected = snap.regions.reduce((s, r) => s + r.openNeeds, 0);
+    return im.totalOpenNeeds === expected && im.stdDev >= 0;
+  });
+
+  check('a23_map_pulse', 'Map pulse applies intensity and hotspot', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const base = nrDashBuildRegionMapNodes(snap);
+    const pulsed = nrDashApplyMapPulse(base);
+    return (
+      nrDashBuildMapPulseRows(base).every(p => p.intensity >= 0 && p.intensity <= 1) &&
+      pulsed.every(n => n.pulseIntensity != null) &&
+      nrDashHottestPulseRegion(pulsed) != null
+    );
+  });
+
+  check('a23_corridor_count', 'Corridor stress covers adjacency pair count', () => {
+    const pairs = agent23ListAdjacencyPairs();
+    return nrDashBuildCorridorStressRows(createAgent23NsFixture()).length === pairs.length;
   });
 
   return results;

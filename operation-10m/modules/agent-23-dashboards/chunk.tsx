@@ -211,6 +211,8 @@ export interface RegionMapNode {
   activityWeight: number;
   /** Map focus mode dims non-neighbor regions. */
   dimmed?: boolean;
+  /** 0..1 activity pulse overlay (derived from snapshot fields). */
+  pulseIntensity?: number;
 }
 
 export interface Agent23TestResult {
@@ -1021,6 +1023,204 @@ export function nrDashTopParityOutliers(snap: NrDashAuthSnapshot, limit = 3): Nr
     .slice(0, limit);
 }
 
+// --- bundled from core/corridor-stress.ts ---
+export interface NrDashCorridorStressRow {
+  corridorKey: string;
+  regionA: string;
+  regionB: string;
+  /** Mean peak utilization across the two endpoint regions (0..1). */
+  meanPeakUtilization: number;
+  /** Worst condition rank label across both regions' network cells. */
+  worstLabel: string;
+}
+
+function regionPeakUtilization(ns: NationalSystemsState, regionId: string): number {
+  const reg = ns.regions[regionId];
+  if (!reg) return 0;
+  let peak = 0;
+  NATIONAL_NETWORKS.forEach(n => {
+    const u = reg.networks[n]?.utilization ?? 0;
+    if (u > peak) peak = u;
+  });
+  return peak;
+}
+
+/** Land-corridor stress from NS utilization at adjacency endpoints (state-derived). */
+export function nrDashBuildCorridorStressRows(ns: NationalSystemsState | null): NrDashCorridorStressRow[] {
+  if (!ns) return [];
+  return agent23ListAdjacencyPairs().map(({ a, b, key }) => {
+    const peakA = regionPeakUtilization(ns, a);
+    const peakB = regionPeakUtilization(ns, b);
+    const meanPeakUtilization = Math.round(((peakA + peakB) / 2) * 1000) / 1000;
+    const worst = Math.max(peakA, peakB);
+    const worstLabel = worst >= 0.9 ? 'critical corridor' : worst >= 0.75 ? 'strained corridor' : 'stable corridor';
+    return { corridorKey: key, regionA: a, regionB: b, meanPeakUtilization, worstLabel };
+  });
+}
+
+export function nrDashTopCorridorStress(ns: NationalSystemsState | null, limit = 5): NrDashCorridorStressRow[] {
+  return nrDashBuildCorridorStressRows(ns)
+    .sort((x, y) => y.meanPeakUtilization - x.meanPeakUtilization || x.corridorKey.localeCompare(y.corridorKey))
+    .slice(0, limit);
+}
+
+// --- bundled from core/network-coupling.ts ---
+export interface NrDashNetworkCouplingRow {
+  regionId: string;
+  strainedCount: number;
+  /** Share of networks at strained+ condition (0..1). */
+  couplingRatio: number;
+}
+
+export interface NrDashNetworkCouplingSummary {
+  rows: NrDashNetworkCouplingRow[];
+  meanCoupling: number;
+  maxCouplingRegionId: string | null;
+}
+
+const strainedPlus = (c: NationalNetworkCondition) => NS_COND_RANK[c] >= NS_COND_RANK.strained;
+
+/** Count co-occurring strained+ networks per region (NS cells only). */
+export function nrDashBuildNetworkCoupling(ns: NationalSystemsState | null): NrDashNetworkCouplingSummary | null {
+  if (!ns) return null;
+  const rows: NrDashNetworkCouplingRow[] = Object.values(ns.regions).map(reg => {
+    let strainedCount = 0;
+    NATIONAL_NETWORKS.forEach(n => {
+      const cell = reg.networks[n];
+      if (cell && strainedPlus(cell.condition)) strainedCount += 1;
+    });
+    const couplingRatio = Math.round((strainedCount / NATIONAL_NETWORKS.length) * 1000) / 1000;
+    return { regionId: reg.regionId, strainedCount, couplingRatio };
+  });
+  rows.sort((a, b) => b.couplingRatio - a.couplingRatio || a.regionId.localeCompare(b.regionId));
+  const meanCoupling =
+    rows.length === 0
+      ? 0
+      : Math.round((rows.reduce((s, r) => s + r.couplingRatio, 0) / rows.length) * 1000) / 1000;
+  const maxCouplingRegionId = rows[0]?.couplingRatio ? rows[0].regionId : null;
+  return { rows, meanCoupling, maxCouplingRegionId };
+}
+
+// --- bundled from core/dependency-chokepoint.ts ---
+const IMPORTANCE_WEIGHT: Record<string, number> = {
+  moderate: 1,
+  high: 1.25,
+  critical: 1.5,
+};
+
+export interface NrDashDependencyChokepointRow {
+  dependencyId: string;
+  label: string;
+  consumerRegionId: string;
+  providerRegionId: string;
+  networkLabel: string;
+  /** Endpoint peak utilization sum weighted by importance (state-derived). */
+  chokeScore: number;
+}
+
+function endpointPeak(ns: NationalSystemsState, regionId: string): number {
+  const reg = ns.regions[regionId];
+  if (!reg) return 0;
+  return Math.max(
+    reg.networks.freight?.utilization ?? 0,
+    reg.networks.energy?.utilization ?? 0,
+    reg.networks.water?.utilization ?? 0,
+    reg.networks.trade?.utilization ?? 0,
+    reg.networks.digital?.utilization ?? 0
+  );
+}
+
+/** Rank interregional dependencies by combined endpoint stress (NS authoritative). */
+export function nrDashBuildDependencyChokepoints(ns: NationalSystemsState | null): NrDashDependencyChokepointRow[] {
+  if (!ns?.dependencies?.length) return [];
+  return ns.dependencies
+    .map(dep => {
+      const consumerPeak = endpointPeak(ns, dep.consumerRegionId);
+      const providerPeak = endpointPeak(ns, dep.providerRegionId);
+      const w = IMPORTANCE_WEIGHT[dep.importance] ?? 1;
+      const chokeScore = Math.round((consumerPeak + providerPeak) * w * 1000) / 1000;
+      return {
+        dependencyId: dep.id,
+        label: `${dep.consumerRegionId} ← ${dep.providerRegionId} (${NATIONAL_NETWORK_LABEL[dep.network]})`,
+        consumerRegionId: dep.consumerRegionId,
+        providerRegionId: dep.providerRegionId,
+        networkLabel: NATIONAL_NETWORK_LABEL[dep.network],
+        chokeScore,
+      };
+    })
+    .sort((a, b) => b.chokeScore - a.chokeScore || a.dependencyId.localeCompare(b.dependencyId));
+}
+
+export function nrDashTopDependencyChokepoints(ns: NationalSystemsState | null, limit = 3): NrDashDependencyChokepointRow[] {
+  return nrDashBuildDependencyChokepoints(ns).slice(0, limit);
+}
+
+// --- bundled from core/needs-imbalance.ts ---
+export interface NrDashNeedsImbalance {
+  totalOpenNeeds: number;
+  meanPerRegion: number;
+  stdDev: number;
+  neediestRegionId: string | null;
+  neediestOpenNeeds: number;
+  /** max/min among regions with needs > 0, null when flat. */
+  spreadRatio: number | null;
+}
+
+/** Regional open-needs dispersion from snapshot rows (LR-derived counts). */
+export function nrDashBuildNeedsImbalance(snap: NrDashAuthSnapshot | null): NrDashNeedsImbalance | null {
+  if (!snap?.regions.length) return null;
+  const counts = snap.regions.map(r => r.openNeeds);
+  const totalOpenNeeds = counts.reduce((s, n) => s + n, 0);
+  const meanPerRegion = totalOpenNeeds / counts.length;
+  const variance =
+    counts.reduce((s, n) => s + (n - meanPerRegion) ** 2, 0) / Math.max(counts.length, 1);
+  const stdDev = Math.round(Math.sqrt(variance) * 100) / 100;
+  const ranked = [...snap.regions].sort((a, b) => b.openNeeds - a.openNeeds || a.regionId.localeCompare(b.regionId));
+  const neediest = ranked[0];
+  const positives = counts.filter(n => n > 0);
+  const spreadRatio =
+    positives.length >= 2
+      ? Math.round((Math.max(...positives) / Math.min(...positives)) * 100) / 100
+      : null;
+  return {
+    totalOpenNeeds,
+    meanPerRegion: Math.round(meanPerRegion * 100) / 100,
+    stdDev,
+    neediestRegionId: neediest?.openNeeds ? neediest.regionId : null,
+    neediestOpenNeeds: neediest?.openNeeds ?? 0,
+    spreadRatio,
+  };
+}
+
+// --- bundled from core/map-pulse.ts ---
+export interface NrDashMapPulseRow {
+  regionId: string;
+  /** 0..1 composite pulse from snapshot node fields (not simulated). */
+  intensity: number;
+}
+
+/** Pulse intensity blends momentum activity, open needs, and high risks on map nodes. */
+export function nrDashBuildMapPulseRows(nodes: RegionMapNode[]): NrDashMapPulseRow[] {
+  return nodes.map(n => {
+    const needTerm = nrDashClamp01(n.openNeeds / 8);
+    const riskTerm = nrDashClamp01(n.highRisks / 4);
+    const intensity = nrDashClamp01(n.activityWeight * 0.55 + needTerm * 0.25 + riskTerm * 0.2);
+    return { regionId: n.regionId, intensity };
+  });
+}
+
+export function nrDashApplyMapPulse(nodes: RegionMapNode[]): RegionMapNode[] {
+  const pulse = new Map(nrDashBuildMapPulseRows(nodes).map(p => [p.regionId, p.intensity]));
+  return nodes.map(n => ({ ...n, pulseIntensity: pulse.get(n.regionId) ?? 0 }));
+}
+
+export function nrDashHottestPulseRegion(nodes: RegionMapNode[]): string | null {
+  const rows = nrDashBuildMapPulseRows(nodes);
+  if (!rows.length) return null;
+  const top = [...rows].sort((a, b) => b.intensity - a.intensity)[0];
+  return top.intensity > 0 ? top.regionId : null;
+}
+
 // --- bundled from tests/fixtures.ts ---
 function emptyNetworks(): Record<NationalNetworkKind, NationalRegionSystemsState['networks']['freight']> {
   const base = { utilization: 0.4, condition: 'healthy' as const };
@@ -1368,6 +1568,38 @@ export const NrDashRegionsDepthStrip: React.FC<{
   </div>
 );
 
+// --- bundled from ui/corridor-stress-strip.tsx ---
+export const NrDashCorridorStressStrip: React.FC<{ corridors: NrDashCorridorStressRow[] }> = ({ corridors }) => {
+  if (!corridors.length) return null;
+  return (
+    <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-corridor-stress">
+      <div className="font-semibold mb-1">Highest-stress land corridors (NS endpoints)</div>
+      <ul className="list-disc list-inside">
+        {corridors.map(c => (
+          <li key={c.corridorKey}>
+            {c.regionA}–{c.regionB}: {Math.round(c.meanPeakUtilization * 100)}% · {c.worstLabel}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+// --- bundled from ui/needs-imbalance-card.tsx ---
+export const NrDashNeedsImbalanceCard: React.FC<{ imbalance: NrDashNeedsImbalance | null }> = ({ imbalance }) => {
+  if (!imbalance) return null;
+  return (
+    <div className="rounded border border-slate-600/50 p-2 text-xs" data-testid="nr-dash-needs-imbalance">
+      <div className="font-semibold mb-1">Regional open-needs imbalance</div>
+      <div>
+        Σ {imbalance.totalOpenNeeds} · μ {imbalance.meanPerRegion}/region · σ {imbalance.stdDev}
+        {imbalance.neediestRegionId ? ` · peak ${imbalance.neediestRegionId} (${imbalance.neediestOpenNeeds})` : ''}
+        {imbalance.spreadRatio != null ? ` · spread ×${imbalance.spreadRatio}` : ''}
+      </div>
+    </div>
+  );
+};
+
 // --- bundled from ui/region-position-map.tsx ---
 export interface RegionPositionMapProps {
   nodes: RegionMapNode[];
@@ -1428,8 +1660,21 @@ export const RegionPositionMap: React.FC<RegionPositionMapProps> = ({
       const r = 2.2 + n.activityWeight * 2.8;
       const focused = focusRegionId === n.regionId;
       const opacity = n.dimmed ? 0.35 : 0.85;
+      const pulse = n.pulseIntensity ?? 0;
       return (
         <g key={n.regionId} data-testid={`agent23-map-node-${n.regionId}`} opacity={opacity}>
+          {pulse > 0.15 && (
+            <circle
+              cx={n.x}
+              cy={n.y}
+              r={r + 2.4 + pulse * 2}
+              fill="none"
+              stroke="#fbbf24"
+              strokeWidth={0.35 + pulse * 0.5}
+              opacity={0.25 + pulse * 0.45}
+              data-testid={`agent23-map-pulse-${n.regionId}`}
+            />
+          )}
           <circle
             cx={n.x}
             cy={n.y}
@@ -1478,6 +1723,7 @@ export const NrDashOverviewTab: React.FC<{
       divergence={nrDashBuildMomentumDivergence(snap)}
       conditionBuckets={nrDashBuildConditionCatalog(nsState)}
     />
+    <NrDashNeedsImbalanceCard imbalance={nrDashBuildNeedsImbalance(snap)} />
     <div className="grid md:grid-cols-3 gap-3 text-sm">
       <div className="rounded-lg border border-slate-600/50 p-3">
         <div className="text-xs opacity-70">National resilience</div>
@@ -1586,8 +1832,27 @@ export const NrDashNetworksTab: React.FC<{
   }
   const heat = nrDashBuildHeatCells(ns);
   const bottlenecks = nrDashBuildBottleneckRollup(ns);
+  const coupling = nrDashBuildNetworkCoupling(ns);
+  const chokepoints = nrDashTopDependencyChokepoints(ns, 3);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
+      {coupling && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-network-coupling">
+          Network coupling μ {coupling.meanCoupling} · hottest {coupling.maxCouplingRegionId ?? '—'}
+        </div>
+      )}
+      {chokepoints.length > 0 && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-dependency-chokepoints">
+          <div className="font-semibold mb-1">Dependency chokepoints (endpoint stress)</div>
+          <ul className="list-disc list-inside">
+            {chokepoints.map(c => (
+              <li key={c.dependencyId}>
+                {c.label}: score {c.chokeScore}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <NrDashNetworkDepthPanel
         constraints={nrDashBuildConstraintProfile(ns)}
         dependencies={nrDashBuildDependencyProfile(ns)}
@@ -1658,7 +1923,11 @@ export const NrDashMapTab: React.FC<{
   onFocusRegion?: (id: string) => void;
 }> = ({ snap, nsState, focusRegionId, onFocusRegion }) => {
   const baseNodes = useMemo(() => nrDashBuildRegionMapNodes(snap), [snap]);
-  const nodes = useMemo(() => nrDashApplyMapFocus(baseNodes, focusRegionId), [baseNodes, focusRegionId]);
+  const nodes = useMemo(
+    () => nrDashApplyMapPulse(nrDashApplyMapFocus(baseNodes, focusRegionId)),
+    [baseNodes, focusRegionId]
+  );
+  const pulseHot = useMemo(() => nrDashHottestPulseRegion(nodes), [nodes]);
   const allLinks = useMemo(
     () =>
       nrDashMergeMapLinks(
@@ -1675,6 +1944,12 @@ export const NrDashMapTab: React.FC<{
     <div className="space-y-3" data-testid="nr-dash-tab-map">
       <NrDashProvenanceStrip items={snap.provenance} />
       <RegionPositionMap nodes={nodes} links={links} focusRegionId={focusRegionId} onSelect={onFocusRegion} />
+      <NrDashCorridorStressStrip corridors={nrDashTopCorridorStress(nsState, 4)} />
+      {pulseHot && (
+        <p className="text-[10px] opacity-75" data-testid="nr-dash-map-pulse-hot">
+          Pulse hotspot: {pulseHot} (momentum activity + needs + risks)
+        </p>
+      )}
       <NrDashMapLegend />
       <p className="text-[10px] opacity-70">
         Dashed lines: land adjacency. Solid colored lines: interregional dependencies from National Systems.
@@ -2006,6 +2281,45 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   check('a23_parity_gap', 'Parity gap rows align to region count', () => {
     const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
     return nrDashBuildParityGapRows(snap).length === 8 && nrDashTopParityOutliers(snap, 2).length <= 2;
+  });
+
+  check('a23_corridor_stress', 'Corridor stress ranks NSW adjacency high', () => {
+    const rows = nrDashTopCorridorStress(createAgent23NsFixture(), 3);
+    return rows.length === 3 && rows.some(r => r.corridorKey.includes('NSW'));
+  });
+
+  check('a23_network_coupling', 'Network coupling reports NSW strained cell', () => {
+    const c = nrDashBuildNetworkCoupling(createAgent23NsFixture())!;
+    const nsw = c.rows.find(r => r.regionId === 'NSW');
+    return c.meanCoupling >= 0 && Boolean(nsw && nsw.strainedCount >= 1);
+  });
+
+  check('a23_dep_chokepoint', 'Dependency chokepoints preserve fixture order by score', () => {
+    const rows = nrDashBuildDependencyChokepoints(createAgent23NsFixture());
+    return rows.length === 3 && rows[0].chokeScore >= rows[rows.length - 1].chokeScore;
+  });
+
+  check('a23_needs_imbalance', 'Needs imbalance totals match snapshot rows', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const im = nrDashBuildNeedsImbalance(snap)!;
+    const expected = snap.regions.reduce((s, r) => s + r.openNeeds, 0);
+    return im.totalOpenNeeds === expected && im.stdDev >= 0;
+  });
+
+  check('a23_map_pulse', 'Map pulse applies intensity and hotspot', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const base = nrDashBuildRegionMapNodes(snap);
+    const pulsed = nrDashApplyMapPulse(base);
+    return (
+      nrDashBuildMapPulseRows(base).every(p => p.intensity >= 0 && p.intensity <= 1) &&
+      pulsed.every(n => n.pulseIntensity != null) &&
+      nrDashHottestPulseRegion(pulsed) != null
+    );
+  });
+
+  check('a23_corridor_count', 'Corridor stress covers adjacency pair count', () => {
+    const pairs = agent23ListAdjacencyPairs();
+    return nrDashBuildCorridorStressRows(createAgent23NsFixture()).length === pairs.length;
   });
 
   return results;

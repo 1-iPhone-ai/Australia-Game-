@@ -207,6 +207,8 @@ export interface RegionMapNode {
   activityWeight: number;
   /** Map focus mode dims non-neighbor regions. */
   dimmed?: boolean;
+  /** 0..1 activity pulse overlay (derived from snapshot fields). */
+  pulseIntensity?: number;
 }
 
 export interface Agent23TestResult {

@@ -62,8 +62,21 @@ export const RegionPositionMap: React.FC<RegionPositionMapProps> = ({
       const r = 2.2 + n.activityWeight * 2.8;
       const focused = focusRegionId === n.regionId;
       const opacity = n.dimmed ? 0.35 : 0.85;
+      const pulse = n.pulseIntensity ?? 0;
       return (
         <g key={n.regionId} data-testid={`agent23-map-node-${n.regionId}`} opacity={opacity}>
+          {pulse > 0.15 && (
+            <circle
+              cx={n.x}
+              cy={n.y}
+              r={r + 2.4 + pulse * 2}
+              fill="none"
+              stroke="#fbbf24"
+              strokeWidth={0.35 + pulse * 0.5}
+              opacity={0.25 + pulse * 0.45}
+              data-testid={`agent23-map-pulse-${n.regionId}`}
+            />
+          )}
           <circle
             cx={n.x}
             cy={n.y}

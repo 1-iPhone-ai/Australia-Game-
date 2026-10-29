@@ -19,6 +19,11 @@ import { nrDashBuildDependencyProfile } from '../core/dependency-profile.ts';
 import { nrDashBuildHeatRowSummaries } from '../core/heat-summary.ts';
 import { nrDashTopParityOutliers } from '../core/parity-gap.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
+import { nrDashTopCorridorStress } from '../core/corridor-stress.ts';
+import { nrDashBuildNetworkCoupling } from '../core/network-coupling.ts';
+import { nrDashTopDependencyChokepoints } from '../core/dependency-chokepoint.ts';
+import { nrDashBuildNeedsImbalance } from '../core/needs-imbalance.ts';
+import { nrDashApplyMapPulse, nrDashHottestPulseRegion } from '../core/map-pulse.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -42,6 +47,8 @@ import { NrDashCompareInsightsPanel } from './compare-insights.tsx';
 import { NrDashMapLegend } from './map-legend.tsx';
 import { NrDashNetworkDepthPanel } from './network-depth-panel.tsx';
 import { NrDashRegionsDepthStrip } from './regions-depth-strip.tsx';
+import { NrDashCorridorStressStrip } from './corridor-stress-strip.tsx';
+import { NrDashNeedsImbalanceCard } from './needs-imbalance-card.tsx';
 import { RegionPositionMap } from './region-position-map.tsx';
 
 const NrDashProvenanceStrip: React.FC<{ items: NrDashProvenance[] }> = ({ items }) => (
@@ -66,6 +73,7 @@ export const NrDashOverviewTab: React.FC<{
       divergence={nrDashBuildMomentumDivergence(snap)}
       conditionBuckets={nrDashBuildConditionCatalog(nsState)}
     />
+    <NrDashNeedsImbalanceCard imbalance={nrDashBuildNeedsImbalance(snap)} />
     <div className="grid md:grid-cols-3 gap-3 text-sm">
       <div className="rounded-lg border border-slate-600/50 p-3">
         <div className="text-xs opacity-70">National resilience</div>
@@ -174,8 +182,27 @@ export const NrDashNetworksTab: React.FC<{
   }
   const heat = nrDashBuildHeatCells(ns);
   const bottlenecks = nrDashBuildBottleneckRollup(ns);
+  const coupling = nrDashBuildNetworkCoupling(ns);
+  const chokepoints = nrDashTopDependencyChokepoints(ns, 3);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
+      {coupling && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-network-coupling">
+          Network coupling μ {coupling.meanCoupling} · hottest {coupling.maxCouplingRegionId ?? '—'}
+        </div>
+      )}
+      {chokepoints.length > 0 && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-dependency-chokepoints">
+          <div className="font-semibold mb-1">Dependency chokepoints (endpoint stress)</div>
+          <ul className="list-disc list-inside">
+            {chokepoints.map(c => (
+              <li key={c.dependencyId}>
+                {c.label}: score {c.chokeScore}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <NrDashNetworkDepthPanel
         constraints={nrDashBuildConstraintProfile(ns)}
         dependencies={nrDashBuildDependencyProfile(ns)}
@@ -246,7 +273,11 @@ export const NrDashMapTab: React.FC<{
   onFocusRegion?: (id: string) => void;
 }> = ({ snap, nsState, focusRegionId, onFocusRegion }) => {
   const baseNodes = useMemo(() => nrDashBuildRegionMapNodes(snap), [snap]);
-  const nodes = useMemo(() => nrDashApplyMapFocus(baseNodes, focusRegionId), [baseNodes, focusRegionId]);
+  const nodes = useMemo(
+    () => nrDashApplyMapPulse(nrDashApplyMapFocus(baseNodes, focusRegionId)),
+    [baseNodes, focusRegionId]
+  );
+  const pulseHot = useMemo(() => nrDashHottestPulseRegion(nodes), [nodes]);
   const allLinks = useMemo(
     () =>
       nrDashMergeMapLinks(
@@ -263,6 +294,12 @@ export const NrDashMapTab: React.FC<{
     <div className="space-y-3" data-testid="nr-dash-tab-map">
       <NrDashProvenanceStrip items={snap.provenance} />
       <RegionPositionMap nodes={nodes} links={links} focusRegionId={focusRegionId} onSelect={onFocusRegion} />
+      <NrDashCorridorStressStrip corridors={nrDashTopCorridorStress(nsState, 4)} />
+      {pulseHot && (
+        <p className="text-[10px] opacity-75" data-testid="nr-dash-map-pulse-hot">
+          Pulse hotspot: {pulseHot} (momentum activity + needs + risks)
+        </p>
+      )}
       <NrDashMapLegend />
       <p className="text-[10px] opacity-70">
         Dashed lines: land adjacency. Solid colored lines: interregional dependencies from National Systems.
