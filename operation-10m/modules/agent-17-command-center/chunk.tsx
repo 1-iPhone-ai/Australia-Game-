@@ -203,6 +203,8 @@ export interface Agent17PlanningDepthSnapshot {
   executionClosure: Agent17ExecutionClosureSnapshot;
   cadenceLattice: Agent17CadenceLatticeSnapshot;
   readinessGate: Agent17ReadinessGateSnapshot;
+  pulseIndex: Agent17PulseIndexSnapshot;
+  continuityBridge: Agent17ContinuityBridgeSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -477,6 +479,38 @@ export interface Agent17ReadinessGateSnapshot {
   signals: Agent17ReadinessGateSignal[];
   handoffReady: boolean;
   runAllowed: boolean;
+  headline: string;
+}
+
+export interface Agent17PulseIndexFactor {
+  id: string;
+  label: string;
+  score: number;
+  weight: number;
+}
+
+export interface Agent17PulseIndexSnapshot {
+  pulseIndex: number;
+  band: 'strong' | 'moderate' | 'flat';
+  factors: Agent17PulseIndexFactor[];
+  readinessBand: Agent17ReadinessGateSnapshot['band'];
+  cadenceBand: Agent17CadenceLatticeSnapshot['band'];
+  headline: string;
+}
+
+export interface Agent17ContinuityBridgeLink {
+  id: string;
+  label: string;
+  connected: boolean;
+  weight: number;
+}
+
+export interface Agent17ContinuityBridgeSnapshot {
+  bridgeScore: number;
+  band: 'linked' | 'partial' | 'broken';
+  links: Agent17ContinuityBridgeLink[];
+  pulseBand: Agent17PulseIndexSnapshot['band'];
+  continuityClearance: boolean;
   headline: string;
 }
 
@@ -3934,6 +3968,191 @@ export function readinessGateBlocksRun(snapshot: Agent17ReadinessGateSnapshot): 
 }
 
 
+// --- source: planning/pulse-index.ts ---
+  Agent17CadenceLatticeSnapshot,
+  Agent17CommandPostureSnapshot,
+  Agent17PulseIndexSnapshot,
+  Agent17ReadinessGateSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17PulseIndexInputs {
+  readinessGate: Agent17ReadinessGateSnapshot;
+  cadenceLattice: Agent17CadenceLatticeSnapshot;
+  commandPosture: Agent17CommandPostureSnapshot;
+}
+
+export function buildAgent17PulseIndex(
+  inputs: Agent17PulseIndexInputs
+): Agent17PulseIndexSnapshot {
+  const factors: Agent17PulseIndexSnapshot['factors'] = [];
+
+  factors.push({
+    id: 'readiness_score',
+    label: 'Readiness gate score',
+    score: inputs.readinessGate.readinessScore,
+    weight: 35,
+  });
+
+  factors.push({
+    id: 'cadence_index',
+    label: 'Cadence lattice index',
+    score: inputs.cadenceLattice.cadenceIndex,
+    weight: 30,
+  });
+
+  factors.push({
+    id: 'posture_index',
+    label: 'Command posture index',
+    score: inputs.commandPosture.postureIndex,
+    weight: 25,
+  });
+
+  const runBonus = inputs.readinessGate.runAllowed ? 85 : 45;
+  factors.push({
+    id: 'run_clearance',
+    label: 'Run clearance',
+    score: runBonus,
+    weight: 10,
+  });
+
+  const weighted = factors.reduce((n, f) => n + f.score * (f.weight / 100), 0);
+  const totalWeight = factors.reduce((n, f) => n + f.weight, 0);
+  const pulseIndex = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const flatSignals =
+    inputs.readinessGate.band === 'stop' ||
+    inputs.cadenceLattice.band === 'stalled' ||
+    readinessGateBlocksRun(inputs.readinessGate) ||
+    cadenceLatticeBlocksRun(inputs.cadenceLattice);
+
+  const band: Agent17PulseIndexSnapshot['band'] = flatSignals
+    ? 'flat'
+    : pulseIndex >= 68 &&
+        inputs.readinessGate.band === 'go' &&
+        inputs.cadenceLattice.band === 'flowing'
+      ? 'strong'
+      : 'moderate';
+
+  return {
+    pulseIndex,
+    band,
+    factors,
+    readinessBand: inputs.readinessGate.band,
+    cadenceBand: inputs.cadenceLattice.cadenceBand,
+    headline: `Pulse ${band} (${pulseIndex}/100) · ready ${inputs.readinessGate.band}`,
+  };
+}
+
+export function pulseIndexBlocksContinuity(snapshot: Agent17PulseIndexSnapshot): boolean {
+  return snapshot.band === 'flat' || snapshot.pulseIndex < 35;
+}
+
+
+// --- source: planning/continuity-bridge.ts ---
+  Agent17ContinuityBridgeSnapshot,
+  Agent17PulseIndexSnapshot,
+  Agent17ResilienceScorecard,
+  Agent17VerificationPolicySnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17ContinuityBridgeInputs {
+  pulseIndex: Agent17PulseIndexSnapshot;
+  resilienceScorecard: Agent17ResilienceScorecard;
+  verificationPolicy: Agent17VerificationPolicySnapshot;
+}
+
+export function buildAgent17ContinuityBridge(
+  inputs: Agent17ContinuityBridgeInputs
+): Agent17ContinuityBridgeSnapshot {
+  const links: Agent17ContinuityBridgeSnapshot['links'] = [];
+
+  links.push({
+    id: 'pulse_resilience',
+    label: 'Pulse to resilience mesh',
+    connected:
+      inputs.pulseIndex.pulseIndex >= 50 &&
+      inputs.resilienceScorecard.compositeIndex >= 45,
+    weight: 30,
+  });
+
+  links.push({
+    id: 'verify_pulse',
+    label: 'Verification to pulse lane',
+    connected:
+      inputs.verificationPolicy.allowVerification &&
+      inputs.pulseIndex.band !== 'flat',
+    weight: 25,
+  });
+
+  links.push({
+    id: 'resilience_verify',
+    label: 'Resilience to verify policy',
+    connected:
+      inputs.resilienceScorecard.band !== 'fragile' ||
+      inputs.verificationPolicy.allowVerification,
+    weight: 20,
+  });
+
+  links.push({
+    id: 'mitigation_pulse',
+    label: 'Mitigation hints to pulse',
+    connected: inputs.resilienceScorecard.mitigationHints.length >= 1,
+    weight: 15,
+  });
+
+  links.push({
+    id: 'policy_rules',
+    label: 'Policy rules satisfied',
+    connected: inputs.verificationPolicy.rules.filter(r => r.satisfied).length >= 2,
+    weight: 10,
+  });
+
+  const weighted = links.reduce(
+    (n, link) => n + (link.connected ? 100 : 20) * (link.weight / 100),
+    0
+  );
+  const totalWeight = links.reduce((n, link) => n + link.weight, 0);
+  const bridgeScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const brokenSignals =
+    pulseIndexBlocksContinuity(inputs.pulseIndex) ||
+    (inputs.resilienceScorecard.band === 'fragile' &&
+      !inputs.verificationPolicy.allowVerification);
+
+  const band: Agent17ContinuityBridgeSnapshot['band'] = brokenSignals
+    ? 'broken'
+    : bridgeScore >= 70 && inputs.pulseIndex.band !== 'flat'
+      ? 'linked'
+      : 'partial';
+
+  const continuityClearance =
+    band === 'linked' &&
+    !pulseIndexBlocksContinuity(inputs.pulseIndex) &&
+    inputs.verificationPolicy.allowVerification;
+
+  return {
+    bridgeScore,
+    band,
+    links,
+    pulseBand: inputs.pulseIndex.band,
+    continuityClearance,
+    headline: `Bridge ${band} (${bridgeScore}/100) · ${links.filter(l => l.connected).length}/${links.length} links`,
+  };
+}
+
+export function continuityBridgeBlocksHandoff(
+  snapshot: Agent17ContinuityBridgeSnapshot
+): boolean {
+  return snapshot.band === 'broken' || !snapshot.continuityClearance;
+}
+
+
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -4133,6 +4352,16 @@ export function buildAgent17PlanningDepthSnapshot(
     handoffReadiness,
     coordinationBrief,
   });
+  const pulseIndex = buildAgent17PulseIndex({
+    readinessGate,
+    cadenceLattice,
+    commandPosture,
+  });
+  const continuityBridge = buildAgent17ContinuityBridge({
+    pulseIndex,
+    resilienceScorecard,
+    verificationPolicy,
+  });
   return {
     ...core,
     intentQueue,
@@ -4154,6 +4383,8 @@ export function buildAgent17PlanningDepthSnapshot(
     executionClosure,
     cadenceLattice,
     readinessGate,
+    pulseIndex,
+    continuityBridge,
   };
 }
 
@@ -4782,6 +5013,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Stalled cadence or stop band yields readinessGateBlocksRun.',
     severity: 'major',
   },
+  {
+    id: 'G17-049',
+    title: 'Pulse index on planning depth',
+    category: 'telemetry',
+    acceptance: 'pulseIndex reports pulseIndex 0–100 with strong/moderate/flat band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-050',
+    title: 'Continuity bridge links complete',
+    category: 'telemetry',
+    acceptance: 'continuityBridge exposes ≥5 bridge links and bridgeScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-051',
+    title: 'Flat pulse breaks continuity bridge',
+    category: 'integration',
+    acceptance: 'Flat pulse or broken bridge yields continuityBridgeBlocksHandoff.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -4835,6 +5087,12 @@ export function listAgent17GoalIds(): string[] {
   buildAgent17ReadinessGate,
   readinessGateBlocksRun,
 } from '../planning/readiness-gate.ts';
+  buildAgent17PulseIndex,
+  pulseIndexBlocksContinuity,
+} from '../planning/pulse-index.ts';
+  buildAgent17ContinuityBridge,
+  continuityBridgeBlocksHandoff,
+} from '../planning/continuity-bridge.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -5532,6 +5790,56 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const pulseIndexSnap = depthEval.snapshot.planningDepth?.pulseIndex;
+  goalResults.push(
+    result(
+      'G17-049',
+      !!pulseIndexSnap &&
+        pulseIndexSnap.pulseIndex >= 0 &&
+        pulseIndexSnap.pulseIndex <= 100 &&
+        (pulseIndexSnap.band === 'strong' ||
+          pulseIndexSnap.band === 'moderate' ||
+          pulseIndexSnap.band === 'flat'),
+      `${pulseIndexSnap?.pulseIndex}/${pulseIndexSnap?.band}`
+    )
+  );
+
+  const continuityBridge = depthEval.snapshot.planningDepth?.continuityBridge;
+  goalResults.push(
+    result(
+      'G17-050',
+      !!continuityBridge &&
+        continuityBridge.links.length >= 5 &&
+        continuityBridge.bridgeScore >= 0 &&
+        continuityBridge.bridgeScore <= 100,
+      `links=${continuityBridge?.links.length} score=${continuityBridge?.bridgeScore}`
+    )
+  );
+
+  const flatPulse = buildAgent17PulseIndex({
+    readinessGate: stopReadiness,
+    cadenceLattice: stalledCadence,
+    commandPosture: posture!,
+  });
+  const brokenBridge = buildAgent17ContinuityBridge({
+    pulseIndex: flatPulse,
+    resilienceScorecard: buildAgent17ResilienceScorecard(
+      breachOps,
+      baseState,
+      'player',
+      assessAgent17PlanHealth(breachOps.activePlan, baseState, 'player'),
+      buildAgent17VerificationPolicy(breachOps, baseState, 'player')
+    ),
+    verificationPolicy: buildAgent17VerificationPolicy(breachOps, baseState, 'player'),
+  });
+  goalResults.push(
+    result(
+      'G17-051',
+      pulseIndexBlocksContinuity(flatPulse) || continuityBridgeBlocksHandoff(brokenBridge),
+      `${flatPulse.band}/${brokenBridge.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -5610,6 +5918,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-046',
     'G17-047',
     'G17-048',
+    'G17-049',
+    'G17-050',
+    'G17-051',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
@@ -8568,6 +8879,412 @@ export function runAgent17CadenceDepthTests(): Agent17DevTestReport {
     success: overallStatus === 'passed',
     testResults,
     summary: `Agent 17 Cadence Depth Tests: ${passedCount}/${testResults.length} Passed`,
+  };
+}
+
+
+// --- source: harness/run-pulse-depth-tests.ts ---
+  createDefaultAcc17CommandCenterOpsState,
+  acc17CreateMultiStepPlanFromObjective,
+  defaultObjectiveResolver,
+} from '../planning/ops-state.ts';
+  buildAgent17GovernanceAudit,
+  governanceAuditBlocksAutomation,
+} from '../planning/governance-audit.ts';
+  buildAgent17EscalationMatrix,
+  escalationMatrixBlocksAutomation,
+} from '../planning/escalation-matrix.ts';
+  buildAgent17RollbackAssurance,
+  rollbackAssuranceNeedsRestore,
+} from '../planning/rollback-assurance.ts';
+  buildAgent17StabilizationIndex,
+  stabilizationIndexBlocksAutomation,
+} from '../planning/stabilization-index.ts';
+  buildAgent17CommandEnvelope,
+  commandEnvelopeNeedsThrottle,
+} from '../planning/command-envelope.ts';
+  buildAgent17ConvergenceIndex,
+  convergenceIndexBlocksDirective,
+} from '../planning/convergence-index.ts';
+  buildAgent17DirectiveSynthesis,
+  directiveSynthesisBlocksAdvance,
+} from '../planning/directive-synthesis.ts';
+  buildAgent17ContinuityBridge,
+  continuityBridgeBlocksHandoff,
+} from '../planning/continuity-bridge.ts';
+  rankAgent17TemplateCandidates,
+  summarizeAgent17CatalogDepth,
+} from '../planning/template-selector.ts';
+
+export function runAgent17PulseDepthTests(): Agent17DevTestReport {
+  const start = Date.now();
+  const testResults: Agent17DevTestReport['testResults'] = [];
+  const push = (id: string, name: string, ok: boolean, detail?: string) => {
+    testResults.push({
+      id,
+      name,
+      status: ok ? 'passed' : 'failed',
+      durationMs: 0,
+      errorMessage: ok ? undefined : detail,
+    });
+  };
+
+  try {
+    const settings = {
+      commandCenterSettings: { enabled: true },
+      aiCommunicationAutonomyLevel: 'assisted' as const,
+    };
+    const actor = {
+      id: 'player',
+      money: 120,
+      netWorth: 2400,
+      currentRegion: 'QLD',
+      currentSupplies: 6,
+    };
+    const state: Agent17GameStateSlice = {
+      turnCounter: 30,
+      day: 30,
+      player: actor,
+      actorsById: { player: actor },
+      playerTrackedObjective: {
+        title: 'Expand trade network supply chain',
+        sourceType: 'contract',
+      },
+      gi3Strategy: { headline: 'Expand trade network resilience' },
+      strategyPlannerState: { activePlan: { title: 'Trade network supply expansion' } },
+      lastExecutedAction: { type: 'trade' },
+    };
+    const ops = createDefaultAcc17CommandCenterOpsState();
+    const plan = acc17CreateMultiStepPlanFromObjective(
+      state,
+      settings,
+      'player',
+      (s, st, id) => defaultObjectiveResolver(s, st, id)
+    );
+    const opsWithPlan = {
+      ...ops,
+      activePlan: plan ? { ...plan, title: plan.title || 'Trade supply chain plan' } : plan,
+    };
+    const health = assessAgent17PlanHealth(opsWithPlan.activePlan, state, 'player');
+    const intentQueue = buildAgent17IntentQueue(opsWithPlan, state, settings, 'player', health);
+    const alignment = buildAgent17StrategicAlignment(
+      opsWithPlan,
+      state,
+      settings,
+      'player',
+      intentQueue
+    );
+    const policy = buildAgent17VerificationPolicy(
+      { ...opsWithPlan, lastContextFingerprint: 'pulse_fp' },
+      state,
+      'player'
+    );
+    const pacing = buildAgent17ExecutionPacing(opsWithPlan, state, health, policy);
+    const scorecard = buildAgent17ResilienceScorecard(
+      opsWithPlan,
+      state,
+      'player',
+      health,
+      policy
+    );
+    const routing = rankAgent17TemplateCandidates(state, settings, 'player');
+    const delegationAnalytics = buildAgent17DelegationAnalytics(opsWithPlan, settings);
+    const core = {
+      turn: state.turnCounter || 1,
+      actorId: 'player',
+      planHealth: health,
+      suggestion: buildAgent17PlanningSuggestion(
+        opsWithPlan,
+        state,
+        settings,
+        'player',
+        'copilot'
+      ),
+      templateRouting: routing,
+      delegationAnalytics,
+      delegationLadder: buildAgent17DelegationLadder(delegationAnalytics, settings, 'copilot'),
+      planLedger: summarizeAgent17PlanLedger(opsWithPlan, state),
+      catalogDepth: summarizeAgent17CatalogDepth(),
+    };
+    const brief = buildAgent17CoordinationBrief(
+      core,
+      intentQueue,
+      policy,
+      opsWithPlan,
+      state,
+      settings
+    );
+    const handoff = buildAgent17HandoffReadiness({
+      coordinationBrief: brief,
+      verificationPolicy: policy,
+      executionPacing: pacing,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const posture = buildAgent17CommandPosture({
+      planHealth: health,
+      handoffReadiness: handoff,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const audit = buildAgent17GovernanceAudit(opsWithPlan, settings, policy);
+    const matrix = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: audit,
+      handoffReadiness: handoff,
+    });
+    const assurance = buildAgent17RollbackAssurance(opsWithPlan, health, audit);
+    const stabilization = buildAgent17StabilizationIndex({
+      escalationMatrix: matrix,
+      rollbackAssurance: assurance,
+    });
+    const envelope = buildAgent17CommandEnvelope({
+      ops: opsWithPlan,
+      executionPacing: pacing,
+      stabilizationIndex: stabilization,
+    });
+    const convergence = buildAgent17ConvergenceIndex({
+      commandEnvelope: envelope,
+      stabilizationIndex: stabilization,
+      strategicAlignment: alignment,
+    });
+    const directive = buildAgent17MissionDirective({
+      intentQueue,
+      commandEnvelope: envelope,
+      convergenceIndex: convergence,
+    });
+    const synthesis = buildAgent17DirectiveSynthesis({
+      missionDirective: directive,
+      convergenceIndex: convergence,
+      intentQueue,
+    });
+    const closure = buildAgent17ExecutionClosure({
+      directiveSynthesis: synthesis,
+      executionPacing: pacing,
+      missionDirective: directive,
+    });
+    const cadence = buildAgent17CadenceLattice({
+      executionClosure: closure,
+      directiveSynthesis: synthesis,
+      executionPacing: pacing,
+    });
+    const readiness = buildAgent17ReadinessGate({
+      cadenceLattice: cadence,
+      handoffReadiness: handoff,
+      coordinationBrief: brief,
+    });
+
+    const pulseClean = buildAgent17PulseIndex({
+      readinessGate: readiness,
+      cadenceLattice: cadence,
+      commandPosture: posture,
+    });
+    push(
+      'pls_index_bounded',
+      'Pulse index bounded with band',
+      pulseClean.pulseIndex >= 0 &&
+        pulseClean.pulseIndex <= 100 &&
+        (pulseClean.band === 'strong' ||
+          pulseClean.band === 'moderate' ||
+          pulseClean.band === 'flat'),
+      `${pulseClean.pulseIndex}/${pulseClean.band}`
+    );
+
+    push(
+      'pls_factors',
+      'Pulse index exposes weighted factors',
+      pulseClean.factors.length >= 4 && pulseClean.factors.every(f => f.weight > 0),
+      `factors=${pulseClean.factors.length}`
+    );
+
+    const bridgeClean = buildAgent17ContinuityBridge({
+      pulseIndex: pulseClean,
+      resilienceScorecard: scorecard,
+      verificationPolicy: policy,
+    });
+    push(
+      'pls_bridge_links',
+      'Continuity bridge exposes links',
+      bridgeClean.links.length >= 5 &&
+        bridgeClean.bridgeScore >= 0 &&
+        bridgeClean.bridgeScore <= 100,
+      `links=${bridgeClean.links.length} score=${bridgeClean.bridgeScore}`
+    );
+
+    push(
+      'pls_pulse_moderate',
+      'Healthy ops yields moderate or strong pulse',
+      pulseClean.band === 'moderate' || pulseClean.band === 'strong',
+      pulseClean.band
+    );
+
+    push(
+      'pls_bridge_partial',
+      'Healthy ops yields linked or partial bridge',
+      bridgeClean.band === 'linked' || bridgeClean.band === 'partial',
+      bridgeClean.band
+    );
+
+    const breachOps = {
+      ...opsWithPlan,
+      delegatedProjects: [
+        {
+          id: 'dp1',
+          planId: 'p1',
+          title: 'Breach project',
+          delegateKind: 'team_os' as const,
+          delegateTargetId: 'team',
+          status: 'active' as const,
+          authorityCeiling: 'delegated' as const,
+          assignedTurn: 1,
+          assignedDay: 1,
+          lastVerifiedFingerprint: '',
+          notes: '',
+        },
+      ],
+    };
+    const advisorySettings = {
+      ...settings,
+      aiCommunicationAutonomyLevel: 'advisory' as const,
+    };
+    const auditBreach = buildAgent17GovernanceAudit(breachOps, advisorySettings, policy);
+    const matrixUrgent = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: auditBreach,
+      handoffReadiness: handoff,
+    });
+    const assuranceBreach = buildAgent17RollbackAssurance(
+      breachOps,
+      assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+      auditBreach
+    );
+    const stabilizationVolatile = buildAgent17StabilizationIndex({
+      escalationMatrix: matrixUrgent,
+      rollbackAssurance: assuranceBreach,
+    });
+    const envelopeSaturated = buildAgent17CommandEnvelope({
+      ops: breachOps,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      stabilizationIndex: stabilizationVolatile,
+    });
+    const convergenceDiverging = buildAgent17ConvergenceIndex({
+      commandEnvelope: envelopeSaturated,
+      stabilizationIndex: stabilizationVolatile,
+      strategicAlignment: alignment,
+    });
+    const directiveHeld = buildAgent17MissionDirective({
+      intentQueue,
+      commandEnvelope: envelopeSaturated,
+      convergenceIndex: convergenceDiverging,
+    });
+    const synthesisLocked = buildAgent17DirectiveSynthesis({
+      missionDirective: directiveHeld,
+      convergenceIndex: convergenceDiverging,
+      intentQueue,
+    });
+    const closureSealed = buildAgent17ExecutionClosure({
+      directiveSynthesis: synthesisLocked,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      missionDirective: directiveHeld,
+    });
+    const cadenceStalled = buildAgent17CadenceLattice({
+      executionClosure: closureSealed,
+      directiveSynthesis: synthesisLocked,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+    });
+    const readinessStop = buildAgent17ReadinessGate({
+      cadenceLattice: cadenceStalled,
+      handoffReadiness: handoff,
+      coordinationBrief: brief,
+    });
+    const pulseFlat = buildAgent17PulseIndex({
+      readinessGate: readinessStop,
+      cadenceLattice: cadenceStalled,
+      commandPosture: posture,
+    });
+    push(
+      'pls_flat_blocks',
+      'Governance breach yields flat pulse or blocks continuity',
+      pulseFlat.band === 'flat' || pulseIndexBlocksContinuity(pulseFlat),
+      `${pulseFlat.band} idx=${pulseFlat.pulseIndex}`
+    );
+
+    const bridgeBroken = buildAgent17ContinuityBridge({
+      pulseIndex: pulseFlat,
+      resilienceScorecard: buildAgent17ResilienceScorecard(
+        breachOps,
+        state,
+        'player',
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      verificationPolicy: policy,
+    });
+    push(
+      'pls_broken_handoff',
+      'Broken bridge blocks continuity handoff',
+      bridgeBroken.band === 'broken' ||
+        continuityBridgeBlocksHandoff(bridgeBroken) ||
+        !bridgeBroken.continuityClearance,
+      `${bridgeBroken.band} clearance=${bridgeBroken.continuityClearance}`
+    );
+
+    push(
+      'pls_escalation_link',
+      'Urgent escalation propagates to pulse factors',
+      escalationMatrixBlocksAutomation(matrixUrgent) ||
+        governanceAuditBlocksAutomation(auditBreach) ||
+        rollbackAssuranceNeedsRestore(assuranceBreach) ||
+        stabilizationIndexBlocksAutomation(stabilizationVolatile) ||
+        commandEnvelopeNeedsThrottle(envelopeSaturated) ||
+        readinessGateBlocksRun(readinessStop) ||
+        cadenceLatticeBlocksRun(cadenceStalled),
+      matrixUrgent.band
+    );
+
+    const evalRes = evaluateAcc17CommandCenterOperations(state, settings, 'player', ops);
+    const depth = evalRes.snapshot.planningDepth;
+    push(
+      'pls_evaluator_depth',
+      'Evaluator attaches pulse index and continuity bridge',
+      !!depth?.pulseIndex?.headline &&
+        !!depth?.continuityBridge?.headline &&
+        (depth.continuityBridge.links?.length ?? 0) >= 5,
+      `${depth?.pulseIndex?.band}/${depth?.continuityBridge?.band}`
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    push('pls_throw', 'Pulse harness did not throw', false, msg);
+  }
+
+  const passedCount = testResults.filter(t => t.status === 'passed').length;
+  const failedCount = testResults.filter(t => t.status === 'failed').length;
+  const overallStatus: 'passed' | 'failed' = failedCount === 0 ? 'passed' : 'failed';
+  return {
+    timestamp: Date.now(),
+    totalTests: testResults.length,
+    passedCount,
+    failedCount,
+    executionTimeMs: Date.now() - start,
+    overallStatus,
+    success: overallStatus === 'passed',
+    testResults,
+    summary: `Agent 17 Pulse Depth Tests: ${passedCount}/${testResults.length} Passed`,
   };
 }
 

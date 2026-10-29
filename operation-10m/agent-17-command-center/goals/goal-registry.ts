@@ -338,6 +338,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Stalled cadence or stop band yields readinessGateBlocksRun.',
     severity: 'major',
   },
+  {
+    id: 'G17-049',
+    title: 'Pulse index on planning depth',
+    category: 'telemetry',
+    acceptance: 'pulseIndex reports pulseIndex 0–100 with strong/moderate/flat band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-050',
+    title: 'Continuity bridge links complete',
+    category: 'telemetry',
+    acceptance: 'continuityBridge exposes ≥5 bridge links and bridgeScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-051',
+    title: 'Flat pulse breaks continuity bridge',
+    category: 'integration',
+    acceptance: 'Flat pulse or broken bridge yields continuityBridgeBlocksHandoff.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

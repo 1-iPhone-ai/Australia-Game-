@@ -70,6 +70,14 @@ import {
   readinessGateBlocksRun,
 } from '../planning/readiness-gate.ts';
 import {
+  buildAgent17PulseIndex,
+  pulseIndexBlocksContinuity,
+} from '../planning/pulse-index.ts';
+import {
+  buildAgent17ContinuityBridge,
+  continuityBridgeBlocksHandoff,
+} from '../planning/continuity-bridge.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -767,6 +775,56 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const pulseIndexSnap = depthEval.snapshot.planningDepth?.pulseIndex;
+  goalResults.push(
+    result(
+      'G17-049',
+      !!pulseIndexSnap &&
+        pulseIndexSnap.pulseIndex >= 0 &&
+        pulseIndexSnap.pulseIndex <= 100 &&
+        (pulseIndexSnap.band === 'strong' ||
+          pulseIndexSnap.band === 'moderate' ||
+          pulseIndexSnap.band === 'flat'),
+      `${pulseIndexSnap?.pulseIndex}/${pulseIndexSnap?.band}`
+    )
+  );
+
+  const continuityBridge = depthEval.snapshot.planningDepth?.continuityBridge;
+  goalResults.push(
+    result(
+      'G17-050',
+      !!continuityBridge &&
+        continuityBridge.links.length >= 5 &&
+        continuityBridge.bridgeScore >= 0 &&
+        continuityBridge.bridgeScore <= 100,
+      `links=${continuityBridge?.links.length} score=${continuityBridge?.bridgeScore}`
+    )
+  );
+
+  const flatPulse = buildAgent17PulseIndex({
+    readinessGate: stopReadiness,
+    cadenceLattice: stalledCadence,
+    commandPosture: posture!,
+  });
+  const brokenBridge = buildAgent17ContinuityBridge({
+    pulseIndex: flatPulse,
+    resilienceScorecard: buildAgent17ResilienceScorecard(
+      breachOps,
+      baseState,
+      'player',
+      assessAgent17PlanHealth(breachOps.activePlan, baseState, 'player'),
+      buildAgent17VerificationPolicy(breachOps, baseState, 'player')
+    ),
+    verificationPolicy: buildAgent17VerificationPolicy(breachOps, baseState, 'player'),
+  });
+  goalResults.push(
+    result(
+      'G17-051',
+      pulseIndexBlocksContinuity(flatPulse) || continuityBridgeBlocksHandoff(brokenBridge),
+      `${flatPulse.band}/${brokenBridge.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -845,6 +903,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-046',
     'G17-047',
     'G17-048',
+    'G17-049',
+    'G17-050',
+    'G17-051',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

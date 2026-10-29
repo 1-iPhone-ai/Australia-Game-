@@ -39,6 +39,8 @@ import { buildAgent17DirectiveSynthesis } from './directive-synthesis.ts';
 import { buildAgent17ExecutionClosure } from './execution-closure.ts';
 import { buildAgent17CadenceLattice } from './cadence-lattice.ts';
 import { buildAgent17ReadinessGate } from './readiness-gate.ts';
+import { buildAgent17PulseIndex } from './pulse-index.ts';
+import { buildAgent17ContinuityBridge } from './continuity-bridge.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -223,6 +225,16 @@ export function buildAgent17PlanningDepthSnapshot(
     handoffReadiness,
     coordinationBrief,
   });
+  const pulseIndex = buildAgent17PulseIndex({
+    readinessGate,
+    cadenceLattice,
+    commandPosture,
+  });
+  const continuityBridge = buildAgent17ContinuityBridge({
+    pulseIndex,
+    resilienceScorecard,
+    verificationPolicy,
+  });
   return {
     ...core,
     intentQueue,
@@ -244,6 +256,8 @@ export function buildAgent17PlanningDepthSnapshot(
     executionClosure,
     cadenceLattice,
     readinessGate,
+    pulseIndex,
+    continuityBridge,
   };
 }
 

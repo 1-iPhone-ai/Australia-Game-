@@ -199,6 +199,8 @@ export interface Agent17PlanningDepthSnapshot {
   executionClosure: Agent17ExecutionClosureSnapshot;
   cadenceLattice: Agent17CadenceLatticeSnapshot;
   readinessGate: Agent17ReadinessGateSnapshot;
+  pulseIndex: Agent17PulseIndexSnapshot;
+  continuityBridge: Agent17ContinuityBridgeSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -473,6 +475,38 @@ export interface Agent17ReadinessGateSnapshot {
   signals: Agent17ReadinessGateSignal[];
   handoffReady: boolean;
   runAllowed: boolean;
+  headline: string;
+}
+
+export interface Agent17PulseIndexFactor {
+  id: string;
+  label: string;
+  score: number;
+  weight: number;
+}
+
+export interface Agent17PulseIndexSnapshot {
+  pulseIndex: number;
+  band: 'strong' | 'moderate' | 'flat';
+  factors: Agent17PulseIndexFactor[];
+  readinessBand: Agent17ReadinessGateSnapshot['band'];
+  cadenceBand: Agent17CadenceLatticeSnapshot['band'];
+  headline: string;
+}
+
+export interface Agent17ContinuityBridgeLink {
+  id: string;
+  label: string;
+  connected: boolean;
+  weight: number;
+}
+
+export interface Agent17ContinuityBridgeSnapshot {
+  bridgeScore: number;
+  band: 'linked' | 'partial' | 'broken';
+  links: Agent17ContinuityBridgeLink[];
+  pulseBand: Agent17PulseIndexSnapshot['band'];
+  continuityClearance: boolean;
   headline: string;
 }
 
