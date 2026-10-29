@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 26
+
+- Schema **`agent12/27`**: green steel export throughput, indigenous community airlift readiness, port berth slot optimizer share (`greenSteelExportPolicy`, `indigenousCommunityAirliftPolicy`, `portBerthSlotOptimizerPolicy`)
+- Catalog: **367** assets, **92** corridors, **148** scenarios
+- Systems: `network/green-steel-export-index.ts`, `operations/indigenous-community-airlift-index.ts`, `productivity/port-berth-slot-optimizer-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 25
 
 - Schema **`agent12/26`**: sustainable aviation fuel supply throughput, outback diesel security readiness, rail double-stack container share (`sustainableAviationFuelSupplyPolicy`, `outbackDieselSecurityPolicy`, `railDoubleStackContainerPolicy`)

@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/26' &&
+      infra.schemaVersion === 'agent12/27' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -154,8 +154,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalSustainableAviationFuelSupplyIndex >= 5 &&
       infra.nationalOutbackDieselSecurityIndex >= 5 &&
       infra.railDoubleStackContainerShare >= 0.03 &&
-      infra.nationalRailDoubleStackContainerThroughputIndex >= 1.8,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} saf=${infra.nationalSustainableAviationFuelSupplyIndex.toFixed(1)} diesel=${infra.nationalOutbackDieselSecurityIndex.toFixed(1)} stack=${infra.nationalRailDoubleStackContainerThroughputIndex.toFixed(1)}`,
+      infra.nationalRailDoubleStackContainerThroughputIndex >= 1.8 &&
+      infra.nationalGreenSteelExportIndex >= 5 &&
+      infra.nationalIndigenousCommunityAirliftIndex >= 5 &&
+      infra.portBerthSlotOptimizerShare >= 0.03 &&
+      infra.nationalPortBerthSlotOptimizerThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} steel=${infra.nationalGreenSteelExportIndex.toFixed(1)} airlift=${infra.nationalIndigenousCommunityAirliftIndex.toFixed(1)} berth=${infra.nationalPortBerthSlotOptimizerThroughputIndex.toFixed(1)}`,
   });
 
   return results;

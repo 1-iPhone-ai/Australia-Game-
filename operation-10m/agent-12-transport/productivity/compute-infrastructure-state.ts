@@ -380,6 +380,23 @@ import {
   nationalRailDoubleStackContainerThroughputIndex,
   railDoubleStackContainerProductivityMultiplier,
 } from './rail-double-stack-container-index.ts';
+import {
+  computeGreenSteelExportByRegion,
+  greenSteelExportProductivityMultiplier,
+  nationalGreenSteelExportIndex,
+} from '../network/green-steel-export-index.ts';
+import {
+  computeIndigenousCommunityAirliftByRegion,
+  computeIndigenousCommunityAirliftShare,
+  indigenousCommunityAirliftProductivityMultiplier,
+  nationalIndigenousCommunityAirliftIndex,
+} from '../operations/indigenous-community-airlift-index.ts';
+import {
+  computePortBerthSlotOptimizerShare,
+  computePortBerthSlotOptimizerThroughputByRegion,
+  nationalPortBerthSlotOptimizerThroughputIndex,
+  portBerthSlotOptimizerProductivityMultiplier,
+} from './port-berth-slot-optimizer-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1279,6 +1296,34 @@ export function computeTransportInfrastructureState(
     railDoubleStackContainerShare,
     options?.railDoubleStackContainerPolicy ?? 'baseline',
   );
+  const greenSteelExportByRegion = computeGreenSteelExportByRegion(ops);
+  const nationalGreenSteel = nationalGreenSteelExportIndex(greenSteelExportByRegion);
+  const greenSteelMult = greenSteelExportProductivityMultiplier(
+    nationalGreenSteel,
+    options?.greenSteelExportPolicy ?? 'baseline',
+  );
+  const indigenousCommunityAirliftByRegion = computeIndigenousCommunityAirliftByRegion(ops, networkStress);
+  const nationalIndigenousAirlift = nationalIndigenousCommunityAirliftIndex(indigenousCommunityAirliftByRegion);
+  const indigenousCommunityAirliftShare = computeIndigenousCommunityAirliftShare(
+    ops,
+    options?.indigenousCommunityAirliftPolicy ?? 'baseline',
+  );
+  const indigenousAirliftMult = indigenousCommunityAirliftProductivityMultiplier(
+    indigenousCommunityAirliftShare,
+    options?.indigenousCommunityAirliftPolicy ?? 'baseline',
+  );
+  const portBerthSlotOptimizerThroughputByRegion = computePortBerthSlotOptimizerThroughputByRegion(ops);
+  const nationalPortBerthSlot = nationalPortBerthSlotOptimizerThroughputIndex(
+    portBerthSlotOptimizerThroughputByRegion,
+  );
+  const portBerthSlotOptimizerShare = computePortBerthSlotOptimizerShare(
+    ops,
+    options?.portBerthSlotOptimizerPolicy ?? 'baseline',
+  );
+  const berthSlotMult = portBerthSlotOptimizerProductivityMultiplier(
+    portBerthSlotOptimizerShare,
+    options?.portBerthSlotOptimizerPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1311,6 +1356,9 @@ export function computeTransportInfrastructureState(
     const safBoost = (sustainableAviationFuelSupplyByRegion[code] - 4) * 0.004;
     const outbackDieselBoost = (outbackDieselSecurityByRegion[code] - 5) * 0.0038;
     const doubleStackBoost = (railDoubleStackContainerThroughputByRegion[code] - 1.8) * 0.0035;
+    const greenSteelBoost = (greenSteelExportByRegion[code] - 5) * 0.0042;
+    const indigenousAirliftBoost = (indigenousCommunityAirliftByRegion[code] - 5) * 0.0036;
+    const berthSlotBoost = (portBerthSlotOptimizerThroughputByRegion[code] - 2) * 0.0034;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -1342,7 +1390,10 @@ export function computeTransportInfrastructureState(
         smartBorderBoost +
         safBoost +
         outbackDieselBoost +
-        doubleStackBoost) *
+        doubleStackBoost +
+        greenSteelBoost +
+        indigenousAirliftBoost +
+        berthSlotBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -1372,7 +1423,10 @@ export function computeTransportInfrastructureState(
       smartBorderMult *
       safMult *
       outbackDieselMult *
-      doubleStackMult;
+      doubleStackMult *
+      greenSteelMult *
+      indigenousAirliftMult *
+      berthSlotMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -1425,7 +1479,10 @@ export function computeTransportInfrastructureState(
     nationalSmartBorderPreclearance * 0.005 +
     nationalSafSupply * 0.005 +
     nationalOutbackDiesel * 0.005 +
-    nationalRailDoubleStack * 0.004;
+    nationalRailDoubleStack * 0.004 +
+    nationalGreenSteel * 0.004 +
+    nationalIndigenousAirlift * 0.004 +
+    nationalPortBerthSlot * 0.004;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -1440,7 +1497,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/26',
+    schemaVersion: 'agent12/27',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -1614,6 +1671,14 @@ export function computeTransportInfrastructureState(
     railDoubleStackContainerShare,
     nationalRailDoubleStackContainerThroughputIndex: nationalRailDoubleStack,
     railDoubleStackContainerThroughputByRegion,
+    nationalGreenSteelExportIndex: nationalGreenSteel,
+    greenSteelExportByRegion,
+    indigenousCommunityAirliftShare,
+    nationalIndigenousCommunityAirliftIndex: nationalIndigenousAirlift,
+    indigenousCommunityAirliftByRegion,
+    portBerthSlotOptimizerShare,
+    nationalPortBerthSlotOptimizerThroughputIndex: nationalPortBerthSlot,
+    portBerthSlotOptimizerThroughputByRegion,
     computeMs,
   };
 }

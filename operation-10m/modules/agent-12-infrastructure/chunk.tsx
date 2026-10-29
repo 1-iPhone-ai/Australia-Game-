@@ -307,8 +307,14 @@ export type OutbackDieselSecurityPolicy = 'baseline' | 'harden';
 
 export type RailDoubleStackContainerPolicy = 'baseline' | 'deploy';
 
+export type GreenSteelExportPolicy = 'baseline' | 'accelerate';
+
+export type IndigenousCommunityAirliftPolicy = 'baseline' | 'expand';
+
+export type PortBerthSlotOptimizerPolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/26';
+  schemaVersion: 'agent12/27';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -482,6 +488,14 @@ export interface TransportInfrastructureState {
   railDoubleStackContainerShare: number;
   nationalRailDoubleStackContainerThroughputIndex: number;
   railDoubleStackContainerThroughputByRegion: Record<AuRegionCode, number>;
+  nationalGreenSteelExportIndex: number;
+  greenSteelExportByRegion: Record<AuRegionCode, number>;
+  indigenousCommunityAirliftShare: number;
+  nationalIndigenousCommunityAirliftIndex: number;
+  indigenousCommunityAirliftByRegion: Record<AuRegionCode, number>;
+  portBerthSlotOptimizerShare: number;
+  nationalPortBerthSlotOptimizerThroughputIndex: number;
+  portBerthSlotOptimizerThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -550,6 +564,9 @@ export interface TransportInfrastructureOptions {
   sustainableAviationFuelSupplyPolicy?: SustainableAviationFuelSupplyPolicy;
   outbackDieselSecurityPolicy?: OutbackDieselSecurityPolicy;
   railDoubleStackContainerPolicy?: RailDoubleStackContainerPolicy;
+  greenSteelExportPolicy?: GreenSteelExportPolicy;
+  indigenousCommunityAirliftPolicy?: IndigenousCommunityAirliftPolicy;
+  portBerthSlotOptimizerPolicy?: PortBerthSlotOptimizerPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -1659,6 +1676,48 @@ export const TRANSPORT_CORRIDORS_ROUND25: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round26.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND26: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_sa_green_steel_export',
+    name: 'WA–SA Green Steel Export',
+    networkKind: 'trade',
+    regionSequence: ['WA', 'SA'],
+    requiredTagsByRegion: {
+      WA: ['green_steel', 'hydrogen_dri', 'export_slab'],
+      SA: ['green_steel', 'hydrogen_dri', 'export_slab'],
+    },
+    productivitySynergyPoints: 6.2,
+    logisticsRelief: 0.037,
+  },
+  {
+    id: 'corr_nt_wa_indigenous_airlift',
+    name: 'NT–WA Indigenous Airlift',
+    networkKind: 'mobility',
+    regionSequence: ['NT', 'WA'],
+    requiredTagsByRegion: {
+      NT: ['indigenous_airlift', 'remote_community_supply', 'bush_runway'],
+      WA: ['indigenous_airlift', 'remote_community_supply', 'bush_runway'],
+    },
+    productivitySynergyPoints: 5.5,
+    logisticsRelief: 0.029,
+  },
+  {
+    id: 'corr_qld_nsw_berth_slot_relief',
+    name: 'QLD–NSW Berth Slot Relief',
+    networkKind: 'trade',
+    regionSequence: ['QLD', 'NSW'],
+    requiredTagsByRegion: {
+      QLD: ['berth_slot_optimizer', 'port_congestion_relief', 'tidal_window'],
+      NSW: ['berth_slot_optimizer', 'port_congestion_relief', 'tidal_window'],
+    },
+    productivitySynergyPoints: 6.1,
+    logisticsRelief: 0.033,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -1831,6 +1890,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND23,
   ...TRANSPORT_CORRIDORS_ROUND24,
   ...TRANSPORT_CORRIDORS_ROUND25,
+  ...TRANSPORT_CORRIDORS_ROUND26,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -3263,6 +3323,62 @@ export const TRANSPORT_SCENARIOS_ROUND25: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round26.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND26: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_green_steel_export_rush',
+    label: 'WA Green Steel Export Rush',
+    description: 'Hydrogen-DRI slab surge overloads Hedland green steel berths.',
+    targetRegions: ['WA', 'SA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_sa_dri_yard_congestion',
+    label: 'SA DRI Yard Congestion',
+    description: 'Whyalla slab staging backs up Spencer Gulf export rail.',
+    targetRegions: ['SA', 'WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics', 'rail'],
+  },
+  {
+    id: 'scn_nt_bush_runway_weather',
+    label: 'NT Bush Runway Weather',
+    description: 'Wet season closes Arnhem community airlift slots.',
+    targetRegions: ['NT', 'WA'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.2,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['road', 'logistics'],
+  },
+  {
+    id: 'scn_qld_tidal_berth_crunch',
+    label: 'Queensland Tidal Berth Crunch',
+    description: 'Tidal window miss strains Fisherman Islands slot optimizer.',
+    targetRegions: ['QLD', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port'],
+  },
+  {
+    id: 'scn_nsw_botany_slot_outage',
+    label: 'NSW Botany Slot Outage',
+    description: 'Berth optimizer outage delays Sydney container handoffs.',
+    targetRegions: ['NSW', 'QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.21,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -3449,6 +3565,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND23,
   ...TRANSPORT_SCENARIOS_ROUND24,
   ...TRANSPORT_SCENARIOS_ROUND25,
+  ...TRANSPORT_SCENARIOS_ROUND26,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -9880,6 +9997,233 @@ export const SCALE_WAVE_ROUND25_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round26-assets.ts ---
+
+export const ROUND26_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_karratha_green_steel',
+    category: 'road',
+    name: 'Karratha Green Steel Feed',
+    description: 'Hydrogen-DRI slab export road to Pilbara ports.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['green_steel', 'hydrogen_dri', 'export_slab'],
+    laneKilometres: 54,
+    designSpeedKmh: 88,
+    freightShare: 0.42,
+    urbanShare: 0.03,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_whyalla_steel_export',
+    category: 'road',
+    name: 'Whyalla Steel Export Road',
+    description: 'SA green steel slab haul to Spencer Gulf.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['trade'],
+    tags: ['green_steel', 'hydrogen_dri', 'export_slab'],
+    laneKilometres: 38,
+    designSpeedKmh: 86,
+    freightShare: 0.39,
+    urbanShare: 0.08,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nt_arnhem_bush_runway',
+    category: 'road',
+    name: 'Arnhem Bush Runway Feed',
+    description: 'Remote community airlift road to bush runways.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'WA'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['indigenous_airlift', 'remote_community_supply', 'bush_runway'],
+    laneKilometres: 64,
+    designSpeedKmh: 78,
+    freightShare: 0.22,
+    urbanShare: 0.02,
+    tollRoad: false,
+  },
+  {
+    id: 'road_wa_kimberley_community_air',
+    category: 'road',
+    name: 'Kimberley Community Air Link',
+    description: 'Indigenous community supply road to regional airlift.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'NT'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['mobility'],
+    tags: ['indigenous_airlift', 'remote_community_supply', 'bush_runway'],
+    laneKilometres: 58,
+    designSpeedKmh: 82,
+    freightShare: 0.18,
+    urbanShare: 0.01,
+    tollRoad: false,
+  },
+];
+
+export const ROUND26_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_pilbara_green_steel',
+    category: 'rail',
+    name: 'Pilbara Green Steel Rail',
+    description: 'Hydrogen-DRI slab export rail corridor.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['green_steel', 'hydrogen_dri', 'export_slab'],
+    trackKilometres: 118,
+    dualTrackShare: 0.49,
+    electrifiedShare: 0.24,
+    designFreightTonnesPerYear: 7_400_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_sa_spencer_steel_link',
+    category: 'rail',
+    name: 'Spencer Gulf Steel Link',
+    description: 'SA export slab rail to green steel berths.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['trade'],
+    tags: ['green_steel', 'hydrogen_dri', 'export_slab'],
+    trackKilometres: 52,
+    dualTrackShare: 0.41,
+    electrifiedShare: 0.31,
+    designFreightTonnesPerYear: 3_600_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_qld_brisbane_slot_feed',
+    category: 'rail',
+    name: 'Brisbane Berth Slot Feed Rail',
+    description: 'Port congestion relief rail to optimized berths.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['berth_slot_optimizer', 'port_congestion_relief', 'tidal_window'],
+    trackKilometres: 28,
+    dualTrackShare: 0.57,
+    electrifiedShare: 0.62,
+    designFreightTonnesPerYear: 4_100_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND26_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_port_hedland_green_steel',
+    category: 'port',
+    name: 'Port Hedland Green Steel Terminal',
+    description: 'Bulk green steel slab export with tidal berth slots.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.8,
+    strategicNetworks: ['trade'],
+    tags: ['green_steel', 'hydrogen_dri', 'export_slab', 'bulk'],
+    berthCount: 4,
+    maxDraftMetres: 15.5,
+    teuCapacityPerYear: 160_000,
+    automationLevel: 2,
+    bulkShare: 0.68,
+  },
+  {
+    id: 'port_qld_fisherman_berth_slots',
+    category: 'port',
+    name: 'Fisherman Islands Berth Slot Hub',
+    description: 'Brisbane container berth slot optimization terminal.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['berth_slot_optimizer', 'port_congestion_relief', 'tidal_window', 'container'],
+    berthCount: 4,
+    maxDraftMetres: 14.0,
+    teuCapacityPerYear: 520_000,
+    automationLevel: 2,
+    bulkShare: 0.08,
+  },
+  {
+    id: 'port_nsw_botany_slot_optimizer',
+    category: 'port',
+    name: 'Botany Slot Optimizer Terminal',
+    description: 'NSW tidal-window berth congestion relief.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['trade'],
+    tags: ['berth_slot_optimizer', 'port_congestion_relief', 'tidal_window'],
+    berthCount: 3,
+    maxDraftMetres: 13.5,
+    teuCapacityPerYear: 480_000,
+    automationLevel: 2,
+    bulkShare: 0.1,
+  },
+];
+
+export const ROUND26_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_sa_whyalla_dri_yard',
+    category: 'logistics',
+    name: 'Whyalla DRI Export Yard',
+    description: 'SA hydrogen-DRI slab staging for green steel export.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['trade'],
+    tags: ['green_steel', 'hydrogen_dri', 'export_slab'],
+    warehouseSqm: 82_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 49,
+  },
+  {
+    id: 'log_nt_darwin_airlift_depot',
+    category: 'logistics',
+    name: 'Darwin Airlift Depot',
+    description: 'NT indigenous community airlift consolidation.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'WA'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['indigenous_airlift', 'remote_community_supply', 'bush_runway'],
+    warehouseSqm: 44_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 38,
+  },
+  {
+    id: 'log_nsw_port_botany_slot_yard',
+    category: 'logistics',
+    name: 'Port Botany Slot Yard',
+    description: 'NSW berth slot optimizer staging yard.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['berth_slot_optimizer', 'port_congestion_relief', 'tidal_window'],
+    warehouseSqm: 59_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 65,
+  },
+];
+
+export const SCALE_WAVE_ROUND26_ASSETS = [
+  ...ROUND26_ROADS,
+  ...ROUND26_RAIL,
+  ...ROUND26_PORTS,
+  ...ROUND26_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -9913,6 +10257,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND23_ASSETS,
     ...SCALE_WAVE_ROUND24_ASSETS,
     ...SCALE_WAVE_ROUND25_ASSETS,
+    ...SCALE_WAVE_ROUND26_ASSETS,
   ];
 }
 
@@ -11308,6 +11653,62 @@ export function sustainableAviationFuelSupplyProductivityMultiplier(
   const policyBoost = policy === 'expand' ? 0.041 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.047 + policyBoost, 0.93, 1.1);
+}
+
+
+// --- source: network/green-steel-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type GreenSteelExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 green steel and hydrogen-DRI slab export throughput by region. */
+export function computeGreenSteelExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) => t === 'green_steel' || t === 'hydrogen_dri' || t === 'export_slab',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.2 + asset.bulkShare * 5.1;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 88_000 + asset.intermodalLinks.length * 0.82;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 580;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 10_800_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalGreenSteelExportIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.48 + max * 0.52, 5, 76) * 10) / 10;
+}
+
+export function greenSteelExportProductivityMultiplier(
+  index: number,
+  policy: GreenSteelExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.04 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.046 + policyBoost, 0.93, 1.11);
 }
 
 
@@ -12961,6 +13362,93 @@ export function outbackDieselSecurityProductivityMultiplier(
 ): number {
   const bias = policy === 'harden' ? 1.021 : 1;
   return (1 + (share - 0.048) * 0.03) * bias;
+}
+
+
+// --- source: operations/indigenous-community-airlift-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type IndigenousCommunityAirliftPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 indigenous community airlift and bush runway supply readiness by region. */
+export function computeIndigenousCommunityAirliftByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 4])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'indigenous_airlift' || t === 'remote_community_supply' || t === 'bush_runway',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 92_000 + (asset.coldChainCapable ? 1.4 : 0.7);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 620;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 16_000_000;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.9 + asset.teuCapacityPerYear / 380_000;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.038 - stress * 0.028), 4, 82) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalIndigenousCommunityAirliftIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.51 + max * 0.49, 5, 79) * 10) / 10;
+}
+
+export function computeIndigenousCommunityAirliftShare(
+  operationalAssets: TransportAsset[],
+  policy: IndigenousCommunityAirliftPolicy = 'baseline',
+): number {
+  let airliftUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('indigenous_airlift') || asset.tags.includes('remote_community_supply')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 80_000;
+        airliftUnits += asset.warehouseSqm / 80_000 * 0.66;
+      }
+      if (asset.category === 'road') {
+        totalUnits += asset.laneKilometres / 500;
+        airliftUnits += asset.laneKilometres / 500 * 0.52;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.033;
+  const policyBoost = policy === 'expand' ? 0.032 : 0;
+  return Math.round(clamp(airliftUnits / totalUnits + policyBoost, 0.032, 0.3) * 1000) / 1000;
+}
+
+export function indigenousCommunityAirliftProductivityMultiplier(
+  share: number,
+  policy: IndigenousCommunityAirliftPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.022 : 1;
+  return (1 + (share - 0.05) * 0.031) * bias;
 }
 
 
@@ -14852,6 +15340,92 @@ export function nationalRailDoubleStackContainerThroughputIndex(
 }
 
 
+// --- source: productivity/port-berth-slot-optimizer-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type PortBerthSlotOptimizerPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of container port throughput using berth slot optimization. */
+export function computePortBerthSlotOptimizerShare(
+  operationalAssets: TransportAsset[],
+  policy: PortBerthSlotOptimizerPolicy = 'baseline',
+): number {
+  let optimizedUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) => t === 'berth_slot_optimizer' || t === 'port_congestion_relief' || t === 'tidal_window',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.6 + asset.teuCapacityPerYear / 300_000;
+        optimizedUnits += asset.berthCount * 1.1 + asset.teuCapacityPerYear / 300_000 * 0.63;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 60_000;
+        optimizedUnits += (asset.warehouseSqm / 60_000) * 0.59;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.035;
+  const policyBoost = policy === 'deploy' ? 0.031 : 0;
+  return Math.round(clamp(optimizedUnits / totalUnits + policyBoost, 0.034, 0.31) * 1000) / 1000;
+}
+
+export function portBerthSlotOptimizerProductivityMultiplier(
+  share: number,
+  policy: PortBerthSlotOptimizerPolicy,
+): number {
+  const bias = policy === 'deploy' ? 1.024 : 1;
+  return (1 + (share - 0.054) * 0.03) * bias;
+}
+
+export function computePortBerthSlotOptimizerThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'berth_slot_optimizer' || t === 'port_congestion_relief' || t === 'tidal_window',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.8 + asset.teuCapacityPerYear / 280_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 68_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 420;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalPortBerthSlotOptimizerThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 2, 55) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -15327,6 +15901,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalRailDoubleStackContainerThroughputIndex,
   railDoubleStackContainerProductivityMultiplier,
 } from './rail-double-stack-container-index.ts';
+  computeGreenSteelExportByRegion,
+  greenSteelExportProductivityMultiplier,
+  nationalGreenSteelExportIndex,
+} from '../network/green-steel-export-index.ts';
+  computeIndigenousCommunityAirliftByRegion,
+  computeIndigenousCommunityAirliftShare,
+  indigenousCommunityAirliftProductivityMultiplier,
+  nationalIndigenousCommunityAirliftIndex,
+} from '../operations/indigenous-community-airlift-index.ts';
+  computePortBerthSlotOptimizerShare,
+  computePortBerthSlotOptimizerThroughputByRegion,
+  nationalPortBerthSlotOptimizerThroughputIndex,
+  portBerthSlotOptimizerProductivityMultiplier,
+} from './port-berth-slot-optimizer-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -16225,6 +16813,34 @@ export function computeTransportInfrastructureState(
     railDoubleStackContainerShare,
     options?.railDoubleStackContainerPolicy ?? 'baseline',
   );
+  const greenSteelExportByRegion = computeGreenSteelExportByRegion(ops);
+  const nationalGreenSteel = nationalGreenSteelExportIndex(greenSteelExportByRegion);
+  const greenSteelMult = greenSteelExportProductivityMultiplier(
+    nationalGreenSteel,
+    options?.greenSteelExportPolicy ?? 'baseline',
+  );
+  const indigenousCommunityAirliftByRegion = computeIndigenousCommunityAirliftByRegion(ops, networkStress);
+  const nationalIndigenousAirlift = nationalIndigenousCommunityAirliftIndex(indigenousCommunityAirliftByRegion);
+  const indigenousCommunityAirliftShare = computeIndigenousCommunityAirliftShare(
+    ops,
+    options?.indigenousCommunityAirliftPolicy ?? 'baseline',
+  );
+  const indigenousAirliftMult = indigenousCommunityAirliftProductivityMultiplier(
+    indigenousCommunityAirliftShare,
+    options?.indigenousCommunityAirliftPolicy ?? 'baseline',
+  );
+  const portBerthSlotOptimizerThroughputByRegion = computePortBerthSlotOptimizerThroughputByRegion(ops);
+  const nationalPortBerthSlot = nationalPortBerthSlotOptimizerThroughputIndex(
+    portBerthSlotOptimizerThroughputByRegion,
+  );
+  const portBerthSlotOptimizerShare = computePortBerthSlotOptimizerShare(
+    ops,
+    options?.portBerthSlotOptimizerPolicy ?? 'baseline',
+  );
+  const berthSlotMult = portBerthSlotOptimizerProductivityMultiplier(
+    portBerthSlotOptimizerShare,
+    options?.portBerthSlotOptimizerPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -16257,6 +16873,9 @@ export function computeTransportInfrastructureState(
     const safBoost = (sustainableAviationFuelSupplyByRegion[code] - 4) * 0.004;
     const outbackDieselBoost = (outbackDieselSecurityByRegion[code] - 5) * 0.0038;
     const doubleStackBoost = (railDoubleStackContainerThroughputByRegion[code] - 1.8) * 0.0035;
+    const greenSteelBoost = (greenSteelExportByRegion[code] - 5) * 0.0042;
+    const indigenousAirliftBoost = (indigenousCommunityAirliftByRegion[code] - 5) * 0.0036;
+    const berthSlotBoost = (portBerthSlotOptimizerThroughputByRegion[code] - 2) * 0.0034;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -16288,7 +16907,10 @@ export function computeTransportInfrastructureState(
         smartBorderBoost +
         safBoost +
         outbackDieselBoost +
-        doubleStackBoost) *
+        doubleStackBoost +
+        greenSteelBoost +
+        indigenousAirliftBoost +
+        berthSlotBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -16318,7 +16940,10 @@ export function computeTransportInfrastructureState(
       smartBorderMult *
       safMult *
       outbackDieselMult *
-      doubleStackMult;
+      doubleStackMult *
+      greenSteelMult *
+      indigenousAirliftMult *
+      berthSlotMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -16371,7 +16996,10 @@ export function computeTransportInfrastructureState(
     nationalSmartBorderPreclearance * 0.005 +
     nationalSafSupply * 0.005 +
     nationalOutbackDiesel * 0.005 +
-    nationalRailDoubleStack * 0.004;
+    nationalRailDoubleStack * 0.004 +
+    nationalGreenSteel * 0.004 +
+    nationalIndigenousAirlift * 0.004 +
+    nationalPortBerthSlot * 0.004;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -16386,7 +17014,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/26',
+    schemaVersion: 'agent12/27',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -16560,6 +17188,14 @@ export function computeTransportInfrastructureState(
     railDoubleStackContainerShare,
     nationalRailDoubleStackContainerThroughputIndex: nationalRailDoubleStack,
     railDoubleStackContainerThroughputByRegion,
+    nationalGreenSteelExportIndex: nationalGreenSteel,
+    greenSteelExportByRegion,
+    indigenousCommunityAirliftShare,
+    nationalIndigenousCommunityAirliftIndex: nationalIndigenousAirlift,
+    indigenousCommunityAirliftByRegion,
+    portBerthSlotOptimizerShare,
+    nationalPortBerthSlotOptimizerThroughputIndex: nationalPortBerthSlot,
+    portBerthSlotOptimizerThroughputByRegion,
     computeMs,
   };
 }
@@ -16642,7 +17278,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/26' &&
+      infra.schemaVersion === 'agent12/27' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -16728,8 +17364,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalSustainableAviationFuelSupplyIndex >= 5 &&
       infra.nationalOutbackDieselSecurityIndex >= 5 &&
       infra.railDoubleStackContainerShare >= 0.03 &&
-      infra.nationalRailDoubleStackContainerThroughputIndex >= 1.8,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} saf=${infra.nationalSustainableAviationFuelSupplyIndex.toFixed(1)} diesel=${infra.nationalOutbackDieselSecurityIndex.toFixed(1)} stack=${infra.nationalRailDoubleStackContainerThroughputIndex.toFixed(1)}`,
+      infra.nationalRailDoubleStackContainerThroughputIndex >= 1.8 &&
+      infra.nationalGreenSteelExportIndex >= 5 &&
+      infra.nationalIndigenousCommunityAirliftIndex >= 5 &&
+      infra.portBerthSlotOptimizerShare >= 0.03 &&
+      infra.nationalPortBerthSlotOptimizerThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} steel=${infra.nationalGreenSteelExportIndex.toFixed(1)} airlift=${infra.nationalIndigenousCommunityAirliftIndex.toFixed(1)} berth=${infra.nationalPortBerthSlotOptimizerThroughputIndex.toFixed(1)}`,
   });
 
   return results;

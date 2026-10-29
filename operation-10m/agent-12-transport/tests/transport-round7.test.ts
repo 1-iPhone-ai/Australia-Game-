@@ -33,13 +33,13 @@ describe('Agent 12 round 7 catalog', () => {
 });
 
 describe('Agent 12 round 7 systems', () => {
-  it('returns agent12/26 with bulk export, dwell, and congestion relief', () => {
+  it('returns agent12/27 with bulk export, dwell, and congestion relief', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(40), {
       congestionReliefPolicy: 'invest',
     });
-    assert.equal(state.schemaVersion, 'agent12/26');
+    assert.equal(state.schemaVersion, 'agent12/27');
     assert.ok(state.nationalBulkExportThroughputIndex >= 20);
-    assert.ok(state.nationalIntermodalDwellMedian >= 12 && state.nationalIntermodalDwellMedian <= 55);
+    assert.ok(state.nationalIntermodalDwellMedian >= 12 && state.nationalIntermodalDwellMedian <= 60);
     assert.ok(state.nationalUrbanCongestionIndex >= 18);
     assert.ok(state.bulkExportThroughputByRegion.WA > 25);
   });

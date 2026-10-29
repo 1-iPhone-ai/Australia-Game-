@@ -303,8 +303,14 @@ export type OutbackDieselSecurityPolicy = 'baseline' | 'harden';
 
 export type RailDoubleStackContainerPolicy = 'baseline' | 'deploy';
 
+export type GreenSteelExportPolicy = 'baseline' | 'accelerate';
+
+export type IndigenousCommunityAirliftPolicy = 'baseline' | 'expand';
+
+export type PortBerthSlotOptimizerPolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/26';
+  schemaVersion: 'agent12/27';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -478,6 +484,14 @@ export interface TransportInfrastructureState {
   railDoubleStackContainerShare: number;
   nationalRailDoubleStackContainerThroughputIndex: number;
   railDoubleStackContainerThroughputByRegion: Record<AuRegionCode, number>;
+  nationalGreenSteelExportIndex: number;
+  greenSteelExportByRegion: Record<AuRegionCode, number>;
+  indigenousCommunityAirliftShare: number;
+  nationalIndigenousCommunityAirliftIndex: number;
+  indigenousCommunityAirliftByRegion: Record<AuRegionCode, number>;
+  portBerthSlotOptimizerShare: number;
+  nationalPortBerthSlotOptimizerThroughputIndex: number;
+  portBerthSlotOptimizerThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -546,6 +560,9 @@ export interface TransportInfrastructureOptions {
   sustainableAviationFuelSupplyPolicy?: SustainableAviationFuelSupplyPolicy;
   outbackDieselSecurityPolicy?: OutbackDieselSecurityPolicy;
   railDoubleStackContainerPolicy?: RailDoubleStackContainerPolicy;
+  greenSteelExportPolicy?: GreenSteelExportPolicy;
+  indigenousCommunityAirliftPolicy?: IndigenousCommunityAirliftPolicy;
+  portBerthSlotOptimizerPolicy?: PortBerthSlotOptimizerPolicy;
 }
 
 export interface V94ProjectSnapshot {
