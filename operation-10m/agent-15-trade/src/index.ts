@@ -53,5 +53,7 @@ export * from './certified-throughput-sustainment.ts';
 export * from './bilateral-capacity-handoff-gate.ts';
 export * from './capacity-handoff-absorption.ts';
 export * from './bilateral-trade-window-continuity.ts';
+export * from './trade-cycle-seal-verification.ts';
+export * from './bilateral-capacity-renewal-gate.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';

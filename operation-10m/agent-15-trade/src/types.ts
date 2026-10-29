@@ -190,6 +190,8 @@ export interface GTELPersisted {
   bilateralCapacityHandoffGateSmoothing?: number;
   capacityHandoffAbsorptionSmoothing?: number;
   bilateralTradeWindowContinuitySmoothing?: number;
+  tradeCycleSealVerificationSmoothing?: number;
+  bilateralCapacityRenewalGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -249,6 +251,8 @@ export interface GTELState {
   bilateralCapacityHandoffGate: GTELBilateralCapacityHandoffGateSnapshot;
   capacityHandoffAbsorption: GTELCapacityHandoffAbsorptionSnapshot;
   bilateralTradeWindowContinuity: GTELBilateralTradeWindowContinuitySnapshot;
+  tradeCycleSealVerification: GTELTradeCycleSealVerificationSnapshot;
+  bilateralCapacityRenewalGate: GTELBilateralCapacityRenewalGateSnapshot;
   inputHash: string;
 }
 
@@ -833,6 +837,26 @@ export interface GTELBilateralTradeWindowContinuitySnapshot {
   band: GTELBilateralTradeWindowContinuityBand;
   absorptionSupport: number;
   readinessAnchor: number;
+  summary: string;
+}
+
+export type GTELTradeCycleSealVerificationBand = 'verified' | 'provisional' | 'contested' | 'failed';
+
+export interface GTELTradeCycleSealVerificationSnapshot {
+  score: number;
+  band: GTELTradeCycleSealVerificationBand;
+  continuitySupport: number;
+  sustainmentAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralCapacityRenewalGateBand = 'renewed' | 'pending' | 'deferred' | 'blocked';
+
+export interface GTELBilateralCapacityRenewalGateSnapshot {
+  score: number;
+  band: GTELBilateralCapacityRenewalGateBand;
+  sealSupport: number;
+  readinessLift: number;
   summary: string;
 }
 
