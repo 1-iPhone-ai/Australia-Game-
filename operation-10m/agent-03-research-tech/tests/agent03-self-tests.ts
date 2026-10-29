@@ -1380,7 +1380,7 @@ tests.push(
       scaleWaveMaturitySnapshot: null,
     };
     const core = migrateResearchProgressSave(v17);
-    assert(core?.schemaVersion === 'op10m-agent03-v19');
+    assert(core?.schemaVersion === 'op10m-agent03-v20');
     assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v17'));
     assert(Array.isArray(core?.nationalIntegrationBandLog));
     assert(core?.nationalIntegrationSnapshot === null);
@@ -1449,13 +1449,84 @@ tests.push(
       nationalIntegrationSnapshot: null,
     };
     const core = migrateResearchProgressSave(v18);
-    assert(core?.schemaVersion === 'op10m-agent03-v19');
+    assert(core?.schemaVersion === 'op10m-agent03-v20');
     assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v18'));
     assert(Array.isArray(core?.scaleWaveProjectionBandLog));
     assert(core?.scaleWaveProjectionSnapshot === null);
     const state = computeResearchProgress(baseInputs({ turn: 35 }), core);
     assert(typeof state.scaleWaveProjectionSnapshot?.digest === 'string');
     assert(Array.isArray(state.scaleWaveProjectionBandLog));
+  })
+);
+
+tests.push(
+  test('scale_wave_integration_gate_outlook_derived', () => {
+    const inputs = baseInputs({ turn: 40 });
+    const state = computeResearchProgress(inputs, null);
+    const outlook = state.scaleWaveIntegrationGateOutlook;
+    assert(outlook != null);
+    assert(outlook?.waveOrdinal === 20);
+    assert(outlook?.integrationBaselineShaHint === '680b9954');
+    assert(detectForeignSaveFields({ scaleWaveIntegrationGateOutlook: outlook }).includes('scaleWaveIntegrationGateOutlook'));
+  })
+);
+
+tests.push(
+  test('save_v19_migrates_to_v20_with_tranche_projection_fields', () => {
+    const v19 = {
+      schemaVersion: 'op10m-agent03-v19',
+      turn: 36,
+      revision: 3,
+      unlockedNodes: [],
+      institutionUpgrades: [],
+      unlockSeq: 0,
+      branchEmphasis: [],
+      emphasisRevision: 1,
+      migrationLog: [{ fromVersion: 'op10m-agent03-v18', toVersion: 'op10m-agent03-v19', turn: 35 }],
+      saveKind: 'manual',
+      updatedAtTurn: 36,
+      sessionId: 'v19',
+      persistRevision: 19,
+      unlockEventLog: [],
+      lastReconciledAtTurn: 36,
+      emphasisChangeLog: [],
+      institutionTierSnapshot: { capturedAtTurn: 36, tiers: {}, digest: 'abc', nationalIntegrationCount: 0, strategicOrAboveCount: 0 },
+      readinessMilestoneLog: [],
+      readinessBranchSnapshot: null,
+      integrationRiskLog: [],
+      integrationRiskSnapshot: null,
+      scaleWaveSnapshot: null,
+      synergyThresholdLog: [],
+      synergySnapshot: null,
+      commercializationMilestoneLog: [],
+      commercializationSnapshot: null,
+      diffusionIntegrationLog: [],
+      diffusionIntegrationSnapshot: null,
+      portfolioBalanceLog: [],
+      portfolioBalanceSnapshot: null,
+      diffusionForecastBandLog: [],
+      diffusionForecastSnapshot: null,
+      horizonConvergenceBandLog: [],
+      horizonConvergenceSnapshot: null,
+      researchExecutionBandLog: [],
+      researchExecutionSnapshot: null,
+      strategicDeliveryBandLog: [],
+      strategicDeliverySnapshot: null,
+      scaleWaveMaturityBandLog: [],
+      scaleWaveMaturitySnapshot: null,
+      nationalIntegrationBandLog: [],
+      nationalIntegrationSnapshot: null,
+      scaleWaveProjectionBandLog: [],
+      scaleWaveProjectionSnapshot: null,
+    };
+    const core = migrateResearchProgressSave(v19);
+    assert(core?.schemaVersion === 'op10m-agent03-v20');
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v19'));
+    assert(Array.isArray(core?.trancheProjectionBandLog));
+    assert(core?.trancheProjectionSnapshot === null);
+    const state = computeResearchProgress(baseInputs({ turn: 37 }), core);
+    assert(typeof state.trancheProjectionSnapshot?.digest === 'string');
+    assert(Array.isArray(state.trancheProjectionBandLog));
   })
 );
 

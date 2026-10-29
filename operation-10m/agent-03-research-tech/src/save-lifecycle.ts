@@ -23,6 +23,7 @@ import type {
   ResearchScaleWaveMaturityBandEvent,
   ResearchNationalIntegrationBandEvent,
   ResearchScaleWaveProjectionBandEvent,
+  ResearchTrancheProjectionBandEvent,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { RESEARCH_UNLOCK_EVENT_LOG_CAP } from './unlock-event-log.ts';
@@ -42,6 +43,7 @@ import { RESEARCH_STRATEGIC_DELIVERY_BAND_LOG_CAP } from './strategic-delivery-b
 import { RESEARCH_SCALE_WAVE_MATURITY_BAND_LOG_CAP } from './scale-wave-maturity-band-log.ts';
 import { RESEARCH_NATIONAL_INTEGRATION_BAND_LOG_CAP } from './national-integration-band-log.ts';
 import { RESEARCH_SCALE_WAVE_PROJECTION_BAND_LOG_CAP } from './scale-wave-projection-band-log.ts';
+import { RESEARCH_TRANCHE_PROJECTION_BAND_LOG_CAP } from './tranche-projection-band-log.ts';
 import { mergeIntegrationRiskSnapshots } from './integration-risk-snapshot.ts';
 import { mergeScaleWaveSnapshots } from './scale-wave-snapshot.ts';
 import { mergeSynergySnapshots } from './synergy-snapshot.ts';
@@ -55,6 +57,7 @@ import { mergeStrategicDeliverySnapshots } from './strategic-delivery-snapshot.t
 import { mergeScaleWaveMaturitySnapshots } from './scale-wave-maturity-snapshot.ts';
 import { mergeNationalIntegrationSnapshots } from './national-integration-snapshot.ts';
 import { mergeScaleWaveProjectionSnapshots } from './scale-wave-projection-snapshot.ts';
+import { mergeTrancheProjectionSnapshots } from './tranche-projection-snapshot.ts';
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
@@ -250,6 +253,18 @@ function mergeScaleWaveProjectionBandLogs(
   return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_SCALE_WAVE_PROJECTION_BAND_LOG_CAP);
 }
 
+function mergeTrancheProjectionBandLogs(
+  local: ResearchTrancheProjectionBandEvent[] | undefined,
+  remote: ResearchTrancheProjectionBandEvent[] | undefined
+): ResearchTrancheProjectionBandEvent[] {
+  const byKey = new Map<string, ResearchTrancheProjectionBandEvent>();
+  for (const ev of [...(local ?? []), ...(remote ?? [])]) {
+    const key = `${ev.seq}:${ev.band}:${ev.phase}`;
+    byKey.set(key, ev);
+  }
+  return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_TRANCHE_PROJECTION_BAND_LOG_CAP);
+}
+
 function stableCoreSnapshot(core: ResearchProgressPersistedCore): Record<string, unknown> {
   const { coreFingerprint, ...rest } = core;
   void coreFingerprint;
@@ -439,6 +454,15 @@ export function mergeResearchPersistedCores(
         local.scaleWaveProjectionSnapshot ?? undefined,
         remote.scaleWaveProjectionSnapshot ?? undefined
       ) ?? null,
+    trancheProjectionBandLog: mergeTrancheProjectionBandLogs(
+      local.trancheProjectionBandLog,
+      remote.trancheProjectionBandLog
+    ),
+    trancheProjectionSnapshot:
+      mergeTrancheProjectionSnapshots(
+        local.trancheProjectionSnapshot ?? undefined,
+        remote.trancheProjectionSnapshot ?? undefined
+      ) ?? null,
     lastReconciledAtTurn: Math.max(local.lastReconciledAtTurn ?? 0, remote.lastReconciledAtTurn ?? 0),
   });
 }
@@ -493,6 +517,8 @@ export function reconcileResearchProgressOnLoad(
         nationalIntegrationSnapshot: persist.nationalIntegrationSnapshot,
         scaleWaveProjectionBandLog: persist.scaleWaveProjectionBandLog,
         scaleWaveProjectionSnapshot: persist.scaleWaveProjectionSnapshot,
+        trancheProjectionBandLog: persist.trancheProjectionBandLog,
+        trancheProjectionSnapshot: persist.trancheProjectionSnapshot,
       },
       persist,
     };
@@ -539,6 +565,8 @@ export function reconcileResearchProgressOnLoad(
     nationalIntegrationSnapshot: mergedCore.nationalIntegrationSnapshot,
     scaleWaveProjectionBandLog: mergedCore.scaleWaveProjectionBandLog,
     scaleWaveProjectionSnapshot: mergedCore.scaleWaveProjectionSnapshot,
+    trancheProjectionBandLog: mergedCore.trancheProjectionBandLog,
+    trancheProjectionSnapshot: mergedCore.trancheProjectionSnapshot,
     lastReconciledAtTurn: ctx.turn,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
   };
@@ -586,6 +614,8 @@ export function reconcileResearchProgressOnLoad(
       nationalIntegrationSnapshot: persist.nationalIntegrationSnapshot,
       scaleWaveProjectionBandLog: persist.scaleWaveProjectionBandLog,
       scaleWaveProjectionSnapshot: persist.scaleWaveProjectionSnapshot,
+      trancheProjectionBandLog: persist.trancheProjectionBandLog,
+      trancheProjectionSnapshot: persist.trancheProjectionSnapshot,
     },
     persist,
   };

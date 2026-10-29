@@ -41,6 +41,8 @@ import type {
   ResearchNationalIntegrationSnapshot,
   ResearchScaleWaveProjectionBandEvent,
   ResearchScaleWaveProjectionSnapshot,
+  ResearchTrancheProjectionBandEvent,
+  ResearchTrancheProjectionSnapshot,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { appendUnlockEvents, rebuildUnlockEventLogFromNodes, emptyUnlockEventLog } from './unlock-event-log.ts';
@@ -141,6 +143,15 @@ import {
   computeScaleWaveProjectionSnapshot,
   mergeScaleWaveProjectionSnapshots,
 } from './scale-wave-projection-snapshot.ts';
+import {
+  appendTrancheProjectionBandEvents,
+  emptyTrancheProjectionBandLog,
+  RESEARCH_TRANCHE_PROJECTION_BAND_LOG_CAP,
+} from './tranche-projection-band-log.ts';
+import {
+  computeTrancheProjectionSnapshot,
+  mergeTrancheProjectionSnapshots,
+} from './tranche-projection-snapshot.ts';
 import { INSTITUTION_UPGRADE_TIER_RANK } from './institution-upgrades.ts';
 
 export type { ResearchProgressSchemaVersion, ResearchBranchEmphasisState, ResearchProgramEmphasis } from './types.ts';
@@ -261,6 +272,7 @@ const LEGACY_V15 = 'op10m-agent03-v15' as const;
 const LEGACY_V16 = 'op10m-agent03-v16' as const;
 const LEGACY_V17 = 'op10m-agent03-v17' as const;
 const LEGACY_V18 = 'op10m-agent03-v18' as const;
+const LEGACY_V19 = 'op10m-agent03-v19' as const;
 
 /** Keys that must never appear on persisted save blobs (Agent 25 guard). */
 export const RESEARCH_SAVE_DERIVED_KEYS = [
@@ -287,6 +299,7 @@ export const RESEARCH_SAVE_DERIVED_KEYS = [
   'nationalIntegrationOutlook',
   'scaleWaveProjectionOutlook',
   'trancheProjectionReadinessOutlook',
+  'scaleWaveIntegrationGateOutlook',
 ] as const;
 
 function finalizeCoreForPersist(
@@ -338,6 +351,8 @@ function finalizeCoreForPersist(
     nationalIntegrationSnapshot: partial.nationalIntegrationSnapshot ?? null,
     scaleWaveProjectionBandLog: partial.scaleWaveProjectionBandLog ?? emptyScaleWaveProjectionBandLog(),
     scaleWaveProjectionSnapshot: partial.scaleWaveProjectionSnapshot ?? null,
+    trancheProjectionBandLog: partial.trancheProjectionBandLog ?? emptyTrancheProjectionBandLog(),
+    trancheProjectionSnapshot: partial.trancheProjectionSnapshot ?? null,
   };
   return { ...draft, coreFingerprint: computePersistedCoreFingerprint(draft) };
 }
@@ -395,6 +410,8 @@ export function computePersistedCoreFingerprint(
     nationalIntegrationSnapshot: core.nationalIntegrationSnapshot,
     scaleWaveProjectionBandLog: core.scaleWaveProjectionBandLog,
     scaleWaveProjectionSnapshot: core.scaleWaveProjectionSnapshot,
+    trancheProjectionBandLog: core.trancheProjectionBandLog,
+    trancheProjectionSnapshot: core.trancheProjectionSnapshot,
   });
   for (let i = 0; i < payload.length; i++) {
     h ^= payload.charCodeAt(i);
@@ -436,6 +453,8 @@ function upgradeToCurrentCore(
     nationalIntegrationSnapshot?: ResearchNationalIntegrationSnapshot | null;
     scaleWaveProjectionBandLog?: ResearchScaleWaveProjectionBandEvent[];
     scaleWaveProjectionSnapshot?: ResearchScaleWaveProjectionSnapshot | null;
+    trancheProjectionBandLog?: ResearchTrancheProjectionBandEvent[];
+    trancheProjectionSnapshot?: ResearchTrancheProjectionSnapshot | null;
     unlockEventLog?: ResearchUnlockEvent[];
     lastReconciledAtTurn?: number;
   },
@@ -488,6 +507,8 @@ function upgradeToCurrentCore(
     nationalIntegrationSnapshot: base.nationalIntegrationSnapshot ?? null,
     scaleWaveProjectionBandLog: base.scaleWaveProjectionBandLog ?? emptyScaleWaveProjectionBandLog(),
     scaleWaveProjectionSnapshot: base.scaleWaveProjectionSnapshot ?? null,
+    trancheProjectionBandLog: base.trancheProjectionBandLog ?? emptyTrancheProjectionBandLog(),
+    trancheProjectionSnapshot: base.trancheProjectionSnapshot ?? null,
     unlockEventLog: base.unlockEventLog ?? rebuildUnlockEventLogFromNodes(base.unlockedNodes ?? []),
     lastReconciledAtTurn: base.lastReconciledAtTurn ?? base.turn,
   });
@@ -544,6 +565,8 @@ function emptyCore(turn = 0): ResearchProgressPersistedCore {
     nationalIntegrationSnapshot: null,
     scaleWaveProjectionBandLog: emptyScaleWaveProjectionBandLog(),
     scaleWaveProjectionSnapshot: null,
+    trancheProjectionBandLog: emptyTrancheProjectionBandLog(),
+    trancheProjectionSnapshot: null,
   });
 }
 
@@ -1163,6 +1186,44 @@ function sanitizeScaleWaveProjectionSnapshot(raw: unknown, turn: number): Resear
   };
 }
 
+function sanitizeTrancheProjectionBandLog(raw: unknown): ResearchTrancheProjectionBandEvent[] {
+  if (!Array.isArray(raw)) return emptyTrancheProjectionBandLog();
+  const bands = new Set([55, 70, 85, 95]);
+  const out: ResearchTrancheProjectionBandEvent[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as ResearchTrancheProjectionBandEvent;
+    if (!bands.has(Number(o.band))) continue;
+    if (o.phase !== 'escalation' && o.phase !== 'de-escalation') continue;
+    out.push({
+      seq: Number(o.seq) || out.length + 1,
+      turn: Number(o.turn) || 0,
+      band: o.band,
+      trancheReadinessScore: Number(o.trancheReadinessScore) || 0,
+      horizonTurns: Number(o.horizonTurns) || 0,
+      waveOrdinal: Number(o.waveOrdinal) || 0,
+      phase: o.phase,
+    });
+  }
+  return out.sort((a, b) => a.seq - b.seq).slice(-RESEARCH_TRANCHE_PROJECTION_BAND_LOG_CAP);
+}
+
+function sanitizeTrancheProjectionSnapshot(raw: unknown, turn: number): ResearchTrancheProjectionSnapshot | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as ResearchTrancheProjectionSnapshot;
+  if (typeof o.digest !== 'string') return null;
+  return {
+    capturedAtTurn: Number(o.capturedAtTurn) || turn,
+    trancheReadinessScore: Number(o.trancheReadinessScore) || 0,
+    horizonTurns: Number(o.horizonTurns) || 0,
+    waveOrdinal: Number(o.waveOrdinal) || 0,
+    projectionMomentum: Number(o.projectionMomentum) || 0,
+    dryRunEligible: Boolean(o.dryRunEligible),
+    peakBand: (Number(o.peakBand) || 0) as ResearchTrancheProjectionSnapshot['peakBand'],
+    digest: o.digest,
+  };
+}
+
 function snapshotFromUpgrades(
   upgrades: InstitutionUpgradeState[],
   turn: number
@@ -1260,6 +1321,10 @@ export function migrateResearchProgressSave(raw: unknown): ResearchProgressPersi
         ? sanitizeScaleWaveProjectionBandLog(o.scaleWaveProjectionBandLog)
         : emptyScaleWaveProjectionBandLog(),
       scaleWaveProjectionSnapshot: sanitizeScaleWaveProjectionSnapshot(o.scaleWaveProjectionSnapshot, turn),
+      trancheProjectionBandLog: sanitizeTrancheProjectionBandLog(o.trancheProjectionBandLog).length
+        ? sanitizeTrancheProjectionBandLog(o.trancheProjectionBandLog)
+        : emptyTrancheProjectionBandLog(),
+      trancheProjectionSnapshot: sanitizeTrancheProjectionSnapshot(o.trancheProjectionSnapshot, turn),
     });
     if (typeof o.coreFingerprint === 'string' && o.coreFingerprint !== draft.coreFingerprint) {
       return draft;
@@ -1361,8 +1426,117 @@ export function migrateResearchProgressSave(raw: unknown): ResearchProgressPersi
         nationalIntegrationSnapshot: null,
         scaleWaveProjectionBandLog: emptyScaleWaveProjectionBandLog(),
         scaleWaveProjectionSnapshot: null,
+        trancheProjectionBandLog: emptyTrancheProjectionBandLog(),
+        trancheProjectionSnapshot: null,
       },
       LEGACY_V17
+    );
+  }
+
+  if (ver === LEGACY_V19) {
+    const nodes = sanitizeUnlockedNodes(o.unlockedNodes);
+    const upgrades = sanitizeInstitutionUpgrades(o.institutionUpgrades);
+    const turn = Number(o.turn) || 0;
+    const branchEmphasis = sanitizeBranchEmphasis(o.branchEmphasis);
+    const emphasisRevision = Number(o.emphasisRevision) || 0;
+    const institutionTierSnapshot =
+      sanitizeInstitutionTierSnapshot(o.institutionTierSnapshot, turn) ??
+      snapshotFromUpgrades(upgrades, turn);
+    const readinessBranchSnapshot = sanitizeReadinessBranchSnapshot(o.readinessBranchSnapshot, turn);
+    const integrationRiskSnapshot = sanitizeIntegrationRiskSnapshot(o.integrationRiskSnapshot, turn);
+    const scaleWaveSnapshot = sanitizeScaleWaveSnapshot(o.scaleWaveSnapshot, turn);
+    const synergySnapshot = sanitizeSynergySnapshot(o.synergySnapshot, turn);
+    const commercializationSnapshot = sanitizeCommercializationSnapshot(o.commercializationSnapshot, turn);
+    const diffusionIntegrationSnapshot = sanitizeDiffusionIntegrationSnapshot(o.diffusionIntegrationSnapshot, turn);
+    const portfolioBalanceSnapshot = sanitizePortfolioBalanceSnapshot(o.portfolioBalanceSnapshot, turn);
+    const diffusionForecastSnapshot = sanitizeDiffusionForecastSnapshot(o.diffusionForecastSnapshot, turn);
+    const horizonConvergenceSnapshot = sanitizeHorizonConvergenceSnapshot(o.horizonConvergenceSnapshot, turn);
+    const researchExecutionSnapshot = sanitizeResearchExecutionSnapshot(o.researchExecutionSnapshot, turn);
+    const strategicDeliverySnapshot = sanitizeStrategicDeliverySnapshot(o.strategicDeliverySnapshot, turn);
+    const scaleWaveMaturitySnapshot = sanitizeScaleWaveMaturitySnapshot(o.scaleWaveMaturitySnapshot, turn);
+    const nationalIntegrationSnapshot = sanitizeNationalIntegrationSnapshot(o.nationalIntegrationSnapshot, turn);
+    const scaleWaveProjectionSnapshot = sanitizeScaleWaveProjectionSnapshot(o.scaleWaveProjectionSnapshot, turn);
+    return upgradeToCurrentCore(
+      {
+        schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+        revision: Number(o.revision) || 0,
+        turn,
+        unlockedNodes: nodes,
+        institutionUpgrades: upgrades,
+        leadingResearchRegion: (o.leadingResearchRegion as ResearchProgressPersistedCore['leadingResearchRegion']) ?? null,
+        unlockSeq: Number(o.unlockSeq) || computeUnlockSeq(nodes),
+        branchEmphasis,
+        emphasisRevision,
+        migrationLog: Array.isArray(o.migrationLog) ? (o.migrationLog as ResearchSaveMigrationEntry[]) : [],
+        saveKind: (o.saveKind as ResearchSaveKind) || 'manual',
+        updatedAtTurn: Number(o.updatedAtTurn) || turn,
+        sessionId: typeof o.sessionId === 'string' ? o.sessionId : `o10m_r03_${turn}`,
+        persistRevision: Number(o.persistRevision) || 0,
+        unlockEventLog: sanitizeUnlockEventLog(o.unlockEventLog).length
+          ? sanitizeUnlockEventLog(o.unlockEventLog)
+          : rebuildUnlockEventLogFromNodes(nodes),
+        lastReconciledAtTurn: Number(o.lastReconciledAtTurn) || turn,
+        emphasisChangeLog: sanitizeEmphasisChangeLog(o.emphasisChangeLog).length
+          ? sanitizeEmphasisChangeLog(o.emphasisChangeLog)
+          : rebuildEmphasisChangeLogFromBranchEmphasis(branchEmphasis, emphasisRevision, turn),
+        institutionTierSnapshot,
+        readinessMilestoneLog: sanitizeReadinessMilestoneLog(o.readinessMilestoneLog).length
+          ? sanitizeReadinessMilestoneLog(o.readinessMilestoneLog)
+          : rebuildReadinessMilestoneLogFromSnapshot(readinessBranchSnapshot, turn),
+        readinessBranchSnapshot,
+        integrationRiskLog: sanitizeIntegrationRiskLog(o.integrationRiskLog).length
+          ? sanitizeIntegrationRiskLog(o.integrationRiskLog)
+          : emptyIntegrationRiskLog(),
+        integrationRiskSnapshot,
+        scaleWaveSnapshot,
+        synergyThresholdLog: sanitizeSynergyThresholdLog(o.synergyThresholdLog).length
+          ? sanitizeSynergyThresholdLog(o.synergyThresholdLog)
+          : emptySynergyThresholdLog(),
+        synergySnapshot,
+        commercializationMilestoneLog: sanitizeCommercializationMilestoneLog(o.commercializationMilestoneLog).length
+          ? sanitizeCommercializationMilestoneLog(o.commercializationMilestoneLog)
+          : emptyCommercializationMilestoneLog(),
+        commercializationSnapshot,
+        diffusionIntegrationLog: sanitizeDiffusionIntegrationLog(o.diffusionIntegrationLog).length
+          ? sanitizeDiffusionIntegrationLog(o.diffusionIntegrationLog)
+          : emptyDiffusionIntegrationLog(),
+        diffusionIntegrationSnapshot,
+        portfolioBalanceLog: sanitizePortfolioBalanceLog(o.portfolioBalanceLog).length
+          ? sanitizePortfolioBalanceLog(o.portfolioBalanceLog)
+          : emptyPortfolioBalanceLog(),
+        portfolioBalanceSnapshot,
+        diffusionForecastBandLog: sanitizeDiffusionForecastBandLog(o.diffusionForecastBandLog).length
+          ? sanitizeDiffusionForecastBandLog(o.diffusionForecastBandLog)
+          : emptyDiffusionForecastBandLog(),
+        diffusionForecastSnapshot,
+        horizonConvergenceBandLog: sanitizeHorizonConvergenceBandLog(o.horizonConvergenceBandLog).length
+          ? sanitizeHorizonConvergenceBandLog(o.horizonConvergenceBandLog)
+          : emptyHorizonConvergenceBandLog(),
+        horizonConvergenceSnapshot,
+        researchExecutionBandLog: sanitizeResearchExecutionBandLog(o.researchExecutionBandLog).length
+          ? sanitizeResearchExecutionBandLog(o.researchExecutionBandLog)
+          : emptyResearchExecutionBandLog(),
+        researchExecutionSnapshot,
+        strategicDeliveryBandLog: sanitizeStrategicDeliveryBandLog(o.strategicDeliveryBandLog).length
+          ? sanitizeStrategicDeliveryBandLog(o.strategicDeliveryBandLog)
+          : emptyStrategicDeliveryBandLog(),
+        strategicDeliverySnapshot,
+        scaleWaveMaturityBandLog: sanitizeScaleWaveMaturityBandLog(o.scaleWaveMaturityBandLog).length
+          ? sanitizeScaleWaveMaturityBandLog(o.scaleWaveMaturityBandLog)
+          : emptyScaleWaveMaturityBandLog(),
+        scaleWaveMaturitySnapshot,
+        nationalIntegrationBandLog: sanitizeNationalIntegrationBandLog(o.nationalIntegrationBandLog).length
+          ? sanitizeNationalIntegrationBandLog(o.nationalIntegrationBandLog)
+          : emptyNationalIntegrationBandLog(),
+        nationalIntegrationSnapshot,
+        scaleWaveProjectionBandLog: sanitizeScaleWaveProjectionBandLog(o.scaleWaveProjectionBandLog).length
+          ? sanitizeScaleWaveProjectionBandLog(o.scaleWaveProjectionBandLog)
+          : emptyScaleWaveProjectionBandLog(),
+        scaleWaveProjectionSnapshot,
+        trancheProjectionBandLog: emptyTrancheProjectionBandLog(),
+        trancheProjectionSnapshot: null,
+      },
+      LEGACY_V19
     );
   }
 
@@ -2396,6 +2570,8 @@ export function extractPersistedCore(state: ResearchProgressState): ResearchProg
     nationalIntegrationSnapshot: state.nationalIntegrationSnapshot ?? null,
     scaleWaveProjectionBandLog: state.scaleWaveProjectionBandLog ?? emptyScaleWaveProjectionBandLog(),
     scaleWaveProjectionSnapshot: state.scaleWaveProjectionSnapshot ?? null,
+    trancheProjectionBandLog: state.trancheProjectionBandLog ?? emptyTrancheProjectionBandLog(),
+    trancheProjectionSnapshot: state.trancheProjectionSnapshot ?? null,
   });
 }
 
@@ -2455,6 +2631,8 @@ export function hydrateResearchProgressCore(core: ResearchProgressPersistedCore 
     nationalIntegrationSnapshot: core.nationalIntegrationSnapshot,
     scaleWaveProjectionBandLog: core.scaleWaveProjectionBandLog,
     scaleWaveProjectionSnapshot: core.scaleWaveProjectionSnapshot,
+    trancheProjectionBandLog: core.trancheProjectionBandLog,
+    trancheProjectionSnapshot: core.trancheProjectionSnapshot,
     diffusion: V94_REGION_CODES.map(regionId => ({
       regionId,
       score: 0,
@@ -2681,6 +2859,25 @@ export function mergeComputedResearchState(
     scaleWaveProjectionOutlook,
     computed.turn
   );
+  const trancheProjectionReadinessOutlook =
+    computed.trancheProjectionReadinessOutlook ??
+    ({
+      active: false,
+      baseTurn: computed.turn,
+      horizonTurns: 6,
+      waveOrdinal: 19,
+      trancheReadinessScore: 0,
+      projectionMomentum: 0,
+      integrationBaselineShaHint: '7bd7b1f3',
+      dryRunEligible: false,
+      ticketHint: null,
+    } as const);
+  const trancheProjectionBandLog = appendTrancheProjectionBandEvents(
+    core.trancheProjectionBandLog ?? emptyTrancheProjectionBandLog(),
+    core.trancheProjectionSnapshot ?? null,
+    trancheProjectionReadinessOutlook,
+    computed.turn
+  );
   return {
     ...computed,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
@@ -2736,6 +2933,8 @@ export function mergeComputedResearchState(
     nationalIntegrationSnapshot: computeNationalIntegrationSnapshot(nationalIntegrationOutlook, computed.turn),
     scaleWaveProjectionBandLog,
     scaleWaveProjectionSnapshot: computeScaleWaveProjectionSnapshot(scaleWaveProjectionOutlook, computed.turn),
+    trancheProjectionBandLog,
+    trancheProjectionSnapshot: computeTrancheProjectionSnapshot(trancheProjectionReadinessOutlook, computed.turn),
   };
 }
 

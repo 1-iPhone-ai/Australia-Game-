@@ -58,4 +58,7 @@ export * from './scale-wave-projection-outlook.ts';
 export * from './scale-wave-projection-band-log.ts';
 export * from './scale-wave-projection-snapshot.ts';
 export * from './tranche-projection-readiness-outlook.ts';
+export * from './tranche-projection-band-log.ts';
+export * from './tranche-projection-snapshot.ts';
+export * from './scale-wave-integration-gate-outlook.ts';
 export * from './compute.ts';
