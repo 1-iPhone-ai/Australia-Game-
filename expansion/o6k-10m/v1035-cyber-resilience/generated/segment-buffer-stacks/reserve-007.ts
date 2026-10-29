@@ -1,0 +1,31 @@
+import type { V1035CyresSegmentBufferEdge } from '../../types/core.ts';
+
+/** Segment buffer graph shard 007 (extreme_heat/drought/dust corridor coupling). */
+export const V1035_CYRES_SEGMENT_BUFFER_SHARD_007: readonly V1035CyresSegmentBufferEdge[] = [
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.4, lagTurns: 9, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.406, lagTurns: 10, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.412, lagTurns: 11, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.418, lagTurns: 12, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.424, lagTurns: 9, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.43, lagTurns: 10, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.436, lagTurns: 11, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.442, lagTurns: 12, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.448, lagTurns: 9, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.454, lagTurns: 10, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.46, lagTurns: 11, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.364, lagTurns: 12, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.37, lagTurns: 9, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.376, lagTurns: 10, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.382, lagTurns: 11, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.388, lagTurns: 12, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.394, lagTurns: 9, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.4, lagTurns: 10, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.406, lagTurns: 11, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.412, lagTurns: 12, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.418, lagTurns: 9, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.424, lagTurns: 10, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.43, lagTurns: 11, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.436, lagTurns: 12, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.442, lagTurns: 9, nodeId: 'facility_zone_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.448, lagTurns: 10, nodeId: 'facility_zone_07' },
+];

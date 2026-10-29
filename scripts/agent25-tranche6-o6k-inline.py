@@ -37,6 +37,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     telecom_resilience_paths,
     supply_chain_resilience_paths,
     critical_infrastructure_resilience_paths,
+    cyber_resilience_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -256,6 +257,15 @@ CIRES_SECTION = (
 )
 
 CIRES_MARKER = "export function runV1034CiresTurn"
+
+CYRES_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20CG: V10.35 SOVEREIGN CYBER / NATIONAL DIGITAL OPERATIONS RESILIENCE — SOVEREIGN DIGITAL STRESS EXPOSURE, FACILITY ZONE NODES & SEGMENT BUFFERS (O6K-84)\n"
+    "// Renumbered from shard 20CE (canonical 20CE = critical infrastructure resilience, push #33)\n"
+    "// ============================================================================\n"
+)
+
+CYRES_MARKER = "export function runV1035CyresTurn"
 
 TRADE_HELPERS = """
 export function buildV1014TradeDepthTurnInputFromGameState(gs: any, turn: number): V1014TradeDepthTurnInput {
@@ -3978,6 +3988,213 @@ def push_cires(text: str) -> str:
     return text
 
 
+CYRES_HELPERS = """
+function V1035_CYRES_readPersistedFromGameState(gs: any): V1035CyresPersisted | null {
+  const raw = (gs?.save?.meta?.v1035 as any)?.cyber_resilience;
+  return raw ? sanitizeV1035CyresPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1035_CYRES_applyToGameState(gs: any, out: V1035CyresTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1035 = { ...(meta.v1035 || {}) };
+  v1035.cyber_resilience = out.persisted;
+  meta.v1035 = v1035;
+  save.meta = meta;
+  return { ...gs, save, v1035CyberResilience: out.state };
+}
+
+export function buildV1035CyresTurnInputFromGameState(gs: any, turn: number): V1035CyresTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 10350;
+  const inp = buildV1035CyresTurnInputFromGameStateStub(turn, seed);
+  const trade = gs?.v1014TradeDepth ?? null;
+  const energy = gs?.energyDepth ?? null;
+  const supply = gs?.v1014SupplyChain ?? null;
+  const workforce = gs?.v1014WorkforceMigration ?? gs?.workforceHumanCapital ?? null;
+  const pubsvc = gs?.v1014PublicServicesCrosswalk ?? null;
+  const clad = gs?.v1023ClimateAdaptation ?? null;
+  const dgov = gs?.v1024DigitalGovernance ?? null;
+  const rhs = gs?.v1026RegionalHealthSystems ?? null;
+  const cires = gs?.v1034CriticalInfrastructureResilience ?? null;
+  return {
+    ...inp,
+    supply20bb: {
+      ...inp.supply20bb,
+      turn,
+      bottleneckPressure: Number(supply?.bottleneckPressure ?? inp.supply20bb.bottleneckPressure),
+      segmentBufferIndex: Number(
+        supply?.segmentBufferIndex ?? supply?.corridorBufferIndex ?? supply?.backboneBufferIndex ?? inp.supply20bb.segmentBufferIndex,
+      ),
+      regionalStockDays: {
+        ...inp.supply20bb.regionalStockDays,
+        ...(supply?.regionalStockDays || {}),
+      },
+    },
+    trade20ba: {
+      ...inp.trade20ba,
+      turn,
+      sanctionsPressure: Number(trade?.sanctionsPressure ?? inp.trade20ba.sanctionsPressure),
+      exportLaneStability: Number(trade?.exportLaneStability ?? inp.trade20ba.exportLaneStability),
+      importDependencyRatio: Number(trade?.importDependencyRatio ?? inp.trade20ba.importDependencyRatio),
+    },
+    energy20bc: {
+      ...inp.energy20bc,
+      turn,
+      gridStability: Number(energy?.gridStability ?? inp.energy20bc.gridStability),
+      reserveMarginPct: Number(energy?.reserveMarginPct ?? inp.energy20bc.reserveMarginPct),
+      routingCascadeRisk: Number(
+        energy?.routingCascadeRisk ?? energy?.outageCascadeRisk ?? energy?.cascadeRiskStress ?? inp.energy20bc.routingCascadeRisk,
+      ),
+    },
+    workforce20bf: {
+      ...inp.workforce20bf,
+      turn,
+      specialistGap: Number(workforce?.specialistGap ?? inp.workforce20bf.specialistGap),
+      nationalReadiness: Number(workforce?.nationalReadiness ?? inp.workforce20bf.nationalReadiness),
+      mismatchIndex: Number(workforce?.mismatchIndex ?? inp.workforce20bf.mismatchIndex),
+    },
+    publicServices20az: {
+      ...inp.publicServices20az,
+      turn,
+      clinicCapacityScore: Number(pubsvc?.clinicCapacityScore ?? inp.publicServices20az.clinicCapacityScore),
+      digitalServiceCoverage: Number(
+        pubsvc?.digitalServiceCoverage ?? inp.publicServices20az.digitalServiceCoverage,
+      ),
+      serviceDeliveryReadiness: Number(
+        pubsvc?.serviceDeliveryReadiness ?? inp.publicServices20az.serviceDeliveryReadiness,
+      ),
+    },
+    climateAdaptation20br: {
+      ...inp.climateAdaptation20br,
+      turn,
+      heatStressPressure: Number(clad?.heatStressPressure ?? inp.climateAdaptation20br.heatStressPressure),
+      grantStackLoad: Number(clad?.grantStackLoad ?? inp.climateAdaptation20br.grantStackLoad),
+      resilienceDriftTurns: Number(clad?.resilienceDriftTurns ?? inp.climateAdaptation20br.resilienceDriftTurns),
+    },
+    digitalGovernance20bt: {
+      ...inp.digitalGovernance20bt,
+      turn,
+      modelGovernancePressure: Number(dgov?.modelGovernancePressure ?? inp.digitalGovernance20bt.modelGovernancePressure),
+      grantStackLoad: Number(dgov?.grantStackLoad ?? inp.digitalGovernance20bt.grantStackLoad),
+      alignmentDriftTurns: Number(dgov?.alignmentDriftTurns ?? inp.digitalGovernance20bt.alignmentDriftTurns),
+    },
+    regionalHealthSystems20bv: {
+      ...inp.regionalHealthSystems20bv,
+      turn,
+      hospitalSurgePressure: Number(
+        rhs?.hospitalSurgePressure ?? inp.regionalHealthSystems20bv.hospitalSurgePressure,
+      ),
+      grantStackLoad: Number(rhs?.grantStackLoad ?? inp.regionalHealthSystems20bv.grantStackLoad),
+      bedCapacityDriftTurns: Number(
+        rhs?.bedCapacityDriftTurns ?? inp.regionalHealthSystems20bv.bedCapacityDriftTurns,
+      ),
+    },
+    cyberResiliencePolicyFocus: Number(
+      cires?.aggregateCriticalInfrastructureResilienceScore ?? inp.cyberResiliencePolicyFocus,
+    ),
+    persisted: null,
+  };
+}
+"""
+
+CYRES_DAY_HOOK = """
+      if (typeof runV1035CyresTurn === 'function') {
+        try {
+          const cyresIn = buildV1035CyresTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          cyresIn.persisted = V1035_CYRES_readPersistedFromGameState(mergedGameState);
+          const cyresOut = runV1035CyresTurn(cyresIn);
+          mergedGameState = V1035_CYRES_applyToGameState(mergedGameState, cyresOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_cyres_day_hook(text: str) -> str:
+    marker = "runV1035CyresTurn(cyresIn)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:82000] if "executeAgent02SingleDayBoundary" in text else ""
+    if marker in day_slice:
+        print("skip cyres day hook (present)")
+        return text
+    mega7_tail = """      if (typeof runV1022T6Mega7DepthTurn === 'function') {
+        try {
+          const m7In = buildV1022T6Mega7DepthTurnInputFromGameState(
+            mergedGameState,
+            passCtx.turnCounter,
+            settings?.t6Mega7DepthEnabled !== false,
+          );
+          m7In.persisted = V1022_T6MEGA7_readPersistedFromGameState(mergedGameState);
+          const m7Out = runV1022T6Mega7DepthTurn(m7In);
+          mergedGameState = V1022_T6MEGA6_applyToGameState(mergedGameState, m7Out);
+        } catch (_) { /* isolated */ }
+      }"""
+    mega7_tail_fixed = mega7_tail.replace(
+        "V1022_T6MEGA6_applyToGameState",
+        "V1022_T6MEGA7_applyToGameState",
+    )
+    if mega7_tail_fixed not in text:
+        raise SystemExit("mega7 day hook anchor missing for cyres hook")
+    return text.replace(mega7_tail_fixed, mega7_tail_fixed + CYRES_DAY_HOOK, 1)
+
+
+def wire_cyres_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState && typeof sanitizeV1022T6Mega7DepthPersisted === 'function') {"
+    patch = (
+        "  if (migrated.gameState && typeof sanitizeV1035CyresPersisted === 'function') {\n"
+        "    const cyresRaw = (migrated.gameState as any)?.save?.meta?.v1035?.cyber_resilience;\n"
+        "    if (cyresRaw) {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1035 = { ...(meta.v1035 || {}) };\n"
+        "      v1035.cyber_resilience = sanitizeV1035CyresPersisted(cyresRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1035 = v1035;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1035.cyber_resilience = sanitizeV1035CyresPersisted" in text:
+        print("skip cyres §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("mega7 §6 anchor missing for cyres migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
+def push_cyres(text: str) -> str:
+    block = CYRES_SECTION + bundle_local_files(cyber_resilience_paths()) + CYRES_HELPERS
+    text = insert_before(text, block, CYRES_MARKER, "T6 push #35 v1035-cyber-resilience (O6K-84)")
+    text = wire_cyres_day_hook(text)
+    text = wire_cyres_migration(text)
+    lab = """  { id: 'v1035_cyber_resilience', label: 'V10.35 Sovereign cyber resilience (20CG intrusion & segment buffers)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1035CyresSelfTestsForLab() },
+"""
+    cires_lab = (
+        "  { id: 'v1034_critical_infrastructure_resilience', label: 'V10.34 Critical infrastructure resilience (20CE compromise & segment buffers)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1034CiresSelfTestsForLab() },"
+    )
+    if "{ id: 'v1035_cyber_resilience'" not in text:
+        if cires_lab in text:
+            text = text.replace(cires_lab, cires_lab + "\n" + lab.strip(), 1)
+            print("registered LAB v1035_cyber_resilience")
+        else:
+            text = wire_lab(text, lab, "v1035_cyber_resilience")
+            print("registered LAB v1035_cyber_resilience (fallback)")
+    if "v1035CyresEnabled" not in text:
+        if "t6Mega7DepthEnabled: true," in text:
+            text = text.replace(
+                "t6Mega7DepthEnabled: true,",
+                "t6Mega7DepthEnabled: true,\n  v1035CyresEnabled: true,",
+                1,
+            )
+            print("registered settings v1035CyresEnabled")
+        elif "v1034CiresEnabled: true," in text:
+            text = text.replace(
+                "v1034CiresEnabled: true,",
+                "v1034CiresEnabled: true,\n  v1035CyresEnabled: true,",
+                1,
+            )
+            print("registered settings v1035CyresEnabled (fallback)")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -3992,7 +4209,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32, 33])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32, 33, 35])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -4049,6 +4266,8 @@ def main() -> None:
         text = push_scres(text)
     elif args.push == 33:
         text = push_cires(text)
+    elif args.push == 35:
+        text = push_cyres(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")

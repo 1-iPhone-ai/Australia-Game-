@@ -1,0 +1,31 @@
+import type { V1035CyresSegmentBufferEdge } from '../../types/core.ts';
+
+/** Segment buffer graph shard 035 (extreme_heat/drought/dust corridor coupling). */
+export const V1035_CYRES_SEGMENT_BUFFER_SHARD_035: readonly V1035CyresSegmentBufferEdge[] = [
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.25, lagTurns: 10, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.256, lagTurns: 11, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.262, lagTurns: 12, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.268, lagTurns: 13, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.172, lagTurns: 10, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.178, lagTurns: 11, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.184, lagTurns: 12, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.19, lagTurns: 13, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.196, lagTurns: 10, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.202, lagTurns: 11, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.208, lagTurns: 12, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.214, lagTurns: 13, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.22, lagTurns: 10, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.226, lagTurns: 11, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.232, lagTurns: 12, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.238, lagTurns: 13, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.244, lagTurns: 10, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.25, lagTurns: 11, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.256, lagTurns: 12, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.262, lagTurns: 13, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.268, lagTurns: 10, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.172, lagTurns: 11, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.178, lagTurns: 12, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.184, lagTurns: 13, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.19, lagTurns: 10, nodeId: 'facility_zone_11' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.196, lagTurns: 11, nodeId: 'facility_zone_11' },
+];

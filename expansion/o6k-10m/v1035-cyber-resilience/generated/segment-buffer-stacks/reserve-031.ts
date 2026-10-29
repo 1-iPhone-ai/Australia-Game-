@@ -1,0 +1,31 @@
+import type { V1035CyresSegmentBufferEdge } from '../../types/core.ts';
+
+/** Segment buffer graph shard 031 (extreme_heat/drought/dust corridor coupling). */
+export const V1035_CYRES_SEGMENT_BUFFER_SHARD_031: readonly V1035CyresSegmentBufferEdge[] = [
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.66, lagTurns: 6, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.666, lagTurns: 7, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.672, lagTurns: 8, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.678, lagTurns: 9, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.684, lagTurns: 6, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.588, lagTurns: 7, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.594, lagTurns: 8, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.6, lagTurns: 9, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.606, lagTurns: 6, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.612, lagTurns: 7, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.618, lagTurns: 8, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.624, lagTurns: 9, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.63, lagTurns: 6, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.636, lagTurns: 7, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.642, lagTurns: 8, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.648, lagTurns: 9, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.654, lagTurns: 6, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.66, lagTurns: 7, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.666, lagTurns: 8, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.672, lagTurns: 9, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.678, lagTurns: 6, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.684, lagTurns: 7, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.588, lagTurns: 8, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.594, lagTurns: 9, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.6, lagTurns: 6, nodeId: 'facility_zone_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.606, lagTurns: 7, nodeId: 'facility_zone_07' },
+];

@@ -1,0 +1,31 @@
+import type { V1035CyresSegmentBufferEdge } from '../../types/core.ts';
+
+/** Segment buffer graph shard 030 (extreme_heat/drought/dust corridor coupling). */
+export const V1035_CYRES_SEGMENT_BUFFER_SHARD_030: readonly V1035CyresSegmentBufferEdge[] = [
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.652, lagTurns: 5, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.556, lagTurns: 6, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.562, lagTurns: 7, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.568, lagTurns: 8, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.574, lagTurns: 5, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.58, lagTurns: 6, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.586, lagTurns: 7, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.592, lagTurns: 8, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.598, lagTurns: 5, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.604, lagTurns: 6, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.61, lagTurns: 7, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.616, lagTurns: 8, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.622, lagTurns: 5, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.628, lagTurns: 6, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.634, lagTurns: 7, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.64, lagTurns: 8, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.646, lagTurns: 5, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.652, lagTurns: 6, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.556, lagTurns: 7, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.562, lagTurns: 8, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.568, lagTurns: 5, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.574, lagTurns: 6, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.58, lagTurns: 7, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.586, lagTurns: 8, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.592, lagTurns: 5, nodeId: 'facility_zone_06' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.598, lagTurns: 6, nodeId: 'facility_zone_06' },
+];

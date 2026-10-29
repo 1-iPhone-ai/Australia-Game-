@@ -945,6 +945,54 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  createEmptyV1034CiresPersisted,\n  v1034CiresInputHash,\n  sanitizeV1034CiresPersisted,\n} from '../engine/critical-infrastructure-resilience-orchestrator';",
             "  v1034CiresInputHash,\n} from '../engine/critical-infrastructure-resilience-orchestrator';\nimport {\n  createEmptyV1034CiresPersisted,\n  sanitizeV1034CiresPersisted,\n} from '../persistence/migrations';",
         )
+    if "v1035-cyber-resilience" in name.replace("\\", "/"):
+        for sec in ("20CA", "20CB", "20CD", "20CE", "20CF", "20BZ", "20BY", "20BX", "20BW", "20BV", "20BU", "20BT", "20BR", "20CC"):
+            src = src.replace(f"SECTION {sec}", "SECTION 20CG")
+    if "cyber-resilience/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1035CyresClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1035CyresClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1035_CYRES_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1035_CYRES_MIG_REGIONS", src)
+    if "cyber-resilience-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1035CyresPersisted, sanitizeV1035CyresPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1035_CYRES_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1035_CYRES_ORCH_REGIONS.forEach", src)
+    if "cyber-resilience-utils.ts" in name:
+        src = re.sub(
+            r"export function V1035_CYRES_segmentBufferGraphHash",
+            "export function V1035_CYRES_utilSegmentBufferGraphHash",
+            src,
+        )
+    if "v1035-cyber-resilience/segment-buffer-stacks/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"V1035_CYRES_segmentBufferGraphHash as dgovGraphHashCore",
+            "V1035_CYRES_utilSegmentBufferGraphHash as dgovGraphHashCore",
+            src,
+        )
+    if "intrusion-scenarios/scenario-" in name.replace("\\", "/"):
+        src = re.sub(
+            r"\n    cyberResilienceBand: V1035_CYRES_INTRUSION_SCENARIO_\d+_META\.cyberResilienceBand,",
+            "",
+            src,
+        )
+    if "run-v1035-cyres-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1035CyresSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1035CyresSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1035CyresBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1035CyresBaseInput(", src)
+        src = src.replace(
+            "  runV1035CyresTurn,\n  createEmptyV1035CyresPersisted,\n  v1035CyresInputHash,\n  sanitizeV1035CyresPersisted,\n} from '../engine/cyber-resilience-orchestrator';",
+            "  runV1035CyresTurn,\n  v1035CyresInputHash,\n} from '../engine/cyber-resilience-orchestrator';\nimport {\n  createEmptyV1035CyresPersisted,\n  sanitizeV1035CyresPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1035CyresPersisted,\n  v1035CyresInputHash,\n  sanitizeV1035CyresPersisted,\n} from '../engine/cyber-resilience-orchestrator';",
+            "  v1035CyresInputHash,\n} from '../engine/cyber-resilience-orchestrator';\nimport {\n  createEmptyV1035CyresPersisted,\n  sanitizeV1035CyresPersisted,\n} from '../persistence/migrations';",
+        )
     return src
 
 
@@ -2307,6 +2355,118 @@ def critical_infrastructure_resilience_paths() -> list[str]:
             and "disruption-scenarios" not in str(p)
             and "corridor-buffer-stacks" not in str(p)
             and "corridor-buffer-bundle.ts" not in str(p)
+            and "substation-zone-nodes" not in str(p)
+            and "exchange-zone-nodes" not in str(p)
+            and "hub-zone-nodes" not in str(p)
+            and "aquifer-reserve" not in str(p)
+            and "basin-registry" not in str(p)
+            and "evacuation-capacity" not in str(p)
+            and "hazard-registry" not in str(p)
+            and "surge-registry" not in str(p)
+            and "adaptation-buffer" not in str(p)
+            and "heatwave-scenarios" not in str(p)
+            and "arid-buffer-stacks" not in str(p)
+            and "conservation-offset" not in str(p)
+            and "recovery-registry" not in str(p)
+            and "primary-care" not in str(p)
+            and "stress-registry" not in str(p)
+            and "supply-pipeline" not in str(p)
+            and "drought-buffer-bundle" not in str(p)
+            and "distribution-network" not in str(p)
+            and "emergency-response" not in str(p)
+            and "littoral-zone" not in str(p)
+            and "inland-zone" not in str(p)
+            and "substation-zone" not in str(p)
+            and "biodiversity-stewardship-20bu" not in str(p)
+            and (
+                "/facility-zone-nodes/" not in str(p)
+                or re.match(r"facility-zone-\d+\.ts$", p.name)
+            )
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def cyber_resilience_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1035-cyber-resilience"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/segment-buffer-stacks/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/intrusion-scenarios/" in s:
+            return (3, s)
+        if "/generated/segment-buffer-stacks/" in s:
+            return (4, s)
+        if "intrusion-registry" in s or "segment-buffer-bundle" in s:
+            return (5, s)
+        if "/facility-zone-nodes/" in s:
+            return (6, s)
+        if "cyber-resilience-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "cyber-resilience-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
+        if "distribution-network" in s or "emergency-response" in s or "inland-zone" in s:
+            return (98, s)
+        if "littoral-zone" in s or "substation-zone" in s:
+            return (98, s)
+        if "outage-scenarios" in s or "grid-buffer" in s:
+            return (98, s)
+        if "failover-scenarios" in s or "backbone-buffer" in s:
+            return (98, s)
+        if "exchange-zone" in s or "hub-zone" in s:
+            return (98, s)
+        if "disruption-scenarios" in s or "corridor-buffer" in s:
+            return (98, s)
+        if "compromise-scenarios" in s or "intrusion-scenarios" in s and "/generated/" not in s:
+            return (98, s)
+        if "aquifer-reserve" in s or "basin-registry" in s:
+            return (98, s)
+        if "evacuation-capacity" in s or "hazard-registry" in s:
+            return (98, s)
+        if "surge-registry" in s or "adaptation-buffer" in s or "heatwave" in s:
+            return (98, s)
+        if "arid-buffer" in s:
+            return (98, s)
+        if "biodiversity-stewardship-20bu" in s:
+            return (98, s)
+        if "conservation-offset" in s or "recovery-registry" in s or "primary-care" in s:
+            return (98, s)
+        if "stress-registry" in s or "supply-pipeline" in s:
+            return (98, s)
+        if "drought-buffer-bundle" in s:
+            return (98, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+            and not (p.parent.name == "generated" and p.name == "index.ts")
+            and "outage-scenarios" not in str(p)
+            and "grid-buffer-stacks" not in str(p)
+            and "outage-registry.ts" not in str(p)
+            and "grid-buffer-bundle.ts" not in str(p)
+            and "backbone-buffer-bundle.ts" not in str(p)
+            and "failover-scenarios" not in str(p)
+            and "backbone-buffer-stacks" not in str(p)
+            and "disruption-scenarios" not in str(p)
+            and "corridor-buffer-stacks" not in str(p)
+            and "corridor-buffer-bundle.ts" not in str(p)
+            and "compromise-scenarios" not in str(p)
             and "substation-zone-nodes" not in str(p)
             and "exchange-zone-nodes" not in str(p)
             and "hub-zone-nodes" not in str(p)
