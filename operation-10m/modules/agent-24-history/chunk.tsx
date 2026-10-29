@@ -3341,6 +3341,542 @@ export function runAgent24ArchivePublishPlanSelfTests(): Array<{ name: string; p
 }
 
 
+// --- source: replay-restore-plan.ts ---
+
+export type Agent24ReplayRestoreStepKind =
+  | 'verify_seal'
+  | 'anchor_checkpoint'
+  | 'rewind_to_target'
+  | 'replay_monotonic_check';
+
+export interface Agent24ReplayRestoreStep {
+  stepIndex: number;
+  kind: Agent24ReplayRestoreStepKind;
+  targetTurn: number | null;
+  detail: string;
+  required: boolean;
+  fingerprint: string;
+}
+
+export interface Agent24ReplayRestorePlan {
+  planId: string;
+  matchId: string;
+  restoreAllowed: boolean;
+  anchorTurn: number | null;
+  stepCount: number;
+  requiredStepCount: number;
+  steps: Agent24ReplayRestoreStep[];
+  restorePlanScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ReplayRestorePlanInput {
+  matchId: string;
+  replayRestoreGate: Agent24ReplayRestoreGateReport;
+  sealVerification: Agent24SealVerificationReport;
+  rewindSafety: Agent24RewindSafetyReport;
+  checkpointCoverage: Agent24CheckpointCoverageReport;
+}
+
+export function buildAgent24ReplayRestorePlan(input: Agent24ReplayRestorePlanInput): Agent24ReplayRestorePlan {
+  const steps: Agent24ReplayRestoreStep[] = [];
+  let stepIndex = 0;
+
+  const pushStep = (
+    kind: Agent24ReplayRestoreStepKind,
+    targetTurn: number | null,
+    detail: string,
+    required: boolean,
+  ) => {
+    steps.push({
+      stepIndex,
+      kind,
+      targetTurn,
+      detail,
+      required,
+      fingerprint: o6kAgent24Fingerprint('restore_step', { idx: stepIndex, kind, turn: targetTurn, detail }),
+    });
+    stepIndex += 1;
+  };
+
+  pushStep(
+    'verify_seal',
+    null,
+    input.sealVerification.verified ? 'Seal verification passed' : 'Seal verification required before restore',
+    true,
+  );
+
+  const anchorTurn =
+    input.replayRestoreGate.recommendedRestoreTurn ??
+    input.rewindSafety.recommendedTurn ??
+    (input.checkpointCoverage.checkpointTurns.length > 0
+      ? input.checkpointCoverage.checkpointTurns[input.checkpointCoverage.checkpointTurns.length - 1]
+      : null);
+
+  if (anchorTurn !== null) {
+    pushStep('anchor_checkpoint', anchorTurn, `Anchor restore at checkpoint turn ${anchorTurn}`, true);
+    pushStep('rewind_to_target', anchorTurn, `Rewind playback head to turn ${anchorTurn}`, true);
+  } else {
+    pushStep('anchor_checkpoint', null, 'No checkpoint anchor available', true);
+  }
+
+  pushStep(
+    'replay_monotonic_check',
+    anchorTurn,
+    'Validate monotonic replay event ordering after restore',
+    input.replayRestoreGate.restoreAllowed,
+  );
+
+  const requiredStepCount = steps.filter(s => s.required).length;
+  let restorePlanScore = 100;
+  if (!input.sealVerification.verified) restorePlanScore -= 35;
+  if (!input.replayRestoreGate.restoreAllowed) restorePlanScore -= 30;
+  if (anchorTurn === null) restorePlanScore -= 25;
+  if (input.rewindSafety.safeTargetCount === 0) restorePlanScore -= 10;
+  restorePlanScore = Math.max(0, Math.min(100, restorePlanScore));
+
+  const restoreAllowed =
+    input.replayRestoreGate.restoreAllowed && input.sealVerification.verified && anchorTurn !== null;
+
+  return {
+    planId: o6kAgent24Fingerprint('replay_restore_plan', { matchId: input.matchId, anchor: anchorTurn }),
+    matchId: input.matchId,
+    restoreAllowed,
+    anchorTurn,
+    stepCount: steps.length,
+    requiredStepCount,
+    steps,
+    restorePlanScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('replay_restore_plan_body', {
+      steps: steps.map(s => s.fingerprint),
+      restoreAllowed,
+      anchorTurn,
+      restorePlanScore,
+    }),
+  };
+}
+
+export function runAgent24ReplayRestorePlanSelfTests(): Array<{ name: string; passed: boolean }> {
+  const gateAllowed = {
+    reportId: 'g',
+    matchId: 'self',
+    restoreAllowed: true,
+    recommendedRestoreTurn: 12,
+    blockerCount: 0,
+    blockers: [],
+    restoreScore: 95,
+    deterministicFingerprint: o6kAgent24Fingerprint('rg_self', { v: 1 }),
+  };
+  const gateBlocked = { ...gateAllowed, restoreAllowed: false, recommendedRestoreTurn: null, restoreScore: 40 };
+  const sealOk = {
+    reportId: 'v',
+    matchId: 'self',
+    verified: true,
+    issueCount: 0,
+    issues: [],
+    linkMatchCount: 5,
+    verificationScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('sv_self', { v: 1 }),
+  };
+  const rewind = {
+    reportId: 'w',
+    matchId: 'self',
+    currentTurn: 16,
+    targets: [],
+    safeTargetCount: 2,
+    recommendedTurn: 12,
+    deterministicFingerprint: o6kAgent24Fingerprint('rw_self', { v: 1 }),
+  };
+  const coverage = {
+    reportId: 'c',
+    matchId: 'self',
+    checkpointTurns: [8, 12],
+    checkpointCount: 2,
+    maxGapTurns: 4,
+    gaps: [],
+    endgameCoverageOk: true,
+    coverageScore: 95,
+    deterministicFingerprint: o6kAgent24Fingerprint('cc_self', { v: 1 }),
+  };
+
+  const plan = buildAgent24ReplayRestorePlan({
+    matchId: 'self',
+    replayRestoreGate: gateAllowed,
+    sealVerification: sealOk,
+    rewindSafety: rewind,
+    checkpointCoverage: coverage,
+  });
+  const blocked = buildAgent24ReplayRestorePlan({
+    matchId: 'self',
+    replayRestoreGate: gateBlocked,
+    sealVerification: sealOk,
+    rewindSafety: rewind,
+    checkpointCoverage: coverage,
+  });
+
+  return [
+    { name: 'restore_plan_steps_when_allowed', passed: plan.restoreAllowed && plan.stepCount >= 4 },
+    { name: 'restore_plan_blocked_when_gate_closed', passed: !blocked.restoreAllowed },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        plan.deterministicFingerprint ===
+        buildAgent24ReplayRestorePlan({
+          matchId: 'self',
+          replayRestoreGate: gateAllowed,
+          sealVerification: sealOk,
+          rewindSafety: rewind,
+          checkpointCoverage: coverage,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
+// --- source: archive-publish-dispatch.ts ---
+
+export interface Agent24ArchivePublishDispatchJob {
+  jobId: string;
+  slotId: string;
+  fromTurn: number;
+  toTurn: number;
+  dispatched: boolean;
+  reason: string;
+  eventSlots: number;
+  fingerprint: string;
+}
+
+export interface Agent24ArchivePublishDispatchReport {
+  reportId: string;
+  matchId: string;
+  currentTurn: number;
+  dispatchAllowed: boolean;
+  jobCount: number;
+  dispatchedJobCount: number;
+  withheldJobCount: number;
+  estimatedDispatchedEvents: number;
+  jobs: Agent24ArchivePublishDispatchJob[];
+  dispatchScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ArchivePublishDispatchInput {
+  matchId: string;
+  currentTurn: number;
+  snapshotSeal: Agent24SnapshotSeal;
+  archivePublishPlan: Agent24ArchivePublishPlan;
+  replayRestorePlan: Agent24ReplayRestorePlan;
+}
+
+export function buildAgent24ArchivePublishDispatchReport(
+  input: Agent24ArchivePublishDispatchInput,
+): Agent24ArchivePublishDispatchReport {
+  const gatesOpen =
+    input.snapshotSeal.sealed &&
+    input.archivePublishPlan.publishReady &&
+    input.replayRestorePlan.restoreAllowed;
+
+  const jobs: Agent24ArchivePublishDispatchJob[] = input.archivePublishPlan.slots.map(slot => {
+    const dispatched = gatesOpen && slot.publishable;
+    let reason = dispatched ? 'dispatched_to_cold_archive' : 'withheld';
+    if (!input.snapshotSeal.sealed) reason = 'seal_not_sealed';
+    else if (!input.archivePublishPlan.publishReady) reason = 'publish_plan_not_ready';
+    else if (!input.replayRestorePlan.restoreAllowed) reason = 'restore_plan_not_ready';
+    else if (!slot.publishable) reason = slot.reason;
+
+    return {
+      jobId: o6kAgent24Fingerprint('publish_dispatch_job', {
+        matchId: input.matchId,
+        slot: slot.slotId,
+      }),
+      slotId: slot.slotId,
+      fromTurn: slot.fromTurn,
+      toTurn: slot.toTurn,
+      dispatched,
+      reason,
+      eventSlots: dispatched ? slot.estimatedEventSlots : 0,
+      fingerprint: o6kAgent24Fingerprint('publish_dispatch_job_body', {
+        slot: slot.slotId,
+        dispatched,
+        reason,
+        events: dispatched ? slot.estimatedEventSlots : 0,
+      }),
+    };
+  });
+
+  jobs.sort((a, b) => a.fromTurn - b.fromTurn);
+  const dispatchedJobCount = jobs.filter(j => j.dispatched).length;
+  const withheldJobCount = jobs.length - dispatchedJobCount;
+  const estimatedDispatchedEvents = jobs.reduce((sum, j) => sum + j.eventSlots, 0);
+
+  let dispatchScore = 100;
+  if (!gatesOpen) dispatchScore -= 35;
+  if (dispatchedJobCount === 0 && input.currentTurn > 15) dispatchScore -= 15;
+  dispatchScore -= withheldJobCount * 2;
+  dispatchScore = Math.max(0, Math.min(100, dispatchScore));
+
+  const dispatchAllowed = gatesOpen && dispatchedJobCount > 0;
+
+  return {
+    reportId: o6kAgent24Fingerprint('archive_publish_dispatch', {
+      matchId: input.matchId,
+      turn: input.currentTurn,
+    }),
+    matchId: input.matchId,
+    currentTurn: input.currentTurn,
+    dispatchAllowed,
+    jobCount: jobs.length,
+    dispatchedJobCount,
+    withheldJobCount,
+    estimatedDispatchedEvents,
+    jobs,
+    dispatchScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('archive_publish_dispatch_body', {
+      jobs: jobs.map(j => j.fingerprint),
+      dispatchAllowed,
+      dispatchedJobCount,
+      dispatchScore,
+    }),
+  };
+}
+
+export function runAgent24ArchivePublishDispatchSelfTests(): Array<{ name: string; passed: boolean }> {
+  const seal = {
+    sealId: 's',
+    matchId: 'self',
+    turn: 20,
+    sealed: true,
+    linkCount: 5,
+    links: [],
+    compositeBundleFingerprint: 'c',
+    sealFingerprint: 'sf',
+    deterministicFingerprint: o6kAgent24Fingerprint('seal_disp', { v: 1 }),
+  };
+  const publishPlan = {
+    planId: 'p',
+    matchId: 'self',
+    currentTurn: 20,
+    publishableSlotCount: 1,
+    withheldSlotCount: 0,
+    estimatedPublishedEvents: 10,
+    publishReady: true,
+    publishScore: 90,
+    slots: [
+      {
+        slotId: 'slot1',
+        fromTurn: 1,
+        toTurn: 5,
+        publishable: true,
+        reason: 'eligible_for_cold_archive',
+        estimatedEventSlots: 10,
+        fingerprint: o6kAgent24Fingerprint('slot_disp', { v: 1 }),
+      },
+    ],
+    deterministicFingerprint: o6kAgent24Fingerprint('ap_disp', { v: 1 }),
+  };
+  const restorePlan = {
+    planId: 'rp',
+    matchId: 'self',
+    restoreAllowed: true,
+    anchorTurn: 12,
+    stepCount: 4,
+    requiredStepCount: 3,
+    steps: [],
+    restorePlanScore: 95,
+    deterministicFingerprint: o6kAgent24Fingerprint('rp_disp', { v: 1 }),
+  };
+
+  const report = buildAgent24ArchivePublishDispatchReport({
+    matchId: 'self',
+    currentTurn: 20,
+    snapshotSeal: seal,
+    archivePublishPlan: publishPlan,
+    replayRestorePlan: restorePlan,
+  });
+
+  return [
+    { name: 'dispatch_jobs_when_gates_open', passed: report.dispatchAllowed && report.dispatchedJobCount === 1 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        report.deterministicFingerprint ===
+        buildAgent24ArchivePublishDispatchReport({
+          matchId: 'self',
+          currentTurn: 20,
+          snapshotSeal: seal,
+          archivePublishPlan: publishPlan,
+          replayRestorePlan: restorePlan,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
+// --- source: publish-receipt-ledger.ts ---
+
+export interface Agent24PublishReceiptEntry {
+  receiptId: string;
+  jobId: string;
+  slotId: string;
+  fromTurn: number;
+  toTurn: number;
+  eventSlots: number;
+  sealFingerprint: string;
+  linked: boolean;
+  fingerprint: string;
+}
+
+export interface Agent24PublishReceiptLedger {
+  ledgerId: string;
+  matchId: string;
+  entryCount: number;
+  linkedEntryCount: number;
+  totalEventSlots: number;
+  ledgerComplete: boolean;
+  entries: Agent24PublishReceiptEntry[];
+  ledgerScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24PublishReceiptLedgerInput {
+  matchId: string;
+  snapshotSeal: Agent24SnapshotSeal;
+  archivePublishPlan: Agent24ArchivePublishPlan;
+  publishDispatch: Agent24ArchivePublishDispatchReport;
+}
+
+export function buildAgent24PublishReceiptLedger(input: Agent24PublishReceiptLedgerInput): Agent24PublishReceiptLedger {
+  const sealFp = input.snapshotSeal.sealFingerprint || input.snapshotSeal.deterministicFingerprint;
+
+  const entries: Agent24PublishReceiptEntry[] = input.publishDispatch.jobs
+    .filter(job => job.dispatched)
+    .map(job => {
+      const linked = input.snapshotSeal.sealed && job.eventSlots > 0;
+      return {
+        receiptId: o6kAgent24Fingerprint('publish_receipt', { matchId: input.matchId, job: job.jobId }),
+        jobId: job.jobId,
+        slotId: job.slotId,
+        fromTurn: job.fromTurn,
+        toTurn: job.toTurn,
+        eventSlots: job.eventSlots,
+        sealFingerprint: sealFp,
+        linked,
+        fingerprint: o6kAgent24Fingerprint('publish_receipt_body', {
+          job: job.jobId,
+          linked,
+          events: job.eventSlots,
+          seal: sealFp,
+        }),
+      };
+    });
+
+  entries.sort((a, b) => a.fromTurn - b.fromTurn);
+  const linkedEntryCount = entries.filter(e => e.linked).length;
+  const totalEventSlots = entries.reduce((sum, e) => sum + e.eventSlots, 0);
+
+  let ledgerScore = 100;
+  if (!input.snapshotSeal.sealed) ledgerScore -= 40;
+  if (entries.length === 0 && input.archivePublishPlan.publishReady) ledgerScore -= 20;
+  if (linkedEntryCount < entries.length) ledgerScore -= (entries.length - linkedEntryCount) * 5;
+  ledgerScore = Math.max(0, Math.min(100, ledgerScore));
+
+  const ledgerComplete =
+    input.snapshotSeal.sealed &&
+    input.publishDispatch.dispatchAllowed &&
+    entries.length > 0 &&
+    linkedEntryCount === entries.length;
+
+  return {
+    ledgerId: o6kAgent24Fingerprint('publish_receipt_ledger', { matchId: input.matchId }),
+    matchId: input.matchId,
+    entryCount: entries.length,
+    linkedEntryCount,
+    totalEventSlots,
+    ledgerComplete,
+    entries,
+    ledgerScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('publish_receipt_ledger_body', {
+      entries: entries.map(e => e.fingerprint),
+      ledgerComplete,
+      totalEventSlots,
+      ledgerScore,
+    }),
+  };
+}
+
+export function runAgent24PublishReceiptLedgerSelfTests(): Array<{ name: string; passed: boolean }> {
+  const seal = {
+    sealId: 's',
+    matchId: 'self',
+    turn: 20,
+    sealed: true,
+    linkCount: 5,
+    links: [],
+    compositeBundleFingerprint: 'c',
+    sealFingerprint: 'sf_ledger',
+    deterministicFingerprint: o6kAgent24Fingerprint('seal_led', { v: 1 }),
+  };
+  const publishPlan = {
+    planId: 'p',
+    matchId: 'self',
+    currentTurn: 20,
+    publishableSlotCount: 1,
+    withheldSlotCount: 0,
+    estimatedPublishedEvents: 8,
+    publishReady: true,
+    publishScore: 88,
+    slots: [],
+    deterministicFingerprint: o6kAgent24Fingerprint('ap_led', { v: 1 }),
+  };
+  const dispatch = {
+    reportId: 'd',
+    matchId: 'self',
+    currentTurn: 20,
+    dispatchAllowed: true,
+    jobCount: 1,
+    dispatchedJobCount: 1,
+    withheldJobCount: 0,
+    estimatedDispatchedEvents: 8,
+    dispatchScore: 92,
+    jobs: [
+      {
+        jobId: 'j1',
+        slotId: 'slot1',
+        fromTurn: 1,
+        toTurn: 5,
+        dispatched: true,
+        reason: 'dispatched_to_cold_archive',
+        eventSlots: 8,
+        fingerprint: o6kAgent24Fingerprint('job_led', { v: 1 }),
+      },
+    ],
+    deterministicFingerprint: o6kAgent24Fingerprint('disp_led', { v: 1 }),
+  };
+
+  const ledger = buildAgent24PublishReceiptLedger({
+    matchId: 'self',
+    snapshotSeal: seal,
+    archivePublishPlan: publishPlan,
+    publishDispatch: dispatch,
+  });
+
+  return [
+    { name: 'ledger_complete_with_dispatched_job', passed: ledger.ledgerComplete && ledger.entryCount === 1 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        ledger.deterministicFingerprint ===
+        buildAgent24PublishReceiptLedger({
+          matchId: 'self',
+          snapshotSeal: seal,
+          archivePublishPlan: publishPlan,
+          publishDispatch: dispatch,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
 // --- source: history-replay-analytics.ts ---
 
 export const O6K_AGENT24_MODULE_VERSION = '1.1.0-op10m';
@@ -22853,6 +23389,9 @@ export function applyO6kHistoricalAnalyticsCachePatch(state: Record<string, unkn
   buildAgent24ReplayRestoreGateReport,
   type Agent24ReplayRestoreGateReport,
 } from './replay-restore-gate.ts';
+  buildAgent24ArchivePublishDispatchReport,
+  type Agent24ArchivePublishDispatchReport,
+} from './archive-publish-dispatch.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -22882,6 +23421,9 @@ export interface Agent24ReplayDeterminismBundle {
   sealVerification: Agent24SealVerificationReport;
   replayRestoreGate: Agent24ReplayRestoreGateReport;
   archivePublishPlan: Agent24ArchivePublishPlan;
+  replayRestorePlan: Agent24ReplayRestorePlan;
+  archivePublishDispatch: Agent24ArchivePublishDispatchReport;
+  publishReceiptLedger: Agent24PublishReceiptLedger;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -23156,6 +23698,26 @@ export function buildAgent24ReplayDeterminismBundle(
     replayTransferGate,
     archiveCompaction,
   });
+  const replayRestorePlan = buildAgent24ReplayRestorePlan({
+    matchId: input.matchId,
+    replayRestoreGate,
+    sealVerification,
+    rewindSafety,
+    checkpointCoverage,
+  });
+  const archivePublishDispatch = buildAgent24ArchivePublishDispatchReport({
+    matchId: input.matchId,
+    currentTurn: input.turn,
+    snapshotSeal,
+    archivePublishPlan,
+    replayRestorePlan,
+  });
+  const publishReceiptLedger = buildAgent24PublishReceiptLedger({
+    matchId: input.matchId,
+    snapshotSeal,
+    archivePublishPlan,
+    publishDispatch: archivePublishDispatch,
+  });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
@@ -23183,6 +23745,9 @@ export function buildAgent24ReplayDeterminismBundle(
     sealVerification: sealVerification.deterministicFingerprint,
     replayRestoreGate: replayRestoreGate.deterministicFingerprint,
     archivePublishPlan: archivePublishPlan.deterministicFingerprint,
+    replayRestorePlan: replayRestorePlan.deterministicFingerprint,
+    archivePublishDispatch: archivePublishDispatch.deterministicFingerprint,
+    publishReceiptLedger: publishReceiptLedger.deterministicFingerprint,
   });
 
   return {
@@ -23205,6 +23770,9 @@ export function buildAgent24ReplayDeterminismBundle(
     sealVerification,
     replayRestoreGate,
     archivePublishPlan,
+    replayRestorePlan,
+    archivePublishDispatch,
+    publishReceiptLedger,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -23345,6 +23913,21 @@ export function verifyAgent24ReplayDeterminism(
       name: 'archive_publish_plan_twin',
       passed: a.archivePublishPlan.deterministicFingerprint === b.archivePublishPlan.deterministicFingerprint,
       detail: 'Twin archive publish plan fingerprints',
+    },
+    {
+      name: 'replay_restore_plan_twin',
+      passed: a.replayRestorePlan.deterministicFingerprint === b.replayRestorePlan.deterministicFingerprint,
+      detail: 'Twin replay restore plan fingerprints',
+    },
+    {
+      name: 'archive_publish_dispatch_twin',
+      passed: a.archivePublishDispatch.deterministicFingerprint === b.archivePublishDispatch.deterministicFingerprint,
+      detail: 'Twin archive publish dispatch fingerprints',
+    },
+    {
+      name: 'publish_receipt_ledger_twin',
+      passed: a.publishReceiptLedger.deterministicFingerprint === b.publishReceiptLedger.deterministicFingerprint,
+      detail: 'Twin publish receipt ledger fingerprints',
     },
     {
       name: 'composite_twin',

@@ -61,6 +61,18 @@ import {
   buildAgent24ArchivePublishPlan,
   runAgent24ArchivePublishPlanSelfTests,
 } from '../src/archive-publish-plan.ts';
+import {
+  buildAgent24ReplayRestorePlan,
+  runAgent24ReplayRestorePlanSelfTests,
+} from '../src/replay-restore-plan.ts';
+import {
+  buildAgent24ArchivePublishDispatchReport,
+  runAgent24ArchivePublishDispatchSelfTests,
+} from '../src/archive-publish-dispatch.ts';
+import {
+  buildAgent24PublishReceiptLedger,
+  runAgent24PublishReceiptLedgerSelfTests,
+} from '../src/publish-receipt-ledger.ts';
 import { buildO6kHistoricalAnalyticsSnapshot } from '../src/history-replay-analytics.ts';
 import { o6kAgent24StableStringify, runO6kAgent24SelfTests } from '../src/history-replay-analytics.ts';
 
@@ -164,6 +176,9 @@ describe('Agent 24 replay determinism bundle', () => {
     assert.ok(result.probes.some(p => p.name === 'seal_verification_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'replay_restore_gate_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'archive_publish_plan_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'replay_restore_plan_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'archive_publish_dispatch_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'publish_receipt_ledger_twin' && p.passed));
   });
 
   it('includes analytics depth rollups and stable twin fingerprint', () => {
@@ -610,6 +625,91 @@ describe('Agent 24 archive publish plan', () => {
     });
     assert.equal(direct.deterministicFingerprint, bundle.archivePublishPlan.deterministicFingerprint);
     assert.ok(runAgent24ArchivePublishPlanSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 replay restore plan', () => {
+  it('builds ordered restore steps when gate allows', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle({
+      matchId: 'm',
+      turn: 18,
+      day: 18,
+      replay: {
+        events: [
+          { eventType: 'replay_checkpoint', turn: 8, sequence: 1 },
+          { eventType: 'replay_checkpoint', turn: 18, sequence: 2 },
+        ],
+        checkpoints: { '8': {}, '18': {} },
+      },
+      deterministicMode: true,
+    });
+    assert.ok(bundle.replayRestorePlan.stepCount >= 3);
+    const direct = buildAgent24ReplayRestorePlan({
+      matchId: 'm',
+      replayRestoreGate: bundle.replayRestoreGate,
+      sealVerification: bundle.sealVerification,
+      rewindSafety: bundle.rewindSafety,
+      checkpointCoverage: bundle.checkpointCoverage,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.replayRestorePlan.deterministicFingerprint);
+    assert.ok(runAgent24ReplayRestorePlanSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 archive publish dispatch', () => {
+  it('dispatches jobs when publish and restore plans align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle({
+      matchId: 'm',
+      turn: 24,
+      day: 24,
+      maxTurns: 100,
+      replay: {
+        events: [
+          { eventType: 'replay_checkpoint', turn: 8, sequence: 1 },
+          { eventType: 'replay_checkpoint', turn: 16, sequence: 2 },
+          { eventType: 'replay_checkpoint', turn: 24, sequence: 3 },
+        ],
+        checkpoints: { '8': {}, '16': {}, '24': {} },
+      },
+      deterministicMode: true,
+    });
+    const direct = buildAgent24ArchivePublishDispatchReport({
+      matchId: 'm',
+      currentTurn: 24,
+      snapshotSeal: bundle.snapshotSeal,
+      archivePublishPlan: bundle.archivePublishPlan,
+      replayRestorePlan: bundle.replayRestorePlan,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.archivePublishDispatch.deterministicFingerprint);
+    assert.ok(runAgent24ArchivePublishDispatchSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 publish receipt ledger', () => {
+  it('links dispatched jobs to snapshot seal receipts', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle({
+      matchId: 'm',
+      turn: 26,
+      day: 26,
+      maxTurns: 100,
+      replay: {
+        events: [
+          { eventType: 'replay_checkpoint', turn: 8, sequence: 1 },
+          { eventType: 'replay_checkpoint', turn: 18, sequence: 2 },
+          { eventType: 'replay_checkpoint', turn: 26, sequence: 3 },
+        ],
+        checkpoints: { '8': {}, '18': {}, '26': {} },
+      },
+      deterministicMode: true,
+    });
+    const direct = buildAgent24PublishReceiptLedger({
+      matchId: 'm',
+      snapshotSeal: bundle.snapshotSeal,
+      archivePublishPlan: bundle.archivePublishPlan,
+      publishDispatch: bundle.archivePublishDispatch,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.publishReceiptLedger.deterministicFingerprint);
+    assert.ok(runAgent24PublishReceiptLedgerSelfTests().every(t => t.passed));
   });
 });
 

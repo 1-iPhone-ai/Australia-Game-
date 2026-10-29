@@ -59,6 +59,12 @@ import {
   type Agent24ReplayRestoreGateReport,
 } from './replay-restore-gate.ts';
 import { buildAgent24ArchivePublishPlan, type Agent24ArchivePublishPlan } from './archive-publish-plan.ts';
+import { buildAgent24ReplayRestorePlan, type Agent24ReplayRestorePlan } from './replay-restore-plan.ts';
+import {
+  buildAgent24ArchivePublishDispatchReport,
+  type Agent24ArchivePublishDispatchReport,
+} from './archive-publish-dispatch.ts';
+import { buildAgent24PublishReceiptLedger, type Agent24PublishReceiptLedger } from './publish-receipt-ledger.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -88,6 +94,9 @@ export interface Agent24ReplayDeterminismBundle {
   sealVerification: Agent24SealVerificationReport;
   replayRestoreGate: Agent24ReplayRestoreGateReport;
   archivePublishPlan: Agent24ArchivePublishPlan;
+  replayRestorePlan: Agent24ReplayRestorePlan;
+  archivePublishDispatch: Agent24ArchivePublishDispatchReport;
+  publishReceiptLedger: Agent24PublishReceiptLedger;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -362,6 +371,26 @@ export function buildAgent24ReplayDeterminismBundle(
     replayTransferGate,
     archiveCompaction,
   });
+  const replayRestorePlan = buildAgent24ReplayRestorePlan({
+    matchId: input.matchId,
+    replayRestoreGate,
+    sealVerification,
+    rewindSafety,
+    checkpointCoverage,
+  });
+  const archivePublishDispatch = buildAgent24ArchivePublishDispatchReport({
+    matchId: input.matchId,
+    currentTurn: input.turn,
+    snapshotSeal,
+    archivePublishPlan,
+    replayRestorePlan,
+  });
+  const publishReceiptLedger = buildAgent24PublishReceiptLedger({
+    matchId: input.matchId,
+    snapshotSeal,
+    archivePublishPlan,
+    publishDispatch: archivePublishDispatch,
+  });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
@@ -389,6 +418,9 @@ export function buildAgent24ReplayDeterminismBundle(
     sealVerification: sealVerification.deterministicFingerprint,
     replayRestoreGate: replayRestoreGate.deterministicFingerprint,
     archivePublishPlan: archivePublishPlan.deterministicFingerprint,
+    replayRestorePlan: replayRestorePlan.deterministicFingerprint,
+    archivePublishDispatch: archivePublishDispatch.deterministicFingerprint,
+    publishReceiptLedger: publishReceiptLedger.deterministicFingerprint,
   });
 
   return {
@@ -411,6 +443,9 @@ export function buildAgent24ReplayDeterminismBundle(
     sealVerification,
     replayRestoreGate,
     archivePublishPlan,
+    replayRestorePlan,
+    archivePublishDispatch,
+    publishReceiptLedger,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -551,6 +586,21 @@ export function verifyAgent24ReplayDeterminism(
       name: 'archive_publish_plan_twin',
       passed: a.archivePublishPlan.deterministicFingerprint === b.archivePublishPlan.deterministicFingerprint,
       detail: 'Twin archive publish plan fingerprints',
+    },
+    {
+      name: 'replay_restore_plan_twin',
+      passed: a.replayRestorePlan.deterministicFingerprint === b.replayRestorePlan.deterministicFingerprint,
+      detail: 'Twin replay restore plan fingerprints',
+    },
+    {
+      name: 'archive_publish_dispatch_twin',
+      passed: a.archivePublishDispatch.deterministicFingerprint === b.archivePublishDispatch.deterministicFingerprint,
+      detail: 'Twin archive publish dispatch fingerprints',
+    },
+    {
+      name: 'publish_receipt_ledger_twin',
+      passed: a.publishReceiptLedger.deterministicFingerprint === b.publishReceiptLedger.deterministicFingerprint,
+      detail: 'Twin publish receipt ledger fingerprints',
     },
     {
       name: 'composite_twin',
