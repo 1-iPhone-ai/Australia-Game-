@@ -166,6 +166,14 @@ import {
   unityAccordBlocksPact,
 } from '../planning/unity-accord.ts';
 import {
+  buildAgent17CompactIndex,
+  compactIndexBlocksSovereign,
+} from '../planning/compact-index.ts';
+import {
+  buildAgent17SovereignAccord,
+  sovereignAccordBlocksCompact,
+} from '../planning/sovereign-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -1429,6 +1437,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const compactIndex = depthEval.snapshot.planningDepth?.compactIndex;
+  goalResults.push(
+    result(
+      'G17-085',
+      !!compactIndex &&
+        compactIndex.facets.length >= 5 &&
+        compactIndex.compactScore >= 0 &&
+        compactIndex.compactScore <= 100 &&
+        (compactIndex.band === 'tight' ||
+          compactIndex.band === 'forming' ||
+          compactIndex.band === 'loose'),
+      `facets=${compactIndex?.facets.length} score=${compactIndex?.compactScore}`
+    )
+  );
+
+  const sovereignAccord = depthEval.snapshot.planningDepth?.sovereignAccord;
+  goalResults.push(
+    result(
+      'G17-086',
+      !!sovereignAccord &&
+        sovereignAccord.seals.length >= 5 &&
+        sovereignAccord.sovereignScore >= 0 &&
+        sovereignAccord.sovereignScore <= 100,
+      `seals=${sovereignAccord?.seals.length} score=${sovereignAccord?.sovereignScore}`
+    )
+  );
+
+  const looseCompact = buildAgent17CompactIndex({
+    unityAccord: shatteredUnity,
+    federationAccord: dissolvedFederation,
+    doctrineAccord: voidDoctrine,
+  });
+  const abdicatedSovereign = buildAgent17SovereignAccord({
+    compactIndex: looseCompact,
+    unityAccord: shatteredUnity,
+    commandIndex: degradedCommand,
+  });
+  goalResults.push(
+    result(
+      'G17-087',
+      unityAccordBlocksPact(shatteredUnity) ||
+        compactIndexBlocksSovereign(looseCompact) ||
+        sovereignAccordBlocksCompact(abdicatedSovereign),
+      `${looseCompact.band}/${abdicatedSovereign.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -1543,6 +1598,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-082',
     'G17-083',
     'G17-084',
+    'G17-085',
+    'G17-086',
+    'G17-087',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

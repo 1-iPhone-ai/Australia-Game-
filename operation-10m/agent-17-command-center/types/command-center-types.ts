@@ -223,6 +223,8 @@ export interface Agent17PlanningDepthSnapshot {
   coalitionAccord: Agent17CoalitionAccordSnapshot;
   pactIndex: Agent17PactIndexSnapshot;
   unityAccord: Agent17UnityAccordSnapshot;
+  compactIndex: Agent17CompactIndexSnapshot;
+  sovereignAccord: Agent17SovereignAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -895,6 +897,40 @@ export interface Agent17UnityAccordSnapshot {
   pactBand: Agent17PactIndexSnapshot['band'];
   strategicBand: Agent17StrategicIndexSnapshot['band'];
   unityAchieved: boolean;
+  headline: string;
+}
+
+export interface Agent17CompactFacet {
+  id: string;
+  label: string;
+  locked: boolean;
+  weight: number;
+}
+
+export interface Agent17CompactIndexSnapshot {
+  compactScore: number;
+  band: 'tight' | 'forming' | 'loose';
+  facets: Agent17CompactFacet[];
+  unityBand: Agent17UnityAccordSnapshot['band'];
+  federationBand: Agent17FederationAccordSnapshot['band'];
+  compactLocked: boolean;
+  headline: string;
+}
+
+export interface Agent17SovereignSeal {
+  id: string;
+  label: string;
+  affixed: boolean;
+  weight: number;
+}
+
+export interface Agent17SovereignAccordSnapshot {
+  sovereignScore: number;
+  band: 'crowned' | 'regent' | 'abdicated';
+  seals: Agent17SovereignSeal[];
+  compactBand: Agent17CompactIndexSnapshot['band'];
+  commandBand: Agent17CommandIndexSnapshot['band'];
+  sovereigntyCrowned: boolean;
   headline: string;
 }
 

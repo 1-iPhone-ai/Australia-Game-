@@ -590,6 +590,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Void pact or broken coalition yields unityAccordBlocksPact.',
     severity: 'major',
   },
+  {
+    id: 'G17-085',
+    title: 'Compact index on planning depth',
+    category: 'telemetry',
+    acceptance: 'compactIndex reports compactScore 0–100 with tight/forming/loose band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-086',
+    title: 'Sovereign accord seals complete',
+    category: 'telemetry',
+    acceptance: 'sovereignAccord exposes ≥5 seals and sovereignScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-087',
+    title: 'Loose compact abdicates sovereign accord',
+    category: 'integration',
+    acceptance: 'Loose compact or shattered unity yields sovereignAccordBlocksCompact.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

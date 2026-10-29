@@ -63,6 +63,8 @@ import { buildAgent17AllianceIndex } from './alliance-index.ts';
 import { buildAgent17CoalitionAccord } from './coalition-accord.ts';
 import { buildAgent17PactIndex } from './pact-index.ts';
 import { buildAgent17UnityAccord } from './unity-accord.ts';
+import { buildAgent17CompactIndex } from './compact-index.ts';
+import { buildAgent17SovereignAccord } from './sovereign-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -367,6 +369,16 @@ export function buildAgent17PlanningDepthSnapshot(
     coalitionAccord,
     strategicIndex,
   });
+  const compactIndex = buildAgent17CompactIndex({
+    unityAccord,
+    federationAccord,
+    doctrineAccord,
+  });
+  const sovereignAccord = buildAgent17SovereignAccord({
+    compactIndex,
+    unityAccord,
+    commandIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -412,6 +424,8 @@ export function buildAgent17PlanningDepthSnapshot(
     coalitionAccord,
     pactIndex,
     unityAccord,
+    compactIndex,
+    sovereignAccord,
   };
 }
 
