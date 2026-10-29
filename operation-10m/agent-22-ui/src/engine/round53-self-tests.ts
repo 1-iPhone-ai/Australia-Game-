@@ -28,9 +28,9 @@ export function runAgent22Round53SelfTests(): {
       const coach = buildFourteenthUnlockHeadlineDayCoach({
         newlyUnlockedPanelIds: twelveIds,
         signals: { gameDay: 17, turnCount: 17, interfaceLevel: 'guided' },
-        nextGameDay: 16,
+        nextGameDay: 17,
       });
-      return coach.panelId === twelveIds[12] && Boolean(coach.coachCopy?.includes('Day 18'));
+      return coach.panelId === twelveIds[13] && Boolean(coach.coachCopy?.includes('Day 17'));
     })()
   );
 
@@ -39,7 +39,7 @@ export function runAgent22Round53SelfTests(): {
     'duodecim deferred queue day coach',
     (() => {
       const coach = buildDuodecimDeferredQueueDayCoach({ combinedQueueDepth: 12, nextGameDay: 17 });
-      return coach.queueDepth === 12 && Boolean(coach.coachCopy?.includes('Day 18'));
+      return coach.queueDepth === 12 && Boolean(coach.coachCopy?.includes('Day 17'));
     })()
   );
 

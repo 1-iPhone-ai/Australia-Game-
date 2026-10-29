@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: db58378a13c5efa3
+// content-sha256-prefix: a87685c3e126cde4
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -1023,6 +1023,16 @@ export interface DayAdvanceUiEvolutionResult {
   decemDeferredQueueDayCoachCopy: string | null;
   previewFractionBreadthDayCoachCopy: string | null;
   pacingDeferredSeptDayCoachCopy: string | null;
+  thirteenthUnlockHeadlineDayCoachCopy: string | null;
+  undecimDeferredQueueDayCoachCopy: string | null;
+  previewCoverageBreadthDayCoachCopy: string | null;
+  pacingDeferredOctDayCoachCopy: string | null;
+  fourteenthUnlockHeadlineDayCoachCopy: string | null;
+  duodecimDeferredQueueDayCoachCopy: string | null;
+  pacingDeferredNovDayCoachCopy: string | null;
+  fifteenthUnlockHeadlineDayCoachCopy: string | null;
+  tredecimDeferredQueueDayCoachCopy: string | null;
+  pacingDeferredDecDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -2068,6 +2078,59 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const thirteenthUnlockHeadlineDayCoach = buildThirteenthUnlockHeadlineDayCoach({
+    newlyUnlockedPanelIds,
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const undecimDeferredQueueDayCoach = buildUndecimDeferredQueueDayCoach({
+    combinedQueueDepth: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const previewCoverageBreadthDayCoach = buildPreviewCoverageBreadthDayCoach({
+    snapshot: coverage,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const pacingDeferredOctDayCoach = buildPacingDeferredOctDayCoach({
+    pacingDeferredCount: pacing.deferredCount,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const fourteenthUnlockHeadlineDayCoach = buildFourteenthUnlockHeadlineDayCoach({
+    newlyUnlockedPanelIds,
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const duodecimDeferredQueueDayCoach = buildDuodecimDeferredQueueDayCoach({
+    combinedQueueDepth: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const pacingDeferredNovDayCoach = buildPacingDeferredNovDayCoach({
+    pacingDeferredCount: pacing.deferredCount,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const fifteenthUnlockHeadlineDayCoach = buildFifteenthUnlockHeadlineDayCoach({
+    newlyUnlockedPanelIds,
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const tredecimDeferredQueueDayCoach = buildTredecimDeferredQueueDayCoach({
+    combinedQueueDepth: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const pacingDeferredDecDayCoach = buildPacingDeferredDecDayCoach({
+    pacingDeferredCount: pacing.deferredCount,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -2262,6 +2325,16 @@ export function tickEvolvingUiOnDayAdvance(
     decemDeferredQueueDayCoachCopy: decemDeferredQueueDayCoach.coachCopy,
     previewFractionBreadthDayCoachCopy: previewFractionBreadthDayCoach.coachCopy,
     pacingDeferredSeptDayCoachCopy: pacingDeferredSeptDayCoach.coachCopy,
+    thirteenthUnlockHeadlineDayCoachCopy: thirteenthUnlockHeadlineDayCoach.coachCopy,
+    undecimDeferredQueueDayCoachCopy: undecimDeferredQueueDayCoach.coachCopy,
+    previewCoverageBreadthDayCoachCopy: previewCoverageBreadthDayCoach.coachCopy,
+    pacingDeferredOctDayCoachCopy: pacingDeferredOctDayCoach.coachCopy,
+    fourteenthUnlockHeadlineDayCoachCopy: fourteenthUnlockHeadlineDayCoach.coachCopy,
+    duodecimDeferredQueueDayCoachCopy: duodecimDeferredQueueDayCoach.coachCopy,
+    pacingDeferredNovDayCoachCopy: pacingDeferredNovDayCoach.coachCopy,
+    fifteenthUnlockHeadlineDayCoachCopy: fifteenthUnlockHeadlineDayCoach.coachCopy,
+    tredecimDeferredQueueDayCoachCopy: tredecimDeferredQueueDayCoach.coachCopy,
+    pacingDeferredDecDayCoachCopy: pacingDeferredDecDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
