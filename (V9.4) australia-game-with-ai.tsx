@@ -57059,6 +57059,45 @@ export function runCoPilotCategory3SelfTests(
     });
   }
 
+  // Subtest 3.3b: Problem detection follows human actor, not currentActorId (team / waiting turns)
+  tStart = Date.now();
+  try {
+    const teamState: any = JSON.parse(JSON.stringify(state));
+    teamState.currentActorId = 'ally_ai';
+    teamState.activeActorId = 'ally_ai';
+    teamState.player = { ...(teamState.player || {}), id: 'player', money: 25, loans: [{ amount: 5000, accrued: 200 }] };
+    teamState.actorsById = {
+      ...(teamState.actorsById || {}),
+      player: teamState.player,
+      ally_ai: { id: 'ally_ai', kind: 'ai', isAi: true, isHuman: false, money: 50000 }
+    };
+    const humanCond = evaluateHumanStrategicCondition(teamState, 'player');
+    const humanProblems = detectCoPilotProblems(teamState, humanCond, 'player');
+    const aiCond = evaluateHumanStrategicCondition(teamState, 'ally_ai');
+    const aiProblems = detectCoPilotProblems(teamState, aiCond, 'ally_ai');
+    const ok = humanProblems.some(p => (p.type || p.problemType) === 'bankruptcy_imminent')
+      && !aiProblems.some(p => (p.type || p.problemType) === 'bankruptcy_imminent' && p.actorId === 'ally_ai' && humanCond.isBankruptcyThreatened);
+    tests.push({
+      id: 'cat3_human_actor_not_current_actor',
+      name: 'Problem detector resolves human actor independently of currentActorId',
+      category: 'strategic_condition_evaluator_and_problem_detector',
+      status: ok ? 'passed' : 'failed',
+      durationMs: Date.now() - tStart,
+      errorMessage: ok ? undefined : `human=${humanProblems.length} ai=${aiProblems.length}`,
+      success: ok
+    });
+  } catch (e) {
+    tests.push({
+      id: 'cat3_human_actor_not_current_actor',
+      name: 'Problem detector resolves human actor independently of currentActorId',
+      category: 'strategic_condition_evaluator_and_problem_detector',
+      status: 'failed',
+      durationMs: Date.now() - tStart,
+      errorMessage: e instanceof Error ? e.message : String(e),
+      success: false
+    });
+  }
+
   // Subtest 3.4: 3-System separation guard
   tStart = Date.now();
   try {
@@ -69805,20 +69844,38 @@ export function assertCoPilotSystemSeparation(
 }
 
 // ----------------------------------------------------------------------------
+// HUMAN ACTOR RESOLUTION (diagnostics must not follow currentActorId during AI turns)
+// ----------------------------------------------------------------------------
+
+export function resolveCoPilotHumanActorId(
+  state: any,
+  condition?: HumanStrategicCondition | null,
+  explicitId?: string
+): string {
+  if (explicitId) return explicitId;
+  if (condition?.actorId) return condition.actorId;
+  const gs = state || {};
+  if (gs.humanPlayerId) return gs.humanPlayerId;
+  if (gs.player?.id) return gs.player.id;
+  return 'player';
+}
+
+// ----------------------------------------------------------------------------
 // PROBLEM DETECTOR
 // ----------------------------------------------------------------------------
 
 export function detectCoPilotProblems(
   state: GameState | ExtendedGameState | any,
-  condition?: HumanStrategicCondition | null
+  condition?: HumanStrategicCondition | null,
+  humanActorId?: string
 ): CoPilotDetectedProblem[] {
   // 1. Enforce 3-System Separation Snapshot
   const initialChecksum = computeSystemStateChecksum(state);
 
   const gs = (state || {}) as ExtendedGameState;
-  const humanActorId = gs?.currentActorId || gs?.activeActorId || 'player';
+  const humanActorIdResolved = resolveCoPilotHumanActorId(state, condition, humanActorId);
   const actorMap = gs?.actorsById || {};
-  const actorRaw = actorMap[humanActorId] || (humanActorId === 'player' ? gs?.player : (humanActorId === 'ai' ? gs?.aiPlayer : null)) || gs?.player;
+  const actorRaw = actorMap[humanActorIdResolved] || (humanActorIdResolved === 'player' ? gs?.player : (humanActorIdResolved === 'ai' ? gs?.aiPlayer : null)) || gs?.player;
   const actor = actorRaw as ExtendedActorState | null;
 
   if (!actor) {
@@ -69830,7 +69887,7 @@ export function detectCoPilotProblems(
   const problems: CoPilotDetectedProblem[] = [];
 
   // Helper to generate deterministic problem IDs
-  const makeId = (type: CoPilotProblemType) => `prob_${type}_${humanActorId}_t${currentTurn}`;
+  const makeId = (type: CoPilotProblemType) => `prob_${type}_${humanActorIdResolved}_t${currentTurn}`;
 
   // --------------------------------------------------------------------------
   // Rule 1: Bankruptcy Imminent
@@ -69845,7 +69902,7 @@ export function detectCoPilotProblems(
     const pType: CoPilotProblemType = 'bankruptcy_imminent';
     problems.push({
       id: makeId(pType),
-      actorId: humanActorId,
+      actorId: humanActorIdResolved,
       type: pType,
       problemType: pType,
       severity: 'critical',
@@ -69873,7 +69930,7 @@ export function detectCoPilotProblems(
     const pType: CoPilotProblemType = 'negative_cashflow_crisis';
     problems.push({
       id: makeId(pType),
-      actorId: humanActorId,
+      actorId: humanActorIdResolved,
       type: pType,
       problemType: pType,
       severity: 'high',
@@ -69903,7 +69960,7 @@ export function detectCoPilotProblems(
     const pType: CoPilotProblemType = 'excessive_debt_burden';
     problems.push({
       id: makeId(pType),
-      actorId: humanActorId,
+      actorId: humanActorIdResolved,
       type: pType,
       problemType: pType,
       severity: creditScore < 20 ? 'critical' : 'high',
@@ -69935,7 +69992,7 @@ export function detectCoPilotProblems(
       const pType: CoPilotProblemType = 'contract_failure_imminent';
       problems.push({
         id: `${makeId(pType)}_${contract.id}`,
-        actorId: humanActorId,
+        actorId: humanActorIdResolved,
         type: pType,
         problemType: pType,
         severity: turnsRemaining <= 1 ? 'critical' : 'high',
@@ -69969,7 +70026,7 @@ export function detectCoPilotProblems(
     const pType: CoPilotProblemType = 'expedition_emergency';
     problems.push({
       id: makeId(pType),
-      actorId: humanActorId,
+      actorId: humanActorIdResolved,
       type: pType,
       problemType: pType,
       severity: (conditionState === 'critical' || suppliesPct <= 10) ? 'critical' : 'high',
@@ -69999,7 +70056,7 @@ export function detectCoPilotProblems(
       const pType: CoPilotProblemType = 'team_economy_collapse';
       problems.push({
         id: makeId(pType),
-        actorId: humanActorId,
+        actorId: humanActorIdResolved,
         type: pType,
         problemType: pType,
         severity: 'high',
@@ -70027,7 +70084,7 @@ export function detectCoPilotProblems(
     const pType: CoPilotProblemType = 'dynamic_crisis_hazard';
     problems.push({
       id: `${makeId(pType)}_${highImpactEvent.id || 'event'}`,
-      actorId: humanActorId,
+      actorId: humanActorIdResolved,
       type: pType,
       problemType: pType,
       severity: 'medium',
@@ -70053,7 +70110,7 @@ export function detectCoPilotProblems(
       const pType: CoPilotProblemType = 'regional_standing_loss';
       problems.push({
         id: `${makeId(pType)}_${regionId}`,
-        actorId: humanActorId,
+        actorId: humanActorIdResolved,
         type: pType,
         problemType: pType,
         severity: standingVal < -70 ? 'high' : 'medium',
@@ -70096,11 +70153,12 @@ export function detectCoPilotProblems(
 // ============================================================================
 export function evaluateCoPilotIntentContext(
   state: any,
-  problems: CoPilotDetectedProblem[] = []
+  problems: CoPilotDetectedProblem[] = [],
+  humanActorId?: string
 ): CoPilotIntentContext {
   // 1. Defensive Extraction of State Fields
   const gs = (state || {}) as ExtendedGameState;
-  const targetId = gs?.currentActorId || gs?.activeActorId || 'player';
+  const targetId = humanActorId || problems[0]?.actorId || resolveCoPilotHumanActorId(state);
   const actorMap = gs?.actorsById || {};
   const player: any = actorMap[targetId] || gs?.player || {};
   const actorId = player?.id || targetId;
@@ -70340,9 +70398,10 @@ export function evaluateCoPilotRescueTriggers(
 
   // 2. Defensive Initialization
   const gs = state || {};
-  const evalCondition = condition || evaluateHumanStrategicCondition(gs);
-  const evalProblems = problems || detectCoPilotProblems(gs, evalCondition);
-  const evalIntent = intent || evaluateCoPilotIntentContext(gs, evalProblems);
+  const resolvedHumanId = resolveCoPilotHumanActorId(gs, condition);
+  const evalCondition = condition || evaluateHumanStrategicCondition(gs, resolvedHumanId);
+  const evalProblems = problems || detectCoPilotProblems(gs, evalCondition, resolvedHumanId);
+  const evalIntent = intent || evaluateCoPilotIntentContext(gs, evalProblems, resolvedHumanId);
 
   const rawFin = evalCondition?.financialBreakdown;
   const fin = {
@@ -184190,8 +184249,8 @@ function dispatchGameSettingsChange(
       // which made every turn a "rescue" and turned On-Request into permanent autonomous play.
       const rescueViewState = syncHumanPlayerIntoGameState(gameState, player);
       const condition = evaluateHumanStrategicCondition(rescueViewState, 'player');
-      const problems = detectCoPilotProblems(rescueViewState, condition);
-      const intent = evaluateCoPilotIntentContext(rescueViewState, problems);
+      const problems = detectCoPilotProblems(rescueViewState, condition, 'player');
+      const intent = evaluateCoPilotIntentContext(rescueViewState, problems, 'player');
       const triggers = evaluateCoPilotRescueTriggers(rescueViewState, condition, problems, intent);
       const activeTriggers = triggers.filter(t => !t.isSuppressed);
       const isLowMoney = (player?.money !== undefined && player.money <= 0);
@@ -230886,9 +230945,9 @@ function dispatchGameSettingsChange(
           let topRecommendation: any = null;
           try {
             humanCondition = evaluateHumanStrategicCondition(coPilotViewState, 'player');
-            problems = detectCoPilotProblems(coPilotViewState, humanCondition);
+            problems = detectCoPilotProblems(coPilotViewState, humanCondition, 'player');
             primaryProblem = problems.length > 0 ? problems[0] : null;
-            const intent = evaluateCoPilotIntentContext(coPilotViewState, problems);
+            const intent = evaluateCoPilotIntentContext(coPilotViewState, problems, 'player');
             recommendations = generateCoPilotRecommendations(coPilotViewState, humanCondition, problems, intent);
             const evaluation = typeof generateCoPilotPlayerActionCandidates === 'function'
               ? generateCoPilotPlayerActionCandidates(coPilotRuntimeContext)
@@ -243310,8 +243369,8 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
           if (!uiState.showCoPilotRecommendationsModal) return [];
           try {
             const cond = evaluateHumanStrategicCondition(coPilotViewState, 'player');
-            const probs = detectCoPilotProblems(coPilotViewState, cond);
-            const intCtx = evaluateCoPilotIntentContext(coPilotViewState, probs);
+            const probs = detectCoPilotProblems(coPilotViewState, cond, 'player');
+            const intCtx = evaluateCoPilotIntentContext(coPilotViewState, probs, 'player');
             return generateCoPilotRecommendations(coPilotViewState, cond, probs, intCtx);
           } catch (err) {
             console.error('[CoPilotRecommendationsModal] generate failed', err);
