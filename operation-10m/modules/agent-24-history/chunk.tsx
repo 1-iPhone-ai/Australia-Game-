@@ -5255,6 +5255,431 @@ export function runAgent24AttestationChainSealSelfTests(): Array<{ name: string;
 }
 
 
+// --- source: attestation-chain-verification.ts ---
+
+export interface Agent24AttestationChainVerificationIssue {
+  segment: string;
+  detail: string;
+  fingerprint: string;
+}
+
+export interface Agent24AttestationChainVerificationReport {
+  reportId: string;
+  matchId: string;
+  verified: boolean;
+  issueCount: number;
+  issues: Agent24AttestationChainVerificationIssue[];
+  alignedLinkCount: number;
+  verificationScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24AttestationChainVerificationInput {
+  matchId: string;
+  attestationChainSeal: Agent24AttestationChainSeal;
+  snapshotSeal: Agent24SnapshotSeal;
+  sealVerification: Agent24SealVerificationReport;
+}
+
+export function buildAgent24AttestationChainVerificationReport(
+  input: Agent24AttestationChainVerificationInput,
+): Agent24AttestationChainVerificationReport {
+  const issues: Agent24AttestationChainVerificationIssue[] = [];
+
+  if (!input.sealVerification.verified) {
+    issues.push({
+      segment: 'snapshot_seal',
+      detail: 'Underlying seal verification failed',
+      fingerprint: o6kAgent24Fingerprint('acv_seal', { verified: false }),
+    });
+  }
+  if (!input.attestationChainSeal.chainSealed) {
+    issues.push({
+      segment: 'attestation_chain',
+      detail: `Chain not sealed (${input.attestationChainSeal.alignedLinkCount}/${input.attestationChainSeal.linkCount} aligned)`,
+      fingerprint: o6kAgent24Fingerprint('acv_chain', {
+        aligned: input.attestationChainSeal.alignedLinkCount,
+        total: input.attestationChainSeal.linkCount,
+      }),
+    });
+  }
+
+  for (const link of input.attestationChainSeal.links) {
+    if (!link.aligned) {
+      issues.push({
+        segment: link.segment,
+        detail: `Chain segment ${link.segment} not aligned`,
+        fingerprint: o6kAgent24Fingerprint('acv_segment', { segment: link.segment }),
+      });
+    }
+  }
+
+  if (!input.snapshotSeal.sealed && input.attestationChainSeal.chainSealed) {
+    issues.push({
+      segment: 'snapshot_seal',
+      detail: 'Chain sealed but snapshot seal not sealed',
+      fingerprint: o6kAgent24Fingerprint('acv_mismatch', { sealed: false }),
+    });
+  }
+
+  issues.sort((a, b) => a.fingerprint.localeCompare(b.fingerprint));
+
+  let verificationScore = 100;
+  verificationScore -= issues.length * 12;
+  verificationScore = Math.max(0, Math.min(100, verificationScore));
+
+  const verified = issues.length === 0 && input.attestationChainSeal.chainSealed && input.sealVerification.verified;
+
+  return {
+    reportId: o6kAgent24Fingerprint('attestation_chain_verification', { matchId: input.matchId }),
+    matchId: input.matchId,
+    verified,
+    issueCount: issues.length,
+    issues,
+    alignedLinkCount: input.attestationChainSeal.alignedLinkCount,
+    verificationScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('attestation_chain_verification_body', {
+      issues: issues.map(i => i.fingerprint),
+      verified,
+      verificationScore,
+    }),
+  };
+}
+
+export function runAgent24AttestationChainVerificationSelfTests(): Array<{ name: string; passed: boolean }> {
+  const chain = {
+    sealId: 'c',
+    matchId: 'self',
+    chainSealed: true,
+    linkCount: 4,
+    alignedLinkCount: 4,
+    links: [
+      { linkId: 'l1', segment: 'continuity_attestation' as const, aligned: true, fingerprint: 'a' },
+      { linkId: 'l2', segment: 'export_gate' as const, aligned: true, fingerprint: 'b' },
+      { linkId: 'l3', segment: 'manifest' as const, aligned: true, fingerprint: 'c' },
+      { linkId: 'l4', segment: 'snapshot_seal' as const, aligned: true, fingerprint: 'd' },
+    ],
+    chainScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('acs_v', { v: 1 }),
+  };
+  const seal = {
+    sealId: 's',
+    matchId: 'self',
+    turn: 10,
+    sealed: true,
+    linkCount: 5,
+    links: [],
+    compositeBundleFingerprint: 'comp',
+    sealFingerprint: 'sf',
+    deterministicFingerprint: o6kAgent24Fingerprint('ss_v', { v: 1 }),
+  };
+  const sealVerification = {
+    reportId: 'v',
+    matchId: 'self',
+    verified: true,
+    issueCount: 0,
+    issues: [],
+    linkMatchCount: 5,
+    verificationScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('sv_v', { v: 1 }),
+  };
+
+  const report = buildAgent24AttestationChainVerificationReport({
+    matchId: 'self',
+    attestationChainSeal: chain,
+    snapshotSeal: seal,
+    sealVerification,
+  });
+
+  return [
+    { name: 'verified_when_chain_and_seal_ok', passed: report.verified && report.issueCount === 0 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        report.deterministicFingerprint ===
+        buildAgent24AttestationChainVerificationReport({
+          matchId: 'self',
+          attestationChainSeal: chain,
+          snapshotSeal: seal,
+          sealVerification,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
+// --- source: continuity-export-ledger.ts ---
+
+export interface Agent24ContinuityExportLedgerEntry {
+  entryId: string;
+  exportAllowed: boolean;
+  commitAuditPassed: boolean;
+  chainVerified: boolean;
+  recorded: boolean;
+  fingerprint: string;
+}
+
+export interface Agent24ContinuityExportLedger {
+  ledgerId: string;
+  matchId: string;
+  entryCount: number;
+  recordedEntryCount: number;
+  ledgerComplete: boolean;
+  entries: Agent24ContinuityExportLedgerEntry[];
+  ledgerScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ContinuityExportLedgerInput {
+  matchId: string;
+  currentTurn: number;
+  continuityExportGate: Agent24ContinuityExportGateReport;
+  restoreCommitAudit: Agent24RestoreCommitAuditReport;
+  attestationChainVerification: Agent24AttestationChainVerificationReport;
+}
+
+export function buildAgent24ContinuityExportLedger(
+  input: Agent24ContinuityExportLedgerInput,
+): Agent24ContinuityExportLedger {
+  const recorded =
+    input.continuityExportGate.exportAllowed &&
+    input.restoreCommitAudit.auditPassed &&
+    input.attestationChainVerification.verified;
+
+  const entries: Agent24ContinuityExportLedgerEntry[] = [
+    {
+      entryId: o6kAgent24Fingerprint('continuity_export_ledger_entry', {
+        matchId: input.matchId,
+        turn: input.currentTurn,
+      }),
+      exportAllowed: input.continuityExportGate.exportAllowed,
+      commitAuditPassed: input.restoreCommitAudit.auditPassed,
+      chainVerified: input.attestationChainVerification.verified,
+      recorded,
+      fingerprint: o6kAgent24Fingerprint('continuity_export_ledger_entry_body', {
+        turn: input.currentTurn,
+        recorded,
+        export: input.continuityExportGate.exportAllowed,
+      }),
+    },
+  ];
+
+  const recordedEntryCount = entries.filter(e => e.recorded).length;
+
+  let ledgerScore = 100;
+  if (!input.continuityExportGate.exportAllowed) ledgerScore -= 30;
+  if (!input.restoreCommitAudit.auditPassed) ledgerScore -= 25;
+  if (!input.attestationChainVerification.verified) ledgerScore -= 25;
+  ledgerScore = Math.max(0, Math.min(100, ledgerScore));
+
+  const ledgerComplete = recordedEntryCount === entries.length && recordedEntryCount > 0;
+
+  return {
+    ledgerId: o6kAgent24Fingerprint('continuity_export_ledger', { matchId: input.matchId }),
+    matchId: input.matchId,
+    entryCount: entries.length,
+    recordedEntryCount,
+    ledgerComplete,
+    entries,
+    ledgerScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('continuity_export_ledger_body', {
+      entries: entries.map(e => e.fingerprint),
+      ledgerComplete,
+      ledgerScore,
+    }),
+  };
+}
+
+export function runAgent24ContinuityExportLedgerSelfTests(): Array<{ name: string; passed: boolean }> {
+  const exportGate = {
+    reportId: 'g',
+    matchId: 'self',
+    exportAllowed: true,
+    blockerCount: 0,
+    blockers: [],
+    exportGateScore: 95,
+    deterministicFingerprint: o6kAgent24Fingerprint('ceg_led', { v: 1 }),
+  };
+  const commitAudit = {
+    reportId: 'a',
+    matchId: 'self',
+    auditPassed: true,
+    findingCount: 0,
+    findings: [],
+    auditScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('rca_led', { v: 1 }),
+  };
+  const chainVerification = {
+    reportId: 'v',
+    matchId: 'self',
+    verified: true,
+    issueCount: 0,
+    issues: [],
+    alignedLinkCount: 4,
+    verificationScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('acv_led', { v: 1 }),
+  };
+
+  const ledger = buildAgent24ContinuityExportLedger({
+    matchId: 'self',
+    currentTurn: 20,
+    continuityExportGate: exportGate,
+    restoreCommitAudit: commitAudit,
+    attestationChainVerification: chainVerification,
+  });
+
+  return [
+    { name: 'ledger_complete_when_all_gates_pass', passed: ledger.ledgerComplete && ledger.recordedEntryCount === 1 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        ledger.deterministicFingerprint ===
+        buildAgent24ContinuityExportLedger({
+          matchId: 'self',
+          currentTurn: 20,
+          continuityExportGate: exportGate,
+          restoreCommitAudit: commitAudit,
+          attestationChainVerification: chainVerification,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
+// --- source: archive-roundtrip-gate.ts ---
+
+export type Agent24ArchiveRoundtripBlockerKind =
+  | 'ledger_incomplete'
+  | 'import_invalid'
+  | 'transfer_blocked';
+
+export interface Agent24ArchiveRoundtripBlocker {
+  kind: Agent24ArchiveRoundtripBlockerKind;
+  detail: string;
+  fingerprint: string;
+}
+
+export interface Agent24ArchiveRoundtripGateReport {
+  reportId: string;
+  matchId: string;
+  roundtripAllowed: boolean;
+  blockerCount: number;
+  blockers: Agent24ArchiveRoundtripBlocker[];
+  roundtripScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ArchiveRoundtripGateInput {
+  matchId: string;
+  continuityExportLedger: Agent24ContinuityExportLedger;
+  importValidation: Agent24ImportValidationReport;
+  replayTransferGate: Agent24ReplayTransferGateReport;
+}
+
+export function buildAgent24ArchiveRoundtripGateReport(
+  input: Agent24ArchiveRoundtripGateInput,
+): Agent24ArchiveRoundtripGateReport {
+  const blockers: Agent24ArchiveRoundtripBlocker[] = [];
+
+  if (!input.continuityExportLedger.ledgerComplete) {
+    blockers.push({
+      kind: 'ledger_incomplete',
+      detail: `Export ledger incomplete (${input.continuityExportLedger.recordedEntryCount}/${input.continuityExportLedger.entryCount} recorded)`,
+      fingerprint: o6kAgent24Fingerprint('rt_ledger', {
+        recorded: input.continuityExportLedger.recordedEntryCount,
+      }),
+    });
+  }
+  if (!input.importValidation.valid) {
+    blockers.push({
+      kind: 'import_invalid',
+      detail: `Import validation failed (${input.importValidation.issueCount} issues)`,
+      fingerprint: o6kAgent24Fingerprint('rt_import', { issues: input.importValidation.issueCount }),
+    });
+  }
+  if (!input.replayTransferGate.transferAllowed) {
+    blockers.push({
+      kind: 'transfer_blocked',
+      detail: 'Replay transfer gate blocked',
+      fingerprint: o6kAgent24Fingerprint('rt_transfer', { allowed: false }),
+    });
+  }
+
+  let roundtripScore = 100;
+  roundtripScore -= blockers.length * 22;
+  roundtripScore -= Math.max(0, 100 - input.continuityExportLedger.ledgerScore) * 0.15;
+  roundtripScore = Math.max(0, Math.min(100, Math.round(roundtripScore)));
+
+  const roundtripAllowed = blockers.length === 0;
+
+  return {
+    reportId: o6kAgent24Fingerprint('archive_roundtrip_gate', { matchId: input.matchId }),
+    matchId: input.matchId,
+    roundtripAllowed,
+    blockerCount: blockers.length,
+    blockers,
+    roundtripScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('archive_roundtrip_gate_body', {
+      blockers: blockers.map(b => b.fingerprint),
+      roundtripAllowed,
+      roundtripScore,
+    }),
+  };
+}
+
+export function runAgent24ArchiveRoundtripGateSelfTests(): Array<{ name: string; passed: boolean }> {
+  const ledger = {
+    ledgerId: 'l',
+    matchId: 'self',
+    entryCount: 1,
+    recordedEntryCount: 1,
+    ledgerComplete: true,
+    entries: [],
+    ledgerScore: 95,
+    deterministicFingerprint: o6kAgent24Fingerprint('cel_rt', { v: 1 }),
+  };
+  const importValidation = {
+    reportId: 'iv',
+    matchId: 'self',
+    valid: true,
+    issueCount: 0,
+    issues: [],
+    deterministicFingerprint: o6kAgent24Fingerprint('iv_rt', { v: 1 }),
+  };
+  const transfer = {
+    reportId: 'tg',
+    matchId: 'self',
+    transferAllowed: true,
+    blockerCount: 0,
+    blockers: [],
+    transferScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('tg_rt', { v: 1 }),
+  };
+
+  const report = buildAgent24ArchiveRoundtripGateReport({
+    matchId: 'self',
+    continuityExportLedger: ledger,
+    importValidation,
+    replayTransferGate: transfer,
+  });
+
+  return [
+    { name: 'roundtrip_allowed_when_aligned', passed: report.roundtripAllowed && report.blockerCount === 0 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        report.deterministicFingerprint ===
+        buildAgent24ArchiveRoundtripGateReport({
+          matchId: 'self',
+          continuityExportLedger: ledger,
+          importValidation,
+          replayTransferGate: transfer,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
 // --- source: history-replay-analytics.ts ---
 
 export const O6K_AGENT24_MODULE_VERSION = '1.1.0-op10m';
@@ -24791,6 +25216,12 @@ export function applyO6kHistoricalAnalyticsCachePatch(state: Record<string, unkn
   buildAgent24RestoreCommitAuditReport,
   type Agent24RestoreCommitAuditReport,
 } from './restore-commit-audit.ts';
+  buildAgent24AttestationChainVerificationReport,
+  type Agent24AttestationChainVerificationReport,
+} from './attestation-chain-verification.ts';
+  buildAgent24ArchiveRoundtripGateReport,
+  type Agent24ArchiveRoundtripGateReport,
+} from './archive-roundtrip-gate.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -24832,6 +25263,9 @@ export interface Agent24ReplayDeterminismBundle {
   continuityExportGate: Agent24ContinuityExportGateReport;
   restoreCommitAudit: Agent24RestoreCommitAuditReport;
   attestationChainSeal: Agent24AttestationChainSeal;
+  attestationChainVerification: Agent24AttestationChainVerificationReport;
+  continuityExportLedger: Agent24ContinuityExportLedger;
+  archiveRoundtripGate: Agent24ArchiveRoundtripGateReport;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -25182,6 +25616,25 @@ export function buildAgent24ReplayDeterminismBundle(
     archiveContinuityAttestation,
     continuityExportGate,
   });
+  const attestationChainVerification = buildAgent24AttestationChainVerificationReport({
+    matchId: input.matchId,
+    attestationChainSeal,
+    snapshotSeal,
+    sealVerification,
+  });
+  const continuityExportLedger = buildAgent24ContinuityExportLedger({
+    matchId: input.matchId,
+    currentTurn: input.turn,
+    continuityExportGate,
+    restoreCommitAudit,
+    attestationChainVerification,
+  });
+  const archiveRoundtripGate = buildAgent24ArchiveRoundtripGateReport({
+    matchId: input.matchId,
+    continuityExportLedger,
+    importValidation,
+    replayTransferGate,
+  });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
@@ -25221,6 +25674,9 @@ export function buildAgent24ReplayDeterminismBundle(
     continuityExportGate: continuityExportGate.deterministicFingerprint,
     restoreCommitAudit: restoreCommitAudit.deterministicFingerprint,
     attestationChainSeal: attestationChainSeal.deterministicFingerprint,
+    attestationChainVerification: attestationChainVerification.deterministicFingerprint,
+    continuityExportLedger: continuityExportLedger.deterministicFingerprint,
+    archiveRoundtripGate: archiveRoundtripGate.deterministicFingerprint,
   });
 
   return {
@@ -25255,6 +25711,9 @@ export function buildAgent24ReplayDeterminismBundle(
     continuityExportGate,
     restoreCommitAudit,
     attestationChainSeal,
+    attestationChainVerification,
+    continuityExportLedger,
+    archiveRoundtripGate,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -25456,6 +25915,22 @@ export function verifyAgent24ReplayDeterminism(
       name: 'attestation_chain_seal_twin',
       passed: a.attestationChainSeal.deterministicFingerprint === b.attestationChainSeal.deterministicFingerprint,
       detail: 'Twin attestation chain seal fingerprints',
+    },
+    {
+      name: 'attestation_chain_verification_twin',
+      passed:
+        a.attestationChainVerification.deterministicFingerprint === b.attestationChainVerification.deterministicFingerprint,
+      detail: 'Twin attestation chain verification fingerprints',
+    },
+    {
+      name: 'continuity_export_ledger_twin',
+      passed: a.continuityExportLedger.deterministicFingerprint === b.continuityExportLedger.deterministicFingerprint,
+      detail: 'Twin continuity export ledger fingerprints',
+    },
+    {
+      name: 'archive_roundtrip_gate_twin',
+      passed: a.archiveRoundtripGate.deterministicFingerprint === b.archiveRoundtripGate.deterministicFingerprint,
+      detail: 'Twin archive roundtrip gate fingerprints',
     },
     {
       name: 'composite_twin',

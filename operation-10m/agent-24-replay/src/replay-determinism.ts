@@ -95,6 +95,15 @@ import {
   type Agent24RestoreCommitAuditReport,
 } from './restore-commit-audit.ts';
 import { buildAgent24AttestationChainSeal, type Agent24AttestationChainSeal } from './attestation-chain-seal.ts';
+import {
+  buildAgent24AttestationChainVerificationReport,
+  type Agent24AttestationChainVerificationReport,
+} from './attestation-chain-verification.ts';
+import { buildAgent24ContinuityExportLedger, type Agent24ContinuityExportLedger } from './continuity-export-ledger.ts';
+import {
+  buildAgent24ArchiveRoundtripGateReport,
+  type Agent24ArchiveRoundtripGateReport,
+} from './archive-roundtrip-gate.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -136,6 +145,9 @@ export interface Agent24ReplayDeterminismBundle {
   continuityExportGate: Agent24ContinuityExportGateReport;
   restoreCommitAudit: Agent24RestoreCommitAuditReport;
   attestationChainSeal: Agent24AttestationChainSeal;
+  attestationChainVerification: Agent24AttestationChainVerificationReport;
+  continuityExportLedger: Agent24ContinuityExportLedger;
+  archiveRoundtripGate: Agent24ArchiveRoundtripGateReport;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -486,6 +498,25 @@ export function buildAgent24ReplayDeterminismBundle(
     archiveContinuityAttestation,
     continuityExportGate,
   });
+  const attestationChainVerification = buildAgent24AttestationChainVerificationReport({
+    matchId: input.matchId,
+    attestationChainSeal,
+    snapshotSeal,
+    sealVerification,
+  });
+  const continuityExportLedger = buildAgent24ContinuityExportLedger({
+    matchId: input.matchId,
+    currentTurn: input.turn,
+    continuityExportGate,
+    restoreCommitAudit,
+    attestationChainVerification,
+  });
+  const archiveRoundtripGate = buildAgent24ArchiveRoundtripGateReport({
+    matchId: input.matchId,
+    continuityExportLedger,
+    importValidation,
+    replayTransferGate,
+  });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
@@ -525,6 +556,9 @@ export function buildAgent24ReplayDeterminismBundle(
     continuityExportGate: continuityExportGate.deterministicFingerprint,
     restoreCommitAudit: restoreCommitAudit.deterministicFingerprint,
     attestationChainSeal: attestationChainSeal.deterministicFingerprint,
+    attestationChainVerification: attestationChainVerification.deterministicFingerprint,
+    continuityExportLedger: continuityExportLedger.deterministicFingerprint,
+    archiveRoundtripGate: archiveRoundtripGate.deterministicFingerprint,
   });
 
   return {
@@ -559,6 +593,9 @@ export function buildAgent24ReplayDeterminismBundle(
     continuityExportGate,
     restoreCommitAudit,
     attestationChainSeal,
+    attestationChainVerification,
+    continuityExportLedger,
+    archiveRoundtripGate,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -760,6 +797,22 @@ export function verifyAgent24ReplayDeterminism(
       name: 'attestation_chain_seal_twin',
       passed: a.attestationChainSeal.deterministicFingerprint === b.attestationChainSeal.deterministicFingerprint,
       detail: 'Twin attestation chain seal fingerprints',
+    },
+    {
+      name: 'attestation_chain_verification_twin',
+      passed:
+        a.attestationChainVerification.deterministicFingerprint === b.attestationChainVerification.deterministicFingerprint,
+      detail: 'Twin attestation chain verification fingerprints',
+    },
+    {
+      name: 'continuity_export_ledger_twin',
+      passed: a.continuityExportLedger.deterministicFingerprint === b.continuityExportLedger.deterministicFingerprint,
+      detail: 'Twin continuity export ledger fingerprints',
+    },
+    {
+      name: 'archive_roundtrip_gate_twin',
+      passed: a.archiveRoundtripGate.deterministicFingerprint === b.archiveRoundtripGate.deterministicFingerprint,
+      detail: 'Twin archive roundtrip gate fingerprints',
     },
     {
       name: 'composite_twin',

@@ -109,6 +109,18 @@ import {
   buildAgent24AttestationChainSeal,
   runAgent24AttestationChainSealSelfTests,
 } from '../src/attestation-chain-seal.ts';
+import {
+  buildAgent24AttestationChainVerificationReport,
+  runAgent24AttestationChainVerificationSelfTests,
+} from '../src/attestation-chain-verification.ts';
+import {
+  buildAgent24ContinuityExportLedger,
+  runAgent24ContinuityExportLedgerSelfTests,
+} from '../src/continuity-export-ledger.ts';
+import {
+  buildAgent24ArchiveRoundtripGateReport,
+  runAgent24ArchiveRoundtripGateSelfTests,
+} from '../src/archive-roundtrip-gate.ts';
 import { buildO6kHistoricalAnalyticsSnapshot } from '../src/history-replay-analytics.ts';
 import { o6kAgent24StableStringify, runO6kAgent24SelfTests } from '../src/history-replay-analytics.ts';
 
@@ -224,6 +236,9 @@ describe('Agent 24 replay determinism bundle', () => {
     assert.ok(result.probes.some(p => p.name === 'continuity_export_gate_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'restore_commit_audit_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'attestation_chain_seal_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'attestation_chain_verification_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'continuity_export_ledger_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'archive_roundtrip_gate_twin' && p.passed));
   });
 
   it('includes analytics depth rollups and stable twin fingerprint', () => {
@@ -982,6 +997,51 @@ describe('Agent 24 attestation chain seal', () => {
     });
     assert.equal(direct.deterministicFingerprint, bundle.attestationChainSeal.deterministicFingerprint);
     assert.ok(runAgent24AttestationChainSealSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 attestation chain verification', () => {
+  it('verifies sealed chain against snapshot seal verification', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    const direct = buildAgent24AttestationChainVerificationReport({
+      matchId: 'm',
+      attestationChainSeal: bundle.attestationChainSeal,
+      snapshotSeal: bundle.snapshotSeal,
+      sealVerification: bundle.sealVerification,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.attestationChainVerification.deterministicFingerprint);
+    assert.ok(runAgent24AttestationChainVerificationSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 continuity export ledger', () => {
+  it('records export ledger entry when gates verify', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.continuityExportLedger.ledgerComplete, true);
+    const direct = buildAgent24ContinuityExportLedger({
+      matchId: 'm',
+      currentTurn: bundle.restoreCommitRecord.currentTurn,
+      continuityExportGate: bundle.continuityExportGate,
+      restoreCommitAudit: bundle.restoreCommitAudit,
+      attestationChainVerification: bundle.attestationChainVerification,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.continuityExportLedger.deterministicFingerprint);
+    assert.ok(runAgent24ContinuityExportLedgerSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 archive roundtrip gate', () => {
+  it('allows roundtrip when export ledger and import validation align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.archiveRoundtripGate.roundtripAllowed, true);
+    const direct = buildAgent24ArchiveRoundtripGateReport({
+      matchId: 'm',
+      continuityExportLedger: bundle.continuityExportLedger,
+      importValidation: bundle.importValidation,
+      replayTransferGate: bundle.replayTransferGate,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.archiveRoundtripGate.deterministicFingerprint);
+    assert.ok(runAgent24ArchiveRoundtripGateSelfTests().every(t => t.passed));
   });
 });
 
