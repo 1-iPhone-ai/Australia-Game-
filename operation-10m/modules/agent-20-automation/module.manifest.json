@@ -6,8 +6,8 @@
   "anchorComment": "O10_AGENT20_INTEGRATION_ANCHOR",
   "sourceRoot": "operation-10m/agent-20-automation/src",
   "regenerate": "node operation-10m/agent-20-automation/scripts/build-chunk.mjs",
-  "chunkSha256": "7f012b3fb74099b0952a3f53075788ba9e7ba6a2b983abb49c6dfae0670c0381",
-  "chunkLineCount": 22204,
+  "chunkSha256": "9a4c978843e64199b38222b6359475d9a7b38898e1109f5e2638f1678a3fae06",
+  "chunkLineCount": 22473,
   "sourceFiles": [
     "types.ts",
     "conditional-actions.ts",
@@ -174,6 +174,8 @@
     "automation-idle-governance-program-wave-round53-capstone.ts",
     "automation-idle-governance-program-wave-round54-export.ts",
     "automation-idle-governance-program-wave-round54-capstone.ts",
+    "automation-idle-governance-program-wave-round55-export.ts",
+    "automation-idle-governance-program-wave-round55-capstone.ts",
     "index.ts"
   ]
 }
