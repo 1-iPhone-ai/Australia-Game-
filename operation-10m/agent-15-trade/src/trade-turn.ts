@@ -669,6 +669,20 @@ import {
   bilateralClearedForwardArcReadinessGateWorldEvent,
 } from './bilateral-cleared-forward-arc-readiness-gate.ts';
 import {
+  computeSustainedClearedForwardArcContinuitySnapshot,
+  sustainedClearedForwardArcContinuityDomesticStress,
+  sustainedClearedForwardArcContinuityExportScale,
+  sustainedClearedForwardArcContinuityGiNotes,
+  sustainedClearedForwardArcContinuityWorldEvent,
+} from './sustained-cleared-forward-arc-continuity.ts';
+import {
+  computeBilateralLaunchedClearedForwardArcHandoffGateSnapshot,
+  bilateralLaunchedClearedForwardArcHandoffGateDomesticStressRelief,
+  bilateralLaunchedClearedForwardArcHandoffGateExportScale,
+  bilateralLaunchedClearedForwardArcHandoffGateGiNotes,
+  bilateralLaunchedClearedForwardArcHandoffGateWorldEvent,
+} from './bilateral-launched-cleared-forward-arc-handoff-gate.ts';
+import {
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -1897,6 +1911,32 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   );
   if (clearedForwardArcReadinessEvent) worldEvents.push(clearedForwardArcReadinessEvent);
 
+  const sustainedClearedForwardArcContinuityStep = computeSustainedClearedForwardArcContinuitySnapshot({
+    bilateralClearedForwardArcReadinessGate,
+    clearedForwardArcHandoffContinuity,
+    persisted,
+  });
+  persisted = sustainedClearedForwardArcContinuityStep.persisted;
+  const sustainedClearedForwardArcContinuity = sustainedClearedForwardArcContinuityStep.snapshot;
+  const sustainedClearedForwardArcContinuityEvent = sustainedClearedForwardArcContinuityWorldEvent(
+    sustainedClearedForwardArcContinuity,
+    turn,
+  );
+  if (sustainedClearedForwardArcContinuityEvent) worldEvents.push(sustainedClearedForwardArcContinuityEvent);
+
+  const launchedClearedForwardArcHandoffStep = computeBilateralLaunchedClearedForwardArcHandoffGateSnapshot({
+    sustainedClearedForwardArcContinuity,
+    bilateralClearedForwardArcReadinessGate,
+    persisted,
+  });
+  persisted = launchedClearedForwardArcHandoffStep.persisted;
+  const bilateralLaunchedClearedForwardArcHandoffGate = launchedClearedForwardArcHandoffStep.snapshot;
+  const launchedClearedForwardArcHandoffEvent = bilateralLaunchedClearedForwardArcHandoffGateWorldEvent(
+    bilateralLaunchedClearedForwardArcHandoffGate,
+    turn,
+  );
+  if (launchedClearedForwardArcHandoffEvent) worldEvents.push(launchedClearedForwardArcHandoffEvent);
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -1984,6 +2024,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         bilateralSustainedForwardArcHandoffGateExportScale(bilateralSustainedForwardArcHandoffGate) *
         clearedForwardArcHandoffContinuityExportScale(clearedForwardArcHandoffContinuity) *
         bilateralClearedForwardArcReadinessGateExportScale(bilateralClearedForwardArcReadinessGate) *
+        sustainedClearedForwardArcContinuityExportScale(sustainedClearedForwardArcContinuity) *
+        bilateralLaunchedClearedForwardArcHandoffGateExportScale(bilateralLaunchedClearedForwardArcHandoffGate) *
         10,
     ) / 10;
 
@@ -2080,6 +2122,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       bilateralAdmittedForwardArcSustainGateDomesticStressRelief(bilateralAdmittedForwardArcSustainGate) +
       bilateralSustainedForwardArcHandoffGateDomesticStressRelief(bilateralSustainedForwardArcHandoffGate) +
       bilateralClearedForwardArcReadinessGateDomesticStressRelief(bilateralClearedForwardArcReadinessGate) +
+      bilateralLaunchedClearedForwardArcHandoffGateDomesticStressRelief(bilateralLaunchedClearedForwardArcHandoffGate) +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
@@ -2122,7 +2165,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       primedHandoffArcOpeningContinuityDomesticStress(primedHandoffArcOpeningContinuity) +
       engagedArcForwardAdmissionContinuityDomesticStress(engagedArcForwardAdmissionContinuity) +
       sustainedAdmittedForwardArcContinuityDomesticStress(sustainedAdmittedForwardArcContinuity) +
-      clearedForwardArcHandoffContinuityDomesticStress(clearedForwardArcHandoffContinuity),
+      clearedForwardArcHandoffContinuityDomesticStress(clearedForwardArcHandoffContinuity) +
+      sustainedClearedForwardArcContinuityDomesticStress(sustainedClearedForwardArcContinuity),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -2231,6 +2275,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.bilateralSustainedForwardArcHandoffGateSmoothing,
     persisted.clearedForwardArcHandoffContinuitySmoothing,
     persisted.bilateralClearedForwardArcReadinessGateSmoothing,
+    persisted.sustainedClearedForwardArcContinuitySmoothing,
+    persisted.bilateralLaunchedClearedForwardArcHandoffGateSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -2371,6 +2417,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     bilateralSustainedForwardArcHandoffGate,
     clearedForwardArcHandoffContinuity,
     bilateralClearedForwardArcReadinessGate,
+    sustainedClearedForwardArcContinuity,
+    bilateralLaunchedClearedForwardArcHandoffGate,
     inputHash,
   };
 
@@ -2490,6 +2538,10 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...bilateralSustainedForwardArcHandoffGateGiNotes(state.bilateralSustainedForwardArcHandoffGate));
   lines.push(...clearedForwardArcHandoffContinuityGiNotes(state.clearedForwardArcHandoffContinuity));
   lines.push(...bilateralClearedForwardArcReadinessGateGiNotes(state.bilateralClearedForwardArcReadinessGate));
+  lines.push(...sustainedClearedForwardArcContinuityGiNotes(state.sustainedClearedForwardArcContinuity));
+  lines.push(
+    ...bilateralLaunchedClearedForwardArcHandoffGateGiNotes(state.bilateralLaunchedClearedForwardArcHandoffGate),
+  );
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }

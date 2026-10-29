@@ -242,6 +242,8 @@ export interface GTELPersisted {
   bilateralSustainedForwardArcHandoffGateSmoothing?: number;
   clearedForwardArcHandoffContinuitySmoothing?: number;
   bilateralClearedForwardArcReadinessGateSmoothing?: number;
+  sustainedClearedForwardArcContinuitySmoothing?: number;
+  bilateralLaunchedClearedForwardArcHandoffGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -353,6 +355,8 @@ export interface GTELState {
   bilateralSustainedForwardArcHandoffGate: GTELBilateralSustainedForwardArcHandoffGateSnapshot;
   clearedForwardArcHandoffContinuity: GTELClearedForwardArcHandoffContinuitySnapshot;
   bilateralClearedForwardArcReadinessGate: GTELBilateralClearedForwardArcReadinessGateSnapshot;
+  sustainedClearedForwardArcContinuity: GTELSustainedClearedForwardArcContinuitySnapshot;
+  bilateralLaunchedClearedForwardArcHandoffGate: GTELBilateralLaunchedClearedForwardArcHandoffGateSnapshot;
   inputHash: string;
 }
 
@@ -1457,6 +1461,26 @@ export interface GTELBilateralClearedForwardArcReadinessGateSnapshot {
   band: GTELBilateralClearedForwardArcReadinessGateBand;
   handoffContinuityFeed: number;
   gateAnchor: number;
+  summary: string;
+}
+
+export type GTELSustainedClearedForwardArcContinuityBand = 'anchored' | 'holding' | 'slipping' | 'severed';
+
+export interface GTELSustainedClearedForwardArcContinuitySnapshot {
+  score: number;
+  band: GTELSustainedClearedForwardArcContinuityBand;
+  readinessGateFeed: number;
+  handoffContinuityAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralLaunchedClearedForwardArcHandoffGateBand = 'cleared' | 'staging' | 'queued' | 'blocked';
+
+export interface GTELBilateralLaunchedClearedForwardArcHandoffGateSnapshot {
+  score: number;
+  band: GTELBilateralLaunchedClearedForwardArcHandoffGateBand;
+  continuityFeed: number;
+  readinessAnchor: number;
   summary: string;
 }
 

@@ -246,6 +246,8 @@ export interface GTELPersisted {
   bilateralSustainedForwardArcHandoffGateSmoothing?: number;
   clearedForwardArcHandoffContinuitySmoothing?: number;
   bilateralClearedForwardArcReadinessGateSmoothing?: number;
+  sustainedClearedForwardArcContinuitySmoothing?: number;
+  bilateralLaunchedClearedForwardArcHandoffGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -357,6 +359,8 @@ export interface GTELState {
   bilateralSustainedForwardArcHandoffGate: GTELBilateralSustainedForwardArcHandoffGateSnapshot;
   clearedForwardArcHandoffContinuity: GTELClearedForwardArcHandoffContinuitySnapshot;
   bilateralClearedForwardArcReadinessGate: GTELBilateralClearedForwardArcReadinessGateSnapshot;
+  sustainedClearedForwardArcContinuity: GTELSustainedClearedForwardArcContinuitySnapshot;
+  bilateralLaunchedClearedForwardArcHandoffGate: GTELBilateralLaunchedClearedForwardArcHandoffGateSnapshot;
   inputHash: string;
 }
 
@@ -1464,6 +1468,26 @@ export interface GTELBilateralClearedForwardArcReadinessGateSnapshot {
   summary: string;
 }
 
+export type GTELSustainedClearedForwardArcContinuityBand = 'anchored' | 'holding' | 'slipping' | 'severed';
+
+export interface GTELSustainedClearedForwardArcContinuitySnapshot {
+  score: number;
+  band: GTELSustainedClearedForwardArcContinuityBand;
+  readinessGateFeed: number;
+  handoffContinuityAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralLaunchedClearedForwardArcHandoffGateBand = 'cleared' | 'staging' | 'queued' | 'blocked';
+
+export interface GTELBilateralLaunchedClearedForwardArcHandoffGateSnapshot {
+  score: number;
+  band: GTELBilateralLaunchedClearedForwardArcHandoffGateBand;
+  continuityFeed: number;
+  readinessAnchor: number;
+  summary: string;
+}
+
 export interface GlobalTradeEconomyPanelProps {
   state: GTELState | null;
   theme?: { isDark?: boolean };
@@ -1707,6 +1731,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     bilateralSustainedForwardArcHandoffGateSmoothing: 0.52,
     clearedForwardArcHandoffContinuitySmoothing: 0.52,
     bilateralClearedForwardArcReadinessGateSmoothing: 0.52,
+    sustainedClearedForwardArcContinuitySmoothing: 0.52,
+    bilateralLaunchedClearedForwardArcHandoffGateSmoothing: 0.52,
   };
 }
 
@@ -2081,6 +2107,13 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   base.bilateralClearedForwardArcReadinessGateSmoothing = sanitizeBilateralClearedForwardArcReadinessGateSmoothing(
     r.bilateralClearedForwardArcReadinessGateSmoothing,
   );
+  base.sustainedClearedForwardArcContinuitySmoothing = sanitizeSustainedClearedForwardArcContinuitySmoothing(
+    r.sustainedClearedForwardArcContinuitySmoothing,
+  );
+  base.bilateralLaunchedClearedForwardArcHandoffGateSmoothing =
+    sanitizeBilateralLaunchedClearedForwardArcHandoffGateSmoothing(
+      r.bilateralLaunchedClearedForwardArcHandoffGateSmoothing,
+    );
   return base;
 }
 
@@ -8104,6 +8137,18 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   bilateralClearedForwardArcReadinessGateGiNotes,
   bilateralClearedForwardArcReadinessGateWorldEvent,
 } from './bilateral-cleared-forward-arc-readiness-gate.ts';
+  computeSustainedClearedForwardArcContinuitySnapshot,
+  sustainedClearedForwardArcContinuityDomesticStress,
+  sustainedClearedForwardArcContinuityExportScale,
+  sustainedClearedForwardArcContinuityGiNotes,
+  sustainedClearedForwardArcContinuityWorldEvent,
+} from './sustained-cleared-forward-arc-continuity.ts';
+  computeBilateralLaunchedClearedForwardArcHandoffGateSnapshot,
+  bilateralLaunchedClearedForwardArcHandoffGateDomesticStressRelief,
+  bilateralLaunchedClearedForwardArcHandoffGateExportScale,
+  bilateralLaunchedClearedForwardArcHandoffGateGiNotes,
+  bilateralLaunchedClearedForwardArcHandoffGateWorldEvent,
+} from './bilateral-launched-cleared-forward-arc-handoff-gate.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -9329,6 +9374,32 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   );
   if (clearedForwardArcReadinessEvent) worldEvents.push(clearedForwardArcReadinessEvent);
 
+  const sustainedClearedForwardArcContinuityStep = computeSustainedClearedForwardArcContinuitySnapshot({
+    bilateralClearedForwardArcReadinessGate,
+    clearedForwardArcHandoffContinuity,
+    persisted,
+  });
+  persisted = sustainedClearedForwardArcContinuityStep.persisted;
+  const sustainedClearedForwardArcContinuity = sustainedClearedForwardArcContinuityStep.snapshot;
+  const sustainedClearedForwardArcContinuityEvent = sustainedClearedForwardArcContinuityWorldEvent(
+    sustainedClearedForwardArcContinuity,
+    turn,
+  );
+  if (sustainedClearedForwardArcContinuityEvent) worldEvents.push(sustainedClearedForwardArcContinuityEvent);
+
+  const launchedClearedForwardArcHandoffStep = computeBilateralLaunchedClearedForwardArcHandoffGateSnapshot({
+    sustainedClearedForwardArcContinuity,
+    bilateralClearedForwardArcReadinessGate,
+    persisted,
+  });
+  persisted = launchedClearedForwardArcHandoffStep.persisted;
+  const bilateralLaunchedClearedForwardArcHandoffGate = launchedClearedForwardArcHandoffStep.snapshot;
+  const launchedClearedForwardArcHandoffEvent = bilateralLaunchedClearedForwardArcHandoffGateWorldEvent(
+    bilateralLaunchedClearedForwardArcHandoffGate,
+    turn,
+  );
+  if (launchedClearedForwardArcHandoffEvent) worldEvents.push(launchedClearedForwardArcHandoffEvent);
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -9416,6 +9487,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         bilateralSustainedForwardArcHandoffGateExportScale(bilateralSustainedForwardArcHandoffGate) *
         clearedForwardArcHandoffContinuityExportScale(clearedForwardArcHandoffContinuity) *
         bilateralClearedForwardArcReadinessGateExportScale(bilateralClearedForwardArcReadinessGate) *
+        sustainedClearedForwardArcContinuityExportScale(sustainedClearedForwardArcContinuity) *
+        bilateralLaunchedClearedForwardArcHandoffGateExportScale(bilateralLaunchedClearedForwardArcHandoffGate) *
         10,
     ) / 10;
 
@@ -9512,6 +9585,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       bilateralAdmittedForwardArcSustainGateDomesticStressRelief(bilateralAdmittedForwardArcSustainGate) +
       bilateralSustainedForwardArcHandoffGateDomesticStressRelief(bilateralSustainedForwardArcHandoffGate) +
       bilateralClearedForwardArcReadinessGateDomesticStressRelief(bilateralClearedForwardArcReadinessGate) +
+      bilateralLaunchedClearedForwardArcHandoffGateDomesticStressRelief(bilateralLaunchedClearedForwardArcHandoffGate) +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
@@ -9554,7 +9628,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       primedHandoffArcOpeningContinuityDomesticStress(primedHandoffArcOpeningContinuity) +
       engagedArcForwardAdmissionContinuityDomesticStress(engagedArcForwardAdmissionContinuity) +
       sustainedAdmittedForwardArcContinuityDomesticStress(sustainedAdmittedForwardArcContinuity) +
-      clearedForwardArcHandoffContinuityDomesticStress(clearedForwardArcHandoffContinuity),
+      clearedForwardArcHandoffContinuityDomesticStress(clearedForwardArcHandoffContinuity) +
+      sustainedClearedForwardArcContinuityDomesticStress(sustainedClearedForwardArcContinuity),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -9663,6 +9738,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.bilateralSustainedForwardArcHandoffGateSmoothing,
     persisted.clearedForwardArcHandoffContinuitySmoothing,
     persisted.bilateralClearedForwardArcReadinessGateSmoothing,
+    persisted.sustainedClearedForwardArcContinuitySmoothing,
+    persisted.bilateralLaunchedClearedForwardArcHandoffGateSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -9803,6 +9880,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     bilateralSustainedForwardArcHandoffGate,
     clearedForwardArcHandoffContinuity,
     bilateralClearedForwardArcReadinessGate,
+    sustainedClearedForwardArcContinuity,
+    bilateralLaunchedClearedForwardArcHandoffGate,
     inputHash,
   };
 
@@ -9922,6 +10001,10 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...bilateralSustainedForwardArcHandoffGateGiNotes(state.bilateralSustainedForwardArcHandoffGate));
   lines.push(...clearedForwardArcHandoffContinuityGiNotes(state.clearedForwardArcHandoffContinuity));
   lines.push(...bilateralClearedForwardArcReadinessGateGiNotes(state.bilateralClearedForwardArcReadinessGate));
+  lines.push(...sustainedClearedForwardArcContinuityGiNotes(state.sustainedClearedForwardArcContinuity));
+  lines.push(
+    ...bilateralLaunchedClearedForwardArcHandoffGateGiNotes(state.bilateralLaunchedClearedForwardArcHandoffGate),
+  );
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
@@ -10277,6 +10360,14 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   createEmptyBilateralClearedForwardArcReadinessGateSnapshot,
   bilateralClearedForwardArcReadinessGateExportScale,
 } from './bilateral-cleared-forward-arc-readiness-gate.ts';
+  computeSustainedClearedForwardArcContinuitySnapshot,
+  createEmptySustainedClearedForwardArcContinuitySnapshot,
+  sustainedClearedForwardArcContinuityExportScale,
+} from './sustained-cleared-forward-arc-continuity.ts';
+  computeBilateralLaunchedClearedForwardArcHandoffGateSnapshot,
+  createEmptyBilateralLaunchedClearedForwardArcHandoffGateSnapshot,
+  bilateralLaunchedClearedForwardArcHandoffGateExportScale,
+} from './bilateral-launched-cleared-forward-arc-handoff-gate.ts';
   validateScenarioShockCatalog,
   triggerCommodityShockScenario,
   COMMODITY_SHOCK_SCENARIOS,
@@ -12847,6 +12938,64 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
       bilateralClearedForwardArcReadinessGateExportScale(ready) >=
         bilateralClearedForwardArcReadinessGateExportScale(withheld),
       'expected cleared forward arc readiness scale lift',
+    );
+  });
+
+  ok('sustained cleared forward arc continuity improves when readiness gate is ready', () => {
+    const readiness = {
+      ...createEmptyBilateralClearedForwardArcReadinessGateSnapshot(),
+      score: 0.95,
+      band: 'ready' as const,
+    };
+    const handoff = {
+      ...createEmptyClearedForwardArcHandoffContinuitySnapshot(),
+      score: 0.94,
+      band: 'settled' as const,
+    };
+    const anchored = computeSustainedClearedForwardArcContinuitySnapshot({
+      bilateralClearedForwardArcReadinessGate: readiness,
+      clearedForwardArcHandoffContinuity: handoff,
+      persisted: { ...createEmptyGTELPersisted(), sustainedClearedForwardArcContinuitySmoothing: 0.99 },
+    }).snapshot;
+    const severed = computeSustainedClearedForwardArcContinuitySnapshot({
+      bilateralClearedForwardArcReadinessGate: { ...readiness, score: 0.1, band: 'withheld' },
+      clearedForwardArcHandoffContinuity: { ...handoff, score: 0.09, band: 'broken' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(anchored.score > severed.score, 'expected sustained cleared continuity when readiness ready');
+    gtelAssert(
+      sustainedClearedForwardArcContinuityExportScale(anchored) >=
+        sustainedClearedForwardArcContinuityExportScale(severed),
+      'expected sustained cleared forward arc continuity scale lift',
+    );
+  });
+
+  ok('launched cleared forward arc handoff gate improves when sustained continuity is anchored', () => {
+    const continuity = {
+      ...createEmptySustainedClearedForwardArcContinuitySnapshot(),
+      score: 0.95,
+      band: 'anchored' as const,
+    };
+    const readiness = {
+      ...createEmptyBilateralClearedForwardArcReadinessGateSnapshot(),
+      score: 0.93,
+      band: 'ready' as const,
+    };
+    const cleared = computeBilateralLaunchedClearedForwardArcHandoffGateSnapshot({
+      sustainedClearedForwardArcContinuity: continuity,
+      bilateralClearedForwardArcReadinessGate: readiness,
+      persisted: { ...createEmptyGTELPersisted(), bilateralLaunchedClearedForwardArcHandoffGateSmoothing: 0.99 },
+    }).snapshot;
+    const blocked = computeBilateralLaunchedClearedForwardArcHandoffGateSnapshot({
+      sustainedClearedForwardArcContinuity: { ...continuity, score: 0.11, band: 'severed' },
+      bilateralClearedForwardArcReadinessGate: { ...readiness, score: 0.09, band: 'withheld' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(cleared.score > blocked.score, 'expected launched handoff gate when continuity anchored');
+    gtelAssert(
+      bilateralLaunchedClearedForwardArcHandoffGateExportScale(cleared) >=
+        bilateralLaunchedClearedForwardArcHandoffGateExportScale(blocked),
+      'expected launched cleared forward arc handoff scale lift',
     );
   });
 

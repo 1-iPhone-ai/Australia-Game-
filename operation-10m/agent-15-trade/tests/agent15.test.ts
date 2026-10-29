@@ -2276,3 +2276,54 @@ test('round 49: blocked handoff gate weakens continuity vs cleared baseline', ()
       blocked.state.clearedForwardArcHandoffContinuity.score - 0.14,
   );
 });
+
+test('round 50: sustained cleared continuity and launched handoff gate on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.bilateralClearedForwardArcReadinessGateSmoothing = 0.78;
+  persisted.clearedForwardArcHandoffContinuitySmoothing = 0.76;
+  persisted.sustainedClearedForwardArcContinuitySmoothing = 0.74;
+  persisted.bilateralLaunchedClearedForwardArcHandoffGateSmoothing = 0.72;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 117,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 152 } } },
+    persisted,
+  });
+  assert.ok(r.state.sustainedClearedForwardArcContinuity);
+  assert.ok(
+    ['anchored', 'holding', 'slipping', 'severed'].includes(r.state.sustainedClearedForwardArcContinuity.band),
+  );
+  assert.ok(r.state.bilateralLaunchedClearedForwardArcHandoffGate);
+  assert.ok(
+    ['cleared', 'staging', 'queued', 'blocked'].includes(r.state.bilateralLaunchedClearedForwardArcHandoffGate.band),
+  );
+  assert.ok(r.persisted.sustainedClearedForwardArcContinuitySmoothing != null);
+  assert.ok(r.persisted.bilateralLaunchedClearedForwardArcHandoffGateSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Sustained cleared forward arc continuity/i.test(n)));
+  assert.ok(notes.some(n => /Bilateral launched cleared forward arc handoff gate/i.test(n)));
+});
+
+test('round 50: withheld readiness weakens sustained continuity vs ready baseline', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.bilateralClearedForwardArcReadinessGateSmoothing = 0.99;
+  persisted.clearedForwardArcHandoffContinuitySmoothing = 0.97;
+  const ready = advanceGlobalTradeEconomyTurn({
+    turn: 118,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 132 } } },
+    persisted: { ...persisted },
+  });
+  persisted.bilateralClearedForwardArcReadinessGateSmoothing = 0.24;
+  persisted.clearedForwardArcHandoffContinuitySmoothing = 0.22;
+  const withheld = advanceGlobalTradeEconomyTurn({
+    turn: 118,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 282 } } },
+    persisted: { ...persisted },
+  });
+  assert.ok(
+    ready.state.sustainedClearedForwardArcContinuity.score >=
+      withheld.state.sustainedClearedForwardArcContinuity.score - 0.14,
+  );
+});
