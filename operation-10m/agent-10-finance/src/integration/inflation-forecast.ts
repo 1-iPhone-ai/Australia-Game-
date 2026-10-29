@@ -63,6 +63,14 @@ import {
   assessProfessionalServicesFeeInflation,
   type ProfessionalServicesFeeBand,
 } from '../inflation/professional-services-fee-inflation.js';
+import {
+  assessChildcareServicesInflation,
+  type ChildcareServicesPressureBand,
+} from '../inflation/childcare-services-inflation.js';
+import {
+  assessGovernmentChargesInflation,
+  type GovernmentChargesPressureBand,
+} from '../inflation/government-charges-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -87,6 +95,8 @@ export interface InflationForecastPoint {
   communicationsServicesPressureBand: CommunicationsServicesPressureBand;
   recreationLeisurePressureBand: RecreationLeisurePressureBand;
   professionalServicesFeeBand: ProfessionalServicesFeeBand;
+  childcareServicesPressureBand: ChildcareServicesPressureBand;
+  governmentChargesPressureBand: GovernmentChargesPressureBand;
 }
 
 export interface InflationForecastPath {
@@ -228,6 +238,20 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const childcare = assessChildcareServicesInflation({
+      capacityShortageBand: inputs.householdAffordability === 'severe_pressure' ? 'severe' : 'moderate',
+      wageAwardPassThrough: inputs.highInflationScenario ? 'strong' : 'normal',
+      subsidyIndexationLag: inputs.fiscalPressure === 'critical' || inputs.fiscalPressure === 'strained',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const govCharges = assessGovernmentChargesInflation({
+      feeIndexationBand: inputs.highInflationScenario ? 'above_cpi' : 'at_cpi',
+      newLevyStackActive: inputs.fiscalPressure === 'critical',
+      localGovernmentPressure: inputs.publicStability < 45 ? 'high' : 'medium',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -252,6 +276,8 @@ export function projectInflationForecastPath(
       communicationsServicesPressureBand: commsServices.pressureBand,
       recreationLeisurePressureBand: recreation.pressureBand,
       professionalServicesFeeBand: professionalFees.feeBand,
+      childcareServicesPressureBand: childcare.pressureBand,
+      governmentChargesPressureBand: govCharges.pressureBand,
     });
   }
 

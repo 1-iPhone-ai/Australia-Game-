@@ -18,11 +18,13 @@ import type { EducationTuitionPressureBand } from '../inflation/education-tuitio
 import type { CommunicationsServicesPressureBand } from '../inflation/communications-services-inflation.js';
 import type { RecreationLeisurePressureBand } from '../inflation/recreation-leisure-inflation.js';
 import type { ProfessionalServicesFeeBand } from '../inflation/professional-services-fee-inflation.js';
+import type { ChildcareServicesPressureBand } from '../inflation/childcare-services-inflation.js';
+import type { GovernmentChargesPressureBand } from '../inflation/government-charges-inflation.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r12';
+  schemaVersion: '10.14.agent10.r13';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -42,6 +44,8 @@ export interface Agent21InflationForecastBundle {
   terminalCommunicationsServicesPressure: CommunicationsServicesPressureBand;
   terminalRecreationLeisurePressure: RecreationLeisurePressureBand;
   terminalProfessionalServicesFee: ProfessionalServicesFeeBand;
+  terminalChildcareServicesPressure: ChildcareServicesPressureBand;
+  terminalGovernmentChargesPressure: GovernmentChargesPressureBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -70,7 +74,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r12',
+    schemaVersion: '10.14.agent10.r13',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -90,6 +94,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalCommunicationsServicesPressure: lastPoint?.communicationsServicesPressureBand ?? 'soft',
     terminalRecreationLeisurePressure: lastPoint?.recreationLeisurePressureBand ?? 'soft',
     terminalProfessionalServicesFee: lastPoint?.professionalServicesFeeBand ?? 'stable',
+    terminalChildcareServicesPressure: lastPoint?.childcareServicesPressureBand ?? 'stable',
+    terminalGovernmentChargesPressure: lastPoint?.governmentChargesPressureBand ?? 'flat',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

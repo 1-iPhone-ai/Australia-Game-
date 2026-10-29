@@ -379,6 +379,42 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'command', 'round12'],
   },
+  {
+    id: 'childcare_capacity_award_stack',
+    label: 'Childcare capacity award stack',
+    description: 'Severe capacity with award pass-through — childcare CPI.',
+    patch: {
+      householdAffordability: 'severe_pressure',
+      inflationSettingMultiplier: 1.22,
+      highInflationScenario: true,
+      fiscalPressure: 'strained',
+    },
+    tags: ['inflation', 'childcare', 'round13'],
+  },
+  {
+    id: 'government_levy_indexation_step',
+    label: 'Government levy indexation step',
+    description: 'Above-CPI fee indexation with fiscal critical — charges CPI.',
+    patch: {
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.24,
+      highInflationScenario: true,
+      publicStability: 41,
+    },
+    tags: ['inflation', 'government', 'round13'],
+  },
+  {
+    id: 'turns_automation_inflation_drift',
+    label: 'Turns automation inflation drift',
+    description: 'Peak season carryover with unattended autopilot drift.',
+    patch: {
+      inflationSettingMultiplier: 1.27,
+      highInflationScenario: true,
+      creditShockActive: true,
+      activeCrises: 1,
+    },
+    tags: ['inflation', 'automation', 'round13'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

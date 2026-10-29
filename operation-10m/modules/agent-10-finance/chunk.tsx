@@ -2488,6 +2488,139 @@ export function professionalServicesFeeInflationScoreAdjustment(band: Profession
 }
 
 
+// --- source: inflation/childcare-services-inflation.ts ---
+
+export type ChildcareServicesPressureBand = 'stable' | 'rising' | 'sharp' | 'crisis';
+
+export interface ChildcareServicesInflationAssessment {
+  pressureBand: ChildcareServicesPressureBand;
+  childcareIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Early childhood and care services in macro CPI metadata. */
+export function assessChildcareServicesInflation(input: {
+  capacityShortageBand: 'none' | 'moderate' | 'severe';
+  wageAwardPassThrough: 'muted' | 'normal' | 'strong';
+  subsidyIndexationLag: boolean;
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): ChildcareServicesInflationAssessment {
+  let pressure = 0;
+  if (input.capacityShortageBand === 'severe') pressure += 0.4;
+  else if (input.capacityShortageBand === 'moderate') pressure += 0.22;
+
+  if (input.wageAwardPassThrough === 'strong') pressure += 0.26;
+  else if (input.wageAwardPassThrough === 'normal') pressure += 0.12;
+
+  if (input.subsidyIndexationLag) pressure += 0.18;
+
+  if (input.inflationBand === 'elevated' || input.inflationBand === 'high') {
+    pressure += 0.07;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.004, 0, 1.05);
+  const childcareIndex = finRound(100 + pressure * 15, 1);
+
+  let pressureBand: ChildcareServicesPressureBand = 'stable';
+  if (pressure >= 0.62) pressureBand = 'crisis';
+  else if (pressure >= 0.4) pressureBand = 'sharp';
+  else if (pressure >= 0.2) pressureBand = 'rising';
+
+  const inflationScoreNudge =
+    pressureBand === 'crisis'
+      ? 0.08
+      : pressureBand === 'sharp'
+        ? 0.05
+        : pressureBand === 'rising'
+          ? 0.03
+          : 0;
+
+  const narrative =
+    pressureBand === 'crisis' || pressureBand === 'sharp'
+      ? 'Childcare fees are lifting household cost-of-living and services CPI.'
+      : pressureBand === 'rising'
+        ? 'Childcare inflation rising — capacity and award pass-through in play.'
+        : 'Childcare services inflation stable relative to headline basket.';
+
+  return { pressureBand, childcareIndex, inflationScoreNudge, narrative };
+}
+
+export function childcareServicesInflationScoreAdjustment(band: ChildcareServicesPressureBand): number {
+  if (band === 'crisis') return 4;
+  if (band === 'sharp') return 3;
+  if (band === 'rising') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/government-charges-inflation.ts ---
+
+export type GovernmentChargesPressureBand = 'flat' | 'creeping' | 'elevated' | 'step_up';
+
+export interface GovernmentChargesInflationAssessment {
+  pressureBand: GovernmentChargesPressureBand;
+  chargesIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Indexed fees, levies, and regulatory charges in macro CPI metadata. */
+export function assessGovernmentChargesInflation(input: {
+  feeIndexationBand: 'below_cpi' | 'at_cpi' | 'above_cpi';
+  newLevyStackActive: boolean;
+  localGovernmentPressure: 'low' | 'medium' | 'high';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): GovernmentChargesInflationAssessment {
+  let pressure = 0;
+  if (input.feeIndexationBand === 'above_cpi') pressure += 0.32;
+  else if (input.feeIndexationBand === 'at_cpi') pressure += 0.18;
+
+  if (input.newLevyStackActive) pressure += 0.24;
+  if (input.localGovernmentPressure === 'high') pressure += 0.2;
+  else if (input.localGovernmentPressure === 'medium') pressure += 0.1;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.06;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.005, 0, 1.05);
+  const chargesIndex = finRound(100 + pressure * 12, 1);
+
+  let pressureBand: GovernmentChargesPressureBand = 'flat';
+  if (pressure >= 0.58) pressureBand = 'step_up';
+  else if (pressure >= 0.38) pressureBand = 'elevated';
+  else if (pressure >= 0.18) pressureBand = 'creeping';
+
+  const inflationScoreNudge =
+    pressureBand === 'step_up'
+      ? 0.07
+      : pressureBand === 'elevated'
+        ? 0.04
+        : pressureBand === 'creeping'
+          ? 0.02
+          : 0;
+
+  const narrative =
+    pressureBand === 'step_up' || pressureBand === 'elevated'
+      ? 'Government charges and indexed fees are adding to headline CPI stickiness.'
+      : pressureBand === 'creeping'
+        ? 'Government charges creeping higher — watch levy and local fee stacks.'
+        : 'Government charges inflation flat versus services basket.';
+
+  return { pressureBand, chargesIndex, inflationScoreNudge, narrative };
+}
+
+export function governmentChargesInflationScoreAdjustment(band: GovernmentChargesPressureBand): number {
+  if (band === 'step_up') return 4;
+  if (band === 'elevated') return 3;
+  if (band === 'creeping') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -3104,6 +3237,42 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       activeCrises: 2,
     },
     tags: ['inflation', 'command', 'round12'],
+  },
+  {
+    id: 'childcare_capacity_award_stack',
+    label: 'Childcare capacity award stack',
+    description: 'Severe capacity with award pass-through — childcare CPI.',
+    patch: {
+      householdAffordability: 'severe_pressure',
+      inflationSettingMultiplier: 1.22,
+      highInflationScenario: true,
+      fiscalPressure: 'strained',
+    },
+    tags: ['inflation', 'childcare', 'round13'],
+  },
+  {
+    id: 'government_levy_indexation_step',
+    label: 'Government levy indexation step',
+    description: 'Above-CPI fee indexation with fiscal critical — charges CPI.',
+    patch: {
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.24,
+      highInflationScenario: true,
+      publicStability: 41,
+    },
+    tags: ['inflation', 'government', 'round13'],
+  },
+  {
+    id: 'turns_automation_inflation_drift',
+    label: 'Turns automation inflation drift',
+    description: 'Peak season carryover with unattended autopilot drift.',
+    patch: {
+      inflationSettingMultiplier: 1.27,
+      highInflationScenario: true,
+      creditShockActive: true,
+      activeCrises: 1,
+    },
+    tags: ['inflation', 'automation', 'round13'],
   },
 ] as const;
 
@@ -4608,6 +4777,96 @@ export function agent18TeamBridgeIntegrationNote(): string {
 }
 
 
+// --- source: integration/agent02-turns-bridge.ts ---
+
+/** Read-only turns / time snapshot from Agent 02 (contract only). */
+export interface Agent02TurnsSnapshot {
+  turn: number;
+  calendarSeasonBand: 'off_peak' | 'normal' | 'peak_demand';
+  policyReviewWindowOpen: boolean;
+  multiTurnInflationCarryover: number;
+}
+
+export function mergeAgent02IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent02TurnsSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.calendarSeasonBand === 'peak_demand') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  }
+
+  if (snapshot.multiTurnInflationCarryover > 0.15) {
+    inflationSettingMultiplier = finClamp(
+      inflationSettingMultiplier + snapshot.multiTurnInflationCarryover * 0.25,
+      0.85,
+      1.45,
+    );
+  }
+
+  if (snapshot.policyReviewWindowOpen && snapshot.calendarSeasonBand === 'peak_demand') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+  };
+}
+
+export function agent02TurnsBridgeIntegrationNote(): string {
+  return 'Agent 02 turns snapshot adjusts seasonal inflation carryover; no calendar save writes.';
+}
+
+
+// --- source: integration/agent20-automation-bridge.ts ---
+
+/** Read-only idle automation snapshot from Agent 20 (contract only). */
+export interface Agent20AutomationSnapshot {
+  turn: number;
+  macroAutopilotInflationBias: 'deflate' | 'neutral' | 'inflate';
+  unattendedShockDriftActive: boolean;
+  automationConfidenceScore: number;
+}
+
+export function mergeAgent20IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent20AutomationSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.macroAutopilotInflationBias === 'inflate') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.07, 0.85, 1.45);
+  } else if (snapshot.macroAutopilotInflationBias === 'deflate') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier - 0.04, 0.85, 1.45);
+  }
+
+  if (snapshot.unattendedShockDriftActive && snapshot.automationConfidenceScore < 0.45) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.09, 0.85, 1.45);
+  }
+
+  let highInflationScenario = base.highInflationScenario;
+  if (snapshot.macroAutopilotInflationBias === 'inflate' && snapshot.unattendedShockDriftActive) {
+    highInflationScenario = true;
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    highInflationScenario,
+  };
+}
+
+export function agent20AutomationBridgeIntegrationNote(): string {
+  return 'Agent 20 automation snapshot adjusts autopilot inflation bias flags; no automation queue writes.';
+}
+
+
 // --- source: integration/inflation-forecast.ts ---
   stepInflationRegimeTracker,
   createInitialInflationRegimeTracker,
@@ -4653,6 +4912,12 @@ export function agent18TeamBridgeIntegrationNote(): string {
   assessProfessionalServicesFeeInflation,
   type ProfessionalServicesFeeBand,
 } from '../inflation/professional-services-fee-inflation.js';
+  assessChildcareServicesInflation,
+  type ChildcareServicesPressureBand,
+} from '../inflation/childcare-services-inflation.js';
+  assessGovernmentChargesInflation,
+  type GovernmentChargesPressureBand,
+} from '../inflation/government-charges-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -4677,6 +4942,8 @@ export interface InflationForecastPoint {
   communicationsServicesPressureBand: CommunicationsServicesPressureBand;
   recreationLeisurePressureBand: RecreationLeisurePressureBand;
   professionalServicesFeeBand: ProfessionalServicesFeeBand;
+  childcareServicesPressureBand: ChildcareServicesPressureBand;
+  governmentChargesPressureBand: GovernmentChargesPressureBand;
 }
 
 export interface InflationForecastPath {
@@ -4818,6 +5085,20 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const childcare = assessChildcareServicesInflation({
+      capacityShortageBand: inputs.householdAffordability === 'severe_pressure' ? 'severe' : 'moderate',
+      wageAwardPassThrough: inputs.highInflationScenario ? 'strong' : 'normal',
+      subsidyIndexationLag: inputs.fiscalPressure === 'critical' || inputs.fiscalPressure === 'strained',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const govCharges = assessGovernmentChargesInflation({
+      feeIndexationBand: inputs.highInflationScenario ? 'above_cpi' : 'at_cpi',
+      newLevyStackActive: inputs.fiscalPressure === 'critical',
+      localGovernmentPressure: inputs.publicStability < 45 ? 'high' : 'medium',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -4842,6 +5123,8 @@ export function projectInflationForecastPath(
       communicationsServicesPressureBand: commsServices.pressureBand,
       recreationLeisurePressureBand: recreation.pressureBand,
       professionalServicesFeeBand: professionalFees.feeBand,
+      childcareServicesPressureBand: childcare.pressureBand,
+      governmentChargesPressureBand: govCharges.pressureBand,
     });
   }
 
@@ -4947,7 +5230,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r12';
+  schemaVersion: '10.14.agent10.r13';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -4967,6 +5250,8 @@ export interface Agent21InflationForecastBundle {
   terminalCommunicationsServicesPressure: CommunicationsServicesPressureBand;
   terminalRecreationLeisurePressure: RecreationLeisurePressureBand;
   terminalProfessionalServicesFee: ProfessionalServicesFeeBand;
+  terminalChildcareServicesPressure: ChildcareServicesPressureBand;
+  terminalGovernmentChargesPressure: GovernmentChargesPressureBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -4995,7 +5280,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r12',
+    schemaVersion: '10.14.agent10.r13',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -5015,6 +5300,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalCommunicationsServicesPressure: lastPoint?.communicationsServicesPressureBand ?? 'soft',
     terminalRecreationLeisurePressure: lastPoint?.recreationLeisurePressureBand ?? 'soft',
     terminalProfessionalServicesFee: lastPoint?.professionalServicesFeeBand ?? 'stable',
+    terminalChildcareServicesPressure: lastPoint?.childcareServicesPressureBand ?? 'stable',
+    terminalGovernmentChargesPressure: lastPoint?.governmentChargesPressureBand ?? 'flat',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -5172,6 +5459,18 @@ export function effectiveTierLoanRate(
   mergeAgent18IntoMacroFinancialInputs,
   agent18TeamBridgeIntegrationNote,
 } from './integration/agent18-team-bridge.js';
+  assessChildcareServicesInflation,
+  childcareServicesInflationScoreAdjustment,
+} from './inflation/childcare-services-inflation.js';
+  assessGovernmentChargesInflation,
+  governmentChargesInflationScoreAdjustment,
+} from './inflation/government-charges-inflation.js';
+  mergeAgent02IntoMacroFinancialInputs,
+  agent02TurnsBridgeIntegrationNote,
+} from './integration/agent02-turns-bridge.js';
+  mergeAgent20IntoMacroFinancialInputs,
+  agent20AutomationBridgeIntegrationNote,
+} from './integration/agent20-automation-bridge.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -5570,7 +5869,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r12');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r13');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -5717,7 +6016,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r12' &&
+      bundle.schemaVersion === '10.14.agent10.r13' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -5809,7 +6108,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r12' &&
+      bundle.schemaVersion === '10.14.agent10.r13' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -5908,7 +6207,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r12' &&
+      bundle.schemaVersion === '10.14.agent10.r13' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -6006,7 +6305,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r12' &&
+      bundle.schemaVersion === '10.14.agent10.r13' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -6104,7 +6403,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r12' &&
+      bundle.schemaVersion === '10.14.agent10.r13' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -6194,7 +6493,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r12_10',
       'agent21 r12 fields',
-      bundle.schemaVersion === '10.14.agent10.r12' &&
+      bundle.schemaVersion === '10.14.agent10.r13' &&
         bundle.terminalRecreationLeisurePressure !== undefined &&
         bundle.terminalProfessionalServicesFee !== undefined,
     );
@@ -6221,6 +6520,96 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'command_team_upside_risk_brief');
       return (inp?.inflationSettingMultiplier ?? 1) > 1.28 && (inp.activeCrises ?? 0) >= 2;
+    })(),
+  );
+
+  // --- Round 13 scale wave ---
+  {
+    const childcare = assessChildcareServicesInflation({
+      capacityShortageBand: 'severe',
+      wageAwardPassThrough: 'strong',
+      subsidyIndexationLag: true,
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check('a10_r13_01', 'childcare sharp or crisis', childcare.pressureBand === 'sharp' || childcare.pressureBand === 'crisis');
+    check('a10_r13_02', 'childcare score adj', childcareServicesInflationScoreAdjustment(childcare.pressureBand) >= 3);
+  }
+  {
+    const gov = assessGovernmentChargesInflation({
+      feeIndexationBand: 'above_cpi',
+      newLevyStackActive: true,
+      localGovernmentPressure: 'high',
+      inflationBand: 'elevated',
+      turn: 3,
+    });
+    check('a10_r13_03', 'gov charges elevated or step_up', gov.pressureBand === 'elevated' || gov.pressureBand === 'step_up');
+    check('a10_r13_04', 'gov score adj', governmentChargesInflationScoreAdjustment(gov.pressureBand) >= 3);
+  }
+  {
+    const merged02 = mergeAgent02IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      calendarSeasonBand: 'peak_demand',
+      policyReviewWindowOpen: true,
+      multiTurnInflationCarryover: 0.22,
+    });
+    check('a10_r13_05', 'agent02 turns merge', (merged02.inflationSettingMultiplier ?? 1) > 1.05);
+    check('a10_r13_06', 'agent02 bridge note', agent02TurnsBridgeIntegrationNote().includes('Agent 02'));
+  }
+  {
+    const merged20 = mergeAgent20IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      macroAutopilotInflationBias: 'inflate',
+      unattendedShockDriftActive: true,
+      automationConfidenceScore: 0.3,
+    });
+    check('a10_r13_07', 'agent20 automation merge', merged20.highInflationScenario === true);
+    check('a10_r13_08', 'agent20 bridge note', agent20AutomationBridgeIntegrationNote().includes('Agent 20'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r13_09',
+      'forecast childcare and gov fields',
+      path.points.every((p) => !!p.childcareServicesPressureBand && !!p.governmentChargesPressureBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r13_10',
+      'agent21 r13 fields',
+      bundle.schemaVersion === '10.14.agent10.r13' &&
+        bundle.terminalChildcareServicesPressure !== undefined &&
+        bundle.terminalGovernmentChargesPressure !== undefined,
+    );
+  }
+  check(
+    'a10_r13_11',
+    'round13 preset childcare capacity',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'childcare_capacity_award_stack');
+      return inp?.householdAffordability === 'severe_pressure' && inp.highInflationScenario === true;
+    })(),
+  );
+  check(
+    'a10_r13_12',
+    'round13 preset gov levy step',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'government_levy_indexation_step');
+      return inp?.fiscalPressure === 'critical' && (inp.inflationSettingMultiplier ?? 1) > 1.2;
+    })(),
+  );
+  check(
+    'a10_r13_13',
+    'round13 preset turns automation drift',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'turns_automation_inflation_drift');
+      return inp?.creditShockActive === true && (inp.inflationSettingMultiplier ?? 1) > 1.25;
     })(),
   );
 
@@ -6835,6 +7224,70 @@ export function RecreationProfessionalInflationPanel(props: RecreationProfession
       </p>
       <p data-testid="recreation-prof-leisure-note">{leisure.narrative}</p>
       <p>{professional.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/ChildcareGovernmentInflationPanel.tsx ---
+  assessChildcareServicesInflation,
+  childcareServicesInflationScoreAdjustment,
+} from '../inflation/childcare-services-inflation.js';
+  assessGovernmentChargesInflation,
+  governmentChargesInflationScoreAdjustment,
+} from '../inflation/government-charges-inflation.js';
+
+export interface ChildcareGovernmentInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent02?: Agent02TurnsSnapshot | null;
+  agent20?: Agent20AutomationSnapshot | null;
+}
+
+export function ChildcareGovernmentInflationPanel(props: ChildcareGovernmentInflationPanelProps) {
+  const turns = props.agent02 ?? {
+    turn: props.inputs.turn,
+    calendarSeasonBand: props.inputs.highInflationScenario ? ('peak_demand' as const) : ('normal' as const),
+    policyReviewWindowOpen: props.inputs.fiscalPressure === 'critical',
+    multiTurnInflationCarryover: 0.12,
+  };
+
+  const automation = props.agent20 ?? {
+    turn: props.inputs.turn,
+    macroAutopilotInflationBias: props.inputs.highInflationScenario ? ('inflate' as const) : ('neutral' as const),
+    unattendedShockDriftActive: props.inputs.creditShockActive,
+    automationConfidenceScore: 0.5,
+  };
+
+  const childcare = assessChildcareServicesInflation({
+    capacityShortageBand: turns.calendarSeasonBand === 'peak_demand' ? 'severe' : 'moderate',
+    wageAwardPassThrough: automation.macroAutopilotInflationBias === 'inflate' ? 'strong' : 'normal',
+    subsidyIndexationLag: props.inputs.fiscalPressure === 'critical',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const govCharges = assessGovernmentChargesInflation({
+    feeIndexationBand: props.inputs.highInflationScenario ? 'above_cpi' : 'at_cpi',
+    newLevyStackActive: turns.policyReviewWindowOpen,
+    localGovernmentPressure: automation.unattendedShockDriftActive ? 'high' : 'medium',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-childcare-government-inflation" data-testid="childcare-government-inflation-panel">
+      <h4>Childcare, government charges & time (round 13)</h4>
+      <p>
+        Childcare {childcare.pressureBand} · index {childcare.childcareIndex.toFixed(0)} · score adj{' '}
+        {childcareServicesInflationScoreAdjustment(childcare.pressureBand)}
+      </p>
+      <p>
+        Gov charges {govCharges.pressureBand} · index {govCharges.chargesIndex.toFixed(0)} · score adj{' '}
+        {governmentChargesInflationScoreAdjustment(govCharges.pressureBand)}
+      </p>
+      <p data-testid="childcare-gov-care-note">{childcare.narrative}</p>
+      <p>{govCharges.narrative}</p>
     </div>
   );
 }

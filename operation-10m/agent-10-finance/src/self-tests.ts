@@ -165,6 +165,22 @@ import {
   mergeAgent18IntoMacroFinancialInputs,
   agent18TeamBridgeIntegrationNote,
 } from './integration/agent18-team-bridge.js';
+import {
+  assessChildcareServicesInflation,
+  childcareServicesInflationScoreAdjustment,
+} from './inflation/childcare-services-inflation.js';
+import {
+  assessGovernmentChargesInflation,
+  governmentChargesInflationScoreAdjustment,
+} from './inflation/government-charges-inflation.js';
+import {
+  mergeAgent02IntoMacroFinancialInputs,
+  agent02TurnsBridgeIntegrationNote,
+} from './integration/agent02-turns-bridge.js';
+import {
+  mergeAgent20IntoMacroFinancialInputs,
+  agent20AutomationBridgeIntegrationNote,
+} from './integration/agent20-automation-bridge.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -563,7 +579,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r12');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r13');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -710,7 +726,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r12' &&
+      bundle.schemaVersion === '10.14.agent10.r13' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -802,7 +818,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r12' &&
+      bundle.schemaVersion === '10.14.agent10.r13' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -901,7 +917,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r12' &&
+      bundle.schemaVersion === '10.14.agent10.r13' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -999,7 +1015,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r12' &&
+      bundle.schemaVersion === '10.14.agent10.r13' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -1097,7 +1113,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r12' &&
+      bundle.schemaVersion === '10.14.agent10.r13' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -1187,7 +1203,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r12_10',
       'agent21 r12 fields',
-      bundle.schemaVersion === '10.14.agent10.r12' &&
+      bundle.schemaVersion === '10.14.agent10.r13' &&
         bundle.terminalRecreationLeisurePressure !== undefined &&
         bundle.terminalProfessionalServicesFee !== undefined,
     );
@@ -1214,6 +1230,96 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'command_team_upside_risk_brief');
       return (inp?.inflationSettingMultiplier ?? 1) > 1.28 && (inp.activeCrises ?? 0) >= 2;
+    })(),
+  );
+
+  // --- Round 13 scale wave ---
+  {
+    const childcare = assessChildcareServicesInflation({
+      capacityShortageBand: 'severe',
+      wageAwardPassThrough: 'strong',
+      subsidyIndexationLag: true,
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check('a10_r13_01', 'childcare sharp or crisis', childcare.pressureBand === 'sharp' || childcare.pressureBand === 'crisis');
+    check('a10_r13_02', 'childcare score adj', childcareServicesInflationScoreAdjustment(childcare.pressureBand) >= 3);
+  }
+  {
+    const gov = assessGovernmentChargesInflation({
+      feeIndexationBand: 'above_cpi',
+      newLevyStackActive: true,
+      localGovernmentPressure: 'high',
+      inflationBand: 'elevated',
+      turn: 3,
+    });
+    check('a10_r13_03', 'gov charges elevated or step_up', gov.pressureBand === 'elevated' || gov.pressureBand === 'step_up');
+    check('a10_r13_04', 'gov score adj', governmentChargesInflationScoreAdjustment(gov.pressureBand) >= 3);
+  }
+  {
+    const merged02 = mergeAgent02IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      calendarSeasonBand: 'peak_demand',
+      policyReviewWindowOpen: true,
+      multiTurnInflationCarryover: 0.22,
+    });
+    check('a10_r13_05', 'agent02 turns merge', (merged02.inflationSettingMultiplier ?? 1) > 1.05);
+    check('a10_r13_06', 'agent02 bridge note', agent02TurnsBridgeIntegrationNote().includes('Agent 02'));
+  }
+  {
+    const merged20 = mergeAgent20IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      macroAutopilotInflationBias: 'inflate',
+      unattendedShockDriftActive: true,
+      automationConfidenceScore: 0.3,
+    });
+    check('a10_r13_07', 'agent20 automation merge', merged20.highInflationScenario === true);
+    check('a10_r13_08', 'agent20 bridge note', agent20AutomationBridgeIntegrationNote().includes('Agent 20'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r13_09',
+      'forecast childcare and gov fields',
+      path.points.every((p) => !!p.childcareServicesPressureBand && !!p.governmentChargesPressureBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r13_10',
+      'agent21 r13 fields',
+      bundle.schemaVersion === '10.14.agent10.r13' &&
+        bundle.terminalChildcareServicesPressure !== undefined &&
+        bundle.terminalGovernmentChargesPressure !== undefined,
+    );
+  }
+  check(
+    'a10_r13_11',
+    'round13 preset childcare capacity',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'childcare_capacity_award_stack');
+      return inp?.householdAffordability === 'severe_pressure' && inp.highInflationScenario === true;
+    })(),
+  );
+  check(
+    'a10_r13_12',
+    'round13 preset gov levy step',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'government_levy_indexation_step');
+      return inp?.fiscalPressure === 'critical' && (inp.inflationSettingMultiplier ?? 1) > 1.2;
+    })(),
+  );
+  check(
+    'a10_r13_13',
+    'round13 preset turns automation drift',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'turns_automation_inflation_drift');
+      return inp?.creditShockActive === true && (inp.inflationSettingMultiplier ?? 1) > 1.25;
     })(),
   );
 
