@@ -172,6 +172,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   amnestyStrainIndex: number;
   amnestyIntegrityScore: number;
   governanceResolveScore: number;
+  pardonStrainIndex: number;
+  pardonIntegrityScore: number;
+  governanceZealScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -2374,6 +2377,62 @@ export function buildGuardianDepthAmnestyReport(snapshot: GuardianCoPilotMonitor
   return lines.slice(0, 3);
 }
 
+export function computePardonStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceResolveScore < 50) load += Math.min(25, 50 - snapshot.governanceResolveScore);
+  if (snapshot.governanceResolveScore < 35) load += 10;
+  if (snapshot.amnestyIntegrityScore < 45) load += 20;
+  if (snapshot.amnestyIntegrityScore < 35) load += 10;
+  if (snapshot.amnestyStrainIndex >= 55) load += 20;
+  if (snapshot.amnestyStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computePardonIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.pardonStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.pardonStrainIndex * 0.35));
+  if (snapshot.amnestyIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.amnestyIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceResolveScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceZealScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.pardonStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.pardonStrainIndex * 0.32));
+  if (snapshot.pardonIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.pardonIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceResolveScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthPardonReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.pardonStrainIndex >= 55) {
+    lines.push(
+      `Pardon strain ${snapshot.pardonStrainIndex} — stacked pardon review may exceed operator pardon capacity`
+    );
+  }
+  if (snapshot.pardonIntegrityScore < 45) {
+    lines.push(
+      `Pardon integrity ${snapshot.pardonIntegrityScore} — align Co-Pilot pardons with Guardian pardon posture`
+    );
+  }
+  if (snapshot.governanceZealScore < 40) {
+    lines.push(
+      `Governance zeal ${snapshot.governanceZealScore} — little zeal to sustain pardon oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -2733,9 +2792,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withAmnestyStrain: GuardianCoPilotMonitorSnapshot = { ...withGrit, amnestyStrainIndex };
   const amnestyIntegrityScore = computeAmnestyIntegrityScore(withAmnestyStrain);
   const withAmnesty: GuardianCoPilotMonitorSnapshot = { ...withAmnestyStrain, amnestyIntegrityScore };
-  return {
+  const withResolve: GuardianCoPilotMonitorSnapshot = {
     ...withAmnesty,
     governanceResolveScore: computeGovernanceResolveScore(withAmnesty),
+    pardonStrainIndex: 0,
+    pardonIntegrityScore: 100,
+    governanceZealScore: 100,
+  };
+  const pardonStrainIndex = computePardonStrainIndex(withResolve);
+  const withPardonStrain: GuardianCoPilotMonitorSnapshot = { ...withResolve, pardonStrainIndex };
+  const pardonIntegrityScore = computePardonIntegrityScore(withPardonStrain);
+  const withPardon: GuardianCoPilotMonitorSnapshot = { ...withPardonStrain, pardonIntegrityScore };
+  return {
+    ...withPardon,
+    governanceZealScore: computeGovernanceZealScore(withPardon),
   };
 }
 
@@ -3874,6 +3944,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceResolveScore(snap) < 35;
+  });
+  ok('gd_pardon_strain', () => {
+    const snap = {
+      governanceResolveScore: 30,
+      amnestyIntegrityScore: 32,
+      amnestyStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computePardonStrainIndex(snap) >= 70;
+  });
+  ok('gd_pardon_integrity', () => {
+    const snap = {
+      pardonStrainIndex: 72,
+      amnestyIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceResolveScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computePardonIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_zeal', () => {
+    const snap = {
+      pardonStrainIndex: 78,
+      pardonIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceResolveScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceZealScore(snap) < 35;
   });
   return out;
 }
@@ -8574,6 +8678,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_34: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_34_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_34.length;
 
 
+// --- source: monitor-rules-scale-wave-35.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_35: AdvisoryMonitorRule[] = [
+  {
+    id: 'pardon_strain_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Pardon Strain High',
+    detailTemplate: 'Pardon strain is in the high band — reduce overlapping warn-only pardon review demands',
+    evidenceFields: ['pardonStrainIndex', 'governanceResolveScore', 'pardonIntegrityScore'],
+    evaluate: s => s.pardonStrainIndex >= 70,
+  },
+  {
+    id: 'pardon_strain_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Pardon Strain Elevated',
+    detailTemplate: 'Pardon strain is elevated — expect slower pardon review across turns',
+    evidenceFields: ['pardonStrainIndex', 'amnestyStrainIndex'],
+    evaluate: s => s.pardonStrainIndex >= 45 && s.pardonStrainIndex < 70,
+  },
+  {
+    id: 'pardon_integrity_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Pardon Integrity Low',
+    detailTemplate: 'Pardon integrity is critically low — defer stacked autonomous actions',
+    evidenceFields: ['pardonIntegrityScore', 'pardonStrainIndex', 'amnestyIntegrityScore'],
+    evaluate: s => s.pardonIntegrityScore < 35,
+  },
+  {
+    id: 'pardon_integrity_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Pardon While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate pardon integrity',
+    evidenceFields: ['pardonIntegrityScore', 'copilotAutonomousActive', 'pardonStrainIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.pardonIntegrityScore >= 35 && s.pardonIntegrityScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_zeal_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Zeal Low',
+    detailTemplate: 'Little governance zeal remains for warn-only pardon oversight across turns',
+    evidenceFields: ['governanceZealScore', 'pardonStrainIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governanceZealScore < 35,
+  },
+  {
+    id: 'governance_zeal_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Zeal While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance zeal',
+    evidenceFields: ['governanceZealScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governanceZealScore >= 35 && s.governanceZealScore < 55,
+  },
+  {
+    id: 'pardon_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Pardon Envelope Pressured',
+    detailTemplate: 'Pardon strain and low pardon integrity align in the pressured envelope band',
+    evidenceFields: ['pardonStrainIndex', 'pardonIntegrityScore', 'governanceZealScore'],
+    evaluate: s => s.pardonStrainIndex >= 55 && s.pardonIntegrityScore < 50,
+  },
+  {
+    id: 'rival_pardon_strain',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Pardon Strain',
+    detailTemplate: 'Rival victory progress plus elevated pardon strain',
+    evidenceFields: ['rivalVictoryProgressPct', 'pardonStrainIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.pardonStrainIndex >= 50,
+  },
+  {
+    id: 'team_plan_pardon_strain',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Pardon Strain',
+    detailTemplate: 'Pending team plan while pardon strain is elevated',
+    evidenceFields: ['teamPlanPending', 'pardonStrainIndex', 'governanceZealScore'],
+    evaluate: s => s.teamPlanPending && s.pardonStrainIndex >= 55,
+  },
+  {
+    id: 'guardian_pardon_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Pardon Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance zeal',
+    evidenceFields: ['guardianRiskBand', 'governanceZealScore', 'pardonStrainIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governanceZealScore < 40,
+  },
+  {
+    id: 'copilot_pardon_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Pardon Strain',
+    detailTemplate: 'Autonomous Co-Pilot while pardon strain is high',
+    evidenceFields: ['copilotAutonomousActive', 'pardonStrainIndex', 'pardonIntegrityScore'],
+    evaluate: s => s.copilotAutonomousActive && s.pardonStrainIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_zeal',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Zeal',
+    detailTemplate: 'Expiring contracts while governance zeal is low',
+    evidenceFields: ['expiringContractCount', 'governanceZealScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governanceZealScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_35_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_35.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -8837,6 +9074,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_32,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_33,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_34,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_35,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -9255,6 +9493,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     amnestyStrainIndex: 0,
     amnestyIntegrityScore: 100,
     governanceResolveScore: 100,
+    pardonStrainIndex: 0,
+    pardonIntegrityScore: 100,
+    governanceZealScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -11827,6 +12068,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['amnesty_envelope_pressured', 'guardian_amnesty_envelope_critical'],
     notes: 'Pressured amnesty envelope with critical Guardian band',
   },
+  {
+    id: 'sc_pardon_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2260,
+      maxSpendPerAction: 10580,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['pardon_strain_high', 'pardon_integrity_low'],
+    notes: 'High pardon strain with critical pardon integrity',
+  },
+  {
+    id: 'sc_governance_zeal_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 4,
+      minCashReserve: 500,
+      debt: 1380,
+      maxSpendPerAction: 8080,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_zeal_low', 'contracts_governance_zeal'],
+    notes: 'Low governance zeal with expiring contracts',
+  },
+  {
+    id: 'sc_pardon_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 1300,
+      maxSpendPerAction: 8280,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['pardon_envelope_pressured', 'guardian_pardon_envelope_critical'],
+    notes: 'Pressured pardon envelope with critical Guardian band',
+  },
 ];
 
 
@@ -12002,8 +12311,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 34 scale wave brings monitor catalog to 442+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 442;
+  check(results, 'a16_expansion_count', 'Round 35 scale wave brings monitor catalog to 454+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 454;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -13254,6 +13563,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthAmnestyReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round35_metrics', 'Round 35 pardon envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.pardonStrainIndex >= 40 &&
+      snap.pardonIntegrityScore <= 100 &&
+      snap.governanceZealScore <= 100
+    );
+  });
+
+  check(results, 'a16_pardon_report', 'Guardian depth pardon report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthPardonReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 

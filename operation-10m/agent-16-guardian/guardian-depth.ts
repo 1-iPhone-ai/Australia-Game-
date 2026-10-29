@@ -1919,6 +1919,62 @@ export function buildGuardianDepthAmnestyReport(snapshot: GuardianCoPilotMonitor
   return lines.slice(0, 3);
 }
 
+export function computePardonStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceResolveScore < 50) load += Math.min(25, 50 - snapshot.governanceResolveScore);
+  if (snapshot.governanceResolveScore < 35) load += 10;
+  if (snapshot.amnestyIntegrityScore < 45) load += 20;
+  if (snapshot.amnestyIntegrityScore < 35) load += 10;
+  if (snapshot.amnestyStrainIndex >= 55) load += 20;
+  if (snapshot.amnestyStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computePardonIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.pardonStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.pardonStrainIndex * 0.35));
+  if (snapshot.amnestyIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.amnestyIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceResolveScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceZealScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.pardonStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.pardonStrainIndex * 0.32));
+  if (snapshot.pardonIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.pardonIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceResolveScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthPardonReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.pardonStrainIndex >= 55) {
+    lines.push(
+      `Pardon strain ${snapshot.pardonStrainIndex} — stacked pardon review may exceed operator pardon capacity`
+    );
+  }
+  if (snapshot.pardonIntegrityScore < 45) {
+    lines.push(
+      `Pardon integrity ${snapshot.pardonIntegrityScore} — align Co-Pilot pardons with Guardian pardon posture`
+    );
+  }
+  if (snapshot.governanceZealScore < 40) {
+    lines.push(
+      `Governance zeal ${snapshot.governanceZealScore} — little zeal to sustain pardon oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -2278,9 +2334,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withAmnestyStrain: GuardianCoPilotMonitorSnapshot = { ...withGrit, amnestyStrainIndex };
   const amnestyIntegrityScore = computeAmnestyIntegrityScore(withAmnestyStrain);
   const withAmnesty: GuardianCoPilotMonitorSnapshot = { ...withAmnestyStrain, amnestyIntegrityScore };
-  return {
+  const withResolve: GuardianCoPilotMonitorSnapshot = {
     ...withAmnesty,
     governanceResolveScore: computeGovernanceResolveScore(withAmnesty),
+    pardonStrainIndex: 0,
+    pardonIntegrityScore: 100,
+    governanceZealScore: 100,
+  };
+  const pardonStrainIndex = computePardonStrainIndex(withResolve);
+  const withPardonStrain: GuardianCoPilotMonitorSnapshot = { ...withResolve, pardonStrainIndex };
+  const pardonIntegrityScore = computePardonIntegrityScore(withPardonStrain);
+  const withPardon: GuardianCoPilotMonitorSnapshot = { ...withPardonStrain, pardonIntegrityScore };
+  return {
+    ...withPardon,
+    governanceZealScore: computeGovernanceZealScore(withPardon),
   };
 }
 
@@ -3419,6 +3486,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceResolveScore(snap) < 35;
+  });
+  ok('gd_pardon_strain', () => {
+    const snap = {
+      governanceResolveScore: 30,
+      amnestyIntegrityScore: 32,
+      amnestyStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computePardonStrainIndex(snap) >= 70;
+  });
+  ok('gd_pardon_integrity', () => {
+    const snap = {
+      pardonStrainIndex: 72,
+      amnestyIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceResolveScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computePardonIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_zeal', () => {
+    const snap = {
+      pardonStrainIndex: 78,
+      pardonIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceResolveScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceZealScore(snap) < 35;
   });
   return out;
 }
