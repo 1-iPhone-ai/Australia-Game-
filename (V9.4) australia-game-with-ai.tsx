@@ -7429,9 +7429,10 @@ export function validateActionPointRequest(
   canOverride: boolean;
   overrideCost: number;
   reason?: string;
+  code?: 'UNMAPPED_ACTION_ID' | 'INSUFFICIENT_AP' | 'ACTION_LIMITS_OFF';
 } {
   if (!settings || settings.actionLimitsEnabled === false) {
-    return { allowed: true, actionId: normalizeActionPointId(actionId), cost: 0, remaining: Infinity, missing: 0, canOverride: false, overrideCost: 0 };
+    return { allowed: true, actionId: normalizeActionPointId(actionId), cost: 0, remaining: Infinity, missing: 0, canOverride: false, overrideCost: 0, code: 'ACTION_LIMITS_OFF' };
   }
   const normId = normalizeActionPointId(actionId);
   if (!normId || normId === 'end_turn') {
@@ -7439,7 +7440,17 @@ export function validateActionPointRequest(
     if (!normId && actionId) {
       console.warn(`[validateActionPointRequest] Unmapped action identifier '${actionId}' passed; fail-open fallback returning cost 0.`);
     }
-    return { allowed: true, actionId: normId, cost: 0, remaining: getRemainingActionPoints(actor, settings), missing: 0, canOverride: false, overrideCost: 0, reason: !normId ? `Unmapped action identifier '${actionId}'` : undefined };
+    return {
+      allowed: true,
+      actionId: normId,
+      cost: 0,
+      remaining: getRemainingActionPoints(actor, settings),
+      missing: 0,
+      canOverride: false,
+      overrideCost: 0,
+      reason: !normId ? `Unmapped action identifier '${actionId}'` : undefined,
+      code: !normId && actionId ? 'UNMAPPED_ACTION_ID' : undefined
+    };
   }
   const isAi = Boolean(actor?.isAi || actor?.kind === 'ai');
   const cost = getActionPointCost(normId, settings, isAi);
@@ -7468,7 +7479,8 @@ export function validateActionPointRequest(
     missing,
     canOverride,
     overrideCost,
-    reason: canOverride ? 'Action point limit reached. Override available.' : 'Action point limit reached.'
+    reason: canOverride ? 'Action point limit reached. Override available.' : 'Action point limit reached.',
+    code: 'INSUFFICIENT_AP'
   };
 }
 
@@ -11303,6 +11315,7 @@ export function canonicalStateFromSave(saveData: any): CanonicalGameState {
     settingsIntelligence: sanitizeSettingsIntelligenceState(save?.settingsIntelligence || gameState?.settingsIntelligence),
     diplomacyState: sanitizeDiplomacyState(save?.diplomacyState || gameState?.diplomacyState, (gameState as any)?.diplomacy || (save as any)?.diplomacy, Number(gameState?.turnCounter || 0)),
     worldReaction: sanitizeWorldReactionState((save as any)?.worldReaction || (gameState as any)?.worldReaction),
+    globalEconomicEnvironment: sanitizeGlobalEconomicEnvironmentPersisted((save as any)?.globalEconomicEnvironment || (gameState as any)?.globalEconomicEnvironment, Number(gameState?.day || 1)),
     livingRegions: sanitizeLivingRegionsState((save as any)?.livingRegions || (gameState as any)?.livingRegions),
     regionalFactions: sanitizeRegionalFactionsState((save as any)?.regionalFactions || (gameState as any)?.regionalFactions),
     contentState: sanitizeMatchContentState((save as any)?.contentState || (gameState as any)?.contentState),
@@ -11484,6 +11497,7 @@ export function canonicalStateFromLiveRuntime(
     settingsIntelligence: sanitizeSettingsIntelligenceState(liveState.settingsIntelligence || gameState?.settingsIntelligence),
     diplomacyState: sanitizeDiplomacyState(liveState.diplomacyState || gameState?.diplomacyState, (gameState as any)?.diplomacy, Number(gameState?.turnCounter || 0)),
     worldReaction: sanitizeWorldReactionState((liveState as any).worldReaction || (gameState as any)?.worldReaction),
+    globalEconomicEnvironment: sanitizeGlobalEconomicEnvironmentPersisted((liveState as any).globalEconomicEnvironment || (gameState as any)?.globalEconomicEnvironment, Number(liveState?.day || gameState?.day || 1)),
     livingRegions: sanitizeLivingRegionsState((liveState as any).livingRegions || (gameState as any)?.livingRegions),
     regionalFactions: sanitizeRegionalFactionsState((liveState as any).regionalFactions || (gameState as any)?.regionalFactions),
     megaprojects: sanitizeMegaprojectsPersisted((liveState as any).megaprojects || (gameState as any)?.megaprojects),
@@ -11978,6 +11992,8 @@ export function reduceGameAction(
       const usedAtStart = Number(actor?.actionsUsedThisTurn) || 0;
 
       let actionExecuted = false;
+      let rejectReason: string | undefined;
+      let commandRejectionReason: string | undefined;
 
       switch (action.type as string) {
         case 'copilot_telemetry_noop':
@@ -12723,28 +12739,21 @@ export function reduceGameAction(
         }
 
         case 'megaproject_command': {
-          // V10.3: thin canonical program action (propose / commit / contribute / choose / suspend / resume). applyMegaprojectCommand
-          // validates turn ownership, authority, AP, cash, program + stage state, the stage-remainder cap and prerequisites; real cash
-          // moves HERE exactly once and AP is spent once by the shared post-switch rule. A rejected command executes nothing.
+          // V10.3 + O111 command contract: validate + mutate program memory in applyMegaprojectCommand; cash moves here
+          // exactly once; AP once via applyExecutedGameplayActionPointSpend. Rejected commands leave state unchanged.
           if (!actor) break;
           const gsLive: any = (nextState as any).gameState || {};
-          const isAiActor = actorId === 'ai' || actor.kind === 'ai' || Boolean(actor.isAi);
-          const soloAiTurn = gsLive.gameMode === 'game' && isSoloRivalModeSelection(gsLive.selectedMode) && Boolean(gsLive.currentTurn);
-          const turnOwner = isAiActor ? !(soloAiTurn && gsLive.currentTurn !== 'ai') : !isHumanLockedOutForSoloRival(gsLive, 'human');
-          const limitsOn = gameSettings.actionLimitsEnabled !== false;
-          const apRemaining = limitsOn ? getRemainingActionPoints(actor, gameSettings) : Number.POSITIVE_INFINITY;
-          const apCost = limitsOn ? Math.max(1, getActionPointCost('megaproject_command', actor, gameSettings)) : 0;
-          // Derived (read-only) system snapshots are pure functions of canonical state; the caller passes the ones it already computed.
           const derived: any = action.parameters?.derived || {};
-          const mpWorld = buildMegaprojectWorld({ turn: Number(nextState.turn) || 1, totalDays: (gameSettings as any).totalDays, enabled: (gameSettings as any).megaprojectsEnabled !== false && (gameSettings as any).nationalSystemsEnabled !== false,
-            infrastructureEnabled: Boolean((gameSettings as any).stateInfrastructureEnabled), gameOver: Boolean(gsLive.isGameOver) || (typeof gsLive.gameMode === 'string' && gsLive.gameMode !== 'game'), projects: nextState.infrastructureProjects, regionalDevLevels: nextState.regionalDevLevels,
-            national: derived.national || null, industries: derived.industries || null, networks: derived.networks || null, factions: (nextState as any).regionalFactions || null, flags: (nextState as any).contentState?.flags || gsLive.contentState?.flags || {} });
-          const mpRes = applyMegaprojectCommand((nextState as any).megaprojects || null, (action.parameters?.command || {}) as MegaprojectCommand,
-            { id: actorId, kind: isAiActor ? 'ai' : 'human', teamId: actor.teamId || null, money: Number(actor.money) || 0, currentRegion: actor.currentRegion || null, apRemaining, apCost, turnOwner }, mpWorld);
+          const mpActor = resolveMegaprojectActorContext(actorId, actor, gameSettings, gsLive);
+          const mpWorld = resolveMegaprojectWorldFromGameState(nextState, gameSettings, derived);
+          const mpRes = applyMegaprojectCommand((nextState as any).megaprojects || null, (action.parameters?.command || {}) as MegaprojectCommand, mpActor, mpWorld);
           if (mpRes.ok) {
             actor.money -= mpRes.moneySpent;
             (nextState as any).megaprojects = mpRes.persisted;
             actionExecuted = true;
+          } else {
+            rejectReason = mpRes.reason || undefined;
+            commandRejectionReason = mpRes.reason || 'Megaproject command rejected.';
           }
           break;
         }
@@ -13666,7 +13675,7 @@ export function reduceGameAction(
             description: action.payload?.description || action.parameters?.description || 'Earned XP',
           };
           currentProfile.totalXP = newXP;
-          currentProfile.level = newLevel;
+          currentProfile.currentLevel = newLevel;
           if (!currentProfile.history) currentProfile.history = [];
           currentProfile.history.push(newRecord);
           nextState.careerProfile = currentProfile;
@@ -14073,7 +14082,8 @@ export function reduceGameAction(
         nextState,
         actionAttemptId,
         stateHash,
-        ledgerEvent
+        ledgerEvent,
+        error: commandRejectionReason ?? rejectReason
       };
     });
   });
@@ -18897,9 +18907,6 @@ export function resolveCurrentGamePhase(
   uiState: any,
   surfaceManagerState: GlobalUISurfaceManagerState
 ): StandardizedGamePhase {
-  if (uiState?.showStartScreen || gameState?.gameMode === 'start_screen' || gameState?.gameMode === 'menu' || gameState?.gameStarted === false) {
-    return uiState?.showCampaignSelect ? 'setup' : 'main_menu';
-  }
   if (surfaceManagerState?.activeBlockingModal === 'save_load_modal' || uiState?.showSaveLoadModal) {
     return 'save_load';
   }
@@ -18909,11 +18916,15 @@ export function resolveCurrentGamePhase(
   if (surfaceManagerState?.activeBlockingModal === 'approval_dialog' || uiState?.isApprovalWaiting) {
     return 'approval_waiting';
   }
-  if (uiState?.isPaused || gameState?.isPaused) {
-    return 'paused';
+  const lifecycle = deriveMatchLifecycleSnapshot(gameState, uiState);
+  if (lifecycle.phase === 'menu') {
+    return uiState?.showCampaignSelect ? 'setup' : 'main_menu';
   }
-  if (gameState?.isGameOver || uiState?.showEndGameModal) {
+  if (lifecycle.phase === 'completed') {
     return 'post_match';
+  }
+  if (lifecycle.phase === 'paused') {
+    return 'paused';
   }
   if (gameState?.isAiTurn || gameState?.currentActorId?.startsWith('ai_')) {
     return 'ai_turn';
@@ -28344,6 +28355,256 @@ export function mapGoalKindToPlanType(goal: TeamGoal, context: TeamAiContext): T
 // ============================================================================
 // SECTION 7: CORE GAMEPLAY SYSTEMS
 // ============================================================================
+
+// ---- O111 Agent 14: Match lifecycle (init / pause / restart / completion) -------------------------
+export type MatchLifecycleEventKind = 'match_start' | 'day_start' | 'day_end' | 'turn_start' | 'turn_end' | 'match_end';
+export type MatchLifecyclePhase = 'menu' | 'live' | 'paused' | 'completed';
+export type GameLifecycleCommandKind = 'init' | 'pause' | 'resume' | 'restart' | 'complete';
+
+export interface GameLifecycleUiSlice {
+  isPaused?: boolean;
+  showEndGameModal?: boolean;
+  showStartScreen?: boolean;
+  showCampaignSelect?: boolean;
+}
+
+export interface MatchLifecycleSnapshot {
+  phase: MatchLifecyclePhase;
+  isLiveMatch: boolean;
+  acceptsGameplayInput: boolean;
+  reason: string;
+}
+
+export interface GameLifecycleCommand {
+  kind: GameLifecycleCommandKind;
+  mode?: GameModeSelection;
+  winnerTeamId?: string | null;
+  completionReason?: string;
+}
+
+export interface GameLifecycleApplyResult {
+  ok: boolean;
+  reason?: string;
+  nextGameState?: Record<string, unknown>;
+  nextUiState?: Partial<GameLifecycleUiSlice>;
+  ledger?: { eventKind: MatchLifecycleEventKind; summary: string; details?: Record<string, unknown> };
+}
+
+export function deriveMatchLifecycleSnapshot(
+  gameState: any,
+  uiState?: GameLifecycleUiSlice | null
+): MatchLifecycleSnapshot {
+  const gs = gameState || {};
+  const ui = uiState || {};
+  const completed = gs.gameMode === 'end'
+    || Boolean(gs.gameOver)
+    || Boolean(gs.isGameOver)
+    || Boolean(ui.showEndGameModal);
+  if (completed) {
+    return { phase: 'completed', isLiveMatch: false, acceptsGameplayInput: false, reason: 'post-match' };
+  }
+  const menu = gs.gameMode === 'menu'
+    || gs.gameMode === 'start_screen'
+    || ui.showStartScreen
+    || ui.showCampaignSelect
+    || gs.gameStarted === false;
+  if (menu) {
+    return { phase: 'menu', isLiveMatch: false, acceptsGameplayInput: false, reason: 'pre-match' };
+  }
+  const paused = Boolean(gs.isPaused || ui.isPaused);
+  if (paused) {
+    return { phase: 'paused', isLiveMatch: true, acceptsGameplayInput: false, reason: 'user-paused' };
+  }
+  if (gs.gameMode === 'game') {
+    return { phase: 'live', isLiveMatch: true, acceptsGameplayInput: true, reason: 'live-match' };
+  }
+  return { phase: 'menu', isLiveMatch: false, acceptsGameplayInput: false, reason: 'idle' };
+}
+
+/** Canonical live-match probe for intent layers, Co-Pilot, and learning (includes user pause). */
+export function isMatchLiveForIntent(gameState: any, uiState?: GameLifecycleUiSlice | null): boolean {
+  return deriveMatchLifecycleSnapshot(gameState, uiState).isLiveMatch;
+}
+
+/** Settings hub availability: a started match that has not been sealed complete. */
+export function isMatchLiveForSettings(gameState: any): boolean {
+  const gs = gameState || {};
+  return gs.gameMode === 'game' && Boolean(gs.gameStarted) && !Boolean(gs.gameOver);
+}
+
+export function patchGameStateForMatchInit(mode: GameModeSelection): Record<string, unknown> {
+  return {
+    gameMode: 'game',
+    selectedMode: mode,
+    gameStarted: true,
+    gameOver: false,
+    isGameOver: false,
+    isPaused: false,
+    scenarioOutcome: null
+  };
+}
+
+export function patchGameStateForMatchCompletion(extra?: { winnerTeamId?: string | null }): Record<string, unknown> {
+  return {
+    gameMode: 'end',
+    gameStarted: true,
+    gameOver: true,
+    isGameOver: true,
+    isPaused: false,
+    matchWinnerTeamId: extra?.winnerTeamId ?? null
+  };
+}
+
+export function patchGameStateForMatchRestart(): Record<string, unknown> {
+  return {
+    gameStarted: false,
+    gameOver: false,
+    isGameOver: false,
+    isPaused: false,
+    scenarioOutcome: null,
+    matchWinnerTeamId: null
+  };
+}
+
+export function buildMatchLifecycleLedgerFields(
+  eventKind: MatchLifecycleEventKind,
+  gameState: any,
+  extra?: { winnerTeamId?: string | null; details?: Record<string, unknown> }
+): { summary: string; payload: Record<string, unknown> } {
+  const day = Math.max(1, Number(gameState?.day) || 1);
+  const turn = Math.max(0, Number(gameState?.turnCounter) || 0);
+  const summaryByKind: Record<MatchLifecycleEventKind, string> = {
+    match_start: 'Match started.',
+    day_start: `Day ${day} begins.`,
+    day_end: `Day ${day} ends.`,
+    turn_start: `Turn ${turn} begins.`,
+    turn_end: `Turn ${turn} ends.`,
+    match_end: extra?.winnerTeamId ? `Match ended — winner ${extra.winnerTeamId}.` : 'Match ended.'
+  };
+  return {
+    summary: summaryByKind[eventKind],
+    payload: {
+      category: 'match_lifecycle',
+      eventKind,
+      day,
+      turn,
+      winnerTeamId: extra?.winnerTeamId,
+      details: extra?.details
+    }
+  };
+}
+
+export function applyGameLifecycleCommand(
+  gameState: any,
+  uiState: GameLifecycleUiSlice | null | undefined,
+  command: GameLifecycleCommand
+): GameLifecycleApplyResult {
+  const snap = deriveMatchLifecycleSnapshot(gameState, uiState);
+  switch (command.kind) {
+    case 'init': {
+      if (snap.phase === 'live' || snap.phase === 'paused') {
+        return { ok: false, reason: 'Cannot init while a match is already live.' };
+      }
+      const mode = command.mode || gameState?.selectedMode || 'single';
+      return {
+        ok: true,
+        nextGameState: patchGameStateForMatchInit(mode),
+        nextUiState: { isPaused: false, showEndGameModal: false },
+        ledger: { eventKind: 'match_start', summary: 'Match started.', details: { mode } }
+      };
+    }
+    case 'pause': {
+      if (snap.phase !== 'live') return { ok: false, reason: `Cannot pause from ${snap.phase}.` };
+      return {
+        ok: true,
+        nextGameState: { isPaused: true },
+        nextUiState: { isPaused: true }
+      };
+    }
+    case 'resume': {
+      if (snap.phase !== 'paused') return { ok: false, reason: `Cannot resume from ${snap.phase}.` };
+      return {
+        ok: true,
+        nextGameState: { isPaused: false },
+        nextUiState: { isPaused: false }
+      };
+    }
+    case 'restart': {
+      return {
+        ok: true,
+        nextGameState: patchGameStateForMatchRestart(),
+        nextUiState: { isPaused: false, showEndGameModal: false }
+      };
+    }
+    case 'complete': {
+      if (snap.phase !== 'live' && snap.phase !== 'paused') {
+        return { ok: false, reason: `Cannot complete from ${snap.phase}.` };
+      }
+      return {
+        ok: true,
+        nextGameState: patchGameStateForMatchCompletion({ winnerTeamId: command.winnerTeamId ?? null }),
+        nextUiState: { isPaused: false },
+        ledger: {
+          eventKind: 'match_end',
+          summary: command.completionReason || 'Match completed.',
+          details: { reason: command.completionReason, winnerTeamId: command.winnerTeamId ?? null }
+        }
+      };
+    }
+    default:
+      return { ok: false, reason: 'Unknown lifecycle command.' };
+  }
+}
+
+export function runGameLifecycleSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  check('gl_init_flags', 'Init stamps gameStarted and clears completion flags', () => {
+    const p = patchGameStateForMatchInit('ai');
+    return p.gameStarted === true && p.gameOver === false && p.isGameOver === false && p.isPaused === false && p.gameMode === 'game';
+  });
+  check('gl_complete_flags', 'Completion seals gameOver and end mode', () => {
+    const p = patchGameStateForMatchCompletion({ winnerTeamId: TEAM_PLAYER_ID });
+    return p.gameMode === 'end' && p.gameOver === true && p.isGameOver === true && p.isPaused === false;
+  });
+  check('gl_pause_resume', 'Pause/resume only from live/paused', () => {
+    const live = { gameMode: 'game', gameStarted: true, gameOver: false };
+    const pause = applyGameLifecycleCommand(live, {}, { kind: 'pause' });
+    const bad = applyGameLifecycleCommand({ gameMode: 'menu' }, {}, { kind: 'pause' });
+    const resume = applyGameLifecycleCommand({ ...live, isPaused: true }, { isPaused: true }, { kind: 'resume' });
+    return pause.ok && pause.nextGameState?.isPaused === true && !bad.ok && resume.ok && resume.nextGameState?.isPaused === false;
+  });
+  check('gl_settings_live', 'Settings live-match probe requires gameStarted', () => {
+    return isMatchLiveForSettings({ gameMode: 'game', gameStarted: true, gameOver: false })
+      && !isMatchLiveForSettings({ gameMode: 'game', gameOver: false });
+  });
+  check('gl_reducer_complete', 'SET_GAME_MODE end applies completion patch', () => {
+    const next = gameStateReducer(
+      { ...initialGameState, gameMode: 'game', gameStarted: true, day: 3 },
+      { type: 'SET_GAME_MODE', payload: 'end' }
+    );
+    return next.gameMode === 'end' && next.gameOver === true && next.isGameOver === true;
+  });
+  check('gl_reducer_pause', 'APPLY_GAME_LIFECYCLE pause toggles isPaused', () => {
+    const live = { ...initialGameState, gameMode: 'game', gameStarted: true, gameOver: false };
+    const paused = gameStateReducer(live, { type: 'APPLY_GAME_LIFECYCLE', payload: { kind: 'pause' } });
+    const resumed = gameStateReducer(paused, { type: 'APPLY_GAME_LIFECYCLE', payload: { kind: 'resume' } });
+    return paused.isPaused === true && resumed.isPaused === false;
+  });
+  return results;
+}
+
+if (typeof window !== 'undefined') {
+  (window as any).runGameLifecycleSelfTests = runGameLifecycleSelfTests;
+}
+
 export function gameStateReducer(state: any, action: any) {
   switch (action.type) {
     case 'NEXT_DAY': {
@@ -28377,10 +28638,23 @@ export function gameStateReducer(state: any, action: any) {
       };
     case 'UPDATE_MARKET_TREND':
       return { ...state, marketTrend: action.payload };
+    case 'UPDATE_GLOBAL_ECONOMIC_ENVIRONMENT':
+      return { ...state, globalEconomicEnvironment: sanitizeGlobalEconomicEnvironmentPersisted(action.payload, state.day) };
     case 'SET_GAME_MODE': {
       const nextMode = action.payload;
       if (nextMode !== 'game' && nextMode !== 'menu' && nextMode !== 'end' && nextMode !== 'start_screen') return state;
+      if (nextMode === 'end') {
+        return { ...state, ...patchGameStateForMatchCompletion({ winnerTeamId: action.winnerTeamId ?? state.matchWinnerTeamId ?? null }) };
+      }
+      if (nextMode === 'menu' || nextMode === 'start_screen') {
+        return { ...state, gameMode: nextMode, ...patchGameStateForMatchRestart() };
+      }
       return { ...state, gameMode: nextMode };
+    }
+    case 'APPLY_GAME_LIFECYCLE': {
+      const result = applyGameLifecycleCommand(state, action.uiState, action.payload);
+      if (!result.ok || !result.nextGameState) return state;
+      return { ...state, ...result.nextGameState };
     }
     case 'SET_SCENARIO_OUTCOME':
       return { ...state, scenarioOutcome: action.payload };
@@ -29187,6 +29461,7 @@ export function gameStateReducer(state: any, action: any) {
         selectedMode: null,
         aiDifficulty: state.aiDifficulty,
         takeoverSession: null,
+        ...patchGameStateForMatchRestart(),
         coPilotSettings: {
           ...(state.coPilotSettings || createDefaultCoPilotSettings()),
           coPilotEnabled: false,
@@ -33636,8 +33911,10 @@ const calculateCreditScore = (player: any, gameState: any): number => {
   // Defaults (-20 per default)
   score -= loanHistory.defaultCount * 20;
 
-  // Net worth (±20 points)
-  const netWorth = player.money + (player.inventory?.length || 0) * 50;
+  // Net worth (±20 points) — debt-aware, aligned with calculateNetWorth / win metrics
+  const netWorth = calculateNetWorth(player);
+  const outstandingDebt = calculateActorOutstandingDebt(player);
+  if (outstandingDebt >= 3000) score -= Math.min(15, Math.floor(outstandingDebt / 400));
   if (netWorth > 5000) score += 20;
   else if (netWorth > 3000) score += 10;
   else if (netWorth > 1000) score += 0;
@@ -33990,6 +34267,36 @@ export function calculateActorOutstandingDebt(player: any): number {
     ? (simpleLoanDebt + advancedLoanDebt)
     : (typeof player.debt === 'number' && Number.isFinite(player.debt) ? player.debt : (typeof player.loans === 'number' && Number.isFinite(player.loans) ? player.loans : 0));
   return Number.isFinite(totalDebt) ? Math.max(0, totalDebt) : 0;
+}
+
+/** Next-turn simple + advanced loan interest (matches daily tick rules; used by Guardian liquidity checks). */
+export function estimateActorDailyLoanInterest(
+  actor: any,
+  gameSettings: GameSettingsState = DEFAULT_GAME_SETTINGS
+): number {
+  if (!actor) return 0;
+  let interest = 0;
+  const simpleLoans = Array.isArray(actor.loans) ? actor.loans : [];
+  for (const loan of simpleLoans) {
+    if (!loan || typeof loan !== 'object') continue;
+    const amount = typeof loan.amount === 'number' && Number.isFinite(loan.amount) ? loan.amount : 0;
+    if (amount <= 0) continue;
+    const principal =
+      typeof loan.principal === 'number' && loan.principal > 0 ? loan.principal : Math.min(amount, LOAN_AMOUNT);
+    interest += Math.floor(principal * LOAN_INTEREST_RATE);
+  }
+  if (gameSettings.advancedLoansEnabled) {
+    const creditScore = gameSettings.creditScoreEnabled ? calculateCreditScore(actor, {}) : 50;
+    const creditRange = getCreditScoreRange(creditScore);
+    const advancedLoans = Array.isArray(actor.advancedLoans) ? actor.advancedLoans : [];
+    for (const loan of advancedLoans) {
+      if (!loan || typeof loan !== 'object') continue;
+      const amount = typeof loan.amount === 'number' && Number.isFinite(loan.amount) ? loan.amount : 0;
+      if (amount <= 0) continue;
+      interest += calculateLoanInterest(loan as AdvancedLoan, gameSettings.creditScoreEnabled ? creditRange.multiplier : 1, gameSettings.interestAccrualRate);
+    }
+  }
+  return Number.isFinite(interest) ? Math.max(0, interest) : 0;
 }
 
 /**
@@ -37395,6 +37702,8 @@ export const initialGameState = {
   settingsIntelligence: createEmptySettingsIntelligenceState(),
   diplomacyState: createEmptyDiplomacyState(),
   worldReaction: createEmptyWorldReactionState(),
+  /** O111 Agent 56: external cycle hysteresis. */
+  globalEconomicEnvironment: createEmptyGlobalEconomicEnvironment(1),
   // Living Regions initialises from canonical state on the first live pass (history starts then).
   livingRegions: null as LivingRegionsState | null,
   /** V10: only non-derivable national memory (bands, history); the network snapshot is always recomputed. */
@@ -43976,9 +44285,9 @@ function extractActorDebt(actor: Record<string, unknown> | null): {
   loans.forEach((l: unknown) => {
     if (l && typeof l === 'object') {
       const loanObj = l as Record<string, unknown>;
-      const amount = typeof loanObj.amount === 'number' ? loanObj.amount : 0;
-      const accrued = typeof loanObj.accrued === 'number' ? loanObj.accrued : 0;
-      simpleLoansDebt += amount + accrued;
+      const amount = typeof loanObj.amount === 'number' && Number.isFinite(loanObj.amount) ? loanObj.amount : 0;
+      const totalOwed = typeof loanObj.totalOwed === 'number' && Number.isFinite(loanObj.totalOwed) ? loanObj.totalOwed : 0;
+      simpleLoansDebt += totalOwed || amount || 0;
     }
   });
 
@@ -43986,14 +44295,21 @@ function extractActorDebt(actor: Record<string, unknown> | null): {
   advLoans.forEach((l: unknown) => {
     if (l && typeof l === 'object') {
       const loanObj = l as Record<string, unknown>;
-      const amount = typeof loanObj.amount === 'number' ? loanObj.amount : 0;
-      const accruedInterest = typeof loanObj.accruedInterest === 'number' ? loanObj.accruedInterest : 0;
-      advLoansDebt += amount + accruedInterest;
+      const amount = typeof loanObj.amount === 'number' && Number.isFinite(loanObj.amount) ? loanObj.amount : 0;
+      const accruedInterest =
+        typeof loanObj.accruedInterest === 'number' && Number.isFinite(loanObj.accruedInterest)
+          ? loanObj.accruedInterest
+          : typeof loanObj.accrued === 'number' && Number.isFinite(loanObj.accrued)
+          ? loanObj.accrued
+          : 0;
+      const totalOwed = typeof loanObj.totalOwed === 'number' && Number.isFinite(loanObj.totalOwed) ? loanObj.totalOwed : 0;
+      advLoansDebt += totalOwed || (amount + accruedInterest) || 0;
     }
   });
 
-  const totalDebt = simpleLoansDebt + advLoansDebt;
-  const dailyLoanInterest = simpleLoansDebt * 0.05 + advLoansDebt * 0.08;
+  const summed = simpleLoansDebt + advLoansDebt;
+  const totalDebt = summed > 0 ? summed : calculateActorOutstandingDebt(actor);
+  const dailyLoanInterest = estimateActorDailyLoanInterest(actor);
 
   return { simpleLoansDebt, advLoansDebt, totalDebt, dailyLoanInterest };
 }
@@ -53166,6 +53482,9 @@ export function BalanceLabPanel({
   const [aiDifficultyScaling, setAiDifficultyScaling] = useState<number>(1.0);
   const [shopPriceScaling, setShopPriceScaling] = useState<number>(1.0);
   const [investmentReturnYields, setInvestmentReturnYields] = useState<number>(1.0);
+  const [idleLabTicks, setIdleLabTicks] = useState<number>(50);
+  const [idleLabReport, setIdleLabReport] = useState<IdleGameplayLabReport | null>(null);
+  const [idleLabRunning, setIdleLabRunning] = useState(false);
 
   const sandboxConfig: BalanceSandboxConfig = {
     baselineId: 'canonical_defaults',
@@ -53379,6 +53698,50 @@ export function BalanceLabPanel({
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="p-3 bg-slate-800/60 border border-indigo-500/30 rounded-lg space-y-3" data-testid="idle76-lab-panel">
+        <div className="font-semibold text-xs text-indigo-200">⏳ O111 Idle Gameplay Lab (Agent 76)</div>
+        <div className="text-[10px] opacity-75">
+          Headless idle tick simulator on the tuning fixture save — Auto Mode evaluation steps only, isolated from the live match.
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-[10px] flex flex-col gap-1">
+            Ticks (max {O111_IDLE_LAB_MAX_TICKS})
+            <input
+              type="number"
+              min={1}
+              max={O111_IDLE_LAB_MAX_TICKS}
+              value={idleLabTicks}
+              onChange={(e) => setIdleLabTicks(Math.max(1, Math.min(O111_IDLE_LAB_MAX_TICKS, Number(e.target.value) || O111_IDLE_LAB_DEFAULT_TICKS)))}
+              className="w-24 px-2 py-1 rounded bg-slate-900 border border-slate-600 text-white"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={idleLabRunning}
+            onClick={() => {
+              setIdleLabRunning(true);
+              try {
+                const report = v95WithIsolatedGlobals(() =>
+                  runIdleGameplayLabSimulator({ seed: 76, maxTicks: idleLabTicks })
+                );
+                setIdleLabReport(report);
+              } finally {
+                setIdleLabRunning(false);
+              }
+            }}
+            className={`px-3 py-1.5 rounded font-bold text-xs transition ${idleLabRunning ? 'bg-slate-700 text-slate-400' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}
+            data-testid="idle76-lab-run"
+          >
+            {idleLabRunning ? 'Running…' : 'Run idle sim'}
+          </button>
+        </div>
+        {idleLabReport && (
+          <pre className="text-[10px] whitespace-pre-wrap bg-black/40 p-2 rounded border border-white/10 font-mono" data-testid="idle76-lab-report">
+            {`ticks ${idleLabReport.ticksExecuted}/${idleLabReport.ticksRequested} · stop ${idleLabReport.stoppedReason}\nday ${idleLabReport.startDay}→${idleLabReport.endDay} · Δ$${Math.round(idleLabReport.playerMoneyDelta)} · ledger +${idleLabReport.ledgerEventsRecorded}\nbreaches ${idleLabReport.invariantBreaches.length} · hash ${idleLabReport.determinismHash.slice(0, 16)}`}
+          </pre>
+        )}
       </div>
     </div>
   );
@@ -57091,6 +57454,289 @@ export function runAutoModeRuntimeDevTests(
     overallStatus: failedCount === 0 ? 'passed' : 'failed',
     summary: `Auto Mode Dev Tests: ${passedCount}/${testCases.length} Passed`
   };
+}
+
+
+// ============================================================================
+// O111 AGENT 76 — IDLE GAMEPLAY LAB (Phase 1: headless tick simulator)
+// Advances turns via evaluateAutoModeTurnStep; yields on approvals, Guardian,
+// Co-Pilot confirmation, and the V95 AI turn watchdog. No reducer shortcuts.
+// ============================================================================
+
+export const O111_IDLE_GAMEPLAY_SCHEMA_VERSION = 1;
+export const O111_IDLE_LAB_DEFAULT_TICKS = 100;
+export const O111_IDLE_LAB_MAX_TICKS = 500;
+export const O111_IDLE_MAX_ACTIONS_PER_SEC = 8;
+
+export type IdleGameplayYieldReason =
+  | 'none'
+  | 'autoplay_disabled'
+  | 'autoplay_paused'
+  | 'pending_human_approval'
+  | 'guardian_block'
+  | 'copilot_confirmation'
+  | 'ai_turn_watchdog'
+  | 'match_not_active';
+
+export interface IdleGameplayExternalSignals {
+  hasPendingApprovals?: boolean;
+  guardianVerdict?: { allowedToProceed?: boolean; highestSeverity?: string; confirmationRequired?: boolean } | null;
+  coPilotAwaitingConfirmation?: boolean;
+  isAiThinking?: boolean;
+  msSinceLastAction?: number;
+  guardianProtectionLevel?: string;
+}
+
+export interface IdleGameplayLabTickResult {
+  state: ExtendedGameState;
+  yieldReason: IdleGameplayYieldReason;
+  ledgerEventsAdded: number;
+  dayBefore: number;
+  dayAfter: number;
+}
+
+export interface IdleGameplayLabSimulatorOptions {
+  seed?: number;
+  maxTicks?: number;
+  initialState?: ExtendedGameState;
+  settings?: GameSettingsState;
+  signals?: IdleGameplayExternalSignals;
+}
+
+export interface IdleGameplayLabReport {
+  schemaVersion: number;
+  seed: number;
+  ticksRequested: number;
+  ticksExecuted: number;
+  stoppedReason: IdleGameplayYieldReason | 'completed';
+  startDay: number;
+  endDay: number;
+  playerMoneyDelta: number;
+  ledgerEventsRecorded: number;
+  regionsTouched: string[];
+  crisesTriggered: number;
+  invariantBreaches: string[];
+  finalStateHash: string;
+  determinismHash: string;
+}
+
+function idleLabTotalActorCash(state: ExtendedGameState | GameState): number {
+  const ids = new Set<string>(['player', 'ai', ...Object.keys(state.actorsById || {})]);
+  let sum = 0;
+  ids.forEach(id => {
+    const a = state.actorsById?.[id] || (id === 'player' ? (state as any).player : id === 'ai' ? (state as any).aiPlayer : null);
+    sum += Number(a?.money) || 0;
+  });
+  return sum;
+}
+
+function buildIdleLabFixture(seed: number): { state: ExtendedGameState; settings: GameSettingsState } {
+  const canonical = createTuningMatchState(seed, false);
+  const settings: GameSettingsState = {
+    ...canonical.gameSettings,
+    autoModeSettings: {
+      ...(canonical.gameSettings?.autoModeSettings || createDefaultAutoModeGlobalSettings()),
+      autoModeEnabled: true,
+      enabled: true
+    }
+  };
+  const state = JSON.parse(JSON.stringify(canonical.gameState || {})) as ExtendedGameState;
+  state.day = canonical.day;
+  state.turn = canonical.turn;
+  state.turnCounter = canonical.turnCounter;
+  state.selectedMode = state.selectedMode || 'ai';
+  state.gameMode = state.gameMode || 'ai';
+  state.currentActorId = canonical.activeActorId || canonical.match?.activeActorId || 'player';
+  state.turnOrder = state.turnOrder?.length ? state.turnOrder : ['player', 'ai'];
+  state.actorsById = canonical.actorsById;
+  state.teamsById = canonical.teamsById;
+  state.autoplay = { enabled: true, paused: false, speed: 1 };
+  state.autoModeRuntime = createDefaultAutoModeRuntimeState();
+  state.gameActivityLedger = canonical.gameActivityLedger || createDefaultGameActivityLedgerState();
+  return { state, settings };
+}
+
+export function resolveIdleGameplayYieldReason(
+  state: GameState | ExtendedGameState,
+  _settings: GameSettingsState,
+  signals: IdleGameplayExternalSignals = {}
+): IdleGameplayYieldReason {
+  if (state.gameMode === 'menu' || !state.selectedMode) return 'match_not_active';
+  const ap = state.autoplay;
+  if (!ap?.enabled) return 'autoplay_disabled';
+  if (ap.paused) return 'autoplay_paused';
+  if (signals.hasPendingApprovals) return 'pending_human_approval';
+  if (guardianBlocksAutomation(signals.guardianVerdict, signals.guardianProtectionLevel)) return 'guardian_block';
+  if (signals.coPilotAwaitingConfirmation) return 'copilot_confirmation';
+  const watchdog = decideAiTurnWatchdog({
+    isThinking: Boolean(signals.isAiThinking),
+    hasPendingApprovals: Boolean(signals.hasPendingApprovals),
+    msSinceLastAction: signals.msSinceLastAction ?? 0
+  });
+  if (watchdog === 'waiting_for_approval') return 'pending_human_approval';
+  if (watchdog === 'recover') return 'ai_turn_watchdog';
+  return 'none';
+}
+
+export function runIdleGameplayLabTick(
+  state: ExtendedGameState,
+  settings: GameSettingsState,
+  signals: IdleGameplayExternalSignals = {}
+): IdleGameplayLabTickResult {
+  const yieldReason = resolveIdleGameplayYieldReason(state, settings, signals);
+  const dayBefore = state.day || 1;
+  const ledgerBefore = state.gameActivityLedger?.events?.length || 0;
+  if (yieldReason !== 'none') {
+    return { state, yieldReason, ledgerEventsAdded: 0, dayBefore, dayAfter: dayBefore };
+  }
+
+  let next = { ...state } as ExtendedGameState;
+  const turnIdx = (next.turnCounter || next.turn || 0) + 1;
+  next.turnCounter = turnIdx;
+  next.turn = turnIdx;
+  next.day = Math.floor((turnIdx - 1) / 2) + 1;
+  const actorOrder = next.turnOrder?.length ? next.turnOrder : ['player', 'ai'];
+  const activeActorId = actorOrder[(turnIdx - 1) % actorOrder.length] || 'player';
+  next.currentActorId = activeActorId;
+  next.currentTurn = activeActorId === 'player' ? 'player' : 'ai';
+
+  next = evaluateAutoModeTurnStep(next, settings, { actorId: activeActorId, boundaryType: 'actor_turn_completed' });
+  if (turnIdx % 2 === 0) {
+    next = evaluateAutoModeTurnStep(next, settings, { boundaryType: 'day_completed' });
+  }
+
+  const ledgerAfter = next.gameActivityLedger?.events?.length || 0;
+  return {
+    state: next,
+    yieldReason: 'none',
+    ledgerEventsAdded: ledgerAfter - ledgerBefore,
+    dayBefore,
+    dayAfter: next.day || dayBefore
+  };
+}
+
+export function runIdleGameplayLabSimulator(opts: IdleGameplayLabSimulatorOptions = {}): IdleGameplayLabReport {
+  const seed = opts.seed ?? 76;
+  const ticksRequested = Math.max(0, Math.min(opts.maxTicks ?? O111_IDLE_LAB_DEFAULT_TICKS, O111_IDLE_LAB_MAX_TICKS));
+  const built = opts.initialState && opts.settings
+    ? { state: JSON.parse(JSON.stringify(opts.initialState)) as ExtendedGameState, settings: opts.settings }
+    : buildIdleLabFixture(seed);
+
+  setRngMasterSeed(seed, true);
+  let state = built.state;
+  const settings = built.settings;
+  const signals = opts.signals || {};
+  const startDay = state.day || 1;
+  const startEvents = state.gameActivityLedger?.events?.length || 0;
+  const startCrises = (state.activeEvents || []).length;
+  const regionsTouched = new Set<string>();
+  const turnHashes: string[] = [];
+  const breaches: string[] = [];
+
+  let ticksExecuted = 0;
+  let stoppedReason: IdleGameplayYieldReason | 'completed' = 'completed';
+
+  for (let i = 0; i < ticksRequested; i++) {
+    const tick = runIdleGameplayLabTick(state, settings, signals);
+    if (tick.yieldReason !== 'none') {
+      stoppedReason = tick.yieldReason;
+      break;
+    }
+    state = tick.state;
+    ticksExecuted += 1;
+    turnHashes.push(computeCanonicalStateHash(state));
+    (state.activeEvents || []).forEach((ev: any) => {
+      if (ev?.region) regionsTouched.add(String(ev.region));
+    });
+    const cash = idleLabTotalActorCash(state);
+    if (!Number.isFinite(cash)) breaches.push(`tick ${i + 1}: non-finite total cash`);
+  }
+
+  const endEvents = state.gameActivityLedger?.events?.length || 0;
+  const endCrises = (state.activeEvents || []).length;
+
+  return {
+    schemaVersion: O111_IDLE_GAMEPLAY_SCHEMA_VERSION,
+    seed,
+    ticksRequested,
+    ticksExecuted,
+    stoppedReason,
+    startDay,
+    endDay: state.day || startDay,
+    playerMoneyDelta: (Number(state.actorsById?.player?.money) || Number((state as any).player?.money) || 0)
+      - (Number(built.state.actorsById?.player?.money) || Number((built.state as any).player?.money) || 0),
+    ledgerEventsRecorded: endEvents - startEvents,
+    regionsTouched: [...regionsTouched],
+    crisesTriggered: Math.max(0, endCrises - startCrises),
+    invariantBreaches: breaches,
+    finalStateHash: computeCanonicalStateHash(state),
+    determinismHash: computeBundleChecksum(JSON.stringify(turnHashes))
+  };
+}
+
+export function runIdleGameplaySelfTests(): V9SelfTestResult[] {
+  const out: V9SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail: string) => {
+    out.push({ id, name, passed, detail });
+  };
+
+  const { state, settings } = buildIdleLabFixture(7601);
+  push(
+    'idle76_yield_paused',
+    'Idle yields when autoplay is paused',
+    resolveIdleGameplayYieldReason({ ...state, autoplay: { enabled: true, paused: true, speed: 1 } }, settings) === 'autoplay_paused',
+    'paused autoplay must not advance'
+  );
+  push(
+    'idle76_yield_approval',
+    'Idle yields on pending human approval',
+    resolveIdleGameplayYieldReason(state, settings, { hasPendingApprovals: true }) === 'pending_human_approval',
+    'approval queue blocks idle ticks'
+  );
+  push(
+    'idle76_yield_guardian',
+    'Idle yields on Guardian hard block',
+    resolveIdleGameplayYieldReason(state, settings, { guardianVerdict: { allowedToProceed: false } }) === 'guardian_block',
+    'guardianBlocksAutomation respected'
+  );
+  push(
+    'idle76_yield_copilot',
+    'Idle yields on Co-Pilot confirmation token',
+    resolveIdleGameplayYieldReason(state, settings, { coPilotAwaitingConfirmation: true }) === 'copilot_confirmation',
+    'Co-Pilot confirmation must pause idle'
+  );
+  push(
+    'idle76_yield_watchdog',
+    'Idle yields when AI turn watchdog requests recovery',
+    resolveIdleGameplayYieldReason(state, settings, { isAiThinking: true, msSinceLastAction: V95_AI_TURN_WATCHDOG_MS + 500 }) === 'ai_turn_watchdog',
+    'decideAiTurnWatchdog recover path'
+  );
+
+  const simA = v95WithIsolatedGlobals(() => runIdleGameplayLabSimulator({ seed: 7611, maxTicks: 24 }));
+  push(
+    'idle76_sim_runs',
+    'LAB idle simulator completes ticks on fixture save',
+    simA.ticksExecuted >= 10 && simA.stoppedReason === 'completed' && simA.invariantBreaches.length === 0,
+    `${simA.ticksExecuted}/${simA.ticksRequested} ticks, day ${simA.startDay}→${simA.endDay}, breaches=${simA.invariantBreaches.length}`
+  );
+
+  const simB = v95WithIsolatedGlobals(() => runIdleGameplayLabSimulator({ seed: 7611, maxTicks: 24 }));
+  push(
+    'idle76_sim_deterministic',
+    'Idle simulator is deterministic for fixed seed',
+    simA.determinismHash === simB.determinismHash && simA.finalStateHash === simB.finalStateHash,
+    `hashA=${simA.determinismHash.slice(0, 12)} hashB=${simB.determinismHash.slice(0, 12)}`
+  );
+
+  const fuzz = v95WithIsolatedGlobals(() => runV95ResourceConservationFuzz(76));
+  push(
+    'idle76_fuzz_anchor',
+    'Resource conservation fuzz still clean (Agent 76 baseline seed)',
+    fuzz.breaches.length === 0,
+    `${fuzz.cases} cases, ${fuzz.breaches.length} breaches`
+  );
+
+  return out;
 }
 
 // MILESTONE 7: HUMAN COPILOT AI DEV SELF-TESTS DIAGNOSTIC ENGINE
@@ -80617,6 +81263,12 @@ export function evaluateTurnMasterSwitches(gameState: GameStateSnapshot, setting
   if (currentSettings?.campaignEngineEnabled) {
     nextState = evaluateCampaignChapterProgression(nextState);
   }
+  if (currentSettings?.fogOfWarEnabled) {
+    nextState = evaluateFogOfWarAndIntel(nextState);
+  }
+  if (currentSettings?.aiRivalryEnabled) {
+    nextState = evaluateAiRelationshipDecay(nextState);
+  }
   return nextState;
 }
 
@@ -80656,6 +81308,185 @@ export function evaluateCampaignProgression(
   }
 
   return { campaignState };
+}
+
+// O111 Agent 15 — integrated career + campaign progression on each turn/day boundary
+const CAREER_XP_PER_LEVEL = 1000;
+
+function careerDeterministicTimestamp(turnNumber: number): string {
+  const FIXED_EPOCH = 1704067200000;
+  return new Date(FIXED_EPOCH + (Math.max(1, turnNumber) - 1) * 86400000).toISOString();
+}
+
+function countProgressionControlledRegions(gameState: GameStateSnapshot): number {
+  const player = (gameState as { player?: { visitedRegions?: string[]; startingRegions?: string[] } }).player;
+  const visited = player?.visitedRegions || player?.startingRegions || (gameState as { controlledRegions?: string[] }).controlledRegions || [];
+  return Array.isArray(visited) ? visited.length : 0;
+}
+
+function countEquippedHighTierRelics(gameState: GameStateSnapshot, playerId: string = 'player'): number {
+  const equipped = (gameState as { equippedRelicsByActor?: Record<string, Record<string, RelicRewardItem | null>> }).equippedRelicsByActor?.[playerId];
+  if (!equipped) return 0;
+  return Object.values(equipped).filter(r => r && ['rare', 'epic', 'legendary'].includes(String(r.rarity))).length;
+}
+
+function careerHistoryHasSource(profile: CareerProfile, sourceKey: string): boolean {
+  return (profile.history || []).some(h => h.source === sourceKey || h.id === sourceKey);
+}
+
+export function syncCareerLevelRewardUnlocks(profile: CareerProfile): CareerProfile {
+  const newLevel = Math.floor(profile.totalXP / CAREER_XP_PER_LEVEL) + 1;
+  const unlocks = (profile.unlocks || []).map(u => ({
+    ...u,
+    unlocked: Boolean(u.unlocked) || newLevel >= u.requiredLevel,
+  }));
+  return { ...profile, currentLevel: newLevel, unlocks };
+}
+
+export function deriveLiveCareerAchievementProgress(
+  gameState: GameStateSnapshot,
+  profile: CareerProfile
+): Record<string, { current: number; target: number }> {
+  const player = (gameState as { player?: { money?: number } }).player || {};
+  const money = Number(player.money || 0);
+  const regions = countProgressionControlledRegions(gameState);
+  const stats = profile.stats || createDefaultCareerProfile().stats;
+  const rareRelics = countEquippedHighTierRelics(gameState);
+  const achievements = profile.achievements || DEFAULT_CAREER_ACHIEVEMENTS;
+
+  const base: Record<string, { current: number; target: number }> = {};
+  Object.entries(achievements).forEach(([id, ach]) => {
+    base[id] = { current: ach.progress?.current ?? 0, target: ach.progress?.target ?? 1 };
+  });
+
+  if (base.ach_outback_dominator) {
+    base.ach_outback_dominator.current = Math.min(regions, base.ach_outback_dominator.target);
+  }
+  if (base.ach_expansionist_supreme) {
+    base.ach_expansionist_supreme.current = Math.min(regions, base.ach_expansionist_supreme.target);
+  }
+  if (base.ach_tycoon_north) {
+    base.ach_tycoon_north.current = Math.min(money, base.ach_tycoon_north.target);
+  }
+  if (base.ach_consensus_architect) {
+    base.ach_consensus_architect.current = Math.min(stats.governanceProposalsPassed, base.ach_consensus_architect.target);
+  }
+  if (base.ach_relic_hunter) {
+    base.ach_relic_hunter.current = Math.min(rareRelics, base.ach_relic_hunter.target);
+  }
+  if (base.ach_outback_scout) {
+    base.ach_outback_scout.current = Math.min(stats.reconMissionsCompleted, base.ach_outback_scout.target);
+  }
+
+  return base;
+}
+
+function applyCareerXPGain(profile: CareerProfile, amount: number, turn: number, source: string, description: string): CareerProfile {
+  if (amount <= 0) return profile;
+  const recordIndex = (profile.history?.length || 0) + 1;
+  const newRecord: CareerXPRecord = {
+    id: `xp_t${turn}_idx${recordIndex}_${source}`,
+    timestamp: careerDeterministicTimestamp(turn),
+    turn,
+    amount,
+    source,
+    description,
+  };
+  const next: CareerProfile = {
+    ...profile,
+    totalXP: profile.totalXP + amount,
+    history: [newRecord, ...(profile.history || [])].slice(0, 100),
+  };
+  return syncCareerLevelRewardUnlocks(next);
+}
+
+function unlockCareerAchievementInProfile(profile: CareerProfile, achId: string, turn: number): CareerProfile {
+  const ach = profile.achievements?.[achId];
+  if (!ach || ach.unlocked) return profile;
+  const updatedAch: CareerAchievement = {
+    ...ach,
+    unlocked: true,
+    unlockedAtTurn: turn,
+    unlockedAtTimestamp: careerDeterministicTimestamp(turn),
+    progress: { ...ach.progress, current: ach.progress.target },
+  };
+  let next: CareerProfile = {
+    ...profile,
+    achievements: { ...profile.achievements, [achId]: updatedAch },
+  };
+  return applyCareerXPGain(next, ach.xpReward, turn, `achievement_${achId}`, `Unlocked: ${ach.title}`);
+}
+
+/** Deterministic per-turn career + achievement sync; respects gameplay settings gates. */
+export function evaluateCareerProgressionTurnStep(
+  gameState: GameStateSnapshot,
+  settings?: GameSettingsState
+): GameStateSnapshot {
+  const currentSettings = settings || (gameState as ExtendedGameState).gameSettings;
+  const careerOn = Boolean(currentSettings?.careerProgressionEnabled);
+  const achievementsOn = Boolean(currentSettings?.achievementsEnabled);
+  if (!careerOn && !achievementsOn) return gameState;
+
+  const turn = gameState.turnCounter || gameState.day || 1;
+  const priorProfile = gameState.careerProfile || createDefaultCareerProfile(
+    (gameState as { player?: { id?: string } }).player?.id || 'player'
+  );
+  let profile = priorProfile;
+
+  if (careerOn && currentSettings?.campaignEngineEnabled && gameState.campaignState?.chapterOutcomes) {
+    Object.entries(gameState.campaignState.chapterOutcomes).forEach(([chapterId, outcome]) => {
+      const sourceKey = `campaign_chapter_${chapterId}`;
+      if (outcome.completedOnDay === turn && !careerHistoryHasSource(profile, sourceKey)) {
+        profile = applyCareerXPGain(profile, 250, turn, sourceKey, `Campaign chapter completed: ${chapterId}`);
+      }
+    });
+  }
+
+  if (achievementsOn) {
+    let achievements = { ...(profile.achievements || DEFAULT_CAREER_ACHIEVEMENTS) };
+    const progressMap = deriveLiveCareerAchievementProgress(gameState, { ...profile, achievements });
+    Object.entries(progressMap).forEach(([id, prog]) => {
+      const existing = achievements[id];
+      if (!existing || existing.unlocked) return;
+      achievements[id] = { ...existing, progress: { current: prog.current, target: prog.target } };
+      if (prog.current >= prog.target) {
+        profile = { ...profile, achievements };
+        profile = unlockCareerAchievementInProfile(profile, id, turn);
+        achievements = { ...profile.achievements };
+      }
+    });
+    profile = { ...profile, achievements };
+  }
+
+  if (careerOn) {
+    profile = syncCareerLevelRewardUnlocks(profile);
+  }
+
+  if (profile === priorProfile) return gameState;
+  return { ...gameState, careerProfile: profile };
+}
+
+/** Narrative, campaign, fog, rivalry, then career — used after advanceDay crisis tick (avoids double crisis eval). */
+export function evaluateIntegratedProgressionTurnStep(
+  gameState: GameStateSnapshot,
+  settings?: GameSettingsState
+): GameStateSnapshot {
+  const currentSettings = settings || (gameState as ExtendedGameState).gameSettings;
+  let nextState = gameState;
+  if (currentSettings?.narrativeEngineEnabled) {
+    nextState = evaluateNarrativeDecisions(nextState);
+  }
+  if (currentSettings?.campaignEngineEnabled) {
+    nextState = evaluateCampaignChapterProgression(nextState);
+  }
+  if (currentSettings?.fogOfWarEnabled) {
+    nextState = evaluateFogOfWarAndIntel(nextState);
+  }
+  if (currentSettings?.aiRivalryEnabled) {
+    nextState = evaluateAiRelationshipDecay(nextState);
+  }
+  nextState = evaluateCareerProgressionTurnStep(nextState, settings);
+  return nextState;
 }
 
 export function evaluateNarrativeDecisions(gameState: GameStateSnapshot): GameStateSnapshot {
@@ -81712,6 +82543,7 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   // Diplomacy 2.0: old saves load empty; legacy pacts are migrated; trust / stance / historicEvents stay untouched.
   // World Reaction: old saves start with empty history / windows / deferred queue (no ledger back-fill).
   if (migrated.gameState) migrated.gameState.worldReaction = sanitizeWorldReactionState(migrated.gameState.worldReaction || migrated.worldReaction);
+  if (migrated.gameState) migrated.gameState.globalEconomicEnvironment = sanitizeGlobalEconomicEnvironmentPersisted(migrated.gameState.globalEconomicEnvironment, Number(migrated.gameState.day || 1));
   // Living Regions: old saves carry none — it initialises from current canonical systems on load (no fake history).
   if (migrated.gameState) migrated.gameState.livingRegions = sanitizeLivingRegionsState(migrated.gameState.livingRegions || migrated.livingRegions);
   // Regional Factions: old saves initialise on load from canonical systems (no invented interactions).
@@ -124758,6 +125590,228 @@ export function worldCrisisContext(state: WorldReactionState | null | undefined)
   return { instability, shortage, chanceMultiplier: Math.round(Math.min(1.5, 1 + 0.5 * Math.max(instability, shortage)) * 100) / 100 };
 }
 
+
+// ============================================================================
+// SECTION 20I-A56: GLOBAL ECONOMIC ENVIRONMENT — O111 AGENT 56
+// ----------------------------------------------------------------------------
+// External cycle + export-demand layer for canonical commodity prices.
+// Persists band hysteresis and smoothed indices only; headline pressures are
+// derived each day from World Reaction signals, market trend, and content flags.
+// Feeds computeDailyMarketUpdate via mergeCanonicalMarketPressure (±6% cap total).
+// ============================================================================
+
+export type GeeCycleBand = 'expansion' | 'neutral' | 'contraction';
+
+export interface GeeHistoryEntry { day: number; band: GeeCycleBand; exportDemand: number }
+
+export interface GlobalEconomicEnvironmentPersisted {
+  version: 1;
+  cycleBand: GeeCycleBand;
+  bandEnteredDay: number;
+  /** Smoothed external export demand (−1..1). */
+  exportDemandIndex: number;
+  /** Smoothed FX / funding stress (0..1) for eligibility weighting only. */
+  fxStressIndex: number;
+  history: GeeHistoryEntry[];
+}
+
+export const GEE_LIMITS = { history: 14, bandHoldDays: 4, exportSmooth: 0.35, fxSmooth: 0.25 } as const;
+
+const GEE_EXPORT_RESOURCES = ['Iron Ore', 'Coal', 'Gold', 'Uranium', 'Wheat', 'Timber'] as const;
+
+export function createEmptyGlobalEconomicEnvironment(day = 1): GlobalEconomicEnvironmentPersisted {
+  return { version: 1, cycleBand: 'neutral', bandEnteredDay: day, exportDemandIndex: 0, fxStressIndex: 0, history: [] };
+}
+
+export function sanitizeGlobalEconomicEnvironmentPersisted(raw: unknown, day = 1): GlobalEconomicEnvironmentPersisted {
+  const base = createEmptyGlobalEconomicEnvironment(day);
+  if (!raw || typeof raw !== 'object') return base;
+  const d = raw as Partial<GlobalEconomicEnvironmentPersisted>;
+  const band: GeeCycleBand = d.cycleBand === 'expansion' || d.cycleBand === 'contraction' ? d.cycleBand : 'neutral';
+  const exportDemandIndex = typeof d.exportDemandIndex === 'number' && Number.isFinite(d.exportDemandIndex)
+    ? Math.max(-1, Math.min(1, Math.round(d.exportDemandIndex * 1000) / 1000)) : 0;
+  const fxStressIndex = typeof d.fxStressIndex === 'number' && Number.isFinite(d.fxStressIndex)
+    ? Math.max(0, Math.min(1, Math.round(d.fxStressIndex * 1000) / 1000)) : 0;
+  const bandEnteredDay = typeof d.bandEnteredDay === 'number' && Number.isFinite(d.bandEnteredDay)
+    ? Math.max(1, Math.floor(d.bandEnteredDay)) : day;
+  const history = Array.isArray(d.history)
+    ? d.history
+        .filter((h): h is GeeHistoryEntry => Boolean(h && typeof h === 'object' && typeof (h as GeeHistoryEntry).day === 'number'))
+        .map(h => ({
+          day: Math.max(1, Math.floor(h.day)),
+          band: h.band === 'expansion' || h.band === 'contraction' ? h.band : 'neutral',
+          exportDemand: Math.max(-1, Math.min(1, Number(h.exportDemand) || 0))
+        }))
+        .slice(-GEE_LIMITS.history)
+    : [];
+  return { version: 1, cycleBand: band, bandEnteredDay, exportDemandIndex, fxStressIndex, history };
+}
+
+export interface GeeDayInputs {
+  day: number;
+  turn: number;
+  marketTrend: string;
+  worldReaction: WorldReactionState | null | undefined;
+  contentFlags?: Record<string, string | number | boolean> | null;
+  scenarioOpening?: string | null;
+}
+
+const geeClamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(v * 1000) / 1000));
+
+export function computeGlobalEconomicEnvironmentView(
+  persisted: GlobalEconomicEnvironmentPersisted,
+  inputs: GeeDayInputs
+): { cycleBand: GeeCycleBand; exportDemandIndex: number; fxStressIndex: number; headline: string } {
+  const flags = inputs.contentFlags || {};
+  const crash = flags.commodity_crash === true || flags.commodity_crash === 1;
+  const surge = flags.export_surge === true || flags.export_surge === 1;
+  const wr = inputs.worldReaction;
+  const demandSig = Math.max(0, ...(wr?.signals || []).filter(s => s.kind === 'market_demand_pressure').map(s => s.value));
+  const supplySig = Math.max(0, ...(wr?.signals || []).filter(s => s.kind === 'market_supply_pressure').map(s => s.value));
+  const liquidity = Math.max(0, ...(wr?.signals || []).filter(s => s.kind === 'economic_liquidity_pressure').map(s => s.value));
+  let targetExport = persisted.exportDemandIndex;
+  if (inputs.marketTrend === 'rising') targetExport += 0.12;
+  else if (inputs.marketTrend === 'falling') targetExport -= 0.12;
+  else if (inputs.marketTrend === 'volatile') targetExport += 0.04;
+  targetExport += 0.25 * (demandSig - supplySig);
+  if (surge) targetExport += 0.35;
+  if (crash) targetExport -= 0.45;
+  if (inputs.scenarioOpening === 'commodity_boom') targetExport += 0.2;
+  if (inputs.scenarioOpening === 'resource_cycle') targetExport += 0.15;
+  targetExport = geeClamp(targetExport, -1, 1);
+  const targetFx = geeClamp(liquidity * 0.6 + (crash ? 0.35 : 0) + (targetExport < -0.35 ? 0.2 : 0), 0, 1);
+  const exportDemandIndex = geeClamp(
+    persisted.exportDemandIndex * (1 - GEE_LIMITS.exportSmooth) + targetExport * GEE_LIMITS.exportSmooth,
+    -1,
+    1
+  );
+  const fxStressIndex = geeClamp(
+    persisted.fxStressIndex * (1 - GEE_LIMITS.fxSmooth) + targetFx * GEE_LIMITS.fxSmooth,
+    0,
+    1
+  );
+  let cycleBand: GeeCycleBand = persisted.cycleBand;
+  if (exportDemandIndex >= 0.42) cycleBand = 'expansion';
+  else if (exportDemandIndex <= -0.38) cycleBand = 'contraction';
+  else cycleBand = 'neutral';
+  const headline =
+    cycleBand === 'expansion'
+      ? 'Global export demand is firm — bulk commodities trade above trend.'
+      : cycleBand === 'contraction'
+        ? 'Global demand is soft — export prices face headwinds.'
+        : 'Global conditions are mixed — export markets are range-bound.';
+  return { cycleBand, exportDemandIndex, fxStressIndex, headline };
+}
+
+export function advanceGlobalEconomicEnvironmentDay(
+  persistedIn: GlobalEconomicEnvironmentPersisted,
+  inputs: GeeDayInputs
+): GlobalEconomicEnvironmentPersisted {
+  const persisted = sanitizeGlobalEconomicEnvironmentPersisted(persistedIn, inputs.day);
+  const view = computeGlobalEconomicEnvironmentView(persisted, inputs);
+  let { cycleBand, bandEnteredDay } = persisted;
+  if (view.cycleBand !== cycleBand) {
+    const held = inputs.day - bandEnteredDay;
+    if (held >= GEE_LIMITS.bandHoldDays || cycleBand === 'neutral') {
+      cycleBand = view.cycleBand;
+      bandEnteredDay = inputs.day;
+    }
+  }
+  const history = [...persisted.history, { day: inputs.day, band: cycleBand, exportDemand: view.exportDemandIndex }].slice(-GEE_LIMITS.history);
+  return {
+    version: 1,
+    cycleBand,
+    bandEnteredDay,
+    exportDemandIndex: view.exportDemandIndex,
+    fxStressIndex: view.fxStressIndex,
+    history
+  };
+}
+
+/** Bounded market pressure from the external cycle (fraction of base price, shares ±6% budget with World Reaction). */
+export function globalEconomicMarketPressure(
+  persisted: GlobalEconomicEnvironmentPersisted | null | undefined,
+  inputs: GeeDayInputs
+): Record<string, number> {
+  if (!persisted) return {};
+  const view = computeGlobalEconomicEnvironmentView(sanitizeGlobalEconomicEnvironmentPersisted(persisted, inputs.day), inputs);
+  const baseShift = view.exportDemandIndex * 0.045;
+  const out: Record<string, number> = {};
+  GEE_EXPORT_RESOURCES.forEach((res, i) => {
+    const w = 1 - i * 0.08;
+    const v = geeClamp(baseShift * w, -0.045, 0.045);
+    if (Math.abs(v) >= 0.002) out[res] = v;
+  });
+  if (view.cycleBand === 'contraction' && view.fxStressIndex > 0.45) {
+    out['Government Grants'] = geeClamp(-0.02 - view.fxStressIndex * 0.02, -0.04, 0);
+  }
+  return out;
+}
+
+export function mergeCanonicalMarketPressure(
+  swr: WorldReactionState | null | undefined,
+  gee: GlobalEconomicEnvironmentPersisted | null | undefined,
+  inputs: GeeDayInputs
+): Record<string, number> {
+  const out: Record<string, number> = { ...worldMarketPressure(swr) };
+  Object.entries(globalEconomicMarketPressure(gee, inputs)).forEach(([k, v]) => {
+    const merged = geeClamp((out[k] || 0) + v, -0.06, 0.06);
+    if (Math.abs(merged) >= 0.001) out[k] = merged;
+    else delete out[k];
+  });
+  return out;
+}
+
+/** Content / crisis eligibility weighting (never spawns events by itself). */
+export function globalEconomicContentContext(
+  persisted: GlobalEconomicEnvironmentPersisted | null | undefined,
+  inputs: GeeDayInputs
+): { exportShock: number; cycleMultiplier: number } {
+  const p = sanitizeGlobalEconomicEnvironmentPersisted(persisted, inputs.day);
+  const view = computeGlobalEconomicEnvironmentView(p, inputs);
+  const exportShock = Math.max(0, -view.exportDemandIndex);
+  const cycleMultiplier = view.cycleBand === 'expansion' ? 1.08 : view.cycleBand === 'contraction' ? 0.92 : 1;
+  return { exportShock, cycleMultiplier: Math.round(cycleMultiplier * 100) / 100 };
+}
+
+export function describeGlobalEconomicHeadline(persisted: GlobalEconomicEnvironmentPersisted | null | undefined, inputs: GeeDayInputs): string {
+  return computeGlobalEconomicEnvironmentView(sanitizeGlobalEconomicEnvironmentPersisted(persisted, inputs.day), inputs).headline;
+}
+
+export function runGlobalEconomicEnvironmentSelfTests(): Array<{ id: string; passed: boolean; detail?: string }> {
+  const results: Array<{ id: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, ok: boolean, detail?: string) => { results.push({ id, passed: ok, detail: ok ? undefined : detail }); };
+  const J = (x: unknown) => JSON.stringify(x);
+  check('gee_sanitize', sanitizeGlobalEconomicEnvironmentPersisted(null).cycleBand === 'neutral', 'empty');
+  let boom = createEmptyGlobalEconomicEnvironment(1);
+  for (let d = 2; d <= 14; d++) {
+    boom = advanceGlobalEconomicEnvironmentDay(boom, {
+      day: d, turn: 2, marketTrend: 'rising', worldReaction: null, contentFlags: { export_surge: true }, scenarioOpening: 'commodity_boom'
+    });
+  }
+  check('gee_expansion', boom.cycleBand === 'expansion' && boom.exportDemandIndex > 0.35, J({ band: boom.cycleBand, exp: boom.exportDemandIndex }));
+  const crash = advanceGlobalEconomicEnvironmentDay(createEmptyGlobalEconomicEnvironment(1), {
+    day: 12, turn: 3, marketTrend: 'falling', worldReaction: null, contentFlags: { commodity_crash: true }
+  });
+  check('gee_contraction', crash.exportDemandIndex < 0 || crash.cycleBand === 'contraction', J(crash));
+  const wr: WorldReactionState = {
+    ...createEmptyWorldReactionState(),
+    signals: [{ key: 'd:Iron Ore', kind: 'market_demand_pressure', subject: 'Iron Ore', value: 1, updatedTurn: 5, source: 't' }]
+  };
+  const merged = mergeCanonicalMarketPressure(wr, boom, { day: 8, turn: 2, marketTrend: 'rising', worldReaction: wr });
+  check('gee_merge_cap', (merged['Iron Ore'] ?? 0) <= 0.06 && (merged['Iron Ore'] ?? 0) >= -0.06, J(merged['Iron Ore']));
+  check('gee_pressure_resources', Object.keys(globalEconomicMarketPressure(boom, { day: 8, turn: 2, marketTrend: 'rising', worldReaction: wr })).includes('Iron Ore'), 'missing iron ore');
+  check('gee_hysteresis', (() => {
+    let p = createEmptyGlobalEconomicEnvironment(1);
+    for (let d = 2; d <= 6; d++) {
+      p = advanceGlobalEconomicEnvironmentDay(p, { day: d, turn: 1, marketTrend: 'rising', worldReaction: null, contentFlags: { export_surge: true } });
+    }
+    return p.cycleBand === 'neutral' || p.bandEnteredDay <= 6;
+  })(), 'band flipped too early');
+  check('gee_content_ctx', globalEconomicContentContext(crash, { day: 12, turn: 3, marketTrend: 'falling', worldReaction: null }).exportShock > 0, 'export shock');
+  return results;
+}
+
 /** Compact temporary strategic conditions (interpretations, not mechanics). */
 export function deriveStrategicConditions(state: WorldReactionState, viewerId: string): string[] {
   const out: string[] = [];
@@ -131135,6 +132189,15 @@ export function buildBlockedActionHelp(kind: string, blocker: string, ctx: { cas
     asks.push('How do Actions work?');
   } else if (/objective/i.test(text)) {
     conceptId = 'contracts'; need = 'every contract objective completed'; how.push('Use Deliver / Progress in the target region'); nav = navAction('contracts', 'Open Contracts'); asks.push('How do I complete this contract?');
+  } else if (/Decide|program|megaproject|stage|commit the program|Labour must be on site|Minimum contribution/i.test(text) || kind === 'megaproject') {
+    conceptId = 'infrastructure';
+    if (/Decide/.test(text)) { need = 'a design decision before this stage can finish'; how.push('Open National Programs and record your choice (choices are permanent)'); }
+    else if (/Commit the program first/i.test(text)) { need = 'the program committed before contributions'; how.push('Use Commit with an opening capital contribution'); }
+    else if (/Labour must be on site/i.test(text)) { need = 'to be in the required region for on-site labour'; how.push(`Travel to the site region (${ctx.currentRegionName} is where you are now)`); nav = navAction('map', 'Open Map'); }
+    else if (/Minimum contribution/i.test(text)) { need = text.match(/Minimum contribution is \$(\d[\d,]*)/)?.[0]?.replace('Minimum contribution is ', '') || 'a larger contribution'; how.push('Increase the contribution amount or wait until the stage needs less'); }
+    else if (/No actions left/i.test(text)) { conceptId = 'action_points'; need = 'an Action'; how.push('End your turn — Actions refresh next turn'); }
+    else how.push('Check program eligibility and stage prerequisites in National Programs');
+    asks.push('What do I need for this national program?');
   } else {
     how.push('Ask the game for the options available right now'); asks.push('Why is this blocked?');
   }
@@ -134920,6 +135983,43 @@ export function createFeelSnapshotFixture(o: Partial<FeelSnapshot> = {}): FeelSn
   };
 }
 
+
+export function runCommandInterpretationSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  check('cmd12_mp_missing_op', 'Megaproject interpret rejects missing op with a clear message', () => {
+    const r = interpretMegaprojectCommand({});
+    return !r.ok && r.errors.some(e => e.code === 'missing_field') && /Missing op/.test(formatCommandInterpretationErrors(r.errors));
+  });
+  check('cmd12_mp_bad_amount', 'Megaproject interpret rejects non-numeric amounts', () => {
+    const r = interpretMegaprojectCommand({ op: 'contribute', programId: 'mp_x', amount: 'lots' });
+    return !r.ok && r.errors.some(e => e.code === 'invalid_amount');
+  });
+  check('cmd12_mp_ok', 'Megaproject interpret accepts a minimal valid propose', () => {
+    const kind = MEGAPROJECT_DEFINITIONS[0]?.kind;
+    if (!kind) return 'no catalog';
+    const r = interpretMegaprojectCommand({ op: 'propose', kind });
+    return r.ok && r.value?.op === 'propose' && r.value.kind === kind;
+  });
+  check('cmd12_ap_code', 'Action point validation exposes UNMAPPED_ACTION_ID code', () => {
+    const r = validateActionPointRequest({ actionsUsedThisTurn: 0 }, 'not_a_real_action_type', { actionLimitsEnabled: true, playerActionsPerDay: 3 });
+    return r.code === 'UNMAPPED_ACTION_ID' && r.allowed === true;
+  });
+  check('cmd12_reduce_error', 'reduceGameAction returns error text when megaproject command fails', () => {
+    const base: any = JSON.parse(JSON.stringify(initialGameState));
+    base.player = { ...base.player, id: 'player', money: 100, actionsUsedThisTurn: 0, currentRegion: 'NSW' };
+    base.actorsById = { player: base.player };
+    base.megaprojects = createEmptyMegaprojectsPersisted();
+    const bundle: any = { gameState: base, player: base.player, actorsById: base.actorsById, gameSettings: { ...DEFAULT_GAME_SETTINGS, megaprojectsEnabled: true, nationalSystemsEnabled: true, actionLimitsEnabled: false } };
+    const res = reduceGameAction(bundle, { type: 'megaproject_command', actorId: 'player', parameters: { command: { op: 'contribute', programId: 'missing' }, derived: {} } } as any, { active: true, operation: 'megaproject_command', actorId: 'player' });
+    return res.success === false && typeof res.error === 'string' && res.error.length > 0;
+  });
+  return results;
+}
+
 export function runV94GameFeelPolishSelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   const check = (id: string, name: string, fn: () => boolean | string) => {
@@ -136853,6 +137953,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         settingsIntelligence: sanitizeSettingsIntelligenceState(stateData.settingsIntelligence || raw.settingsIntelligence || raw.gameState?.settingsIntelligence),
         diplomacyState: sanitizeDiplomacyState(stateData.diplomacyState || raw.diplomacyState || raw.gameState?.diplomacyState, stateData.diplomacy || raw.diplomacy, Number(stateData.turnCounter || 0)),
         worldReaction: sanitizeWorldReactionState(stateData.worldReaction || raw.worldReaction || raw.gameState?.worldReaction),
+        globalEconomicEnvironment: sanitizeGlobalEconomicEnvironmentPersisted(stateData.globalEconomicEnvironment || raw.globalEconomicEnvironment || raw.gameState?.globalEconomicEnvironment, Number(stateData.day || 1)),
         livingRegions: sanitizeLivingRegionsState(stateData.livingRegions || raw.livingRegions || raw.gameState?.livingRegions),
         regionalFactions: sanitizeRegionalFactionsState(stateData.regionalFactions || raw.regionalFactions || raw.gameState?.regionalFactions),
         contentState: sanitizeMatchContentState(stateData.contentState || raw.contentState || raw.gameState?.contentState),
@@ -138947,6 +140048,7 @@ function v95NormalizeSuiteResults(raw: unknown): Array<{ name: string; passed: b
 
 export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
+  { id: 'o111-cc', label: 'O111 Command & Action Contract', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runO111CommandActionContractSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
   { id: 'v105', label: 'V10.5 Innovation & Emerging Capabilities', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV105InnovationCapabilitiesSelfTests() },
@@ -138957,10 +140059,13 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1010', label: 'V10.10 Workforce, Skills & Human Capital', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1010WorkforceHumanCapitalSelfTests() },
   { id: 'v1011', label: 'V10.11 Adaptive Governance & State Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1011AdaptiveGovernanceSelfTests() },
   { id: 'v1012', label: 'V10.12 Public Finance & Fiscal Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1012PublicFinanceSelfTests() },
+  { id: 'o111_d24', label: 'O111 Agent 24 — Debt & Financial Stability', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runO111DebtFinancialStabilitySelfTests() },
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
   { id: 'v1014', label: 'V10.14 Unified National Layer (§20AG)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014UnifiedSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
+  { id: 'cmd12', label: 'Command Interpretation', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runCommandInterpretationSelfTests() },
+  { id: 'lifecycle', label: 'Game Lifecycle', tier: 'quick', section: 'Turn Flow', severity: 'MAJOR', run: () => runGameLifecycleSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
   { id: 'o111-int', label: 'O111 Cross-System Integration', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runO111IntegrationSelfTests() },
   { id: 'v94_a70', label: 'V9.4 Interaction Feedback (Agent 70)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94InteractionFeedbackSelfTests() },
@@ -138973,6 +140078,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v62', label: 'V9.4 Dynamic Evolutionary UI', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV62DynamicEvolutionaryUiSelfTests() },
   { id: 'o111_a64', label: 'O111 Agent 64 Strategic Dashboard', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111Agent64StrategicDashboardSelfTests() },
   { id: 'o111_c59', label: 'O111 Agent 59 National Crisis', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runO111NationalCrisisSelfTests() },
+  { id: 'o111_a56', label: 'O111 Global Economic Environment (A56)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runGlobalEconomicEnvironmentSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
   { id: 'v91', label: 'V9.1 Strategic Balance', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicDepthBalanceSelfTests() },
@@ -138993,7 +140099,9 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'intent', label: 'Player Intent', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runPlayerIntentLayerSelfTests() },
   { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
   { id: 'src_arch', label: 'Source architecture map (SECTION 1A)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runSourceArchitectureSelfTests() },
+  { id: 'progression', label: 'Progression integration (O111-15)', tier: 'quick', section: 'Critical Invariants', severity: 'MAJOR', run: () => runProgressionIntegrationSelfTests() },
   { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
+  { id: 'idle76', label: 'O111 Idle Gameplay (Agent 76)', tier: 'quick', section: 'AI Turn Reliability', severity: 'MAJOR', run: () => runIdleGameplaySelfTests() },
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
     ...runAiMemoryPhase1SelfTests().results, ...runAiMemoryPhase2SelfTests().results, ...runAiMemoryPhase3SelfTests().results,
@@ -141680,6 +142788,9 @@ export function sanitizeNationalSystemsPersisted(raw: unknown): NationalSystemsP
     kind: ['bottleneck_formed', 'bottleneck_resolved', 'dependency_changed', 'capacity_expanded', 'resilience_changed'].includes(h.kind) ? h.kind : 'resilience_changed',
     subjectId: String(h.subjectId || '').slice(0, 60), summary: h.summary.slice(0, 200), sourceEventIds: (Array.isArray(h.sourceEventIds) ? h.sourceEventIds : []).filter((x: any) => typeof x === 'string').slice(0, 4)
   }));
+  out.appliedDomesticDemandProvenance = (Array.isArray(r.appliedDomesticDemandProvenance) ? r.appliedDomesticDemandProvenance : [])
+    .filter((x: any) => typeof x === 'string')
+    .slice(0, 8);
   out.inputHash = typeof r.inputHash === 'string' ? r.inputHash.slice(0, 20) : '';
   return out;
 }
@@ -142715,6 +143826,8 @@ export interface IndustriesPersisted {
   schemaVersion: '10.1'; revision: number; initializedTurn: number | null; lastUpdatedTurn: number;
   industryBands: Record<string, IndustryCondition>; supplyBands: Record<string, SupplyCondition>; criticalDeps: string[]; nationalOutput: Record<string, number>;
   cooldowns: Record<string, number>; history: IndustryHistoryEntry[]; inputHash: string;
+  /** Provenance tags for domestic demand already folded into V10.1 this match (feeds V10.13 dedupe). */
+  appliedDomesticDemandProvenance?: string[];
 }
 export interface IndustriesSupplyChainsState {
   schemaVersion: '10.1'; revision: number; regions: Record<string, RegionalIndustryState>; supplies: Record<string, RegionalSupplyState[]>;
@@ -142728,6 +143841,8 @@ export interface IndustriesInputs {
   /** V10.0 snapshot — the ONLY transport layer. Null ⇒ no interregional delivery (V10.1 never invents routes). */
   national: NationalSystemsState | null;
   modifiers?: Record<string, Partial<Record<StrategicIndustryKind, number>>>;
+  /** V10.13 bounded domestic-demand modifiers (Invariant H); provenance dedupe applied before compute. */
+  domesticDemandModifiers?: V1013IndustryDemandModifier[];
 }
 
 const scR = (x: number, d = 1) => { const f = Math.pow(10, d); return Math.round((Number.isFinite(x) ? x : 0) * f) / f; };
@@ -142752,8 +143867,12 @@ export function nationalTransportRoutes(ns: NationalSystemsState, network: Natio
 export function industriesInputHash(i: IndustriesInputs): string {
   const ns = i.national;
   const nsDigest = ns ? [ns.inputHash, Object.values(ns.regions).map(r => NATIONAL_NETWORKS.map(n => r.networks[n].condition[0]).join('')).join(','), Object.values(ns.links).map(l => Math.round(Math.max(0, l.effectiveCapacity - l.used))).join(',')].join('|') : 'none';
+  const ddDigest = (i.domesticDemandModifiers || [])
+    .map(m => `${m.sector}:${m.boundedDelta}:${m.skippedDuplicate ? 'skip' : 'on'}`)
+    .sort()
+    .join(',');
   const raw = JSON.stringify([i.turn, i.regions.map(r => [r.code, Math.round(r.devScore), Math.round(r.momentum * 20), r.stability === null ? null : Math.round(r.stability / 5), Object.keys(r.sectors).sort().map(k => `${k}${Math.round((r.sectors as any)[k] / 2)}`)]),
-    i.projects.map(p => `${p.id}:${p.regionId}:${p.projectType}:${p.status}`).sort(), i.modifiers || null, nsDigest]);
+    i.projects.map(p => `${p.id}:${p.regionId}:${p.projectType}:${p.status}`).sort(), i.modifiers || null, ddDigest || null, nsDigest]);
   let h = 2166136261;
   for (let k = 0; k < raw.length; k++) { h ^= raw.charCodeAt(k); h = Math.imul(h, 16777619); }
   return (h >>> 0).toString(36);
@@ -142795,6 +143914,35 @@ function scSupplyConditionFor(demand: number, supplied: number, leftover: number
  * transformation → advanced/services. Each stage allocates local supply first, then deliverable imports over
  * V10.0 routes (headroom-limited, stable tie-breaks, ≤ V101_LIMITS.maxPasses passes).
  */
+
+/** Maps V10.13 household demand sectors → V10.1 strategic industries (Invariant H). */
+export const V1013_HOUSEHOLD_SECTOR_TO_INDUSTRY: Partial<Record<HouseholdDemandSector, StrategicIndustryKind[]>> = {
+  manufacturing: ['manufacturing'],
+  tourism_services: ['tourism'],
+  agriculture_food: ['agriculture'],
+  technology_digital: ['technology', 'research'],
+  infrastructure_housing: ['manufacturing', 'energy']
+};
+
+/** Strength points from bounded domestic demand delta ([-1,+1] → up to ±8 nationally, split across mapped industries). */
+export const V1013_DOMESTIC_DEMAND_INDUSTRY_POINTS = 8;
+
+export function nationalDomesticDemandIndustryPoints(
+  modifiers: V1013IndustryDemandModifier[] | null | undefined
+): Partial<Record<StrategicIndustryKind, number>> {
+  const out: Partial<Record<StrategicIndustryKind, number>> = {};
+  if (!modifiers?.length) return out;
+  for (const m of modifiers) {
+    if (m.skippedDuplicate || m.boundedDelta === 0) continue;
+    const pts = scR(m.boundedDelta * V1013_DOMESTIC_DEMAND_INDUSTRY_POINTS);
+    const targets = V1013_HOUSEHOLD_SECTOR_TO_INDUSTRY[m.sector];
+    if (!targets?.length) continue;
+    const share = pts / targets.length;
+    for (const ind of targets) out[ind] = scR((out[ind] || 0) + share);
+  }
+  return out;
+}
+
 export function computeIndustriesSupplyChains(i: IndustriesInputs, prevIn?: IndustriesPersisted | null, opts: { emit?: boolean } = {}): { state: IndustriesSupplyChainsState; persisted: IndustriesPersisted; derived: IndustryDerivedEvent[] } {
   const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
   const prev = prevIn || null;
@@ -142802,6 +143950,7 @@ export function computeIndustriesSupplyChains(i: IndustriesInputs, prevIn?: Indu
   const regionsIn = i.regions.filter(r => REGIONS[r.code]).sort((a, b) => a.code.localeCompare(b.code));
   const codes = regionsIn.map(r => r.code);
   const ns = i.national;
+  const natDomesticIndustryPts = nationalDomesticDemandIndustryPoints(i.domesticDemandModifiers);
   // ---- 1) Industry strength & potential (derived from actual regional state; nothing hardcoded per region) ----
   type Work = { def: StrategicIndustryDefinition; strength: number; potential: number; factors: IndustryEvidence[]; access: number; accessWorst: { network: NationalNetworkKind; factor: number } | null; inputs: IndustryInputStatus[]; effective: number };
   const work: Record<string, Partial<Record<StrategicIndustryKind, Work>>> = {};
@@ -142829,6 +143978,8 @@ export function computeIndustriesSupplyChains(i: IndustriesInputs, prevIn?: Indu
       if (k === 'energy') add('Base regional generation', 8 + dev * 0.1, 'baseline');
       const mod = Number(i.modifiers?.[r.code]?.[k]) || 0;
       if (mod) add('Scenario setting', mod, 'scenario');
+      const domesticPt = natDomesticIndustryPts[k];
+      if (domesticPt) add('Domestic household demand', domesticPt, V1013_DOMESTIC_DEMAND_PROVENANCE);
       const strength = scR(scClamp(factors.reduce((a, x) => a + x.value, 0), 0, 100));
       if (strength < 5) return;
       const potential = scR(scClamp(strength * (0.85 + dev / 400), 0, 120));
@@ -143095,9 +144246,12 @@ export function computeIndustriesSupplyChains(i: IndustriesInputs, prevIn?: Indu
   const boundedHistory = history.slice(-V101_LIMITS.history);
   const boundedCooldowns = Object.fromEntries(Object.entries(cooldowns).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, V101_LIMITS.cooldowns));
   const inputHash = industriesInputHash(i);
+  const appliedDomesticDemandProvenance =
+    i.domesticDemandModifiers?.some(m => !m.skippedDuplicate && m.boundedDelta !== 0) ? [V1013_DOMESTIC_DEMAND_PROVENANCE] : [];
   const persisted: IndustriesPersisted = {
     schemaVersion: '10.1', revision: (prev?.revision || 0) + (derived.length || !prev || prev.inputHash !== inputHash ? 1 : 0), initializedTurn: prev?.initializedTurn ?? turn, lastUpdatedTurn: turn,
-    industryBands, supplyBands, criticalDeps: critical.map(d => d.id), nationalOutput, cooldowns: boundedCooldowns, history: boundedHistory, inputHash
+    industryBands, supplyBands, criticalDeps: critical.map(d => d.id), nationalOutput, cooldowns: boundedCooldowns, history: boundedHistory, inputHash,
+    appliedDomesticDemandProvenance
   };
   codes.forEach(c => { regions[c].revision = persisted.revision; });
   const state: IndustriesSupplyChainsState = {
@@ -143108,14 +144262,14 @@ export function computeIndustriesSupplyChains(i: IndustriesInputs, prevIn?: Indu
 }
 
 /** Inputs from canonical systems (read-only): Living Regions + infrastructure + the V10.0 snapshot. */
-export function buildIndustriesInputs(src: { turn: number; lr: LivingRegionsState | null; projects: Record<string, any> | any[] | null | undefined; national: NationalSystemsState | null; modifiers?: IndustriesInputs['modifiers'] }): IndustriesInputs {
+export function buildIndustriesInputs(src: { turn: number; lr: LivingRegionsState | null; projects: Record<string, any> | any[] | null | undefined; national: NationalSystemsState | null; modifiers?: IndustriesInputs['modifiers']; domesticDemandModifiers?: IndustriesInputs['domesticDemandModifiers'] }): IndustriesInputs {
   const codes = Object.keys(REGIONS).filter(c => (REGIONAL_RESOURCES[c] || []).length && ['QLD', 'NSW', 'VIC', 'TAS', 'SA', 'WA', 'NT', 'ACT'].includes(c)).sort();
   const projectsRaw = Array.isArray(src.projects) ? src.projects : Object.values(src.projects || {});
   return {
     turn: Number(src.turn) || 0,
     regions: codes.map(code => { const reg = src.lr?.regions?.[code]; return { code, name: REGIONS[code]?.name || code, devScore: Number(reg?.development.score) || 0, momentum: Number(reg?.momentum.value) || 0, stability: reg && typeof reg.stability.value === 'number' ? reg.stability.value : null, sectors: { ...(reg?.sectors || {}) } }; }),
     projects: projectsRaw.filter((p: any) => p && typeof p.id === 'string').map((p: any) => ({ id: p.id, title: String(p.title || p.id), regionId: p.regionId || p.stateCode || null, projectType: String(p.projectType || ''), status: String(p.status || 'locked') })),
-    national: src.national, modifiers: src.modifiers
+    national: src.national, modifiers: src.modifiers, domesticDemandModifiers: src.domesticDemandModifiers
   };
 }
 
@@ -143817,6 +144971,14 @@ export function runV101IndustriesSupplyChainsSelfTests(): V9SelfTestResult[] {
     return ((DEFAULT_GAME_SETTINGS as any).industriesEnabled === true && (V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes('industriesEnabled') && industryRegionOutlook(null, 'VIC').factor === 0
       && industryPlayStrip(null).length === 0 && industryContentTags(null, 'VIC').length === 0 && detectIndustryQuery('why is victoria manufacturing constrained', { national: { industries: null } } as any) === null
       && JSON.stringify({ ...nsA, computeMs: 0 }) === JSON.stringify({ ...nsB, computeMs: 0 })) || 'leak';
+  });
+  check('sc33_v1013_domestic_demand', 'Strong V10.13 domestic demand adds bounded national strength to mapped V10.1 industries', () => {
+    const w = healthy();
+    const hhOut = computeNationalHouseholdEconomy(makeDefaultV1013TestInputs({}, { NSW: { economyBand: 'strong', developmentBand: 'advanced', employmentSupportScore: 86 }, VIC: { economyBand: 'strong', developmentBand: 'advanced', employmentSupportScore: 84 } }), createInitialHouseholdEconomyPersisted(), null);
+    const mods = buildHouseholdIndustryDemandModifiers(hhOut.state, []);
+    const base = run({ ...w.ii, domesticDemandModifiers: undefined }).state.regions.NSW.industries.tourism?.strength ?? 0;
+    const boosted = run({ ...w.ii, domesticDemandModifiers: mods }).state.regions.NSW.industries.tourism?.strength ?? 0;
+    return boosted >= base && mods.some(m => m.boundedDelta > 0) || `${base} -> ${boosted}`;
   });
   check('sc32_circular', 'Research ↔ technology loop: staged, bounded, terminates with finite output', () => {
     const s = run(W({ sectors: { VIC: { technology: 90, research: 90 }, ACT: { research: 90, technology: 90 } } }).ii).state;
@@ -145091,6 +146253,109 @@ export interface MegaprojectDerivedEvent { id: string; turn: number; kind: Megap
 export interface MegaprojectCommand { op: MegaprojectCommandOp; kind?: MegaprojectKind; programId?: string; amount?: number; labor?: number; choiceId?: string; optionId?: string }
 export interface MegaprojectActorContext { id: string; kind: 'human' | 'ai'; teamId: string | null; money: number; currentRegion: string | null; apRemaining: number; apCost: number; turnOwner: boolean }
 
+/** Structured outcome when parsing player/AI/UI payloads into canonical commands (before world validation). */
+export type CommandInterpretationErrorCode =
+  | 'invalid_payload'
+  | 'missing_field'
+  | 'unknown_op'
+  | 'unknown_kind'
+  | 'invalid_amount'
+  | 'invalid_program_id'
+  | 'missing_choice'
+  | 'unmapped_action_id';
+
+export interface CommandInterpretationError { code: CommandInterpretationErrorCode; message: string; field?: string }
+
+export interface CommandInterpretationResult<T> { ok: boolean; value: T | null; errors: CommandInterpretationError[] }
+
+const MEGAPROJECT_COMMAND_OPS: MegaprojectCommandOp[] = ['propose', 'commit', 'contribute', 'choose', 'suspend', 'resume'];
+
+/** Normalize a loose UI/AI payload into a MegaprojectCommand (does not check game rules). */
+export function interpretMegaprojectCommand(raw: unknown): CommandInterpretationResult<MegaprojectCommand> {
+  const errors: CommandInterpretationError[] = [];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ok: false, value: null, errors: [{ code: 'invalid_payload', message: 'Megaproject command must be an object.' }] };
+  }
+  const src = raw as Record<string, unknown>;
+  const opRaw = typeof src.op === 'string' ? src.op.trim().toLowerCase() : '';
+  if (!opRaw) errors.push({ code: 'missing_field', message: 'Missing op (propose, commit, contribute, choose, suspend, or resume).', field: 'op' });
+  else if (!MEGAPROJECT_COMMAND_OPS.includes(opRaw as MegaprojectCommandOp)) {
+    errors.push({ code: 'unknown_op', message: `Unknown megaproject op "${String(src.op)}".`, field: 'op' });
+  }
+  const op = (errors.length ? null : opRaw) as MegaprojectCommandOp | null;
+  let kind: MegaprojectKind | undefined;
+  if (typeof src.kind === 'string' && src.kind.trim()) {
+    const k = src.kind.trim() as MegaprojectKind;
+    if (MEGAPROJECT_DEF_BY_KIND[k]) kind = k;
+    else errors.push({ code: 'unknown_kind', message: `Unknown program kind "${src.kind}".`, field: 'kind' });
+  }
+  let programId: string | undefined;
+  if (src.programId !== undefined && src.programId !== null && src.programId !== '') {
+    programId = String(src.programId).slice(0, 120);
+  }
+  const parseOptionalInt = (field: 'amount' | 'labor', v: unknown): number | undefined => {
+    if (v === undefined || v === null || v === '') return undefined;
+    const n = typeof v === 'number' ? v : Number(String(v).replace(/[$,\s]/g, ''));
+    if (!Number.isFinite(n) || n < 0) {
+      errors.push({ code: 'invalid_amount', message: `Invalid ${field} "${String(v)}".`, field });
+      return undefined;
+    }
+    return Math.floor(n);
+  };
+  const amount = parseOptionalInt('amount', src.amount);
+  const labor = parseOptionalInt('labor', src.labor);
+  const choiceId = typeof src.choiceId === 'string' && src.choiceId.trim() ? src.choiceId.trim().slice(0, 80) : undefined;
+  const optionId = typeof src.optionId === 'string' && src.optionId.trim() ? src.optionId.trim().slice(0, 80) : undefined;
+  if (op === 'propose' && !kind) errors.push({ code: 'missing_field', message: 'Propose requires a program kind.', field: 'kind' });
+  if (op === 'choose') {
+    if (!choiceId) errors.push({ code: 'missing_choice', message: 'Choose requires choiceId.', field: 'choiceId' });
+    if (!optionId) errors.push({ code: 'missing_choice', message: 'Choose requires optionId.', field: 'optionId' });
+  }
+  if ((op === 'commit' || op === 'contribute' || op === 'suspend' || op === 'resume' || op === 'choose') && !programId && !kind) {
+    errors.push({ code: 'missing_field', message: 'This command requires programId or kind.', field: 'programId' });
+  }
+  if (errors.length) return { ok: false, value: null, errors };
+  return {
+    ok: true,
+    value: { op: op!, ...(kind ? { kind } : {}), ...(programId ? { programId } : {}), ...(amount !== undefined ? { amount } : {}), ...(labor !== undefined ? { labor } : {}), ...(choiceId ? { choiceId } : {}), ...(optionId ? { optionId } : {}) },
+    errors: []
+  };
+}
+
+/** Human-readable summary of interpretation errors (for notifications and blocked-action help). */
+export function formatCommandInterpretationErrors(errors: CommandInterpretationError[]): string {
+  if (!errors.length) return 'Invalid command.';
+  return errors.map(e => e.message).slice(0, 3).join(' ');
+}
+
+/** Team commands parsed from language must still reference real teammates and known regions. */
+export function validateTeamCommandIntent(cmd: TeamCommandIntent | null, world: Pick<GIWorld, 'actors' | 'regions'>): { ok: boolean; reason?: string; code?: string } {
+  if (!cmd) return { ok: false, reason: 'Not a team command.', code: 'empty' };
+  const mateIds = new Set(world.actors.filter(a => a.relation === 'teammate').map(a => a.id));
+  const regionCodes = new Set(Object.keys(world.regions || {}));
+  for (const r of cmd.responsibilities) {
+    if (r.actorId !== 'player' && r.actorId !== 'both' && !mateIds.has(r.actorId)) {
+      return { ok: false, reason: `Unknown teammate "${r.actorId}" in this command.`, code: 'unknown_teammate' };
+    }
+    if (r.regionId && !regionCodes.has(r.regionId)) {
+      return { ok: false, reason: `Unknown region "${r.regionId}" in this command.`, code: 'unknown_region' };
+    }
+  }
+  for (const d of cmd.deprioritizedRegions) {
+    if (!regionCodes.has(d)) return { ok: false, reason: `Unknown region "${d}" to deprioritize.`, code: 'unknown_region' };
+  }
+  for (const c of cmd.contingencies) {
+    if (c.regionId && !regionCodes.has(c.regionId)) return { ok: false, reason: `Unknown region "${c.regionId}" in a contingency.`, code: 'unknown_region' };
+    if (c.supportRegionId && !regionCodes.has(c.supportRegionId)) return { ok: false, reason: `Unknown support region "${c.supportRegionId}".`, code: 'unknown_region' };
+    if (c.actorId && c.actorId !== 'player' && !mateIds.has(c.actorId)) return { ok: false, reason: `Unknown teammate "${c.actorId}" in a contingency.`, code: 'unknown_teammate' };
+  }
+  if (cmd.reserveFloor !== null && (!Number.isFinite(cmd.reserveFloor) || cmd.reserveFloor < 0)) {
+    return { ok: false, reason: 'Reserve floor must be a non-negative amount.', code: 'invalid_reserve' };
+  }
+  return { ok: true };
+}
+
+
 // ---- Curated catalog (8 distinct programs over canonical project ids) -------------------------------------
 const mpq = (id: string, kind: MegaprojectPrerequisiteKind, label: string, extra: Partial<MegaprojectPrerequisite> = {}): MegaprojectPrerequisite => ({ id, kind, label, ...extra });
 const mps = (id: string, title: string, description: string, requiredCapital: number, requiredLabor: number, requiredRegionIds: string[], requiredProjectIds: string[], extra: { prerequisites?: MegaprojectPrerequisite[]; unlocks?: string[]; coordination?: string } = {}): MegaprojectStageDef =>
@@ -145504,6 +146769,78 @@ export function setMegaprojectTracked(prev: MegaprojectsPersisted | null, actorI
   const s = v103Clone(prev || createEmptyMegaprojectsPersisted());
   if (programId && s.programs[programId]) s.tracked[actorId] = programId; else delete s.tracked[actorId];
   s.revision += 1; return s;
+}
+
+// ---- O111 Agent 5: canonical command contract (validate → mutate domain memory; money/AP at reducer boundary) ----
+/** Reference shape for domain commands: pure validation + memory mutation; economic side effects stay in reduceGameAction. */
+export interface CanonicalDomainCommandResult<TMemory = unknown> {
+  ok: boolean;
+  reason: string | null;
+  memory: TMemory;
+  moneySpent: number;
+}
+
+export type MegaprojectCommandDerivedSnapshots = {
+  national?: NationalSystemsState | null;
+  industries?: IndustriesSupplyChainsState | null;
+  networks?: StrategicInfrastructureState | null;
+};
+
+export function resolveMegaprojectTurnOwner(gsLive: any, actorId: string, actor: any): boolean {
+  const isAiActor = actorId === 'ai' || actor?.kind === 'ai' || Boolean(actor?.isAi);
+  const soloAiTurn = gsLive?.gameMode === 'game' && isSoloRivalModeSelection(gsLive.selectedMode) && Boolean(gsLive.currentTurn);
+  return isAiActor ? !(soloAiTurn && gsLive.currentTurn !== 'ai') : !isHumanLockedOutForSoloRival(gsLive, 'human');
+}
+
+/** Single source for turn ownership, AP budget and actor identity used by reducer, UI preview and tests. */
+export function resolveMegaprojectActorContext(actorId: string, actor: any, gameSettings: any, gsLive: any): MegaprojectActorContext {
+  const isAiActor = actorId === 'ai' || actor?.kind === 'ai' || Boolean(actor?.isAi);
+  const limitsOn = gameSettings?.actionLimitsEnabled !== false;
+  const apRemaining = limitsOn ? getRemainingActionPoints(actor, gameSettings) : Number.POSITIVE_INFINITY;
+  const apCost = limitsOn ? Math.max(1, getActionPointCost('megaproject_command', actor, gameSettings)) : 0;
+  return {
+    id: actorId,
+    kind: isAiActor ? 'ai' : 'human',
+    teamId: actor?.teamId || null,
+    money: Number(actor?.money) || 0,
+    currentRegion: actor?.currentRegion || null,
+    apRemaining,
+    apCost,
+    turnOwner: resolveMegaprojectTurnOwner(gsLive, actorId, actor)
+  };
+}
+
+export function resolveMegaprojectWorldFromGameState(nextState: any, gameSettings: any, derived?: MegaprojectCommandDerivedSnapshots | null): MegaprojectWorld {
+  const gsLive: any = nextState?.gameState || nextState || {};
+  return buildMegaprojectWorld({
+    turn: Number(nextState.turn) || 1,
+    totalDays: (gameSettings as any).totalDays,
+    enabled: (gameSettings as any).megaprojectsEnabled !== false && (gameSettings as any).nationalSystemsEnabled !== false,
+    infrastructureEnabled: Boolean((gameSettings as any).stateInfrastructureEnabled),
+    gameOver: Boolean(gsLive.isGameOver) || (typeof gsLive.gameMode === 'string' && gsLive.gameMode !== 'game'),
+    projects: nextState.infrastructureProjects,
+    regionalDevLevels: nextState.regionalDevLevels,
+    national: derived?.national || null,
+    industries: derived?.industries || null,
+    networks: derived?.networks || null,
+    factions: (nextState as any).regionalFactions || null,
+    flags: (nextState as any).contentState?.flags || gsLive.contentState?.flags || {}
+  });
+}
+
+/** Alias documenting the validate+mutate contract (implementation: applyMegaprojectCommand). */
+export function validateAndApplyMegaprojectCommand(prev: MegaprojectsPersisted | null, cmd: MegaprojectCommand, actor: MegaprojectActorContext, world: MegaprojectWorld): MegaprojectCommandResult {
+  return applyMegaprojectCommand(prev, cmd, actor, world);
+}
+
+export function previewMegaprojectCommand(prev: MegaprojectsPersisted | null, cmd: MegaprojectCommand, actor: MegaprojectActorContext, world: MegaprojectWorld): { ok: boolean; reason: string | null } {
+  const r = applyMegaprojectCommand(prev, cmd, actor, world);
+  return { ok: r.ok, reason: r.reason };
+}
+
+export function executeMegaprojectDomainCommand(prev: MegaprojectsPersisted | null, cmd: MegaprojectCommand, actorId: string, actor: any, gameSettings: any, stateForWorld: any, derived?: MegaprojectCommandDerivedSnapshots | null): MegaprojectCommandResult {
+  const gsLive: any = stateForWorld?.gameState || stateForWorld || {};
+  return applyMegaprojectCommand(prev, cmd, resolveMegaprojectActorContext(actorId, actor, gameSettings, gsLive), resolveMegaprojectWorldFromGameState(stateForWorld, gameSettings, derived));
 }
 
 export interface MegaprojectCommandResult { ok: boolean; reason: string | null; persisted: MegaprojectsPersisted; moneySpent: number; laborApplied: number; programId: string | null }
@@ -146016,6 +147353,67 @@ export function createMegaprojectFixtureWorld(o: { statuses?: Record<string, str
   });
   return buildMegaprojectWorld({ turn, totalDays: o.totalDays ?? 30, enabled: o.enabled !== false, infrastructureEnabled: o.infrastructureEnabled !== false, gameOver: o.gameOver, projects,
     regionalDevLevels: Object.fromEntries(Object.entries(o.devTiers || {}).map(([k, t]) => [k, { tier: t }])), national: ns, industries: ind, networks: net, factions: null, flags: o.flags || {} });
+}
+
+export function runO111CommandActionContractSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const HSR = 'infra_hsr_nsw_vic', ID = megaprojectIdFor('national_high_speed_rail');
+  const w = createMegaprojectFixtureWorld({ statuses: { [HSR]: 'under_construction' }, nsModifiers: Object.fromEntries(['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA'].map(r => [r, { freight: -40 }])) as any });
+  const committed = () => {
+    let s = applyMegaprojectCommand(null, { op: 'propose', kind: 'national_high_speed_rail' }, { id: 'player', kind: 'human', teamId: 'team_player', money: 50000, currentRegion: 'NSW', apRemaining: 3, apCost: 1, turnOwner: true }, w);
+    if (!s.ok) throw new Error(s.reason || 'propose failed');
+    s = applyMegaprojectCommand(s.persisted, { op: 'commit', programId: ID, amount: 5000 }, { id: 'player', kind: 'human', teamId: 'team_player', money: 50000, currentRegion: 'NSW', apRemaining: 3, apCost: 1, turnOwner: true }, w);
+    if (!s.ok) throw new Error(s.reason || 'commit failed');
+    return s.persisted;
+  };
+  check('o111_cc01_actor_ap_cost', 'resolveMegaprojectActorContext uses getActionPointCost (not a hard-coded 1)', () => {
+    const gs = { gameMode: 'game', selectedMode: 'ai', currentTurn: 'player' };
+    const actor = { id: 'player', kind: 'human', money: 1000, actionsUsedThisTurn: 0, teamId: 'team_player' };
+    const settings = { ...DEFAULT_GAME_SETTINGS, actionLimitsEnabled: true, playerActionsPerDay: 5 };
+    const ctx = resolveMegaprojectActorContext('player', actor, settings, gs);
+    const expected = Math.max(1, getActionPointCost('megaproject_command', actor, settings));
+    return ctx.apCost === expected || `expected ${expected}, got ${ctx.apCost}`;
+  });
+  check('o111_cc02_preview_matches_apply', 'previewMegaprojectCommand matches applyMegaprojectCommand ok/reason', () => {
+    const s = committed();
+    const cmd: MegaprojectCommand = { op: 'contribute', programId: ID, amount: 4000 };
+    const act = { id: 'player', kind: 'human' as const, teamId: 'team_player', money: 1000, currentRegion: 'NSW', apRemaining: 1, apCost: 1, turnOwner: true };
+    const apply = applyMegaprojectCommand(s, cmd, act, w);
+    const prev = previewMegaprojectCommand(s, cmd, act, w);
+    return (apply.ok === prev.ok && apply.reason === prev.reason) || JSON.stringify({ apply, prev });
+  });
+  check('o111_cc03_reducer_error', 'reduceGameAction surfaces megaproject rejection on error', () => {
+    const s = committed();
+    const projects = Object.fromEntries([...PRESET_INFRASTRUCTURE_PROJECTS, ...V93_INFRASTRUCTURE_PROJECTS].map(p => [p.id, { ...JSON.parse(JSON.stringify(p)), status: p.id === HSR ? 'under_construction' : p.status }]));
+    const bundle = { gameState: { gameMode: 'game', selectedMode: 'ai', currentTurn: 'ai', turnCounter: 5, infrastructureProjects: projects, megaprojects: s, regionalDevLevels: {} },
+      player: { ...initialPlayerState, id: 'player', kind: 'human', money: 20000, actionsUsedThisTurn: 0, currentRegion: 'NSW' }, aiPlayer: { ...initialPlayerState, id: 'ai', kind: 'ai', isAi: true, money: 20000, actionsUsedThisTurn: 0, currentRegion: 'NSW' },
+      gameSettings: { ...DEFAULT_GAME_SETTINGS, stateInfrastructureEnabled: true, actionLimitsEnabled: true, playerActionsPerDay: 3, aiActionsPerDay: 3 } };
+    const res = reduceGameAction(bundle as any, { type: 'megaproject_command', actorId: 'player', parameters: { command: { op: 'contribute', programId: ID, amount: 1000 } } } as any);
+    return (!res.success && typeof res.error === 'string' && res.error.length > 0) || JSON.stringify({ success: res.success, error: res.error });
+  });
+  check('o111_cc04_domain_executor', 'executeMegaprojectDomainCommand matches direct applyMegaprojectCommand', () => {
+    const s = committed();
+    const cmd: MegaprojectCommand = { op: 'contribute', programId: ID, amount: 500 };
+    const actor = { id: 'player', kind: 'human', money: 20000, currentRegion: 'NSW', teamId: 'team_player', actionsUsedThisTurn: 0 };
+    const state = { gameState: { gameMode: 'game', turnCounter: 5, infrastructureProjects: w.projects, megaprojects: s, regionalDevLevels: w.devTiers }, turn: 5, infrastructureProjects: w.projects, regionalDevLevels: w.devTiers, megaprojects: s };
+    const settings = { ...DEFAULT_GAME_SETTINGS, stateInfrastructureEnabled: true, actionLimitsEnabled: true, playerActionsPerDay: 3 };
+    const a = applyMegaprojectCommand(s, cmd, resolveMegaprojectActorContext('player', actor, settings, state.gameState), w);
+    const b = executeMegaprojectDomainCommand(s, cmd, 'player', actor, settings, state);
+    return (a.ok === b.ok && a.moneySpent === b.moneySpent && a.reason === b.reason) || JSON.stringify({ a, b });
+  });
+  check('o111_cc05_validate_alias', 'validateAndApplyMegaprojectCommand is applyMegaprojectCommand', () => {
+    const s = committed();
+    const act = { id: 'player', kind: 'human' as const, teamId: 'team_player', money: 50000, currentRegion: 'NSW', apRemaining: 2, apCost: 1, turnOwner: true };
+    const cmd: MegaprojectCommand = { op: 'contribute', programId: ID, amount: 100 };
+    const direct = applyMegaprojectCommand(s, cmd, act, w);
+    const alias = validateAndApplyMegaprojectCommand(s, cmd, act, w);
+    return (direct.ok === alias.ok && direct.moneySpent === alias.moneySpent && JSON.stringify(direct.persisted) === JSON.stringify(alias.persisted)) || 'alias drift';
+  });
+  return results;
 }
 
 export function runV103NationalMegaprojectSelfTests(): V9SelfTestResult[] {
@@ -173532,6 +174930,10 @@ export function publicFinanceInputHash(
   const sc11Sig = sc11Any
     ? `${sc11Any.implementationLoad?.pressure || 'na'}:${Math.round(sc11Any.implementationLoad?.totalLoad || 0)}`
     : 'na';
+  const scCapAny: any = inputs.strategicCapital;
+  const scCapSig = scCapAny
+    ? `${scCapAny.revision ?? 0}:${String(scCapAny.position?.flexibilityBand || scCapAny.summary?.flexibilityBand || 'na')}:${Math.round(Number(scCapAny.position?.deployableCapital ?? scCapAny.summary?.deployableCapital ?? 0))}`
+    : 'na';
   const progSig = (inputs.programs || [])
     .map(
       p =>
@@ -173566,6 +174968,7 @@ export function publicFinanceInputHash(
     `eg:${egSig}`,
     `wf:${wfSig}`,
     `sc11:${sc11Sig}`,
+    `scCap:${scCapSig}`,
     `prog:${progSig}`,
     `cr:${crisisSig}`,
     `cnt:${inputs.completedInfrastructureCount}:${maintNetSig}`,
@@ -181889,7 +183292,6 @@ export function buildHouseholdIndustryDemandModifiers(
     };
   });
 }
-
 export interface V1013SystemicRiskContext {
   householdShockSensitivity: 'low' | 'moderate' | 'high' | 'critical';
   shockAmplificationMultiplier: number; // 0.85 to 1.35
@@ -184688,6 +186090,7 @@ export function runV1013HouseholdsLivingStandardsSelfTests(): {
     results
   };
 }
+// ============================================================================
 // ============================================================================
 // ============================================================================
 // SECTION 20AG: V10.14 UNIFIED NATIONAL LAYER (Operation 111 — Agents 21,25,29,30,36,40,55,109)
@@ -192287,7 +193690,7 @@ function dispatchGameSettingsChange(
   // CPFIX1: Memoize coPilotRuntimeContext and callbacks to prevent controller effect thrash on every render
   // CPFIX2: Supply live actorsById memo, aiPlayer, and teamsById to createCoPilotRuntimeContext
   const coPilotRuntimeContext = useMemo(() => createCoPilotRuntimeContext(player, gameState, gameSettings, takeoverSession, actorsById, aiPlayer, teamsById), [player, gameState, gameSettings, takeoverSession, actorsById, aiPlayer, teamsById]);
-  const isLiveIntentMatch = gameState?.gameMode === 'game' && !gameState?.gameOver;
+  const isLiveIntentMatch = isMatchLiveForIntent(gameState, uiState);
   const intentCandidateCacheRef = useRef<{ fingerprint: string; candidates: any[] }>({ fingerprint: '', candidates: [] });
   const [intentRecCandidates, setIntentRecCandidates] = useState<any[]>([]);
   React.useEffect(() => {
@@ -199405,7 +200808,7 @@ function dispatchGameSettingsChange(
       type: 'LOAD_STATE',
       payload: {
         ...initialGameState,
-        gameMode: 'game',
+        ...patchGameStateForMatchInit(mode),
         selectedMode: mode,
         aiDifficulty: difficulty,
         currentTurn: nextCurrentTurn,
@@ -199515,7 +200918,14 @@ function dispatchGameSettingsChange(
         true
       );
     }
-  }, [addNotification, gameSettings, gameState.gameMode, gameState.selectedMode, isolatedReplayRuntime, pickRandomCharacters, showConfirmation, uiState.playerName, uiState.selectedCharacter, updateUiState]);
+    const matchStartLedger = buildMatchLifecycleLedgerFields('match_start', { day: 1, turnCounter: 0 }, { details: { mode } });
+    dispatchAuthoritativeGameActivityLedgerEvent('match_lifecycle', {
+      summary: matchStartLedger.summary,
+      payload: matchStartLedger.payload,
+      day: 1,
+      turn: 0
+    });
+  }, [addNotification, dispatchAuthoritativeGameActivityLedgerEvent, gameSettings, gameState.gameMode, gameState.selectedMode, isolatedReplayRuntime, pickRandomCharacters, showConfirmation, uiState.playerName, uiState.selectedCharacter, updateUiState]);
 
   // Phase 12: Scenario Launch & Exit Handlers
   const restorePreScenarioSettings = useCallback(() => {
@@ -207860,18 +209270,7 @@ function dispatchGameSettingsChange(
     if (gameSettings?.dynamicCrisisChainsEnabled) {
       nextState = evaluateTurnCrisisChains(nextState, gameSettings, mergeRegionalCrisisContext(worldCrisisContext(swrStateRef.current), lrStateRef.current));
     }
-    if (gameSettings?.narrativeEngineEnabled) {
-      nextState = evaluateNarrativeDecisions(nextState);
-    }
-    if (gameSettings?.campaignEngineEnabled) {
-      nextState = evaluateCampaignChapterProgression(nextState);
-    }
-    if (gameSettings?.fogOfWarEnabled) {
-      nextState = evaluateFogOfWarAndIntel(nextState);
-    }
-    if (gameSettings?.aiRivalryEnabled) {
-      nextState = evaluateAiRelationshipDecay(nextState);
-    }
+    nextState = evaluateIntegratedProgressionTurnStep(nextState, gameSettings);
     if (gameSettings.aiMemoryEnabled !== false) {
       const decayTurn = Math.max(newDay, gameState.turnCounter || 0);
       const nextMemories = applyTurnDecayToAiMemories(aiMemoriesRef.current || gameState.aiMemoriesByActor || {}, decayTurn);
@@ -207910,6 +209309,15 @@ function dispatchGameSettingsChange(
     }
     if (nextState.campaignState !== gameState.campaignState) {
       dispatchGameState({ type: 'SET_CAMPAIGN_STATE', payload: nextState.campaignState });
+    }
+    if (nextState.careerProfile !== gameState.careerProfile) {
+      dispatchGameState({ type: 'LOAD_STATE', payload: { careerProfile: nextState.careerProfile } });
+    }
+    if (nextState.activeReconMissions !== gameState.activeReconMissions) {
+      dispatchGameState({ type: 'LOAD_STATE', payload: { activeReconMissions: nextState.activeReconMissions } });
+    }
+    if (nextState.aiRelationshipState !== gameState.aiRelationshipState) {
+      dispatchGameState({ type: 'LOAD_STATE', payload: { aiRelationshipState: nextState.aiRelationshipState } });
     }
 
     if (gameSettings.automationDailyDigestEnabled) {
@@ -207954,7 +209362,8 @@ function dispatchGameSettingsChange(
 
       dispatchGameState({ type: 'NEXT_DAY' });
       advanceLiveContractsForDay();
-      dispatchAuthoritativeGameActivityLedgerEvent('match_lifecycle', { summary: `Day ${newDay} begins.` });
+      const dayStartLedger = buildMatchLifecycleLedgerFields('day_start', { day: newDay, turnCounter: gameState.turnCounter });
+      dispatchAuthoritativeGameActivityLedgerEvent('match_lifecycle', { summary: dayStartLedger.summary, payload: dayStartLedger.payload, day: newDay, turn: gameState.turnCounter });
 
       if (seasonChanged) {
         addNotification(`Season changed to ${newSeason}. Challenges have refreshed with mastery tiers.`, 'info', true);
@@ -207964,7 +209373,25 @@ function dispatchGameSettingsChange(
       const newWeather = drawGameplayRandomChoice('RandomEvents', weatherOptions);
       dispatchGameState({ type: 'UPDATE_WEATHER', payload: newWeather });
 
-      const { nextTrend, nextPrices } = computeDailyMarketUpdate(newDay, gameState.resourcePrices, gameState.marketTrend, worldMarketPressure(swrStateRef.current));
+      const geeDayInputs: GeeDayInputs = {
+        day: newDay,
+        turn: gameState.turnCounter,
+        marketTrend: gameState.marketTrend,
+        worldReaction: swrStateRef.current,
+        contentFlags: gameState.contentState?.flags || null,
+        scenarioOpening: gameState.contentState?.profile?.regionalOpening || null
+      };
+      const nextGee = advanceGlobalEconomicEnvironmentDay(
+        sanitizeGlobalEconomicEnvironmentPersisted(gameState.globalEconomicEnvironment, gameState.day),
+        geeDayInputs
+      );
+      dispatchGameState({ type: 'UPDATE_GLOBAL_ECONOMIC_ENVIRONMENT', payload: nextGee });
+      const { nextTrend, nextPrices } = computeDailyMarketUpdate(
+        newDay,
+        gameState.resourcePrices,
+        gameState.marketTrend,
+        mergeCanonicalMarketPressure(swrStateRef.current, nextGee, geeDayInputs)
+      );
       dispatchGameState({ type: 'UPDATE_MARKET_TREND', payload: nextTrend });
       dispatchGameState({ type: 'UPDATE_RESOURCE_PRICES', payload: nextPrices });
 
@@ -209348,7 +210775,8 @@ function dispatchGameSettingsChange(
 
     dispatchGameState({ type: 'NEXT_DAY' });
     advanceLiveContractsForDay();
-    dispatchAuthoritativeGameActivityLedgerEvent('match_lifecycle', { summary: `Day ${newDay} begins.` });
+    const dayStartLedger = buildMatchLifecycleLedgerFields('day_start', { day: newDay, turnCounter: gameState.turnCounter });
+      dispatchAuthoritativeGameActivityLedgerEvent('match_lifecycle', { summary: dayStartLedger.summary, payload: dayStartLedger.payload, day: newDay, turn: gameState.turnCounter });
 
     // Build projected states for daily maintenance before committing
     let projectedPlayer = { ...currentPlayer };
@@ -209385,7 +210813,25 @@ function dispatchGameSettingsChange(
     dispatchGameState({ type: 'UPDATE_WEATHER', payload: newWeather });
 
     // Market trend & price updates
-    const { nextTrend, nextPrices } = computeDailyMarketUpdate(newDay, gameState.resourcePrices, gameState.marketTrend, worldMarketPressure(swrStateRef.current));
+    const geeDayInputs: GeeDayInputs = {
+      day: newDay,
+      turn: gameState.turnCounter,
+      marketTrend: gameState.marketTrend,
+      worldReaction: swrStateRef.current,
+      contentFlags: gameState.contentState?.flags || null,
+      scenarioOpening: gameState.contentState?.profile?.regionalOpening || null
+    };
+    const nextGee = advanceGlobalEconomicEnvironmentDay(
+      sanitizeGlobalEconomicEnvironmentPersisted(gameState.globalEconomicEnvironment, gameState.day),
+      geeDayInputs
+    );
+    dispatchGameState({ type: 'UPDATE_GLOBAL_ECONOMIC_ENVIRONMENT', payload: nextGee });
+    const { nextTrend, nextPrices } = computeDailyMarketUpdate(
+      newDay,
+      gameState.resourcePrices,
+      gameState.marketTrend,
+      mergeCanonicalMarketPressure(swrStateRef.current, nextGee, geeDayInputs)
+    );
     dispatchGameState({ type: 'UPDATE_MARKET_TREND', payload: nextTrend });
     dispatchGameState({ type: 'UPDATE_RESOURCE_PRICES', payload: nextPrices });
 
@@ -218934,7 +220380,7 @@ function dispatchGameSettingsChange(
         gameSettings,
         draftGameSettings,
         depReport,
-        Boolean(gameState?.gameStarted && !gameState?.gameOver)
+        isMatchLiveForSettings(gameState)
       );
 
       if (isMatch) {
@@ -220646,6 +222092,15 @@ function dispatchGameSettingsChange(
     const view = teamOsViewRef.current;
     const inputs = view?.inputs || null;
     if (!view || !inputs) { addNotification('Team Intelligence is not active in this match.', 'warning', false, 'system'); return false; }
+    const giWorld = giWorldBuilderRef.current?.();
+    if (giWorld) {
+      const cmdCheck = validateTeamCommandIntent(command, giWorld);
+      if (!cmdCheck.ok) {
+        addNotification(`🧭 Team command not applied: ${cmdCheck.reason || 'Invalid team command.'}`.slice(0, 200), 'warning', false, 'system');
+        reportBlockedActionRef.current?.('team_command', cmdCheck.reason || 'Invalid team command.');
+        return false;
+      }
+    }
     const team: any = (teamsById as any)?.[teamOsTeamId];
     const route = routeTeamStrategyChange({ summary, teamId: teamOsTeamId, proposerActorId: String(player?.id || 'player') }, team, gameSettings, gameState);
     if (!route.approved) {
@@ -221921,8 +223376,15 @@ function dispatchGameSettingsChange(
     return sc && sc.industries && typeof sc.industries === 'object' ? sc.industries as IndustriesInputs['modifiers'] : undefined;
   }, [gameSettings.selectedScenarioId, gameState.customScenarioBuilder?.savedScenarios]);
   const scModifiersLive = useMemo(() => mergeCapabilityModifiers(scScenarioModifiers, icModifiers.industries), [scScenarioModifiers, icModifiers]);
-  const scInputs = useMemo<IndustriesInputs>(() => buildIndustriesInputs({ turn: lrInputs.turn, lr: lrState, projects: gameState.infrastructureProjects as any, national: nsState, modifiers: scModifiersLive }),
-    [lrInputs.turn, lrState, gameState.infrastructureProjects, nsState, scModifiersLive]);
+  const householdsForDemandOn = Boolean(nsEnabled && gameSettings.householdsEnabled !== false);
+  const scDomesticDemandMods = useMemo(() => {
+    if (!scEnabled || !householdsForDemandOn) return undefined;
+    const hhState = (gameState as any).householdEconomyState as NationalHouseholdEconomyState | undefined;
+    if (!hhState?.domesticDemand?.sectorSignals?.length) return undefined;
+    return buildHouseholdIndustryDemandModifiers(hhState, scPersisted?.appliedDomesticDemandProvenance || []);
+  }, [scEnabled, householdsForDemandOn, (gameState as any).householdEconomyState, scPersisted?.appliedDomesticDemandProvenance]);
+  const scInputs = useMemo<IndustriesInputs>(() => buildIndustriesInputs({ turn: lrInputs.turn, lr: lrState, projects: gameState.infrastructureProjects as any, national: nsState, modifiers: scModifiersLive, domesticDemandModifiers: scDomesticDemandMods }),
+    [lrInputs.turn, lrState, gameState.infrastructureProjects, nsState, scModifiersLive, scDomesticDemandMods]);
   const scHash = useMemo(() => industriesInputHash(scInputs), [scInputs]);
   const scState = useMemo<IndustriesSupplyChainsState | null>(() => (scEnabled && nsState ? computeIndustriesSupplyChains(scInputs, scPersistedRef.current, { emit: false }).state : null),
     [scEnabled, scHash, scPersisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -222075,18 +223537,25 @@ function dispatchGameSettingsChange(
   }, [mpEnabled, gameState.gameMode, gameState.infrastructureProjects]);
   /** One command through the canonical reducer (validation + cash exactly once). The AI's AP is counted by executeAiAction. */
   const mpRunCommand = useCallback((who: 'human' | 'ai', cmd: MegaprojectCommand): { ok: boolean; reason: string | null } => {
+    const interpreted = interpretMegaprojectCommand(cmd);
+    if (!interpreted.ok || !interpreted.value) {
+      return { ok: false, reason: formatCommandInterpretationErrors(interpreted.errors) };
+    }
+    const canonicalCmd = interpreted.value;
     const human: any = playerRef.current; const ai: any = aiPlayerRef.current;
     const actorId = who === 'ai' ? 'ai' : String(human?.id || 'player');
     const act: any = who === 'ai' ? ai : human;
-    const bundle: any = { gameState: gameStateLiveRef.current, player: human, aiPlayer: ai, actorsById: { [String(human?.id || 'player')]: human, player: human, ...(ai ? { ai } : {}) }, gameSettings };
+    const gsLive = gameStateLiveRef.current;
+    const bundle: any = { gameState: gsLive, player: human, aiPlayer: ai, actorsById: { [String(human?.id || 'player')]: human, player: human, ...(ai ? { ai } : {}) }, gameSettings, megaprojects: mpPersistedRef.current, infrastructureProjects: gsLive?.infrastructureProjects, regionalDevLevels: gsLive?.regionalDevLevels, turn: gsLive?.turnCounter || gsLive?.turn || 1 };
     const derived = { national: nsStateRef.current, industries: scStateRef.current, networks: inStateRef.current };
-    const res = reduceGameAction(bundle, { type: 'megaproject_command', actorId, teamId: act?.teamId, parameters: { command: cmd, derived } } as any, { active: true, operation: 'megaproject_command', actorId, teamId: act?.teamId } as ActionExecutionContext);
+    const res = reduceGameAction(bundle, { type: 'megaproject_command', actorId, teamId: act?.teamId, parameters: { command: canonicalCmd, derived } } as any, { active: true, operation: 'megaproject_command', actorId, teamId: act?.teamId } as ActionExecutionContext);
     const dg = mpDiagRef.current; dg.commands += 1;
     if (!res?.success) {
       dg.rejected += 1;
-      const limitsOn = gameSettings.actionLimitsEnabled !== false;
-      const why = applyMegaprojectCommand(mpPersistedRef.current, cmd, { id: actorId, kind: who, teamId: act?.teamId || null, money: Number(act?.money) || 0, currentRegion: act?.currentRegion || null,
-        apRemaining: limitsOn ? getRemainingActionPoints(act, gameSettings) : Number.POSITIVE_INFINITY, apCost: limitsOn ? 1 : 0, turnOwner: who === 'ai' || !isHumanLockedOutForSoloRival(gameStateLiveRef.current, 'human') }, mpWorldRef.current).reason;
+      const preview = previewMegaprojectCommand(mpPersistedRef.current, cmd, resolveMegaprojectActorContext(actorId, act, gameSettings, gsLive), resolveMegaprojectWorldFromGameState(bundle, gameSettings, derived));
+      return { ok: false, reason: res.error || preview.reason || 'Not possible right now.' };
+      const why = res?.error || applyMegaprojectCommand(mpPersistedRef.current, canonicalCmd, { id: actorId, kind: who, teamId: act?.teamId || null, money: Number(act?.money) || 0, currentRegion: act?.currentRegion || null,
+        apRemaining: gameSettings.actionLimitsEnabled !== false ? getRemainingActionPoints(act, gameSettings) : Number.POSITIVE_INFINITY, apCost: gameSettings.actionLimitsEnabled !== false ? 1 : 0, turnOwner: who === 'ai' || !isHumanLockedOutForSoloRival(gameStateLiveRef.current, 'human') }, mpWorldRef.current).reason;
       return { ok: false, reason: why || 'Not possible right now.' };
     }
     const next: any = res.nextState;
@@ -222588,9 +224057,10 @@ function dispatchGameSettingsChange(
       economicGeography: egEnabled ? egState : null,
       workforce: wfEnabled ? wfState : null,
       stateCapacity: sc11Enabled ? sc11State : null,
+      strategicCapital: capEnabled ? capState : null,
       persisted: pf12PersistedRef.current
     });
-  }, [pf12Enabled, nsState, lrInputs.turn, npViewerId, gameState.infrastructureProjects, gameState.crisisChainState, gameState.publicStabilityState, player?.id, lrState, rfState, scState, inState, mpEnabled, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, npEnabled, npState, egEnabled, egState, wfEnabled, wfState, sc11Enabled, sc11State, pf12Persisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pf12Enabled, nsState, lrInputs.turn, npViewerId, gameState.infrastructureProjects, gameState.crisisChainState, gameState.publicStabilityState, player?.id, lrState, rfState, scState, inState, mpEnabled, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, npEnabled, npState, egEnabled, egState, wfEnabled, wfState, sc11Enabled, sc11State, capEnabled, capState, pf12Persisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
   const pf12Hash = useMemo(() => (pf12Inputs ? publicFinanceInputHash(pf12Inputs, pf12PersistedRef.current) : ''), [pf12Inputs, pf12Persisted?.revision]);
   const pf12State = useMemo<NationalPublicFinanceState | null>(() => (pf12Inputs ? computeNationalPublicFinance(pf12Inputs, pf12PersistedRef.current).state : null),
     [pf12Hash, pf12Inputs, pf12Persisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -222696,6 +224166,7 @@ function dispatchGameSettingsChange(
       livingRegions: lrState,
       nationalSystems: nsState,
       industries: scState,
+      existingIndustryDemandSources: scPersistedRef.current?.appliedDomesticDemandProvenance || [],
       infraNetworks: inState,
       megaprojects: mpEnabled ? mpPersisted : null,
       nationalDevelopment: ndEnabled ? ndProfile : null,
@@ -239771,7 +241242,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runO111NationalCrisisSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV62DynamicEvolutionaryUiSelfTests(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
+            const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runO111NationalCrisisSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runCommandInterpretationSelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV62DynamicEvolutionaryUiSelfTests(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
