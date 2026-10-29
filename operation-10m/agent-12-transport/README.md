@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 23
+
+- Schema **`agent12/24`**: autonomous heavy haul throughput, GBR biosecurity logistics readiness, night urban freight window share (`autonomousHeavyHaulPolicy`, `gbrBiosecurityLogisticsPolicy`, `nightUrbanFreightWindowPolicy`)
+- Catalog: **328** assets, **83** corridors, **133** scenarios
+- Systems: `network/autonomous-heavy-haul-index.ts`, `operations/gbr-biosecurity-logistics-index.ts`, `productivity/night-urban-freight-window-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 22
 
 - Schema **`agent12/23`**: grid BESS logistics throughput, Pacific humanitarian sealift readiness, autonomous port tractor share (`gridBatteryLogisticsPolicy`, `pacificHumanitarianSealiftPolicy`, `autonomousPortTractorPolicy`)

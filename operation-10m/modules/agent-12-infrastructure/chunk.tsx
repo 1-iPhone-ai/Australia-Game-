@@ -289,8 +289,14 @@ export type PacificHumanitarianSealiftPolicy = 'baseline' | 'surge';
 
 export type AutonomousPortTractorPolicy = 'baseline' | 'deploy';
 
+export type AutonomousHeavyHaulPolicy = 'baseline' | 'deploy';
+
+export type GbrBiosecurityLogisticsPolicy = 'baseline' | 'harden';
+
+export type NightUrbanFreightWindowPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/23';
+  schemaVersion: 'agent12/24';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -440,6 +446,14 @@ export interface TransportInfrastructureState {
   autonomousPortTractorShare: number;
   nationalAutonomousPortTractorThroughputIndex: number;
   autonomousPortTractorThroughputByRegion: Record<AuRegionCode, number>;
+  nationalAutonomousHeavyHaulIndex: number;
+  autonomousHeavyHaulByRegion: Record<AuRegionCode, number>;
+  gbrBiosecurityLogisticsShare: number;
+  nationalGbrBiosecurityLogisticsIndex: number;
+  gbrBiosecurityLogisticsByRegion: Record<AuRegionCode, number>;
+  nightUrbanFreightWindowShare: number;
+  nationalNightUrbanFreightWindowThroughputIndex: number;
+  nightUrbanFreightWindowThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -499,6 +513,9 @@ export interface TransportInfrastructureOptions {
   gridBatteryLogisticsPolicy?: GridBatteryLogisticsPolicy;
   pacificHumanitarianSealiftPolicy?: PacificHumanitarianSealiftPolicy;
   autonomousPortTractorPolicy?: AutonomousPortTractorPolicy;
+  autonomousHeavyHaulPolicy?: AutonomousHeavyHaulPolicy;
+  gbrBiosecurityLogisticsPolicy?: GbrBiosecurityLogisticsPolicy;
+  nightUrbanFreightWindowPolicy?: NightUrbanFreightWindowPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -1482,6 +1499,48 @@ export const TRANSPORT_CORRIDORS_ROUND22: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round23.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND23: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_qld_autonomous_heavy_haul',
+    name: 'WA–QLD Autonomous Heavy Haul',
+    networkKind: 'freight',
+    regionSequence: ['WA', 'QLD'],
+    requiredTagsByRegion: {
+      WA: ['autonomous_heavy_haul', 'ore_auto_rail', 'driverless_pilbara'],
+      QLD: ['autonomous_heavy_haul', 'ore_auto_rail'],
+    },
+    productivitySynergyPoints: 6.6,
+    logisticsRelief: 0.038,
+  },
+  {
+    id: 'corr_qld_nsw_gbr_biosecurity',
+    name: 'QLD–NSW GBR Biosecurity',
+    networkKind: 'trade',
+    regionSequence: ['QLD', 'NSW'],
+    requiredTagsByRegion: {
+      QLD: ['gbr_biosecurity', 'reef_quarantine', 'coral_trade_guard'],
+      NSW: ['gbr_biosecurity', 'reef_quarantine', 'coral_trade_guard'],
+    },
+    productivitySynergyPoints: 5.8,
+    logisticsRelief: 0.032,
+  },
+  {
+    id: 'corr_nsw_vic_night_freight_window',
+    name: 'NSW–VIC Night Freight Window',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['night_freight', 'curfew_logistics', 'off_peak_urban'],
+      VIC: ['night_freight', 'curfew_logistics', 'off_peak_urban'],
+    },
+    productivitySynergyPoints: 5.7,
+    logisticsRelief: 0.031,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -1651,6 +1710,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND20,
   ...TRANSPORT_CORRIDORS_ROUND21,
   ...TRANSPORT_CORRIDORS_ROUND22,
+  ...TRANSPORT_CORRIDORS_ROUND23,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -2915,6 +2975,62 @@ export const TRANSPORT_SCENARIOS_ROUND22: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round23.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND23: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_auto_haul_surge',
+    label: 'WA Autonomous Haul Surge',
+    description: 'Ore export rush overloads Pilbara autonomous handoffs.',
+    targetRegions: ['WA'],
+    networkKind: 'freight',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['rail', 'port'],
+  },
+  {
+    id: 'scn_qld_reef_quarantine_hold',
+    label: 'Queensland Reef Quarantine Hold',
+    description: 'Biosecurity hold backs up Hay Point reef guard berths.',
+    targetRegions: ['QLD', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_nsw_night_freight_peak',
+    label: 'NSW Night Freight Peak',
+    description: 'Curfew window surge strains M5 night logistics.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['road', 'logistics'],
+  },
+  {
+    id: 'scn_vic_off_peak_rail_closure',
+    label: 'Victoria Off-Peak Rail Closure',
+    description: 'Possession cuts Melbourne night freight rail slots.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.19,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail'],
+  },
+  {
+    id: 'scn_qld_coral_trade_inspection',
+    label: 'Queensland Coral Trade Inspection',
+    description: 'Inspection blitz delays GBR export staging yards.',
+    targetRegions: ['QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.2,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'port'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -3098,6 +3214,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND20,
   ...TRANSPORT_SCENARIOS_ROUND21,
   ...TRANSPORT_SCENARIOS_ROUND22,
+  ...TRANSPORT_SCENARIOS_ROUND23,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -8818,6 +8935,263 @@ export const SCALE_WAVE_ROUND22_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round23-assets.ts ---
+
+export const ROUND23_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_newman_auto_haul',
+    category: 'road',
+    name: 'Newman Autonomous Haul Road',
+    description: 'Driverless ore road feed to Pilbara rail.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['freight'],
+    tags: ['autonomous_heavy_haul', 'ore_auto_rail', 'driverless_pilbara', 'mining'],
+    laneKilometres: 62,
+    designSpeedKmh: 85,
+    freightShare: 0.46,
+    urbanShare: 0.03,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_mackay_reef_quarantine',
+    category: 'road',
+    name: 'Mackay Reef Quarantine Feed',
+    description: 'GBR biosecurity road to reef trade ports.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 3.9,
+    strategicNetworks: ['trade'],
+    tags: ['gbr_biosecurity', 'reef_quarantine', 'coral_trade_guard', 'port_access'],
+    laneKilometres: 36,
+    designSpeedKmh: 88,
+    freightShare: 0.27,
+    urbanShare: 0.12,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_m5_night_freight',
+    category: 'road',
+    name: 'M5 Night Freight Window',
+    description: 'Off-peak urban curfew logistics on M5 corridor.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['freight', 'mobility'],
+    tags: ['night_freight', 'curfew_logistics', 'off_peak_urban', 'motorway'],
+    laneKilometres: 22,
+    designSpeedKmh: 90,
+    freightShare: 0.34,
+    urbanShare: 0.52,
+    tollRoad: true,
+  },
+  {
+    id: 'road_vic_westgate_night_lane',
+    category: 'road',
+    name: 'West Gate Night Freight Lane',
+    description: 'Melbourne night urban freight access.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['freight'],
+    tags: ['night_freight', 'curfew_logistics', 'off_peak_urban'],
+    laneKilometres: 14,
+    designSpeedKmh: 80,
+    freightShare: 0.31,
+    urbanShare: 0.58,
+    tollRoad: true,
+  },
+];
+
+export const ROUND23_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_pilbara_auto_ore',
+    category: 'rail',
+    name: 'Pilbara Autonomous Ore Rail',
+    description: 'Driverless heavy-haul iron ore mainline.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 6.2,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['autonomous_heavy_haul', 'ore_auto_rail', 'driverless_pilbara', 'heavy_haul'],
+    trackKilometres: 420,
+    dualTrackShare: 0.58,
+    electrifiedShare: 0.08,
+    designFreightTonnesPerYear: 28_000_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_qld_cairns_reef_rail',
+    category: 'rail',
+    name: 'Cairns Reef Guard Rail',
+    description: 'Biosecurity rail to GBR export ports.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['trade'],
+    tags: ['gbr_biosecurity', 'reef_quarantine', 'coral_trade_guard'],
+    trackKilometres: 78,
+    dualTrackShare: 0.39,
+    electrifiedShare: 0.12,
+    designFreightTonnesPerYear: 4_800_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nsw_sydney_night_freight',
+    category: 'rail',
+    name: 'Sydney Night Freight Rail',
+    description: 'Off-peak urban freight rail slots.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['freight'],
+    tags: ['night_freight', 'curfew_logistics', 'off_peak_urban'],
+    trackKilometres: 34,
+    dualTrackShare: 0.56,
+    electrifiedShare: 0.74,
+    designFreightTonnesPerYear: 3_200_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND23_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_port_hedland_auto',
+    category: 'port',
+    name: 'Port Hedland Autonomous Bulk',
+    description: 'Driverless haul handoff to autonomous ore berths.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 6.0,
+    strategicNetworks: ['trade'],
+    tags: ['autonomous_heavy_haul', 'ore_auto_rail', 'driverless_pilbara', 'bulk'],
+    berthCount: 5,
+    maxDraftMetres: 16.0,
+    teuCapacityPerYear: 200_000,
+    automationLevel: 2,
+    bulkShare: 0.72,
+  },
+  {
+    id: 'port_qld_hay_point_reef_guard',
+    category: 'port',
+    name: 'Hay Point Reef Guard Terminal',
+    description: 'GBR biosecurity quarantine and trade staging.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['trade'],
+    tags: ['gbr_biosecurity', 'reef_quarantine', 'coral_trade_guard', 'bulk'],
+    berthCount: 3,
+    maxDraftMetres: 14.2,
+    teuCapacityPerYear: 150_000,
+    automationLevel: 1,
+    bulkShare: 0.55,
+  },
+  {
+    id: 'port_nsw_port_kembla_night',
+    category: 'port',
+    name: 'Port Kembla Night Handoff',
+    description: 'Night-window container handoff to urban freight.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['night_freight', 'curfew_logistics', 'off_peak_urban', 'container'],
+    berthCount: 3,
+    maxDraftMetres: 13.5,
+    teuCapacityPerYear: 310_000,
+    automationLevel: 2,
+    bulkShare: 0.12,
+  },
+];
+
+export const ROUND23_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_wa_karratha_auto_yard',
+    category: 'logistics',
+    name: 'Karratha Autonomous Haul Yard',
+    description: 'Driverless ore road-rail interface staging.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['freight'],
+    tags: ['autonomous_heavy_haul', 'ore_auto_rail', 'driverless_pilbara'],
+    warehouseSqm: 108_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 43,
+  },
+  {
+    id: 'log_qld_townsville_reef_stores',
+    category: 'logistics',
+    name: 'Townsville Reef Guard Stores',
+    description: 'GBR biosecurity inspection and quarantine stores.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['trade'],
+    tags: ['gbr_biosecurity', 'reef_quarantine', 'coral_trade_guard'],
+    warehouseSqm: 72_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 56,
+  },
+  {
+    id: 'log_qld_mackay_ore_transit',
+    category: 'logistics',
+    name: 'Mackay Ore Transit Hub',
+    description: 'East coast autonomous ore intermodal handoff.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['autonomous_heavy_haul', 'ore_auto_rail'],
+    warehouseSqm: 64_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 47,
+  },
+  {
+    id: 'log_nsw_newcastle_reef_guard',
+    category: 'logistics',
+    name: 'Newcastle Reef Guard Stores',
+    description: 'NSW GBR biosecurity staging for reef trade.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['trade'],
+    tags: ['gbr_biosecurity', 'reef_quarantine', 'coral_trade_guard'],
+    warehouseSqm: 58_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 61,
+  },
+  {
+    id: 'log_vic_dandenong_night_dc',
+    category: 'logistics',
+    name: 'Dandenong Night Freight DC',
+    description: 'Off-peak urban consolidation for curfew logistics.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['freight'],
+    tags: ['night_freight', 'curfew_logistics', 'off_peak_urban'],
+    warehouseSqm: 52_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 74,
+  },
+];
+
+export const SCALE_WAVE_ROUND23_ASSETS = [
+  ...ROUND23_ROADS,
+  ...ROUND23_RAIL,
+  ...ROUND23_PORTS,
+  ...ROUND23_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -8848,6 +9222,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND20_ASSETS,
     ...SCALE_WAVE_ROUND21_ASSETS,
     ...SCALE_WAVE_ROUND22_ASSETS,
+    ...SCALE_WAVE_ROUND23_ASSETS,
   ];
 }
 
@@ -10071,6 +10446,62 @@ export function gridBatteryLogisticsProductivityMultiplier(
   policy: GridBatteryLogisticsPolicy = 'baseline',
 ): number {
   const policyBoost = policy === 'accelerate' ? 0.043 : 0;
+  const normalized = (index - 6) / 100;
+  return clamp(1 + normalized * 0.048 + policyBoost, 0.93, 1.11);
+}
+
+
+// --- source: network/autonomous-heavy-haul-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type AutonomousHeavyHaulPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 autonomous heavy-haul rail and road throughput by region. */
+export function computeAutonomousHeavyHaulByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) => t === 'autonomous_heavy_haul' || t === 'ore_auto_rail' || t === 'driverless_pilbara',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 9_500_000 + asset.trackKilometres / 520;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 720 + asset.freightShare * 3.6;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.8 + asset.bulkShare * 5.4;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 100_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalAutonomousHeavyHaulIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.43 + max * 0.57, 5, 76) * 10) / 10;
+}
+
+export function autonomousHeavyHaulProductivityMultiplier(
+  index: number,
+  policy: AutonomousHeavyHaulPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'deploy' ? 0.042 : 0;
   const normalized = (index - 6) / 100;
   return clamp(1 + normalized * 0.048 + policyBoost, 0.93, 1.11);
 }
@@ -11467,6 +11898,93 @@ export function pacificHumanitarianSealiftProductivityMultiplier(
 ): number {
   const bias = policy === 'surge' ? 1.024 : 1;
   return (1 + (share - 0.048) * 0.033) * bias;
+}
+
+
+// --- source: operations/gbr-biosecurity-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type GbrBiosecurityLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 Great Barrier Reef biosecurity logistics readiness by region. */
+export function computeGbrBiosecurityLogisticsByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 7])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'gbr_biosecurity' || t === 'reef_quarantine' || t === 'coral_trade_guard',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.0 + asset.teuCapacityPerYear / 260_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 72_000 + asset.intermodalLinks.length * 0.7;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 540;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 12_500_000;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.034 - stress * 0.027), 5, 88) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalGbrBiosecurityLogisticsIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.48 + max * 0.52, 7, 84) * 10) / 10;
+}
+
+export function computeGbrBiosecurityLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: GbrBiosecurityLogisticsPolicy = 'baseline',
+): number {
+  let guardUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('reef_quarantine') || asset.tags.includes('gbr_biosecurity')) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.5;
+        guardUnits += asset.berthCount * 1.05;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 75_000;
+        guardUnits += asset.warehouseSqm / 75_000 * 0.68;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.031;
+  const policyBoost = policy === 'harden' ? 0.033 : 0;
+  return Math.round(clamp(guardUnits / totalUnits + policyBoost, 0.03, 0.31) * 1000) / 1000;
+}
+
+export function gbrBiosecurityLogisticsProductivityMultiplier(
+  share: number,
+  policy: GbrBiosecurityLogisticsPolicy,
+): number {
+  const bias = policy === 'harden' ? 1.023 : 1;
+  return (1 + (share - 0.045) * 0.032) * bias;
 }
 
 
@@ -13100,6 +13618,88 @@ export function nationalAutonomousPortTractorThroughputIndex(
 }
 
 
+// --- source: productivity/night-urban-freight-window-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type NightUrbanFreightWindowPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of urban freight moved in off-peak night windows. */
+export function computeNightUrbanFreightWindowShare(
+  operationalAssets: TransportAsset[],
+  policy: NightUrbanFreightWindowPolicy = 'baseline',
+): number {
+  let nightUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.some((t) => t === 'night_freight' || t === 'curfew_logistics' || t === 'off_peak_urban')) {
+      if (asset.category === 'road' && 'urbanShare' in asset && asset.urbanShare > 0.2) {
+        totalUnits += asset.laneKilometres / 280 + asset.urbanShare * 2;
+        nightUnits += (asset.laneKilometres / 280 + asset.urbanShare * 2) * 0.63;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 58_000;
+        nightUnits += asset.warehouseSqm / 58_000 * 0.55;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.032;
+  const policyBoost = policy === 'expand' ? 0.031 : 0;
+  return Math.round(clamp(nightUnits / totalUnits + policyBoost, 0.03, 0.3) * 1000) / 1000;
+}
+
+export function nightUrbanFreightWindowProductivityMultiplier(
+  share: number,
+  policy: NightUrbanFreightWindowPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.022 : 1;
+  return (1 + (share - 0.05) * 0.03) * bias;
+}
+
+export function computeNightUrbanFreightWindowThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'night_freight' || t === 'curfew_logistics' || t === 'off_peak_urban',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 310 * asset.urbanShare;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 70_000;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 15_000_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalNightUrbanFreightWindowThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.51 + max * 0.49, 1.5, 52) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -13533,6 +14133,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   computeAutonomousPortTractorThroughputByRegion,
   nationalAutonomousPortTractorThroughputIndex,
 } from './autonomous-port-tractor-index.ts';
+  computeAutonomousHeavyHaulByRegion,
+  autonomousHeavyHaulProductivityMultiplier,
+  nationalAutonomousHeavyHaulIndex,
+} from '../network/autonomous-heavy-haul-index.ts';
+  computeGbrBiosecurityLogisticsByRegion,
+  computeGbrBiosecurityLogisticsShare,
+  gbrBiosecurityLogisticsProductivityMultiplier,
+  nationalGbrBiosecurityLogisticsIndex,
+} from '../operations/gbr-biosecurity-logistics-index.ts';
+  computeNightUrbanFreightWindowShare,
+  computeNightUrbanFreightWindowThroughputByRegion,
+  nationalNightUrbanFreightWindowThroughputIndex,
+  nightUrbanFreightWindowProductivityMultiplier,
+} from './night-urban-freight-window-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -14347,6 +14961,34 @@ export function computeTransportInfrastructureState(
     autonomousPortTractorShare,
     options?.autonomousPortTractorPolicy ?? 'baseline',
   );
+  const autonomousHeavyHaulByRegion = computeAutonomousHeavyHaulByRegion(ops);
+  const nationalAutonomousHeavyHaul = nationalAutonomousHeavyHaulIndex(autonomousHeavyHaulByRegion);
+  const heavyHaulMult = autonomousHeavyHaulProductivityMultiplier(
+    nationalAutonomousHeavyHaul,
+    options?.autonomousHeavyHaulPolicy ?? 'baseline',
+  );
+  const gbrBiosecurityLogisticsByRegion = computeGbrBiosecurityLogisticsByRegion(ops, networkStress);
+  const nationalGbrBiosecurity = nationalGbrBiosecurityLogisticsIndex(gbrBiosecurityLogisticsByRegion);
+  const gbrBiosecurityLogisticsShare = computeGbrBiosecurityLogisticsShare(
+    ops,
+    options?.gbrBiosecurityLogisticsPolicy ?? 'baseline',
+  );
+  const gbrMult = gbrBiosecurityLogisticsProductivityMultiplier(
+    gbrBiosecurityLogisticsShare,
+    options?.gbrBiosecurityLogisticsPolicy ?? 'baseline',
+  );
+  const nightUrbanFreightWindowThroughputByRegion = computeNightUrbanFreightWindowThroughputByRegion(ops);
+  const nationalNightUrbanFreight = nationalNightUrbanFreightWindowThroughputIndex(
+    nightUrbanFreightWindowThroughputByRegion,
+  );
+  const nightUrbanFreightWindowShare = computeNightUrbanFreightWindowShare(
+    ops,
+    options?.nightUrbanFreightWindowPolicy ?? 'baseline',
+  );
+  const nightFreightMult = nightUrbanFreightWindowProductivityMultiplier(
+    nightUrbanFreightWindowShare,
+    options?.nightUrbanFreightWindowPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -14370,6 +15012,9 @@ export function computeTransportInfrastructureState(
     const gridBatteryBoost = (gridBatteryLogisticsByRegion[code] - 5) * 0.0044;
     const sealiftBoost = (pacificHumanitarianSealiftByRegion[code] - 8) * 0.004;
     const portTractorBoost = (autonomousPortTractorThroughputByRegion[code] - 2) * 0.0039;
+    const heavyHaulBoost = (autonomousHeavyHaulByRegion[code] - 6) * 0.0043;
+    const gbrBoost = (gbrBiosecurityLogisticsByRegion[code] - 8) * 0.0039;
+    const nightFreightBoost = (nightUrbanFreightWindowThroughputByRegion[code] - 1.5) * 0.0038;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -14392,7 +15037,10 @@ export function computeTransportInfrastructureState(
         freightDroneBoost +
         gridBatteryBoost +
         sealiftBoost +
-        portTractorBoost) *
+        portTractorBoost +
+        heavyHaulBoost +
+        gbrBoost +
+        nightFreightBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -14413,7 +15061,10 @@ export function computeTransportInfrastructureState(
       freightDroneMult *
       gridBatteryMult *
       sealiftMult *
-      portTractorMult;
+      portTractorMult *
+      heavyHaulMult *
+      gbrMult *
+      nightFreightMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -14457,7 +15108,10 @@ export function computeTransportInfrastructureState(
     nationalRegionalFreightDrone * 0.008 +
     nationalGridBattery * 0.007 +
     nationalPacificSealift * 0.007 +
-    nationalAutonomousPortTractor * 0.007;
+    nationalAutonomousPortTractor * 0.007 +
+    nationalAutonomousHeavyHaul * 0.007 +
+    nationalGbrBiosecurity * 0.006 +
+    nationalNightUrbanFreight * 0.006;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -14472,7 +15126,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/23',
+    schemaVersion: 'agent12/24',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -14622,6 +15276,14 @@ export function computeTransportInfrastructureState(
     autonomousPortTractorShare,
     nationalAutonomousPortTractorThroughputIndex: nationalAutonomousPortTractor,
     autonomousPortTractorThroughputByRegion,
+    nationalAutonomousHeavyHaulIndex: nationalAutonomousHeavyHaul,
+    autonomousHeavyHaulByRegion,
+    gbrBiosecurityLogisticsShare,
+    nationalGbrBiosecurityLogisticsIndex: nationalGbrBiosecurity,
+    gbrBiosecurityLogisticsByRegion,
+    nightUrbanFreightWindowShare,
+    nationalNightUrbanFreightWindowThroughputIndex: nationalNightUrbanFreight,
+    nightUrbanFreightWindowThroughputByRegion,
     computeMs,
   };
 }
@@ -14704,7 +15366,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/23' &&
+      infra.schemaVersion === 'agent12/24' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -14775,11 +15437,15 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalCriticalMedicineAirliftIndex >= 8 &&
       infra.regionalFreightDroneShare >= 0.03 &&
       infra.nationalRegionalFreightDroneThroughputIndex >= 1.5 &&
-      infra.nationalGridBatteryLogisticsIndex >= 6 &&
+      infra.nationalGridBatteryLogisticsIndex >= 5 &&
       infra.nationalPacificHumanitarianSealiftIndex >= 8 &&
       infra.autonomousPortTractorShare >= 0.033 &&
-      infra.nationalAutonomousPortTractorThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} bess=${infra.nationalGridBatteryLogisticsIndex.toFixed(1)} sealift=${infra.nationalPacificHumanitarianSealiftIndex.toFixed(1)} tractor=${infra.nationalAutonomousPortTractorThroughputIndex.toFixed(1)}`,
+      infra.nationalAutonomousPortTractorThroughputIndex >= 2 &&
+      infra.nationalAutonomousHeavyHaulIndex >= 6 &&
+      infra.nationalGbrBiosecurityLogisticsIndex >= 8 &&
+      infra.nightUrbanFreightWindowShare >= 0.03 &&
+      infra.nationalNightUrbanFreightWindowThroughputIndex >= 1.5,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} haul=${infra.nationalAutonomousHeavyHaulIndex.toFixed(1)} gbr=${infra.nationalGbrBiosecurityLogisticsIndex.toFixed(1)} night=${infra.nationalNightUrbanFreightWindowThroughputIndex.toFixed(1)}`,
   });
 
   return results;

@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/23' &&
+      infra.schemaVersion === 'agent12/24' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -142,8 +142,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalGridBatteryLogisticsIndex >= 5 &&
       infra.nationalPacificHumanitarianSealiftIndex >= 8 &&
       infra.autonomousPortTractorShare >= 0.033 &&
-      infra.nationalAutonomousPortTractorThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} bess=${infra.nationalGridBatteryLogisticsIndex.toFixed(1)} sealift=${infra.nationalPacificHumanitarianSealiftIndex.toFixed(1)} tractor=${infra.nationalAutonomousPortTractorThroughputIndex.toFixed(1)}`,
+      infra.nationalAutonomousPortTractorThroughputIndex >= 2 &&
+      infra.nationalAutonomousHeavyHaulIndex >= 6 &&
+      infra.nationalGbrBiosecurityLogisticsIndex >= 8 &&
+      infra.nightUrbanFreightWindowShare >= 0.03 &&
+      infra.nationalNightUrbanFreightWindowThroughputIndex >= 1.5,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} haul=${infra.nationalAutonomousHeavyHaulIndex.toFixed(1)} gbr=${infra.nationalGbrBiosecurityLogisticsIndex.toFixed(1)} night=${infra.nationalNightUrbanFreightWindowThroughputIndex.toFixed(1)}`,
   });
 
   return results;

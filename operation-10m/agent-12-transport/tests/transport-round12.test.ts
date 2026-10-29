@@ -35,13 +35,13 @@ describe('Agent 12 round 12 catalog', () => {
 });
 
 describe('Agent 12 round 12 systems', () => {
-  it('returns agent12/23 with critical minerals, channel maintenance, indigenous remote supply', () => {
+  it('returns agent12/24 with critical minerals, channel maintenance, indigenous remote supply', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(90), {
       criticalMineralsPolicy: 'accelerate',
       channelMaintenancePolicy: 'dredge',
       indigenousRemoteSupplyPolicy: 'strengthen',
     });
-    assert.equal(state.schemaVersion, 'agent12/23');
+    assert.equal(state.schemaVersion, 'agent12/24');
     assert.ok(state.nationalCriticalMineralsExportIndex >= 10);
     assert.ok(state.nationalChannelMaintenanceIndex >= 40);
     assert.ok(state.indigenousRemoteSupplyShare >= 0.08);

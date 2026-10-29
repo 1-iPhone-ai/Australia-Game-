@@ -285,8 +285,14 @@ export type PacificHumanitarianSealiftPolicy = 'baseline' | 'surge';
 
 export type AutonomousPortTractorPolicy = 'baseline' | 'deploy';
 
+export type AutonomousHeavyHaulPolicy = 'baseline' | 'deploy';
+
+export type GbrBiosecurityLogisticsPolicy = 'baseline' | 'harden';
+
+export type NightUrbanFreightWindowPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/23';
+  schemaVersion: 'agent12/24';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -436,6 +442,14 @@ export interface TransportInfrastructureState {
   autonomousPortTractorShare: number;
   nationalAutonomousPortTractorThroughputIndex: number;
   autonomousPortTractorThroughputByRegion: Record<AuRegionCode, number>;
+  nationalAutonomousHeavyHaulIndex: number;
+  autonomousHeavyHaulByRegion: Record<AuRegionCode, number>;
+  gbrBiosecurityLogisticsShare: number;
+  nationalGbrBiosecurityLogisticsIndex: number;
+  gbrBiosecurityLogisticsByRegion: Record<AuRegionCode, number>;
+  nightUrbanFreightWindowShare: number;
+  nationalNightUrbanFreightWindowThroughputIndex: number;
+  nightUrbanFreightWindowThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -495,6 +509,9 @@ export interface TransportInfrastructureOptions {
   gridBatteryLogisticsPolicy?: GridBatteryLogisticsPolicy;
   pacificHumanitarianSealiftPolicy?: PacificHumanitarianSealiftPolicy;
   autonomousPortTractorPolicy?: AutonomousPortTractorPolicy;
+  autonomousHeavyHaulPolicy?: AutonomousHeavyHaulPolicy;
+  gbrBiosecurityLogisticsPolicy?: GbrBiosecurityLogisticsPolicy;
+  nightUrbanFreightWindowPolicy?: NightUrbanFreightWindowPolicy;
 }
 
 export interface V94ProjectSnapshot {
