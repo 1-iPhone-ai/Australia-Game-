@@ -289,6 +289,10 @@ export interface NationalLaborDemographicsState {
   coordinationHorizonOutlook?: NationalCoordinationHorizonOutlook;
   subjectZenithReadinessBrief?: NationalSubjectZenithReadinessBrief;
   nationalWorkforceZenithIndex?: NationalWorkforceZenithIndex;
+  zenithFlexibilityCouplingBrief?: NationalZenithFlexibilityCouplingBrief;
+  flexibilityAscentOutlook?: NationalFlexibilityAscentOutlook;
+  subjectApogeeReadinessBrief?: NationalSubjectApogeeReadinessBrief;
+  nationalWorkforceApogeeIndex?: NationalWorkforceApogeeIndex;
 }
 
 export type MigrationShockKind =
@@ -1401,6 +1405,50 @@ export interface NationalWorkforceZenithIndex {
   zenithIndex: number;
   band: WorkforceZenithBand;
   zenithDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ZenithFlexibilityCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalZenithFlexibilityCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: ZenithFlexibilityCouplingBand;
+  zenithDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type FlexibilityAscentBand = 'ebbing' | 'patchy' | 'rising' | 'ascent';
+
+export interface NationalFlexibilityAscentOutlook {
+  turn: number;
+  ascentIndex: number;
+  band: FlexibilityAscentBand;
+  horizonDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectApogeeReadinessBand = 'below_apogee' | 'approaching' | 'apogee_ready' | 'orbit_locked';
+
+export interface NationalSubjectApogeeReadinessBrief {
+  turn: number;
+  apogeeIndex: number;
+  band: SubjectApogeeReadinessBand;
+  apogeeDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceApogeeBand = 'fragile' | 'thin' | 'elevated' | 'apogee';
+
+export interface NationalWorkforceApogeeIndex {
+  turn: number;
+  apogeeIndex: number;
+  band: WorkforceApogeeBand;
+  apogeeDrag: number;
   summary: string;
   stewardNote: string;
 }
@@ -2571,7 +2619,11 @@ export type LaborGiQueryTopic =
   | 'summit_coordination_coupling'
   | 'coordination_horizon'
   | 'subject_zenith_readiness'
-  | 'workforce_zenith';
+  | 'workforce_zenith'
+  | 'zenith_flexibility_coupling'
+  | 'flexibility_ascent'
+  | 'subject_apogee_readiness'
+  | 'workforce_apogee';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -4335,6 +4387,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceZenithIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceZenithIndex.stewardNote);
+  }
+  if (
+    state.zenithFlexibilityCouplingBrief?.band === 'decoupled' ||
+    state.zenithFlexibilityCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.zenithFlexibilityCouplingBrief.stewardNote);
+  }
+  if (
+    state.flexibilityAscentOutlook?.band === 'ebbing' ||
+    state.flexibilityAscentOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.flexibilityAscentOutlook.stewardNote);
+  }
+  if (
+    state.subjectApogeeReadinessBrief?.band === 'below_apogee' ||
+    state.subjectApogeeReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectApogeeReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceApogeeIndex?.band === 'fragile' ||
+    state.nationalWorkforceApogeeIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceApogeeIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -12212,6 +12288,278 @@ export function computeNationalWorkforceZenithIndex(
 }
 
 
+// --- source: zenith-flexibility-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalWorkforceZenithIndex,
+  type NationalZenithFlexibilityCouplingBrief,
+  type ZenithFlexibilityCouplingBand
+} from './types';
+
+function couplingBand(index: number): ZenithFlexibilityCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-30 / wave-30 zenith-flexibility coupling — zenith × flexibility levers (O10-191). */
+export function computeNationalZenithFlexibilityCouplingBrief(
+  state: NationalLaborDemographicsState,
+  zenith: NationalWorkforceZenithIndex | null | undefined
+): NationalZenithFlexibilityCouplingBrief {
+  if (!state.enabled || !zenith) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      zenithDrag: 0,
+      summary: 'Zenith-flexibility coupling idle — workforce zenith unavailable.',
+      stewardNote: 'Compute workforce zenith before flexibility coupling guidance.'
+    };
+  }
+
+  let flexibilityLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    flexibilityLift += flexibilityEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  flexibilityLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const zenithDrag = v1014laborClamp(
+    zenith.zenithDrag * 0.48 + (zenith.band === 'fragile' || zenith.band === 'thin' ? 11 : 3)
+  );
+  const zenithLift =
+    zenith.band === 'elevated' || zenith.band === 'horizon'
+      ? zenith.zenithIndex * 0.24
+      : zenith.zenithIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + flexibilityLift * 21 + zenithLift - zenithDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained zenith-flexibility link — deploy flexibility levers before wave-30 apogee commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard flexibility ascent spikes that drain zenith buffers.'
+        : 'Amplified coupling — pair flexibility packs with subject apogee readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    zenithDrag,
+    summary: `Zenith-flexibility coupling ${band} (index ${Math.round(couplingIndex)}); zenith drag ${Math.round(zenithDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: flexibility-ascent-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type FlexibilityAscentBand,
+  type NationalCoordinationHorizonOutlook,
+  type NationalFlexibilityAscentOutlook,
+  type NationalLaborDemographicsState
+} from './types';
+
+function ascentBand(index: number): FlexibilityAscentBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'ascent';
+}
+
+export function computeNationalFlexibilityAscentOutlook(
+  state: NationalLaborDemographicsState,
+  coordinationHorizon: NationalCoordinationHorizonOutlook | null | undefined
+): NationalFlexibilityAscentOutlook {
+  if (!state.enabled || !coordinationHorizon) {
+    return {
+      turn: state.turn,
+      ascentIndex: 50,
+      band: 'patchy',
+      horizonDrag: 0,
+      summary: 'Flexibility ascent idle — coordination horizon unavailable.',
+      stewardNote: 'Compute coordination horizon before flexibility ascent guidance.'
+    };
+  }
+
+  let flexibilityLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    flexibilityLift += flexibilityEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  flexibilityLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const horizonDrag = v1014laborClamp(
+    coordinationHorizon.crestDrag * 0.46 +
+      (coordinationHorizon.band === 'ebbing' || coordinationHorizon.band === 'patchy' ? 10 : 3)
+  );
+  const horizonLift =
+    coordinationHorizon.band === 'rising' || coordinationHorizon.band === 'horizon'
+      ? coordinationHorizon.horizonIndex * 0.2
+      : coordinationHorizon.horizonIndex * 0.1;
+
+  const ascentIndex = v1014laborClamp(24 + flexibilityLift * 22 + horizonLift - horizonDrag);
+  const band = ascentBand(ascentIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy flexibility ascent — deploy flexibility levers before subject apogee assembly.'
+      : band === 'ascent'
+        ? 'Ascent band — verify zenith-flexibility coupling before auto workforce pushes.'
+        : 'Rising ascent — align with endurance-flexibility coupling checks.';
+
+  return {
+    turn: state.turn,
+    ascentIndex,
+    band,
+    horizonDrag,
+    summary: `National flexibility ascent ${band} (index ${Math.round(ascentIndex)}); horizon drag ${Math.round(horizonDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-apogee-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectApogeeReadinessBrief,
+  type NationalSubjectZenithReadinessBrief,
+  type NationalWorkforceZenithIndex,
+  type SubjectApogeeReadinessBand
+} from './types';
+
+function apogeeBand(index: number): SubjectApogeeReadinessBand {
+  if (index <= 34) return 'below_apogee';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'apogee_ready';
+  return 'orbit_locked';
+}
+
+/** Round-30 / wave-30 subject apogee readiness — zenith × workforce zenith (O10-191). */
+export function computeNationalSubjectApogeeReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectZenith: NationalSubjectZenithReadinessBrief | null | undefined,
+  workforceZenith: NationalWorkforceZenithIndex | null | undefined
+): NationalSubjectApogeeReadinessBrief {
+  if (!state.enabled || !subjectZenith || !workforceZenith) {
+    return {
+      turn: state.turn,
+      apogeeIndex: 50,
+      band: 'approaching',
+      apogeeDrag: 0,
+      summary: 'Subject apogee readiness idle — subject zenith or workforce zenith unavailable.',
+      stewardNote: 'Compute subject zenith and workforce zenith before apogee guidance.'
+    };
+  }
+
+  const apogeeDrag = v1014laborClamp(
+    subjectZenith.zenithDrag * 0.38 +
+      workforceZenith.zenithDrag * 0.38 +
+      (subjectZenith.band === 'below_zenith' || workforceZenith.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectZenith.band === 'zenith_ready' || subjectZenith.band === 'horizon_locked'
+      ? subjectZenith.zenithIndex * 0.27
+      : subjectZenith.zenithIndex * 0.14;
+  const workforceLift =
+    workforceZenith.band === 'elevated' || workforceZenith.band === 'horizon'
+      ? workforceZenith.zenithIndex * 0.25
+      : workforceZenith.zenithIndex * 0.12;
+
+  const apogeeIndex = v1014laborClamp(20 + subjectLift + workforceLift - apogeeDrag);
+  const band = apogeeBand(apogeeIndex);
+
+  const stewardNote =
+    band === 'below_apogee' || band === 'approaching'
+      ? 'Approaching apogee — hold O10-191 wave-30 scale until zenith-flexibility syncs.'
+      : band === 'orbit_locked'
+        ? 'Orbit-locked apogee — still monitor flexibility ascent during corridor peaks.'
+        : 'Apogee-ready — pair with workforce apogee index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    apogeeIndex,
+    band,
+    apogeeDrag,
+    summary: `Subject apogee readiness ${band} (index ${Math.round(apogeeIndex)}); apogee drag ${Math.round(apogeeDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-apogee-index.ts ---
+  type NationalFlexibilityAscentOutlook,
+  type NationalLaborDemographicsState,
+  type NationalSubjectApogeeReadinessBrief,
+  type NationalWorkforceApogeeIndex,
+  type NationalZenithFlexibilityCouplingBrief,
+  type WorkforceApogeeBand
+} from './types';
+
+function apogeeBand(index: number): WorkforceApogeeBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'apogee';
+}
+
+export function computeNationalWorkforceApogeeIndex(
+  state: NationalLaborDemographicsState,
+  flexibilityCoupling: NationalZenithFlexibilityCouplingBrief | null | undefined,
+  flexibilityAscent: NationalFlexibilityAscentOutlook | null | undefined,
+  subjectApogee: NationalSubjectApogeeReadinessBrief | null | undefined
+): NationalWorkforceApogeeIndex {
+  if (!state.enabled || !flexibilityCoupling || !flexibilityAscent || !subjectApogee) {
+    return {
+      turn: state.turn,
+      apogeeIndex: 50,
+      band: 'thin',
+      apogeeDrag: 0,
+      summary: 'Workforce apogee idle — flexibility coupling, flexibility ascent, or subject apogee unavailable.',
+      stewardNote: 'Compute O10-191 wave-30 depth stack before apogee guidance.'
+    };
+  }
+
+  const apogeeDrag = v1014laborClamp(
+    subjectApogee.apogeeDrag * 0.35 +
+      flexibilityCoupling.zenithDrag * 0.3 +
+      flexibilityAscent.horizonDrag * 0.25 +
+      (subjectApogee.band === 'below_apogee' || flexibilityCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const flexibilityLift =
+    flexibilityCoupling.band === 'amplified' || flexibilityCoupling.band === 'elevated'
+      ? flexibilityCoupling.couplingIndex * 0.2
+      : flexibilityCoupling.couplingIndex * 0.1;
+  const ascentLift =
+    flexibilityAscent.band === 'rising' || flexibilityAscent.band === 'ascent'
+      ? flexibilityAscent.ascentIndex * 0.18
+      : flexibilityAscent.ascentIndex * 0.09;
+  const subjectLift =
+    subjectApogee.band === 'apogee_ready' || subjectApogee.band === 'orbit_locked'
+      ? subjectApogee.apogeeIndex * 0.22
+      : subjectApogee.apogeeIndex * 0.11;
+
+  const apogeeIndex = v1014laborClamp(18 + flexibilityLift + ascentLift + subjectLift - apogeeDrag);
+  const band = apogeeBand(apogeeIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce apogee — sequence zenith-flexibility, flexibility ascent, and subject apogee before post-88fa570 tranche.'
+      : band === 'apogee'
+        ? 'Apogee band — avoid corridor overload that breaks subject apogee bands.'
+        : 'Elevated apogee — refresh subject apogee checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    apogeeIndex,
+    band,
+    apogeeDrag,
+    summary: `National workforce apogee ${band} (index ${Math.round(apogeeIndex)}); apogee drag ${Math.round(apogeeDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -13130,6 +13478,25 @@ export function computeNationalLaborDemographics(
     state.coordinationHorizonOutlook,
     state.subjectZenithReadinessBrief
   );
+  state.zenithFlexibilityCouplingBrief = computeNationalZenithFlexibilityCouplingBrief(
+    state,
+    state.nationalWorkforceZenithIndex
+  );
+  state.flexibilityAscentOutlook = computeNationalFlexibilityAscentOutlook(
+    state,
+    state.coordinationHorizonOutlook
+  );
+  state.subjectApogeeReadinessBrief = computeNationalSubjectApogeeReadinessBrief(
+    state,
+    state.subjectZenithReadinessBrief,
+    state.nationalWorkforceZenithIndex
+  );
+  state.nationalWorkforceApogeeIndex = computeNationalWorkforceApogeeIndex(
+    state,
+    state.zenithFlexibilityCouplingBrief,
+    state.flexibilityAscentOutlook,
+    state.subjectApogeeReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -13728,6 +14095,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceZenithIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.zenithFlexibilityCouplingBrief?.band === 'decoupled' ||
+      state.zenithFlexibilityCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.zenithFlexibilityCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.flexibilityAscentOutlook?.band === 'ebbing' ||
+      state.flexibilityAscentOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.flexibilityAscentOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectApogeeReadinessBrief?.band === 'below_apogee' ||
+      state.subjectApogeeReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectApogeeReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceApogeeIndex?.band === 'fragile' ||
+      state.nationalWorkforceApogeeIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceApogeeIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -15379,6 +15774,62 @@ export function runV1014LaborDemographicsSelfTests(): {
     'summit steward note'
   );
   check('R2816', retentionPullForRegion('NSW', 'technology') > 0, 'retention pull for region');
+
+  check('R2901', Boolean(r1.state.summitCoordinationCouplingBrief?.band), 'summit coordination on state');
+  check('R2902', (r1.state.summitCoordinationCouplingBrief?.summitDrag ?? 0) >= 0, 'summit coordination drag');
+  check('R2903', Boolean(r1.state.coordinationHorizonOutlook?.band), 'coordination horizon on state');
+  check('R2904', (r1.state.coordinationHorizonOutlook?.crestDrag ?? 0) >= 0, 'coordination horizon crest drag');
+  check('R2905', Boolean(r1.state.subjectZenithReadinessBrief?.band), 'subject zenith on state');
+  check('R2906', Boolean(r1.state.nationalWorkforceZenithIndex?.band), 'workforce zenith on state');
+  check(
+    'R2907',
+    detectLaborDemographicsQuery('summit coordination coupling') === 'summit_coordination_coupling',
+    'GI summit coordination detect'
+  );
+  check(
+    'R2908',
+    detectLaborDemographicsQuery('coordination horizon') === 'coordination_horizon',
+    'GI coordination horizon detect'
+  );
+  check(
+    'R2909',
+    detectLaborDemographicsQuery('subject zenith readiness') === 'subject_zenith_readiness',
+    'GI subject zenith detect'
+  );
+  check(
+    'R2910',
+    detectLaborDemographicsQuery('workforce zenith') === 'workforce_zenith',
+    'GI workforce zenith detect'
+  );
+  check(
+    'R2911',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_zenith').headline.length > 5,
+    'GI workforce zenith answer'
+  );
+  const summitCoordinationOnly = computeNationalSummitCoordinationCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceSummitIndex
+  );
+  check('R2912', summitCoordinationOnly.summary.length > 10, 'summit coordination standalone summary');
+  const coordinationHorizonOnly = computeNationalCoordinationHorizonOutlook(r1.state, r1.state.retentionCrestOutlook);
+  check('R2913', coordinationHorizonOnly.band.length > 3, 'coordination horizon band string');
+  const subjectZenithOnly = computeNationalSubjectZenithReadinessBrief(
+    r1.state,
+    r1.state.subjectSummitReadinessBrief,
+    r1.state.nationalWorkforceSummitIndex
+  );
+  check('R2914', subjectZenithOnly.zenithDrag >= 0, 'subject zenith drag');
+  check(
+    'R2915',
+    computeNationalWorkforceZenithIndex(
+      rHhBad.state,
+      rHhBad.state.summitCoordinationCouplingBrief,
+      rHhBad.state.coordinationHorizonOutlook,
+      rHhBad.state.subjectZenithReadinessBrief
+    ).stewardNote.length > 8,
+    'zenith steward note'
+  );
+  check('R2916', coordinationEaseForRegion('NSW', 'technology') > 0, 'coordination ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

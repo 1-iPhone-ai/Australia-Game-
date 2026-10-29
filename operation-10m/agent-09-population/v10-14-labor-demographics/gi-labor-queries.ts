@@ -103,7 +103,11 @@ export type LaborGiQueryTopic =
   | 'summit_coordination_coupling'
   | 'coordination_horizon'
   | 'subject_zenith_readiness'
-  | 'workforce_zenith';
+  | 'workforce_zenith'
+  | 'zenith_flexibility_coupling'
+  | 'flexibility_ascent'
+  | 'subject_apogee_readiness'
+  | 'workforce_apogee';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -204,6 +208,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(coordination horizon|coordination pipeline horizon)/.test(q)) return 'coordination_horizon';
   if (/\b(subject zenith readiness|zenith readiness subject)/.test(q)) return 'subject_zenith_readiness';
   if (/\b(workforce zenith|zenith index labor)/.test(q)) return 'workforce_zenith';
+  if (/\b(zenith flexibility|zenith-flexibility coupling)/.test(q)) return 'zenith_flexibility_coupling';
+  if (/\b(flexibility ascent|flexibility pipeline ascent)/.test(q)) return 'flexibility_ascent';
+  if (/\b(subject apogee readiness|apogee readiness subject)/.test(q)) return 'subject_apogee_readiness';
+  if (/\b(workforce apogee|apogee index labor)/.test(q)) return 'workforce_apogee';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1022,6 +1030,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Zenith band ${state.nationalWorkforceZenithIndex?.band ?? 'unknown'}; zenith drag ${Math.round(state.nationalWorkforceZenithIndex?.zenithDrag ?? 0)}.`,
         inference: state.nationalWorkforceZenithIndex?.stewardNote || state.summary,
         projection: 'Workforce zenith synthesizes coordination coupling, coordination horizon, and subject zenith.'
+      };
+    case 'zenith_flexibility_coupling':
+      return {
+        topic,
+        headline: state.zenithFlexibilityCouplingBrief?.summary || 'Zenith-flexibility coupling unavailable.',
+        fact: `Coupling band ${state.zenithFlexibilityCouplingBrief?.band ?? 'unknown'}; zenith drag ${Math.round(state.zenithFlexibilityCouplingBrief?.zenithDrag ?? 0)}.`,
+        inference: state.zenithFlexibilityCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce zenith with flexibility levers — wave 30 / O10-191 depth.'
+      };
+    case 'flexibility_ascent':
+      return {
+        topic,
+        headline: state.flexibilityAscentOutlook?.summary || 'Flexibility ascent unavailable.',
+        fact: `Ascent band ${state.flexibilityAscentOutlook?.band ?? 'unknown'}; horizon drag ${Math.round(state.flexibilityAscentOutlook?.horizonDrag ?? 0)}.`,
+        inference: state.flexibilityAscentOutlook?.stewardNote || state.outlook,
+        projection: 'Ascent blends flexibility levers with coordination horizon — bounded indices only.'
+      };
+    case 'subject_apogee_readiness':
+      return {
+        topic,
+        headline: state.subjectApogeeReadinessBrief?.summary || 'Subject apogee readiness unavailable.',
+        fact: `Apogee band ${state.subjectApogeeReadinessBrief?.band ?? 'unknown'}; apogee drag ${Math.round(state.subjectApogeeReadinessBrief?.apogeeDrag ?? 0)}.`,
+        inference: state.subjectApogeeReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject apogee readiness gates subject zenith against workforce zenith for O10-191 wave 30.'
+      };
+    case 'workforce_apogee':
+      return {
+        topic,
+        headline: state.nationalWorkforceApogeeIndex?.summary || 'Workforce apogee unavailable.',
+        fact: `Apogee band ${state.nationalWorkforceApogeeIndex?.band ?? 'unknown'}; apogee drag ${Math.round(state.nationalWorkforceApogeeIndex?.apogeeDrag ?? 0)}.`,
+        inference: state.nationalWorkforceApogeeIndex?.stewardNote || state.summary,
+        projection: 'Workforce apogee synthesizes flexibility coupling, flexibility ascent, and subject apogee.'
       };
     default:
       return {

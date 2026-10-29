@@ -285,6 +285,10 @@ export interface NationalLaborDemographicsState {
   coordinationHorizonOutlook?: NationalCoordinationHorizonOutlook;
   subjectZenithReadinessBrief?: NationalSubjectZenithReadinessBrief;
   nationalWorkforceZenithIndex?: NationalWorkforceZenithIndex;
+  zenithFlexibilityCouplingBrief?: NationalZenithFlexibilityCouplingBrief;
+  flexibilityAscentOutlook?: NationalFlexibilityAscentOutlook;
+  subjectApogeeReadinessBrief?: NationalSubjectApogeeReadinessBrief;
+  nationalWorkforceApogeeIndex?: NationalWorkforceApogeeIndex;
 }
 
 export type MigrationShockKind =
@@ -1397,6 +1401,50 @@ export interface NationalWorkforceZenithIndex {
   zenithIndex: number;
   band: WorkforceZenithBand;
   zenithDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ZenithFlexibilityCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalZenithFlexibilityCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: ZenithFlexibilityCouplingBand;
+  zenithDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type FlexibilityAscentBand = 'ebbing' | 'patchy' | 'rising' | 'ascent';
+
+export interface NationalFlexibilityAscentOutlook {
+  turn: number;
+  ascentIndex: number;
+  band: FlexibilityAscentBand;
+  horizonDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectApogeeReadinessBand = 'below_apogee' | 'approaching' | 'apogee_ready' | 'orbit_locked';
+
+export interface NationalSubjectApogeeReadinessBrief {
+  turn: number;
+  apogeeIndex: number;
+  band: SubjectApogeeReadinessBand;
+  apogeeDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceApogeeBand = 'fragile' | 'thin' | 'elevated' | 'apogee';
+
+export interface NationalWorkforceApogeeIndex {
+  turn: number;
+  apogeeIndex: number;
+  band: WorkforceApogeeBand;
+  apogeeDrag: number;
   summary: string;
   stewardNote: string;
 }

@@ -170,6 +170,10 @@ import { computeNationalSummitCoordinationCouplingBrief } from './summit-coordin
 import { computeNationalCoordinationHorizonOutlook } from './coordination-horizon-outlook';
 import { computeNationalSubjectZenithReadinessBrief } from './subject-zenith-readiness-brief';
 import { computeNationalWorkforceZenithIndex } from './national-workforce-zenith-index';
+import { computeNationalZenithFlexibilityCouplingBrief } from './zenith-flexibility-coupling-brief';
+import { computeNationalFlexibilityAscentOutlook } from './flexibility-ascent-outlook';
+import { computeNationalSubjectApogeeReadinessBrief } from './subject-apogee-readiness-brief';
+import { computeNationalWorkforceApogeeIndex } from './national-workforce-apogee-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -1808,6 +1812,62 @@ export function runV1014LaborDemographicsSelfTests(): {
     'zenith steward note'
   );
   check('R2916', coordinationEaseForRegion('NSW', 'technology') > 0, 'coordination ease for region');
+
+  check('R3001', Boolean(r1.state.zenithFlexibilityCouplingBrief?.band), 'zenith flexibility on state');
+  check('R3002', (r1.state.zenithFlexibilityCouplingBrief?.zenithDrag ?? 0) >= 0, 'zenith flexibility drag');
+  check('R3003', Boolean(r1.state.flexibilityAscentOutlook?.band), 'flexibility ascent on state');
+  check('R3004', (r1.state.flexibilityAscentOutlook?.horizonDrag ?? 0) >= 0, 'flexibility ascent horizon drag');
+  check('R3005', Boolean(r1.state.subjectApogeeReadinessBrief?.band), 'subject apogee on state');
+  check('R3006', Boolean(r1.state.nationalWorkforceApogeeIndex?.band), 'workforce apogee on state');
+  check(
+    'R3007',
+    detectLaborDemographicsQuery('zenith flexibility coupling') === 'zenith_flexibility_coupling',
+    'GI zenith flexibility detect'
+  );
+  check(
+    'R3008',
+    detectLaborDemographicsQuery('flexibility ascent') === 'flexibility_ascent',
+    'GI flexibility ascent detect'
+  );
+  check(
+    'R3009',
+    detectLaborDemographicsQuery('subject apogee readiness') === 'subject_apogee_readiness',
+    'GI subject apogee detect'
+  );
+  check(
+    'R3010',
+    detectLaborDemographicsQuery('workforce apogee') === 'workforce_apogee',
+    'GI workforce apogee detect'
+  );
+  check(
+    'R3011',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_apogee').headline.length > 5,
+    'GI workforce apogee answer'
+  );
+  const zenithFlexibilityOnly = computeNationalZenithFlexibilityCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceZenithIndex
+  );
+  check('R3012', zenithFlexibilityOnly.summary.length > 10, 'zenith flexibility standalone summary');
+  const flexibilityAscentOnly = computeNationalFlexibilityAscentOutlook(r1.state, r1.state.coordinationHorizonOutlook);
+  check('R3013', flexibilityAscentOnly.band.length > 3, 'flexibility ascent band string');
+  const subjectApogeeOnly = computeNationalSubjectApogeeReadinessBrief(
+    r1.state,
+    r1.state.subjectZenithReadinessBrief,
+    r1.state.nationalWorkforceZenithIndex
+  );
+  check('R3014', subjectApogeeOnly.apogeeDrag >= 0, 'subject apogee drag');
+  check(
+    'R3015',
+    computeNationalWorkforceApogeeIndex(
+      rHhBad.state,
+      rHhBad.state.zenithFlexibilityCouplingBrief,
+      rHhBad.state.flexibilityAscentOutlook,
+      rHhBad.state.subjectApogeeReadinessBrief
+    ).stewardNote.length > 8,
+    'apogee steward note'
+  );
+  check('R3016', flexibilityEaseForRegion('NSW', 'technology') > 0, 'flexibility ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
