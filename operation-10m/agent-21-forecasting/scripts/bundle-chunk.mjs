@@ -182,7 +182,10 @@ const SOURCE_FILES = [
   'operation-10m/agent-21-forecasting/forecast-round49-console.tsx',
   'operation-10m/agent-21-forecasting/forecast-wave50-projection-sync.ts',
   'operation-10m/agent-21-forecasting/forecast-integration-wave50-origin-handoff.ts',
-  'operation-10m/agent-21-forecasting/forecast-round50-console.tsx'
+  'operation-10m/agent-21-forecasting/forecast-round50-console.tsx',
+  'operation-10m/agent-21-forecasting/forecast-wave51-projection-sync.ts',
+  'operation-10m/agent-21-forecasting/forecast-integration-wave51-origin-handoff.ts',
+  'operation-10m/agent-21-forecasting/forecast-round51-console.tsx'
 ];
 
 function stripModuleImports(src) {
