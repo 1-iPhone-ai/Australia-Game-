@@ -17,6 +17,8 @@ import { applyMacroTurnsSpillover, readMacroTurnsSpilloverFromV102 } from './bri
 import { applyMacroTransportSpillover, readMacroTransportSpilloverFromV1017 } from './bridge-v1017-transport.ts';
 import { applyMacroResearchSpillover, readMacroResearchSpilloverFromV103 } from './bridge-v103-research.ts';
 import { applyMacroPopulationSpillover, readMacroPopulationSpilloverFromV109Pop } from './bridge-v109-population.ts';
+import { applyMacroModesSpillover, readMacroModesSpilloverFromV1006 } from './bridge-v1006-modes.ts';
+import { applyMacroGuardianSpillover, readMacroGuardianSpilloverFromV1016Guardian } from './bridge-v1016-guardian.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
@@ -28,6 +30,7 @@ import { buildMacroTransmissionCoherenceSnapshot } from './macro-transmission-co
 import { buildMacroTransmissionConcentrationSnapshot } from './macro-transmission-concentration.ts';
 import { buildMacroTransmissionAsymmetrySnapshot } from './macro-transmission-asymmetry.ts';
 import { buildMacroTransmissionVolatilitySnapshot } from './macro-transmission-volatility.ts';
+import { buildMacroTransmissionResilienceSnapshot } from './macro-transmission-resilience.ts';
 import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
 import { V1014_MACRO_LIMITS } from './constants.ts';
 import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
@@ -109,6 +112,8 @@ export function computeNationalMacroEconomy(
   const transportSpillover = readMacroTransportSpilloverFromV1017(inputs);
   const researchSpillover = readMacroResearchSpilloverFromV103(inputs);
   const populationSpillover = readMacroPopulationSpilloverFromV109Pop(inputs);
+  const modesSpillover = readMacroModesSpilloverFromV1006(inputs);
+  const guardianSpillover = readMacroGuardianSpilloverFromV1016Guardian(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -127,7 +132,9 @@ export function computeNationalMacroEconomy(
   const withTransport = applyMacroTransportSpillover(withTurns, transportSpillover);
   const withResearch = applyMacroResearchSpillover(withTransport, researchSpillover);
   const withPopulation = applyMacroPopulationSpillover(withResearch, populationSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withPopulation, pushEv);
+  const withModes = applyMacroModesSpillover(withPopulation, modesSpillover);
+  const withGuardian = applyMacroGuardianSpillover(withModes, guardianSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withGuardian, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -173,7 +180,9 @@ export function computeNationalMacroEconomy(
     turns: turnsSpillover,
     transport: transportSpillover,
     research: researchSpillover,
-    population: populationSpillover
+    population: populationSpillover,
+    modes: modesSpillover,
+    guardian: guardianSpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
@@ -181,6 +190,7 @@ export function computeNationalMacroEconomy(
   const transmissionConcentration = buildMacroTransmissionConcentrationSnapshot(transmissionReport);
   const transmissionAsymmetry = buildMacroTransmissionAsymmetrySnapshot(transmissionReport);
   const transmissionVolatility = buildMacroTransmissionVolatilitySnapshot(transmissionReport);
+  const transmissionResilience = buildMacroTransmissionResilienceSnapshot(transmissionReport);
 
   const capacitySnapshot = buildMacroCapacitySnapshot({
     state: {
@@ -249,12 +259,15 @@ export function computeNationalMacroEconomy(
     transportSpilloverSummary: transportSpillover.summary,
     researchSpilloverSummary: researchSpillover.summary,
     populationSpilloverSummary: populationSpillover.summary,
+    modesSpilloverSummary: modesSpillover.summary,
+    guardianSpilloverSummary: guardianSpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,
     transmissionConcentration,
     transmissionAsymmetry,
     transmissionVolatility,
+    transmissionResilience,
     transmissionReport,
     stressIndex: {
       score: 0,

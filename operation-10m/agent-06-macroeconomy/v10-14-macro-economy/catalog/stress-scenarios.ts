@@ -78,6 +78,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Research & population stress',
     shockIds: ['global_slowdown', 'credit_contraction'],
     description: 'Weak research pipeline with demographic drag (harness overlay).'
+  },
+  {
+    id: 'modes_guardian_stress',
+    label: 'Modes & guardian stress',
+    shockIds: ['housing_correction', 'global_slowdown'],
+    description: 'Extreme scenario difficulty with elevated guardian alerts (harness overlay).'
   }
 ];
 

@@ -28,6 +28,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeEventsCompaniesStress?: boolean;
   includeTurnsTransportStress?: boolean;
   includeResearchPopulationStress?: boolean;
+  includeModesGuardianStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
@@ -38,6 +39,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   const includeEventsCompaniesStress = Boolean(options?.includeEventsCompaniesStress);
   const includeTurnsTransportStress = Boolean(options?.includeTurnsTransportStress);
   const includeResearchPopulationStress = Boolean(options?.includeResearchPopulationStress);
+  const includeModesGuardianStress = Boolean(options?.includeModesGuardianStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -131,6 +133,20 @@ export function runMacroEconomyRegressionHarness(options?: {
             dependencyBand: t % 6 === 0 ? 'elevated' : 'favorable',
             netMigrationBand: t % 9 === 0 ? 'outflow' : 'strong_inflow'
           }
+        : undefined,
+      modesScenarios: includeModesGuardianStress
+        ? {
+            difficultyBand: t % 6 === 0 ? 'extreme' : 'standard',
+            campaignMomentum: { band: t % 7 === 0 ? 'stalled' : 'summit_push' },
+            scenarioVolatility: { band: t % 5 === 0 ? 'high' : 'stable' }
+          }
+        : undefined,
+      guardianCopilot: includeModesGuardianStress
+        ? {
+            alertBand: t % 8 === 0 ? 'critical' : 'calm',
+            openWarningCount: t % 6 === 0 ? 4 : 1,
+            guidanceConfidence: { band: t % 9 === 0 ? 'low' : 'high' }
+          }
         : undefined
     });
     const { state, persisted: nextP } = computeNationalMacroEconomy(inputs, persisted, prev);
@@ -191,8 +207,8 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionCoherence.coherenceIndex)
     });
     checks.push({
-      id: 'eighteen_transmission_layers',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 18,
+      id: 'twenty_transmission_layers',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 20,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -203,8 +219,8 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionConcentration.concentrationIndex)
     });
     checks.push({
-      id: 'eighteen_transmission_layers_events',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 18,
+      id: 'twenty_transmission_layers_events',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 20,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -215,8 +231,8 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionAsymmetry.asymmetryIndex)
     });
     checks.push({
-      id: 'eighteen_transmission_layers_turns',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 18,
+      id: 'twenty_transmission_layers_turns',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 20,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -227,8 +243,20 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionVolatility.volatilityIndex)
     });
     checks.push({
-      id: 'eighteen_transmission_layers_research',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 18,
+      id: 'twenty_transmission_layers_research',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 20,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeModesGuardianStress && prev) {
+    checks.push({
+      id: 'transmission_resilience_finite',
+      passed: Number.isFinite(prev.transmissionResilience.resilienceIndex),
+      detail: String(prev.transmissionResilience.resilienceIndex)
+    });
+    checks.push({
+      id: 'twenty_transmission_layers_modes',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 20,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }

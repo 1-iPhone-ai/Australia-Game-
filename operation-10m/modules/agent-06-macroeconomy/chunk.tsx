@@ -107,12 +107,15 @@ export interface NationalMacroEconomyState {
   transportSpilloverSummary: string | null;
   researchSpilloverSummary: string | null;
   populationSpilloverSummary: string | null;
+  modesSpilloverSummary: string | null;
+  guardianSpilloverSummary: string | null;
   capacitySnapshot: MacroCapacitySnapshot;
   transmissionBalance: MacroTransmissionBalanceSnapshot;
   transmissionCoherence: MacroTransmissionCoherenceSnapshot;
   transmissionConcentration: MacroTransmissionConcentrationSnapshot;
   transmissionAsymmetry: MacroTransmissionAsymmetrySnapshot;
   transmissionVolatility: MacroTransmissionVolatilitySnapshot;
+  transmissionResilience: MacroTransmissionResilienceSnapshot;
   transmissionReport: MacroTransmissionReport;
   stressIndex: MacroStressIndexSnapshot;
   policyStance: MacroPolicyStanceSnapshot;
@@ -235,6 +238,16 @@ export interface MacroTransmissionVolatilitySnapshot {
   summary: string;
 }
 
+export type MacroTransmissionResilienceBand = 'fragile' | 'mixed' | 'steady' | 'robust';
+
+export interface MacroTransmissionResilienceSnapshot {
+  resilienceIndex: number;
+  band: MacroTransmissionResilienceBand;
+  resilientLayerCount: number;
+  consideredLayerCount: number;
+  summary: string;
+}
+
 export type MacroStressBand = 'calm' | 'elevated' | 'acute';
 
 export interface MacroStressIndexSnapshot {
@@ -308,6 +321,12 @@ export interface MacroEconomyInputs {
   population?: any;
   demographics?: any;
   nationalPopulation?: any;
+  modesScenarios?: any;
+  gameModes?: any;
+  scenarioRuntime?: any;
+  guardianCopilot?: any;
+  guardian?: any;
+  coPilotWarnings?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;
   /** Additional catalog shock ids (see catalog/cyclical-shocks.ts). Legacy flags merge in. */
@@ -955,6 +974,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Research & population stress',
     shockIds: ['global_slowdown', 'credit_contraction'],
     description: 'Weak research pipeline with demographic drag (harness overlay).'
+  },
+  {
+    id: 'modes_guardian_stress',
+    label: 'Modes & guardian stress',
+    shockIds: ['housing_correction', 'global_slowdown'],
+    description: 'Extreme scenario difficulty with elevated guardian alerts (harness overlay).'
   }
 ];
 
@@ -1458,6 +1483,12 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
     population: params?.population ?? params?.gameState?.populationState ?? params?.nationalSystems?.population,
     demographics: params?.demographics,
     nationalPopulation: params?.nationalPopulation,
+    modesScenarios: params?.modesScenarios ?? params?.gameState?.modesScenariosState ?? params?.nationalSystems?.modes,
+    gameModes: params?.gameModes,
+    scenarioRuntime: params?.scenarioRuntime ?? params?.gameState?.scenarioRuntime,
+    guardianCopilot: params?.guardianCopilot ?? params?.guardian ?? params?.gameState?.guardianState,
+    guardian: params?.guardian,
+    coPilotWarnings: params?.coPilotWarnings,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };
@@ -2794,6 +2825,157 @@ export function applyMacroPopulationSpillover(
 }
 
 
+// --- source: bridge-v1006-modes.ts ---
+
+export interface MacroModesSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.6 modes / scenarios read-only spillover (never mutates mode state). */
+export function readMacroModesSpilloverFromV1006(inputs: MacroEconomyInputs): MacroModesSpillover {
+  const md: any =
+    inputs.modesScenarios ??
+    inputs.gameModes ??
+    inputs.scenarioRuntime ??
+    inputs.nationalSystems?.modes ??
+    inputs.nationalSystems?.scenarios;
+  if (!md) return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const difficulty = String(md.difficultyBand ?? md.scenarioDifficulty?.band ?? md.pressureBand ?? '');
+  const campaign = String(md.campaignMomentum?.band ?? md.campaignPhase?.band ?? md.progressBand ?? '');
+  const volatility = String(md.scenarioVolatility?.band ?? md.modeVolatility?.band ?? '');
+
+  if (difficulty === 'extreme' || difficulty === 'crisis' || difficulty === 'hardcore') {
+    cycleNudge -= 2;
+    investmentNudge -= 1;
+    productivityNudge -= 1;
+    summary = `Elevated scenario difficulty (${difficulty}) drags macro cycle read.`;
+  } else if (difficulty === 'sandbox' || difficulty === 'relaxed' || difficulty === 'tutorial') {
+    cycleNudge += 0.5;
+    investmentNudge += 0.5;
+    summary = 'Relaxed scenario difficulty supports stable macro interpretation.';
+  }
+
+  if (campaign === 'summit_push' || campaign === 'ascent' || campaign === 'breakout') {
+    investmentNudge += 2;
+    cycleNudge += 1;
+    summary = (summary ? summary + ' ' : '') + 'Strong campaign momentum lifts macro investment read.';
+  } else if (campaign === 'stalled' || campaign === 'regression' || campaign === 'retreat') {
+    cycleNudge -= 2;
+    investmentNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Stalled campaign momentum weighs on macro cycle.';
+  }
+
+  if (volatility === 'high' || volatility === 'chaotic') {
+    cycleNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'High scenario volatility increases macro uncertainty read.';
+  } else if (volatility === 'low' || volatility === 'stable') {
+    cycleNudge += 0.5;
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroModesSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroModesSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: bridge-v1016-guardian.ts ---
+
+export interface MacroGuardianSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.16 guardian co-pilot spillover (distinct from credit layer; never mutates guardian state). */
+export function readMacroGuardianSpilloverFromV1016Guardian(inputs: MacroEconomyInputs): MacroGuardianSpillover {
+  const g: any =
+    inputs.guardianCopilot ??
+    inputs.guardian ??
+    inputs.coPilotWarnings ??
+    inputs.nationalSystems?.guardian;
+  if (!g) return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const alertBand = String(g.alertBand ?? g.riskBand ?? g.overallRisk?.band ?? '');
+  const openWarnings = Math.max(0, Math.floor(Number(g.openWarningCount ?? g.activeWarnings ?? g.warningCount ?? 0)));
+  const confidence = String(g.guidanceConfidence?.band ?? g.confidenceBand ?? '');
+
+  if (alertBand === 'critical' || alertBand === 'severe' || alertBand === 'red') {
+    cycleNudge -= 3;
+    investmentNudge -= 2;
+    productivityNudge -= 1;
+    summary = `Guardian alert band (${alertBand}) drags macro cycle and investment read.`;
+  } else if (alertBand === 'elevated' || alertBand === 'amber' || alertBand === 'watch') {
+    cycleNudge -= 1;
+    investmentNudge -= 1;
+    summary = `Elevated guardian alerts (${alertBand}) cap macro upside interpretation.`;
+  } else if (alertBand === 'calm' || alertBand === 'green' || alertBand === 'clear') {
+    cycleNudge += 0.5;
+    summary = 'Calm guardian backdrop supports stable macro read.';
+  }
+
+  if (openWarnings >= 5) {
+    cycleNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + `${openWarnings} open guardian warnings amplify macro downside risk.`;
+  } else if (openWarnings >= 3) {
+    cycleNudge -= 1;
+  }
+
+  if (confidence === 'low' || confidence === 'uncertain') {
+    investmentNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Low guardian guidance confidence reduces investment conviction read.';
+  } else if (confidence === 'high' || confidence === 'strong') {
+    investmentNudge += 0.5;
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroGuardianSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroGuardianSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
 // --- source: macro-transmission.ts ---
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -2818,6 +3000,8 @@ export function buildMacroTransmissionReport(params: {
   transport?: MacroTransportSpillover;
   research?: MacroResearchSpillover;
   population?: MacroPopulationSpillover;
+  modes?: MacroModesSpillover;
+  guardian?: MacroGuardianSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -2827,6 +3011,8 @@ export function buildMacroTransmissionReport(params: {
   const transport = params.transport ?? ZERO_SPILLOVER;
   const research = params.research ?? ZERO_SPILLOVER;
   const population = params.population ?? ZERO_SPILLOVER;
+  const modes = params.modes ?? ZERO_SPILLOVER;
+  const guardian = params.guardian ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -2943,6 +3129,22 @@ export function buildMacroTransmissionReport(params: {
       population.investmentNudge,
       population.productivityNudge,
       population.summary
+    ),
+    layer(
+      'v10.6_modes',
+      'Modes & scenarios',
+      modes.cycleNudge,
+      modes.investmentNudge,
+      modes.productivityNudge,
+      modes.summary
+    ),
+    layer(
+      'v10.16_guardian',
+      'Guardian co-pilot',
+      guardian.cycleNudge,
+      guardian.investmentNudge,
+      guardian.productivityNudge,
+      guardian.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);
@@ -3374,6 +3576,40 @@ export function buildMacroTransmissionVolatilitySnapshot(
 }
 
 
+// --- source: macro-transmission-resilience.ts ---
+  MacroTransmissionReport,
+  MacroTransmissionResilienceBand,
+  MacroTransmissionResilienceSnapshot
+} from './types.ts';
+
+export type { MacroTransmissionResilienceBand, MacroTransmissionResilienceSnapshot };
+
+/** Share of layers whose net nudge is not materially restrictive — macro read resilience proxy. */
+export function buildMacroTransmissionResilienceSnapshot(
+  report: MacroTransmissionReport
+): MacroTransmissionResilienceSnapshot {
+  let resilient = 0;
+  let considered = 0;
+  for (const layer of report.layers) {
+    const net = layer.cycleContribution + layer.investmentContribution * 0.35 + layer.productivityContribution * 0.2;
+    if (Math.abs(net) < 0.05) continue;
+    considered++;
+    if (net >= -0.15) resilient++;
+  }
+  const ratio = considered > 0 ? resilient / considered : 1;
+  const resilienceIndex = Math.round(v1014macroClamp(ratio, 0, 1) * 1000) / 10;
+
+  let band: MacroTransmissionResilienceBand = 'fragile';
+  if (resilienceIndex >= 78) band = 'robust';
+  else if (resilienceIndex >= 62) band = 'steady';
+  else if (resilienceIndex >= 45) band = 'mixed';
+
+  const summary = `Transmission resilience ${resilienceIndex.toFixed(1)} (${band}); ${resilient}/${considered} layers non-restrictive.`;
+
+  return { resilienceIndex, band, resilientLayerCount: resilient, consideredLayerCount: considered, summary };
+}
+
+
 // --- source: scenario-compare.ts ---
 
 export interface MacroScenarioCompareRow {
@@ -3531,6 +3767,35 @@ export function rankMacroScenarioSeverity(rows: MacroScenarioCompareRow[]): Macr
 }
 
 
+// --- source: scenario-composite-rank.ts ---
+
+export interface MacroScenarioCompositeRow {
+  scenarioId: string;
+  compositeScore: number;
+}
+
+/** Lab composite rank blending severity, elasticity, and convergence (higher = more policy attention). */
+export function rankMacroScenarioComposite(rows: MacroScenarioCompareRow[]): MacroScenarioCompositeRow[] {
+  const severity = rankMacroScenarioSeverity(rows);
+  const elasticity = rankMacroScenarioElasticity(rows);
+  const convergence = rankMacroScenarioConvergence(rows);
+  const sevMax = Math.max(1, ...severity.map(s => s.severityIndex));
+  const elMax = Math.max(1, ...elasticity.map(e => e.elasticity));
+  const convMax = Math.max(1, ...convergence.map(c => c.convergenceIndex));
+
+  return rows
+    .map(row => {
+      const sev = severity.find(s => s.scenarioId === row.scenarioId)?.severityIndex ?? 0;
+      const el = elasticity.find(e => e.scenarioId === row.scenarioId)?.elasticity ?? 0;
+      const conv = convergence.find(c => c.scenarioId === row.scenarioId)?.convergenceIndex ?? 0;
+      const compositeScore =
+        Math.round(((sev / sevMax) * 0.5 + (el / elMax) * 0.3 + (1 - conv / convMax) * 0.2) * 1000) / 1000;
+      return { scenarioId: row.scenarioId, compositeScore };
+    })
+    .sort((a, b) => b.compositeScore - a.compositeScore);
+}
+
+
 // --- source: regression-harness.ts ---
 
 export interface MacroRegressionCheck {
@@ -3557,6 +3822,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeEventsCompaniesStress?: boolean;
   includeTurnsTransportStress?: boolean;
   includeResearchPopulationStress?: boolean;
+  includeModesGuardianStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
@@ -3567,6 +3833,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   const includeEventsCompaniesStress = Boolean(options?.includeEventsCompaniesStress);
   const includeTurnsTransportStress = Boolean(options?.includeTurnsTransportStress);
   const includeResearchPopulationStress = Boolean(options?.includeResearchPopulationStress);
+  const includeModesGuardianStress = Boolean(options?.includeModesGuardianStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -3660,6 +3927,20 @@ export function runMacroEconomyRegressionHarness(options?: {
             dependencyBand: t % 6 === 0 ? 'elevated' : 'favorable',
             netMigrationBand: t % 9 === 0 ? 'outflow' : 'strong_inflow'
           }
+        : undefined,
+      modesScenarios: includeModesGuardianStress
+        ? {
+            difficultyBand: t % 6 === 0 ? 'extreme' : 'standard',
+            campaignMomentum: { band: t % 7 === 0 ? 'stalled' : 'summit_push' },
+            scenarioVolatility: { band: t % 5 === 0 ? 'high' : 'stable' }
+          }
+        : undefined,
+      guardianCopilot: includeModesGuardianStress
+        ? {
+            alertBand: t % 8 === 0 ? 'critical' : 'calm',
+            openWarningCount: t % 6 === 0 ? 4 : 1,
+            guidanceConfidence: { band: t % 9 === 0 ? 'low' : 'high' }
+          }
         : undefined
     });
     const { state, persisted: nextP } = computeNationalMacroEconomy(inputs, persisted, prev);
@@ -3720,8 +4001,8 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionCoherence.coherenceIndex)
     });
     checks.push({
-      id: 'eighteen_transmission_layers',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 18,
+      id: 'twenty_transmission_layers',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 20,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -3732,8 +4013,8 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionConcentration.concentrationIndex)
     });
     checks.push({
-      id: 'eighteen_transmission_layers_events',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 18,
+      id: 'twenty_transmission_layers_events',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 20,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -3744,8 +4025,8 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionAsymmetry.asymmetryIndex)
     });
     checks.push({
-      id: 'eighteen_transmission_layers_turns',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 18,
+      id: 'twenty_transmission_layers_turns',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 20,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -3756,8 +4037,20 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionVolatility.volatilityIndex)
     });
     checks.push({
-      id: 'eighteen_transmission_layers_research',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 18,
+      id: 'twenty_transmission_layers_research',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 20,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeModesGuardianStress && prev) {
+    checks.push({
+      id: 'transmission_resilience_finite',
+      passed: Number.isFinite(prev.transmissionResilience.resilienceIndex),
+      detail: String(prev.transmissionResilience.resilienceIndex)
+    });
+    checks.push({
+      id: 'twenty_transmission_layers_modes',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 20,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -4306,6 +4599,32 @@ export function evaluateMacroConsistencyGates(
       summary: 'Elevated cross-layer transmission volatility — composite macro scores may swing turn-to-turn.'
     });
   }
+  const md: any = inputs.modesScenarios ?? inputs.gameModes ?? inputs.scenarioRuntime;
+  const difficulty = String(md?.difficultyBand ?? md?.scenarioDifficulty?.band ?? '');
+  if (
+    (difficulty === 'extreme' || difficulty === 'crisis') &&
+    (state.stressIndex?.band === 'acute' || state.stressIndex?.band === 'elevated')
+  ) {
+    gates.push({
+      id: 'modes_stress_alignment',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Extreme scenario difficulty aligns with elevated macro stress index — composite downside risk.'
+    });
+  }
+  const grd: any = inputs.guardianCopilot ?? inputs.guardian ?? inputs.coPilotWarnings;
+  const alert = String(grd?.alertBand ?? grd?.riskBand ?? '');
+  if (
+    (alert === 'critical' || alert === 'severe' || alert === 'red') &&
+    state.transmissionResilience?.band === 'fragile'
+  ) {
+    gates.push({
+      id: 'guardian_resilience_fragility',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Critical guardian alerts with fragile transmission resilience — macro read highly brittle.'
+    });
+  }
   return gates;
 }
 
@@ -4505,6 +4824,8 @@ export function computeNationalMacroEconomy(
   const transportSpillover = readMacroTransportSpilloverFromV1017(inputs);
   const researchSpillover = readMacroResearchSpilloverFromV103(inputs);
   const populationSpillover = readMacroPopulationSpilloverFromV109Pop(inputs);
+  const modesSpillover = readMacroModesSpilloverFromV1006(inputs);
+  const guardianSpillover = readMacroGuardianSpilloverFromV1016Guardian(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -4523,7 +4844,9 @@ export function computeNationalMacroEconomy(
   const withTransport = applyMacroTransportSpillover(withTurns, transportSpillover);
   const withResearch = applyMacroResearchSpillover(withTransport, researchSpillover);
   const withPopulation = applyMacroPopulationSpillover(withResearch, populationSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withPopulation, pushEv);
+  const withModes = applyMacroModesSpillover(withPopulation, modesSpillover);
+  const withGuardian = applyMacroGuardianSpillover(withModes, guardianSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withGuardian, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -4569,7 +4892,9 @@ export function computeNationalMacroEconomy(
     turns: turnsSpillover,
     transport: transportSpillover,
     research: researchSpillover,
-    population: populationSpillover
+    population: populationSpillover,
+    modes: modesSpillover,
+    guardian: guardianSpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
@@ -4577,6 +4902,7 @@ export function computeNationalMacroEconomy(
   const transmissionConcentration = buildMacroTransmissionConcentrationSnapshot(transmissionReport);
   const transmissionAsymmetry = buildMacroTransmissionAsymmetrySnapshot(transmissionReport);
   const transmissionVolatility = buildMacroTransmissionVolatilitySnapshot(transmissionReport);
+  const transmissionResilience = buildMacroTransmissionResilienceSnapshot(transmissionReport);
 
   const capacitySnapshot = buildMacroCapacitySnapshot({
     state: {
@@ -4645,12 +4971,15 @@ export function computeNationalMacroEconomy(
     transportSpilloverSummary: transportSpillover.summary,
     researchSpilloverSummary: researchSpillover.summary,
     populationSpilloverSummary: populationSpillover.summary,
+    modesSpilloverSummary: modesSpillover.summary,
+    guardianSpilloverSummary: guardianSpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,
     transmissionConcentration,
     transmissionAsymmetry,
     transmissionVolatility,
+    transmissionResilience,
     transmissionReport,
     stressIndex: {
       score: 0,
@@ -5311,7 +5640,7 @@ export function runAgent06Round4SelfTests(): {
     strategic: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null },
     housing: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null }
   });
-  record('R4-03', 'Transmission report has eighteen layers', report.layers.length === 18, String(report.layers.length));
+  record('R4-03', 'Transmission report has twenty layers', report.layers.length === 20, String(report.layers.length));
   record('R4-04', 'Net cycle nudge finite', Number.isFinite(report.netCycleNudge), String(report.netCycleNudge));
 
   const integrated = computeNationalMacroEconomy(
@@ -5322,7 +5651,7 @@ export function runAgent06Round4SelfTests(): {
     null,
     null
   );
-  record('R4-05', 'State carries transmission report', integrated.state.transmissionReport.layers.length === 18, 'ok');
+  record('R4-05', 'State carries transmission report', integrated.state.transmissionReport.layers.length === 20, 'ok');
   record('R4-06', 'Trade summary on state', integrated.state.tradeSpilloverSummary != null, String(integrated.state.tradeSpilloverSummary));
 
   const stress = computeNationalMacroEconomy(
@@ -5465,7 +5794,7 @@ export function runAgent06Round6SelfTests(): {
   );
   record('R6-03', 'State exposes innovation summary', integrated.state.innovationSpilloverSummary != null, 'ok');
   record('R6-04', 'State exposes workforce summary', integrated.state.workforceSpilloverSummary != null, 'ok');
-  record('R6-05', 'Eighteen transmission layers', integrated.state.transmissionReport.layers.length === 18, String(integrated.state.transmissionReport.layers.length));
+  record('R6-05', 'Twenty transmission layers', integrated.state.transmissionReport.layers.length === 20, String(integrated.state.transmissionReport.layers.length));
 
   const capacity = buildMacroCapacitySnapshot({
     state: integrated.state,
@@ -5549,8 +5878,8 @@ export function runAgent06Round7SelfTests(): {
   record('R7-04', 'State exposes housing summary', integrated.state.housingSpilloverSummary != null, 'ok');
   record(
     'R7-05',
-    'Eighteen transmission layers',
-    integrated.state.transmissionReport.layers.length === 18,
+    'Twenty transmission layers',
+    integrated.state.transmissionReport.layers.length === 20,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -5637,8 +5966,8 @@ export function runAgent06Round8SelfTests(): {
   record('R8-04', 'State exposes energy summary', integrated.state.energySpilloverSummary != null, 'ok');
   record(
     'R8-05',
-    'Eighteen transmission layers',
-    integrated.state.transmissionReport.layers.length === 18,
+    'Twenty transmission layers',
+    integrated.state.transmissionReport.layers.length === 20,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -5734,8 +6063,8 @@ export function runAgent06Round9SelfTests(): {
   record('R9-04', 'State exposes companies summary', integrated.state.companiesSpilloverSummary != null, 'ok');
   record(
     'R9-05',
-    'Eighteen transmission layers',
-    integrated.state.transmissionReport.layers.length === 18,
+    'Twenty transmission layers',
+    integrated.state.transmissionReport.layers.length === 20,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -5828,8 +6157,8 @@ export function runAgent06Round10SelfTests(): {
   record('R10-04', 'State exposes transport summary', integrated.state.transportSpilloverSummary != null, 'ok');
   record(
     'R10-05',
-    'Eighteen transmission layers',
-    integrated.state.transmissionReport.layers.length === 18,
+    'Twenty transmission layers',
+    integrated.state.transmissionReport.layers.length === 20,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -5918,8 +6247,8 @@ export function runAgent06Round11SelfTests(): {
   record('R11-04', 'State exposes population summary', integrated.state.populationSpilloverSummary != null, 'ok');
   record(
     'R11-05',
-    'Eighteen transmission layers',
-    integrated.state.transmissionReport.layers.length === 18,
+    'Twenty transmission layers',
+    integrated.state.transmissionReport.layers.length === 20,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -5959,6 +6288,95 @@ export function runAgent06Round11SelfTests(): {
   record(
     'R11-10',
     'Research/population regression harness',
+    harness.allPassed,
+    harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: round12-self-tests.ts ---
+
+export function runAgent06Round12SelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const modes = readMacroModesSpilloverFromV1006(
+    makeDefaultV1014_MACRO_TestInputs({
+      modesScenarios: { difficultyBand: 'crisis', campaignMomentum: { band: 'stalled' }, scenarioVolatility: { band: 'chaotic' } }
+    })
+  );
+  record('R12-01', 'Crisis scenario drags cycle read', modes.cycleNudge < -3, String(modes.cycleNudge));
+
+  const guardian = readMacroGuardianSpilloverFromV1016Guardian(
+    makeDefaultV1014_MACRO_TestInputs({
+      guardianCopilot: { alertBand: 'critical', openWarningCount: 6, guidanceConfidence: { band: 'low' } }
+    })
+  );
+  record('R12-02', 'Critical guardian drags investment', guardian.investmentNudge < -2, String(guardian.investmentNudge));
+
+  const integrated = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({
+      modesScenarios: { difficultyBand: 'relaxed', campaignMomentum: { band: 'summit_push' }, scenarioVolatility: { band: 'stable' } },
+      guardianCopilot: { alertBand: 'calm', openWarningCount: 0, guidanceConfidence: { band: 'high' } }
+    }),
+    null,
+    null
+  );
+  record('R12-03', 'State exposes modes summary', integrated.state.modesSpilloverSummary != null, 'ok');
+  record('R12-04', 'State exposes guardian summary', integrated.state.guardianSpilloverSummary != null, 'ok');
+  record(
+    'R12-05',
+    'Twenty transmission layers',
+    integrated.state.transmissionReport.layers.length === 20,
+    String(integrated.state.transmissionReport.layers.length)
+  );
+
+  const resilience = buildMacroTransmissionResilienceSnapshot(integrated.state.transmissionReport);
+  record('R12-06', 'Transmission resilience finite', Number.isFinite(resilience.resilienceIndex), String(resilience.resilienceIndex));
+  record(
+    'R12-07',
+    'Transmission includes modes layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.6_modes'),
+    integrated.state.transmissionReport.layers.map(l => l.systemId).join(',')
+  );
+
+  const compare = compareMacroEconomyScenarios(
+    makeDefaultV1014_MACRO_TestInputs({ turn: 22 }),
+    [
+      { id: 'crisis_mode', overlay: { modesScenarios: { difficultyBand: 'extreme', scenarioVolatility: { band: 'high' } } } },
+      { id: 'guardian_red', overlay: { guardianCopilot: { alertBand: 'severe', openWarningCount: 5 } } }
+    ],
+    null,
+    null
+  );
+  const composite = rankMacroScenarioComposite(compare);
+  const severity = rankMacroScenarioSeverity(compare);
+  record('R12-08', 'Scenario composite preserves row count', composite.length === 2, String(composite.length));
+  record(
+    'R12-09',
+    'Composite and severity both rank scenarios',
+    severity.length === 2 && composite[0].compositeScore >= 0,
+    composite.map(c => c.scenarioId).join('>')
+  );
+
+  const harness = runMacroEconomyRegressionHarness({
+    turns: 10,
+    scenarioId: 'modes_guardian_stress',
+    includeModesGuardianStress: true
+  });
+  record(
+    'R12-10',
+    'Modes/guardian regression harness',
     harness.allPassed,
     harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
   );
@@ -6111,6 +6529,11 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
 
   const round11 = runAgent06Round11SelfTests();
   for (const r of round11.results) {
+    check(r.id, r.name, r.passed, r.detail);
+  }
+
+  const round12 = runAgent06Round12SelfTests();
+  for (const r of round12.results) {
     check(r.id, r.name, r.passed, r.detail);
   }
 

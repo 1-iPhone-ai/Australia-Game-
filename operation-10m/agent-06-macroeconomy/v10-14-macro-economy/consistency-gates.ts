@@ -338,5 +338,31 @@ export function evaluateMacroConsistencyGates(
       summary: 'Elevated cross-layer transmission volatility — composite macro scores may swing turn-to-turn.'
     });
   }
+  const md: any = inputs.modesScenarios ?? inputs.gameModes ?? inputs.scenarioRuntime;
+  const difficulty = String(md?.difficultyBand ?? md?.scenarioDifficulty?.band ?? '');
+  if (
+    (difficulty === 'extreme' || difficulty === 'crisis') &&
+    (state.stressIndex?.band === 'acute' || state.stressIndex?.band === 'elevated')
+  ) {
+    gates.push({
+      id: 'modes_stress_alignment',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Extreme scenario difficulty aligns with elevated macro stress index — composite downside risk.'
+    });
+  }
+  const grd: any = inputs.guardianCopilot ?? inputs.guardian ?? inputs.coPilotWarnings;
+  const alert = String(grd?.alertBand ?? grd?.riskBand ?? '');
+  if (
+    (alert === 'critical' || alert === 'severe' || alert === 'red') &&
+    state.transmissionResilience?.band === 'fragile'
+  ) {
+    gates.push({
+      id: 'guardian_resilience_fragility',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Critical guardian alerts with fragile transmission resilience — macro read highly brittle.'
+    });
+  }
   return gates;
 }
