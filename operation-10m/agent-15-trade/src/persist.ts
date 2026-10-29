@@ -221,6 +221,7 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     wave53SovereignHandoffDepthSmoothing: 0.52,
     wave54SovereignHandoffLatticeSmoothing: 0.54,
     wave55SovereignHandoffDepthStackingSmoothing: 0.56,
+    wave56SovereignHandoffDepthStackingSmoothing: 0.57,
   };
 }
 
@@ -628,6 +629,11 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   );
   base.wave55SovereignHandoffDepthStackingSmoothing = gtelClamp(
     gtelNum(r.wave55SovereignHandoffDepthStackingSmoothing, 0.56),
+    0.2,
+    0.96,
+  );
+  base.wave56SovereignHandoffDepthStackingSmoothing = gtelClamp(
+    gtelNum(r.wave56SovereignHandoffDepthStackingSmoothing, 0.57),
     0.2,
     0.96,
   );

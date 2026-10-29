@@ -251,6 +251,7 @@ export interface GTELPersisted {
   wave53SovereignHandoffDepthSmoothing?: number;
   wave54SovereignHandoffLatticeSmoothing?: number;
   wave55SovereignHandoffDepthStackingSmoothing?: number;
+  wave56SovereignHandoffDepthStackingSmoothing?: number;
 }
 
 export interface GTELState {
