@@ -97,6 +97,8 @@ export interface StrategicActionDefinition {
   minCoalitionSovereignContinuumStreakDays?: number;
   /** Action requires eternal ascendance streak after sovereign continuum. */
   minCoalitionEternalAscendanceStreakDays?: number;
+  /** Action requires infinite persistence streak after eternal ascendance. */
+  minCoalitionInfinitePersistenceStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -151,7 +153,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_civilizational_endurance_streak'; minDays: number }
   | { kind: 'min_coalition_transcendent_legacy_streak'; minDays: number }
   | { kind: 'min_coalition_sovereign_continuum_streak'; minDays: number }
-  | { kind: 'min_coalition_eternal_ascendance_streak'; minDays: number };
+  | { kind: 'min_coalition_eternal_ascendance_streak'; minDays: number }
+  | { kind: 'min_coalition_infinite_persistence_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -223,6 +226,8 @@ export interface StrategicGameplayState {
   coalitionSovereignContinuumStreakDays?: number;
   /** Days sovereign continuum held eternal ascendance eligibility. */
   coalitionEternalAscendanceStreakDays?: number;
+  /** Days eternal ascendance held infinite persistence eligibility. */
+  coalitionInfinitePersistenceStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;

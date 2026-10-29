@@ -10,7 +10,7 @@ import { priorityMomentumBonus } from './priority-momentum.ts';
 import { detectStrategicSynergies, synergyScoreBonus } from './strategic-synergies.ts';
 import { STRATEGIC_ACTION_CATALOG } from '../catalog/strategic-action-catalog.ts';
 import { mandateRankingBonus } from './strategic-mandate.ts';
-import { coalitionBalanceRankingBonus, coalitionRecoveryRankingBonus, sustainedRecoveryRankingBonus, stabilizationRankingBonus, lockInRankingBonus, crossModuleSyncRankingBonus, integratedMaturityRankingBonus, stewardshipRankingBonus, anchoredGovernanceRankingBonus, institutionalPermanenceRankingBonus, generationalContinuityRankingBonus, civilizationalEnduranceRankingBonus, transcendentLegacyRankingBonus, sovereignContinuumRankingBonus, eternalAscendanceRankingBonus } from './coalition-balance.ts';
+import { coalitionBalanceRankingBonus, coalitionRecoveryRankingBonus, sustainedRecoveryRankingBonus, stabilizationRankingBonus, lockInRankingBonus, crossModuleSyncRankingBonus, integratedMaturityRankingBonus, stewardshipRankingBonus, anchoredGovernanceRankingBonus, institutionalPermanenceRankingBonus, generationalContinuityRankingBonus, civilizationalEnduranceRankingBonus, transcendentLegacyRankingBonus, sovereignContinuumRankingBonus, eternalAscendanceRankingBonus, infinitePersistenceRankingBonus } from './coalition-balance.ts';
 import { scoreNationalPriorityAlignment, validateAction } from './validation.ts';
 
 export function rankStrategicActions(
@@ -53,7 +53,8 @@ export function rankStrategicActions(
         civilizationalEnduranceRankingBonus(state, action) +
         transcendentLegacyRankingBonus(state, action) +
         sovereignContinuumRankingBonus(state, action) +
-        eternalAscendanceRankingBonus(state, action),
+        eternalAscendanceRankingBonus(state, action) +
+        infinitePersistenceRankingBonus(state, action),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });

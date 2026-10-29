@@ -168,3 +168,13 @@ export function eternalAscendanceRankingBonus(
   if (streak >= action.minCoalitionEternalAscendanceStreakDays) return 12;
   return 2;
 }
+
+export function infinitePersistenceRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionInfinitePersistenceStreakDays === undefined) return 0;
+  const streak = state.coalitionInfinitePersistenceStreakDays ?? 0;
+  if (streak >= action.minCoalitionInfinitePersistenceStreakDays) return 13;
+  return 2;
+}

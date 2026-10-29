@@ -46,6 +46,10 @@ import {
   advanceCoalitionEternalAscendanceStreak,
   applyEternalAscendanceMandateBonus,
 } from './coalition-eternal-ascendance.ts';
+import {
+  advanceCoalitionInfinitePersistenceStreak,
+  applyInfinitePersistenceMandateBonus,
+} from './coalition-infinite-persistence.ts';
 import { advanceCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 import type { StakeholderGroupId, StakeholderSentiment } from '../types/coalition-mandate.ts';
@@ -123,6 +127,8 @@ export function advanceStrategicGameplayCalendar(
   next = applySovereignContinuumMandateBonus(next, daysAdvanced);
   next = advanceCoalitionEternalAscendanceStreak(next, daysAdvanced);
   next = applyEternalAscendanceMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionInfinitePersistenceStreak(next, daysAdvanced);
+  next = applyInfinitePersistenceMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 
