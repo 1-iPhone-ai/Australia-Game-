@@ -293,6 +293,10 @@ export interface TeamMultiAgentCoordinationMeta {
   crossTeamRejectionIndex?: number;
   handoffSlaVelocityIndex?: number;
   recoveryActionBreadthIndex?: number;
+  directiveQuotaExhaustionIndex?: number;
+  quotaExhaustedActorIds?: string[];
+  capacityImbalanceIndex?: number;
+  workstreamBarrierStalenessIndex?: number;
 }
 
 export const AGENT18_LIMITS = {

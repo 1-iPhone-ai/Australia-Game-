@@ -297,6 +297,10 @@ export interface TeamMultiAgentCoordinationMeta {
   crossTeamRejectionIndex?: number;
   handoffSlaVelocityIndex?: number;
   recoveryActionBreadthIndex?: number;
+  directiveQuotaExhaustionIndex?: number;
+  quotaExhaustedActorIds?: string[];
+  capacityImbalanceIndex?: number;
+  workstreamBarrierStalenessIndex?: number;
 }
 
 export const AGENT18_LIMITS = {
@@ -3550,6 +3554,126 @@ export function combineDualTeamRecoveryActionBreadth(friendly: number, enemy: nu
 }
 
 
+// --- source: directive-quota-exhaustion-index.ts ---
+export interface DirectiveQuotaExhaustionReport {
+  exhaustionIndex: number;
+  notes: string[];
+}
+
+/**
+ * Pressure from directive quota drops and actors with zero remaining quota.
+ */
+export function computeDirectiveQuotaExhaustionIndex(
+  droppedCount: number,
+  quotaExhaustedActorIds: string[],
+): DirectiveQuotaExhaustionReport {
+  const notes: string[] = [];
+  const exhausted = quotaExhaustedActorIds.length;
+  if (droppedCount > 0) {
+    notes.push(`${droppedCount} directive(s) dropped by quota guard`);
+  }
+  if (exhausted > 0) {
+    notes.push(`${exhausted} actor(s) at directive quota limit`);
+  }
+
+  const exhaustionIndex = Math.round(
+    Math.min(100, droppedCount * 18 + exhausted * 22 + (droppedCount > 0 && exhausted > 0 ? 10 : 0)),
+  );
+
+  return { exhaustionIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamDirectiveQuotaExhaustion(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: capacity-imbalance-index.ts ---
+export interface CapacityImbalanceReport {
+  imbalanceIndex: number;
+  notes: string[];
+}
+
+/**
+ * Actor capacity skew: simultaneous overload and idle teammates.
+ */
+export function computeCapacityImbalanceIndex(
+  balanceScore: number,
+  overloadedActorIds: string[],
+  idleActorIds: string[],
+): CapacityImbalanceReport {
+  const notes: string[] = [];
+  const overloaded = overloadedActorIds.length;
+  const idle = idleActorIds.length;
+  if (overloaded > 0 && idle > 0) {
+    notes.push(`Capacity skew: ${overloaded} overloaded, ${idle} idle`);
+  } else if (overloaded >= 2) {
+    notes.push(`${overloaded} actors overloaded without idle relief`);
+  }
+
+  const skewPairs = Math.min(overloaded, idle);
+  const imbalanceIndex = Math.round(
+    Math.min(
+      100,
+      Math.max(0, 100 - balanceScore) * 0.45 + skewPairs * 24 + overloaded * 8 + idle * 4,
+    ),
+  );
+
+  return { imbalanceIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamCapacityImbalance(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: workstream-barrier-staleness-index.ts ---
+
+export interface WorkstreamBarrierStalenessReport {
+  stalenessIndex: number;
+  notes: string[];
+}
+
+/**
+ * How long workstreams have waited at barriers relative to the SLA cap.
+ */
+export function computeWorkstreamBarrierStalenessIndex(
+  currentTurn: number,
+  workstreamBarrierSince: Record<string, number>,
+  stalledWorkstreamIds: string[],
+): WorkstreamBarrierStalenessReport {
+  const notes: string[] = [];
+  const maxWait = AGENT18_LIMITS.workstreamBarrierMaxWaitTurns;
+  let worstWait = 0;
+
+  stalledWorkstreamIds.forEach(wsId => {
+    const since = workstreamBarrierSince[wsId];
+    if (since === undefined) return;
+    const wait = Math.max(0, currentTurn - since);
+    worstWait = Math.max(worstWait, wait);
+  });
+
+  if (worstWait > maxWait) {
+    notes.push(`Workstream barrier stale ${worstWait} turn(s) (cap ${maxWait})`);
+  } else if (stalledWorkstreamIds.length > 0 && worstWait >= maxWait) {
+    notes.push(`${stalledWorkstreamIds.length} stalled workstream(s) at barrier cap`);
+  }
+
+  const stallPenalty = stalledWorkstreamIds.length * 14;
+  const waitPenalty = worstWait <= 0 ? 0 : Math.min(60, (worstWait / Math.max(1, maxWait)) * 55);
+  const stalenessIndex = Math.round(Math.min(100, stallPenalty + waitPenalty));
+
+  return { stalenessIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamWorkstreamBarrierStaleness(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
 // --- source: coordination-audit.ts ---
   AGENT18_LIMITS,
   CoordinationAuditFinding,
@@ -4063,6 +4187,39 @@ export function auditTeamMultiAgentLayer(
     });
   }
 
+  if (
+    typeof state.meta.directiveQuotaExhaustionIndex === 'number' &&
+    state.meta.directiveQuotaExhaustionIndex >= 42
+  ) {
+    push({
+      severity: 'warning',
+      message: `Directive quota exhaustion (${state.meta.directiveQuotaExhaustionIndex})`,
+      actorIds: state.meta.quotaExhaustedActorIds || [],
+      regionId: null,
+    });
+  }
+
+  if (typeof state.meta.capacityImbalanceIndex === 'number' && state.meta.capacityImbalanceIndex >= 48) {
+    push({
+      severity: 'warning',
+      message: `Actor capacity imbalance (${state.meta.capacityImbalanceIndex})`,
+      actorIds: [...(state.meta.overloadedActorIds || []), ...(state.meta.idleActorIds || [])],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.workstreamBarrierStalenessIndex === 'number' &&
+    state.meta.workstreamBarrierStalenessIndex >= 50
+  ) {
+    push({
+      severity: 'warning',
+      message: `Workstream barrier staleness (${state.meta.workstreamBarrierStalenessIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
   state.coordination.leases.forEach(lease => {
     if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
       push({
@@ -4543,6 +4700,21 @@ export function sanitizeTeamMultiAgentCoordinationState(
         typeof metaRaw.recoveryActionBreadthIndex === 'number'
           ? metaRaw.recoveryActionBreadthIndex
           : undefined,
+      directiveQuotaExhaustionIndex:
+        typeof metaRaw.directiveQuotaExhaustionIndex === 'number'
+          ? metaRaw.directiveQuotaExhaustionIndex
+          : undefined,
+      quotaExhaustedActorIds: Array.isArray(metaRaw.quotaExhaustedActorIds)
+        ? metaRaw.quotaExhaustedActorIds.map(String).slice(0, 8)
+        : undefined,
+      capacityImbalanceIndex:
+        typeof metaRaw.capacityImbalanceIndex === 'number'
+          ? metaRaw.capacityImbalanceIndex
+          : undefined,
+      workstreamBarrierStalenessIndex:
+        typeof metaRaw.workstreamBarrierStalenessIndex === 'number'
+          ? metaRaw.workstreamBarrierStalenessIndex
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -4597,6 +4769,14 @@ export function evaluateTeamMultiAgentLayer(
   quota.dropped.forEach(d =>
     diagnostics.push(`Dropped directive ${d.proposal.id}: ${d.reason}`),
   );
+  const quotaExhaustedActorIds = Object.entries(quota.remainingByActor)
+    .filter(([, remaining]) => remaining === 0)
+    .map(([actorId]) => actorId);
+  const directiveQuotaExhaustion = computeDirectiveQuotaExhaustionIndex(
+    quota.dropped.length,
+    quotaExhaustedActorIds,
+  );
+  directiveQuotaExhaustion.notes.forEach(n => diagnostics.push(n));
   const proposals = quota.allowed;
   const directiveCollisions = computeDirectiveCollisionIndex(proposals);
   directiveCollisions.notes.forEach(n => diagnostics.push(n));
@@ -4634,6 +4814,12 @@ export function evaluateTeamMultiAgentLayer(
   handoffReadinessSpread.notes.forEach(n => diagnostics.push(n));
   const capacityLedger = buildActorCapacityLedger(inputs.actors, inputs.tasks, roles);
   suggestCapacityRebalanceNotes(capacityLedger).forEach(n => diagnostics.push(n));
+  const capacityImbalance = computeCapacityImbalanceIndex(
+    capacityLedger.balanceScore,
+    capacityLedger.overloadedActorIds,
+    capacityLedger.idleActorIds,
+  );
+  capacityImbalance.notes.forEach(n => diagnostics.push(n));
   directiveResult.suppressed.forEach(s =>
     diagnostics.push(`Suppressed directive ${s.proposal.id}: ${s.reason}`),
   );
@@ -4699,6 +4885,12 @@ export function evaluateTeamMultiAgentLayer(
     { workstreamSinceTurn: barrierSince },
   );
   workstreamBarriers.notes.forEach(n => diagnostics.push(n));
+  const workstreamBarrierStaleness = computeWorkstreamBarrierStalenessIndex(
+    inputs.turn,
+    barrierSince,
+    workstreamBarriers.stalledWorkstreamIds,
+  );
+  workstreamBarrierStaleness.notes.forEach(n => diagnostics.push(n));
   const workstreamDeadlocks = detectWorkstreamDeadlocks(coordination.workstreams);
   workstreamDeadlocks.notes.forEach(n => diagnostics.push(n));
   const workstreamParallelism = measureWorkstreamParallelism(coordination.workstreams);
@@ -4831,6 +5023,10 @@ export function evaluateTeamMultiAgentLayer(
       directiveConstrainedActorIds: directiveConstraintDensity.constrainedActorIds,
       crossTeamRejectionIndex: crossTeamRejection.rejectionIndex,
       handoffSlaVelocityIndex: handoffSlaVelocity.velocityIndex,
+      directiveQuotaExhaustionIndex: directiveQuotaExhaustion.exhaustionIndex,
+      quotaExhaustedActorIds: quotaExhaustedActorIds.slice(0, 8),
+      capacityImbalanceIndex: capacityImbalance.imbalanceIndex,
+      workstreamBarrierStalenessIndex: workstreamBarrierStaleness.stalenessIndex,
     },
   };
 
@@ -4960,6 +5156,9 @@ export interface DualTeamMultiAgentResult {
   crossTeamRejectionCombined: number;
   handoffSlaVelocityCombined: number;
   recoveryActionBreadthCombined: number;
+  directiveQuotaExhaustionCombined: number;
+  capacityImbalanceCombined: number;
+  workstreamBarrierStalenessCombined: number;
 }
 
 /**
@@ -5025,6 +5224,9 @@ export function evaluateDualTeamMultiAgentLayers(
       crossTeamRejectionCombined: friendly.state.meta.crossTeamRejectionIndex ?? 0,
       handoffSlaVelocityCombined: friendly.state.meta.handoffSlaVelocityIndex ?? 0,
       recoveryActionBreadthCombined: friendly.state.meta.recoveryActionBreadthIndex ?? 0,
+      directiveQuotaExhaustionCombined: friendly.state.meta.directiveQuotaExhaustionIndex ?? 0,
+      capacityImbalanceCombined: friendly.state.meta.capacityImbalanceIndex ?? 0,
+      workstreamBarrierStalenessCombined: friendly.state.meta.workstreamBarrierStalenessIndex ?? 0,
     };
   }
 
@@ -5236,6 +5438,18 @@ export function evaluateDualTeamMultiAgentLayers(
     recoveryActionBreadthCombined: combineDualTeamRecoveryActionBreadth(
       friendly.state.meta.recoveryActionBreadthIndex ?? 0,
       enemy.state.meta.recoveryActionBreadthIndex ?? 0,
+    ),
+    directiveQuotaExhaustionCombined: combineDualTeamDirectiveQuotaExhaustion(
+      friendly.state.meta.directiveQuotaExhaustionIndex ?? 0,
+      enemy.state.meta.directiveQuotaExhaustionIndex ?? 0,
+    ),
+    capacityImbalanceCombined: combineDualTeamCapacityImbalance(
+      friendly.state.meta.capacityImbalanceIndex ?? 0,
+      enemy.state.meta.capacityImbalanceIndex ?? 0,
+    ),
+    workstreamBarrierStalenessCombined: combineDualTeamWorkstreamBarrierStaleness(
+      friendly.state.meta.workstreamBarrierStalenessIndex ?? 0,
+      enemy.state.meta.workstreamBarrierStalenessIndex ?? 0,
     ),
   };
 }
@@ -7346,6 +7560,61 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.crossTeamRejectionCombined === 'number' &&
       typeof dual.handoffSlaVelocityCombined === 'number' &&
       typeof dual.recoveryActionBreadthCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_directive_quota_exhaustion', 'Directive quota exhaustion: drops and exhausted actors score high', () => {
+    const report = computeDirectiveQuotaExhaustionIndex(3, ['a1', 'a2']);
+    return report.exhaustionIndex >= 42;
+  });
+
+  check(results, 'a18_directive_quota_exhaustion_clear', 'Directive quota exhaustion: no drops stays low', () => {
+    const report = computeDirectiveQuotaExhaustionIndex(0, []);
+    return report.exhaustionIndex === 0;
+  });
+
+  check(results, 'a18_capacity_imbalance', 'Capacity imbalance: overload plus idle raises index', () => {
+    const report = computeCapacityImbalanceIndex(40, ['a1', 'a2'], ['a3']);
+    return report.imbalanceIndex >= 48;
+  });
+
+  check(results, 'a18_workstream_barrier_staleness', 'Barrier staleness: stalled workstreams beyond cap score high', () => {
+    const report = computeWorkstreamBarrierStalenessIndex(10, { ws1: 5 }, ['ws1']);
+    return report.stalenessIndex >= 50;
+  });
+
+  check(results, 'a18_eval_round16_meta', 'Layer: round-16 meta exposes quota, capacity, barrier staleness', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.directiveQuotaExhaustionIndex === 'number' &&
+      typeof m.capacityImbalanceIndex === 'number' &&
+      typeof m.workstreamBarrierStalenessIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_capacity_imbalance', 'Audit: capacity imbalance surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, capacityImbalanceIndex: 70 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /capacity imbalance/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round16_combined', 'Dual team: round-16 combined quota, capacity, staleness exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.directiveQuotaExhaustionCombined === 'number' &&
+      typeof dual.capacityImbalanceCombined === 'number' &&
+      typeof dual.workstreamBarrierStalenessCombined === 'number'
     );
   });
 

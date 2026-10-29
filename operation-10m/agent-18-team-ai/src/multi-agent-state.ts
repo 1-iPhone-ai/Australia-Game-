@@ -65,6 +65,9 @@ import { computeDirectiveConstraintDensity } from './directive-constraint-densit
 import { computeCrossTeamRejectionIndex } from './cross-team-rejection-index.ts';
 import { computeHandoffSlaVelocityIndex } from './handoff-sla-velocity-index.ts';
 import { measureRecoveryActionBreadth } from './recovery-action-breadth.ts';
+import { computeDirectiveQuotaExhaustionIndex } from './directive-quota-exhaustion-index.ts';
+import { computeCapacityImbalanceIndex } from './capacity-imbalance-index.ts';
+import { computeWorkstreamBarrierStalenessIndex } from './workstream-barrier-staleness-index.ts';
 import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
@@ -355,6 +358,21 @@ export function sanitizeTeamMultiAgentCoordinationState(
         typeof metaRaw.recoveryActionBreadthIndex === 'number'
           ? metaRaw.recoveryActionBreadthIndex
           : undefined,
+      directiveQuotaExhaustionIndex:
+        typeof metaRaw.directiveQuotaExhaustionIndex === 'number'
+          ? metaRaw.directiveQuotaExhaustionIndex
+          : undefined,
+      quotaExhaustedActorIds: Array.isArray(metaRaw.quotaExhaustedActorIds)
+        ? metaRaw.quotaExhaustedActorIds.map(String).slice(0, 8)
+        : undefined,
+      capacityImbalanceIndex:
+        typeof metaRaw.capacityImbalanceIndex === 'number'
+          ? metaRaw.capacityImbalanceIndex
+          : undefined,
+      workstreamBarrierStalenessIndex:
+        typeof metaRaw.workstreamBarrierStalenessIndex === 'number'
+          ? metaRaw.workstreamBarrierStalenessIndex
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -409,6 +427,14 @@ export function evaluateTeamMultiAgentLayer(
   quota.dropped.forEach(d =>
     diagnostics.push(`Dropped directive ${d.proposal.id}: ${d.reason}`),
   );
+  const quotaExhaustedActorIds = Object.entries(quota.remainingByActor)
+    .filter(([, remaining]) => remaining === 0)
+    .map(([actorId]) => actorId);
+  const directiveQuotaExhaustion = computeDirectiveQuotaExhaustionIndex(
+    quota.dropped.length,
+    quotaExhaustedActorIds,
+  );
+  directiveQuotaExhaustion.notes.forEach(n => diagnostics.push(n));
   const proposals = quota.allowed;
   const directiveCollisions = computeDirectiveCollisionIndex(proposals);
   directiveCollisions.notes.forEach(n => diagnostics.push(n));
@@ -446,6 +472,12 @@ export function evaluateTeamMultiAgentLayer(
   handoffReadinessSpread.notes.forEach(n => diagnostics.push(n));
   const capacityLedger = buildActorCapacityLedger(inputs.actors, inputs.tasks, roles);
   suggestCapacityRebalanceNotes(capacityLedger).forEach(n => diagnostics.push(n));
+  const capacityImbalance = computeCapacityImbalanceIndex(
+    capacityLedger.balanceScore,
+    capacityLedger.overloadedActorIds,
+    capacityLedger.idleActorIds,
+  );
+  capacityImbalance.notes.forEach(n => diagnostics.push(n));
   directiveResult.suppressed.forEach(s =>
     diagnostics.push(`Suppressed directive ${s.proposal.id}: ${s.reason}`),
   );
@@ -511,6 +543,12 @@ export function evaluateTeamMultiAgentLayer(
     { workstreamSinceTurn: barrierSince },
   );
   workstreamBarriers.notes.forEach(n => diagnostics.push(n));
+  const workstreamBarrierStaleness = computeWorkstreamBarrierStalenessIndex(
+    inputs.turn,
+    barrierSince,
+    workstreamBarriers.stalledWorkstreamIds,
+  );
+  workstreamBarrierStaleness.notes.forEach(n => diagnostics.push(n));
   const workstreamDeadlocks = detectWorkstreamDeadlocks(coordination.workstreams);
   workstreamDeadlocks.notes.forEach(n => diagnostics.push(n));
   const workstreamParallelism = measureWorkstreamParallelism(coordination.workstreams);
@@ -643,6 +681,10 @@ export function evaluateTeamMultiAgentLayer(
       directiveConstrainedActorIds: directiveConstraintDensity.constrainedActorIds,
       crossTeamRejectionIndex: crossTeamRejection.rejectionIndex,
       handoffSlaVelocityIndex: handoffSlaVelocity.velocityIndex,
+      directiveQuotaExhaustionIndex: directiveQuotaExhaustion.exhaustionIndex,
+      quotaExhaustedActorIds: quotaExhaustedActorIds.slice(0, 8),
+      capacityImbalanceIndex: capacityImbalance.imbalanceIndex,
+      workstreamBarrierStalenessIndex: workstreamBarrierStaleness.stalenessIndex,
     },
   };
 

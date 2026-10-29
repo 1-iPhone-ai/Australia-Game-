@@ -51,4 +51,7 @@ export * from './directive-constraint-density.ts';
 export * from './cross-team-rejection-index.ts';
 export * from './handoff-sla-velocity-index.ts';
 export * from './recovery-action-breadth.ts';
+export * from './directive-quota-exhaustion-index.ts';
+export * from './capacity-imbalance-index.ts';
+export * from './workstream-barrier-staleness-index.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';

@@ -32,6 +32,9 @@ import { combineDualTeamDirectiveConstraintDensity } from './directive-constrain
 import { combineDualTeamCrossTeamRejection } from './cross-team-rejection-index.ts';
 import { combineDualTeamHandoffSlaVelocity } from './handoff-sla-velocity-index.ts';
 import { combineDualTeamRecoveryActionBreadth } from './recovery-action-breadth.ts';
+import { combineDualTeamDirectiveQuotaExhaustion } from './directive-quota-exhaustion-index.ts';
+import { combineDualTeamCapacityImbalance } from './capacity-imbalance-index.ts';
+import { combineDualTeamWorkstreamBarrierStaleness } from './workstream-barrier-staleness-index.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -81,6 +84,9 @@ export interface DualTeamMultiAgentResult {
   crossTeamRejectionCombined: number;
   handoffSlaVelocityCombined: number;
   recoveryActionBreadthCombined: number;
+  directiveQuotaExhaustionCombined: number;
+  capacityImbalanceCombined: number;
+  workstreamBarrierStalenessCombined: number;
 }
 
 /**
@@ -146,6 +152,9 @@ export function evaluateDualTeamMultiAgentLayers(
       crossTeamRejectionCombined: friendly.state.meta.crossTeamRejectionIndex ?? 0,
       handoffSlaVelocityCombined: friendly.state.meta.handoffSlaVelocityIndex ?? 0,
       recoveryActionBreadthCombined: friendly.state.meta.recoveryActionBreadthIndex ?? 0,
+      directiveQuotaExhaustionCombined: friendly.state.meta.directiveQuotaExhaustionIndex ?? 0,
+      capacityImbalanceCombined: friendly.state.meta.capacityImbalanceIndex ?? 0,
+      workstreamBarrierStalenessCombined: friendly.state.meta.workstreamBarrierStalenessIndex ?? 0,
     };
   }
 
@@ -357,6 +366,18 @@ export function evaluateDualTeamMultiAgentLayers(
     recoveryActionBreadthCombined: combineDualTeamRecoveryActionBreadth(
       friendly.state.meta.recoveryActionBreadthIndex ?? 0,
       enemy.state.meta.recoveryActionBreadthIndex ?? 0,
+    ),
+    directiveQuotaExhaustionCombined: combineDualTeamDirectiveQuotaExhaustion(
+      friendly.state.meta.directiveQuotaExhaustionIndex ?? 0,
+      enemy.state.meta.directiveQuotaExhaustionIndex ?? 0,
+    ),
+    capacityImbalanceCombined: combineDualTeamCapacityImbalance(
+      friendly.state.meta.capacityImbalanceIndex ?? 0,
+      enemy.state.meta.capacityImbalanceIndex ?? 0,
+    ),
+    workstreamBarrierStalenessCombined: combineDualTeamWorkstreamBarrierStaleness(
+      friendly.state.meta.workstreamBarrierStalenessIndex ?? 0,
+      enemy.state.meta.workstreamBarrierStalenessIndex ?? 0,
     ),
   };
 }

@@ -73,6 +73,9 @@ import { computeDirectiveConstraintDensity } from './directive-constraint-densit
 import { computeCrossTeamRejectionIndex } from './cross-team-rejection-index.ts';
 import { computeHandoffSlaVelocityIndex } from './handoff-sla-velocity-index.ts';
 import { measureRecoveryActionBreadth } from './recovery-action-breadth.ts';
+import { computeDirectiveQuotaExhaustionIndex } from './directive-quota-exhaustion-index.ts';
+import { computeCapacityImbalanceIndex } from './capacity-imbalance-index.ts';
+import { computeWorkstreamBarrierStalenessIndex } from './workstream-barrier-staleness-index.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -2150,6 +2153,61 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.crossTeamRejectionCombined === 'number' &&
       typeof dual.handoffSlaVelocityCombined === 'number' &&
       typeof dual.recoveryActionBreadthCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_directive_quota_exhaustion', 'Directive quota exhaustion: drops and exhausted actors score high', () => {
+    const report = computeDirectiveQuotaExhaustionIndex(3, ['a1', 'a2']);
+    return report.exhaustionIndex >= 42;
+  });
+
+  check(results, 'a18_directive_quota_exhaustion_clear', 'Directive quota exhaustion: no drops stays low', () => {
+    const report = computeDirectiveQuotaExhaustionIndex(0, []);
+    return report.exhaustionIndex === 0;
+  });
+
+  check(results, 'a18_capacity_imbalance', 'Capacity imbalance: overload plus idle raises index', () => {
+    const report = computeCapacityImbalanceIndex(40, ['a1', 'a2'], ['a3']);
+    return report.imbalanceIndex >= 48;
+  });
+
+  check(results, 'a18_workstream_barrier_staleness', 'Barrier staleness: stalled workstreams beyond cap score high', () => {
+    const report = computeWorkstreamBarrierStalenessIndex(10, { ws1: 5 }, ['ws1']);
+    return report.stalenessIndex >= 50;
+  });
+
+  check(results, 'a18_eval_round16_meta', 'Layer: round-16 meta exposes quota, capacity, barrier staleness', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.directiveQuotaExhaustionIndex === 'number' &&
+      typeof m.capacityImbalanceIndex === 'number' &&
+      typeof m.workstreamBarrierStalenessIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_capacity_imbalance', 'Audit: capacity imbalance surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, capacityImbalanceIndex: 70 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /capacity imbalance/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round16_combined', 'Dual team: round-16 combined quota, capacity, staleness exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.directiveQuotaExhaustionCombined === 'number' &&
+      typeof dual.capacityImbalanceCombined === 'number' &&
+      typeof dual.workstreamBarrierStalenessCombined === 'number'
     );
   });
 
