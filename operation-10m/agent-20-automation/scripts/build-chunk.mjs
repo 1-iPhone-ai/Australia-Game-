@@ -182,6 +182,8 @@ const FILES = [
     'automation-idle-governance-program-wave-round53-capstone.ts',
     'automation-idle-governance-program-wave-round54-export.ts',
     'automation-idle-governance-program-wave-round54-capstone.ts',
+    'automation-idle-governance-program-wave-round67-export.ts',
+    'automation-idle-governance-program-wave-round67-capstone.ts',
     'automation-idle-governance-program-wave-round66-export.ts',
     'automation-idle-governance-program-wave-round66-capstone.ts',
     'automation-idle-governance-program-wave-round65-export.ts',
