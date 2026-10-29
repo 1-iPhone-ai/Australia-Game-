@@ -324,3 +324,10 @@ export * from './core/triad-merged-derived-major-snippet-source-gap.ts';
 export * from './core/rim-merged-national-chokepoint-border-link-saturation-share.ts';
 export * from './core/adjacency-merged-national-chokepoint-border-link-saturation-share.ts';
 export * from './core/high-derived-major-history-overlap-gap.ts';
+
+export * from './core/adjacency-merged-national-chokepoint-border-link-saturation-share-wave53.ts';
+export * from './core/all-regions-open-needs-severity-tier-spread-wave53.ts';
+export * from './core/high-derived-major-history-overlap-gap-wave53.ts';
+export * from './core/rim-merged-national-chokepoint-border-link-saturation-share-wave53.ts';
+export * from './core/triad-merged-derived-major-snippet-source-gap-wave53.ts';
+export * from './core/you-rival-open-needs-severity-tier-spread-wave53.ts';
