@@ -63,6 +63,8 @@ import { buildEfficiencyOffsetForwardCoherenceReport } from '../efficiency-offse
 import { buildIntergovernmentalStatutoryCoherenceReport } from '../intergovernmental-statutory-coherence/compute';
 import { buildPortfolioOutturnReprioritisationBridgeReport } from '../portfolio-outturn-reprioritisation-bridge/compute';
 import { buildTaxSensitivityIntegrityCoherenceReport } from '../tax-sensitivity-integrity-coherence/compute';
+import { buildInfrastructureStressEnvelopeBridgeReport } from '../infrastructure-stress-envelope-bridge/compute';
+import { buildBudgetNeutralProgramCoherenceReport } from '../budget-neutral-program-coherence/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -414,6 +416,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     v1012,
     taxPolicySensitivity,
     revenueIntegrityAudit
+  );
+  const infrastructureStressEnvelopeBridge = buildInfrastructureStressEnvelopeBridgeReport(
+    turn,
+    v1012,
+    infrastructureFiscalLoad,
+    infrastructureEnvelopeCoherence,
+    fiscalStress
+  );
+  const budgetNeutralProgramCoherence = buildBudgetNeutralProgramCoherenceReport(
+    turn,
+    v1012,
+    budgetNeutralPackages,
+    budgetNeutralForwardCoherence,
+    programPerformanceFiscalBridge
   );
 
   checks.push({
@@ -1272,12 +1288,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `uplift=${taxPolicySensitivity.modeledUpliftPoints}, auditGap=${revenueIntegrityAudit.aggregateDeltaGap}`
   });
 
+  checks.push({
+    id: 'CF121',
+    label: 'Infrastructure stress envelope bridge within band',
+    passed: infrastructureStressEnvelopeBridge.withinInfraStressEnvelopeBand || v1012.pressure === 'critical',
+    detail: `gap=${infrastructureStressEnvelopeBridge.bridgeGapPoints}, checks=${infrastructureStressEnvelopeBridge.checks.filter(c => c.passed).length}/${infrastructureStressEnvelopeBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF122',
+    label: 'Budget neutral program coherence within band',
+    passed: budgetNeutralProgramCoherence.withinNeutralProgramBand || v1012.pressure === 'critical',
+    detail: `gap=${budgetNeutralProgramCoherence.aggregateCoherenceGapPoints}, checks=${budgetNeutralProgramCoherence.checks.filter(c => c.passed).length}/${budgetNeutralProgramCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF123',
+    label: 'Infra stress aligned with envelope coherence',
+    passed: infrastructureStressEnvelopeBridge.alignedWithEnvelopeCoherence,
+    detail: `load=${infrastructureFiscalLoad.loadToCapacityRatio}, stress=${fiscalStress.worstHeadroomDelta}`
+  });
+
+  checks.push({
+    id: 'CF124',
+    label: 'Neutral program aligned with performance bridge',
+    passed: budgetNeutralProgramCoherence.alignedWithPerformanceFiscalBridge,
+    detail: `net=${budgetNeutralPackages.aggregateNetPoints}, bridge=${programPerformanceFiscalBridge.bridgeFeedbackGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 88
+    layerCount: 90
   };
 }

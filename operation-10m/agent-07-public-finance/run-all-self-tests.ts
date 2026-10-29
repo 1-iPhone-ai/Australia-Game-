@@ -71,6 +71,8 @@ import { runEfficiencyOffsetForwardCoherenceSelfTests } from './modules/efficien
 import { runIntergovernmentalStatutoryCoherenceSelfTests } from './modules/intergovernmental-statutory-coherence/self-tests';
 import { runPortfolioOutturnReprioritisationBridgeSelfTests } from './modules/portfolio-outturn-reprioritisation-bridge/self-tests';
 import { runTaxSensitivityIntegrityCoherenceSelfTests } from './modules/tax-sensitivity-integrity-coherence/self-tests';
+import { runInfrastructureStressEnvelopeBridgeSelfTests } from './modules/infrastructure-stress-envelope-bridge/self-tests';
+import { runBudgetNeutralProgramCoherenceSelfTests } from './modules/budget-neutral-program-coherence/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -151,6 +153,8 @@ ok = runSuite('Efficiency offset forward coherence', runEfficiencyOffsetForwardC
 ok = runSuite('Intergovernmental statutory coherence', runIntergovernmentalStatutoryCoherenceSelfTests) && ok;
 ok = runSuite('Portfolio outturn reprioritisation bridge', runPortfolioOutturnReprioritisationBridgeSelfTests) && ok;
 ok = runSuite('Tax sensitivity integrity coherence', runTaxSensitivityIntegrityCoherenceSelfTests) && ok;
+ok = runSuite('Infrastructure stress envelope bridge', runInfrastructureStressEnvelopeBridgeSelfTests) && ok;
+ok = runSuite('Budget neutral program coherence', runBudgetNeutralProgramCoherenceSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);
