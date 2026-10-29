@@ -886,6 +886,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Disputed reconciliation or reopened closure yields finalityAccordBlocksReconciliation.',
     severity: 'major',
   },
+  {
+    id: 'G17-127',
+    title: 'Archive index on planning depth',
+    category: 'telemetry',
+    acceptance: 'archiveIndex reports archiveScore 0–100 with archived/pending/exposed band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-128',
+    title: 'Permanence accord seals complete',
+    category: 'telemetry',
+    acceptance: 'permanenceAccord exposes ≥5 seals and permanenceScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-129',
+    title: 'Exposed archive dissolves permanence accord',
+    category: 'integration',
+    acceptance: 'Exposed archive or revoked finality yields permanenceAccordBlocksArchive.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

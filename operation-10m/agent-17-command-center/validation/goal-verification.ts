@@ -289,6 +289,14 @@ import {
   finalityAccordBlocksReconciliation,
 } from '../planning/finality-accord.ts';
 import {
+  buildAgent17ArchiveIndex,
+  archiveIndexBlocksPermanence,
+} from '../planning/archive-index.ts';
+import {
+  buildAgent17PermanenceAccord,
+  permanenceAccordBlocksArchive,
+} from '../planning/permanence-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -2210,6 +2218,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const archiveIndex = depthEval.snapshot.planningDepth?.archiveIndex;
+  goalResults.push(
+    result(
+      'G17-127',
+      !!archiveIndex &&
+        archiveIndex.volumes.length >= 5 &&
+        archiveIndex.archiveScore >= 0 &&
+        archiveIndex.archiveScore <= 100 &&
+        (archiveIndex.band === 'archived' ||
+          archiveIndex.band === 'pending' ||
+          archiveIndex.band === 'exposed'),
+      `volumes=${archiveIndex?.volumes.length} score=${archiveIndex?.archiveScore}`
+    )
+  );
+
+  const permanenceAccord = depthEval.snapshot.planningDepth?.permanenceAccord;
+  goalResults.push(
+    result(
+      'G17-128',
+      !!permanenceAccord &&
+        permanenceAccord.seals.length >= 5 &&
+        permanenceAccord.permanenceScore >= 0 &&
+        permanenceAccord.permanenceScore <= 100,
+      `seals=${permanenceAccord?.seals.length} score=${permanenceAccord?.permanenceScore}`
+    )
+  );
+
+  const exposedArchive = buildAgent17ArchiveIndex({
+    finalityAccord: revokedFinality,
+    reconciliationIndex: disputedReconciliation,
+    closureAccord: reopenedClosure,
+  });
+  const dissolvedPermanence = buildAgent17PermanenceAccord({
+    archiveIndex: exposedArchive,
+    finalityAccord: revokedFinality,
+    reconciliationIndex: disputedReconciliation,
+  });
+  goalResults.push(
+    result(
+      'G17-129',
+      finalityAccordBlocksReconciliation(revokedFinality) ||
+        archiveIndexBlocksPermanence(exposedArchive) ||
+        permanenceAccordBlocksArchive(dissolvedPermanence),
+      `${exposedArchive.band}/${dissolvedPermanence.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -2366,6 +2421,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-124',
     'G17-125',
     'G17-126',
+    'G17-127',
+    'G17-128',
+    'G17-129',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

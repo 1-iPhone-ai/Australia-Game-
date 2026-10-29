@@ -251,6 +251,8 @@ export interface Agent17PlanningDepthSnapshot {
   closureAccord: Agent17ClosureAccordSnapshot;
   reconciliationIndex: Agent17ReconciliationIndexSnapshot;
   finalityAccord: Agent17FinalityAccordSnapshot;
+  archiveIndex: Agent17ArchiveIndexSnapshot;
+  permanenceAccord: Agent17PermanenceAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1399,6 +1401,40 @@ export interface Agent17FinalityAccordSnapshot {
   reconciliationBand: Agent17ReconciliationIndexSnapshot['band'];
   closureBand: Agent17ClosureAccordSnapshot['band'];
   finalityAbsolute: boolean;
+  headline: string;
+}
+
+export interface Agent17ArchiveVolume {
+  id: string;
+  label: string;
+  sealed: boolean;
+  weight: number;
+}
+
+export interface Agent17ArchiveIndexSnapshot {
+  archiveScore: number;
+  band: 'archived' | 'pending' | 'exposed';
+  volumes: Agent17ArchiveVolume[];
+  finalityBand: Agent17FinalityAccordSnapshot['band'];
+  reconciliationBand: Agent17ReconciliationIndexSnapshot['band'];
+  archiveSealed: boolean;
+  headline: string;
+}
+
+export interface Agent17PermanenceSeal {
+  id: string;
+  label: string;
+  bound: boolean;
+  weight: number;
+}
+
+export interface Agent17PermanenceAccordSnapshot {
+  permanenceScore: number;
+  band: 'enduring' | 'provisional' | 'dissolved';
+  seals: Agent17PermanenceSeal[];
+  archiveBand: Agent17ArchiveIndexSnapshot['band'];
+  finalityBand: Agent17FinalityAccordSnapshot['band'];
+  permanenceEnduring: boolean;
   headline: string;
 }
 

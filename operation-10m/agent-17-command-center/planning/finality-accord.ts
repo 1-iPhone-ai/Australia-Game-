@@ -104,3 +104,7 @@ export function finalityAccordBlocksReconciliation(
 ): boolean {
   return snapshot.band === 'revoked' || !snapshot.finalityAbsolute;
 }
+
+export function finalityAccordBlocksArchive(snapshot: Agent17FinalityAccordSnapshot): boolean {
+  return finalityAccordBlocksReconciliation(snapshot);
+}
