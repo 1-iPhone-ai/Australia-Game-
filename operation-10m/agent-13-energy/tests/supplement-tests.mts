@@ -230,6 +230,11 @@ import {
   V1014_RENEWABLE_EXPORT_CONTINUITY_SOVEREIGN_SECURITY_TURN_SCENARIOS,
 } from '../modules/renewable-export-continuity-sovereign-security-federation-ledger.ts';
 import {
+  runAgent13NationalExportOrchestrationSovereignContinuityScaleSelfTests,
+  runAgent13NationalExportOrchestrationSovereignContinuityTurnScenario,
+  V1014_NATIONAL_EXPORT_ORCHESTRATION_SOVEREIGN_CONTINUITY_TURN_SCENARIOS,
+} from '../modules/national-export-orchestration-sovereign-continuity-federation-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -613,6 +618,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const renewableContinuityTurn = runAgent13RenewableExportContinuitySovereignSecurityTurnScenario(V1014_RENEWABLE_EXPORT_CONTINUITY_SOVEREIGN_SECURITY_TURN_SCENARIOS[0]);
   ok(renewableContinuityTurn.passed);
+
+  const nationalOrchestration = runAgent13NationalExportOrchestrationSovereignContinuityScaleSelfTests();
+  ok(nationalOrchestration.failed === 0 && nationalOrchestration.passed >= 5);
+
+  const nationalOrchestrationTurn = runAgent13NationalExportOrchestrationSovereignContinuityTurnScenario(V1014_NATIONAL_EXPORT_ORCHESTRATION_SOVEREIGN_CONTINUITY_TURN_SCENARIOS[0]);
+  ok(nationalOrchestrationTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
