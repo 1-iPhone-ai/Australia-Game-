@@ -133,6 +133,7 @@ const FILES = [
     'planning/watch-accord.ts',
     'planning/vigilance-index.ts',
     'planning/vigil-accord.ts',
+    'planning/wave56-vigil-accord-extension.ts',
   'planning/planning-orchestrator.ts',
   'evaluation/operations-evaluator.ts',
   'rollback/rollback-controller.ts',

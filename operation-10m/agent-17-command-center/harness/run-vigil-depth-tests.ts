@@ -4,6 +4,7 @@ import { buildAgent17WatchershipIndex } from '../planning/watchership-index.ts';
 import { buildAgent17WatchAccord } from '../planning/watch-accord.ts';
 import { buildAgent17VigilanceIndex } from '../planning/vigilance-index.ts';
 import { buildAgent17VigilAccord } from '../planning/vigil-accord.ts';
+import { buildAgent17Wave56VigilAccordExtension } from '../planning/wave56-vigil-accord-extension.ts';
 import { buildAgent17WardenAccord } from '../planning/warden-accord.ts';
 import { buildAgent17WardenshipIndex } from '../planning/wardenship-index.ts';
 import { buildAgent17OverseerAccord } from '../planning/overseer-accord.ts';
@@ -47,5 +48,8 @@ export function runAgent17VigilDepthTests(): { passed: number; failed: number } 
   ok(vigilanceIndex.mandates.length >= 5);
   ok(!!vigilAccord.headline);
   ok(vigilanceIndex.vigilanceScore >= 0 && vigilanceIndex.vigilanceScore <= 100);
+  const wave56Ext = buildAgent17Wave56VigilAccordExtension(vigilAccord);
+  ok(wave56Ext.wave56VigilScore >= 0 && wave56Ext.wave56VigilScore <= 100);
+  ok(wave56Ext.headline.includes('Wave 56'));
   return { passed, failed };
 }
