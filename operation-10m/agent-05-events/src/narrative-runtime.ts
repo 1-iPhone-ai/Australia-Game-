@@ -3,6 +3,7 @@ import { evaluateCrossSystemCouplings } from './cross-system-orchestrator.ts';
 import { evaluateNationalEscalationLattice } from './national-escalation-orchestrator.ts';
 import { hasArmedBypass } from './deep-chain-orchestrator.ts';
 import { createDefaultRegionalContagionLedger, evaluateRegionalNarrativeHooks, sanitizeRegionalContagionLedger } from './regional-hook-engine.ts';
+import { sanitizeOp10mTurnComputeLedger } from './deferred-queue.ts';
 import {
   evaluateRequirements,
   findStageForPhase,
@@ -72,6 +73,8 @@ export function createDefaultOp10mNarrativeEngineState(): Op10mNarrativeEngineSt
       deepFollowUpsArmed: 0,
       crossSystemCouplings: 0,
       nationalEscalationSteps: 0,
+      computeTurnPasses: 0,
+      deferredMutationsFired: 0,
     },
     regional: createDefaultRegionalContagionLedger(),
   };
@@ -131,6 +134,12 @@ export function sanitizeOp10mNarrativeEngineState(raw: unknown): Op10mNarrativeE
     base.telemetry.deepFollowUpsArmed = Math.max(0, Number(t.deepFollowUpsArmed) || 0);
     base.telemetry.crossSystemCouplings = Math.max(0, Number(t.crossSystemCouplings) || 0);
     base.telemetry.nationalEscalationSteps = Math.max(0, Number(t.nationalEscalationSteps) || 0);
+    base.telemetry.computeTurnPasses = Math.max(0, Number(t.computeTurnPasses) || 0);
+    base.telemetry.deferredMutationsFired = Math.max(0, Number(t.deferredMutationsFired) || 0);
+  }
+
+  if (r.turnCompute) {
+    base.turnCompute = sanitizeOp10mTurnComputeLedger(r.turnCompute);
   }
 
   base.regional = sanitizeRegionalContagionLedger(r.regional);

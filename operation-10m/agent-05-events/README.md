@@ -5,8 +5,9 @@ State-triggered crisis chains with cooldowns, passive persistent modifiers, and 
 ## Layout
 
 - `src/` — runtime engine (triggers, cooldowns, consequences, tick/resolve)
-- `generated/chain-catalog-tranche2.ts` — 240 archetype chains (`scripts/generate-catalog-tranche2.py`)
-- `src/chain-catalog-aggregate.ts` — merged 840-chain export
+- `generated/chain-catalog-tranche4.ts` — 320 national lattice chains
+- `generated/chain-catalog-tranche5.ts` — 280 compute-turn chains (`scripts/generate-catalog-tranche5.py`)
+- `src/deferred-queue.ts` / `src/compute-turn-orchestrator.ts` / `src/compute-turn-hooks.ts` — turn/compute pipeline for Agent 02 alignment
 - `generated/regional-hook-catalog.ts` — 120 cross-region hooks (`scripts/generate-regional-hooks.py`)
 - `src/regional-hook-engine.ts` — contagion, neighbor stability, deep follow-up arming, seasonal bypass for escalated chains
 - `chunk.tsx` — Agent 25 assembly bundle (`npm run bundle:agent05`, markers `OP10M_MODULE_BEGIN agent-05-events`)

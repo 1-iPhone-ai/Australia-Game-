@@ -1,7 +1,7 @@
 /** Operation 10M · Agent 05 — dynamic events & narrative (standalone contract). */
 
 export const OP10M_AGENT05_MODULE_ID = 'op10m_agent05_dynamic_events';
-export const OP10M_AGENT05_MODULE_VERSION = '1.3.0';
+export const OP10M_AGENT05_MODULE_VERSION = '1.4.0';
 
 export type Op10mChainPhase = 'signal' | 'pressure' | 'rupture' | 'recovery';
 
@@ -188,6 +188,39 @@ export interface Op10mTriggerRequireMultiRegionContagion {
   minRegions: number;
 }
 
+export interface Op10mTriggerRequireMinTurnComputePasses {
+  k: 'min_turn_compute_passes';
+  min: number;
+}
+
+export interface Op10mTriggerRequireMinDeferredQueue {
+  k: 'min_deferred_queue';
+  min: number;
+}
+
+export type Op10mComputeTurnStage =
+  | 'pre_simulation'
+  | 'post_simulation'
+  | 'narrative_eligibility'
+  | 'finalize';
+
+export interface Op10mDeferredNarrativeMutation {
+  id: string;
+  chainId: string;
+  firesOnTurn: number;
+  enqueuedDay: number;
+  mutation: Op10mConsequenceMutation;
+}
+
+export interface Op10mTurnComputeLedger {
+  lastTurn: number;
+  lastDay: number;
+  computePassCount: number;
+  turnComputeDigest: string;
+  deferredMutations: Op10mDeferredNarrativeMutation[];
+  lastStages: Op10mComputeTurnStage[];
+}
+
 export type Op10mTriggerRequirement =
   | Op10mTriggerRequireSeason
   | Op10mTriggerRequireSector
@@ -205,7 +238,9 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequirePeerChainPhase
   | Op10mTriggerRequireMinNationalEscalation
   | Op10mTriggerRequireMinResolvedChains
-  | Op10mTriggerRequireMultiRegionContagion;
+  | Op10mTriggerRequireMultiRegionContagion
+  | Op10mTriggerRequireMinTurnComputePasses
+  | Op10mTriggerRequireMinDeferredQueue;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -291,8 +326,11 @@ export interface Op10mNarrativeEngineState {
     deepFollowUpsArmed: number;
     crossSystemCouplings: number;
     nationalEscalationSteps: number;
+    computeTurnPasses: number;
+    deferredMutationsFired: number;
   };
   regional?: Op10mRegionalContagionLedger;
+  turnCompute?: Op10mTurnComputeLedger;
 }
 
 export interface Op10mTickResult {

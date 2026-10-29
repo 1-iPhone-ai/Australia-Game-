@@ -1,0 +1,160 @@
+import { evaluateComputeTurnDepth } from './compute-turn-orchestrator.ts';
+import {
+  drainDeferredNarrativeMutationsForTurn,
+  getDeferredQueueDepth,
+  sanitizeOp10mTurnComputeLedger,
+} from './deferred-queue.ts';
+import {
+  createDefaultOp10mNarrativeEngineState,
+  evaluateOp10mNarrativeTick,
+  sanitizeOp10mNarrativeEngineState,
+  type Op10mTickOptions,
+} from './narrative-runtime.ts';
+import type {
+  Op10mChainDescriptor,
+  Op10mComputeTurnStage,
+  Op10mNarrativeEngineState,
+  Op10mRegionalNarrativeHook,
+  Op10mSimulationSlice,
+} from './types.ts';
+
+export {
+  createDefaultOp10mTurnComputeLedger,
+  drainDeferredNarrativeMutationsForTurn,
+  enqueueDeferredNarrativeMutation,
+  getDeferredQueueDepth,
+  getTurnComputePassCount,
+  sanitizeOp10mTurnComputeLedger,
+} from './deferred-queue.ts';
+
+export const OP10M_TURN_COMPUTE_DIGEST_FLAG = 'op10m_turn_compute_digest';
+
+export function buildTurnComputeDigest(
+  turn: number,
+  day: number,
+  activeCrises: number,
+  deferredCount: number
+): string {
+  return `t${turn}|d${day}|c${activeCrises}|q${deferredCount}`;
+}
+
+export interface Op10mComputeTurnHookParams {
+  turn: number;
+  day: number;
+  enabled?: boolean;
+  simulation: Op10mSimulationSlice;
+  narrative: Op10mNarrativeEngineState | null | undefined;
+  catalog: Op10mChainDescriptor[];
+  regionalHooks?: Op10mRegionalNarrativeHook[];
+  tickOptions?: Op10mTickOptions;
+}
+
+export interface Op10mComputeTurnHookResult {
+  ok: boolean;
+  turn: number;
+  simulation: Op10mSimulationSlice;
+  narrative: Op10mNarrativeEngineState;
+  log: string[];
+  turnComputeDigest: string;
+  stagesRun: Op10mComputeTurnStage[];
+}
+
+const STAGE_ORDER: Op10mComputeTurnStage[] = [
+  'pre_simulation',
+  'post_simulation',
+  'narrative_eligibility',
+  'finalize',
+];
+
+/** Agent 25 / Agent 02 alignment: run deferred drains, compute depth, narrative tick, digest. */
+export function executeOp10mNarrativeComputeTurnHook(
+  params: Op10mComputeTurnHookParams
+): Op10mComputeTurnHookResult {
+  const enabled = params.enabled !== false;
+  const stagesRun: Op10mComputeTurnStage[] = [];
+  const log: string[] = [];
+
+  let simulation: Op10mSimulationSlice = {
+    ...params.simulation,
+    day: params.day,
+  };
+  let narrative = sanitizeOp10mNarrativeEngineState(params.narrative ?? createDefaultOp10mNarrativeEngineState());
+  narrative = {
+    ...narrative,
+    turnCompute: sanitizeOp10mTurnComputeLedger(narrative.turnCompute),
+  };
+
+  if (!enabled) {
+    const digest = buildTurnComputeDigest(
+      params.turn,
+      params.day,
+      simulation.activeCrisisCount,
+      getDeferredQueueDepth(narrative)
+    );
+    return { ok: false, turn: params.turn, simulation, narrative, log, turnComputeDigest: digest, stagesRun };
+  }
+
+  const pre = drainDeferredNarrativeMutationsForTurn(simulation, narrative, params.turn);
+  simulation = pre.simulation;
+  narrative = pre.narrative;
+  log.push(...pre.log);
+  stagesRun.push('pre_simulation');
+
+  const depth = evaluateComputeTurnDepth(simulation, narrative, params.turn);
+  simulation = depth.simulation;
+  narrative = depth.narrative;
+  log.push(...depth.log);
+  stagesRun.push('post_simulation');
+
+  const tick = evaluateOp10mNarrativeTick(simulation, narrative, params.catalog, {
+    regionalHooks: params.regionalHooks,
+    ...params.tickOptions,
+  });
+  simulation = tick.simulation;
+  narrative = tick.narrative;
+  log.push(...tick.log);
+  stagesRun.push('narrative_eligibility');
+
+  const deferredCount = getDeferredQueueDepth(narrative);
+  const digest = buildTurnComputeDigest(
+    params.turn,
+    params.day,
+    simulation.activeCrisisCount,
+    deferredCount
+  );
+  const ledger = sanitizeOp10mTurnComputeLedger(narrative.turnCompute);
+  narrative = {
+    ...narrative,
+    turnCompute: {
+      ...ledger,
+      lastTurn: params.turn,
+      lastDay: params.day,
+      computePassCount: ledger.computePassCount + 1,
+      turnComputeDigest: digest,
+      lastStages: STAGE_ORDER,
+    },
+    telemetry: {
+      ...narrative.telemetry,
+      computeTurnPasses: narrative.telemetry.computeTurnPasses + 1,
+    },
+  };
+  simulation = {
+    ...simulation,
+    flags: {
+      ...simulation.flags,
+      [OP10M_TURN_COMPUTE_DIGEST_FLAG]: digest,
+    },
+  };
+  log.push(`digest ${digest}`);
+  stagesRun.push('finalize');
+
+  return {
+    ok: true,
+    turn: params.turn,
+    simulation,
+    narrative,
+    log,
+    turnComputeDigest: digest,
+    stagesRun,
+  };
+}

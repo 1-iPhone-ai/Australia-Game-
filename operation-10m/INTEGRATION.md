@@ -11,10 +11,11 @@ Agent 05 owns **state-triggered narrative chains** outside canonical V9.4 until 
 | Export | Role |
 |--------|------|
 | `OP10M_AGENT05_MODULE_ID` | Stable integrator key |
-| `OP10M_AGENT05_CHAIN_CATALOG` | 1200 chain descriptors (600 + 240 archetype + 360 cross-system synergy) |
+| `OP10M_AGENT05_CHAIN_CATALOG` | 1800 chain descriptors (600 + 240 + 360 + 320 + 280 compute-turn) |
 | `createDefaultOp10mSimulationSlice` | Minimal mutable sim slice for hooks |
 | `createDefaultOp10mNarrativeEngineState` | Persistent narrative runtime state |
 | `sanitizeOp10mNarrativeEngineState` | Save/load hygiene |
+| `executeOp10mNarrativeComputeTurnHook` | Agent 02 turn/compute alignment: deferred drain → depth → narrative tick → digest |
 | `evaluateOp10mNarrativeTick` | Turn/day advance: eligibility, cooldowns, passive modifiers, pending UI |
 | `resolveOp10mNarrativeResponse` | Player choice → **real** money/stability/flags/crisis counters |
 | `OP10M_AGENT05_REGIONAL_HOOK_CATALOG` | 120 rupture-triggered cross-region hooks (contagion + deep follow-up arming) |
@@ -34,7 +35,7 @@ Maps to existing concepts without editing V9.4:
 ## Assembly hook (Agent 25)
 
 1. Mount `agent05NarrativeState` on game save (default via `createDefaultOp10mNarrativeEngineState`).
-2. After day/turn simulation step, call `evaluateOp10mNarrativeTick(mappedSim, state, OP10M_AGENT05_CHAIN_CATALOG, { enabled: gameSettings.dynamicCrisisChainsEnabled, regionalHooks: OP10M_AGENT05_REGIONAL_HOOK_CATALOG })`.
+2. After day/turn simulation step, call `executeOp10mNarrativeComputeTurnHook({ turn, day, simulation, narrative, catalog, regionalHooks })` **or** `evaluateOp10mNarrativeTick` when only the narrative slice is needed.
 3. Write back **both** returned `simulation` fields (money, stability, flags, crises) and `narrative` sub-state.
 4. UI routes pending `pendingResponses` to dilemma/crisis modals; resolve via `resolveOp10mNarrativeResponse`.
 

@@ -11,6 +11,7 @@ import { getCrossSystemCouplingLevel, hasPeerChainAtPhase } from './cross-system
 import { getNationalEscalationTier, countRegionsWithContagionAtLeast } from './national-escalation-orchestrator.ts';
 import { hasArmedBypass } from './deep-chain-orchestrator.ts';
 import { getContagionLevel } from './regional-graph.ts';
+import { getDeferredQueueDepth, getTurnComputePassCount } from './deferred-queue.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -132,6 +133,24 @@ export function evaluateRequirements(
         const regions = countRegionsWithContagionAtLeast(sim, req.minPerRegion);
         if (regions < req.minRegions) {
           return { ok: false, reason: `regions ${regions}<${req.minRegions}` };
+        }
+        break;
+      }
+      case 'min_turn_compute_passes': {
+        const narrative = context?.narrative;
+        if (!narrative) return { ok: false, reason: 'missing narrative' };
+        const passes = getTurnComputePassCount(narrative);
+        if (passes < req.min) {
+          return { ok: false, reason: `compute passes ${passes}<${req.min}` };
+        }
+        break;
+      }
+      case 'min_deferred_queue': {
+        const narrative = context?.narrative;
+        if (!narrative) return { ok: false, reason: 'missing narrative' };
+        const depth = getDeferredQueueDepth(narrative);
+        if (depth < req.min) {
+          return { ok: false, reason: `deferred queue ${depth}<${req.min}` };
         }
         break;
       }
