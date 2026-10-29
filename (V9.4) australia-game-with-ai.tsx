@@ -4547,6 +4547,8 @@ export const PRESET_GAME_SCENARIOS: PresetScenario[] = [
       { id: 'hi_obj_1', label: 'Capital Preservation', description: 'Maintain a net worth of at least $75,000', targetType: 'netWorth', targetValue: 75000, isPrimary: true },
       { id: 'hi_obj_2', label: 'Financial Fortitude', description: 'Survive the economic storm for 20 days', targetType: 'daysPassed', targetValue: 20, isPrimary: true }
     ],
+    nationalNetworks: { VIC: { trade: -12, energy: -8 } },
+    industries: { VIC: { manufacturing: -15, trade: -10 } },
     modifiers: [],
     youWillLearn: ['Market volatility', 'Cash preservation', 'Adaptive strategy']
   },
@@ -4682,6 +4684,8 @@ export const PRESET_GAME_SCENARIOS: PresetScenario[] = [
       { id: 'cb_obj_1', label: 'Boom Fortune', description: 'Reach $25,000 net worth', targetType: 'netWorth', targetValue: 25000, isPrimary: true },
       { id: 'cb_obj_2', label: 'Resource Heartland', description: 'Control Western Australia', targetType: 'specific_region_controlled', targetValue: 1, targetRegionId: 'WA', isPrimary: false }
     ],
+    nationalNetworks: { WA: { freight: 18, trade: 12 }, QLD: { trade: 10 } },
+    industries: { WA: { mining: 22, trade: 8 }, QLD: { mining: 12 } },
     modifiers: [],
     youWillLearn: ['Markets', 'Commodity exposure', 'Contracts', 'Diversification']
   },
@@ -4697,6 +4701,8 @@ export const PRESET_GAME_SCENARIOS: PresetScenario[] = [
       { id: 'gd_obj_1', label: 'Weather the Drought', description: 'Reach $15,000 net worth', targetType: 'netWorth', targetValue: 15000, isPrimary: true },
       { id: 'gd_obj_2', label: 'Hold the South', description: 'Control South Australia', targetType: 'specific_region_controlled', targetValue: 1, targetRegionId: 'SA', isPrimary: false }
     ],
+    nationalNetworks: { SA: { water: -25, energy: -8 }, NSW: { water: -15 } },
+    industries: { SA: { agriculture: -20 }, NSW: { agriculture: -12 } },
     modifiers: [],
     youWillLearn: ['Crisis chains', 'Infrastructure', 'Regional stability', 'Stakeholder tradeoffs']
   },
@@ -4712,6 +4718,8 @@ export const PRESET_GAME_SCENARIOS: PresetScenario[] = [
       { id: 'tr_obj_1', label: 'Research Leader', description: 'Reach $20,000 net worth', targetType: 'netWorth', targetValue: 20000, isPrimary: true },
       { id: 'tr_obj_2', label: 'Institutional Trust', description: 'Control the ACT', targetType: 'specific_region_controlled', targetValue: 1, targetRegionId: 'ACT', isPrimary: false }
     ],
+    nationalNetworks: { VIC: { digital: 20 }, ACT: { digital: 15 } },
+    industries: { VIC: { technology: 18, research: 12 }, ACT: { research: 20 } },
     modifiers: [],
     youWillLearn: ['Faction contracts', 'Standing', 'Rival strongholds', 'Alternative strategies']
   },
@@ -10749,6 +10757,75 @@ export interface CanonicalRuntimeInput {
   teamsById?: Record<string, any>;
   teamStateMap?: Record<string, any>;
   [key: string]: any;
+}
+
+
+/** Operation 111 · Agent 74 — preset catalog invariants (objectives, determinism, V10 hook shape). */
+export function runScenarioCatalogSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const regionCodes = new Set(Object.keys(REGIONS));
+  const targetTypes = new Set<ScenarioObjectiveTargetType>([
+    'money', 'regions', 'netWorth', 'challenges', 'regionalStanding', 'daysPassed', 'money_accumulated',
+    'regions_controlled', 'turns_survived', 'standing_reached', 'ai_eliminated', 'challenges_completed',
+    'public_stability', 'crisis_resolved', 'territory_controlled', 'debt_cleared', 'investments_count',
+    'standing_threshold', 'specific_region_controlled', 'zero_sabotage_taken', 'governance_proposals_passed', 'multi_actor_standing_avg'
+  ]);
+  const networkKinds = new Set(['freight', 'energy', 'water', 'trade', 'digital']);
+  const industryKinds = new Set(['mining', 'agriculture', 'energy', 'manufacturing', 'technology', 'research', 'tourism', 'trade']);
+  const scanV10Hook = (sc: any, field: 'nationalNetworks' | 'industries', kinds: Set<string>) => {
+    const m = sc[field];
+    if (!m || typeof m !== 'object') return [] as string[];
+    const bad: string[] = [];
+    Object.entries(m).forEach(([reg, vals]: [string, any]) => {
+      if (!regionCodes.has(reg)) bad.push(`${sc.id}.${field}.${reg}`);
+      if (vals && typeof vals === 'object') Object.entries(vals).forEach(([k, v]) => {
+        if (!kinds.has(k)) bad.push(`${sc.id}.${field}.${k}`);
+        if (typeof v === 'number' && Math.abs(v) > 40) bad.push(`${sc.id}.${field}.${k}=${v}`);
+      });
+    });
+    return bad;
+  };
+  check('sc74_unique_ids', 'Preset scenario ids are unique', () => {
+    const ids = PRESET_GAME_SCENARIOS.map(s => s.id);
+    return ids.length === new Set(ids).size || `dupes: ${ids.filter((id, i) => ids.indexOf(id) !== i).join(',')}`;
+  });
+  check('sc74_regions', 'Preset startingRegions use canonical REGIONS codes', () => {
+    const bad: string[] = [];
+    PRESET_GAME_SCENARIOS.forEach(s => (s.startingRegions || []).forEach(r => { if (!regionCodes.has(r)) bad.push(`${s.id}:${r}`); }));
+    return bad.length === 0 || bad.join('; ');
+  });
+  check('sc74_objectives', 'Preset objectives use known targetType values', () => {
+    const bad: string[] = [];
+    PRESET_GAME_SCENARIOS.forEach(s => s.objectives.forEach(o => { if (!targetTypes.has(o.targetType)) bad.push(`${s.id}/${o.id}:${o.targetType}`); }));
+    return bad.length === 0 || bad.join('; ');
+  });
+  check('sc74_primary', 'Every preset has at least one primary objective', () => {
+    const bad = PRESET_GAME_SCENARIOS.filter(s => !s.objectives.some(o => o.isPrimary ?? true)).map(s => s.id);
+    return bad.length === 0 || bad.join(',');
+  });
+  check('sc74_v93_deterministic', 'V9.3 presets force deterministic RNG', () => {
+    const bad = PRESET_GAME_SCENARIOS.filter(s => s.id.startsWith('v93_') && (!s.forcedSettings?.deterministicRngActive || s.forcedSettings?.worldRngSeed == null)).map(s => s.id);
+    return bad.length === 0 || bad.join(',');
+  });
+  check('sc74_v10_hooks', 'V10 scenario modifier hooks are shaped and capped (|delta| ≤ 40)', () => {
+    const bad: string[] = [];
+    PRESET_GAME_SCENARIOS.forEach(sc => { bad.push(...scanV10Hook(sc, 'nationalNetworks', networkKinds), ...scanV10Hook(sc, 'industries', industryKinds)); });
+    return bad.length === 0 || bad.join('; ');
+  });
+  check('sc74_v10_pack_count', 'At least four thematic presets ship V10 nationalNetworks + industries hooks', () => {
+    const n = PRESET_GAME_SCENARIOS.filter((sc: any) => sc.nationalNetworks && sc.industries).length;
+    return n >= 4 || `only ${n}`;
+  });
+  check('sc74_find_active', 'findActiveScenario resolves ids and falls back to first preset', () => {
+    const known = findActiveScenario(PRESET_GAME_SCENARIOS[0].id);
+    const missing = findActiveScenario('__missing_scenario__');
+    return known.id === PRESET_GAME_SCENARIOS[0].id && missing.id === PRESET_GAME_SCENARIOS[0].id || `${known.id}/${missing.id}`;
+  });
+  return results;
 }
 
 export function canonicalStateFromLiveRuntime(
@@ -136512,6 +136589,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
+  { id: 'sc74', label: 'Scenario catalog (O111-A74)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runScenarioCatalogSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
