@@ -75,7 +75,9 @@ const FILES = [
   'strategic-reserve-carbon-neutrality-sovereign-grid-federation-ledger.ts',
   'federated-net-zero-export-climate-resilience-orchestration-ledger.ts',
   'continental-sovereign-net-zero-export-continuity-orchestration-ledger.ts',
+  'oceanic-sovereign-net-zero-export-continuity-mesh-orchestration-ledger.ts',
   'agent25-wave55-projection-handoff-brief.ts',
+  'agent25-wave56-projection-handoff-brief.ts',
   'industrial-energy-environmental.tsx',
 ];
 

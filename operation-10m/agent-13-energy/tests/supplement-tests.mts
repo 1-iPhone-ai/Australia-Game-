@@ -261,10 +261,11 @@ import {
 } from '../modules/continental-sovereign-net-zero-export-continuity-orchestration-ledger.ts';
 import { runAgent13Agent25Wave55ProjectionHandoffBriefSelfTests } from '../modules/agent25-wave55-projection-handoff-brief.ts';
 import {
-  runAgent13ContinentalSovereignNetZeroExportContinuityScaleSelfTests,
-  runAgent13ContinentalSovereignNetZeroExportContinuityTurnScenario,
-  V1014_CONTINENTAL_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_TRANSNATIONAL_MESH_TURN_SCENARIOS,
-} from '../modules/continental-sovereign-net-zero-export-continuity-orchestration-ledger.ts';
+  runAgent13OceanicSovereignNetZeroExportContinuityScaleSelfTests,
+  runAgent13OceanicSovereignNetZeroExportContinuityTurnScenario,
+  V1014_OCEANIC_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_HEMISPHERIC_MESH_TURN_SCENARIOS,
+} from '../modules/oceanic-sovereign-net-zero-export-continuity-mesh-orchestration-ledger.ts';
+import { runAgent13Agent25Wave56ProjectionHandoffBriefSelfTests } from '../modules/agent25-wave56-projection-handoff-brief.ts';
 import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
@@ -696,6 +697,17 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const wave55Handoff = runAgent13Agent25Wave55ProjectionHandoffBriefSelfTests();
   ok(wave55Handoff.failed === 0 && wave55Handoff.passed >= 4);
+
+  const oceanicContinuity = runAgent13OceanicSovereignNetZeroExportContinuityScaleSelfTests();
+  ok(oceanicContinuity.failed === 0 && oceanicContinuity.passed >= 5);
+
+  const oceanicContinuityTurn = runAgent13OceanicSovereignNetZeroExportContinuityTurnScenario(
+    V1014_OCEANIC_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_HEMISPHERIC_MESH_TURN_SCENARIOS[0],
+  );
+  ok(oceanicContinuityTurn.passed);
+
+  const wave56Handoff = runAgent13Agent25Wave56ProjectionHandoffBriefSelfTests();
+  ok(wave56Handoff.failed === 0 && wave56Handoff.passed >= 4);
 
   return { passed, failed, total: passed + failed };
 }
