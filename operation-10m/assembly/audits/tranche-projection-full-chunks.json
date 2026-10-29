@@ -1,12 +1,12 @@
 {
   "projectionId": "tranche-projection-full-chunks",
-  "dryRunAt": "2026-10-29T07:07:57.280Z",
+  "dryRunAt": "2026-10-29T07:11:50.171Z",
   "canonicalBaseCommit": "bc1adf3",
   "baselineAuditedFunctional": 389566,
-  "projectedAuditedFunctional": 1036314,
-  "deltaAuditedFunctional": 646748,
+  "projectedAuditedFunctional": 1076809,
+  "deltaAuditedFunctional": 687243,
   "baselinePhysicalLines": 419353,
-  "projectedPhysicalLines": 1086661,
+  "projectedPhysicalLines": 1128298,
   "branchHeadCount": 32,
   "branchesScannedExcludingIntegration": 31,
   "assemblyReadyRemote": 24,
@@ -89,17 +89,17 @@
     {
       "moduleId": "agent-03-research-tech",
       "slot": "post-v10z",
-      "contentSha256": "66fbee8d024582fb71841cebb5f6b1fd90bed55ebf5f7321fa2741918a6fa0c9"
+      "contentSha256": "1ec4314fc2b130c0677b370a28b1f0f6eecff6613a1d46332c527851669efb4c"
     },
     {
       "moduleId": "agent-04-modes-scenarios",
       "slot": "scenario-engine-extension",
-      "contentSha256": "82e83a74dac59bbf3cfda9b2a93eec18df5b55a49912b05106bdb37a243ef7fa"
+      "contentSha256": "a427301d1a1285164631ba69dd1510d91b92a8f952d2d1fb4afbae0d2c8046b9"
     },
     {
       "moduleId": "agent-05-events",
       "slot": "pre-final-export",
-      "contentSha256": "2ceebb2ea564c843dce59e65ea7f07ff4e78c4b4f21cdb74ae908a9c950a5340"
+      "contentSha256": "f622b2bdb3c492d053a3fe44b031b7f5c8d7e3b2ae04abb7f415ae06ea13a328"
     },
     {
       "moduleId": "agent-06-macroeconomy",
