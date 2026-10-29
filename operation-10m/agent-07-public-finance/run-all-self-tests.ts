@@ -29,6 +29,8 @@ import { runPortfolioOutturnSelfTests } from './modules/portfolio-outturn/self-t
 import { runDebtPortfolioGovernanceSelfTests } from './modules/debt-portfolio-governance/self-tests';
 import { runFiscalStressScenariosSelfTests } from './modules/fiscal-stress-scenarios/self-tests';
 import { runPublicSectorBalanceSheetSelfTests } from './modules/public-sector-balance-sheet/self-tests';
+import { runTaxPolicySensitivitySelfTests } from './modules/tax-policy-sensitivity/self-tests';
+import { runAppropriationLapseRegisterSelfTests } from './modules/appropriation-lapse-register/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -67,6 +69,8 @@ ok = runSuite('Portfolio outturn reconciliation', runPortfolioOutturnSelfTests) 
 ok = runSuite('Debt portfolio governance', runDebtPortfolioGovernanceSelfTests) && ok;
 ok = runSuite('Fiscal stress scenarios', runFiscalStressScenariosSelfTests) && ok;
 ok = runSuite('Public sector balance sheet', runPublicSectorBalanceSheetSelfTests) && ok;
+ok = runSuite('Tax policy sensitivity', runTaxPolicySensitivitySelfTests) && ok;
+ok = runSuite('Appropriation lapse register', runAppropriationLapseRegisterSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

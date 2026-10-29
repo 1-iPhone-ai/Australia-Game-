@@ -52,6 +52,10 @@ const FILES = [
   'fiscal-stress-scenarios/compute.ts',
   'public-sector-balance-sheet/types.ts',
   'public-sector-balance-sheet/compute.ts',
+  'tax-policy-sensitivity/types.ts',
+  'tax-policy-sensitivity/compute.ts',
+  'appropriation-lapse-register/types.ts',
+  'appropriation-lapse-register/compute.ts',
   'infrastructure-financing/types.ts',
   'infrastructure-financing/compute.ts',
   'recurring-commitments/types.ts',
@@ -115,7 +119,9 @@ const FILES = [
   'portfolio-outturn/self-tests.ts',
   'debt-portfolio-governance/self-tests.ts',
   'fiscal-stress-scenarios/self-tests.ts',
-  'public-sector-balance-sheet/self-tests.ts'
+  'public-sector-balance-sheet/self-tests.ts',
+  'tax-policy-sensitivity/self-tests.ts',
+  'appropriation-lapse-register/self-tests.ts'
 ];
 
 function stripModulePreamble(source) {

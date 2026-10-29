@@ -21,6 +21,8 @@ import { buildPortfolioOutturnReport } from '../portfolio-outturn/compute';
 import { buildDebtPortfolioGovernanceReport } from '../debt-portfolio-governance/compute';
 import { buildFiscalStressScenariosReport } from '../fiscal-stress-scenarios/compute';
 import { buildPublicSectorBalanceSheetReport } from '../public-sector-balance-sheet/compute';
+import { buildTaxPolicySensitivityReport } from '../tax-policy-sensitivity/compute';
+import { buildAppropriationLapseRegisterReport } from '../appropriation-lapse-register/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -91,6 +93,8 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
   const publicBalanceSheet = buildPublicSectorBalanceSheetReport(turn, v1012, {
     cashClosingBalance: cashMgmt.aggregateClosingBalance
   });
+  const taxPolicySensitivity = buildTaxPolicySensitivityReport(turn, v1012, ledger);
+  const appropriationLapseRegister = buildAppropriationLapseRegisterReport(turn, v1012, warrantLedger);
   const resilienceStack = assessFiscalResilience(turn, v1012, ['commodity_drop', 'rate_shock']);
   const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
   const fiscalRules = assessFiscalRulesFramework({
@@ -395,12 +399,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `liquid=${publicBalanceSheet.liquidAssetSlice}, tga=${cashMgmt.aggregateClosingBalance}`
   });
 
+  checks.push({
+    id: 'CF37',
+    label: 'Tax policy sensitivity within aggregate band',
+    passed: taxPolicySensitivity.withinAggregateBand,
+    detail: `marginal=${taxPolicySensitivity.aggregateMarginalPoints}, uplift=${taxPolicySensitivity.modeledUpliftPoints}`
+  });
+
+  checks.push({
+    id: 'CF38',
+    label: 'Appropriation lapse register within tolerance',
+    passed: appropriationLapseRegister.withinRegisterTolerance,
+    detail: `ratio=${appropriationLapseRegister.lapseToRemainingRatio}, lapse=${appropriationLapseRegister.aggregateLapsePoints}`
+  });
+
+  checks.push({
+    id: 'CF39',
+    label: 'Tax sensitivity uplift coherent with revenue ledger',
+    passed: taxPolicySensitivity.coherentWithLedgerDelta,
+    detail: `uplift=${taxPolicySensitivity.modeledUpliftPoints}, ledgerOk=${ledger.reconciledToV1012}`
+  });
+
+  checks.push({
+    id: 'CF40',
+    label: 'Lapse register aligned with warrant ledger risk',
+    passed: appropriationLapseRegister.alignedWithWarrantLedger,
+    detail: `register=${appropriationLapseRegister.aggregateLapsePoints}, warrantRisk=${warrantLedger.aggregateLapseRisk}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 34
+    layerCount: 38
   };
 }

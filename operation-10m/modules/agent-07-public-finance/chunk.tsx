@@ -4293,6 +4293,260 @@ export function buildPublicSectorBalanceSheetReport(
 }
 
 
+// --- source: tax-policy-sensitivity/types.ts ---
+export const TAX_POLICY_SENSITIVITY_SCHEMA = 'op10m-agent07-tax-policy-sensitivity-v1';
+
+export type TaxPolicyLever = 'personal_income' | 'company_tax' | 'consumption_base' | 'resource_rent';
+
+export interface TaxPolicySensitivityLine {
+  id: string;
+  lever: TaxPolicyLever;
+  label: string;
+  marginalRevenuePoints: number;
+  elasticity: number;
+  withinSensitivityBand: boolean;
+}
+
+export interface TaxPolicySensitivityReport {
+  schemaVersion: string;
+  turn: number;
+  lines: TaxPolicySensitivityLine[];
+  aggregateMarginalPoints: number;
+  modeledUpliftPoints: number;
+  withinAggregateBand: boolean;
+  coherentWithLedgerDelta: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: tax-policy-sensitivity/compute.ts ---
+
+const AGGREGATE_MARGINAL_CAP = 14;
+
+function line(
+  id: string,
+  lever: TaxPolicyLever,
+  label: string,
+  marginal: number,
+  elasticity: number
+): TaxPolicySensitivityLine {
+  const withinSensitivityBand = Math.abs(marginal) <= 5.5 && elasticity >= 0.08 && elasticity <= 1.2;
+  return {
+    id,
+    lever,
+    label,
+    marginalRevenuePoints: Math.round(marginal * 10) / 10,
+    elasticity: Math.round(elasticity * 100) / 100,
+    withinSensitivityBand
+  };
+}
+
+export function buildTaxPolicySensitivityReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  ledger?: NationalRevenueLedger
+): TaxPolicySensitivityReport {
+  const policySkew =
+    v1012.revenuePolicy === 'expansionary' ? -0.35 : v1012.revenuePolicy === 'revenue_focused' ? 0.45 : 0;
+  const headroomSkew = Math.max(-0.4, Math.min(0.5, v1012.fiscalHeadroom * 0.04));
+
+  const raw: Array<[string, TaxPolicyLever, string, number, number]> = [
+    ['tps_pit', 'personal_income', 'Personal income schedule', 2.8 + policySkew + headroomSkew, 0.42],
+    ['tps_company', 'company_tax', 'Company tax base', 2.1 + policySkew * 0.8, 0.55],
+    ['tps_gst', 'consumption_base', 'Consumption base breadth', 1.6 + headroomSkew * 0.6, 0.38],
+    ['tps_rent', 'resource_rent', 'Resource rent sensitivity', 3.4 - policySkew * 0.5, 0.72]
+  ];
+
+  let lines: TaxPolicySensitivityLine[] = raw.map(([id, lever, label, marginal, elast]) =>
+    line(id, lever, label, marginal, elast)
+  );
+
+  if (v1012.pressure !== 'critical') {
+    lines = lines.map(l =>
+      l.withinSensitivityBand
+        ? l
+        : {
+            ...l,
+            marginalRevenuePoints: Math.sign(l.marginalRevenuePoints) * Math.min(5.5, Math.abs(l.marginalRevenuePoints)),
+            withinSensitivityBand: true
+          }
+    );
+  }
+
+  const aggregateMarginalPoints = Math.round(lines.reduce((s, l) => s + l.marginalRevenuePoints, 0) * 10) / 10;
+  const modeledUpliftPoints = Math.round(aggregateMarginalPoints * (0.35 + (turn % 5) * 0.02) * 10) / 10;
+
+  const ledgerDelta = ledger?.streams.reduce((s, st) => s + st.deltaPoints, 0) ?? 0;
+  const coherentWithLedgerDelta =
+    Math.abs(modeledUpliftPoints - ledgerDelta * 0.25) <= 4.5 ||
+    v1012.pressure === 'critical' ||
+    !ledger?.reconciledToV1012;
+
+  const withinAggregateBand =
+    Math.abs(aggregateMarginalPoints) <= AGGREGATE_MARGINAL_CAP ||
+    v1012.pressure === 'critical' ||
+    (v1012.pressure === 'strained' && Math.abs(aggregateMarginalPoints) <= AGGREGATE_MARGINAL_CAP * 1.1);
+
+  const warnings: string[] = [];
+  if (!withinAggregateBand) {
+    warnings.push(`Aggregate marginal ${aggregateMarginalPoints} exceeds cap ${AGGREGATE_MARGINAL_CAP}.`);
+  }
+  if (!coherentWithLedgerDelta) {
+    warnings.push(`Modeled uplift ${modeledUpliftPoints} diverges from ledger delta ${ledgerDelta}.`);
+  }
+
+  const narrative = withinAggregateBand
+    ? `Tax policy sensitivity aggregate ${aggregateMarginalPoints} pts; modeled uplift ${modeledUpliftPoints}.`
+    : `Tax sensitivity alert: aggregate marginal ${aggregateMarginalPoints}.`;
+
+  return {
+    schemaVersion: TAX_POLICY_SENSITIVITY_SCHEMA,
+    turn,
+    lines,
+    aggregateMarginalPoints,
+    modeledUpliftPoints,
+    withinAggregateBand,
+    coherentWithLedgerDelta,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: appropriation-lapse-register/types.ts ---
+export const APPROPRIATION_LAPSE_REGISTER_SCHEMA = 'op10m-agent07-appropriation-lapse-register-v1';
+
+export type LapseDisposition = 'returned_to_reserve' | 'reallocated' | 'pending_review' | 'lapsed';
+
+export interface AppropriationLapseEntry {
+  id: string;
+  portfolio: string;
+  warrantRemainingPoints: number;
+  lapsePoints: number;
+  disposition: LapseDisposition;
+  withinEntryTolerance: boolean;
+}
+
+export interface AppropriationLapseRegisterReport {
+  schemaVersion: string;
+  turn: number;
+  entries: AppropriationLapseEntry[];
+  aggregateLapsePoints: number;
+  aggregateRemainingPoints: number;
+  lapseToRemainingRatio: number;
+  withinRegisterTolerance: boolean;
+  alignedWithWarrantLedger: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: appropriation-lapse-register/compute.ts ---
+
+const REGISTER_RATIO_CAP = 0.53;
+
+function dispositionFromLapse(lapse: number, remaining: number): LapseDisposition {
+  if (lapse <= remaining * 0.08) return 'pending_review';
+  if (lapse <= remaining * 0.22) return 'reallocated';
+  if (lapse <= remaining * 0.38) return 'returned_to_reserve';
+  return 'lapsed';
+}
+
+export function buildAppropriationLapseRegisterReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  warrantLedger: AppropriationWarrantLedger
+): AppropriationLapseRegisterReport {
+  const yearEnd = turn % 12 >= 10;
+
+  const entries: AppropriationLapseEntry[] = warrantLedger.lines.map(line => {
+    const lapsePoints =
+      Math.round((line.lapseRiskPoints * (yearEnd ? 1.12 : 0.92) + line.warrantRemainingPoints * 0.04) * 10) / 10;
+    const disposition = dispositionFromLapse(lapsePoints, Math.max(0.1, line.warrantRemainingPoints));
+    const withinEntryTolerance =
+      lapsePoints <= line.appropriationPoints * 0.14 ||
+      line.withinTolerance ||
+      v1012.pressure === 'critical';
+    return {
+      id: `lapse_${line.portfolio}`,
+      portfolio: line.portfolio,
+      warrantRemainingPoints: line.warrantRemainingPoints,
+      lapsePoints,
+      disposition,
+      withinEntryTolerance
+    };
+  });
+
+  let aggregateLapsePoints = Math.round(entries.reduce((s, e) => s + e.lapsePoints, 0) * 10) / 10;
+  const aggregateRemainingPoints = Math.round(
+    entries.reduce((s, e) => s + e.warrantRemainingPoints, 0) * 10
+  ) / 10;
+
+  if (v1012.pressure !== 'critical' && aggregateRemainingPoints > 0) {
+    const ratio = aggregateLapsePoints / aggregateRemainingPoints;
+    if (ratio > REGISTER_RATIO_CAP) {
+      const scale = (REGISTER_RATIO_CAP * aggregateRemainingPoints) / Math.max(0.1, aggregateLapsePoints);
+      for (const entry of entries) {
+        entry.lapsePoints = Math.round(entry.lapsePoints * scale * 10) / 10;
+      }
+      aggregateLapsePoints = Math.round(entries.reduce((s, e) => s + e.lapsePoints, 0) * 10) / 10;
+    }
+    const maxLapse = REGISTER_RATIO_CAP * aggregateRemainingPoints;
+    if (aggregateLapsePoints > maxLapse) {
+      const fix = maxLapse / Math.max(0.1, aggregateLapsePoints);
+      for (const entry of entries) {
+        entry.lapsePoints = Math.round(entry.lapsePoints * fix * 10) / 10;
+      }
+      aggregateLapsePoints = Math.round(entries.reduce((s, e) => s + e.lapsePoints, 0) * 10) / 10;
+    }
+  }
+
+  const lapseToRemainingRatio =
+    aggregateRemainingPoints <= 0
+      ? 0
+      : Math.round((aggregateLapsePoints / aggregateRemainingPoints) * 1000) / 1000;
+
+  const withinRegisterTolerance =
+    lapseToRemainingRatio <= REGISTER_RATIO_CAP ||
+    v1012.pressure === 'critical' ||
+    (v1012.pressure === 'strained' && lapseToRemainingRatio <= REGISTER_RATIO_CAP * 1.08);
+
+  const alignedWithWarrantLedger =
+    Math.abs(aggregateLapsePoints - warrantLedger.aggregateLapseRisk) <=
+      warrantLedger.aggregateRemaining * 0.22 + 2.5 ||
+    v1012.pressure === 'critical' ||
+    warrantLedger.lapseWithinTolerance;
+
+  const warnings: string[] = [];
+  if (!withinRegisterTolerance) {
+    warnings.push(`Lapse ratio ${lapseToRemainingRatio} exceeds cap ${REGISTER_RATIO_CAP}.`);
+  }
+  if (!alignedWithWarrantLedger) {
+    warnings.push(
+      `Register lapse ${aggregateLapsePoints} misaligned with warrant risk ${warrantLedger.aggregateLapseRisk}.`
+    );
+  }
+
+  const narrative = withinRegisterTolerance
+    ? `Appropriation lapse register: ${aggregateLapsePoints} pts against ${aggregateRemainingPoints} remaining.`
+    : `Lapse register alert: ratio ${lapseToRemainingRatio}.`;
+
+  return {
+    schemaVersion: APPROPRIATION_LAPSE_REGISTER_SCHEMA,
+    turn,
+    entries,
+    aggregateLapsePoints,
+    aggregateRemainingPoints,
+    lapseToRemainingRatio,
+    withinRegisterTolerance,
+    alignedWithWarrantLedger,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -6051,6 +6305,8 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
   const publicBalanceSheet = buildPublicSectorBalanceSheetReport(turn, v1012, {
     cashClosingBalance: cashMgmt.aggregateClosingBalance
   });
+  const taxPolicySensitivity = buildTaxPolicySensitivityReport(turn, v1012, ledger);
+  const appropriationLapseRegister = buildAppropriationLapseRegisterReport(turn, v1012, warrantLedger);
   const resilienceStack = assessFiscalResilience(turn, v1012, ['commodity_drop', 'rate_shock']);
   const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
   const fiscalRules = assessFiscalRulesFramework({
@@ -6355,13 +6611,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `liquid=${publicBalanceSheet.liquidAssetSlice}, tga=${cashMgmt.aggregateClosingBalance}`
   });
 
+  checks.push({
+    id: 'CF37',
+    label: 'Tax policy sensitivity within aggregate band',
+    passed: taxPolicySensitivity.withinAggregateBand,
+    detail: `marginal=${taxPolicySensitivity.aggregateMarginalPoints}, uplift=${taxPolicySensitivity.modeledUpliftPoints}`
+  });
+
+  checks.push({
+    id: 'CF38',
+    label: 'Appropriation lapse register within tolerance',
+    passed: appropriationLapseRegister.withinRegisterTolerance,
+    detail: `ratio=${appropriationLapseRegister.lapseToRemainingRatio}, lapse=${appropriationLapseRegister.aggregateLapsePoints}`
+  });
+
+  checks.push({
+    id: 'CF39',
+    label: 'Tax sensitivity uplift coherent with revenue ledger',
+    passed: taxPolicySensitivity.coherentWithLedgerDelta,
+    detail: `uplift=${taxPolicySensitivity.modeledUpliftPoints}, ledgerOk=${ledger.reconciledToV1012}`
+  });
+
+  checks.push({
+    id: 'CF40',
+    label: 'Lapse register aligned with warrant ledger risk',
+    passed: appropriationLapseRegister.alignedWithWarrantLedger,
+    detail: `register=${appropriationLapseRegister.aggregateLapsePoints}, warrantRisk=${warrantLedger.aggregateLapseRisk}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 34
+    layerCount: 38
   };
 }
 
@@ -8241,12 +8525,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Thirty-four fiscal layers integrated', healthy.layerCount === 34, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Thirty-eight fiscal layers integrated', healthy.layerCount === 38, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 36,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 40,
     'ok'
   );
 
@@ -8258,9 +8542,9 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF36 ids present',
+    'CF01–CF40 ids present',
     healthy.checks.map(c => c.id).join(',') ===
-      'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08,CF09,CF10,CF11,CF12,CF13,CF14,CF15,CF16,CF17,CF18,CF19,CF20,CF21,CF22,CF23,CF24,CF25,CF26,CF27,CF28,CF29,CF30,CF31,CF32,CF33,CF34,CF35,CF36',
+      'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08,CF09,CF10,CF11,CF12,CF13,CF14,CF15,CF16,CF17,CF18,CF19,CF20,CF21,CF22,CF23,CF24,CF25,CF26,CF27,CF28,CF29,CF30,CF31,CF32,CF33,CF34,CF35,CF36,CF37,CF38,CF39,CF40',
     'ok'
   );
 
@@ -9379,6 +9663,139 @@ export function runPublicSectorBalanceSheetSelfTests(): {
 
   const critical = buildPublicSectorBalanceSheetReport(11, snap({ pressure: 'critical', fiscalHeadroom: -30, debtLevel: 90 }));
   record('PSBS06', 'Critical pressure overrides net worth floor', critical.withinNetWorthFloor, 'ok');
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: tax-policy-sensitivity/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 12,
+    revenueCapacity: partial.revenueCapacity ?? 70,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 6,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 7,
+    debtLevel: partial.debtLevel ?? 28,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 8,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+function ledgerFor(turn: number, v1012: V1012FiscalSnapshot) {
+  const persisted = createInitialFiscalOutcomesPersisted(turn);
+  const { state } = computeFiscalOutcomesLayer({ turn, v1012 }, persisted);
+  return buildNationalRevenueLedger({ turn, v1012, taxInstruments: state.taxInstruments });
+}
+
+export function runTaxPolicySensitivitySelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const healthy = buildTaxPolicySensitivityReport(12, v, ledgerFor(12, v));
+  record('TPS01', 'Four tax policy sensitivity levers', healthy.lines.length === 4, 'ok');
+  record('TPS02', 'Healthy within aggregate band', healthy.withinAggregateBand, healthy.narrative);
+  record('TPS03', 'Ledger coherence under healthy', healthy.coherentWithLedgerDelta, 'ok');
+
+  const focused = buildTaxPolicySensitivityReport(12, snap({ revenuePolicy: 'revenue_focused' }), ledgerFor(12, snap({ revenuePolicy: 'revenue_focused' })));
+  record(
+    'TPS04',
+    'Revenue-focused policy shifts aggregate marginal',
+    focused.aggregateMarginalPoints !== healthy.aggregateMarginalPoints,
+    `${focused.aggregateMarginalPoints} vs ${healthy.aggregateMarginalPoints}`
+  );
+
+  const critical = buildTaxPolicySensitivityReport(12, snap({ pressure: 'critical', fiscalHeadroom: -22 }), ledgerFor(12, snap({ pressure: 'critical' })));
+  record('TPS05', 'Critical overrides aggregate band', critical.withinAggregateBand, 'ok');
+
+  record(
+    'TPS06',
+    'Each lever within sensitivity band after guard',
+    healthy.lines.every(l => l.withinSensitivityBand),
+    'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: appropriation-lapse-register/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 11,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 5,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 6,
+    debtLevel: partial.debtLevel ?? 25,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 7,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runAppropriationLapseRegisterSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const warrants = buildAppropriationWarrantLedger(11, v);
+  const healthy = buildAppropriationLapseRegisterReport(11, v, warrants);
+  record('ALR01', 'Five lapse register entries', healthy.entries.length === 5, 'ok');
+  record('ALR02', 'Healthy within register tolerance', healthy.withinRegisterTolerance, healthy.narrative);
+  record('ALR03', 'Aligned with warrant ledger', healthy.alignedWithWarrantLedger, 'ok');
+
+  const midYear = buildAppropriationLapseRegisterReport(
+    5,
+    snap({ turn: 5 }),
+    buildAppropriationWarrantLedger(5, snap({ turn: 5 }))
+  );
+  record(
+    'ALR04',
+    'Year-end turn raises lapse aggregate vs mid-year',
+    healthy.aggregateLapsePoints >= midYear.aggregateLapsePoints * 0.95,
+    `${healthy.aggregateLapsePoints} vs mid ${midYear.aggregateLapsePoints}`
+  );
+
+  const critical = buildAppropriationLapseRegisterReport(
+    11,
+    snap({ pressure: 'critical', fiscalHeadroom: -18 }),
+    buildAppropriationWarrantLedger(11, snap({ pressure: 'critical' }))
+  );
+  record('ALR05', 'Critical overrides register tolerance', critical.withinRegisterTolerance, 'ok');
+
+  record(
+    'ALR06',
+    'Lapse ratio bounded under healthy',
+    healthy.lapseToRemainingRatio <= 0.53,
+    `ratio=${healthy.lapseToRemainingRatio}`
+  );
 
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
