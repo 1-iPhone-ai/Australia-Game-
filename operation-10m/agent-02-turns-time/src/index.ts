@@ -109,4 +109,7 @@ export * from './batch-national-tick-session-wave-assembly-batch-integration-aud
 export * from './batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-replay-parity.js';
 export * from './batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-gate.js';
 export * from './batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-gate-export.js';
+export * from './batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-gate-export-compare.js';
+export * from './batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-gate-replay-parity.js';
+export * from './batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-gate-audit.js';
 export * from './engine.js';

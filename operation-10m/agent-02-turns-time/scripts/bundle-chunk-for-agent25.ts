@@ -124,6 +124,9 @@ const SOURCE_FILES = [
   'src/batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-replay-parity.ts',
   'src/batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-gate.ts',
   'src/batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-gate-export.ts',
+  'src/batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-gate-export-compare.ts',
+  'src/batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-gate-replay-parity.ts',
+  'src/batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-gate-audit.ts',
   'src/fast-forward.ts',
 ] as const;
 
@@ -173,7 +176,7 @@ function bundleSources(): string {
 
   parts.push(
     `export const AGENT_02_MODULE_ID = 'operation-10m/${moduleId}';`,
-    `export const AGENT_02_MODULE_VERSION = '3.8.0';`,
+    `export const AGENT_02_MODULE_VERSION = '3.9.0';`,
     '',
     `export function runOp10mAgent02TurnsTimeSelfTests(): {`,
     `  passed: number;`,
@@ -636,6 +639,15 @@ function bundleSources(): string {
     `        createTurnAdvanceBudget(2),`,
     `        [[{ maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } }]],`,
     `      ),`,
+    `    ).ok,`,
+    `  });`,
+    `  results.push({`,
+    `    id: 'agent02_national_tick_session_wave_assembly_batch_integration_audit_closure_gate_assembly_gate_audit',`,
+    `    name: 'assembly batch integration audit closure gate assembly gate audit wave 30',`,
+    `    passed: auditBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGate(`,
+    `      new TurnTimeEngine(),`,
+    `      createTurnAdvanceBudget(2),`,
+    `      [[{ maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } }]],`,
     `    ).ok,`,
     `  });`,
     `  const failed = results.filter((r) => !r.passed).length;`,
