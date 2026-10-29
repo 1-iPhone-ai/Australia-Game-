@@ -18,7 +18,7 @@ function readinessSample(brief: PortfolioHandoffBrief): number {
 
 export function createInitialHandoffTrajectory(): HandoffTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.49-scale-wave-49' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.50-scale-wave-50' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     handoffReadinessEma: 52,
@@ -39,7 +39,7 @@ export function sanitizeHandoffTrajectory(
       ? Math.max(0, Math.min(100, raw.handoffReadinessEma))
       : 52;
   return {
-    schemaVersion: '10.14.49-scale-wave-49' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.50-scale-wave-50' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     handoffReadinessEma,
