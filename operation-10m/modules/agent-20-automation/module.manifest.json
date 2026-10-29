@@ -1,13 +1,13 @@
 {
   "moduleId": "agent-20-automation",
-  "moduleVersion": "10m.1.10.0-agent20",
+  "moduleVersion": "10m.1.11.0-agent20",
   "slot": "append-only-self-tests",
   "touchesSaveFormat": true,
   "anchorComment": "O10_AGENT20_INTEGRATION_ANCHOR",
   "sourceRoot": "operation-10m/agent-20-automation/src",
   "regenerate": "node operation-10m/agent-20-automation/scripts/build-chunk.mjs",
-  "chunkSha256": "041bbdce2aceb68c288997088e21b60329c0ba1a29569324604e3c4a4e4e4cc4",
-  "chunkLineCount": 5862,
+  "chunkSha256": "444a0ef2cfd509872920d7434c0c66760d7992e0391aee26a7d6cb6828c69bce",
+  "chunkLineCount": 6309,
   "sourceFiles": [
     "types.ts",
     "conditional-actions.ts",
@@ -44,6 +44,9 @@
     "automation-idle-governance-reconciliation.ts",
     "automation-idle-governance-escalation-ladder.ts",
     "automation-idle-governance-copilot-brief.ts",
+    "automation-idle-governance-audit-trend.ts",
+    "automation-idle-governance-cycle-attestation.ts",
+    "automation-idle-governance-assurance-pass.ts",
     "index.ts"
   ]
 }

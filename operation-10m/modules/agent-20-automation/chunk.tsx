@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: 041bbdce2aceb68c288997088e21b60329c0ba1a29569324604e3c4a4e4e4cc4
-// OP10M_MODULE_VERSION: 10m.1.10.0-agent20
+// OP10M_MANIFEST_SHA256: 444a0ef2cfd509872920d7434c0c66760d7992e0391aee26a7d6cb6828c69bce
+// OP10M_MODULE_VERSION: 10m.1.11.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
@@ -5788,6 +5788,450 @@ export function runO10Agent20IdleGovernanceCopilotBriefSelfTests(): O10SelfTestR
 }
 
 
+// --- source: automation-idle-governance-audit-trend.ts ---
+
+export type O10IdleGovernanceAuditTrendDirection = 'improving' | 'stable' | 'degrading' | 'insufficient';
+
+export interface O10IdleGovernanceAuditTrendResult {
+  schema: '10m.agent20.idle-governance-audit-trend.v1';
+  direction: O10IdleGovernanceAuditTrendDirection;
+  sampleSize: number;
+  peakTierSlope: number;
+  blockedEntryRatio: number;
+  summaryLine: string;
+}
+
+const ALERT_RANK: Record<string, number> = { none: 0, warn: 1, critical: 2 };
+
+function alertRank(level: string): number {
+  return ALERT_RANK[level] ?? 1;
+}
+
+/** Summarize recent audit trail movement for co-pilot trend badges. */
+export function analyzeIdleGovernanceAuditTrend(
+  trail: O10IdleGovernanceAuditTrail,
+  windowSize = 5
+): O10IdleGovernanceAuditTrendResult {
+  const entries = trail.entries.slice(-Math.max(1, windowSize));
+  if (entries.length < 2) {
+    return {
+      schema: '10m.agent20.idle-governance-audit-trend.v1',
+      direction: 'insufficient',
+      sampleSize: entries.length,
+      peakTierSlope: 0,
+      blockedEntryRatio: 0,
+      summaryLine: 'gov_audit_trend direction=insufficient sample=1',
+    };
+  }
+
+  const first = entries[0];
+  const last = entries[entries.length - 1];
+  const peakTierSlope = last.peakTier - first.peakTier;
+  const alertDelta = alertRank(last.alertLevel) - alertRank(first.alertLevel);
+  const blockedEntryRatio =
+    entries.filter(e => e.pendingHumanCommit && e.alertLevel !== 'none').length / entries.length;
+
+  let direction: O10IdleGovernanceAuditTrendDirection = 'stable';
+  if (alertDelta < 0 || peakTierSlope < 0) direction = 'improving';
+  else if (alertDelta > 0 || peakTierSlope > 0 || blockedEntryRatio >= 0.6) direction = 'degrading';
+
+  const summaryLine = [
+    'gov_audit_trend',
+    `direction=${direction}`,
+    `slope_peak=${peakTierSlope}`,
+    `blocked_ratio=${blockedEntryRatio.toFixed(2)}`,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-audit-trend.v1',
+    direction,
+    sampleSize: entries.length,
+    peakTierSlope,
+    blockedEntryRatio,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceAuditTrendSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const mk = (
+    turn: number,
+    alert: string,
+    peak: number,
+    pending: boolean
+  ) => ({
+    schema: '10m.agent20.idle-governance-audit.v1' as const,
+    turn,
+    alertLevel: alert,
+    peakTier: peak as 0 | 1 | 2 | 3,
+    appliedStepCount: 1,
+    pendingHumanCommit: pending,
+    fingerprint: `${turn}-${alert}`,
+  });
+
+  const improving = analyzeIdleGovernanceAuditTrend({
+    schema: '10m.agent20.idle-governance-audit-trail.v1',
+    entries: [mk(1, 'critical', 3, true), mk(2, 'warn', 2, false), mk(3, 'none', 0, false)],
+  });
+  push('gov_trend_improving', 'peak and alert easing marks improving', improving.direction === 'improving');
+
+  const degrading = analyzeIdleGovernanceAuditTrend({
+    schema: '10m.agent20.idle-governance-audit-trail.v1',
+    entries: [mk(1, 'none', 0, false), mk(2, 'warn', 2, true), mk(3, 'critical', 3, true)],
+  });
+  push('gov_trend_degrading', 'rising tier marks degrading', degrading.direction === 'degrading');
+
+  const one = analyzeIdleGovernanceAuditTrend({
+    schema: '10m.agent20.idle-governance-audit-trail.v1',
+    entries: [mk(1, 'warn', 1, false)],
+  });
+  push('gov_trend_insufficient', 'single entry is insufficient', one.direction === 'insufficient');
+
+  push(
+    'gov_trend_schema',
+    'audit trend schema marker',
+    degrading.schema === '10m.agent20.idle-governance-audit-trend.v1' && degrading.summaryLine.includes('direction=degrading')
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-cycle-attestation.ts ---
+
+export interface O10IdleGovernanceCycleAttestation {
+  schema: '10m.agent20.idle-governance-cycle-attestation.v1';
+  turn: number;
+  reconcileStatus: string;
+  stabilizationWave: string;
+  auditDigest: string;
+  briefHeadline: string;
+  fingerprint: string;
+  valid: boolean;
+}
+
+function foldFingerprint(parts: string[]): string {
+  let h = 2166136261;
+  const text = parts.join('\n');
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return `fnv1a_${(h >>> 0).toString(16)}`;
+}
+
+/** Produce a deterministic attestation blob for replay / history modules. */
+export function attestIdleGovernanceComplianceCycle(
+  cycle: O10IdleGovernanceComplianceCycleResult,
+  turn: number
+): O10IdleGovernanceCycleAttestation {
+  const brief = buildIdleGovernanceCopilotBriefFromCycle(cycle);
+  const fingerprint = foldFingerprint([
+    cycle.governance.summaryLine,
+    cycle.reconciliation.summaryLine,
+    cycle.auditDigest,
+    brief.headline,
+    String(turn),
+  ]);
+
+  const valid =
+    cycle.reconciliation.auditMatchesPass &&
+    (cycle.reconciliation.status !== 'drift' || cycle.governance.alertLevel === 'none');
+
+  return {
+    schema: '10m.agent20.idle-governance-cycle-attestation.v1',
+    turn,
+    reconcileStatus: cycle.reconciliation.status,
+    stabilizationWave: cycle.pass.stabilization.wave,
+    auditDigest: cycle.auditDigest,
+    briefHeadline: brief.headline,
+    fingerprint,
+    valid,
+  };
+}
+
+export function verifyIdleGovernanceCycleAttestation(
+  cycle: O10IdleGovernanceComplianceCycleResult,
+  attestation: O10IdleGovernanceCycleAttestation
+): boolean {
+  const rerun = attestIdleGovernanceComplianceCycle(cycle, attestation.turn);
+  return (
+    rerun.fingerprint === attestation.fingerprint &&
+    rerun.reconcileStatus === attestation.reconcileStatus &&
+    rerun.stabilizationWave === attestation.stabilizationWave
+  );
+}
+
+export function runO10Agent20IdleGovernanceCycleAttestationSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const mockCycle: O10IdleGovernanceComplianceCycleResult = {
+    schema: '10m.agent20.idle-governance-compliance-cycle.v1',
+    auditDigest: 'idle_gov_audit entries=1 last_alert=none peak=t0',
+    governance: {
+      schema: '10m.agent20.idle-ops-governance.v1',
+      alertLevel: 'none',
+      remediationStepCount: 1,
+      summaryLine: 'calm window',
+      steward: { persisted: {} as never, throttled: false, reason: 'tier_nominal' },
+      window: {
+        queue: { maxDepth: 8, items: [] },
+        deescalationState: {} as never,
+        telemetry: [],
+        summary: {
+          schema: '10m.agent20.idle-ops-window.v1',
+          turnsRun: 1,
+          humanCommitCount: 1,
+          peakEffectiveTier: 0,
+          finalScheduleAction: 'execute_now',
+          digestSummary: 'ok',
+        },
+        lastTurn: {} as never,
+      },
+    },
+    pass: {
+      schema: '10m.agent20.idle-governance-stabilization-pass.v1',
+      governance: {} as never,
+      remediationRun: {} as never,
+      auditTrail: {
+        schema: '10m.agent20.idle-governance-audit-trail.v1',
+        entries: [
+          {
+            schema: '10m.agent20.idle-governance-audit.v1',
+            turn: 2,
+            alertLevel: 'none',
+            peakTier: 0,
+            appliedStepCount: 0,
+            pendingHumanCommit: false,
+            fingerprint: 'calm',
+          },
+        ],
+      },
+      stabilization: {
+        schema: '10m.agent20.idle-governance-stabilization.v1',
+        wave: 'idle_governance_calm',
+        stabilized: true,
+        auditDigest: 'idle_gov_audit entries=1',
+        reportHeadline: 'ok',
+        summaryLine: 'gov_stabilization wave=idle_governance_calm stabilized=true',
+      },
+    },
+    reconciliation: {
+      schema: '10m.agent20.idle-governance-reconciliation.v1',
+      status: 'aligned',
+      priorAlertLevel: null,
+      deltaPeakTier: 0,
+      auditMatchesPass: true,
+      summaryLine: 'gov_reconcile status=aligned audit_ok=true delta_peak=0',
+    },
+  };
+  mockCycle.pass.governance = mockCycle.governance;
+  mockCycle.pass.remediationRun = {
+    schema: '10m.agent20.governance-remediation-run.v1',
+    plan: { schema: '10m.agent20.backpressure-remediation.v1', alertLevel: 'none', steps: [] },
+    queue: { maxDepth: 8, items: [] },
+    appliedKinds: ['none'],
+    appliedStepCount: 0,
+    pendingHumanCommit: false,
+    summaryLine: 'run calm',
+  };
+
+  const att = attestIdleGovernanceComplianceCycle(mockCycle, 2);
+  push('gov_att_valid', 'aligned calm cycle attestation valid', att.valid && att.fingerprint.startsWith('fnv1a_'));
+  push('gov_att_verify', 'verify matches rerun fingerprint', verifyIdleGovernanceCycleAttestation(mockCycle, att));
+
+  const drift = {
+    ...mockCycle,
+    reconciliation: { ...mockCycle.reconciliation, status: 'drift' as const, auditMatchesPass: false },
+    governance: { ...mockCycle.governance, alertLevel: 'warn' },
+  };
+  const attDrift = attestIdleGovernanceComplianceCycle(drift, 3);
+  push('gov_att_drift', 'drift with warn fails valid flag', attDrift.valid === false);
+
+  push('gov_att_schema', 'attestation schema marker', att.schema === '10m.agent20.idle-governance-cycle-attestation.v1');
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-assurance-pass.ts ---
+  runIdleGovernanceComplianceCycle,
+  type O10IdleGovernanceComplianceCycleResult,
+} from './automation-idle-governance-reconciliation.js';
+
+export interface O10IdleGovernanceWatchSchedule {
+  schema: '10m.agent20.idle-governance-watch-schedule.v1';
+  turnsUntilNextCycle: number;
+  urgency: 'low' | 'medium' | 'high';
+  reason: string;
+}
+
+export interface O10IdleGovernanceAssurancePassResult {
+  schema: '10m.agent20.idle-governance-assurance-pass.v1';
+  cycle: O10IdleGovernanceComplianceCycleResult;
+  briefMarkdown: string;
+  attestationFingerprint: string;
+  trendDirection: string;
+  watch: O10IdleGovernanceWatchSchedule;
+  summaryLine: string;
+}
+
+export function planIdleGovernanceWatchSchedule(
+  escalationLevel: number,
+  trendDirection: string
+): O10IdleGovernanceWatchSchedule {
+  if (escalationLevel >= 3 || trendDirection === 'degrading') {
+    return {
+      schema: '10m.agent20.idle-governance-watch-schedule.v1',
+      turnsUntilNextCycle: 1,
+      urgency: 'high',
+      reason: 'escalation_or_degrading_trend',
+    };
+  }
+  if (escalationLevel >= 1 || trendDirection === 'stable') {
+    return {
+      schema: '10m.agent20.idle-governance-watch-schedule.v1',
+      turnsUntilNextCycle: 3,
+      urgency: 'medium',
+      reason: 'elevated_escalation_or_stable_band',
+    };
+  }
+  return {
+    schema: '10m.agent20.idle-governance-watch-schedule.v1',
+    turnsUntilNextCycle: 6,
+    urgency: 'low',
+    reason: 'calm_improving_band',
+  };
+}
+
+/** Round-11 assurance pass: compliance cycle + brief + attestation + trend + watch cadence. */
+export function runIdleGovernanceAssurancePass(
+  spec: O10IdleOpsWindowSpec,
+  rule: PortableHumanAutomationRule,
+  turn: number
+): O10IdleGovernanceAssurancePassResult {
+  const priorTrail = createEmptyIdleGovernanceAuditTrail();
+  const cycle = runIdleGovernanceComplianceCycle(spec, rule, turn, priorTrail);
+  const brief = buildIdleGovernanceCopilotBriefFromCycle(cycle);
+  const attestation = attestIdleGovernanceComplianceCycle(cycle, turn);
+  const trend = analyzeIdleGovernanceAuditTrend(cycle.pass.auditTrail);
+  const ladder = evaluateIdleGovernanceEscalationLadder(cycle.pass.auditTrail);
+  const watch = planIdleGovernanceWatchSchedule(ladder.level, trend.direction);
+
+  const summaryLine = [
+    'gov_assurance',
+    `attest=${attestation.valid}`,
+    trend.summaryLine,
+    `watch_in=${watch.turnsUntilNextCycle}`,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-assurance-pass.v1',
+    cycle,
+    briefMarkdown: brief.markdown,
+    attestationFingerprint: attestation.fingerprint,
+    trendDirection: trend.direction,
+    watch,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceAssurancePassSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const sampleRule: PortableHumanAutomationRule = {
+    id: 'as1',
+    name: 'Assurance sample',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 5,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 10, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+  };
+
+  const calm = runIdleGovernanceAssurancePass(
+    {
+      startTurn: 1,
+      startDay: 1,
+      turnCount: 2,
+      humanCommittedEvery: 1,
+      idleMsStart: 0,
+      idleMsStep: 0,
+      consecutiveIdleStart: 0,
+    },
+    sampleRule,
+    1
+  );
+  push(
+    'gov_assurance_calm',
+    'calm assurance schedules low urgency watch',
+    calm.watch.urgency === 'low' && calm.cycle.reconciliation.auditMatchesPass
+  );
+
+  const stress = runIdleGovernanceAssurancePass(
+    {
+      startTurn: 1,
+      startDay: 1,
+      turnCount: 6,
+      humanCommittedEvery: 0,
+      idleMsStart: 250_000,
+      idleMsStep: 100_000,
+      consecutiveIdleStart: 10,
+    },
+    sampleRule,
+    2
+  );
+  push(
+    'gov_assurance_stress',
+    'stressed assurance yields brief and fingerprint',
+    stress.briefMarkdown.includes('co-pilot brief') &&
+      stress.attestationFingerprint.startsWith('fnv1a_') &&
+      stress.watch.urgency !== 'low'
+  );
+
+  push(
+    'gov_assurance_schema',
+    'assurance pass schema marker',
+    calm.schema === '10m.agent20.idle-governance-assurance-pass.v1' &&
+      calm.watch.schema === '10m.agent20.idle-governance-watch-schedule.v1'
+  );
+
+  push(
+    'gov_assurance_summary',
+    'summary bundles attestation and watch',
+    calm.summaryLine.includes('gov_assurance') && calm.summaryLine.includes('watch_in=')
+  );
+
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -5853,6 +6297,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceReconciliationSelfTests());
   results.push(...runO10Agent20IdleGovernanceEscalationLadderSelfTests());
   results.push(...runO10Agent20IdleGovernanceCopilotBriefSelfTests());
+  results.push(...runO10Agent20IdleGovernanceAuditTrendSelfTests());
+  results.push(...runO10Agent20IdleGovernanceCycleAttestationSelfTests());
+  results.push(...runO10Agent20IdleGovernanceAssurancePassSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }
