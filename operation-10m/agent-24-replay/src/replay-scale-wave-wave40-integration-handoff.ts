@@ -107,7 +107,7 @@ export function runAgent24ReplayScaleWaveWave40IntegrationHandoffSelfTests(): Ar
     reportId: 'w39iv',
     matchId: 'self',
     waveRound: 39,
-    integrationBaselineSha: '6f7fa49e',
+    integrationBaselineSha: '6134c6ae',
     verified: true,
     issueCount: 0,
     issues: [],
