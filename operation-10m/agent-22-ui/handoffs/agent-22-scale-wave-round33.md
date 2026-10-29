@@ -35,6 +35,8 @@ Regenerate: `npm run build:agent22-chunk`
 
 Wave commit: **`adb4ed89`** — `feat(agent-22-ui): O10-197 scale wave round 33 (v1.33.0)`
 
+Handoff commit: **`76d525bf`** — `docs(agent-22-ui): O10-197 scale wave round 33 handoff on origin`
+
 ## Round 33 depth
 
 - **Flushed deferred queue day coach** — tick `flushedDeferredQueueDayCoachCopy` (`flushed-deferred-queue-day-coach.ts`, `FlushedDeferredQueueDayCoachStrip`)
