@@ -6825,6 +6825,293 @@ export function covenantRecoveryOrchestratorWithinCap(report: CovenantRecoveryOr
 }
 
 
+// --- source: match-explainability-charter-bundle.ts ---
+  auditMatchExplainabilityCharterGate,
+  matchExplainabilityCharterAllowed,
+} from './match-explainability-charter-gate.ts';
+  buildMatchExplainabilityCovenantBundle,
+  matchExplainabilityCovenantReady,
+} from './match-explainability-covenant-bundle.ts';
+  buildSessionCovenantExportBundle,
+  sessionCovenantExportShipped,
+} from './session-covenant-export-bundle.ts';
+
+export const AGENT19_CHARTER_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityCharterBundle {
+  charterReady: boolean;
+  charterAllowed: boolean;
+  covenantReady: boolean;
+  covenantExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type CharterParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Charter bundle: charter gate and covenant export must both be green. */
+export function buildMatchExplainabilityCharterBundle(
+  packs: TurnExplainabilityPack[],
+  params: CharterParams,
+): MatchExplainabilityCharterBundle {
+  const charter = auditMatchExplainabilityCharterGate(packs, params);
+  const covenant = buildMatchExplainabilityCovenantBundle(packs, params);
+  const covenantExport = buildSessionCovenantExportBundle(packs, params);
+  const charterAllowed = matchExplainabilityCharterAllowed(charter);
+  const covenantReady = matchExplainabilityCovenantReady(covenant);
+  const covenantExportShipped = sessionCovenantExportShipped(covenantExport);
+  const charterReady = charterAllowed && covenantReady && covenantExportShipped;
+  const narrativeLines = [
+    `Match explainability charter bundle: ${charterReady ? 'READY' : 'PENDING'} (gate ${charterAllowed ? 'ok' : 'fail'}, covenant ${covenantReady ? 'ok' : 'fail'}).`,
+    ...charter.narrativeLines.slice(0, 2),
+    ...covenant.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_CHARTER_NARRATIVE_CAP);
+  return {
+    charterReady,
+    charterAllowed,
+    covenantReady,
+    covenantExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityCharterReady(bundle: MatchExplainabilityCharterBundle): boolean {
+  return bundle.charterReady;
+}
+
+
+// --- source: session-charter-export-bundle.ts ---
+  buildSessionCovenantExportBundle,
+  type SessionCovenantExportBundle,
+} from './session-covenant-export-bundle.ts';
+  buildMatchExplainabilityCharterBundle,
+  matchExplainabilityCharterReady,
+} from './match-explainability-charter-bundle.ts';
+
+export interface SessionCharterExportBundle extends SessionCovenantExportBundle {
+  charterReady: boolean;
+  charterSchema: string;
+}
+
+/** Charter export wraps covenant export when charter bundle is ready. */
+export function buildSessionCharterExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionCharterExportBundle {
+  const base = buildSessionCovenantExportBundle(packs, params);
+  const charter = buildMatchExplainabilityCharterBundle(packs, params);
+  const charterReady = matchExplainabilityCharterReady(charter);
+  const exports = charterReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    charterReady,
+    charterSchema: 'agent19.charter.v1',
+    releaseReady: charterReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Charter export: ${charterReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionCharterExportShipped(bundle: SessionCharterExportBundle): boolean {
+  return (
+    bundle.charterReady &&
+    bundle.exports.length > 0 &&
+    bundle.charterSchema === 'agent19.charter.v1'
+  );
+}
+
+
+// --- source: covenant-charter-bridge.ts ---
+  buildMatchExplainabilityCharterBundle,
+  matchExplainabilityCharterReady,
+} from './match-explainability-charter-bundle.ts';
+  buildMatchExplainabilityCovenantBundle,
+  matchExplainabilityCovenantReady,
+} from './match-explainability-covenant-bundle.ts';
+
+export interface CovenantCharterBridgeReport {
+  aligned: boolean;
+  charterReady: boolean;
+  covenantReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Charter-ready should match covenant-ready when covenant export stack passes. */
+export function auditCovenantCharterBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): CovenantCharterBridgeReport {
+  const charter = buildMatchExplainabilityCharterBundle(packs, params);
+  const covenant = buildMatchExplainabilityCovenantBundle(packs, params);
+  const charterReady = matchExplainabilityCharterReady(charter);
+  const covenantReady = matchExplainabilityCovenantReady(covenant);
+  const aligned = charterReady === covenantReady;
+  const narrativeLines = [
+    `Covenant/charter bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (charter ${charterReady ? 'ok' : 'fail'}, covenant ${covenantReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, charterReady, covenantReady, narrativeLines };
+}
+
+export function covenantCharterBridgeHealthy(report: CovenantCharterBridgeReport): boolean {
+  return report.charterReady && report.covenantReady && report.aligned;
+}
+
+
+// --- source: match-explainability-pact-gate.ts ---
+  buildMatchExplainabilityCharterBundle,
+  matchExplainabilityCharterReady,
+} from './match-explainability-charter-bundle.ts';
+  buildSessionCharterExportBundle,
+  sessionCharterExportShipped,
+} from './session-charter-export-bundle.ts';
+
+export interface MatchExplainabilityPactGateReport {
+  pactAllowed: boolean;
+  charterReady: boolean;
+  charterExportShipped: boolean;
+  covenantCharterHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Pact gate: charter bundle + charter export + covenant/charter bridge. */
+export function auditMatchExplainabilityPactGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityPactGateReport {
+  const charter = buildMatchExplainabilityCharterBundle(packs, params);
+  const charterExport = buildSessionCharterExportBundle(packs, params);
+  const bridge = auditCovenantCharterBridge(packs, params);
+  const charterReady = matchExplainabilityCharterReady(charter);
+  const charterExportShipped = sessionCharterExportShipped(charterExport);
+  const covenantCharterHealthy = covenantCharterBridgeHealthy(bridge);
+  const pactAllowed = charterReady && charterExportShipped && covenantCharterHealthy;
+  const narrativeLines = [
+    `Match explainability pact: ${pactAllowed ? 'ALLOWED' : 'DENIED'} (charter ${charterReady ? 'ok' : 'fail'}, export ${charterExportShipped ? 'ok' : 'fail'}).`,
+    ...charter.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    pactAllowed,
+    charterReady,
+    charterExportShipped,
+    covenantCharterHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityPactAllowed(report: MatchExplainabilityPactGateReport): boolean {
+  return report.pactAllowed;
+}
+
+
+// --- source: charter-recovery-orchestrator.ts ---
+  auditMatchExplainabilityCharterGate,
+  matchExplainabilityCharterAllowed,
+} from './match-explainability-charter-gate.ts';
+
+export const AGENT19_CHARTER_RECOVERY_CAP = 10;
+
+export interface CharterRecoveryOrchestratorReport {
+  charterBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when charter gate blocks pact rollout. */
+export function buildCharterRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): CharterRecoveryOrchestratorReport {
+  const charter = auditMatchExplainabilityCharterGate(packs, params);
+  const charterBlocked = !matchExplainabilityCharterAllowed(charter);
+  const steps: string[] = [];
+  if (charterBlocked) {
+    if (!charter.covenantReady) {
+      steps.push('Restore covenant bundle: seal and covenant export must pass.');
+    }
+    if (!charter.covenantExportShipped) {
+      steps.push('Emit session covenant export before charter clearance.');
+    }
+    if (!charter.sealCovenantHealthy) {
+      steps.push('Reconcile seal/covenant bridge before charter.');
+    }
+    steps.push(...buildCovenantRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const covenant = buildMatchExplainabilityCovenantBundle(packs, params);
+    if (!covenant.covenantReady) {
+      steps.push('Re-run covenant readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Charter gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_CHARTER_RECOVERY_CAP);
+  return {
+    charterBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Charter recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function charterRecoveryOrchestratorWithinCap(report: CharterRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_CHARTER_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
