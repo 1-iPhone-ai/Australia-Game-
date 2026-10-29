@@ -290,6 +290,16 @@ import {
   bilateralForwardArcRechargeGateExportScale,
 } from './bilateral-forward-arc-recharge-gate.ts';
 import {
+  computeForwardArcRechargeContinuitySnapshot,
+  createEmptyForwardArcRechargeContinuitySnapshot,
+  forwardArcRechargeContinuityExportScale,
+} from './forward-arc-recharge-continuity.ts';
+import {
+  computeBilateralRenewalArcPrimingGateSnapshot,
+  createEmptyBilateralRenewalArcPrimingGateSnapshot,
+  bilateralRenewalArcPrimingGateExportScale,
+} from './bilateral-renewal-arc-priming-gate.ts';
+import {
   computeBilateralTradeWindowContinuitySnapshot,
   createEmptyBilateralTradeWindowContinuitySnapshot,
 } from './bilateral-trade-window-continuity.ts';
@@ -2039,6 +2049,54 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       bilateralForwardArcRechargeGateExportScale(recharged) >= bilateralForwardArcRechargeGateExportScale(blocked),
       'expected arc recharge scale lift',
+    );
+  });
+
+  ok('forward arc recharge continuity improves when arc recharge gate is recharged', () => {
+    const gate = {
+      ...createEmptyBilateralForwardArcRechargeGateSnapshot(),
+      score: 0.95,
+      band: 'recharged' as const,
+    };
+    const loop = { ...createEmptyReopenedCommitmentLoopContinuitySnapshot(), score: 0.93, band: 'stable' as const };
+    const held = computeForwardArcRechargeContinuitySnapshot({
+      bilateralForwardArcRechargeGate: gate,
+      reopenedCommitmentLoopContinuity: loop,
+      persisted: { ...createEmptyGTELPersisted(), forwardArcRechargeContinuitySmoothing: 0.93 },
+    }).snapshot;
+    const lost = computeForwardArcRechargeContinuitySnapshot({
+      bilateralForwardArcRechargeGate: { ...gate, score: 0.1, band: 'blocked' },
+      reopenedCommitmentLoopContinuity: { ...loop, score: 0.08, band: 'cut' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(held.score > lost.score, 'expected held recharge continuity');
+    gtelAssert(
+      forwardArcRechargeContinuityExportScale(held) >= forwardArcRechargeContinuityExportScale(lost),
+      'expected recharge continuity scale lift',
+    );
+  });
+
+  ok('bilateral renewal arc priming gate improves when recharge continuity is held', () => {
+    const continuity = {
+      ...createEmptyForwardArcRechargeContinuitySnapshot(),
+      score: 0.96,
+      band: 'held' as const,
+    };
+    const readiness = { ...createEmptyAnchoredBookReadinessSnapshot(), score: 0.91, band: 'ready' as const };
+    const primed = computeBilateralRenewalArcPrimingGateSnapshot({
+      forwardArcRechargeContinuity: continuity,
+      anchoredBookReadiness: readiness,
+      persisted: { ...createEmptyGTELPersisted(), bilateralRenewalArcPrimingGateSmoothing: 0.95 },
+    }).snapshot;
+    const blocked = computeBilateralRenewalArcPrimingGateSnapshot({
+      forwardArcRechargeContinuity: { ...continuity, score: 0.11, band: 'lost' },
+      anchoredBookReadiness: { ...readiness, score: 0.08, band: 'blocked' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(primed.score > blocked.score, 'expected renewal priming when held');
+    gtelAssert(
+      bilateralRenewalArcPrimingGateExportScale(primed) >= bilateralRenewalArcPrimingGateExportScale(blocked),
+      'expected renewal priming scale lift',
     );
   });
 

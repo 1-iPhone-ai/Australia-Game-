@@ -73,5 +73,7 @@ export * from './forward-cycle-advance-continuity.ts';
 export * from './bilateral-commitment-loop-reopen-gate.ts';
 export * from './reopened-commitment-loop-continuity.ts';
 export * from './bilateral-forward-arc-recharge-gate.ts';
+export * from './forward-arc-recharge-continuity.ts';
+export * from './bilateral-renewal-arc-priming-gate.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';
