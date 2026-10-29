@@ -45,6 +45,9 @@ const FILES = [
   'engine/coach-dismissal-backoff.ts',
   'engine/landmark-reading-order.ts',
   'engine/high-contrast-chrome-policy.ts',
+  'engine/announcement-dedup-ledger.ts',
+  'engine/modal-focus-restoration.ts',
+  'engine/attention-surface-gate.ts',
   'engine/legacy-access.ts',
   'engine/merge-with-v94-contextual-hiding.ts',
   'engine/progression-coach.ts',
@@ -54,6 +57,7 @@ const FILES = [
   'engine/round5-self-tests.ts',
   'engine/round6-self-tests.ts',
   'engine/round7-self-tests.ts',
+  'engine/round8-self-tests.ts',
   'a11y/aria-builders.ts',
   'a11y/focus-management.ts',
   'a11y/live-region-controller.ts',
@@ -75,6 +79,8 @@ const FILES = [
   'react/UiCalmRecoveryBanner.tsx',
   'react/CoachDismissalBackoffBanner.tsx',
   'react/LandmarkSkipLinksStrip.tsx',
+  'react/AnnouncementDedupStatusBanner.tsx',
+  'react/ModalFocusRestoreStrip.tsx',
 ];
 
 function stripModulePreamble(source) {
@@ -116,7 +122,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.7.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.8.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -194,6 +200,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
     check(\`agent22_round7_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
+  const round8 = runAgent22Round8SelfTests();
+  for (const r of round8.results) {
+    check(\`agent22_round8_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
   const failed = results.filter(r => !r.passed).length;
   return {
     passed: results.length - failed,
@@ -220,7 +231,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.7.0',
+  moduleVersion: '1.8.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),

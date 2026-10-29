@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 772367c0f8db33d1
+// content-sha256-prefix: 2f6009b7eadb185c
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -851,6 +851,8 @@ export interface EvolvingUiPersistedState {
   calmRecoveryUntilDay?: number;
   coachDismissalStreak?: number;
   coachDismissalQuietUntilDay?: number;
+  /** announcement hash → last game day announced */
+  announcementDedupLedger?: Record<string, number>;
 }
 
 export interface DayAdvanceUiEvolutionResult {
@@ -930,12 +932,38 @@ export function tickEvolvingUiOnDayAdvance(
     lastCoachPanelId: newlyUnlockedPanelIds[0] ?? persisted.lastCoachPanelId ?? null,
   };
 
+  const deduped = filterDedupedAnnouncements(
+    coachAnnouncements,
+    nextSignals.gameDay,
+    persisted.announcementDedupLedger
+  );
+
+  const updatedPersistedWithDedup = mergeAnnouncementDedupLedgerIntoPersisted(
+    updatedPersisted,
+    deduped.ledger
+  );
+
   return {
     gameDay: nextSignals.gameDay,
     newlyUnlockedPanelIds,
-    coachAnnouncements,
-    updatedPersisted,
+    coachAnnouncements: deduped.freshAnnouncements,
+    updatedPersisted: updatedPersistedWithDedup,
     visiblePanelCount,
+  };
+}
+
+export interface DayAdvanceDedupMeta {
+  suppressedAnnouncementCount: number;
+}
+
+/** Exposes dedup counts for status banners without re-running tick logic. */
+export function summarizeAnnouncementDedup(
+  rawAnnouncements: string[],
+  gameDay: number,
+  ledger: EvolvingUiPersistedState['announcementDedupLedger']
+): DayAdvanceDedupMeta {
+  return {
+    suppressedAnnouncementCount: filterDedupedAnnouncements(rawAnnouncements, gameDay, ledger).suppressedCount,
   };
 }
 
@@ -2506,6 +2534,201 @@ export function mergeHighContrastChromeStyle(
   };
 }
 
+// --- source: engine/announcement-dedup-ledger.ts ---
+export const ANNOUNCEMENT_DEDUP_WINDOW_DAYS = 3;
+export const ANNOUNCEMENT_DEDUP_LEDGER_MAX_ENTRIES = 24;
+
+export type AnnouncementDedupLedger = Record<string, number>;
+
+export function hashAnnouncementText(text: string): string {
+  const normalized = text.trim().toLowerCase().replace(/\s+/g, ' ');
+  let hash = 5381;
+  for (let i = 0; i < normalized.length; i++) {
+    hash = (hash * 33) ^ normalized.charCodeAt(i);
+  }
+  return `a${(hash >>> 0).toString(16)}`;
+}
+
+export function isAnnouncementDuplicate(
+  hash: string,
+  ledger: AnnouncementDedupLedger | undefined,
+  gameDay: number
+): boolean {
+  const lastDay = ledger?.[hash];
+  if (lastDay == null) return false;
+  return gameDay - lastDay < ANNOUNCEMENT_DEDUP_WINDOW_DAYS;
+}
+
+export function pruneAnnouncementDedupLedger(
+  ledger: AnnouncementDedupLedger | undefined,
+  gameDay: number
+): AnnouncementDedupLedger {
+  if (!ledger) return {};
+  const next: AnnouncementDedupLedger = {};
+  for (const [hash, day] of Object.entries(ledger)) {
+    if (gameDay - day <= ANNOUNCEMENT_DEDUP_WINDOW_DAYS) next[hash] = day;
+  }
+  const entries = Object.entries(next);
+  if (entries.length <= ANNOUNCEMENT_DEDUP_LEDGER_MAX_ENTRIES) return next;
+  entries.sort((a, b) => b[1] - a[1]);
+  return Object.fromEntries(entries.slice(0, ANNOUNCEMENT_DEDUP_LEDGER_MAX_ENTRIES));
+}
+
+export interface AnnouncementDedupResult {
+  freshAnnouncements: string[];
+  suppressedCount: number;
+  ledger: AnnouncementDedupLedger;
+}
+
+export function filterDedupedAnnouncements(
+  announcements: string[],
+  gameDay: number,
+  ledger: AnnouncementDedupLedger | undefined
+): AnnouncementDedupResult {
+  const pruned = pruneAnnouncementDedupLedger(ledger, gameDay);
+  const freshAnnouncements: string[] = [];
+  let suppressedCount = 0;
+  const nextLedger = { ...pruned };
+
+  for (const line of announcements) {
+    const hash = hashAnnouncementText(line);
+    if (isAnnouncementDuplicate(hash, nextLedger, gameDay)) {
+      suppressedCount++;
+      continue;
+    }
+    freshAnnouncements.push(line);
+    nextLedger[hash] = gameDay;
+  }
+
+  return {
+    freshAnnouncements,
+    suppressedCount,
+    ledger: pruneAnnouncementDedupLedger(nextLedger, gameDay),
+  };
+}
+
+export function mergeAnnouncementDedupLedgerIntoPersisted(
+  persisted: EvolvingUiPersistedState,
+  ledger: AnnouncementDedupLedger
+): EvolvingUiPersistedState {
+  return {
+    ...persisted,
+    announcementDedupLedger: ledger,
+  };
+}
+
+export function dedupStatusCopy(suppressedCount: number): string {
+  if (suppressedCount <= 0) return '';
+  if (suppressedCount === 1) {
+    return 'One repeated unlock announcement was held back so screen readers are not spammed.';
+  }
+  return `${suppressedCount} repeated unlock announcements were held back so screen readers stay calm.`;
+}
+
+// --- source: engine/modal-focus-restoration.ts ---
+export interface ModalFocusRestorePlan {
+  restoreSelector: string;
+  restoreLabel: string;
+  trapEnabled: boolean;
+  restoreEnabled: boolean;
+  announceOnClose: string;
+}
+
+const DEFAULT_RESTORE_SELECTOR = '[data-evolving-ui-nav-focus="primary"]';
+
+export function navSelectorForTarget(navTarget: string | null | undefined): string {
+  if (!navTarget) return DEFAULT_RESTORE_SELECTOR;
+  return `[data-nav-target="${navTarget}"]`;
+}
+
+export function resolveModalFocusRestorePlan(input: {
+  modalId: string;
+  lastNavTarget?: string | null;
+  accessibility: AccessibilitySettingsSnapshot;
+}): ModalFocusRestorePlan {
+  const trapEnabled = shouldTrapFocusInModal(input.accessibility);
+  const restoreEnabled = shouldRestoreFocusOnClose(input.accessibility);
+  const navTarget = input.lastNavTarget ?? null;
+  const panel = navTarget
+    ? Object.values(EVOLVING_UI_PANEL_BY_ID).find(p => p.navTarget === navTarget)
+    : undefined;
+  const restoreLabel = panel?.label ?? (navTarget ? `Return to ${navTarget}` : 'Return to primary navigation');
+  const restoreSelector = navSelectorForTarget(navTarget);
+
+  const announceOnClose = restoreEnabled
+    ? `Closing ${input.modalId}. Focus returns to ${restoreLabel}.`
+    : `Closing ${input.modalId}.`;
+
+  return {
+    restoreSelector,
+    restoreLabel,
+    trapEnabled,
+    restoreEnabled,
+    announceOnClose,
+  };
+}
+
+export function modalFocusRestoreSkipLabel(plan: ModalFocusRestorePlan): string {
+  return `After closing, focus returns to ${plan.restoreLabel}`;
+}
+
+// --- source: engine/attention-surface-gate.ts ---
+export interface AttentionSurfaceGateInput {
+  band: CognitiveLoadBand;
+  phase: V94StandardizedGamePhase;
+  cognitiveLoadCoachRequested?: boolean;
+  focusSessionBannerRequested?: boolean;
+  panelUnlockCoachRequested?: boolean;
+  simEvolutionBridgeRequested?: boolean;
+  keyboardHintsRequested?: boolean;
+}
+
+const SURFACE_PRIORITIES: Record<AttentionSurfaceId, number> = {
+  focus_session_banner: 1,
+  cognitive_load_coach: 2,
+  panel_unlock_coach: 3,
+  sim_evolution_bridge: 4,
+  keyboard_hints_overlay: 5,
+};
+
+export function buildAttentionSurfaceCandidates(input: AttentionSurfaceGateInput): AttentionSurfaceCandidate[] {
+  const mk = (id: AttentionSurfaceId, requested?: boolean): AttentionSurfaceCandidate => ({
+    id,
+    priority: SURFACE_PRIORITIES[id],
+    requested: Boolean(requested),
+  });
+  return [
+    mk('focus_session_banner', input.focusSessionBannerRequested),
+    mk('cognitive_load_coach', input.cognitiveLoadCoachRequested),
+    mk('panel_unlock_coach', input.panelUnlockCoachRequested),
+    mk('sim_evolution_bridge', input.simEvolutionBridgeRequested),
+    mk('keyboard_hints_overlay', input.keyboardHintsRequested),
+  ];
+}
+
+export function planAttentionSurfaceGate(input: AttentionSurfaceGateInput): AttentionBudgetPlan {
+  return planAttentionSurfaces({
+    band: input.band,
+    phase: input.phase,
+    candidates: buildAttentionSurfaceCandidates(input),
+  });
+}
+
+export function isAttentionCoachSurfaceVisible(
+  plan: AttentionBudgetPlan,
+  surfaceId: AttentionSurfaceId
+): boolean {
+  return isAttentionSurfaceAllowed(plan, surfaceId);
+}
+
+export function attentionDeferralCopy(deferredIds: AttentionSurfaceId[]): string {
+  if (!deferredIds.length) return '';
+  if (deferredIds.length === 1) {
+    return `One coaching surface is waiting (${deferredIds[0]}) until attention budget frees up.`;
+  }
+  return `${deferredIds.length} coaching surfaces are waiting until attention budget frees up.`;
+}
+
 // --- source: engine/legacy-access.ts ---
 /** Mirrors V9.4 resolveIntentNavToUiPatch targets (standalone copy for module tests). */
 export function resolveIntentNavToUiPatch(target: string): Record<string, boolean | string> {
@@ -3460,6 +3683,138 @@ export function runAgent22Round7SelfTests(): {
   return { passed: results.length - failed, failed, results };
 }
 
+// --- source: engine/round8-self-tests.ts ---
+export function runAgent22Round8SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r8_hash_stable',
+    'announcement hash is stable',
+    hashAnnouncementText(' Unlock map ') === hashAnnouncementText('unlock map')
+  );
+
+  check(
+    'r8_dup_within_window',
+    'duplicate detected inside window',
+    (() => {
+      const hash = hashAnnouncementText('Panel unlocked');
+      const ledger = { [hash]: 5 };
+      return isAnnouncementDuplicate(hash, ledger, 6);
+    })()
+  );
+
+  check(
+    'r8_fresh_outside_window',
+    'duplicate expires after window',
+    (() => {
+      const hash = hashAnnouncementText('Panel unlocked');
+      const ledger = { [hash]: 1 };
+      return !isAnnouncementDuplicate(hash, ledger, 1 + ANNOUNCEMENT_DEDUP_WINDOW_DAYS);
+    })()
+  );
+
+  check(
+    'r8_filter_suppresses_repeat',
+    'filter suppresses repeated line',
+    (() => {
+      const line = 'Map panel unlocked';
+      const first = filterDedupedAnnouncements([line, line], 4, {});
+      return first.freshAnnouncements.length === 1 && first.suppressedCount === 1;
+    })()
+  );
+
+  check(
+    'r8_prune_ledger',
+    'prune drops stale ledger entries',
+    (() => {
+      const pruned = pruneAnnouncementDedupLedger({ a: 1, b: 23 }, 25);
+      return pruned.b === 23 && pruned.a == null;
+    })()
+  );
+
+  check(
+    'r8_dedup_copy',
+    'dedup status copy mentions count',
+    dedupStatusCopy(2).includes('2')
+  );
+
+  check(
+    'r8_tick_merges_ledger',
+    'day advance merges dedup ledger',
+    (() => {
+      const prior = { gameDay: 1, turnCount: 1, interfaceLevel: 'guided' as const };
+      const next = { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' as const };
+      const persisted = createDefaultEvolvingUiPersistedState();
+      const r = tickEvolvingUiOnDayAdvance(prior, next, DEFAULT_EVOLVING_UI_ACCESS_POLICY, persisted);
+      return typeof r.updatedPersisted.announcementDedupLedger === 'object';
+    })()
+  );
+
+  check(
+    'r8_modal_restore_selector',
+    'modal restore uses nav target selector',
+    navSelectorForTarget('map').includes('map')
+  );
+
+  check(
+    'r8_modal_restore_plan',
+    'modal plan announces restore label',
+    (() => {
+      const plan = resolveModalFocusRestorePlan({
+        modalId: 'settings_modal',
+        lastNavTarget: 'map',
+        accessibility: DEFAULT_ACCESSIBILITY_SNAPSHOT,
+      });
+      return plan.restoreEnabled && plan.announceOnClose.includes('settings_modal');
+    })()
+  );
+
+  check(
+    'r8_modal_skip_label',
+    'modal skip label references restore target',
+    modalFocusRestoreSkipLabel(
+      resolveModalFocusRestorePlan({
+        modalId: 'x',
+        lastNavTarget: null,
+        accessibility: DEFAULT_ACCESSIBILITY_SNAPSHOT,
+      })
+    ).includes('primary navigation')
+  );
+
+  check(
+    'r8_attention_allows_focus',
+    'attention plan allows focus banner first',
+    (() => {
+      const plan = planAttentionSurfaceGate({
+        band: 'heavy',
+        phase: 'save_load',
+        focusSessionBannerRequested: true,
+        cognitiveLoadCoachRequested: true,
+      });
+      return (
+        isAttentionCoachSurfaceVisible(plan, 'focus_session_banner') &&
+        plan.deferredIds.includes('cognitive_load_coach')
+      );
+    })()
+  );
+
+  check(
+    'r8_attention_defer_copy',
+    'attention deferral copy mentions waiting surfaces',
+    attentionDeferralCopy(['cognitive_load_coach']).includes('waiting')
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
+}
+
 // --- source: a11y/aria-builders.ts ---
 const RING_CLASSES: Record<FocusRingStyle, string> = {
   emerald: 'focus-visible:ring-emerald-400',
@@ -4077,10 +4432,14 @@ export function EvolvingUiProgressLab({
 // --- source: react/SimulationUiEvolutionBridge.tsx ---
 export interface SimulationUiEvolutionBridgeProps {
   result: DayAdvanceUiEvolutionResult | null;
+  suppressedAnnouncementCount?: number;
 }
 
-export function SimulationUiEvolutionBridge({ result }: SimulationUiEvolutionBridgeProps): React.ReactElement | null {
-  if (!result || result.newlyUnlockedPanelIds.length === 0) return null;
+export function SimulationUiEvolutionBridge({
+  result,
+  suppressedAnnouncementCount = 0,
+}: SimulationUiEvolutionBridgeProps): React.ReactElement | null {
+  if (!result || (result.newlyUnlockedPanelIds.length === 0 && suppressedAnnouncementCount <= 0)) return null;
   return (
     <div
       data-testid="sim-ui-evolution-bridge"
@@ -4089,6 +4448,11 @@ export function SimulationUiEvolutionBridge({ result }: SimulationUiEvolutionBri
       className="text-xs space-y-1"
     >
       <div>Day {result.gameDay}: {result.newlyUnlockedPanelIds.length} new interface panels</div>
+      {suppressedAnnouncementCount > 0 ? (
+        <div data-testid="sim-ui-evolution-dedup-count">
+          Held back {suppressedAnnouncementCount} repeated announcements
+        </div>
+      ) : null}
       {result.coachAnnouncements.slice(0, 3).map((line, i) => (
         <div key={i}>{line}</div>
       ))}
@@ -4249,6 +4613,15 @@ export function FocusSessionBanner({
 }: FocusSessionBannerProps): React.ReactElement | null {
   const ctx = { phase, signals, policy, focusSessionSnoozedUntilDay };
   if (!shouldActivateFocusSession(ctx)) return null;
+
+  const load = assessCognitiveLoad({ signals, policy, onboardingEnabled: true });
+  const attentionPlan = planAttentionSurfaceGate({
+    band: load.band,
+    phase,
+    focusSessionBannerRequested: true,
+  });
+  if (!isAttentionCoachSurfaceVisible(attentionPlan, 'focus_session_banner')) return null;
+
   const copy = focusSessionCoachCopy(ctx);
   const suppressed = listPanelsSuppressedByFocusSession(signals, policy, phase, focusSessionSnoozedUntilDay);
   const focusClass = buildFocusRingClassName({
@@ -4292,6 +4665,7 @@ export interface CognitiveLoadCoachBannerProps {
   focusSessionSnoozedUntilDay?: number;
   pendingCoachAnnouncements?: number;
   onboardingEnabled?: boolean;
+  focusSessionBannerActive?: boolean;
   onSnooze?: (untilDay: number) => void;
 }
 
@@ -4305,6 +4679,7 @@ export function CognitiveLoadCoachBanner({
   focusSessionSnoozedUntilDay,
   pendingCoachAnnouncements = 0,
   onboardingEnabled = true,
+  focusSessionBannerActive = false,
   onSnooze,
 }: CognitiveLoadCoachBannerProps): React.ReactElement | null {
   const focusSessionActive = shouldActivateFocusSession({
@@ -4326,6 +4701,17 @@ export function CognitiveLoadCoachBanner({
     !shouldShowCognitiveLoadCoach(assessment, signals.gameDay, cognitiveLoadCoachSnoozedUntilDay) ||
     !shouldAllowCoachSurface(signals.gameDay, coachDismissalBackoff ?? {}, cognitiveLoadCoachSnoozedUntilDay)
   ) {
+    return null;
+  }
+
+  const attentionPlan = planAttentionSurfaceGate({
+    band: assessment.band,
+    phase,
+    cognitiveLoadCoachRequested: true,
+    focusSessionBannerRequested: focusSessionBannerActive,
+  });
+
+  if (!isAttentionCoachSurfaceVisible(attentionPlan, 'cognitive_load_coach')) {
     return null;
   }
 
@@ -4548,8 +4934,81 @@ export function LandmarkSkipLinksStrip({
   );
 }
 
+// --- source: react/AnnouncementDedupStatusBanner.tsx ---
+export interface AnnouncementDedupStatusBannerProps {
+  suppressedCount: number;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function AnnouncementDedupStatusBanner({
+  suppressedCount,
+  accessibility,
+}: AnnouncementDedupStatusBannerProps): React.ReactElement | null {
+  const copy = dedupStatusCopy(suppressedCount);
+  if (!copy) return null;
+
+  return (
+    <div
+      data-testid="announcement-dedup-status-banner"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-violet-500/30 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {copy}
+    </div>
+  );
+}
+
+// --- source: react/ModalFocusRestoreStrip.tsx ---
+export interface ModalFocusRestoreStripProps {
+  modalId: string;
+  lastNavTarget?: string | null;
+  accessibility: AccessibilitySettingsSnapshot;
+  onSkipToRestore?: (selector: string) => void;
+}
+
+export function ModalFocusRestoreStrip({
+  modalId,
+  lastNavTarget,
+  accessibility,
+  onSkipToRestore,
+}: ModalFocusRestoreStripProps): React.ReactElement | null {
+  const plan = resolveModalFocusRestorePlan({ modalId, lastNavTarget, accessibility });
+  if (!plan.restoreEnabled) return null;
+
+  const focusClass = buildFocusRingClassName({
+    highContrast: accessibility.highContrastFocusRings,
+    style: accessibility.focusRingStyle,
+  });
+
+  return (
+    <div
+      data-testid="modal-focus-restore-strip"
+      className="text-xs flex flex-wrap gap-2 items-center"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      <span>{modalFocusRestoreSkipLabel(plan)}</span>
+      <button
+        type="button"
+        className={focusClass}
+        data-testid="modal-focus-restore-skip"
+        data-restore-selector={plan.restoreSelector}
+        onClick={() => onSkipToRestore?.(plan.restoreSelector)}
+      >
+        Jump to restore target
+      </button>
+      {plan.trapEnabled ? (
+        <span className="opacity-70" data-testid="modal-focus-trap-hint">
+          Focus is trapped inside this dialog.
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.7.0';
+export const AGENT_22_MODULE_VERSION = '1.8.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -4625,6 +5084,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round7 = runAgent22Round7SelfTests();
   for (const r of round7.results) {
     check(`agent22_round7_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round8 = runAgent22Round8SelfTests();
+  for (const r of round8.results) {
+    check(`agent22_round8_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;

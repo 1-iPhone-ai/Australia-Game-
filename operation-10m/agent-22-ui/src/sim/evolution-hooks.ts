@@ -4,6 +4,10 @@ import { EVOLVING_UI_PANEL_BY_ID } from '../registry/panel-definitions.js';
 import { resolveEvolvingPanelVisibility } from '../engine/resolve-panel-visibility.js';
 import { formatPanelUnlockAnnouncement } from '../a11y/live-region-controller.js';
 import { buildUnlockHintForPanel } from '../engine/unlock-hint-formatter.js';
+import {
+  filterDedupedAnnouncements,
+  mergeAnnouncementDedupLedgerIntoPersisted,
+} from '../engine/announcement-dedup-ledger.js';
 
 /** Persisted slice proposed for `gameSettings.evolvingUi` (assembly-owned). */
 export interface EvolvingUiPersistedState {
@@ -20,6 +24,8 @@ export interface EvolvingUiPersistedState {
   calmRecoveryUntilDay?: number;
   coachDismissalStreak?: number;
   coachDismissalQuietUntilDay?: number;
+  /** announcement hash → last game day announced */
+  announcementDedupLedger?: Record<string, number>;
 }
 
 export interface DayAdvanceUiEvolutionResult {
@@ -99,12 +105,38 @@ export function tickEvolvingUiOnDayAdvance(
     lastCoachPanelId: newlyUnlockedPanelIds[0] ?? persisted.lastCoachPanelId ?? null,
   };
 
+  const deduped = filterDedupedAnnouncements(
+    coachAnnouncements,
+    nextSignals.gameDay,
+    persisted.announcementDedupLedger
+  );
+
+  const updatedPersistedWithDedup = mergeAnnouncementDedupLedgerIntoPersisted(
+    updatedPersisted,
+    deduped.ledger
+  );
+
   return {
     gameDay: nextSignals.gameDay,
     newlyUnlockedPanelIds,
-    coachAnnouncements,
-    updatedPersisted,
+    coachAnnouncements: deduped.freshAnnouncements,
+    updatedPersisted: updatedPersistedWithDedup,
     visiblePanelCount,
+  };
+}
+
+export interface DayAdvanceDedupMeta {
+  suppressedAnnouncementCount: number;
+}
+
+/** Exposes dedup counts for status banners without re-running tick logic. */
+export function summarizeAnnouncementDedup(
+  rawAnnouncements: string[],
+  gameDay: number,
+  ledger: EvolvingUiPersistedState['announcementDedupLedger']
+): DayAdvanceDedupMeta {
+  return {
+    suppressedAnnouncementCount: filterDedupedAnnouncements(rawAnnouncements, gameDay, ledger).suppressedCount,
   };
 }
 

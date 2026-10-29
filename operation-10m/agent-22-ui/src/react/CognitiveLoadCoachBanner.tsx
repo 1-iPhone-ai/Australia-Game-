@@ -12,6 +12,10 @@ import { shouldActivateFocusSession } from '../engine/focus-session-policy.js';
 import type { V94StandardizedGamePhase } from '../adapters/v94-phase-bridge.js';
 import { shouldAllowCoachSurface } from '../engine/coach-dismissal-backoff.js';
 import type { CoachDismissalBackoffState } from '../engine/coach-dismissal-backoff.js';
+import {
+  isAttentionCoachSurfaceVisible,
+  planAttentionSurfaceGate,
+} from '../engine/attention-surface-gate.js';
 
 export interface CognitiveLoadCoachBannerProps {
   phase: V94StandardizedGamePhase;
@@ -23,6 +27,7 @@ export interface CognitiveLoadCoachBannerProps {
   focusSessionSnoozedUntilDay?: number;
   pendingCoachAnnouncements?: number;
   onboardingEnabled?: boolean;
+  focusSessionBannerActive?: boolean;
   onSnooze?: (untilDay: number) => void;
 }
 
@@ -36,6 +41,7 @@ export function CognitiveLoadCoachBanner({
   focusSessionSnoozedUntilDay,
   pendingCoachAnnouncements = 0,
   onboardingEnabled = true,
+  focusSessionBannerActive = false,
   onSnooze,
 }: CognitiveLoadCoachBannerProps): React.ReactElement | null {
   const focusSessionActive = shouldActivateFocusSession({
@@ -57,6 +63,17 @@ export function CognitiveLoadCoachBanner({
     !shouldShowCognitiveLoadCoach(assessment, signals.gameDay, cognitiveLoadCoachSnoozedUntilDay) ||
     !shouldAllowCoachSurface(signals.gameDay, coachDismissalBackoff ?? {}, cognitiveLoadCoachSnoozedUntilDay)
   ) {
+    return null;
+  }
+
+  const attentionPlan = planAttentionSurfaceGate({
+    band: assessment.band,
+    phase,
+    cognitiveLoadCoachRequested: true,
+    focusSessionBannerRequested: focusSessionBannerActive,
+  });
+
+  if (!isAttentionCoachSurfaceVisible(attentionPlan, 'cognitive_load_coach')) {
     return null;
   }
 

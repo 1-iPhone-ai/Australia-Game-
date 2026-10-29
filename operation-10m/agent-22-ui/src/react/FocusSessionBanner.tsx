@@ -10,6 +10,11 @@ import {
 } from '../engine/focus-session-policy.js';
 import { buildFocusRingClassName } from '../a11y/aria-builders.js';
 import type { AccessibilitySettingsSnapshot } from '../types/accessibility.js';
+import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
+import {
+  isAttentionCoachSurfaceVisible,
+  planAttentionSurfaceGate,
+} from '../engine/attention-surface-gate.js';
 
 export interface FocusSessionBannerProps {
   phase: V94StandardizedGamePhase;
@@ -30,6 +35,15 @@ export function FocusSessionBanner({
 }: FocusSessionBannerProps): React.ReactElement | null {
   const ctx = { phase, signals, policy, focusSessionSnoozedUntilDay };
   if (!shouldActivateFocusSession(ctx)) return null;
+
+  const load = assessCognitiveLoad({ signals, policy, onboardingEnabled: true });
+  const attentionPlan = planAttentionSurfaceGate({
+    band: load.band,
+    phase,
+    focusSessionBannerRequested: true,
+  });
+  if (!isAttentionCoachSurfaceVisible(attentionPlan, 'focus_session_banner')) return null;
+
   const copy = focusSessionCoachCopy(ctx);
   const suppressed = listPanelsSuppressedByFocusSession(signals, policy, phase, focusSessionSnoozedUntilDay);
   const focusClass = buildFocusRingClassName({

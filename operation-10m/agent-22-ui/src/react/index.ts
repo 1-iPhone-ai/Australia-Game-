@@ -13,3 +13,5 @@ export { CognitiveLoadCoachBanner } from './CognitiveLoadCoachBanner.js';
 export { UiCalmRecoveryBanner } from './UiCalmRecoveryBanner.js';
 export { CoachDismissalBackoffBanner } from './CoachDismissalBackoffBanner.js';
 export { LandmarkSkipLinksStrip } from './LandmarkSkipLinksStrip.js';
+export { AnnouncementDedupStatusBanner } from './AnnouncementDedupStatusBanner.js';
+export { ModalFocusRestoreStrip } from './ModalFocusRestoreStrip.js';
