@@ -277,6 +277,11 @@ export interface TeamMultiAgentCoordinationMeta {
   arbitrationPressureIndex?: number;
   arbitrationDemotedActorIds?: string[];
   persistenceChurnIndex?: number;
+  duplicateGuardPressureIndex?: number;
+  roleTaskCoverageGapIndex?: number;
+  uncoveredTaskIds?: string[];
+  compositeHealthGradientIndex?: number;
+  compositeHealthTrend?: string;
 }
 
 export const AGENT18_LIMITS = {

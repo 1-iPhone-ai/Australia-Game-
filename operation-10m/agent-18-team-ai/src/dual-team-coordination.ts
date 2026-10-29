@@ -20,6 +20,9 @@ import { combineDualTeamSuppressionBacklog } from './suppression-backlog-index.t
 import { combineDualTeamReconcileDrift } from './reconcile-drift-index.ts';
 import { combineDualTeamArbitrationPressure } from './arbitration-pressure-index.ts';
 import { combineDualTeamPersistenceChurn } from './persistence-churn-gauge.ts';
+import { combineDualTeamDuplicateGuardPressure } from './duplicate-guard-pressure.ts';
+import { combineDualTeamRoleTaskCoverageGap } from './role-task-coverage-gap.ts';
+import { combineDualTeamCompositeHealthGradient } from './composite-health-gradient.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -57,6 +60,9 @@ export interface DualTeamMultiAgentResult {
   reconcileDriftCombined: number;
   arbitrationPressureCombined: number;
   persistenceChurnCombined: number;
+  duplicateGuardPressureCombined: number;
+  roleTaskCoverageGapCombined: number;
+  compositeHealthGradientCombined: number;
 }
 
 /**
@@ -110,6 +116,9 @@ export function evaluateDualTeamMultiAgentLayers(
       reconcileDriftCombined: friendly.state.meta.reconcileDriftIndex ?? 0,
       arbitrationPressureCombined: friendly.state.meta.arbitrationPressureIndex ?? 0,
       persistenceChurnCombined: friendly.state.meta.persistenceChurnIndex ?? 0,
+      duplicateGuardPressureCombined: friendly.state.meta.duplicateGuardPressureIndex ?? 0,
+      roleTaskCoverageGapCombined: friendly.state.meta.roleTaskCoverageGapIndex ?? 0,
+      compositeHealthGradientCombined: friendly.state.meta.compositeHealthGradientIndex ?? 0,
     };
   }
 
@@ -273,6 +282,18 @@ export function evaluateDualTeamMultiAgentLayers(
     persistenceChurnCombined: combineDualTeamPersistenceChurn(
       friendly.state.meta.persistenceChurnIndex ?? 0,
       enemy.state.meta.persistenceChurnIndex ?? 0,
+    ),
+    duplicateGuardPressureCombined: combineDualTeamDuplicateGuardPressure(
+      friendly.state.meta.duplicateGuardPressureIndex ?? 0,
+      enemy.state.meta.duplicateGuardPressureIndex ?? 0,
+    ),
+    roleTaskCoverageGapCombined: combineDualTeamRoleTaskCoverageGap(
+      friendly.state.meta.roleTaskCoverageGapIndex ?? 0,
+      enemy.state.meta.roleTaskCoverageGapIndex ?? 0,
+    ),
+    compositeHealthGradientCombined: combineDualTeamCompositeHealthGradient(
+      friendly.state.meta.compositeHealthGradientIndex ?? 0,
+      enemy.state.meta.compositeHealthGradientIndex ?? 0,
     ),
   };
 }

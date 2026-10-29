@@ -61,6 +61,9 @@ import { computeSuppressionBacklogIndex } from './suppression-backlog-index.ts';
 import { computeReconcileDriftIndex } from './reconcile-drift-index.ts';
 import { computeArbitrationPressureIndex } from './arbitration-pressure-index.ts';
 import { measurePersistenceChurn } from './persistence-churn-gauge.ts';
+import { measureDuplicateGuardPressure } from './duplicate-guard-pressure.ts';
+import { computeRoleTaskCoverageGap } from './role-task-coverage-gap.ts';
+import { computeCompositeHealthGradient } from './composite-health-gradient.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -1851,6 +1854,87 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.reconcileDriftCombined === 'number' &&
       typeof dual.arbitrationPressureCombined === 'number' &&
       typeof dual.persistenceChurnCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_duplicate_guard_pressure_high', 'Duplicate guard pressure: near-cap reservations score high', () => {
+    const reservations: Record<string, { holderActorId: string; taskId: string; turn: number }> = {};
+    for (let i = 0; i < 24; i += 1) {
+      reservations[`key_${i}`] = { holderActorId: 'player', taskId: `t_${i}`, turn: 1 };
+    }
+    const report = measureDuplicateGuardPressure({
+      version: 1,
+      committedKeys: Array.from({ length: 40 }, (_, i) => `c_${i}`),
+      generationByActor: { player: 1 },
+      turn: 1,
+      reservations,
+    });
+    return report.pressureIndex >= 70;
+  });
+
+  check(results, 'a18_duplicate_guard_pressure_low', 'Duplicate guard pressure: empty guard stays low', () => {
+    const report = measureDuplicateGuardPressure(emptyGuard(1));
+    return report.pressureIndex < 30;
+  });
+
+  check(results, 'a18_role_task_coverage_gap', 'Role/task coverage: assigned task missing from roles flagged', () => {
+    const tasks = baseInputs().tasks;
+    const report = computeRoleTaskCoverageGap(
+      [{ actorId: 'player', primaryRole: 'controller', responsibility: 'lead', taskIds: [], lockedUntilTurn: null }],
+      tasks,
+    );
+    return report.gapIndex > 0 && report.uncoveredTaskIds.length > 0;
+  });
+
+  check(results, 'a18_role_task_coverage_full', 'Role/task coverage: linked roles score zero gap', () => {
+    const tasks = baseInputs().tasks;
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const report = computeRoleTaskCoverageGap(ev.state.roles, tasks);
+    return report.gapIndex === 0;
+  });
+
+  check(results, 'a18_composite_health_declining', 'Composite gradient: sharp decline scores high', () => {
+    const report = computeCompositeHealthGradient(90, 70);
+    return report.trend === 'declining' && report.gradientIndex >= 40;
+  });
+
+  check(results, 'a18_composite_health_improving', 'Composite gradient: improvement trends up', () => {
+    const report = computeCompositeHealthGradient(60, 72);
+    return report.trend === 'improving' && report.gradientIndex === 0;
+  });
+
+  check(results, 'a18_eval_round12_meta', 'Layer: round-12 meta exposes guard, coverage, gradient signals', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.duplicateGuardPressureIndex === 'number' &&
+      typeof m.roleTaskCoverageGapIndex === 'number' &&
+      typeof m.compositeHealthGradientIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_role_coverage_gap', 'Audit: high role/task gap surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, roleTaskCoverageGapIndex: 65 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /coverage gap/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round12_combined', 'Dual team: round-12 combined guard, coverage, gradient exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.duplicateGuardPressureCombined === 'number' &&
+      typeof dual.roleTaskCoverageGapCombined === 'number' &&
+      typeof dual.compositeHealthGradientCombined === 'number'
     );
   });
 

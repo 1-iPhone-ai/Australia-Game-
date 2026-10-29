@@ -39,4 +39,7 @@ export * from './suppression-backlog-index.ts';
 export * from './reconcile-drift-index.ts';
 export * from './arbitration-pressure-index.ts';
 export * from './persistence-churn-gauge.ts';
+export * from './duplicate-guard-pressure.ts';
+export * from './role-task-coverage-gap.ts';
+export * from './composite-health-gradient.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';

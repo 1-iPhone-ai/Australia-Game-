@@ -53,6 +53,9 @@ import { computeSuppressionBacklogIndex } from './suppression-backlog-index.ts';
 import { computeReconcileDriftIndex } from './reconcile-drift-index.ts';
 import { computeArbitrationPressureIndex } from './arbitration-pressure-index.ts';
 import { measurePersistenceChurn } from './persistence-churn-gauge.ts';
+import { measureDuplicateGuardPressure } from './duplicate-guard-pressure.ts';
+import { computeRoleTaskCoverageGap } from './role-task-coverage-gap.ts';
+import { computeCompositeHealthGradient } from './composite-health-gradient.ts';
 import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
@@ -288,6 +291,23 @@ export function sanitizeTeamMultiAgentCoordinationState(
         typeof metaRaw.persistenceChurnIndex === 'number'
           ? metaRaw.persistenceChurnIndex
           : undefined,
+      duplicateGuardPressureIndex:
+        typeof metaRaw.duplicateGuardPressureIndex === 'number'
+          ? metaRaw.duplicateGuardPressureIndex
+          : undefined,
+      roleTaskCoverageGapIndex:
+        typeof metaRaw.roleTaskCoverageGapIndex === 'number'
+          ? metaRaw.roleTaskCoverageGapIndex
+          : undefined,
+      uncoveredTaskIds: Array.isArray(metaRaw.uncoveredTaskIds)
+        ? metaRaw.uncoveredTaskIds.map(String).slice(0, 8)
+        : undefined,
+      compositeHealthGradientIndex:
+        typeof metaRaw.compositeHealthGradientIndex === 'number'
+          ? metaRaw.compositeHealthGradientIndex
+          : undefined,
+      compositeHealthTrend:
+        typeof metaRaw.compositeHealthTrend === 'string' ? metaRaw.compositeHealthTrend : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -311,6 +331,8 @@ export function evaluateTeamMultiAgentLayer(
   const roleMinTurns = inputs.roleMinTurns || AGENT18_LIMITS.roleMinTurnsDefault;
   const { roles, notes } = assignTeamRolesWithSlots({ ...inputs, roleMinTurns });
   diagnostics.push(...notes);
+  const roleTaskCoverage = computeRoleTaskCoverageGap(roles, inputs.tasks);
+  roleTaskCoverage.notes.forEach(n => diagnostics.push(n));
   const sharedIssues = detectIllegalSharedExclusiveTasks(inputs.tasks);
   const locked = [...inputs.lockedRoles, ...(inputs.command?.lockedActorIds || [])];
   const coordination = orchestrateTeamCoordination(inputs.turn, inputs.tasks, roles, locked);
@@ -380,6 +402,8 @@ export function evaluateTeamMultiAgentLayer(
       inputs.turn,
     );
   });
+  const duplicateGuardPressure = measureDuplicateGuardPressure(duplicateGuard);
+  duplicateGuardPressure.notes.forEach(n => diagnostics.push(n));
 
   let state: TeamMultiAgentLayerState = {
     version: 1,
@@ -478,6 +502,11 @@ export function evaluateTeamMultiAgentLayer(
     roleChurnIndex: roleChurn.churnIndex,
   });
   coordinationComposite.notes.forEach(n => diagnostics.push(n));
+  const compositeGradient = computeCompositeHealthGradient(
+    previous?.meta.coordinationCompositeScore,
+    coordinationComposite.compositeScore,
+  );
+  compositeGradient.notes.forEach(n => diagnostics.push(n));
 
   state = {
     ...state,
@@ -534,6 +563,11 @@ export function evaluateTeamMultiAgentLayer(
       reconcileDriftIndex: reconcileDrift.driftIndex,
       arbitrationPressureIndex: arbitrationPressure.pressureIndex,
       arbitrationDemotedActorIds: arbitrationPressure.demotedActorIds,
+      duplicateGuardPressureIndex: duplicateGuardPressure.pressureIndex,
+      roleTaskCoverageGapIndex: roleTaskCoverage.gapIndex,
+      uncoveredTaskIds: roleTaskCoverage.uncoveredTaskIds,
+      compositeHealthGradientIndex: compositeGradient.gradientIndex,
+      compositeHealthTrend: compositeGradient.trend,
     },
   };
 
