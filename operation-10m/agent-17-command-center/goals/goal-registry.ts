@@ -1131,6 +1131,29 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Discharged executor or dissolved administration yields administratorAccordBlocksExecutor.',
     severity: 'major',
   },
+  {
+    id: 'G17-160',
+    title: 'Curatorship index on planning depth',
+    category: 'telemetry',
+    acceptance:
+      'curatorshipIndex reports curatorshipScore 0–100 with entrusted/provisional/surrendered band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-161',
+    title: 'Curator accord assignments complete',
+    category: 'telemetry',
+    acceptance: 'curatorAccord exposes ≥5 assignments and curatorScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-162',
+    title: 'Revoked administrator recuses curator accord',
+    category: 'integration',
+    acceptance:
+      'Revoked administrator or surrendered curatorship yields curatorAccordBlocksAdministrator.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

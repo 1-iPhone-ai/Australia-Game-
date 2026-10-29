@@ -277,6 +277,8 @@ export interface Agent17PlanningDepthSnapshot {
   executorAccord: Agent17ExecutorAccordSnapshot;
   administrationIndex: Agent17AdministrationIndexSnapshot;
   administratorAccord: Agent17AdministratorAccordSnapshot;
+  curatorshipIndex: Agent17CuratorshipIndexSnapshot;
+  curatorAccord: Agent17CuratorAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1799,6 +1801,40 @@ export interface Agent17AdministratorAccordSnapshot {
   administrationBand: Agent17AdministrationIndexSnapshot['band'];
   executorBand: Agent17ExecutorAccordSnapshot['band'];
   administratorCommissioned: boolean;
+  headline: string;
+}
+
+export interface Agent17CuratorshipCustody {
+  id: string;
+  label: string;
+  entrusted: boolean;
+  weight: number;
+}
+
+export interface Agent17CuratorshipIndexSnapshot {
+  curatorshipScore: number;
+  band: 'entrusted' | 'provisional' | 'surrendered';
+  custodies: Agent17CuratorshipCustody[];
+  administrationBand: Agent17AdministrationIndexSnapshot['band'];
+  administratorBand: Agent17AdministratorAccordSnapshot['band'];
+  curatorshipEntrusted: boolean;
+  headline: string;
+}
+
+export interface Agent17CuratorAssignment {
+  id: string;
+  label: string;
+  inducted: boolean;
+  weight: number;
+}
+
+export interface Agent17CuratorAccordSnapshot {
+  curatorScore: number;
+  band: 'inducted' | 'serving' | 'recused';
+  assignments: Agent17CuratorAssignment[];
+  curatorshipBand: Agent17CuratorshipIndexSnapshot['band'];
+  administratorBand: Agent17AdministratorAccordSnapshot['band'];
+  curatorInducted: boolean;
   headline: string;
 }
 
@@ -12797,6 +12833,216 @@ export function administratorAccordBlocksExecutor(
 }
 
 
+// --- source: planning/curatorship-index.ts ---
+  Agent17AdministrationIndexSnapshot,
+  Agent17AdministratorAccordSnapshot,
+  Agent17CuratorshipIndexSnapshot,
+  Agent17ExecutorAccordSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17CuratorshipIndexInputs {
+  administratorAccord: Agent17AdministratorAccordSnapshot;
+  administrationIndex: Agent17AdministrationIndexSnapshot;
+  executorAccord: Agent17ExecutorAccordSnapshot;
+}
+
+export function buildAgent17CuratorshipIndex(
+  inputs: Agent17CuratorshipIndexInputs
+): Agent17CuratorshipIndexSnapshot {
+  const custodies: Agent17CuratorshipIndexSnapshot['custodies'] = [];
+
+  custodies.push({
+    id: 'administrator_commissioned',
+    label: 'Administrator accord administrator-commissioned',
+    entrusted:
+      inputs.administratorAccord.administratorCommissioned &&
+      !administratorAccordBlocksExecutor(inputs.administratorAccord),
+    weight: 30,
+  });
+
+  custodies.push({
+    id: 'administrator_band',
+    label: 'Administrator commissioned or acting',
+    entrusted:
+      inputs.administratorAccord.band === 'commissioned' ||
+      inputs.administratorAccord.band === 'acting',
+    weight: 25,
+  });
+
+  custodies.push({
+    id: 'administration_seated',
+    label: 'Administration index administration-seated',
+    entrusted:
+      inputs.administrationIndex.administrationSeated &&
+      !administrationIndexBlocksAdministrator(inputs.administrationIndex),
+    weight: 20,
+  });
+
+  custodies.push({
+    id: 'executor_clear',
+    label: 'Executor accord not blocking trustee',
+    entrusted: !executorAccordBlocksTrustee(inputs.executorAccord),
+    weight: 15,
+  });
+
+  custodies.push({
+    id: 'administrator_score',
+    label: 'Administrator score headroom',
+    entrusted: inputs.administratorAccord.administratorScore >= 3,
+    weight: 10,
+  });
+
+  const weighted = custodies.reduce(
+    (n, c) => n + (c.entrusted ? 100 : 1) * (c.weight / 100),
+    0
+  );
+  const totalWeight = custodies.reduce((n, c) => n + c.weight, 0);
+  const curatorshipScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const surrenderedSignals =
+    administratorAccordBlocksExecutor(inputs.administratorAccord) ||
+    administrationIndexBlocksAdministrator(inputs.administrationIndex) ||
+    executorAccordBlocksTrustee(inputs.executorAccord);
+
+  const band: Agent17CuratorshipIndexSnapshot['band'] = surrenderedSignals
+    ? 'surrendered'
+    : curatorshipScore >= 44 &&
+        inputs.administratorAccord.band === 'commissioned' &&
+        inputs.administrationIndex.band === 'seated'
+      ? 'entrusted'
+      : 'provisional';
+
+  const curatorshipEntrusted =
+    band === 'entrusted' &&
+    inputs.administratorAccord.administratorCommissioned &&
+    !administratorAccordBlocksExecutor(inputs.administratorAccord);
+
+  return {
+    curatorshipScore,
+    band,
+    custodies,
+    administrationBand: inputs.administrationIndex.band,
+    administratorBand: inputs.administratorAccord.band,
+    curatorshipEntrusted,
+    headline: `Curatorship ${band} (${curatorshipScore}/100) · ${custodies.filter(c => c.entrusted).length}/${custodies.length} custodies`,
+  };
+}
+
+export function curatorshipIndexBlocksCurator(
+  snapshot: Agent17CuratorshipIndexSnapshot
+): boolean {
+  return snapshot.band === 'surrendered' || !snapshot.curatorshipEntrusted;
+}
+
+
+// --- source: planning/curator-accord.ts ---
+  Agent17AdministratorAccordSnapshot,
+  Agent17AdministrationIndexSnapshot,
+  Agent17CuratorAccordSnapshot,
+  Agent17CuratorshipIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17CuratorAccordInputs {
+  curatorshipIndex: Agent17CuratorshipIndexSnapshot;
+  administratorAccord: Agent17AdministratorAccordSnapshot;
+  administrationIndex: Agent17AdministrationIndexSnapshot;
+}
+
+export function buildAgent17CuratorAccord(
+  inputs: Agent17CuratorAccordInputs
+): Agent17CuratorAccordSnapshot {
+  const assignments: Agent17CuratorAccordSnapshot['assignments'] = [];
+
+  assignments.push({
+    id: 'curatorship_entrusted',
+    label: 'Curatorship index curatorship-entrusted',
+    inducted:
+      inputs.curatorshipIndex.curatorshipEntrusted &&
+      !curatorshipIndexBlocksCurator(inputs.curatorshipIndex),
+    weight: 30,
+  });
+
+  assignments.push({
+    id: 'curatorship_band',
+    label: 'Curatorship entrusted or provisional',
+    inducted:
+      inputs.curatorshipIndex.band === 'entrusted' ||
+      inputs.curatorshipIndex.band === 'provisional',
+    weight: 25,
+  });
+
+  assignments.push({
+    id: 'administrator_commissioned',
+    label: 'Administrator accord administrator-ready',
+    inducted:
+      inputs.administratorAccord.administratorCommissioned &&
+      !administratorAccordBlocksExecutor(inputs.administratorAccord),
+    weight: 20,
+  });
+
+  assignments.push({
+    id: 'administration_clear',
+    label: 'Administration index not blocking administrator',
+    inducted: !administrationIndexBlocksAdministrator(inputs.administrationIndex),
+    weight: 15,
+  });
+
+  assignments.push({
+    id: 'curatorship_score',
+    label: 'Curatorship score headroom',
+    inducted: inputs.curatorshipIndex.curatorshipScore >= 2,
+    weight: 10,
+  });
+
+  const weighted = assignments.reduce(
+    (n, a) => n + (a.inducted ? 100 : 1) * (a.weight / 100),
+    0
+  );
+  const totalWeight = assignments.reduce((n, a) => n + a.weight, 0);
+  const curatorScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const recusedSignals =
+    curatorshipIndexBlocksCurator(inputs.curatorshipIndex) ||
+    administratorAccordBlocksExecutor(inputs.administratorAccord) ||
+    administrationIndexBlocksAdministrator(inputs.administrationIndex);
+
+  const band: Agent17CuratorAccordSnapshot['band'] = recusedSignals
+    ? 'recused'
+    : curatorScore >= 41 &&
+        inputs.curatorshipIndex.band === 'entrusted' &&
+        inputs.administratorAccord.band === 'commissioned'
+      ? 'inducted'
+      : 'serving';
+
+  const curatorInducted =
+    band === 'inducted' &&
+    inputs.curatorshipIndex.curatorshipEntrusted &&
+    !curatorshipIndexBlocksCurator(inputs.curatorshipIndex);
+
+  return {
+    curatorScore,
+    band,
+    assignments,
+    curatorshipBand: inputs.curatorshipIndex.band,
+    administratorBand: inputs.administratorAccord.band,
+    curatorInducted,
+    headline: `Curator ${band} (${curatorScore}/100) · ${assignments.filter(a => a.inducted).length}/${assignments.length} assignments`,
+  };
+}
+
+export function curatorAccordBlocksAdministrator(
+  snapshot: Agent17CuratorAccordSnapshot
+): boolean {
+  return snapshot.band === 'recused' || !snapshot.curatorInducted;
+}
+
+
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -13366,6 +13612,16 @@ export function buildAgent17PlanningDepthSnapshot(
     executorAccord,
     executorshipIndex,
   });
+  const curatorshipIndex = buildAgent17CuratorshipIndex({
+    administratorAccord,
+    administrationIndex,
+    executorAccord,
+  });
+  const curatorAccord = buildAgent17CuratorAccord({
+    curatorshipIndex,
+    administratorAccord,
+    administrationIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -13461,6 +13717,8 @@ export function buildAgent17PlanningDepthSnapshot(
     executorAccord,
     administrationIndex,
     administratorAccord,
+    curatorshipIndex,
+    curatorAccord,
   };
 }
 
@@ -14882,6 +15140,29 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Discharged executor or dissolved administration yields administratorAccordBlocksExecutor.',
     severity: 'major',
   },
+  {
+    id: 'G17-160',
+    title: 'Curatorship index on planning depth',
+    category: 'telemetry',
+    acceptance:
+      'curatorshipIndex reports curatorshipScore 0–100 with entrusted/provisional/surrendered band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-161',
+    title: 'Curator accord assignments complete',
+    category: 'telemetry',
+    acceptance: 'curatorAccord exposes ≥5 assignments and curatorScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-162',
+    title: 'Revoked administrator recuses curator accord',
+    category: 'integration',
+    acceptance:
+      'Revoked administrator or surrendered curatorship yields curatorAccordBlocksAdministrator.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -15168,6 +15449,12 @@ export function listAgent17GoalIds(): string[] {
   buildAgent17AdministratorAccord,
   administratorAccordBlocksExecutor,
 } from '../planning/administrator-accord.ts';
+  buildAgent17CuratorshipIndex,
+  curatorshipIndexBlocksCurator,
+} from '../planning/curatorship-index.ts';
+  buildAgent17CuratorAccord,
+  curatorAccordBlocksAdministrator,
+} from '../planning/curator-accord.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -17606,6 +17893,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const curatorshipIndex = depthEval.snapshot.planningDepth?.curatorshipIndex;
+  goalResults.push(
+    result(
+      'G17-160',
+      !!curatorshipIndex &&
+        curatorshipIndex.custodies.length >= 5 &&
+        curatorshipIndex.curatorshipScore >= 0 &&
+        curatorshipIndex.curatorshipScore <= 100 &&
+        (curatorshipIndex.band === 'entrusted' ||
+          curatorshipIndex.band === 'provisional' ||
+          curatorshipIndex.band === 'surrendered'),
+      `custodies=${curatorshipIndex?.custodies.length} score=${curatorshipIndex?.curatorshipScore}`
+    )
+  );
+
+  const curatorAccord = depthEval.snapshot.planningDepth?.curatorAccord;
+  goalResults.push(
+    result(
+      'G17-161',
+      !!curatorAccord &&
+        curatorAccord.assignments.length >= 5 &&
+        curatorAccord.curatorScore >= 0 &&
+        curatorAccord.curatorScore <= 100,
+      `assignments=${curatorAccord?.assignments.length} score=${curatorAccord?.curatorScore}`
+    )
+  );
+
+  const surrenderedCuratorship = buildAgent17CuratorshipIndex({
+    administratorAccord: revokedAdministrator,
+    administrationIndex: dissolvedAdministration,
+    executorAccord: dischargedExecutor,
+  });
+  const recusedCurator = buildAgent17CuratorAccord({
+    curatorshipIndex: surrenderedCuratorship,
+    administratorAccord: revokedAdministrator,
+    administrationIndex: dissolvedAdministration,
+  });
+  goalResults.push(
+    result(
+      'G17-162',
+      administratorAccordBlocksExecutor(revokedAdministrator) ||
+        curatorshipIndexBlocksCurator(surrenderedCuratorship) ||
+        curatorAccordBlocksAdministrator(recusedCurator),
+      `${surrenderedCuratorship.band}/${recusedCurator.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -17795,6 +18129,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-157',
     'G17-158',
     'G17-159',
+    'G17-160',
+    'G17-161',
+    'G17-162',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

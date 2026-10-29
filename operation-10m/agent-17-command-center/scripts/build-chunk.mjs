@@ -119,6 +119,8 @@ const FILES = [
   'planning/executor-accord.ts',
   'planning/administration-index.ts',
   'planning/administrator-accord.ts',
+  'planning/curatorship-index.ts',
+  'planning/curator-accord.ts',
   'planning/planning-orchestrator.ts',
   'evaluation/operations-evaluator.ts',
   'rollback/rollback-controller.ts',

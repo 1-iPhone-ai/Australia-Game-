@@ -377,6 +377,14 @@ import {
   administratorAccordBlocksExecutor,
 } from '../planning/administrator-accord.ts';
 import {
+  buildAgent17CuratorshipIndex,
+  curatorshipIndexBlocksCurator,
+} from '../planning/curatorship-index.ts';
+import {
+  buildAgent17CuratorAccord,
+  curatorAccordBlocksAdministrator,
+} from '../planning/curator-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -2815,6 +2823,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const curatorshipIndex = depthEval.snapshot.planningDepth?.curatorshipIndex;
+  goalResults.push(
+    result(
+      'G17-160',
+      !!curatorshipIndex &&
+        curatorshipIndex.custodies.length >= 5 &&
+        curatorshipIndex.curatorshipScore >= 0 &&
+        curatorshipIndex.curatorshipScore <= 100 &&
+        (curatorshipIndex.band === 'entrusted' ||
+          curatorshipIndex.band === 'provisional' ||
+          curatorshipIndex.band === 'surrendered'),
+      `custodies=${curatorshipIndex?.custodies.length} score=${curatorshipIndex?.curatorshipScore}`
+    )
+  );
+
+  const curatorAccord = depthEval.snapshot.planningDepth?.curatorAccord;
+  goalResults.push(
+    result(
+      'G17-161',
+      !!curatorAccord &&
+        curatorAccord.assignments.length >= 5 &&
+        curatorAccord.curatorScore >= 0 &&
+        curatorAccord.curatorScore <= 100,
+      `assignments=${curatorAccord?.assignments.length} score=${curatorAccord?.curatorScore}`
+    )
+  );
+
+  const surrenderedCuratorship = buildAgent17CuratorshipIndex({
+    administratorAccord: revokedAdministrator,
+    administrationIndex: dissolvedAdministration,
+    executorAccord: dischargedExecutor,
+  });
+  const recusedCurator = buildAgent17CuratorAccord({
+    curatorshipIndex: surrenderedCuratorship,
+    administratorAccord: revokedAdministrator,
+    administrationIndex: dissolvedAdministration,
+  });
+  goalResults.push(
+    result(
+      'G17-162',
+      administratorAccordBlocksExecutor(revokedAdministrator) ||
+        curatorshipIndexBlocksCurator(surrenderedCuratorship) ||
+        curatorAccordBlocksAdministrator(recusedCurator),
+      `${surrenderedCuratorship.band}/${recusedCurator.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -3004,6 +3059,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-157',
     'G17-158',
     'G17-159',
+    'G17-160',
+    'G17-161',
+    'G17-162',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

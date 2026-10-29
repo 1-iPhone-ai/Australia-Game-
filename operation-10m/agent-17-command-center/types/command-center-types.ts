@@ -273,6 +273,8 @@ export interface Agent17PlanningDepthSnapshot {
   executorAccord: Agent17ExecutorAccordSnapshot;
   administrationIndex: Agent17AdministrationIndexSnapshot;
   administratorAccord: Agent17AdministratorAccordSnapshot;
+  curatorshipIndex: Agent17CuratorshipIndexSnapshot;
+  curatorAccord: Agent17CuratorAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1795,6 +1797,40 @@ export interface Agent17AdministratorAccordSnapshot {
   administrationBand: Agent17AdministrationIndexSnapshot['band'];
   executorBand: Agent17ExecutorAccordSnapshot['band'];
   administratorCommissioned: boolean;
+  headline: string;
+}
+
+export interface Agent17CuratorshipCustody {
+  id: string;
+  label: string;
+  entrusted: boolean;
+  weight: number;
+}
+
+export interface Agent17CuratorshipIndexSnapshot {
+  curatorshipScore: number;
+  band: 'entrusted' | 'provisional' | 'surrendered';
+  custodies: Agent17CuratorshipCustody[];
+  administrationBand: Agent17AdministrationIndexSnapshot['band'];
+  administratorBand: Agent17AdministratorAccordSnapshot['band'];
+  curatorshipEntrusted: boolean;
+  headline: string;
+}
+
+export interface Agent17CuratorAssignment {
+  id: string;
+  label: string;
+  inducted: boolean;
+  weight: number;
+}
+
+export interface Agent17CuratorAccordSnapshot {
+  curatorScore: number;
+  band: 'inducted' | 'serving' | 'recused';
+  assignments: Agent17CuratorAssignment[];
+  curatorshipBand: Agent17CuratorshipIndexSnapshot['band'];
+  administratorBand: Agent17AdministratorAccordSnapshot['band'];
+  curatorInducted: boolean;
   headline: string;
 }
 
