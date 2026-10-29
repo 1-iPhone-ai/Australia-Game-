@@ -44,6 +44,8 @@ import type { MacroStrategicGameplaySpillover } from './bridge-v1001-strategic-g
 import type { MacroArchiveIntegritySpillover } from './bridge-v1024-archive-integrity.ts';
 import type { MacroIntegrationHealthSpillover } from './bridge-v1025-integration-health.ts';
 import type { MacroCadenceDriftSpillover } from './bridge-v1002-cadence-drift.ts';
+import type { MacroResearchMomentumSpillover } from './bridge-v1003-research-momentum.ts';
+import type { MacroBudgetOutlookSpillover } from './bridge-v1007-budget-outlook.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -96,6 +98,8 @@ export function buildMacroTransmissionReport(params: {
   archiveIntegrity?: MacroArchiveIntegritySpillover;
   integrationHealth?: MacroIntegrationHealthSpillover;
   cadenceDrift?: MacroCadenceDriftSpillover;
+  researchMomentum?: MacroResearchMomentumSpillover;
+  budgetOutlook?: MacroBudgetOutlookSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -133,6 +137,8 @@ export function buildMacroTransmissionReport(params: {
   const archiveIntegrity = params.archiveIntegrity ?? ZERO_SPILLOVER;
   const integrationHealth = params.integrationHealth ?? ZERO_SPILLOVER;
   const cadenceDrift = params.cadenceDrift ?? ZERO_SPILLOVER;
+  const researchMomentum = params.researchMomentum ?? ZERO_SPILLOVER;
+  const budgetOutlook = params.budgetOutlook ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -473,6 +479,22 @@ export function buildMacroTransmissionReport(params: {
       cadenceDrift.investmentNudge,
       cadenceDrift.productivityNudge,
       cadenceDrift.summary
+    ),
+    layer(
+      'v10.03_research_momentum',
+      'Research momentum',
+      researchMomentum.cycleNudge,
+      researchMomentum.investmentNudge,
+      researchMomentum.productivityNudge,
+      researchMomentum.summary
+    ),
+    layer(
+      'v10.07_budget',
+      'Public budget outlook',
+      budgetOutlook.cycleNudge,
+      budgetOutlook.investmentNudge,
+      budgetOutlook.productivityNudge,
+      budgetOutlook.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

@@ -162,6 +162,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Integration & cadence stress',
     shockIds: ['global_slowdown', 'credit_contraction'],
     description: 'Fractured cross-system integration with chaotic turn cadence drift (harness overlay).'
+  },
+  {
+    id: 'research_budget_stress',
+    label: 'Research & budget stress',
+    shockIds: ['credit_contraction', 'global_slowdown'],
+    description: 'Collapsed research momentum with exhausted public budget capex room (harness overlay).'
   }
 ];
 

@@ -42,6 +42,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeLiquidityMapsStress?: boolean;
   includeGameplayArchiveStress?: boolean;
   includeIntegrationCadenceStress?: boolean;
+  includeResearchBudgetStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
@@ -66,6 +67,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   const includeLiquidityMapsStress = Boolean(options?.includeLiquidityMapsStress);
   const includeGameplayArchiveStress = Boolean(options?.includeGameplayArchiveStress);
   const includeIntegrationCadenceStress = Boolean(options?.includeIntegrationCadenceStress);
+  const includeResearchBudgetStress = Boolean(options?.includeResearchBudgetStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -358,6 +360,20 @@ export function runMacroEconomyRegressionHarness(options?: {
             jitterBand: t % 5 === 0 ? 'chaotic' : 'low',
             resolutionBand: t % 7 === 0 ? 'missed' : 'on_time'
           }
+        : undefined,
+      researchMomentum: includeResearchBudgetStress
+        ? {
+            velocityBand: t % 6 === 0 ? 'collapsed' : 'moderate',
+            diffusionBand: t % 5 === 0 ? 'siloed' : 'broad',
+            fundingBand: t % 7 === 0 ? 'starved' : 'strong'
+          }
+        : undefined,
+      budgetOutlook: includeResearchBudgetStress
+        ? {
+            trajectoryBand: t % 6 === 0 ? 'deteriorating' : 'stable',
+            consolidationBand: t % 5 === 0 ? 'severe' : 'moderate',
+            capexRoomBand: t % 7 === 0 ? 'exhausted' : 'ample'
+          }
         : undefined
     });
     const { state, persisted: nextP } = computeNationalMacroEconomy(inputs, persisted, prev);
@@ -599,7 +615,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'forty_two_transmission_layers_liquidity',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 46,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 48,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -611,7 +627,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'forty_four_transmission_layers_gameplay',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 46,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 48,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -623,7 +639,19 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'forty_six_transmission_layers_integration',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 46,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 48,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeResearchBudgetStress && prev) {
+    checks.push({
+      id: 'transmission_attenuation_finite',
+      passed: Number.isFinite(prev.transmissionAttenuation.attenuationIndex),
+      detail: String(prev.transmissionAttenuation.attenuationIndex)
+    });
+    checks.push({
+      id: 'forty_eight_transmission_layers_research',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 48,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }

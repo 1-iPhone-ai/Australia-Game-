@@ -812,5 +812,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Steep transmission gradient — a few layers dominate macro spillover mass.'
     });
   }
+  const rm: any = inputs.researchMomentum ?? inputs.researchTech?.momentum;
+  const velocity = String(rm?.velocityBand ?? rm?.momentumBand ?? '');
+  if (
+    (velocity === 'collapsed' || velocity === 'critical') &&
+    (state.productivityBand === 'weak' || state.productivityBand === 'critical')
+  ) {
+    gates.push({
+      id: 'research_momentum_collapsed',
+      triggered: true,
+      severity: 'info',
+      summary: 'Collapsed research momentum aligns with weak macro productivity band.'
+    });
+  }
+  const bo: any = inputs.budgetOutlook ?? inputs.publicFinance?.outlook;
+  const capexRoom = String(bo?.capexRoomBand ?? bo?.capitalHeadroom?.band ?? '');
+  if (
+    (capexRoom === 'exhausted' || capexRoom === 'none') &&
+    (state.investmentClimate === 'frozen' || state.fiscalSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'budget_capex_exhausted',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Exhausted public capex room coincides with tight macro investment/fiscal read.'
+    });
+  }
+  if (state.transmissionAttenuation?.band === 'muted' || state.transmissionAttenuation?.band === 'balanced') {
+    gates.push({
+      id: 'transmission_attenuation_soft',
+      triggered: true,
+      severity: 'info',
+      summary: 'Soft transmission attenuation — tail layers carry less spillover mass vs peak layer.'
+    });
+  }
   return gates;
 }

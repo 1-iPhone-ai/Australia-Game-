@@ -46,8 +46,8 @@ export function runAgent06Round13SelfTests(): {
   record('R13-04', 'State exposes forecasting summary', integrated.state.forecastingSpilloverSummary != null, 'ok');
   record(
     'R13-05',
-    'Forty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 46,
+    'Forty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 48,
     String(integrated.state.transmissionReport.layers.length)
   );
 

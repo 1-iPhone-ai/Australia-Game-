@@ -46,8 +46,8 @@ export function runAgent06Round8SelfTests(): {
   record('R8-04', 'State exposes energy summary', integrated.state.energySpilloverSummary != null, 'ok');
   record(
     'R8-05',
-    'Forty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 46,
+    'Forty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 48,
     String(integrated.state.transmissionReport.layers.length)
   );
 

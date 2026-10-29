@@ -57,6 +57,14 @@ import {
   applyMacroCadenceDriftSpillover,
   readMacroCadenceDriftSpilloverFromV1002
 } from './bridge-v1002-cadence-drift.ts';
+import {
+  applyMacroResearchMomentumSpillover,
+  readMacroResearchMomentumSpilloverFromV1003
+} from './bridge-v1003-research-momentum.ts';
+import {
+  applyMacroBudgetOutlookSpillover,
+  readMacroBudgetOutlookSpilloverFromV1007
+} from './bridge-v1007-budget-outlook.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
@@ -82,6 +90,7 @@ import { buildMacroTransmissionCouplingSnapshot } from './macro-transmission-cou
 import { buildMacroTransmissionImbalanceSnapshot } from './macro-transmission-imbalance.ts';
 import { buildMacroTransmissionHarmonicSnapshot } from './macro-transmission-harmonic.ts';
 import { buildMacroTransmissionGradientSnapshot } from './macro-transmission-gradient.ts';
+import { buildMacroTransmissionAttenuationSnapshot } from './macro-transmission-attenuation.ts';
 import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
 import { V1014_MACRO_LIMITS } from './constants.ts';
 import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
@@ -191,6 +200,8 @@ export function computeNationalMacroEconomy(
   const archiveIntegritySpillover = readMacroArchiveIntegritySpilloverFromV1024(inputs);
   const integrationHealthSpillover = readMacroIntegrationHealthSpilloverFromV1025(inputs);
   const cadenceDriftSpillover = readMacroCadenceDriftSpilloverFromV1002(inputs);
+  const researchMomentumSpillover = readMacroResearchMomentumSpilloverFromV1003(inputs);
+  const budgetOutlookSpillover = readMacroBudgetOutlookSpilloverFromV1007(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -237,7 +248,9 @@ export function computeNationalMacroEconomy(
   const withArchiveIntegrity = applyMacroArchiveIntegritySpillover(withStrategicGameplay, archiveIntegritySpillover);
   const withIntegrationHealth = applyMacroIntegrationHealthSpillover(withArchiveIntegrity, integrationHealthSpillover);
   const withCadenceDrift = applyMacroCadenceDriftSpillover(withIntegrationHealth, cadenceDriftSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withCadenceDrift, pushEv);
+  const withResearchMomentum = applyMacroResearchMomentumSpillover(withCadenceDrift, researchMomentumSpillover);
+  const withBudgetOutlook = applyMacroBudgetOutlookSpillover(withResearchMomentum, budgetOutlookSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withBudgetOutlook, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -311,7 +324,9 @@ export function computeNationalMacroEconomy(
     strategicGameplay: strategicGameplaySpillover,
     archiveIntegrity: archiveIntegritySpillover,
     integrationHealth: integrationHealthSpillover,
-    cadenceDrift: cadenceDriftSpillover
+    cadenceDrift: cadenceDriftSpillover,
+    researchMomentum: researchMomentumSpillover,
+    budgetOutlook: budgetOutlookSpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
@@ -333,6 +348,7 @@ export function computeNationalMacroEconomy(
   const transmissionImbalance = buildMacroTransmissionImbalanceSnapshot(transmissionReport);
   const transmissionHarmonic = buildMacroTransmissionHarmonicSnapshot(transmissionReport);
   const transmissionGradient = buildMacroTransmissionGradientSnapshot(transmissionReport);
+  const transmissionAttenuation = buildMacroTransmissionAttenuationSnapshot(transmissionReport);
 
   const capacitySnapshot = buildMacroCapacitySnapshot({
     state: {
@@ -429,6 +445,8 @@ export function computeNationalMacroEconomy(
     archiveIntegritySpilloverSummary: archiveIntegritySpillover.summary,
     integrationHealthSpilloverSummary: integrationHealthSpillover.summary,
     cadenceDriftSpilloverSummary: cadenceDriftSpillover.summary,
+    researchMomentumSpilloverSummary: researchMomentumSpillover.summary,
+    budgetOutlookSpilloverSummary: budgetOutlookSpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,
@@ -449,6 +467,7 @@ export function computeNationalMacroEconomy(
     transmissionImbalance,
     transmissionHarmonic,
     transmissionGradient,
+    transmissionAttenuation,
     transmissionReport,
     stressIndex: {
       score: 0,
