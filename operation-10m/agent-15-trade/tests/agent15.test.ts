@@ -2226,3 +2226,53 @@ test('round 48: lost sustain gate weakens continuity vs sustained baseline', () 
       lost.state.sustainedAdmittedForwardArcContinuity.score - 0.14,
   );
 });
+
+test('round 49: handoff continuity and cleared forward arc readiness gate on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.bilateralSustainedForwardArcHandoffGateSmoothing = 0.76;
+  persisted.clearedForwardArcHandoffContinuitySmoothing = 0.74;
+  persisted.bilateralClearedForwardArcReadinessGateSmoothing = 0.72;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 115,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 150 } } },
+    persisted,
+  });
+  assert.ok(r.state.clearedForwardArcHandoffContinuity);
+  assert.ok(
+    ['settled', 'holding', 'unsettled', 'broken'].includes(r.state.clearedForwardArcHandoffContinuity.band),
+  );
+  assert.ok(r.state.bilateralClearedForwardArcReadinessGate);
+  assert.ok(
+    ['ready', 'arming', 'pending', 'withheld'].includes(r.state.bilateralClearedForwardArcReadinessGate.band),
+  );
+  assert.ok(r.persisted.clearedForwardArcHandoffContinuitySmoothing != null);
+  assert.ok(r.persisted.bilateralClearedForwardArcReadinessGateSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Cleared forward arc handoff continuity/i.test(n)));
+  assert.ok(notes.some(n => /Bilateral cleared forward arc readiness gate/i.test(n)));
+});
+
+test('round 49: blocked handoff gate weakens continuity vs cleared baseline', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.bilateralSustainedForwardArcHandoffGateSmoothing = 0.99;
+  persisted.sustainedAdmittedForwardArcContinuitySmoothing = 0.97;
+  const cleared = advanceGlobalTradeEconomyTurn({
+    turn: 116,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 130 } } },
+    persisted: { ...persisted },
+  });
+  persisted.bilateralSustainedForwardArcHandoffGateSmoothing = 0.25;
+  persisted.sustainedAdmittedForwardArcContinuitySmoothing = 0.23;
+  const blocked = advanceGlobalTradeEconomyTurn({
+    turn: 116,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 280 } } },
+    persisted: { ...persisted },
+  });
+  assert.ok(
+    cleared.state.clearedForwardArcHandoffContinuity.score >=
+      blocked.state.clearedForwardArcHandoffContinuity.score - 0.14,
+  );
+});

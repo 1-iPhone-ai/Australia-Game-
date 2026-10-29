@@ -92,6 +92,8 @@ import { sanitizeEngagedArcForwardAdmissionContinuitySmoothing } from './engaged
 import { sanitizeBilateralAdmittedForwardArcSustainGateSmoothing } from './bilateral-admitted-forward-arc-sustain-gate.ts';
 import { sanitizeSustainedAdmittedForwardArcContinuitySmoothing } from './sustained-admitted-forward-arc-continuity.ts';
 import { sanitizeBilateralSustainedForwardArcHandoffGateSmoothing } from './bilateral-sustained-forward-arc-handoff-gate.ts';
+import { sanitizeClearedForwardArcHandoffContinuitySmoothing } from './cleared-forward-arc-handoff-continuity.ts';
+import { sanitizeBilateralClearedForwardArcReadinessGateSmoothing } from './bilateral-cleared-forward-arc-readiness-gate.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -202,6 +204,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     bilateralAdmittedForwardArcSustainGateSmoothing: 0.52,
     sustainedAdmittedForwardArcContinuitySmoothing: 0.52,
     bilateralSustainedForwardArcHandoffGateSmoothing: 0.52,
+    clearedForwardArcHandoffContinuitySmoothing: 0.52,
+    bilateralClearedForwardArcReadinessGateSmoothing: 0.52,
   };
 }
 
@@ -569,6 +573,12 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   );
   base.bilateralSustainedForwardArcHandoffGateSmoothing = sanitizeBilateralSustainedForwardArcHandoffGateSmoothing(
     r.bilateralSustainedForwardArcHandoffGateSmoothing,
+  );
+  base.clearedForwardArcHandoffContinuitySmoothing = sanitizeClearedForwardArcHandoffContinuitySmoothing(
+    r.clearedForwardArcHandoffContinuitySmoothing,
+  );
+  base.bilateralClearedForwardArcReadinessGateSmoothing = sanitizeBilateralClearedForwardArcReadinessGateSmoothing(
+    r.bilateralClearedForwardArcReadinessGateSmoothing,
   );
   return base;
 }

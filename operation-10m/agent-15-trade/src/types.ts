@@ -240,6 +240,8 @@ export interface GTELPersisted {
   bilateralAdmittedForwardArcSustainGateSmoothing?: number;
   sustainedAdmittedForwardArcContinuitySmoothing?: number;
   bilateralSustainedForwardArcHandoffGateSmoothing?: number;
+  clearedForwardArcHandoffContinuitySmoothing?: number;
+  bilateralClearedForwardArcReadinessGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -349,6 +351,8 @@ export interface GTELState {
   bilateralAdmittedForwardArcSustainGate: GTELBilateralAdmittedForwardArcSustainGateSnapshot;
   sustainedAdmittedForwardArcContinuity: GTELSustainedAdmittedForwardArcContinuitySnapshot;
   bilateralSustainedForwardArcHandoffGate: GTELBilateralSustainedForwardArcHandoffGateSnapshot;
+  clearedForwardArcHandoffContinuity: GTELClearedForwardArcHandoffContinuitySnapshot;
+  bilateralClearedForwardArcReadinessGate: GTELBilateralClearedForwardArcReadinessGateSnapshot;
   inputHash: string;
 }
 
@@ -1433,6 +1437,26 @@ export interface GTELBilateralSustainedForwardArcHandoffGateSnapshot {
   band: GTELBilateralSustainedForwardArcHandoffGateBand;
   continuityFeed: number;
   sustainAnchor: number;
+  summary: string;
+}
+
+export type GTELClearedForwardArcHandoffContinuityBand = 'settled' | 'holding' | 'unsettled' | 'broken';
+
+export interface GTELClearedForwardArcHandoffContinuitySnapshot {
+  score: number;
+  band: GTELClearedForwardArcHandoffContinuityBand;
+  handoffGateFeed: number;
+  sustainedArcAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralClearedForwardArcReadinessGateBand = 'ready' | 'arming' | 'pending' | 'withheld';
+
+export interface GTELBilateralClearedForwardArcReadinessGateSnapshot {
+  score: number;
+  band: GTELBilateralClearedForwardArcReadinessGateBand;
+  handoffContinuityFeed: number;
+  gateAnchor: number;
   summary: string;
 }
 
