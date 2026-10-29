@@ -58988,6 +58988,9 @@ export function runCoPilotCategory9SelfTests(
     humanPlayerId: 'player',
     turnCounter: 1,
     selectedMode: 'ai',
+    // initialGameState is the menu. Menu and end no longer accept turn advances (SIM-035).
+    // These cases describe a live match.
+    gameMode: 'game',
     player: { id: 'player', money: 5000, actionsUsedThisTurn: 0, actionPoints: 3, currentRegion: 'Sydney', ...(overrides?.player || {}) },
     gameSettings: { ...(settings as any), playerActionsPerDay: 3, actionLimitsEnabled: true, coPilotSettings: activeSettings },
     ...overrides
