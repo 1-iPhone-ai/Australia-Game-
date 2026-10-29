@@ -5,8 +5,8 @@ import { buildMacroTransmissionElasticitySnapshot } from './macro-transmission-e
 import { makeDefaultV1014_MACRO_TestInputs } from './inputs.ts';
 import { runMacroEconomyRegressionHarness } from './regression-harness.ts';
 import { compareMacroEconomyScenarios } from './scenario-compare.ts';
-import { rankMacroScenarioResilience } from './scenario-resilience-rank.ts';
-import { rankMacroScenarioProsperity } from './scenario-prosperity-rank.ts';
+import { rankMacroScenarioWave35Integration } from './scenario-wave35-integration-rank.ts';
+import { rankMacroScenarioProjectionSync } from './scenario-projection-sync-rank.ts';
 import type { MacroSelfTestResult } from './types.ts';
 
 export function runAgent06Round35SelfTests(): {
@@ -74,14 +74,14 @@ export function runAgent06Round35SelfTests(): {
     null,
     null
   );
-  const resilience = rankMacroScenarioResilience(compare);
-  const prosperity = rankMacroScenarioProsperity(compare);
-  record('R35-08', 'Scenario resilience preserves row count', resilience.length === 2, String(resilience.length));
+  const integration = rankMacroScenarioWave35Integration(compare);
+  const projectionRank = rankMacroScenarioProjectionSync(compare);
+  record('R35-08', 'Wave 35 integration rank preserves row count', integration.length === 2, String(integration.length));
   record(
     'R35-09',
-    'Resilience and prosperity both rank scenarios',
-    prosperity.length === 2 && resilience[0].resiliencePriority >= 0,
-    resilience.map(r => r.scenarioId).join('>')
+    'Integration and projection sync both rank scenarios',
+    projectionRank.length === 2 && integration[0].integrationPriority >= 0,
+    integration.map(r => r.scenarioId).join('>')
   );
 
   const harness = runMacroEconomyRegressionHarness({
