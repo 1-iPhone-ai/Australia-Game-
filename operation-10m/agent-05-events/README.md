@@ -9,7 +9,9 @@ State-triggered crisis chains with cooldowns, passive persistent modifiers, and 
 - `generated/chain-catalog-tranche6.ts` — 320 reconcile-wave chains (`scripts/generate-catalog-tranche6.py`)
 - `generated/chain-catalog-tranche7.ts` — 320 drift-settle-wave chains (`scripts/generate-catalog-tranche7.py`)
 - `generated/chain-catalog-tranche8.ts` — 320 pending-lattice chains (`scripts/generate-catalog-tranche8.py`)
+- `generated/chain-catalog-tranche9.ts` — 320 stabilization-lattice chains (`scripts/generate-catalog-tranche9.py`)
 - `src/pending-response-expiry-coordinator.ts` — expired dilemma prune + queue-clear flags on compute hook
+- `src/pending-response-stabilization-coordinator.ts` — post-clear calm + stabilization wave flags on compute hook
 - `src/compute-turn-reconcile.ts` — digest drift reconcile + eligibility priming on compute turn hook
 - `src/compute-turn-drift-settle.ts` — drift settlement + turn-gap ack flags on compute turn hook
 - `generated/regional-hook-catalog.ts` — 120 cross-region hooks (`scripts/generate-regional-hooks.py`)
