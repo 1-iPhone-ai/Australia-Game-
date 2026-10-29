@@ -162,6 +162,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   remissionStrainIndex: number;
   remissionIntegrityScore: number;
   governanceMettleScore: number;
+  absolutionStrainIndex: number;
+  absolutionIntegrityScore: number;
+  governanceGritScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {

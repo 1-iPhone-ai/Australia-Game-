@@ -166,6 +166,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   remissionStrainIndex: number;
   remissionIntegrityScore: number;
   governanceMettleScore: number;
+  absolutionStrainIndex: number;
+  absolutionIntegrityScore: number;
+  governanceGritScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -2256,6 +2259,62 @@ export function buildGuardianDepthRemissionReport(snapshot: GuardianCoPilotMonit
   return lines.slice(0, 3);
 }
 
+export function computeAbsolutionStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceMettleScore < 50) load += Math.min(25, 50 - snapshot.governanceMettleScore);
+  if (snapshot.governanceMettleScore < 35) load += 10;
+  if (snapshot.remissionIntegrityScore < 45) load += 20;
+  if (snapshot.remissionIntegrityScore < 35) load += 10;
+  if (snapshot.remissionStrainIndex >= 55) load += 20;
+  if (snapshot.remissionStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeAbsolutionIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.absolutionStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.absolutionStrainIndex * 0.35));
+  if (snapshot.remissionIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.remissionIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceMettleScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceGritScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.absolutionStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.absolutionStrainIndex * 0.32));
+  if (snapshot.absolutionIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.absolutionIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceMettleScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthAbsolutionReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.absolutionStrainIndex >= 55) {
+    lines.push(
+      `Absolution strain ${snapshot.absolutionStrainIndex} — stacked absolution review may exceed operator absolution capacity`
+    );
+  }
+  if (snapshot.absolutionIntegrityScore < 45) {
+    lines.push(
+      `Absolution integrity ${snapshot.absolutionIntegrityScore} — align Co-Pilot absolutions with Guardian absolution posture`
+    );
+  }
+  if (snapshot.governanceGritScore < 40) {
+    lines.push(
+      `Governance grit ${snapshot.governanceGritScore} — little grit to sustain absolution oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -2593,9 +2652,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withRemissionStrain: GuardianCoPilotMonitorSnapshot = { ...withStamina, remissionStrainIndex };
   const remissionIntegrityScore = computeRemissionIntegrityScore(withRemissionStrain);
   const withRemission: GuardianCoPilotMonitorSnapshot = { ...withRemissionStrain, remissionIntegrityScore };
-  return {
+  const withMettle: GuardianCoPilotMonitorSnapshot = {
     ...withRemission,
     governanceMettleScore: computeGovernanceMettleScore(withRemission),
+    absolutionStrainIndex: 0,
+    absolutionIntegrityScore: 100,
+    governanceGritScore: 100,
+  };
+  const absolutionStrainIndex = computeAbsolutionStrainIndex(withMettle);
+  const withAbsolutionStrain: GuardianCoPilotMonitorSnapshot = { ...withMettle, absolutionStrainIndex };
+  const absolutionIntegrityScore = computeAbsolutionIntegrityScore(withAbsolutionStrain);
+  const withAbsolution: GuardianCoPilotMonitorSnapshot = { ...withAbsolutionStrain, absolutionIntegrityScore };
+  return {
+    ...withAbsolution,
+    governanceGritScore: computeGovernanceGritScore(withAbsolution),
   };
 }
 
@@ -3666,6 +3736,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceMettleScore(snap) < 35;
+  });
+  ok('gd_absolution_strain', () => {
+    const snap = {
+      governanceMettleScore: 30,
+      remissionIntegrityScore: 32,
+      remissionStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAbsolutionStrainIndex(snap) >= 70;
+  });
+  ok('gd_absolution_integrity', () => {
+    const snap = {
+      absolutionStrainIndex: 72,
+      remissionIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceMettleScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAbsolutionIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_grit', () => {
+    const snap = {
+      absolutionStrainIndex: 78,
+      absolutionIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceMettleScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceGritScore(snap) < 35;
   });
   return out;
 }
@@ -8100,6 +8204,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_32: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_32_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_32.length;
 
 
+// --- source: monitor-rules-scale-wave-33.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_33: AdvisoryMonitorRule[] = [
+  {
+    id: 'absolution_strain_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Absolution Strain High',
+    detailTemplate: 'Absolution strain is in the high band — reduce overlapping warn-only absolution review demands',
+    evidenceFields: ['absolutionStrainIndex', 'governanceMettleScore', 'absolutionIntegrityScore'],
+    evaluate: s => s.absolutionStrainIndex >= 70,
+  },
+  {
+    id: 'absolution_strain_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Absolution Strain Elevated',
+    detailTemplate: 'Absolution strain is elevated — expect slower absolution review across turns',
+    evidenceFields: ['absolutionStrainIndex', 'remissionStrainIndex'],
+    evaluate: s => s.absolutionStrainIndex >= 45 && s.absolutionStrainIndex < 70,
+  },
+  {
+    id: 'absolution_integrity_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Absolution Integrity Low',
+    detailTemplate: 'Absolution integrity is critically low — defer stacked autonomous actions',
+    evidenceFields: ['absolutionIntegrityScore', 'absolutionStrainIndex', 'remissionIntegrityScore'],
+    evaluate: s => s.absolutionIntegrityScore < 35,
+  },
+  {
+    id: 'absolution_integrity_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Absolution While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate absolution integrity',
+    evidenceFields: ['absolutionIntegrityScore', 'copilotAutonomousActive', 'absolutionStrainIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.absolutionIntegrityScore >= 35 && s.absolutionIntegrityScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_grit_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Grit Low',
+    detailTemplate: 'Little governance grit remains for warn-only absolution oversight across turns',
+    evidenceFields: ['governanceGritScore', 'absolutionStrainIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governanceGritScore < 35,
+  },
+  {
+    id: 'governance_grit_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Grit While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance grit',
+    evidenceFields: ['governanceGritScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governanceGritScore >= 35 && s.governanceGritScore < 55,
+  },
+  {
+    id: 'absolution_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Absolution Envelope Pressured',
+    detailTemplate: 'Absolution strain and low absolution integrity align in the pressured envelope band',
+    evidenceFields: ['absolutionStrainIndex', 'absolutionIntegrityScore', 'governanceGritScore'],
+    evaluate: s => s.absolutionStrainIndex >= 55 && s.absolutionIntegrityScore < 50,
+  },
+  {
+    id: 'rival_absolution_strain',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Absolution Strain',
+    detailTemplate: 'Rival victory progress plus elevated absolution strain',
+    evidenceFields: ['rivalVictoryProgressPct', 'absolutionStrainIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.absolutionStrainIndex >= 50,
+  },
+  {
+    id: 'team_plan_absolution_strain',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Absolution Strain',
+    detailTemplate: 'Pending team plan while absolution strain is elevated',
+    evidenceFields: ['teamPlanPending', 'absolutionStrainIndex', 'governanceGritScore'],
+    evaluate: s => s.teamPlanPending && s.absolutionStrainIndex >= 55,
+  },
+  {
+    id: 'guardian_absolution_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Absolution Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance grit',
+    evidenceFields: ['guardianRiskBand', 'governanceGritScore', 'absolutionStrainIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governanceGritScore < 40,
+  },
+  {
+    id: 'copilot_absolution_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Absolution Strain',
+    detailTemplate: 'Autonomous Co-Pilot while absolution strain is high',
+    evidenceFields: ['copilotAutonomousActive', 'absolutionStrainIndex', 'absolutionIntegrityScore'],
+    evaluate: s => s.copilotAutonomousActive && s.absolutionStrainIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_grit',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Grit',
+    detailTemplate: 'Expiring contracts while governance grit is low',
+    evidenceFields: ['expiringContractCount', 'governanceGritScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governanceGritScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_33_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_33.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -8361,6 +8598,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_30,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_31,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_32,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_33,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -8773,6 +9011,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     remissionStrainIndex: 0,
     remissionIntegrityScore: 100,
     governanceMettleScore: 100,
+    absolutionStrainIndex: 0,
+    absolutionIntegrityScore: 100,
+    governanceGritScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -11209,6 +11450,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['remission_envelope_pressured', 'guardian_remission_envelope_critical'],
     notes: 'Pressured remission envelope with critical Guardian band',
   },
+  {
+    id: 'sc_absolution_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2260,
+      maxSpendPerAction: 10580,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['absolution_strain_high', 'absolution_integrity_low'],
+    notes: 'High absolution strain with critical absolution integrity',
+  },
+  {
+    id: 'sc_governance_grit_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 4,
+      minCashReserve: 500,
+      debt: 1380,
+      maxSpendPerAction: 8080,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_grit_low', 'contracts_governance_grit'],
+    notes: 'Low governance grit with expiring contracts',
+  },
+  {
+    id: 'sc_absolution_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 1300,
+      maxSpendPerAction: 8280,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['absolution_envelope_pressured', 'guardian_absolution_envelope_critical'],
+    notes: 'Pressured absolution envelope with critical Guardian band',
+  },
 ];
 
 
@@ -11384,8 +11693,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 32 scale wave brings monitor catalog to 418+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 418;
+  check(results, 'a16_expansion_count', 'Round 33 scale wave brings monitor catalog to 430+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 430;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -12554,6 +12863,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthRemissionReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round33_metrics', 'Round 33 absolution envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.absolutionStrainIndex >= 40 &&
+      snap.absolutionIntegrityScore <= 100 &&
+      snap.governanceGritScore <= 100
+    );
+  });
+
+  check(results, 'a16_absolution_report', 'Guardian depth absolution report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthAbsolutionReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 
