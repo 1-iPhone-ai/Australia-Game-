@@ -179,5 +179,6 @@ export * from './quinary-harmony-resonance-convergence-stack-index.ts';
 export * from './senary-harmony-resonance-convergence-stack-index.ts';
 export * from './septenary-harmony-resonance-convergence-stack-index.ts';
 export * from './octonary-harmony-resonance-convergence-stack-index.ts';
+export * from './nonary-harmony-resonance-convergence-stack-index.ts';
 
 export * from './resonance-harmony-convergence-stack-index.ts';
