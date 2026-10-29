@@ -136533,6 +136533,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'intent', label: 'Player Intent', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runPlayerIntentLayerSelfTests() },
   { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
   { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
+  { id: 'o111_e96', label: 'O111 Agent 96 Economic Correctness', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runO111EconomicCorrectnessSelfTests() },
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
     ...runAiMemoryPhase1SelfTests().results, ...runAiMemoryPhase2SelfTests().results, ...runAiMemoryPhase3SelfTests().results,
@@ -182067,6 +182068,170 @@ export function runReliabilityUpgradeSelfTests(): V9SelfTestResult[] {
     const after: any = (r.nextState as any).actorsById.player;
     return (canon.actorsById.player.money === 123456 && canon.actorsById.player.currentRegion === 'WA' && after.money === 123456 + 50) || `canon ${canon.actorsById.player.money}@${canon.actorsById.player.currentRegion} after ${after.money}`;
   });
+  return results;
+}
+
+// ---- Operation 111 Agent 96 — Economic Correctness (cross-layer §8 + V10 invariants) --------------------
+export function runO111EconomicCorrectnessSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  check('e96_01_net_worth_subtracts_debt', 'Net worth subtracts outstanding actor debt (§8 win metric)', () => {
+    const actor: any = { money: 2000, inventory: [], investments: [], equipment: [], loans: [{ id: 'L1', amount: 400, accrued: 50 }] };
+    const debt = calculateActorOutstandingDebt(actor);
+    const nw = calculateNetWorth(actor);
+    return (debt === 400 && nw === 1600) || `debt=${debt} nw=${nw}`;
+  });
+
+  check('e96_02_simple_loan_no_double_count', 'Simple loan outstanding uses amount/totalOwed, not amount+accrued (V9.1)', () => {
+    const actor: any = { money: 0, loans: [{ id: 'L1', amount: 500, accrued: 120 }] };
+    return calculateActorOutstandingDebt(actor) === 500 || `got ${calculateActorOutstandingDebt(actor)}`;
+  });
+
+  check('e96_03_market_prices_finite_bounded', 'Daily market prices stay finite within base-price clamps (§8)', () => v95WithIsolatedGlobals(() => {
+    setRngMasterSeed(9603, true);
+    let prices: Record<string, number> = {};
+    BASE_MARKET_RESOURCES.forEach(r => { prices[r] = getResourceMarketPrice(r); });
+    let trend = 'stable';
+    for (let day = 1; day <= 45; day += 1) {
+      const upd = computeDailyMarketUpdate(day, prices, trend, { Wool: 0.12, Wheat: -0.08 });
+      trend = upd.nextTrend;
+      prices = upd.nextPrices;
+      for (const r of BASE_MARKET_RESOURCES) {
+        const p = prices[r];
+        const base = getResourceMarketPrice(r);
+        if (!Number.isFinite(p) || p < Math.round(0.4 * base) || p > Math.round(2.0 * base)) {
+          return `day ${day} ${r}=${p} base=${base}`;
+        }
+      }
+    }
+    return true;
+  }));
+
+  check('e96_04_buy_sell_roundtrip_no_mint', 'Buy then sell at the same unit price does not increase cash+inventory value', () => {
+    const resource = BASE_MARKET_RESOURCES[0] || 'Wheat';
+    const unit = 40;
+    const pocket = (): any => ({
+      day: 1,
+      turnCounter: 1,
+      markets: { resourcePrices: { [resource]: unit } },
+      player: { id: 'player', money: 5000, inventory: [], currentRegion: 'QLD', actionsUsedThisTurn: 0 },
+      actorsById: { player: { id: 'player', money: 5000, inventory: [], currentRegion: 'QLD', actionsUsedThisTurn: 0 } }
+    });
+    const before = pocket();
+    const wealth = (s: any) => {
+      const p = s.player || s.actorsById?.player;
+      return Number(p.money) + calculateInventoryMarketValue(p.inventory || [], { [resource]: unit });
+    };
+    const w0 = wealth(before);
+    const bought = reduceGameAction(before, { type: 'buy_market', actorId: 'player', item: resource, price: unit, parameters: { quantity: 2, resource } } as any);
+    const sold = reduceGameAction(bought.nextState, { type: 'sell', actorId: 'player', item: resource, price: unit, parameters: { quantity: 2, resource, isBuy: false } } as any);
+    const w1 = wealth(sold.nextState);
+    return (bought.success && sold.success && w1 <= w0 + 1e-6) || `w0=${w0} w1=${w1}`;
+  });
+
+  check('e96_05_sovereign_debt_not_actor_loans', 'V10.12 sovereign debt level ignores actor loan inputs (Division C boundary)', () => {
+    const p0 = createInitialPublicFinancePersisted();
+    const inputs: PublicFinanceSystemInputs = {
+      turn: 4,
+      enabled: true,
+      debtEnabled: true,
+      completedInfrastructureCount: 0,
+      completedInfrastructureByNetwork: { freight: 0, energy: 0, water: 0, digital: 0, research: 0, regional_infra: 0 },
+      programs: [],
+      crises: [],
+      actorLoans: [{ id: 'x', principal: 99999, interest: 5000 }] as any
+    };
+    const st = computeNationalPublicFinance(inputs, p0).state;
+    return (st.debt.level === 0 && st.debt.debtServiceLoad === 0) || `level=${st.debt.level} service=${st.debt.debtServiceLoad}`;
+  });
+
+  check('e96_06_public_finance_validates', 'computeNationalPublicFinance output passes validateNationalPublicFinanceState', () => {
+    const p0 = createInitialPublicFinancePersisted();
+    const { state, persisted } = computeNationalPublicFinance({
+      turn: 2,
+      enabled: true,
+      debtEnabled: true,
+      completedInfrastructureCount: 1,
+      completedInfrastructureByNetwork: { freight: 1, energy: 0, water: 0, digital: 0, research: 0, regional_infra: 0 },
+      programs: [],
+      crises: []
+    }, p0);
+    const val = validateNationalPublicFinanceState(state, persisted);
+    return (val.valid && state.revenue.currentCapacity > 0) || JSON.stringify(val);
+  });
+
+  check('e96_07_team_treasury_not_fiscal', 'Team treasury input does not change national fiscal headroom (V10.12 TEST 4)', () => {
+    const p0 = createInitialPublicFinancePersisted();
+    const base: PublicFinanceSystemInputs = {
+      turn: 3,
+      enabled: true,
+      debtEnabled: true,
+      completedInfrastructureCount: 0,
+      completedInfrastructureByNetwork: { freight: 0, energy: 0, water: 0, digital: 0, research: 0, regional_infra: 0 },
+      programs: [],
+      crises: []
+    };
+    const a = computeNationalPublicFinance({ ...base, teamTreasury: 0 } as any, p0).state;
+    const b = computeNationalPublicFinance({ ...base, teamTreasury: 750000 } as any, p0).state;
+    return a.fiscalPosition.fiscalHeadroom === b.fiscalPosition.fiscalHeadroom || `${a.fiscalPosition.fiscalHeadroom} vs ${b.fiscalPosition.fiscalHeadroom}`;
+  });
+
+  check('e96_08_work_pays_finite', 'Canonical work action pays a finite non-negative amount', () => {
+    const base: any = {
+      day: 2,
+      turnCounter: 2,
+      player: { id: 'player', money: 100, inventory: [], currentRegion: 'QLD', actionsUsedThisTurn: 0 },
+      actorsById: { player: { id: 'player', money: 100, inventory: [], currentRegion: 'QLD', actionsUsedThisTurn: 0 } }
+    };
+    const r = reduceGameAction(base, { type: 'work', actorId: 'player', parameters: {} } as any);
+    const after = Number(r.nextState?.player?.money ?? r.nextState?.actorsById?.player?.money);
+    return (r.success && Number.isFinite(after) && after >= 100) || `success=${r.success} after=${after}`;
+  });
+
+  check('e96_09_credit_score_finite', 'Credit score stays finite for a heavily levered actor', () => {
+    const actor: any = {
+      money: 50,
+      loans: [{ id: 'L1', amount: 8000, accrued: 0 }],
+      loanRepaymentHistory: [],
+      advancedLoans: [],
+      bankruptcyTracker: { streak: 0 },
+      completedChallenges: []
+    };
+    const score = calculateCreditScore(actor, createDefaultGameSettings());
+    return (Number.isFinite(score) && score >= 0 && score <= 1000) || `score=${score}`;
+  });
+
+  check('e96_10_inventory_value', 'Inventory market value matches priced stack sum', () => {
+    const inv = ['Wool', 'Wool', 'Gold'];
+    const prices = { Wool: 12, Gold: 90 };
+    const v = calculateInventoryMarketValue(inv, prices);
+    return v === 114 || `v=${v}`;
+  });
+
+  check('e96_11_negative_transfer_rejected', 'Negative give_cash does not succeed (V95 F08)', () => {
+    const base = createTuningMatchState(9611, false);
+    const r = reduceGameAction(base, { type: 'give_cash', actorId: 'player', targetActorId: 'ai', parameters: { amount: -250, targetActorId: 'ai' } } as any);
+    return r.success === false || 'negative transfer succeeded';
+  });
+
+  check('e96_12_world_pressure_clamped', 'World market pressure beyond ±6% does not blow prices (§8)', () => v95WithIsolatedGlobals(() => {
+    setRngMasterSeed(9612, true);
+    const resource = BASE_MARKET_RESOURCES[0] || 'Wheat';
+    const base = getResourceMarketPrice(resource);
+    const upd = computeDailyMarketUpdate(1, { [resource]: base }, 'volatile', { [resource]: 9 });
+    const p = upd.nextPrices[resource];
+    const max = Math.round(2.0 * base);
+    return (p <= max && Number.isFinite(p)) || `p=${p} max=${max}`;
+  }));
+
   return results;
 }
 
