@@ -99,6 +99,8 @@ import { runTransparencyOutlookBridgeSelfTests } from './modules/transparency-ou
 import { runBalanceSheetOutlookCoherenceSelfTests } from './modules/balance-sheet-outlook-coherence/self-tests';
 import { runReconciliationOutlookBridgeSelfTests } from './modules/reconciliation-outlook-bridge/self-tests';
 import { runContingentLiabilityOutlookCoherenceSelfTests } from './modules/contingent-liability-outlook-coherence/self-tests';
+import { runGrantClawbackOutlookBridgeSelfTests } from './modules/grant-clawback-outlook-bridge/self-tests';
+import { runSovereignIssuanceOutlookCoherenceSelfTests } from './modules/sovereign-issuance-outlook-coherence/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -207,6 +209,8 @@ ok = runSuite('Transparency outlook bridge', runTransparencyOutlookBridgeSelfTes
 ok = runSuite('Balance sheet outlook coherence', runBalanceSheetOutlookCoherenceSelfTests) && ok;
 ok = runSuite('Reconciliation outlook bridge', runReconciliationOutlookBridgeSelfTests) && ok;
 ok = runSuite('Contingent liability outlook coherence', runContingentLiabilityOutlookCoherenceSelfTests) && ok;
+ok = runSuite('Grant clawback outlook bridge', runGrantClawbackOutlookBridgeSelfTests) && ok;
+ok = runSuite('Sovereign issuance outlook coherence', runSovereignIssuanceOutlookCoherenceSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);
