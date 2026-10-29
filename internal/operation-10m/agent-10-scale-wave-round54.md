@@ -5,7 +5,7 @@ cursor:
 
 # Agent 10 — scale wave round 54 (O10-240)
 
-**Integration baseline:** **`5bd043ad`** · **Projected scale:** **3,022,056** · **Merge commit:** **`4940ca5d`** · **Gate commit:** **`2071f096`** · **Task:** O10-240  
+**Integration baseline:** **`5bd043ad`** · **Projected scale:** **3,022,056** · **Merge commit:** **`4940ca5d`** · **Gate commit:** **`2071f096`** · **Origin tip:** **`a374468b`** · **Task:** O10-240  
 **Branch:** `op10m/agent-10-finance-inflation`  
 **Worker:** `bc-6c4c53e9-1cf6-5dad-8987-78453d72ff9f`
 
