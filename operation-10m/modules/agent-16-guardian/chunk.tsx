@@ -220,6 +220,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   assignmentStrainIndex: number;
   assignmentIntegrityScore: number;
   governanceVivacityScore: number;
+  commissionStrainIndex: number;
+  commissionIntegrityScore: number;
+  governanceVibrancyScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -3318,6 +3321,62 @@ export function buildGuardianDepthAssignmentReport(snapshot: GuardianCoPilotMoni
   return lines.slice(0, 3);
 }
 
+export function computeCommissionStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceVivacityScore < 50) load += Math.min(25, 50 - snapshot.governanceVivacityScore);
+  if (snapshot.governanceVivacityScore < 35) load += 10;
+  if (snapshot.assignmentIntegrityScore < 45) load += 20;
+  if (snapshot.assignmentIntegrityScore < 35) load += 10;
+  if (snapshot.assignmentStrainIndex >= 55) load += 20;
+  if (snapshot.assignmentStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeCommissionIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.commissionStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.commissionStrainIndex * 0.35));
+  if (snapshot.assignmentIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.assignmentIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceVivacityScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceVibrancyScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.commissionStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.commissionStrainIndex * 0.32));
+  if (snapshot.commissionIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.commissionIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceVivacityScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthCommissionReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.commissionStrainIndex >= 55) {
+    lines.push(
+      `Commission strain ${snapshot.commissionStrainIndex} — stacked commission review may exceed operator commission capacity`
+    );
+  }
+  if (snapshot.commissionIntegrityScore < 45) {
+    lines.push(
+      `Commission integrity ${snapshot.commissionIntegrityScore} — align Co-Pilot commissions with Guardian commission posture`
+    );
+  }
+  if (snapshot.governanceVibrancyScore < 40) {
+    lines.push(
+      `Governance vibrancy ${snapshot.governanceVibrancyScore} — little vibrancy to sustain commission oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -3856,9 +3915,23 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withAssignmentStrain: GuardianCoPilotMonitorSnapshot = { ...withAssignmentSeed, assignmentStrainIndex };
   const assignmentIntegrityScore = computeAssignmentIntegrityScore(withAssignmentStrain);
   const withAssignment: GuardianCoPilotMonitorSnapshot = { ...withAssignmentStrain, assignmentIntegrityScore };
-  return {
+  const withVivacity: GuardianCoPilotMonitorSnapshot = {
     ...withAssignment,
     governanceVivacityScore: computeGovernanceVivacityScore(withAssignment),
+  };
+  const withCommissionSeed: GuardianCoPilotMonitorSnapshot = {
+    ...withVivacity,
+    commissionStrainIndex: 0,
+    commissionIntegrityScore: 100,
+    governanceVibrancyScore: 100,
+  };
+  const commissionStrainIndex = computeCommissionStrainIndex(withCommissionSeed);
+  const withCommissionStrain: GuardianCoPilotMonitorSnapshot = { ...withCommissionSeed, commissionStrainIndex };
+  const commissionIntegrityScore = computeCommissionIntegrityScore(withCommissionStrain);
+  const withCommission: GuardianCoPilotMonitorSnapshot = { ...withCommissionStrain, commissionIntegrityScore };
+  return {
+    ...withCommission,
+    governanceVibrancyScore: computeGovernanceVibrancyScore(withCommission),
   };
 }
 
@@ -5541,6 +5614,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceVivacityScore(snap) < 35;
+  });
+  ok('gd_commission_strain', () => {
+    const snap = {
+      governanceVivacityScore: 30,
+      assignmentIntegrityScore: 32,
+      assignmentStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeCommissionStrainIndex(snap) >= 70;
+  });
+  ok('gd_commission_integrity', () => {
+    const snap = {
+      commissionStrainIndex: 72,
+      assignmentIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceVivacityScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeCommissionIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_vibrancy', () => {
+    const snap = {
+      commissionStrainIndex: 78,
+      commissionIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceVivacityScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceVibrancyScore(snap) < 35;
   });
   return out;
 }
@@ -12249,6 +12356,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_48,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_49,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_50,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_51,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -12715,6 +12823,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     assignmentStrainIndex: 0,
     assignmentIntegrityScore: 100,
     governanceVivacityScore: 100,
+    commissionStrainIndex: 0,
+    commissionIntegrityScore: 100,
+    governanceVibrancyScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -16375,6 +16486,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['assignment_envelope_pressured', 'guardian_assignment_envelope_critical'],
     notes: 'Pressured assignment envelope with critical Guardian band',
   },
+  {
+    id: 'sc_commission_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2500,
+      maxSpendPerAction: 12100,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['commission_strain_high', 'commission_integrity_low'],
+    notes: 'High commission strain with critical commission integrity',
+  },
+  {
+    id: 'sc_governance_vibrancy_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 1,
+      minCashReserve: 500,
+      debt: 1520,
+      maxSpendPerAction: 8680,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_vibrancy_low', 'contracts_governance_vibrancy'],
+    notes: 'Low governance vibrancy with expiring contracts',
+  },
+  {
+    id: 'sc_commission_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2640,
+      maxSpendPerAction: 12040,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['commission_envelope_pressured', 'guardian_commission_envelope_critical'],
+    notes: 'Pressured commission envelope with critical Guardian band',
+  },
 ];
 
 
@@ -18458,6 +18637,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthAssignmentReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round51_metrics', 'Round 51 commission envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.commissionStrainIndex >= 40 &&
+      snap.commissionIntegrityScore <= 100 &&
+      snap.governanceVibrancyScore <= 100
+    );
+  });
+
+  check(results, 'a16_commission_report', 'Guardian depth commission report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthCommissionReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 
