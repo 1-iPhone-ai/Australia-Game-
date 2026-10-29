@@ -115,6 +115,8 @@ export interface NationalMacroEconomyState {
   dashboardsSpilloverSummary: string | null;
   uiSpilloverSummary: string | null;
   utilitiesSpilloverSummary: string | null;
+  logisticsSpilloverSummary: string | null;
+  negotiationSpilloverSummary: string | null;
   capacitySnapshot: MacroCapacitySnapshot;
   transmissionBalance: MacroTransmissionBalanceSnapshot;
   transmissionCoherence: MacroTransmissionCoherenceSnapshot;
@@ -127,6 +129,7 @@ export interface NationalMacroEconomyState {
   transmissionTension: MacroTransmissionTensionSnapshot;
   transmissionDivergence: MacroTransmissionDivergenceSnapshot;
   transmissionStability: MacroTransmissionStabilitySnapshot;
+  transmissionAlignment: MacroTransmissionAlignmentSnapshot;
   transmissionReport: MacroTransmissionReport;
   stressIndex: MacroStressIndexSnapshot;
   policyStance: MacroPolicyStanceSnapshot;
@@ -313,6 +316,16 @@ export interface MacroTransmissionStabilitySnapshot {
   summary: string;
 }
 
+export type MacroTransmissionAlignmentBand = 'aligned' | 'moderate' | 'strained' | 'misaligned';
+
+export interface MacroTransmissionAlignmentSnapshot {
+  alignmentIndex: number;
+  band: MacroTransmissionAlignmentBand;
+  conflictingLayerCount: number;
+  alignedLayerCount: number;
+  summary: string;
+}
+
 export type MacroStressBand = 'calm' | 'elevated' | 'acute';
 
 export interface MacroStressIndexSnapshot {
@@ -422,6 +435,8 @@ export interface MacroEconomyInputs {
   utilitiesGrid?: any;
   publicUtilities?: any;
   nationalUtilities?: any;
+  negotiationState?: any;
+  diplomacy?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;
   /** Additional catalog shock ids (see catalog/cyclical-shocks.ts). Legacy flags merge in. */

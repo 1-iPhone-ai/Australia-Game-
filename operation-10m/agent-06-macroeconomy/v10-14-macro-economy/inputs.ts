@@ -81,6 +81,12 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
       params?.nationalSystems?.utilities,
     publicUtilities: params?.publicUtilities,
     nationalUtilities: params?.nationalUtilities,
+    negotiationState:
+      params?.negotiationState ??
+      params?.diplomacy ??
+      params?.gameState?.negotiationState ??
+      params?.nationalSystems?.negotiation,
+    diplomacy: params?.diplomacy,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };

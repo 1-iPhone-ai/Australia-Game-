@@ -114,6 +114,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'UI & utilities stress',
     shockIds: ['global_slowdown', 'credit_contraction'],
     description: 'Degraded UI shell with rolling utility outages (harness overlay).'
+  },
+  {
+    id: 'logistics_negotiation_stress',
+    label: 'Logistics & negotiation stress',
+    shockIds: ['global_slowdown', 'terms_of_trade_squeeze'],
+    description: 'Gridlocked trade logistics with entrenched negotiation deadlock (harness overlay).'
   }
 ];
 

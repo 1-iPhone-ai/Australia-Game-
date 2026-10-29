@@ -534,5 +534,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Fragile cycle vs productivity transmission stability — interpret headline scores cautiously.'
     });
   }
+  const trLog: any = inputs.trade?.logistics ?? inputs.trade?.supplyChain ?? inputs.trade;
+  const portBacklog = String(trLog?.portBacklogBand ?? trLog?.backlogBand ?? trLog?.congestionBand ?? '');
+  if (
+    (portBacklog === 'gridlocked' || portBacklog === 'critical') &&
+    (state.cyclePhase === 'contraction' || state.cyclePhase === 'slowdown')
+  ) {
+    gates.push({
+      id: 'trade_logistics_gridlock',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Gridlocked trade logistics reinforce macro slowdown / contraction read.'
+    });
+  }
+  const neg: any = inputs.negotiationState ?? inputs.diplomacy;
+  const deadlock = String(neg?.deadlockBand ?? neg?.stalemateBand ?? '');
+  if (
+    (deadlock === 'entrenched' || deadlock === 'critical') &&
+    (state.investmentClimate === 'frozen' || state.investmentClimate === 'cautious')
+  ) {
+    gates.push({
+      id: 'negotiation_deadlock_investment',
+      triggered: true,
+      severity: 'info',
+      summary: 'Entrenched negotiation deadlock aligns with cautious macro investment climate.'
+    });
+  }
+  if (state.transmissionAlignment?.band === 'misaligned' || state.transmissionAlignment?.band === 'strained') {
+    gates.push({
+      id: 'transmission_alignment_strained',
+      triggered: true,
+      severity: 'info',
+      summary: 'Strained investment vs productivity transmission alignment — layer reads may conflict.'
+    });
+  }
   return gates;
 }

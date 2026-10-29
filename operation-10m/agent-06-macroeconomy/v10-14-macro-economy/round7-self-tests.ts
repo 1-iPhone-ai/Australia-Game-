@@ -45,8 +45,8 @@ export function runAgent06Round7SelfTests(): {
   record('R7-04', 'State exposes housing summary', integrated.state.housingSpilloverSummary != null, 'ok');
   record(
     'R7-05',
-    'Thirty transmission layers',
-    integrated.state.transmissionReport.layers.length === 30,
+    'Thirty-two transmission layers',
+    integrated.state.transmissionReport.layers.length === 32,
     String(integrated.state.transmissionReport.layers.length)
   );
 

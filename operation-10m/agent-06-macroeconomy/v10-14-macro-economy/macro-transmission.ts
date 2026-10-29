@@ -28,6 +28,8 @@ import type { MacroMemorySpillover } from './bridge-v1019-memory.ts';
 import type { MacroDashboardsSpillover } from './bridge-v1023-dashboards.ts';
 import type { MacroUiSpillover } from './bridge-v1022-ui.ts';
 import type { MacroUtilitiesSpillover } from './bridge-v1012-utilities.ts';
+import type { MacroTradeLogisticsSpillover } from './bridge-v1015-logistics.ts';
+import type { MacroNegotiationSpillover } from './bridge-v1005-negotiation.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -64,6 +66,8 @@ export function buildMacroTransmissionReport(params: {
   dashboards?: MacroDashboardsSpillover;
   ui?: MacroUiSpillover;
   utilities?: MacroUtilitiesSpillover;
+  logistics?: MacroTradeLogisticsSpillover;
+  negotiation?: MacroNegotiationSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -85,6 +89,8 @@ export function buildMacroTransmissionReport(params: {
   const dashboards = params.dashboards ?? ZERO_SPILLOVER;
   const ui = params.ui ?? ZERO_SPILLOVER;
   const utilities = params.utilities ?? ZERO_SPILLOVER;
+  const logistics = params.logistics ?? ZERO_SPILLOVER;
+  const negotiation = params.negotiation ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -297,6 +303,22 @@ export function buildMacroTransmissionReport(params: {
       utilities.investmentNudge,
       utilities.productivityNudge,
       utilities.summary
+    ),
+    layer(
+      'v10.15_logistics',
+      'Trade logistics',
+      logistics.cycleNudge,
+      logistics.investmentNudge,
+      logistics.productivityNudge,
+      logistics.summary
+    ),
+    layer(
+      'v10.5_negotiation',
+      'Negotiation & diplomacy',
+      negotiation.cycleNudge,
+      negotiation.investmentNudge,
+      negotiation.productivityNudge,
+      negotiation.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);
