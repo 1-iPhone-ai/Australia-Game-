@@ -11275,14 +11275,15 @@ export function simpleLoanRepaymentAmount(loan: any): number {
 }
 
 /** Simple (emergency) loan daily tick: 25% of the outstanding amount is charged; unpaid interest capitalises. */
-export function applySimpleLoanTick(state: { money: number; loans?: any[] }): { money: number; loans: any[] } {
+export function applySimpleLoanTick(state: { money: number; loans?: any[] }, extraInterestRate = 0): { money: number; loans: any[] } {
   if (!state.loans || state.loans.length === 0) return { money: state.money, loans: [] };
   let money = state.money;
   const loans = state.loans.map((loan: any) => {
     // V9.1 balance (T1): interest is charged on the PRINCIPAL. Unpaid interest still becomes debt, but it no
     // longer compounds — one unpayable $500 loan used to exceed $4,600 within 10 days (1.25^n death spiral).
     const principal = typeof loan.principal === 'number' && loan.principal > 0 ? loan.principal : Math.min(loan.amount, LOAN_AMOUNT);
-    const interest = Math.floor(principal * LOAN_INTEREST_RATE);
+    const rate = LOAN_INTEREST_RATE + (Number.isFinite(extraInterestRate) ? Math.max(0, extraInterestRate) : 0);
+    const interest = Math.floor(principal * rate);
     const payable = Number.isFinite(money) && money > 0 ? money : 0;
     const payment = Math.min(interest, payable);
     money -= payment;
@@ -11746,8 +11747,11 @@ export function reduceGameAction(
           const amount = specifiedTransfer === undefined ? 50 : v95ParseWalletAmount(specifiedTransfer);
           const recipient = targetId ? nextState.actorsById[targetId] : null;
           // V9.5: a negative / non-finite amount used to reverse the transfer (taking the recipient's cash).
-          if (actor && recipient && Number.isFinite(amount) && amount > 0 && actor.money >= amount) {
-            actor.money -= amount;
+          if (actor && recipient && Number.isFinite(amount) && amount > 0) {
+            const feeMult = typeof aggregateActiveEventEconomyModifiers === 'function' ? aggregateActiveEventEconomyModifiers(nextState.gameState?.activeEvents, { national: true }).transactionFee : 1;
+            const debit = Math.ceil(amount * feeMult);
+            if (actor.money < debit) break;
+            actor.money -= debit;
             recipient.money += amount;
             if (team) {
               team.supportLedger = team.supportLedger || createDefaultTeamSupportLedger();
@@ -11779,6 +11783,7 @@ export function reduceGameAction(
           const canonicalCost = REGIONAL_INVESTMENTS[region]?.cost;
           const amount = typeof canonicalCost === 'number' ? v95WalletAmount(canonicalCost, 0) : null;
           const alreadyOwned = amount !== null && (actor?.investments || []).includes(region);
+          if (typeof isInvestmentBlockedByActiveEvents === 'function' && isInvestmentBlockedByActiveEvents(nextState.gameState?.activeEvents, region)) break;
           if (actor && amount !== null && Number.isFinite(actor.money) && actor.money >= amount && !alreadyOwned) {
             const nextMoney = actor.money - amount;
             if (!Number.isFinite(nextMoney)) break;
@@ -33360,7 +33365,7 @@ export function estimateDecisionSpendCost(decision: any, travelCost?: (region: s
   }
 }
 
-export const calculateNetWorth = (player: any, resourcePrices?: Record<string, number> | null): number => {
+export const calculateNetWorth = (player: any, resourcePrices?: Record<string, number> | null, activeEvents?: any[] | null): number => {
   if (!player) return 0;
   const money = typeof player.money === 'number' && Number.isFinite(player.money) ? player.money : 0;
   const inventory = Array.isArray(player.inventory) ? player.inventory : [];
@@ -33374,7 +33379,9 @@ export const calculateNetWorth = (player: any, resourcePrices?: Record<string, n
     return sum + (SHOP_ITEMS.find(item => item.id === itemId || item.name === itemId)?.cost || 0);
   }, 0);
   const totalDebt = calculateActorOutstandingDebt(player);
-  const rawWorth = money + inventoryValue + investmentsValue + equipmentValue - totalDebt;
+  let rawWorth = money + inventoryValue + investmentsValue + equipmentValue - totalDebt;
+  const nwMult = typeof aggregateActiveEventEconomyModifiers === 'function' ? aggregateActiveEventEconomyModifiers(activeEvents, { national: true }).netWorthMultiplier : 1;
+  if (nwMult !== 1 && Number.isFinite(rawWorth)) rawWorth *= nwMult;
   return Number.isFinite(rawWorth) ? rawWorth : 0;
 };
 
@@ -131505,29 +131512,133 @@ export function eventFromTemplate(t: WorldEventTemplate, regionId: string | null
   return { id: `v93e_${t.id}`, name: t.title, region, duration: t.duration, remainingDays: t.duration, effect, description: t.description.replace(/\{region\}/g, REGIONS[region]?.name || region), v93: { templateId: t.id, kind: t.kind, rarity: t.rarity, day } };
 }
 
+/** Legacy PRESET crisis keys — translated in crisisStageEffect to canonical activeEvents / stability hooks (O111 Agent 57). */
+export const CRISIS_STAGE_LEGACY_MODIFIER_KEYS = [
+  'priceMultiplier', 'tradeCostMultiplier', 'travelCostMultiplier', 'stabilityDeltaPerTurn',
+  'sabotageCostMultiplier', 'transactionFeeMultiplier', 'investmentLockout', 'interestRateIncrease', 'netWorthMultiplier'
+] as const;
+
+export function crisisStageModifierHasExecutor(modifierKey: string): boolean {
+  const k = String(modifierKey).split(':')[0];
+  return CONTENT_EXECUTABLE.crisisEffectKeys.includes(k) || (CRISIS_STAGE_LEGACY_MODIFIER_KEYS as readonly string[]).includes(k);
+}
+
+const expandCrisisResourcePriceForRegion = (resourcePrice: Record<string, number> | undefined, region: string): Record<string, number> | undefined => {
+  if (!resourcePrice) return undefined;
+  const out = { ...resourcePrice };
+  if (out['@region'] !== undefined) {
+    const m = out['@region'];
+    delete out['@region'];
+    (REGIONAL_RESOURCES[region] || []).forEach(res => { out[res] = m; });
+  }
+  return Object.keys(out).length ? out : undefined;
+};
+
 /** Executor for content crisis stage effects: the active stage becomes canonical activeEvents modifiers. */
-export function crisisStageEffect(stage: CrisisStage | undefined): { priced: any; regional: any } {
-  const priced: any = {}; const regional: any = {};
+export function crisisStageEffect(stage: CrisisStage | undefined): { priced: any; regional: any; stability: StabilityModifier[] } {
+  const priced: any = {}; const regional: any = {}; const stability: StabilityModifier[] = [];
   (stage?.stageEffects || []).forEach(e => {
     const [k, sub] = String(e.modifierKey).split(':');
+    const fxRegions = e.affectedRegions?.length ? e.affectedRegions : null;
     if (k === 'resourcePrice' && sub) { priced.resourcePrice = { ...(priced.resourcePrice || {}), [sub]: e.value }; }
     else if (k === 'investmentYield') priced.investmentYieldMultiplier = e.value;
-    else if (k === 'travelCost') regional.travelCost = e.value;
+    else if (k === 'travelCost' || k === 'travelCostMultiplier' || k === 'tradeCostMultiplier') regional.travelCost = (regional.travelCost || 1) * e.value;
     else if (k === 'challengeBonus' && sub) regional.challengeBonus = { ...(regional.challengeBonus || {}), [sub]: e.value };
+    else if (k === 'priceMultiplier') priced.resourcePrice = { ...(priced.resourcePrice || {}), '@region': e.value, ...(fxRegions ? { __fxRegions: fxRegions as any } : {}) };
+    else if (k === 'stabilityDeltaPerTurn') {
+      stability.push({
+        id: `crisis_fx_${e.id}`.slice(0, 60),
+        source: 'crisis_stage',
+        description: e.description,
+        deltaPerTurn: e.value,
+        remainingTurns: Math.max(1, stage?.remainingTurns ?? stage?.durationTurns ?? 1),
+        isGlobal: !fxRegions || fxRegions.length === 0,
+        ...(fxRegions?.length === 1 ? { targetRegionId: fxRegions[0] } : {})
+      });
+    } else if (k === 'sabotageCostMultiplier') regional.sabotageCost = (regional.sabotageCost || 1) * e.value;
+    else if (k === 'transactionFeeMultiplier') regional.transactionFeeMultiplier = (regional.transactionFeeMultiplier || 1) * e.value;
+    else if (k === 'investmentLockout' && e.value) regional.investmentBlocked = true;
+    else if (k === 'interestRateIncrease') priced.loanInterestRateAdd = (priced.loanInterestRateAdd || 0) + e.value;
+    else if (k === 'netWorthMultiplier') priced.netWorthMultiplier = (priced.netWorthMultiplier || 1) * e.value;
   });
-  return { priced, regional };
+  return { priced, regional, stability };
 }
-/** Keep one modifier event per affected region for each active content crisis stage (prices counted once). */
+
+/** Aggregate economy modifiers from activeEvents (crisis stage sync + world/rare events). */
+export function aggregateActiveEventEconomyModifiers(activeEvents: any[] | null | undefined, opts: { regionId?: string | null; national?: boolean } = {}) {
+  let travelCost = 1; let sabotageCost = 1; let transactionFee = 1; let investmentBlocked = false;
+  let netWorthMultiplier = 1; let loanInterestAdd = 0; let investmentYieldMultiplier = 1;
+  const regionId = opts.regionId ? String(opts.regionId).trim().toUpperCase() : null;
+  (activeEvents || []).forEach(ev => {
+    const evRegion = ev?.region ? String(ev.region).trim().toUpperCase() : null;
+    if (regionId && evRegion && evRegion !== regionId && !opts.national) return;
+    const eff = ev?.effect || {};
+    if (typeof eff.travelCost === 'number') travelCost *= eff.travelCost;
+    if (typeof eff.sabotageCost === 'number') sabotageCost *= eff.sabotageCost;
+    if (typeof eff.transactionFeeMultiplier === 'number') transactionFee *= eff.transactionFeeMultiplier;
+    if (eff.investmentBlocked) investmentBlocked = true;
+    if (typeof eff.netWorthMultiplier === 'number') netWorthMultiplier *= eff.netWorthMultiplier;
+    if (typeof eff.loanInterestRateAdd === 'number') loanInterestAdd += eff.loanInterestRateAdd;
+    if (typeof eff.investmentYieldMultiplier === 'number') investmentYieldMultiplier *= eff.investmentYieldMultiplier;
+  });
+  return { travelCost, sabotageCost, transactionFee, investmentBlocked, netWorthMultiplier, loanInterestAdd, investmentYieldMultiplier };
+}
+
+export function isInvestmentBlockedByActiveEvents(activeEvents: any[] | null | undefined, regionId?: string | null): boolean {
+  return aggregateActiveEventEconomyModifiers(activeEvents, { national: true }).investmentBlocked
+    || (regionId ? aggregateActiveEventEconomyModifiers(activeEvents, { regionId }).investmentBlocked : false);
+}
+
+/** Sync per-turn stability modifiers from active crisis stages (legacy + v93). */
+export function syncCrisisStabilityModifiers(stability: PublicStabilityState, chains: CrisisChain[]): PublicStabilityState {
+  const mods: StabilityModifier[] = [];
+  (chains || []).filter(c => c && c.status === 'active').forEach(c => {
+    const stage = c.stages[c.currentStageIndex];
+    if (!stage) return;
+    mods.push(...(crisisStageEffect(stage).stability || []));
+  });
+  const keep = (stability.modifiers || []).filter(m => m.source !== 'crisis_stage');
+  return { ...stability, modifiers: [...keep, ...mods] };
+}
+
+const buildCrisisStageActiveEvent = (c: CrisisChain, stage: CrisisStage, region: string, priced: any, regional: any) => {
+  let resourcePrice = priced.resourcePrice ? { ...priced.resourcePrice } : undefined;
+  const fxRegions: string[] | undefined = resourcePrice?.__fxRegions;
+  if (resourcePrice && fxRegions) {
+    delete resourcePrice.__fxRegions;
+    if (!fxRegions.includes(region)) resourcePrice = undefined;
+  }
+  resourcePrice = expandCrisisResourcePriceForRegion(resourcePrice, region);
+  const effect: any = { ...regional };
+  if (resourcePrice) effect.resourcePrice = resourcePrice;
+  if (priced.investmentYieldMultiplier) effect.investmentYieldMultiplier = priced.investmentYieldMultiplier;
+  if (priced.loanInterestRateAdd) effect.loanInterestRateAdd = priced.loanInterestRateAdd;
+  if (priced.netWorthMultiplier) effect.netWorthMultiplier = priced.netWorthMultiplier;
+  if (!Object.keys(effect).length) return null;
+  const prefix = String(c.id).startsWith('v93c_') ? 'v93x' : 'crx';
+  return {
+    id: `${prefix}_${c.id}_${region}`,
+    name: stage.title,
+    region,
+    duration: stage.durationTurns,
+    remainingDays: Math.max(1, stage.remainingTurns),
+    effect,
+    description: stage.description,
+    v93: { templateId: c.id, kind: 'crisis', rarity: 'common', stageId: stage.id, legacy: !String(c.id).startsWith('v93c_') }
+  };
+};
+
+/** Keep one modifier event per affected region for each active crisis stage (prices counted once). */
 export function syncContentCrisisEvents(activeEvents: any[], chains: CrisisChain[]): any[] {
   const want: any[] = [];
-  (chains || []).filter(c => c && c.status === 'active' && String(c.id).startsWith('v93c_')).forEach(c => {
+  (chains || []).filter(c => c && c.status === 'active').forEach(c => {
     const stage = c.stages[c.currentStageIndex];
     if (!stage) return;
     const { priced, regional } = crisisStageEffect(stage);
     (c.affectedRegions || []).forEach((region, i) => {
-      const effect = { ...regional, ...(i === 0 ? priced : {}) };
-      if (!Object.keys(effect).length) return;
-      want.push({ id: `v93x_${c.id}_${region}`, name: stage.title, region, duration: stage.durationTurns, remainingDays: Math.max(1, stage.remainingTurns), effect, description: stage.description, v93: { templateId: c.id, kind: 'crisis', rarity: 'common', stageId: stage.id } });
+      const pricedSlice = i === 0 ? priced : { ...priced, resourcePrice: undefined, loanInterestRateAdd: priced.loanInterestRateAdd, netWorthMultiplier: priced.netWorthMultiplier };
+      const built = buildCrisisStageActiveEvent(c, stage, region, pricedSlice, regional);
+      if (built) want.push(built);
     });
   });
   const keep = (activeEvents || []).filter(e => !(e?.v93?.kind === 'crisis'));
@@ -131536,6 +131647,7 @@ export function syncContentCrisisEvents(activeEvents: any[], chains: CrisisChain
   const same = merged.length === prev.size && merged.every(m => { const p: any = prev.get(m.id); return p && p.v93?.stageId === m.v93.stageId && p.remainingDays === m.remainingDays; });
   return same ? activeEvents : [...keep, ...merged];
 }
+
 
 const OPP_FROM_WINDOW: Record<string, { type: ContentOpportunity['type']; nav: IntentNavTarget; title: (s: string) => string }> = {
   expansion_opportunity: { type: 'regional_entry', nav: 'map', title: s => `Enter ${s}` },
@@ -132429,7 +132541,7 @@ export function validateStrategicContentDefinition(t: ContentTemplateBase): Cont
       if (s.nextStageOnSuccess && !ids.has(s.nextStageOnSuccess)) err('invalid_reference', `stage ${s.id} advances to missing stage ${s.nextStageOnSuccess}`);
       s.stageEffects.forEach(e => {
         const [k, sub] = String(e.modifierKey).split(':');
-        if (!CONTENT_EXECUTABLE.crisisEffectKeys.includes(k)) err('effect_without_executor', `stage effect "${e.modifierKey}" has no executor`);
+        if (!crisisStageModifierHasExecutor(String(e.modifierKey))) err('effect_without_executor', `stage effect "${e.modifierKey}" has no executor`);
         if (k === 'resourcePrice' && !V93_KNOWN_RESOURCES.has(sub)) err('invalid_reference', `stage effect prices unknown resource "${sub}"`);
         if (k === 'challengeBonus' && !CONTENT_EXECUTABLE.challengeTypes.includes(sub)) err('invalid_reference', `stage effect uses unknown challenge type "${sub}"`);
       });
@@ -132459,7 +132571,7 @@ export function auditLegacyContent(): ContentValidationIssue[] {
     if (!knownContractTypes().has(c.contractType)) issues.push({ id: c.id, kind: 'contract', severity: 'warning', problem: 'invalid_reference', detail: `contract type ${c.contractType} unmapped` });
   });
   PRESET_CRISIS_CHAINS.forEach(c => c.stages.forEach(s => s.stageEffects.forEach(e => {
-    if (!CONTENT_EXECUTABLE.crisisEffectKeys.includes(String(e.modifierKey).split(':')[0])) issues.push({ id: c.id, kind: 'crisis', severity: 'info', problem: 'effect_without_executor', detail: `legacy stage effect "${e.modifierKey}" is descriptive only (choices still apply stability/cash)` });
+    if (!crisisStageModifierHasExecutor(String(e.modifierKey))) issues.push({ id: c.id, kind: 'crisis', severity: 'info', problem: 'effect_without_executor', detail: `legacy stage effect "${e.modifierKey}" is descriptive only (choices still apply stability/cash)` });
   })));
   PRESET_GAME_SCENARIOS.forEach(sc => sc.objectives.forEach(o => { if (o.targetRegionId && !REGIONS[o.targetRegionId]) issues.push({ id: sc.id, kind: 'scenario', severity: 'error', problem: 'dead_objective', detail: `objective region ${o.targetRegionId} unknown` }); }));
   return issues;
@@ -133141,6 +133253,23 @@ export function runV93ContentReplayabilitySelfTests(): V9SelfTestResult[] {
     const noBoom = ctx0(c => { c.regions.WA.sectors = { mining: 5 }; });
     const boom = ctx0(c => { c.regions.WA.conditions = ['commodity_boom']; });
     return (!eligible('qld_cyclone', 'QLD', winter).ok && eligible('qld_cyclone', 'QLD', summer).ok && !eligible('wa_commodity_crash', 'WA', noBoom).ok && eligible('wa_commodity_crash', 'WA', boom).ok) || 'crisis eligibility mismatch';
+  });
+  check('o111_a57_legacy_crisis_events', 'Legacy PRESET crisis stages sync to canonical activeEvents (price/travel/sabotage modifiers)', () => {
+    const chain = JSON.parse(J(PRESET_CRISIS_CHAINS.find(c => c.id === 'crisis_murray_darling_drought'))) as CrisisChain;
+    chain.status = 'active'; chain.currentStageIndex = 0; chain.activeStageId = chain.stages[0].id;
+    const ev = syncContentCrisisEvents([], [chain]);
+    const vic = ev.find(e => e.region === 'VIC');
+    return Boolean(vic && vic.effect.resourcePrice && Object.keys(vic.effect.resourcePrice).length >= 2) || J(vic?.effect);
+  });
+  check('o111_a57_legacy_crisis_stability', 'Legacy crisis stabilityDeltaPerTurn becomes public stability modifiers', () => {
+    const chain = JSON.parse(J(PRESET_CRISIS_CHAINS.find(c => c.id === 'crisis_murray_darling_drought'))) as CrisisChain;
+    chain.status = 'active'; chain.currentStageIndex = 2; chain.activeStageId = chain.stages[2].id;
+    const stab = syncCrisisStabilityModifiers(createDefaultPublicStabilityState(), [chain]);
+    return stab.modifiers.some(m => m.source === 'crisis_stage' && m.deltaPerTurn === -10) || J(stab.modifiers);
+  });
+  check('o111_a57_legacy_audit', 'Legacy PRESET crisis stage effects are no longer flagged as descriptive-only', () => {
+    const legacy = auditLegacyContent().filter(i => i.kind === 'crisis' && i.problem === 'effect_without_executor');
+    return legacy.length === 0 || J(legacy.slice(0, 4));
   });
   check('v93_crisis_chain', 'Multi-stage crisis progresses deterministically through the canonical engine (warning → impact → recovery)', () => {
     const chain = JSON.parse(J(CRISIS_TEMPLATE_BY_ID.qld_cyclone.chain)) as CrisisChain;
@@ -135838,8 +135967,8 @@ export const V95_AUDIT_FINDINGS: V95AuditFinding[] = [
     detail: 'Saves, replays and diagnostics were stamped 8.6.0 across the V9.x line. Bumped to 9.5.0; save/replay schema versions are unchanged (no format change).' },
   { id: 'F14', severity: 'COSMETIC', system: 'Save', status: 'fixed', title: 'Decision-transparency defaults changed on every load',
     detail: 'Defaults 0.6 / 0.65 were clamped to 1 by the loader (presentation only). The loader range now includes the defaults, so a fresh save round-trips exactly.' },
-  { id: 'K01', severity: 'MINOR', system: 'Content (legacy)', status: 'known', title: 'Some legacy crisis-stage effects are descriptive only',
-    detail: 'Flagged in the V9.3 content audit; unchanged (no silent balance change in a stability pass).' },
+  { id: 'K01', severity: 'MINOR', system: 'Content (legacy)', status: 'fixed', title: 'Legacy crisis-stage effects execute through activeEvents and stability sync',
+    detail: 'O111 Agent 57: crisisStageEffect maps PRESET modifier keys; syncContentCrisisEvents covers all active chains; syncCrisisStabilityModifiers applies stabilityDeltaPerTurn.' },
   { id: 'K02', severity: 'MINOR', system: 'Content (legacy)', status: 'known', title: 'Legacy reward fields without an executor (unlockedItemIds, victoryPoints, regionalEconomicMultiplierBonus, resource_yield)',
     detail: 'Flagged in the V9.3 content audit; still shown as descriptive only.' },
   { id: 'F15', severity: 'MAJOR', system: 'Simulation / memory', status: 'fixed', title: 'Canonical executor nested the whole state one level deeper on every action',
@@ -198395,7 +198524,10 @@ function dispatchGameSettingsChange(
     addNotification(outcome, executed.executed ? 'success' : 'info', false, 'system');
   }, [addNotification, gameSettings.aiCommunicationAutonomyLevel, gameSettings.coPilotSettings, gameState.aiCommunication, gameState.teamStrategicPlansByTeam, gameState.turnCounter, issueTeamDirective, player?.teamId, updateUiState]);
 
-  const applyLoanTick = useCallback((state: any) => applySimpleLoanTick(state), []);
+  const applyLoanTick = useCallback((state: any) => {
+    const add = typeof aggregateActiveEventEconomyModifiers === 'function' ? aggregateActiveEventEconomyModifiers(gameState.activeEvents, { national: true }).loanInterestAdd : 0;
+    return applySimpleLoanTick(state, add);
+  }, [gameState.activeEvents]);
 
   // Advanced Loan System handlers
   const takeAdvancedLoanForActor = useCallback((actorId: string, tierId: string, isEvent: boolean = false, eventId?: string, options?: { silent?: boolean; closeModal?: boolean; suppressLedgerEvent?: boolean }) => {
@@ -199623,7 +199755,8 @@ function dispatchGameSettingsChange(
       addNotification('That sabotage effect is already active.', 'warning');
       return;
     }
-    if (player.money < sabotage.cost) {
+    const sabCost = Math.ceil(sabotage.cost * (typeof aggregateActiveEventEconomyModifiers === 'function' ? aggregateActiveEventEconomyModifiers(gameState.activeEvents, { national: true }).sabotageCost : 1));
+    if (player.money < sabCost) {
       addNotification('Not enough money for sabotage.', 'error');
       return;
     }
@@ -199635,7 +199768,7 @@ function dispatchGameSettingsChange(
       const attackerBonus = Math.min(0.25, Math.max(0, attackerStanding * 0.0025));
       const successChance = 0.70 - sabotageResistance + attackerBonus;
       if (drawGameplayRandom('Sabotage') > successChance) {
-        dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabotage.cost });
+        dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabCost });
         commitMatchMemory({ actionType: 'sabotage', actorId: player.id || 'player', targetId: resolvedTargetId, regionId: targetActor.currentRegion, magnitude: sabotage.cost, success: false, turn: gameState.turnCounter, summary: `${player.name || 'Player'} attempted ${sabotage.name} against ${targetActor.name}.`, stableKey: `human-sabotage-${gameState.turnCounter}-${player.id || 'player'}-${resolvedTargetId}-${sabotage.id}-u${player.actionsUsedThisTurn || 0}` });
         addNotification(`Sabotage attempt failed! ${targetActor.name}'s regional standing resisted the attempt.`, 'warning', true);
         if (sabotageApCost > 0) {
@@ -199648,8 +199781,8 @@ function dispatchGameSettingsChange(
       ...prev,
       debuffs: upsertDebuff(prev.debuffs || [], sabotage.id, sabotage.duration), sabotageTargetedCount: (prev.sabotageTargetedCount || 0) + 1
     }));
-    dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabotage.cost });
-    commitMatchMemory({ actionType: 'sabotage', actorId: player.id || 'player', targetId: resolvedTargetId, regionId: targetActor.currentRegion, magnitude: sabotage.cost, success: true, turn: gameState.turnCounter, summary: `${player.name || 'Player'} used ${sabotage.name} against ${targetActor.name}.`, stableKey: `human-sabotage-${gameState.turnCounter}-${player.id || 'player'}-${resolvedTargetId}-${sabotage.id}-u${player.actionsUsedThisTurn || 0}` });
+    dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabCost });
+    commitMatchMemory({ actionType: 'sabotage', actorId: player.id || 'player', targetId: resolvedTargetId, regionId: targetActor.currentRegion, magnitude: sabCost, success: true, turn: gameState.turnCounter, summary: `${player.name || 'Player'} used ${sabotage.name} against ${targetActor.name}.`, stableKey: `human-sabotage-${gameState.turnCounter}-${player.id || 'player'}-${resolvedTargetId}-${sabotage.id}-u${player.actionsUsedThisTurn || 0}` });
     addNotification(`Sabotage used: ${sabotage.name}.`, 'warning', true);
     addNotification(`🤖 ${targetActor.name} is affected by ${sabotage.name}.`, 'ai', false);
     if (sabotageApCost > 0) {
@@ -214990,7 +215123,12 @@ function dispatchGameSettingsChange(
   useEffect(() => {
     const chains = ((gameState as any).crisisChainState?.activeCrisisChains || []) as CrisisChain[];
     const next = syncContentCrisisEvents(gameState.activeEvents || [], chains);
-    if (next !== gameState.activeEvents) dispatchGameState({ type: 'APPLY_CONTENT_STEP', payload: (state: any) => ({ activeEvents: syncContentCrisisEvents(state.activeEvents || [], state.crisisChainState?.activeCrisisChains || []) }) });
+    const stab = syncCrisisStabilityModifiers((gameState as any).publicStabilityState || createDefaultPublicStabilityState(), chains);
+    const stabChanged = JSON.stringify(stab.modifiers) !== JSON.stringify(((gameState as any).publicStabilityState || createDefaultPublicStabilityState()).modifiers);
+    if (next !== gameState.activeEvents || stabChanged) dispatchGameState({ type: 'APPLY_CONTENT_STEP', payload: (state: any) => ({
+      activeEvents: syncContentCrisisEvents(state.activeEvents || [], state.crisisChainState?.activeCrisisChains || []),
+      publicStabilityState: syncCrisisStabilityModifiers(state.publicStabilityState || createDefaultPublicStabilityState(), state.crisisChainState?.activeCrisisChains || [])
+    }) });
   }, [(gameState as any).crisisChainState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Competing infrastructure: funding one project closes its rival on the same site.
