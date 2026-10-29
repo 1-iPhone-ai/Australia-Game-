@@ -11286,6 +11286,29 @@ export function applySimpleLoanTick(state: { money: number; loans?: any[] }): { 
   return { money, loans };
 }
 
+const V95_MAX_WALLET_AMOUNT = 1e9;
+
+function v95ParseWalletAmount(value: unknown): number {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '') return NaN;
+    return Number(trimmed);
+  }
+  return typeof value === 'number' ? value : Number(value);
+}
+
+function v95WalletAmount(value: unknown, min: number): number | null {
+  const n = v95ParseWalletAmount(value);
+  if (!Number.isFinite(n) || n < min || n > V95_MAX_WALLET_AMOUNT) return null;
+  return n;
+}
+
+function v95FirstWalletAmount(candidates: unknown[], fallback: number, min: number): number | null {
+  const specified = candidates.find(v => v !== undefined && v !== null);
+  if (specified === undefined) return v95WalletAmount(fallback, min);
+  return v95WalletAmount(specified, min);
+}
+
 export function reduceGameAction(
   state: CanonicalGameState,
   action: GameAction,
@@ -11325,17 +11348,20 @@ export function reduceGameAction(
         case 'movement':
         case 'travel': {
           const targetRegion = action.targetRegion || action.parameters?.region || action.parameters?.destinationRegion || action.parameters?.targetRegion || action.parameters?.destination;
-          const rawCost = action.price ?? action.parameters?.cost ?? 0;
-          const cost = Number(rawCost);
+          const specifiedCost = action.price !== undefined && action.price !== null ? action.price : (action.parameters?.cost !== undefined && action.parameters?.cost !== null ? action.parameters.cost : undefined);
+          const parsedCost = specifiedCost === undefined ? 0 : v95ParseWalletAmount(specifiedCost);
           const knownRegion = typeof targetRegion === 'string' && (Boolean(REGIONS[targetRegion]) || Boolean(EXTERNAL_TERRITORIES[targetRegion]));
-          if (actor && knownRegion && Number.isFinite(cost) && cost >= 0 && actor.money >= cost) {
+          const cost = specifiedCost === undefined || parsedCost === 0
+            ? getActorTravelCost(nextState, actor, actor?.currentRegion, targetRegion, gameSettings)
+            : parsedCost;
+          if (actor && knownRegion && Number.isFinite(cost) && cost >= 0 && cost <= V95_MAX_WALLET_AMOUNT && Number.isFinite(actor.money) && actor.money >= cost) {
+            const nextMoney = actor.money - cost;
+            if (!Number.isFinite(nextMoney)) break;
             actor.currentRegion = targetRegion;
             if (!actor.visitedRegions?.includes(targetRegion)) {
               actor.visitedRegions = [...(actor.visitedRegions || []), targetRegion];
             }
-            if (cost > 0) {
-              actor.money -= cost;
-            }
+            actor.money = nextMoney;
             actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
             const apCost = typeof action.apCost === 'number' ? action.apCost : (typeof action.parameters?.apCost === 'number' ? action.parameters.apCost : 1);
             if (typeof actor.actionPoints === 'number') {
@@ -11363,8 +11389,8 @@ export function reduceGameAction(
         case 'take_loan':
         case 'draw_credit_line': {
           const specifiedPrincipal = [action.investmentAmount, action.price, action.parameters?.principal, action.parameters?.amount].find(v => v !== undefined && v !== null);
-          const principal = specifiedPrincipal === undefined ? 1000 : Number(specifiedPrincipal);
-          if (actor && Number.isFinite(principal) && principal > 0) {
+          const principal = specifiedPrincipal === undefined ? v95WalletAmount(1000, 0) : v95WalletAmount(specifiedPrincipal, 0);
+          if (actor && principal !== null && principal > 0 && Number.isFinite(actor.money) && Number.isFinite(actor.money + principal)) {
             actor.money += principal;
             const scheduleId = nextCorrelationId(nextState.counters || globalDeterministicCounters, 'loan');
             const termDays = Number(action.parameters?.termDays || action.parameters?.term) || 5;
@@ -11405,12 +11431,18 @@ export function reduceGameAction(
             }
             break;
           }
-          const amount = action.investmentAmount || action.price || action.parameters?.repaymentAmount || action.parameters?.amount || 500;
-          const currentDebt = actor?.debt || actor?.loans || 0;
-          if (actor && actor.money >= amount && currentDebt > 0) {
+          const specifiedRepay = [action.investmentAmount, action.price, action.parameters?.repaymentAmount, action.parameters?.amount].find((v: unknown) => v !== undefined && v !== null);
+          const amount = specifiedRepay === undefined ? v95WalletAmount(500, 0) : v95WalletAmount(specifiedRepay, 0);
+          const debtNumber = Number(actor?.debt);
+          const loanNumber = typeof actor?.loans === 'number' ? Number(actor.loans) : NaN;
+          const currentDebt = Number.isFinite(debtNumber) && debtNumber > 0 ? debtNumber : loanNumber;
+          if (actor && amount !== null && amount > 0 && Number.isFinite(currentDebt) && currentDebt > 0 && Number.isFinite(actor.money) && actor.money >= amount) {
             const actualRepay = Math.min(amount, currentDebt);
-            actor.money -= actualRepay;
-            actor.debt = Math.max(0, currentDebt - actualRepay);
+            const nextMoney = actor.money - actualRepay;
+            const nextDebt = currentDebt - actualRepay;
+            if (!(Number.isFinite(actualRepay) && actualRepay > 0 && Number.isFinite(nextMoney) && Number.isFinite(nextDebt) && nextMoney <= actor.money && nextDebt <= currentDebt)) break;
+            actor.money = nextMoney;
+            actor.debt = Math.max(0, nextDebt);
             actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
             const apCost = typeof action.apCost === 'number' ? action.apCost : (typeof action.parameters?.apCost === 'number' ? action.parameters.apCost : 1);
             if (typeof actor.actionPoints === 'number') {
@@ -11422,17 +11454,16 @@ export function reduceGameAction(
         }
 
         case 'refinance_advanced_loan': {
-          const newPrincipal = action.parameters?.newPrincipal ?? 5000;
+          const specifiedPrincipal = action.parameters?.newPrincipal;
+          const newPrincipal = specifiedPrincipal === undefined || specifiedPrincipal === null ? v95WalletAmount(5000, 0) : v95WalletAmount(specifiedPrincipal, 0);
           const scheduledPrincipal = Array.isArray(actor?.advancedLoans) ? actor.advancedLoans.reduce((sum: number, loan: any) => sum + (Number(loan?.amount) > 0 ? Number(loan.amount) : 0), 0) : 0;
-          const oldPrincipal = Number(actor?.debt) > 0 ? Number(actor.debt) : scheduledPrincipal;
-          const debtDelta = newPrincipal - oldPrincipal;
-          if (actor) {
-            if (debtDelta > 0) {
-              actor.money += debtDelta;
-              actor.debt = newPrincipal;
-              actionExecuted = true;
-            } else if (debtDelta <= 0 && actor.money >= Math.abs(debtDelta)) {
-              actor.money += debtDelta;
+          const debtPrincipal = Number(actor?.debt);
+          const oldPrincipal = Number.isFinite(debtPrincipal) && debtPrincipal > 0 ? debtPrincipal : scheduledPrincipal;
+          if (actor && newPrincipal !== null && newPrincipal > 0 && Number.isFinite(oldPrincipal) && oldPrincipal > 0 && Number.isFinite(actor.money)) {
+            const debtDelta = newPrincipal - oldPrincipal;
+            const nextMoney = actor.money + debtDelta;
+            if (Number.isFinite(debtDelta) && Number.isFinite(nextMoney) && (debtDelta > 0 || actor.money >= Math.abs(debtDelta))) {
+              actor.money = nextMoney;
               actor.debt = newPrincipal;
               actionExecuted = true;
             }
@@ -11481,9 +11512,11 @@ export function reduceGameAction(
           }
           const reg = action.targetRegion || action.parameters?.region || actor?.currentRegion || 'NSW';
           const type = (action.parameters?.infrastructureType || 'trade_depot') as InfrastructureProjectType;
-          const cost = action.investmentAmount || action.price || action.parameters?.capitalAmount || action.parameters?.cost || 350;
-          if (actor && actor.money >= cost) {
-            actor.money -= cost;
+          const cost = v95FirstWalletAmount([action.investmentAmount, action.price, action.parameters?.capitalAmount, action.parameters?.cost], 350, 0);
+          if (actor && cost !== null && Number.isFinite(actor.money) && actor.money >= cost) {
+            const nextMoney = actor.money - cost;
+            if (!Number.isFinite(nextMoney)) break;
+            actor.money = nextMoney;
             if (!nextState.infrastructureProjects) nextState.infrastructureProjects = {};
             // Deterministic id (replay / save-load must reproduce the same state from the same inputs).
             const requestedId = action.parameters?.projectId;
@@ -11514,9 +11547,11 @@ export function reduceGameAction(
 
         case 'launch_expedition': {
           const siteId = action.targetRegion || action.parameters?.siteId || action.parameters?.targetId || action.item || 'site_1';
-          const cost = action.investmentAmount || action.price || action.parameters?.initialCost || action.parameters?.cost || 250;
-          if (actor && actor.money >= cost) {
-            actor.money -= cost;
+          const cost = v95FirstWalletAmount([action.investmentAmount, action.price, action.parameters?.initialCost, action.parameters?.cost], 250, 0);
+          if (actor && cost !== null && Number.isFinite(actor.money) && actor.money >= cost) {
+            const nextMoney = actor.money - cost;
+            if (!Number.isFinite(nextMoney)) break;
+            actor.money = nextMoney;
             if (!nextState.activeExpeditions) nextState.activeExpeditions = {};
             const expLog: ExpeditionLog = {
               id: siteId,
@@ -11540,9 +11575,11 @@ export function reduceGameAction(
         }
 
         case 'emergency_rescue': {
-          const cost = action.investmentAmount || action.price || action.parameters?.cost || 200;
-          if (actor && actor.money >= cost) {
-            actor.money -= cost;
+          const cost = v95FirstWalletAmount([action.investmentAmount, action.price, action.parameters?.cost], 200, 0);
+          if (actor && cost !== null && Number.isFinite(actor.money) && actor.money >= cost) {
+            const nextMoney = actor.money - cost;
+            if (!Number.isFinite(nextMoney)) break;
+            actor.money = nextMoney;
             if (nextState.activeDynamicEvent) {
               nextState.activeDynamicEvent.severity = Math.max(0, (nextState.activeDynamicEvent.severity || 1) - 1);
             }
@@ -11553,8 +11590,8 @@ export function reduceGameAction(
 
         case 'work': {
           const specifiedWage = action.price ?? action.parameters?.wage ?? action.parameters?.amount;
-          const wage = specifiedWage === undefined ? 50 : Number(specifiedWage);
-          if (actor && Number.isFinite(wage) && wage >= 0) {
+          const wage = specifiedWage === undefined ? v95WalletAmount(50, 0) : v95WalletAmount(specifiedWage, 0);
+          if (actor && wage !== null && Number.isFinite(actor.money) && Number.isFinite(actor.money + wage)) {
             actor.money += wage;
             actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
             actionExecuted = true;
@@ -11613,15 +11650,14 @@ export function reduceGameAction(
         }
 
         case 'double_or_nothing': {
-          const reward = action.parameters?.reward || 0;
-          const isWin = action.parameters?.isWin !== false;
-          if (actor) {
-            if (isWin) {
-              actor.money += reward;
-            } else {
-              actor.money = Math.max(0, actor.money - reward);
+          const reward = v95WalletAmount(action.parameters?.reward ?? 0, 0);
+          const isWin = action.parameters?.isWin;
+          if (actor && typeof isWin === 'boolean' && reward !== null && Number.isFinite(actor.money) && (isWin || actor.money >= reward)) {
+            const nextMoney = isWin ? actor.money + reward : actor.money - reward;
+            if (Number.isFinite(nextMoney)) {
+              actor.money = nextMoney;
+              actionExecuted = true;
             }
-            actionExecuted = true;
           }
           break;
         }
@@ -11629,9 +11665,12 @@ export function reduceGameAction(
         case 'region_deposit': {
           const region = action.targetRegion || action.parameters?.regionCode || action.parameters?.region;
           const amount = action.investmentAmount || action.price || action.parameters?.amount || 0;
+          const knownRegion = typeof region === 'string' && (Boolean(REGIONS[region]) || Boolean(EXTERNAL_TERRITORIES[region]));
           const ownerKey = actorId;
-          if (actor && region && Number.isFinite(amount) && amount > 0 && actor.money >= amount) {
-            actor.money -= amount;
+          if (actor && knownRegion && Number.isFinite(amount) && amount > 0 && amount <= V95_MAX_WALLET_AMOUNT && Number.isFinite(actor.money) && actor.money >= amount) {
+            const nextMoney = actor.money - amount;
+            if (!Number.isFinite(nextMoney)) break;
+            actor.money = nextMoney;
             if (!nextState.regions) nextState.regions = {};
             if (!nextState.regions[region]) nextState.regions[region] = {};
             nextState.regions[region][ownerKey] = (nextState.regions[region][ownerKey] || 0) + amount;
@@ -11680,10 +11719,12 @@ export function reduceGameAction(
           // Co-Pilot/AI investments free control that the human's identical purchase never got).
           const region = action.targetRegion || action.parameters?.regionCode || actor?.currentRegion || 'QLD';
           const canonicalCost = REGIONAL_INVESTMENTS[region]?.cost;
-          const amount = canonicalCost ?? (action.investmentAmount || action.price || action.parameters?.cost || action.parameters?.amount || 100);
-          const alreadyOwned = canonicalCost !== undefined && (actor?.investments || []).includes(region);
-          if (actor && actor.money >= amount && !alreadyOwned) {
-            actor.money -= amount;
+          const amount = typeof canonicalCost === 'number' ? v95WalletAmount(canonicalCost, 0) : null;
+          const alreadyOwned = amount !== null && (actor?.investments || []).includes(region);
+          if (actor && amount !== null && Number.isFinite(actor.money) && actor.money >= amount && !alreadyOwned) {
+            const nextMoney = actor.money - amount;
+            if (!Number.isFinite(nextMoney)) break;
+            actor.money = nextMoney;
             actor.investments = [...(actor.investments || []), region];
             const apCost = typeof action.apCost === 'number' ? action.apCost : (typeof action.parameters?.apCost === 'number' ? action.parameters.apCost : 1);
             if (typeof actor.actionPoints === 'number') {
@@ -11698,9 +11739,11 @@ export function reduceGameAction(
         case 'equipment':
         case 'buy_equipment_for_actor': {
           const item = action.item || action.parameters?.itemId || action.parameters?.item;
-          const price = action.price || action.parameters?.cost || action.parameters?.price || 50;
-          if (actor && item && actor.money >= price) {
-            actor.money -= price;
+          const price = v95FirstWalletAmount([action.price, action.parameters?.cost, action.parameters?.price], 50, 0);
+          if (actor && item && price !== null && Number.isFinite(actor.money) && actor.money >= price) {
+            const nextMoney = actor.money - price;
+            if (!Number.isFinite(nextMoney)) break;
+            actor.money = nextMoney;
             actor.equipment = [...(actor.equipment || []), item];
             actor.inventory = [...(actor.inventory || []), item];
             actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
@@ -11726,7 +11769,7 @@ export function reduceGameAction(
           const specifiedPrice = [action.price, action.parameters?.unitPrice, action.parameters?.price].find(v => v !== undefined && v !== null);
           const unitPrice = specifiedPrice === undefined ? Number(nextState.markets?.resourcePrices?.[item] ?? 100) : Number(specifiedPrice);
           const totalPrice = unitPrice * quantity;
-          if (!Number.isFinite(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice < 0 || !Number.isFinite(totalPrice)) break;
+          if (!Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice < 0 || unitPrice > V95_MAX_WALLET_AMOUNT || !Number.isFinite(totalPrice) || totalPrice < 0 || totalPrice > V95_MAX_WALLET_AMOUNT) break;
           if (actor && item) {
             if (isBuy && actor.money >= totalPrice) {
               actor.money -= totalPrice;
@@ -11933,13 +11976,15 @@ export function reduceGameAction(
         case 'invest_infrastructure_project':
         case 'investInfrastructure': {
           const projectId = action.parameters?.projectId;
-          const investment = action.investmentAmount || action.price || action.parameters?.amount || 1000;
-          if (projectId && nextState.infrastructureProjects?.[projectId] && actor && actor.money >= investment) {
+          const investment = v95FirstWalletAmount([action.investmentAmount, action.price, action.parameters?.amount], 1000, 0);
+          if (projectId && nextState.infrastructureProjects?.[projectId] && actor && investment !== null && investment > 0 && Number.isFinite(actor.money) && actor.money >= investment) {
             const project = nextState.infrastructureProjects[projectId];
             // V9.3: a locked project (site committed to a competing project, or not yet opened) cannot be funded.
             if (project.status === 'locked') break; // actionExecuted stays false → the canonical failure path reports it
             if (project.status !== 'active') {
-              actor.money -= investment;
+              const nextMoney = actor.money - investment;
+              if (!Number.isFinite(nextMoney)) break;
+              actor.money = nextMoney;
               project.totalInvestedMoney += investment;
               project.contributions = { ...(project.contributions || {}), [actorId]: ((project.contributions || {})[actorId] || 0) + investment };
               project.status = 'under_construction';
@@ -12668,18 +12713,28 @@ export function reduceGameAction(
         case 'buySupplies': {
           if (actor) {
             const actAny = action as FlexibleAction;
-            const amount = action.parameters?.amount || actAny.amount || (typeof actAny.payload === 'number' ? actAny.payload : actAny.payload?.amount || 0);
-            const costPerUnit = action.parameters?.costPerUnit ?? actAny.payload?.costPerUnit ?? 10;
-            const totalCost = action.parameters?.totalCost ?? actAny.payload?.totalCost ?? (amount * costPerUnit);
-            if (actor.money >= totalCost) {
-              actor.money -= totalCost;
+            const rawAmount = action.parameters?.amount ?? actAny.amount ?? (typeof actAny.payload === 'number' ? actAny.payload : actAny.payload?.amount);
+            const amount = rawAmount === undefined || rawAmount === null ? null : v95WalletAmount(rawAmount, 0);
+            const rawUnit = action.parameters?.costPerUnit ?? actAny.payload?.costPerUnit;
+            const costPerUnit = rawUnit === undefined || rawUnit === null ? v95WalletAmount(10, 0) : v95WalletAmount(rawUnit, 0);
+            const rawTotal = action.parameters?.totalCost ?? actAny.payload?.totalCost;
+            const totalCost = rawTotal === undefined || rawTotal === null
+              ? (amount !== null && costPerUnit !== null ? amount * costPerUnit : null)
+              : v95WalletAmount(rawTotal, 0);
+            const before = actor.currentSupplies ?? 100;
+            if (amount !== null && amount > 0 && costPerUnit !== null && totalCost !== null && Number.isFinite(totalCost) && totalCost >= 0 && Number.isFinite(actor.money) && actor.money >= totalCost) {
+              const nextMoney = actor.money - totalCost;
               const maxSupp = actor.maxSupplies ?? 100;
-              actor.currentSupplies = Math.min(maxSupp, (actor.currentSupplies ?? 100) + amount);
-              actor.condition = calculateActorConditionState(actor.currentSupplies, maxSupp);
-              if (nextState.player && (actorId === 'player' || actorId === nextState.player.id)) {
-                nextState.player = actor;
+              const nextSupp = Math.min(maxSupp, before + amount);
+              if (Number.isFinite(nextMoney) && Number.isFinite(nextSupp) && nextMoney <= actor.money && nextSupp >= before) {
+                actor.money = nextMoney;
+                actor.currentSupplies = nextSupp;
+                actor.condition = calculateActorConditionState(actor.currentSupplies, maxSupp);
+                if (nextState.player && (actorId === 'player' || actorId === nextState.player.id)) {
+                  nextState.player = actor;
+                }
+                actionExecuted = true;
               }
-              actionExecuted = true;
             }
           }
           break;
@@ -12690,14 +12745,19 @@ export function reduceGameAction(
         case 'consumeSupplies': {
           if (actor) {
             const actAny = action as FlexibleAction;
-            const amount = action.parameters?.amount || actAny.amount || (typeof actAny.payload === 'number' ? actAny.payload : actAny.payload?.amount || 0);
+            const rawAmount = action.parameters?.amount ?? actAny.amount ?? (typeof actAny.payload === 'number' ? actAny.payload : actAny.payload?.amount);
+            const amount = rawAmount === undefined || rawAmount === null ? null : v95WalletAmount(rawAmount, 0);
             const maxSupp = actor.maxSupplies ?? 100;
-            actor.currentSupplies = Math.max(0, (actor.currentSupplies ?? 100) - amount);
-            actor.condition = calculateActorConditionState(actor.currentSupplies, maxSupp);
-            if (nextState.player && (actorId === 'player' || actorId === nextState.player.id)) {
-              nextState.player = actor;
+            const before = actor.currentSupplies ?? 100;
+            const nextSupp = amount === null ? NaN : Math.max(0, before - amount);
+            if (amount !== null && amount > 0 && Number.isFinite(before) && Number.isFinite(nextSupp) && nextSupp <= before) {
+              actor.currentSupplies = nextSupp;
+              actor.condition = calculateActorConditionState(actor.currentSupplies, maxSupp);
+              if (nextState.player && (actorId === 'player' || actorId === nextState.player.id)) {
+                nextState.player = actor;
+              }
+              actionExecuted = true;
             }
-            actionExecuted = true;
           }
           break;
         }
@@ -16015,6 +16075,7 @@ export function drawGameRandom(
       );
       if (allowFallback) {
         resultVal = drawGameplayRandom(domain);
+        gameplayDrawRecorded = true;
         break;
       }
       const domainName = String(domain || 'World');
@@ -34699,9 +34760,10 @@ export function computeCanonicalStateHash(stateObj: any): string {
     const budget = { n: 0 };
     const seen = new WeakSet<object>();
 
-    if (stateObj && typeof stateObj === 'object' && (stateObj.day !== undefined || stateObj.turnCounter !== undefined || stateObj.teamStateMap !== undefined || stateObj.teamsById !== undefined || stateObj.actorsById !== undefined || stateObj.player !== undefined)) {
+    const walletHost = stateObj && typeof stateObj === 'object' && !stateObj.actorsById && !stateObj.player && stateObj.w && typeof stateObj.w === 'object' ? stateObj.w : null;
+    if (stateObj && typeof stateObj === 'object' && (stateObj.day !== undefined || stateObj.turnCounter !== undefined || stateObj.teamStateMap !== undefined || stateObj.teamsById !== undefined || stateObj.actorsById !== undefined || stateObj.player !== undefined || walletHost)) {
       const teams: Record<string, unknown> = {};
-      const teamMap = stateObj.teamStateMap || stateObj.teamsById || {};
+      const teamMap = stateObj.teamStateMap || stateObj.teamsById || walletHost?.teamStateMap || walletHost?.teamsById || {};
       Object.keys(teamMap).sort().forEach(tId => {
         const t = teamMap[tId];
         if (t) {
@@ -34710,17 +34772,17 @@ export function computeCanonicalStateHash(stateObj: any): string {
       });
 
       const actors: Record<string, unknown> = {};
-      const actorMap = stateObj.actorsById || {};
-      const actorKeys = Object.keys(actorMap).length > 0 ? Object.keys(actorMap).sort() : (stateObj.player ? ['player'] : []);
+      const actorMap = stateObj.actorsById || walletHost?.actorsById || {};
+      const actorKeys = Object.keys(actorMap).length > 0 ? Object.keys(actorMap).sort() : (stateObj.player ? ['player'] : (walletHost?.player ? ['player'] : []));
 
       actorKeys.forEach(aId => {
-        const a = actorMap[aId] || (aId === 'player' ? stateObj.player : null);
+        const a = actorMap[aId] || (aId === 'player' ? (stateObj.player || walletHost?.player) : null);
         if (a) {
           actors[aId] = canonicalize(a, seen, 0, budget);
         }
       });
 
-      const territoryMap = stateObj.regions || stateObj.territoryStateMap || stateObj.territories || {};
+      const territoryMap = stateObj.regions || stateObj.territoryStateMap || stateObj.territories || walletHost?.regions || walletHost?.territoryStateMap || walletHost?.territories || {};
       const territories: Record<string, unknown> = {};
       Object.keys(territoryMap).sort().forEach(rId => {
         const r = territoryMap[rId];
@@ -34731,7 +34793,7 @@ export function computeCanonicalStateHash(stateObj: any): string {
 
       cleanState = {
         day: typeof stateObj.day === 'number' ? stateObj.day : 1,
-        turnCounter: typeof stateObj.turnCounter === 'number' ? stateObj.turnCounter : (typeof stateObj.currentTurn === 'number' ? stateObj.currentTurn : 1),
+        turnCounter: typeof stateObj.turnCounter === 'number' ? stateObj.turnCounter : (typeof stateObj.turn === 'number' ? stateObj.turn : (typeof stateObj.currentTurn === 'number' ? stateObj.currentTurn : 1)),
         activePlayer: String(stateObj.activePlayer || ''),
         season: String(stateObj.season || ''),
         economicPhase: String(stateObj.economicPhase || 'normal'),
@@ -137038,6 +137100,119 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number; pr
     const cfg = createBalanceSimConfig({ features: undefined as any });
     return Boolean(cfg.features && cfg.features.contracts !== undefined) || JSON.stringify(cfg.features);
   });
+  check('u_negative_prices_do_not_mint', 'Negative prices do not credit cash (SIM-019)', () => {
+    const pocket = () => ({ day: 1, turnCounter: 1, player: { id: 'player', money: 1000, inventory: [], equipment: [], investments: [], currentRegion: 'QLD', actionsUsedThisTurn: 0, actionPoints: 3, teamId: 'team_player' }, actorsById: { player: { id: 'player', money: 1000, inventory: [], equipment: [], investments: [], currentRegion: 'QLD', actionsUsedThisTurn: 0, actionPoints: 3, teamId: 'team_player' } }, teamsById: { team_player: { id: 'team_player', money: 99999, netWorth: 99999 } } });
+    const rows = [
+      { type: 'buy_equipment', item: 'Compass', price: -80 },
+      { type: 'buy_equipment', item: 'Compass', price: '-80' },
+      { type: 'launch_expedition', price: -250, targetRegion: 'site_1' },
+      { type: 'build_infrastructure', investmentAmount: -350, targetRegion: 'QLD' },
+      { type: 'emergency_rescue', price: -200 },
+      { type: 'emergency_rescue', investmentAmount: -Infinity },
+      { type: 'invest', targetRegion: 'NOT_A_REGION', investmentAmount: -400 },
+      { type: 'invest_infrastructure_project', investmentAmount: -1000, parameters: { projectId: 'infra_hsr_nsw_vic' } },
+      { type: 'start_infrastructure_project', investmentAmount: -5000 }
+    ];
+    const bad = rows.map(action => {
+      const result = reduceGameAction(pocket(), { ...action, actorId: 'player' } as any);
+      const player = result.nextState.player;
+      const project = result.nextState.infrastructureProjects?.infra_hsr_nsw_vic;
+      return { type: action.type, success: result.success, money: player.money, team: result.nextState.teamsById?.team_player?.money, equipment: player.equipment || [], investments: player.investments || [], projectMoney: project?.totalInvestedMoney };
+    });
+    const closed = bad.every(row => row.success === false && row.money === 1000 && row.team === 99999 && Number.isFinite(row.money) && !row.equipment.includes('Compass') && !row.investments.includes('NOT_A_REGION') && !(row.projectMoney < 0));
+    const legalEquip = reduceGameAction(pocket(), { type: 'buy_equipment', actorId: 'player', item: 'Compass', price: 80 } as any);
+    const rich = pocket();
+    rich.player.money = 10000;
+    rich.actorsById.player.money = 10000;
+    const legalInvest = reduceGameAction(rich, { type: 'invest', actorId: 'player', targetRegion: 'NSW', investmentAmount: -400 } as any);
+    const nswCost = REGIONAL_INVESTMENTS.NSW?.cost;
+    return (closed && legalEquip.success && legalEquip.nextState.player.money === 920 && (legalEquip.nextState.player.equipment || []).includes('Compass') && legalInvest.success && legalInvest.nextState.player.money === 10000 - nswCost && nswCost === 3200 && (legalInvest.nextState.player.investments || []).includes('NSW')) || JSON.stringify({ bad, equip: legalEquip.nextState.player.money, invest: legalInvest.nextState.player.money, nswCost });
+  });
+  check('u_double_or_nothing_needs_a_result', 'double_or_nothing does not treat a missing result as a win (SIM-020)', () => {
+    const pocket = (money = 1000) => ({ day: 1, turnCounter: 1, player: { id: 'player', money, currentRegion: 'QLD' }, actorsById: { player: { id: 'player', money, currentRegion: 'QLD' } } });
+    const missing = reduceGameAction(pocket(100), { type: 'double_or_nothing', actorId: 'player', parameters: { reward: 1000000 } } as any);
+    const loss = reduceGameAction(pocket(), { type: 'double_or_nothing', actorId: 'player', parameters: { isWin: false, reward: -500 } } as any);
+    const win = reduceGameAction(pocket(), { type: 'double_or_nothing', actorId: 'player', parameters: { isWin: true, reward: -500 } } as any);
+    const infinite = reduceGameAction(pocket(), { type: 'double_or_nothing', actorId: 'player', parameters: { reward: Infinity } } as any);
+    const fair = reduceGameAction(pocket(), { type: 'double_or_nothing', actorId: 'player', parameters: { isWin: true, reward: 100 } } as any);
+    const closed = !missing.success && missing.nextState.player.money === 100 && !loss.success && loss.nextState.player.money === 1000 && !win.success && win.nextState.player.money === 1000 && !infinite.success && infinite.nextState.player.money === 1000;
+    return (closed && fair.success && fair.nextState.player.money === 1100 && Number.isFinite(fair.nextState.player.money)) || JSON.stringify({ missing: missing.nextState.player.money, loss: loss.nextState.player.money, win: win.nextState.player.money, infinite: infinite.nextState.player.money, fair: fair.nextState.player.money });
+  });
+  check('u_refinance_needs_a_loan', 'Refinance, repayment, and huge wages cannot mint a non-finite wallet (SIM-021)', () => {
+    const actor = (extra: Record<string, unknown> = {}) => ({ id: 'player', money: 1000, currentRegion: 'QLD', debt: 0, advancedLoans: [] as any[], ...extra });
+    const state = (a: ReturnType<typeof actor>) => ({ day: 1, turnCounter: 1, player: { ...a, advancedLoans: [...(a.advancedLoans || [])] }, actorsById: { player: { ...a, advancedLoans: [...(a.advancedLoans || [])] } } });
+    const minted = reduceGameAction(state(actor()), { type: 'refinance_advanced_loan', actorId: 'player', parameters: { newPrincipal: 50000 } } as any);
+    const infinite = reduceGameAction(state(actor()), { type: 'refinance_advanced_loan', actorId: 'player', parameters: { newPrincipal: Infinity } } as any);
+    const repay = reduceGameAction(state(actor({ debt: 800 })), { type: 'repay_loan', actorId: 'player', investmentAmount: -100 } as any);
+    const wage = reduceGameAction(state(actor()), { type: 'work', actorId: 'player', price: 1e308 } as any);
+    const loan = reduceGameAction(state(actor()), { type: 'take_loan', actorId: 'player', investmentAmount: 1e308 } as any);
+    const borrowed = reduceGameAction(state(actor()), { type: 'take_loan', actorId: 'player', investmentAmount: 1000 } as any);
+    const refinanced = reduceGameAction(borrowed.nextState, { type: 'refinance_advanced_loan', actorId: 'player', parameters: { newPrincipal: 1500 } } as any);
+    const closed = !minted.success && minted.nextState.player.money === 1000 && minted.nextState.player.debt !== 50000 && !infinite.success && infinite.nextState.player.money === 1000 && Number.isFinite(infinite.nextState.player.money) && !repay.success && repay.nextState.player.money === 1000 && repay.nextState.player.debt === 800 && !wage.success && wage.nextState.player.money === 1000 && !loan.success && loan.nextState.player.money === 1000 && !(loan.nextState.player.advancedLoans || []).some((row: any) => !Number.isFinite(row.amount) || row.amount > 1e9);
+    return (closed && borrowed.success && borrowed.nextState.player.money === 2000 && refinanced.success && refinanced.nextState.player.money === 2500 && refinanced.nextState.player.debt === 1500 && Number.isFinite(refinanced.nextState.player.money)) || JSON.stringify({ minted: minted.nextState.player.money, infinite: infinite.nextState.player.money, repay: repay.nextState.player, wage: wage.nextState.player.money, loan: loan.nextState.player.money, borrowed: borrowed.nextState.player.money, refinanced: { money: refinanced.nextState.player.money, debt: refinanced.nextState.player.debt, ok: refinanced.success } });
+  });
+  check('u_omitted_travel_charges_fare', 'Travel at price 0 or with no price charges the real fare (SIM-022)', () => {
+    const pocket = (money: number) => ({ day: 1, turnCounter: 1, player: { id: 'player', money, currentRegion: 'QLD', visitedRegions: ['QLD'], teamId: 'team_player' }, actorsById: { player: { id: 'player', money, currentRegion: 'QLD', visitedRegions: ['QLD'], teamId: 'team_player' } }, teamsById: { team_player: { id: 'team_player', money: 99999 } } });
+    const omitted = reduceGameAction(pocket(100), { type: 'travel', actorId: 'player', targetRegion: 'NSW' } as any);
+    const zero = reduceGameAction(pocket(100), { type: 'travel', actorId: 'player', targetRegion: 'NSW', price: 0 } as any);
+    const paid = reduceGameAction(pocket(1000), { type: 'travel', actorId: 'player', targetRegion: 'NSW' } as any);
+    const quoted = getActorTravelCost(pocket(1000), pocket(1000).player, 'QLD', 'NSW');
+    const stayed = !omitted.success && omitted.nextState.player.currentRegion === 'QLD' && omitted.nextState.player.money === 100 && omitted.nextState.teamsById.team_player.money === 99999 && !zero.success && zero.nextState.player.currentRegion === 'QLD' && zero.nextState.player.money === 100;
+    return (quoted === 200 && stayed && paid.success && paid.nextState.player.currentRegion === 'NSW' && paid.nextState.player.money === 800) || JSON.stringify({ quoted, omitted: omitted.nextState.player, zero: zero.nextState.player, paid: paid.nextState.player });
+  });
+  check('u_fractional_buy_and_negative_supplies', 'A fractional buy and a negative supply action do not mint (SIM-023)', () => {
+    const pocket = () => ({ day: 1, turnCounter: 1, player: { id: 'player', money: 1000, inventory: ['wool'], currentSupplies: 40, maxSupplies: 100, currentRegion: 'QLD' }, actorsById: { player: { id: 'player', money: 1000, inventory: ['wool'], currentSupplies: 40, maxSupplies: 100, currentRegion: 'QLD' } } });
+    const fractional = reduceGameAction(pocket(), { type: 'buy_market', actorId: 'player', item: 'Wheat', price: 40, parameters: { quantity: 1.5, resource: 'Wheat' } } as any);
+    const buyNeg = reduceGameAction(pocket(), { type: 'buy_supplies', actorId: 'player', parameters: { amount: -4, costPerUnit: 10 } } as any);
+    const unitNeg = reduceGameAction(pocket(), { type: 'buy_supplies', actorId: 'player', parameters: { amount: 5, costPerUnit: -10 } } as any);
+    const totalNeg = reduceGameAction(pocket(), { type: 'buy_supplies', actorId: 'player', parameters: { amount: 1, totalCost: -800 } } as any);
+    const consume = reduceGameAction(pocket(), { type: 'consume_supplies', actorId: 'player', parameters: { amount: -20 } } as any);
+    const bought = reduceGameAction(pocket(), { type: 'buy_market', actorId: 'player', item: 'Wheat', price: 40, parameters: { quantity: 1, resource: 'Wheat' } } as any);
+    const supplied = reduceGameAction(pocket(), { type: 'buy_supplies', actorId: 'player', parameters: { amount: 2, costPerUnit: 10 } } as any);
+    const eaten = reduceGameAction(pocket(), { type: 'consume_supplies', actorId: 'player', parameters: { amount: 5 } } as any);
+    const still = (row: any) => !row.success && row.nextState.player.money === 1000 && row.nextState.player.currentSupplies === 40 && (row.nextState.player.inventory || []).join(',') === 'wool';
+    const closed = still(fractional) && still(buyNeg) && still(unitNeg) && still(totalNeg) && still(consume);
+    const legal = bought.success && bought.nextState.player.money === 960 && (bought.nextState.player.inventory || []).filter((item: string) => item === 'Wheat').length === 1 && supplied.success && supplied.nextState.player.money === 980 && supplied.nextState.player.currentSupplies === 42 && eaten.success && eaten.nextState.player.currentSupplies === 35 && eaten.nextState.player.money === 1000;
+    return (closed && legal) || JSON.stringify({ fractional: fractional.nextState.player, buyNeg: buyNeg.nextState.player, unitNeg: unitNeg.nextState.player, totalNeg: totalNeg.nextState.player, consume: consume.nextState.player, bought: bought.nextState.player, supplied: supplied.nextState.player, eaten: eaten.nextState.player });
+  });
+  check('u_deposit_needs_a_region', 'A deposit is not stored for an unknown region (SIM-024)', () => {
+    const pocket = () => ({ day: 1, turnCounter: 1, player: { id: 'player', money: 1000, currentRegion: 'QLD' }, actorsById: { player: { id: 'player', money: 1000, currentRegion: 'QLD' } }, regions: {}, gameState: { regionDeposits: {} } });
+    const unknown = reduceGameAction(pocket(), { type: 'region_deposit', actorId: 'player', targetRegion: 'NOT_A_REGION', investmentAmount: 40 } as any);
+    const atlantis = reduceGameAction(pocket(), { type: 'region_deposit', actorId: 'player', targetRegion: 'ATLANTIS', investmentAmount: 40 } as any);
+    const nsw = reduceGameAction(pocket(), { type: 'region_deposit', actorId: 'player', targetRegion: 'NSW', investmentAmount: 40 } as any);
+    const absent = (row: any, region: string) => !row.success && row.nextState.player.money === 1000 && !row.nextState.regions?.[region] && !row.nextState.gameState?.regionDeposits?.[region];
+    const stored = Boolean(nsw.success && nsw.nextState.player.money === 960 && nsw.nextState.regions?.NSW && nsw.nextState.gameState?.regionDeposits?.NSW);
+    return (absent(unknown, 'NOT_A_REGION') && absent(atlantis, 'ATLANTIS') && stored) || JSON.stringify({ unknown: unknown.nextState.player.money, atlantis: atlantis.nextState.regions, nsw: { ok: nsw.success, money: nsw.nextState.player.money, regions: nsw.nextState.regions } });
+  });
+  check('u_chaos_fallback_logs_once', 'An empty recorded_chaos queue logs the fallback draw once (SIM-025)', () => {
+    drainPendingReplayRandomDraws();
+    const drawn = v95WithIsolatedGlobals(() => {
+      setRngMasterSeed(77001, true);
+      const fallback = drawGameRandom({ domain: 'World', mode: 'recorded_chaos', recordedQueue: [], allowFallback: true });
+      const fallbackDraws = drainPendingReplayRandomDraws();
+      setRngMasterSeed(77001, true);
+      const deterministic = drawGameRandom('World', 'deterministic');
+      const deterministicDraws = drainPendingReplayRandomDraws();
+      const hybrid = drawGameRandom('World', 'hybrid');
+      const hybridDraws = drainPendingReplayRandomDraws();
+      const queued = drawGameRandom({ domain: 'World', mode: 'recorded_chaos', recordedQueue: [0.25] });
+      const queuedDraws = drainPendingReplayRandomDraws();
+      return { fallback, fallbackDraws, deterministic, deterministicDraws, hybrid, hybridDraws, queued, queuedDraws };
+    });
+    drainPendingReplayRandomDraws();
+    const once = (value: number, draws: { value: number }[]) => draws.length === 1 && draws[0].value === value;
+    return (once(drawn.fallback, drawn.fallbackDraws) && once(drawn.deterministic, drawn.deterministicDraws) && once(drawn.hybrid, drawn.hybridDraws) && drawn.queued === 0.25 && once(0.25, drawn.queuedDraws)) || JSON.stringify({ fallback: drawn.fallbackDraws.map(draw => draw.value), deterministic: drawn.deterministicDraws.length, hybrid: drawn.hybridDraws.length, queued: drawn.queuedDraws.map(draw => draw.value) });
+  });
+  check('u_canonical_hash_reads_wallet_and_turn', 'Canonical hashes distinguish wallet and turn (SIM-026)', () => {
+    const poor = computeCanonicalStateHash({ w: { actorsById: { player: { money: 1 } } }, day: 6, turn: 6 });
+    const rich = computeCanonicalStateHash({ w: { actorsById: { player: { money: 99999 } } }, day: 6, turn: 6 });
+    const later = computeCanonicalStateHash({ w: { actorsById: { player: { money: 1 } } }, day: 6, turn: 7 });
+    const stable = computeCanonicalStateHash({ day: 6, turnCounter: 6, actorsById: { player: { money: 1 } } });
+    const again = computeCanonicalStateHash({ day: 6, turnCounter: 6, actorsById: { player: { money: 1 } } });
+    const moved = computeCanonicalStateHash({ day: 6, turnCounter: 6, actorsById: { player: { money: 99999 } } });
+    return (poor !== rich && poor !== later && poor !== 'd0fe2bdd' && stable === again && stable === poor && moved === rich && stable !== moved) || JSON.stringify({ poor, rich, later, stable, moved });
+  });
+
 
 
 
