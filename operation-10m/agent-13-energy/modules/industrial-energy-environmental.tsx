@@ -296,6 +296,13 @@ import {
   type V1014RegionalSafeguardTradeBufferLedger,
 } from './safeguard-trade-certificate-stack-federation-ledger';
 import {
+  advanceRegionalExportBufferFederationOrchestration,
+  computeRegionalHydrogenLdesStorageLedger,
+  scoreAgent13H2LdesExportBufferGIAlignment,
+  type V1014RegionalExportBufferFederationLedger,
+  type V1014RegionalHydrogenLdesStorageLedger,
+} from './hydrogen-ldes-export-buffer-federation-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25912,6 +25919,10 @@ export interface V1014RegionalEnergyProfile {
   safeguardTradeBufferRelief: number;
   decarbonCertificateStackBand: string;
   decarbonCertificateStackRelief: number;
+  hydrogenLdesStorageBand: string;
+  hydrogenLdesStorageRelief: number;
+  exportBufferFederationBand: string;
+  exportBufferFederationRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -26028,6 +26039,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalIndustrialThermalFederationLedgers: Record<string, V1014RegionalIndustrialThermalFederationLedger>;
   regionalSafeguardTradeBufferLedgers: Record<string, V1014RegionalSafeguardTradeBufferLedger>;
   regionalDecarbonCertificateStackLedgers: Record<string, V1014RegionalDecarbonCertificateStackLedger>;
+  regionalHydrogenLdesStorageLedgers: Record<string, V1014RegionalHydrogenLdesStorageLedger>;
+  regionalExportBufferFederationLedgers: Record<string, V1014RegionalExportBufferFederationLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -26115,6 +26128,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalIndustrialThermalFederationMemory: Record<string, { thermalIndex: number }>;
   regionalSafeguardTradeBufferMemory: Record<string, { bufferBalance: number; bufferIndex: number }>;
   regionalDecarbonCertificateStackMemory: Record<string, { stackIndex: number }>;
+  regionalHydrogenLdesStorageMemory: Record<string, { ldesBalance: number; ldesIndex: number }>;
+  regionalExportBufferFederationMemory: Record<string, { bufferIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -26214,6 +26229,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalIndustrialThermalFederationMemory: {},
     regionalSafeguardTradeBufferMemory: {},
     regionalDecarbonCertificateStackMemory: {},
+    regionalHydrogenLdesStorageMemory: {},
+    regionalExportBufferFederationMemory: {},
     history: [],
   };
 }
@@ -26459,6 +26476,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalDecarbonCertificateStackMemory === 'object' && raw.regionalDecarbonCertificateStackMemory
         ? raw.regionalDecarbonCertificateStackMemory
         : {},
+    regionalHydrogenLdesStorageMemory:
+      typeof raw.regionalHydrogenLdesStorageMemory === 'object' && raw.regionalHydrogenLdesStorageMemory
+        ? raw.regionalHydrogenLdesStorageMemory
+        : {},
+    regionalExportBufferFederationMemory:
+      typeof raw.regionalExportBufferFederationMemory === 'object' && raw.regionalExportBufferFederationMemory
+        ? raw.regionalExportBufferFederationMemory
+        : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -26645,6 +26670,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalIndustrialThermalFederationLedgers: {},
       regionalSafeguardTradeBufferLedgers: {},
       regionalDecarbonCertificateStackLedgers: {},
+      regionalHydrogenLdesStorageLedgers: {},
+      regionalExportBufferFederationLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26735,6 +26762,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const industrialThermalFederationLedgers: Record<string, V1014RegionalIndustrialThermalFederationLedger> = {};
   const safeguardTradeBufferLedgers: Record<string, V1014RegionalSafeguardTradeBufferLedger> = {};
   const decarbonCertificateStackLedgers: Record<string, V1014RegionalDecarbonCertificateStackLedger> = {};
+  const hydrogenLdesStorageLedgers: Record<string, V1014RegionalHydrogenLdesStorageLedger> = {};
+  const exportBufferFederationLedgers: Record<string, V1014RegionalExportBufferFederationLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26929,6 +26958,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextDecarbonCertificateStackMemory: Record<string, { stackIndex: number }> = {
     ...persisted.regionalDecarbonCertificateStackMemory,
+  };
+  const nextHydrogenLdesStorageMemory: Record<string, { ldesBalance: number; ldesIndex: number }> = {
+    ...persisted.regionalHydrogenLdesStorageMemory,
+  };
+  const nextExportBufferFederationMemory: Record<string, { bufferIndex: number }> = {
+    ...persisted.regionalExportBufferFederationMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -28016,6 +28051,34 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextDecarbonCertificateStackMemory[regionId] = decarbonCertificateStackStep.next;
     decarbonCertificateStackLedgers[regionId] = decarbonCertificateStackStep.ledger;
     pressure -= decarbonCertificateStackStep.ledger.decarbonCertificateStackRelief;
+
+    const hydrogenLdesStorageStep = computeRegionalHydrogenLdesStorageLedger({
+      regionId,
+      exportHydrogenCorridorRelief: exportHydrogenCorridorStep.ledger.exportHydrogenCorridorRelief,
+      maritimeShorePowerRelief: maritimeShorePowerStep.ledger.maritimeShorePowerRelief,
+      decarbonCertificateStackRelief: decarbonCertificateStackStep.ledger.decarbonCertificateStackRelief,
+      safeguardTradeBufferRelief: safeguardTradeBufferStep.ledger.safeguardTradeBufferRelief,
+      communityEnergyResilienceRelief: communityEnergyResilienceStep.ledger.communityEnergyResilienceRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextHydrogenLdesStorageMemory[regionId] || null,
+    });
+    nextHydrogenLdesStorageMemory[regionId] = hydrogenLdesStorageStep.next;
+    hydrogenLdesStorageLedgers[regionId] = hydrogenLdesStorageStep.ledger;
+    pressure -= hydrogenLdesStorageStep.ledger.hydrogenLdesStorageRelief;
+
+    const exportBufferFederationStep = advanceRegionalExportBufferFederationOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      ldesStorageBand: hydrogenLdesStorageStep.ledger.band,
+      distributedBackupRelief: distributedBackupStep.ledger.distributedBackupRelief,
+      interconnectionFlexRelief: interregionalInterconnectionStep.ledger.interregionalInterconnectionRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextExportBufferFederationMemory[regionId] || null,
+    });
+    nextExportBufferFederationMemory[regionId] = exportBufferFederationStep.next;
+    exportBufferFederationLedgers[regionId] = exportBufferFederationStep.ledger;
+    pressure -= exportBufferFederationStep.ledger.exportBufferFederationRelief;
     pressure = v1014Clamp(pressure, 0, 100);
 
     nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
@@ -28108,6 +28171,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       industrialThermalFederationStep.ledger.summary,
       safeguardTradeBufferStep.ledger.summary,
       decarbonCertificateStackStep.ledger.summary,
+      hydrogenLdesStorageStep.ledger.summary,
+      exportBufferFederationStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -28344,6 +28409,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       safeguardTradeBufferRelief: safeguardTradeBufferStep.ledger.safeguardTradeBufferRelief,
       decarbonCertificateStackBand: decarbonCertificateStackStep.ledger.band,
       decarbonCertificateStackRelief: decarbonCertificateStackStep.ledger.decarbonCertificateStackRelief,
+      hydrogenLdesStorageBand: hydrogenLdesStorageStep.ledger.band,
+      hydrogenLdesStorageRelief: hydrogenLdesStorageStep.ledger.hydrogenLdesStorageRelief,
+      exportBufferFederationBand: exportBufferFederationStep.ledger.band,
+      exportBufferFederationRelief: exportBufferFederationStep.ledger.exportBufferFederationRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -28489,6 +28558,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalIndustrialThermalFederationLedgers: industrialThermalFederationLedgers,
     regionalSafeguardTradeBufferLedgers: safeguardTradeBufferLedgers,
     regionalDecarbonCertificateStackLedgers: decarbonCertificateStackLedgers,
+    regionalHydrogenLdesStorageLedgers: hydrogenLdesStorageLedgers,
+    regionalExportBufferFederationLedgers: exportBufferFederationLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -28576,6 +28647,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalIndustrialThermalFederationMemory: nextIndustrialThermalFederationMemory,
     regionalSafeguardTradeBufferMemory: nextSafeguardTradeBufferMemory,
     regionalDecarbonCertificateStackMemory: nextDecarbonCertificateStackMemory,
+    regionalHydrogenLdesStorageMemory: nextHydrogenLdesStorageMemory,
+    regionalExportBufferFederationMemory: nextExportBufferFederationMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -30124,6 +30197,49 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     certificateStackBand: rr41.state.regions.NSW?.decarbonCertificateStackBand,
   });
   check('SAFEGUARD CERTIFICATE GI alignment', giSafeguardCertificate.relevanceDelta > 0.5, giSafeguardCertificate.reason || '');
+
+  const h2LdesExportInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'hydrogen_ldes_federation_hub',
+      'federation_hydrogen_ldes_tie',
+      'export_firming_buffer_hub',
+      'certificate_linked_export_stack_corridor',
+      'export_h2_federation_orchestration_hub',
+      'maritime_shore_power_orchestration_hub',
+      'trade_exposed_safeguard_buffer_hub',
+      'compound_hazard_recovery_hub',
+      'critical_load_backup_mesh',
+      'renewable_grid',
+      'battery_grid',
+    ],
+  };
+  const rr42 = computeIndustrialEnergyEnvironmentalState(
+    h2LdesExportInp,
+    createInitialIndustrialEnergyEnvironmentalPersisted(),
+    null,
+  );
+  check(
+    'H2 LDES storage tracked',
+    !!rr42.state.regionalHydrogenLdesStorageLedgers.QLD?.band,
+    rr42.state.regionalHydrogenLdesStorageLedgers.QLD?.band || '',
+  );
+  check(
+    'EXPORT buffer federation relief',
+    (rr42.state.regions.QLD?.exportBufferFederationRelief || 0) > 0,
+    String(rr42.state.regions.QLD?.exportBufferFederationRelief),
+  );
+  check(
+    'H2 LDES memory persisted',
+    !!rr42.persisted.regionalHydrogenLdesStorageMemory.QLD,
+    String(rr42.persisted.regionalHydrogenLdesStorageMemory.QLD?.ldesIndex),
+  );
+  const giH2LdesExport = scoreAgent13H2LdesExportBufferGIAlignment({
+    actionText: 'Hydrogen LDES federation hub with export firming buffer and certificate-linked export stack corridor',
+    ldesBand: rr42.state.regions.QLD?.hydrogenLdesStorageBand,
+    exportBufferBand: rr42.state.regions.QLD?.exportBufferFederationBand,
+  });
+  check('H2 LDES EXPORT GI alignment', giH2LdesExport.relevanceDelta > 0.5, giH2LdesExport.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

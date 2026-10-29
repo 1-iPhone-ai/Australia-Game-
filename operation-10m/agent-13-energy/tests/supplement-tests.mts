@@ -190,6 +190,11 @@ import {
   V1014_SAFEGUARD_CERTIFICATE_TURN_SCENARIOS,
 } from '../modules/safeguard-trade-certificate-stack-federation-ledger.ts';
 import {
+  runAgent13H2LdesExportBufferScaleSelfTests,
+  runAgent13H2LdesExportBufferTurnScenario,
+  V1014_H2_LDES_EXPORT_BUFFER_TURN_SCENARIOS,
+} from '../modules/hydrogen-ldes-export-buffer-federation-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -519,6 +524,18 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const gtTurn = runAgent13GeothermalThermalTurnScenario(V1014_GEOTHERMAL_THERMAL_TURN_SCENARIOS[0]);
   ok(gtTurn.passed);
+
+  const safeguardCertificate = runAgent13SafeguardCertificateScaleSelfTests();
+  ok(safeguardCertificate.failed === 0 && safeguardCertificate.passed >= 5);
+
+  const scTurn = runAgent13SafeguardCertificateTurnScenario(V1014_SAFEGUARD_CERTIFICATE_TURN_SCENARIOS[0]);
+  ok(scTurn.passed);
+
+  const h2LdesExport = runAgent13H2LdesExportBufferScaleSelfTests();
+  ok(h2LdesExport.failed === 0 && h2LdesExport.passed >= 5);
+
+  const h2LdesTurn = runAgent13H2LdesExportBufferTurnScenario(V1014_H2_LDES_EXPORT_BUFFER_TURN_SCENARIOS[0]);
+  ok(h2LdesTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
