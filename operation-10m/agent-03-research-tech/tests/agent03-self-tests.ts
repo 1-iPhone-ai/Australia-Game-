@@ -2557,7 +2557,20 @@ tests.push(
 );
 
 tests.push(
-  test('scale_wave_seal_handoff_integration_seal_continuity_handoff_integration_seal_continuity_handoff_integration_seal_continuity_handoff_integration_seal_seal_seal_seal_seal_seal_outlook_derived_wave50', () => {
+  test('scale_wave_seal_handoff_integration_seal_continuity_handoff_integration_seal_continuity_handoff_integration_seal_continuity_handoff_integration_seal_seal_seal_seal_seal_seal_seal_outlook_derived_wave51', () => {
+    const inputs = baseInputs({ turn: 51 });
+    const state = computeResearchProgress(inputs, null);
+    const outlook = state.scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealSealSealSealSealSealSealOutlook;
+    assert(outlook != null);
+    assert(outlook?.waveOrdinal === 51);
+    assert(outlook?.integrationBaselineShaHint === 'a32b2b15');
+    assert(outlook?.projectedFunctionalHint === 2_887_600);
+    assert(detectForeignSaveFields({ scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealSealSealSealSealSealSealOutlook: outlook }).includes('scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealSealSealSealSealSealSealOutlook'));
+  })
+);
+
+tests.push(
+  test('scale_wave_seal_handoff_integration_seal_continuity_handoff_integration_seal_continuity_handoff_integration_seal_continuity_handoff_integration_seal_seal_seal_seal_seal_outlook_derived_wave50', () => {
     const inputs = baseInputs({ turn: 50 });
     const state = computeResearchProgress(inputs, null);
     const outlook = state.scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealSealSealSealSealSealOutlook;
