@@ -1,0 +1,503 @@
+{
+  "auditedAt": "2026-10-29T17:24:06.521Z",
+  "file": "(V9.4) australia-game-with-ai.tsx",
+  "physicalLines": 419353,
+  "sectionCount": 83,
+  "duplicateExportSymbols": [
+    {
+      "name": "AskGameAnswerCard",
+      "count": 2,
+      "lines": [
+        78302,
+        78318
+      ],
+      "note": "interface + React component identifier (review naming)"
+    },
+    {
+      "name": "runAbTestSimulations",
+      "count": 3,
+      "lines": [
+        87020,
+        87021,
+        87026
+      ],
+      "note": "TypeScript overload signatures (expected)"
+    },
+    {
+      "name": "LRSector",
+      "count": 2,
+      "lines": [
+        182145,
+        318312
+      ],
+      "note": "baseline type re-export in Agent 03 merge block (~318k); not assembly double-count"
+    },
+    {
+      "name": "EmergingCapabilityId",
+      "count": 2,
+      "lines": [
+        203667,
+        318345
+      ],
+      "note": "baseline type re-export in Agent 03 merge block (~318k); not assembly double-count"
+    },
+    {
+      "name": "CapabilityMaturity",
+      "count": 2,
+      "lines": [
+        203668,
+        318347
+      ],
+      "note": "baseline type re-export in Agent 03 merge block (~318k); not assembly double-count"
+    },
+    {
+      "name": "InstitutionalCapabilityId",
+      "count": 2,
+      "lines": [
+        222999,
+        318373
+      ],
+      "note": "baseline type re-export in Agent 03 merge block (~318k); not assembly double-count"
+    }
+  ],
+  "duplicateNormalizedBlocks": {
+    "minLines": 8,
+    "minNonCommentChars": 400,
+    "clusters": [
+      {
+        "hash": "cf7be0cc83de1506",
+        "occurrences": 9,
+        "startLines": [
+          389886,
+          389938,
+          389989,
+          390040,
+          390195,
+          390258,
+          390331,
+          390416
+        ]
+      },
+      {
+        "hash": "5f5bc9710f21e879",
+        "occurrences": 9,
+        "startLines": [
+          389887,
+          389939,
+          389990,
+          390041,
+          390196,
+          390259,
+          390332,
+          390417
+        ]
+      },
+      {
+        "hash": "ace788393d2a68d1",
+        "occurrences": 6,
+        "startLines": [
+          298575,
+          298597,
+          298619,
+          298641,
+          298663,
+          298685
+        ]
+      },
+      {
+        "hash": "2d5b2282352242cf",
+        "occurrences": 6,
+        "startLines": [
+          298576,
+          298598,
+          298620,
+          298642,
+          298664,
+          298686
+        ]
+      },
+      {
+        "hash": "7b42daf6c5f0f91c",
+        "occurrences": 6,
+        "startLines": [
+          298577,
+          298599,
+          298621,
+          298643,
+          298665,
+          298687
+        ]
+      },
+      {
+        "hash": "c31dbcc346f4b42d",
+        "occurrences": 5,
+        "startLines": [
+          298578,
+          298600,
+          298622,
+          298644,
+          298666
+        ]
+      },
+      {
+        "hash": "59c99d56afacf655",
+        "occurrences": 5,
+        "startLines": [
+          298579,
+          298601,
+          298623,
+          298645,
+          298667
+        ]
+      },
+      {
+        "hash": "e9133fb313198078",
+        "occurrences": 5,
+        "startLines": [
+          298580,
+          298602,
+          298624,
+          298646,
+          298668
+        ]
+      },
+      {
+        "hash": "995a211da286d256",
+        "occurrences": 5,
+        "startLines": [
+          298581,
+          298603,
+          298625,
+          298647,
+          298669
+        ]
+      },
+      {
+        "hash": "c9694c8638e562e0",
+        "occurrences": 5,
+        "startLines": [
+          298582,
+          298604,
+          298626,
+          298648,
+          298670
+        ]
+      },
+      {
+        "hash": "9e4bec7cd765c996",
+        "occurrences": 5,
+        "startLines": [
+          298583,
+          298605,
+          298627,
+          298649,
+          298671
+        ]
+      },
+      {
+        "hash": "22e36db57271aa82",
+        "occurrences": 5,
+        "startLines": [
+          298584,
+          298606,
+          298628,
+          298650,
+          298672
+        ]
+      },
+      {
+        "hash": "5990e7632bc812f6",
+        "occurrences": 5,
+        "startLines": [
+          298585,
+          298607,
+          298629,
+          298651,
+          298673
+        ]
+      },
+      {
+        "hash": "a609b2202211aae2",
+        "occurrences": 5,
+        "startLines": [
+          298586,
+          298608,
+          298630,
+          298652,
+          298674
+        ]
+      },
+      {
+        "hash": "fbbae27870bbb1f3",
+        "occurrences": 5,
+        "startLines": [
+          298587,
+          298609,
+          298631,
+          298653,
+          298675
+        ]
+      },
+      {
+        "hash": "8e3017b52d8a12f7",
+        "occurrences": 5,
+        "startLines": [
+          298588,
+          298610,
+          298632,
+          298654,
+          298676
+        ]
+      },
+      {
+        "hash": "8828707ff76c3690",
+        "occurrences": 5,
+        "startLines": [
+          298589,
+          298611,
+          298633,
+          298655,
+          298677
+        ]
+      },
+      {
+        "hash": "7b2889a0da49c043",
+        "occurrences": 5,
+        "startLines": [
+          298590,
+          298612,
+          298634,
+          298656,
+          298678
+        ]
+      },
+      {
+        "hash": "bb23d70243db6dc6",
+        "occurrences": 5,
+        "startLines": [
+          298591,
+          298613,
+          298635,
+          298657,
+          298679
+        ]
+      },
+      {
+        "hash": "e1d53bfe2e9efbe7",
+        "occurrences": 5,
+        "startLines": [
+          298592,
+          298614,
+          298636,
+          298658,
+          298680
+        ]
+      },
+      {
+        "hash": "3823913ee6977365",
+        "occurrences": 5,
+        "startLines": [
+          298593,
+          298615,
+          298637,
+          298659,
+          298681
+        ]
+      },
+      {
+        "hash": "d45217b729f6a934",
+        "occurrences": 5,
+        "startLines": [
+          298594,
+          298616,
+          298638,
+          298660,
+          298682
+        ]
+      },
+      {
+        "hash": "777904f766e98ab5",
+        "occurrences": 5,
+        "startLines": [
+          298595,
+          298617,
+          298639,
+          298661,
+          298683
+        ]
+      },
+      {
+        "hash": "6b9dbb2f48cdd545",
+        "occurrences": 5,
+        "startLines": [
+          298596,
+          298618,
+          298640,
+          298662,
+          298684
+        ]
+      },
+      {
+        "hash": "e540cb6d493fcd8a",
+        "occurrences": 4,
+        "startLines": [
+          43580,
+          43581,
+          152179,
+          152180
+        ]
+      },
+      {
+        "hash": "78fddc7181df8dee",
+        "occurrences": 4,
+        "startLines": [
+          83684,
+          83685,
+          83686,
+          83687
+        ]
+      },
+      {
+        "hash": "7bb71d006a54a8bf",
+        "occurrences": 4,
+        "startLines": [
+          114746,
+          114871,
+          114961,
+          115046
+        ]
+      },
+      {
+        "hash": "c2c698bc4a78bcf4",
+        "occurrences": 4,
+        "startLines": [
+          148090,
+          148091,
+          148092,
+          148093
+        ]
+      },
+      {
+        "hash": "da1de933660b8e7d",
+        "occurrences": 4,
+        "startLines": [
+          368795,
+          372982,
+          373062,
+          373168
+        ]
+      },
+      {
+        "hash": "c4e09e612f63e5e7",
+        "occurrences": 4,
+        "startLines": [
+          373194,
+          373195,
+          373196,
+          373197
+        ]
+      },
+      {
+        "hash": "84e25e9ff887e83c",
+        "occurrences": 4,
+        "startLines": [
+          384522,
+          384523,
+          384524,
+          384525
+        ]
+      },
+      {
+        "hash": "d73fc5ad201feb2e",
+        "occurrences": 3,
+        "startLines": [
+          3907,
+          3908,
+          3909
+        ]
+      },
+      {
+        "hash": "4664b7a12bdd4757",
+        "occurrences": 3,
+        "startLines": [
+          39911,
+          40007,
+          40346
+        ]
+      },
+      {
+        "hash": "a49c2ffed750c2cb",
+        "occurrences": 3,
+        "startLines": [
+          58813,
+          58814,
+          58815
+        ]
+      },
+      {
+        "hash": "896e5ef63405a6b5",
+        "occurrences": 3,
+        "startLines": [
+          90478,
+          90479,
+          90480
+        ]
+      },
+      {
+        "hash": "a15d6d39b558bba0",
+        "occurrences": 3,
+        "startLines": [
+          103795,
+          103796,
+          103797
+        ]
+      },
+      {
+        "hash": "fa892747f2a0701c",
+        "occurrences": 3,
+        "startLines": [
+          103836,
+          103837,
+          103838
+        ]
+      },
+      {
+        "hash": "8ae95d6abbcfdf6b",
+        "occurrences": 3,
+        "startLines": [
+          114900,
+          114992,
+          115078
+        ]
+      },
+      {
+        "hash": "50f1a11fd53a0329",
+        "occurrences": 3,
+        "startLines": [
+          114901,
+          114993,
+          115079
+        ]
+      },
+      {
+        "hash": "7b0dacfaaffa35c4",
+        "occurrences": 3,
+        "startLines": [
+          114903,
+          114995,
+          115081
+        ]
+      }
+    ],
+    "totalClusters": 1243
+  },
+  "op10mAssemblyMarkers": {
+    "assembled": 0,
+    "moduleBegin": 0
+  },
+  "reachability": {
+    "status": "baseline_static_only",
+    "note": "Full import/call-graph reachability deferred; export collisions tracked for integration gate."
+  },
+  "verdict": "baseline_clean_for_integration"
+}
