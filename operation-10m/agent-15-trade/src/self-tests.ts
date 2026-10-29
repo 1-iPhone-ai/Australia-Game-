@@ -47,16 +47,26 @@ import {
   createEmptyTradeReconciliationSnapshot,
   deriveReconciliationPartnerModifiers,
 } from './trade-reconciliation.ts';
-import { computeMaritimeRiskSnapshot, maritimeRiskExportScale } from './maritime-risk-premium.ts';
+import { computeMaritimeRiskSnapshot, createEmptyMaritimeRiskSnapshot, maritimeRiskExportScale } from './maritime-risk-premium.ts';
 import {
   computePreferentialUtilizationSnapshot,
   preferentialUtilizationExportScale,
 } from './preferential-access-utilization.ts';
 import {
   computeTradeEnforcementSnapshot,
+  createEmptyTradeEnforcementSnapshot,
   deriveEnforcementPartnerModifiers,
   enforcementExportScale,
 } from './trade-enforcement-intensity.ts';
+import {
+  computeExportInsuranceStackSnapshot,
+  exportInsuranceStackExportScale,
+} from './export-credit-insurance-stack.ts';
+import {
+  computePartnerAccessRestorationSnapshot,
+  deriveAccessRestorationPartnerModifiers,
+} from './partner-access-restoration.ts';
+import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
   validateScenarioShockCatalog,
@@ -761,6 +771,50 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     const mods = deriveEnforcementPartnerModifiers(heavy);
     gtelAssert(mods.domesticStress > 0, 'expected enforcement domestic stress');
     gtelAssert(enforcementExportScale(heavy) <= enforcementExportScale(light) + 0.01, 'expected enforcement throughput drag');
+  });
+
+  ok('export insurance stack weakens when maritime and enforcement stress finance', () => {
+    const robust = computeExportInsuranceStackSnapshot({
+      tradeFinance: { ...createEmptyTradeFinanceSnapshot(), availabilityScore: 0.82, band: 'fluid', financingPremium: 0.06 },
+      maritimeRisk: createEmptyMaritimeRiskSnapshot(),
+      tradeEnforcement: createEmptyTradeEnforcementSnapshot(),
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const impaired = computeExportInsuranceStackSnapshot({
+      tradeFinance: { ...createEmptyTradeFinanceSnapshot(), availabilityScore: 0.28, band: 'frozen', financingPremium: 0.42 },
+      maritimeRisk: { ...createEmptyMaritimeRiskSnapshot(), premiumIndex: 0.72, band: 'severe', insuranceLoad: 0.22 },
+      tradeEnforcement: { ...createEmptyTradeEnforcementSnapshot(), intensity: 0.68, band: 'sweep', probeLoad: 0.2 },
+      persisted: { ...createEmptyGTELPersisted(), exportInsuranceStackSmoothing: 0.35 },
+    }).snapshot;
+    gtelAssert(impaired.compositeScore < robust.compositeScore, 'expected weaker insurance stack');
+    gtelAssert(exportInsuranceStackExportScale(impaired) <= exportInsuranceStackExportScale(robust) + 0.01, 'expected stack scale drag');
+  });
+
+  ok('partner access restoration gains momentum from de-escalation breakthrough', () => {
+    const stalled = computePartnerAccessRestorationSnapshot({
+      tradeDeescalation: createEmptyTradeDeescalationSnapshot(),
+      tradeReconciliation: createEmptyTradeReconciliationSnapshot(),
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const reopened = computePartnerAccessRestorationSnapshot({
+      tradeDeescalation: {
+        ...createEmptyTradeDeescalationSnapshot(),
+        band: 'breakthrough',
+        momentum: 0.78,
+        coolingPartnerIds: ['asia_pacific'],
+        retaliationAttenuation: 0.14,
+      },
+      tradeReconciliation: {
+        ...createEmptyTradeReconciliationSnapshot(),
+        band: 'settled',
+        progress: 0.8,
+        reconciledPartnerIds: ['asia_pacific'],
+      },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(reopened.momentum > stalled.momentum, 'expected restoration momentum');
+    const mods = deriveAccessRestorationPartnerModifiers(reopened);
+    gtelAssert(mods.domesticStressRelief >= 0, 'restoration relief non-negative');
   });
 
   return { passed, failed };

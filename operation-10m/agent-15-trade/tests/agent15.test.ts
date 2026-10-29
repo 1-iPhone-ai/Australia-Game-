@@ -47,7 +47,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 31);
+  assert.ok(r.passed >= 33);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -502,4 +502,67 @@ test('round 10: heavy enforcement reduces throughput vs light baseline', () => {
   });
   assert.ok(heavy.state.tradeEnforcement.intensity >= light.state.tradeEnforcement.intensity - 0.02);
   assert.ok(heavy.state.exportThroughput <= light.state.exportThroughput + 0.01);
+});
+
+test('round 11: export insurance stack and partner access restoration on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.accessRestorationSmoothing = 0.58;
+  persisted.exportInsuranceStackSmoothing = 0.52;
+  persisted.deescalationMomentumSmoothing = 0.7;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 39,
+    diplomacyState: {
+      deals: [
+        {
+          id: 'd1',
+          type: 'resource_trade',
+          status: 'active',
+          participants: ['player', 'rival_east'],
+          compliance: 'compliant',
+        },
+      ],
+    },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 100 } } },
+    persisted,
+  });
+  assert.ok(r.state.exportInsuranceStack);
+  assert.ok(['robust', 'adequate', 'strained', 'impaired'].includes(r.state.exportInsuranceStack.band));
+  assert.ok(r.state.partnerAccessRestoration);
+  assert.ok(['stalled', 'partial', 'recovering', 'reopened'].includes(r.state.partnerAccessRestoration.band));
+  assert.ok(r.persisted.exportInsuranceStackSmoothing != null);
+  assert.ok(r.persisted.accessRestorationSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Export credit insurance stack/i.test(n)));
+  assert.ok(notes.some(n => /Partner access restoration/i.test(n)));
+});
+
+test('round 11: impaired insurance stack reduces throughput vs robust baseline', () => {
+  const healthy = advanceGlobalTradeEconomyTurn({
+    turn: 40,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 85 } } },
+    persisted: createEmptyGTELPersisted(),
+  });
+  let persisted = createEmptyGTELPersisted();
+  persisted.exportInsuranceStackSmoothing = 0.32;
+  persisted.maritimeRiskSmoothing = 0.75;
+  persisted.enforcementIntensitySmoothing = 0.72;
+  persisted.tradeFinanceSmoothing = 0.22;
+  const stressed = advanceGlobalTradeEconomyTurn({
+    turn: 40,
+    diplomacyState: {
+      deals: Array.from({ length: 3 }, (_, i) => ({
+        id: `v${i}`,
+        type: 'resource_trade',
+        status: 'violated',
+        participants: ['player', 'ai'],
+        compliance: 'violated',
+      })),
+      events: [{ kind: 'violation', turn: 39, text: 'breach' }],
+    },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 85 } } },
+    persisted,
+  });
+  assert.ok(stressed.state.exportInsuranceStack.compositeScore <= healthy.state.exportInsuranceStack.compositeScore + 0.05);
+  assert.ok(stressed.state.exportThroughput <= healthy.state.exportThroughput + 0.01);
 });

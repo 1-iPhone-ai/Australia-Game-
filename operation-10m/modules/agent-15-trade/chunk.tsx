@@ -146,6 +146,10 @@ export interface GTELPersisted {
   preferentialUtilizationSmoothing?: number;
   /** Smoothed customs enforcement intensity (0–1). */
   enforcementIntensitySmoothing?: number;
+  /** Smoothed export credit + marine insurance composite (0–1). */
+  exportInsuranceStackSmoothing?: number;
+  /** Smoothed partner access restoration momentum (0–1). */
+  accessRestorationSmoothing?: number;
 }
 
 export interface GTELState {
@@ -179,6 +183,8 @@ export interface GTELState {
   maritimeRisk: GTELMaritimeRiskSnapshot;
   preferentialUtilization: GTELPreferentialUtilizationSnapshot;
   tradeEnforcement: GTELTradeEnforcementSnapshot;
+  exportInsuranceStack: GTELExportInsuranceStackSnapshot;
+  partnerAccessRestoration: GTELPartnerAccessRestorationSnapshot;
   inputHash: string;
 }
 
@@ -506,6 +512,26 @@ export interface GTELTradeEnforcementSnapshot {
   summary: string;
 }
 
+export type GTELExportInsuranceStackBand = 'robust' | 'adequate' | 'strained' | 'impaired';
+
+export interface GTELExportInsuranceStackSnapshot {
+  compositeScore: number;
+  band: GTELExportInsuranceStackBand;
+  blendedPremium: number;
+  creditHeadroom: number;
+  summary: string;
+}
+
+export type GTELPartnerAccessRestorationBand = 'stalled' | 'partial' | 'recovering' | 'reopened';
+
+export interface GTELPartnerAccessRestorationSnapshot {
+  momentum: number;
+  band: GTELPartnerAccessRestorationBand;
+  restoredPartnerIds: GTELPartnerId[];
+  accessRecoveryIndex: number;
+  summary: string;
+}
+
 export interface GlobalTradeEconomyPanelProps {
   state: GTELState | null;
   theme?: { isDark?: boolean };
@@ -671,6 +697,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     maritimeRiskSmoothing: 0.22,
     preferentialUtilizationSmoothing: 0.48,
     enforcementIntensitySmoothing: 0.26,
+    exportInsuranceStackSmoothing: 0.56,
+    accessRestorationSmoothing: 0.3,
   };
 }
 
@@ -837,6 +865,8 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
     r.preferentialUtilizationSmoothing,
   );
   base.enforcementIntensitySmoothing = sanitizeEnforcementIntensitySmoothing(r.enforcementIntensitySmoothing);
+  base.exportInsuranceStackSmoothing = sanitizeExportInsuranceStackSmoothing(r.exportInsuranceStackSmoothing);
+  base.accessRestorationSmoothing = sanitizeAccessRestorationSmoothing(r.accessRestorationSmoothing);
   return base;
 }
 
@@ -4473,6 +4503,295 @@ export function tradeEnforcementGiNotes(
 }
 
 
+// --- source: export-credit-insurance-stack.ts ---
+  GTELMaritimeRiskSnapshot,
+  GTELPersisted,
+  GTELExportInsuranceStackSnapshot,
+  GTELTradeEnforcementSnapshot,
+  GTELTradeFinanceSnapshot,
+  GTELTurnResult,
+} from './types.ts';
+
+export type GTELExportInsuranceStackBand = GTELExportInsuranceStackSnapshot['band'];
+
+function stackBand(composite: number): GTELExportInsuranceStackBand {
+  if (composite >= 0.78) return 'robust';
+  if (composite >= 0.58) return 'adequate';
+  if (composite >= 0.38) return 'strained';
+  return 'impaired';
+}
+
+export function sanitizeExportInsuranceStackSmoothing(raw: unknown): number {
+  return gtelClamp(gtelNum(raw, 0.56), 0.22, 0.92);
+}
+
+export function createEmptyExportInsuranceStackSnapshot(): GTELExportInsuranceStackSnapshot {
+  return {
+    compositeScore: 0.56,
+    band: 'adequate',
+    blendedPremium: 0.1,
+    creditHeadroom: 0.62,
+    summary: 'Export credit and marine insurance markets are broadly aligned.',
+  };
+}
+
+export function advanceExportInsuranceStackSmoothing(
+  persisted: GTELPersisted,
+  rawComposite: number,
+): GTELPersisted {
+  const prev = sanitizeExportInsuranceStackSmoothing(persisted.exportInsuranceStackSmoothing);
+  const next = gtelClamp(prev * 0.72 + gtelClamp(rawComposite, 0.22, 0.92) * 0.28, 0.22, 0.92);
+  return { ...persisted, exportInsuranceStackSmoothing: Math.round(next * 1000) / 1000 };
+}
+
+export function computeExportInsuranceStackSnapshot(input: {
+  tradeFinance: GTELTradeFinanceSnapshot;
+  maritimeRisk: GTELMaritimeRiskSnapshot;
+  tradeEnforcement: GTELTradeEnforcementSnapshot;
+  persisted: GTELPersisted;
+}): { snapshot: GTELExportInsuranceStackSnapshot; persisted: GTELPersisted } {
+  const financeLift = gtelClamp(input.tradeFinance.availabilityScore * 0.42, 0.05, 0.38);
+  const maritimeDrag = gtelClamp(input.maritimeRisk.premiumIndex * 0.28 + input.maritimeRisk.insuranceLoad * 0.12, 0, 0.32);
+  const enforcementDrag = gtelClamp(input.tradeEnforcement.probeLoad * 0.35 + input.tradeEnforcement.intensity * 0.08, 0, 0.22);
+  const rawComposite = gtelClamp(0.38 + financeLift - maritimeDrag - enforcementDrag, 0.22, 0.92);
+  const persisted = advanceExportInsuranceStackSmoothing(input.persisted, rawComposite);
+  const compositeScore = sanitizeExportInsuranceStackSmoothing(persisted.exportInsuranceStackSmoothing);
+  const band = stackBand(compositeScore);
+  const blendedPremium = gtelClamp(
+    input.tradeFinance.financingPremium * 0.45 +
+      input.maritimeRisk.insuranceLoad * 0.35 +
+      input.tradeEnforcement.probeLoad * 0.2,
+    0.04,
+    0.48,
+  );
+  const creditHeadroom = gtelClamp(
+    compositeScore * 0.55 + input.tradeFinance.availabilityScore * 0.35 - blendedPremium * 0.15,
+    0.18,
+    0.88,
+  );
+
+  const summary =
+    band === 'robust'
+      ? 'Export credit insurers and marine underwriters are offering stacked cover without punitive loadings.'
+      : band === 'impaired'
+        ? 'Stacked export credit and war-risk premiums are choking new shipment declarations.'
+        : band === 'strained'
+          ? 'Blended insurance and export finance premiums are squeezing marginal export lanes.'
+          : 'Export credit and marine insurance markets are broadly aligned.';
+
+  return {
+    snapshot: {
+      compositeScore: Math.round(compositeScore * 1000) / 1000,
+      band,
+      blendedPremium: Math.round(blendedPremium * 1000) / 1000,
+      creditHeadroom: Math.round(creditHeadroom * 1000) / 1000,
+      summary,
+    },
+    persisted,
+  };
+}
+
+export function exportInsuranceStackExportScale(snapshot: GTELExportInsuranceStackSnapshot): number {
+  if (snapshot.band === 'robust') return gtelClamp(1 + snapshot.creditHeadroom * 0.04, 1, 1.05);
+  if (snapshot.band === 'impaired') return gtelClamp(0.84 + snapshot.compositeScore * 0.08, 0.8, 0.9);
+  if (snapshot.band === 'strained') return gtelClamp(0.9 + snapshot.compositeScore * 0.06, 0.86, 0.96);
+  return gtelClamp(0.96 + snapshot.compositeScore * 0.03, 0.92, 1.02);
+}
+
+export function exportInsuranceStackDomesticStress(snapshot: GTELExportInsuranceStackSnapshot): number {
+  if (snapshot.band === 'impaired') return gtelClamp((0.55 - snapshot.compositeScore) * 0.12, 0.03, 0.08);
+  if (snapshot.band === 'strained') return gtelClamp((0.5 - snapshot.compositeScore) * 0.08, 0, 0.05);
+  return 0;
+}
+
+export function exportInsuranceStackWorldEvent(
+  snapshot: GTELExportInsuranceStackSnapshot,
+  turn: number,
+): GTELTurnResult['worldEvents'][0] | null {
+  if (snapshot.band !== 'strained' && snapshot.band !== 'impaired') return null;
+  if (snapshot.blendedPremium < 0.18) return null;
+  return {
+    id: `gtel_insurance_stack_${turn}`,
+    turn,
+    kind: 'trade',
+    title: 'Export insurance stack repricing',
+    summary: snapshot.summary,
+    regionIds: ['NSW', 'VIC', 'WA'],
+  };
+}
+
+export function exportInsuranceStackGiNotes(
+  stack: GTELExportInsuranceStackSnapshot | null | undefined,
+): string[] {
+  if (!stack) return [];
+  return [
+    `Export credit insurance stack: ${stack.band} (${Math.round(stack.compositeScore * 100)}% composite).`,
+    stack.summary,
+  ];
+}
+
+
+// --- source: partner-access-restoration.ts ---
+  GTELPartnerId,
+  GTELPersisted,
+  GTELPartnerAccessRestorationSnapshot,
+  GTELTradeDeescalationSnapshot,
+  GTELTradeReconciliationSnapshot,
+  GTELTurnResult,
+} from './types.ts';
+
+export type GTELPartnerAccessRestorationBand = GTELPartnerAccessRestorationSnapshot['band'];
+
+function restorationBand(momentum: number): GTELPartnerAccessRestorationBand {
+  if (momentum >= 0.72) return 'reopened';
+  if (momentum >= 0.52) return 'recovering';
+  if (momentum >= 0.32) return 'partial';
+  return 'stalled';
+}
+
+export function sanitizeAccessRestorationSmoothing(raw: unknown): number {
+  return gtelClamp(gtelNum(raw, 0.3), 0.1, 0.9);
+}
+
+export function createEmptyPartnerAccessRestorationSnapshot(): GTELPartnerAccessRestorationSnapshot {
+  return {
+    momentum: 0.3,
+    band: 'stalled',
+    restoredPartnerIds: [],
+    accessRecoveryIndex: 0,
+    summary: 'Partner gate restoration tracks have not yet reopened export lanes.',
+  };
+}
+
+export function advanceAccessRestorationSmoothing(
+  persisted: GTELPersisted,
+  rawMomentum: number,
+): GTELPersisted {
+  const prev = sanitizeAccessRestorationSmoothing(persisted.accessRestorationSmoothing);
+  const next = gtelClamp(prev * 0.73 + gtelClamp(rawMomentum, 0.1, 0.9) * 0.27, 0.1, 0.9);
+  return { ...persisted, accessRestorationSmoothing: Math.round(next * 1000) / 1000 };
+}
+
+export function computePartnerAccessRestorationSnapshot(input: {
+  tradeDeescalation: GTELTradeDeescalationSnapshot;
+  tradeReconciliation: GTELTradeReconciliationSnapshot;
+  persisted: GTELPersisted;
+}): { snapshot: GTELPartnerAccessRestorationSnapshot; persisted: GTELPersisted } {
+  const deescalationLift =
+    input.tradeDeescalation.band === 'breakthrough'
+      ? 0.26
+      : input.tradeDeescalation.band === 'warming'
+        ? 0.16
+        : input.tradeDeescalation.band === 'thawing'
+          ? 0.08
+          : 0.02;
+  const reconciliationLift =
+    input.tradeReconciliation.band === 'settled'
+      ? 0.22
+      : input.tradeReconciliation.band === 'substantive'
+        ? 0.14
+        : input.tradeReconciliation.band === 'procedural'
+          ? 0.06
+          : 0;
+  const attenuationLift = gtelClamp(input.tradeDeescalation.retaliationAttenuation * 0.85, 0, 0.12);
+  const rawMomentum = gtelClamp(
+    0.2 + deescalationLift + reconciliationLift + attenuationLift,
+    0.1,
+    0.9,
+  );
+  const persisted = advanceAccessRestorationSmoothing(input.persisted, rawMomentum);
+  const momentum = sanitizeAccessRestorationSmoothing(persisted.accessRestorationSmoothing);
+  const band = restorationBand(momentum);
+
+  const restoredPartnerIds: GTELPartnerId[] = [];
+  const cooling = new Set(input.tradeDeescalation.coolingPartnerIds);
+  const reconciled = new Set(input.tradeReconciliation.reconciledPartnerIds);
+  GTEL_PARTNER_DEFS.forEach(p => {
+    if (p.id === 'domestic_premium') return;
+    if (momentum > 0.38 && (cooling.has(p.id) || reconciled.has(p.id))) {
+      restoredPartnerIds.push(p.id);
+    }
+  });
+
+  const accessRecoveryIndex =
+    band === 'reopened'
+      ? gtelClamp(momentum * 0.14 + restoredPartnerIds.length * 0.03, 0.04, 0.18)
+      : band === 'recovering'
+        ? gtelClamp(momentum * 0.1 + restoredPartnerIds.length * 0.025, 0.02, 0.12)
+        : band === 'partial'
+          ? gtelClamp(momentum * 0.06, 0, 0.06)
+          : 0;
+
+  const summary =
+    band === 'reopened'
+      ? 'Restoration panels are reopening partner gates on previously restricted export lanes.'
+      : band === 'recovering'
+        ? 'Confidence measures are restoring bilateral access on priority partner markets.'
+        : band === 'partial'
+          ? 'Limited partner access restoration is underway but remains fragile.'
+          : 'Partner gate restoration tracks have not yet reopened export lanes.';
+
+  return {
+    snapshot: {
+      momentum: Math.round(momentum * 1000) / 1000,
+      band,
+      restoredPartnerIds: restoredPartnerIds.slice(0, 4),
+      accessRecoveryIndex: Math.round(accessRecoveryIndex * 1000) / 1000,
+      summary,
+    },
+    persisted,
+  };
+}
+
+export function deriveAccessRestorationPartnerModifiers(snapshot: GTELPartnerAccessRestorationSnapshot): {
+  partnerDeltas: Partial<Record<GTELPartnerId, number>>;
+  domesticStressRelief: number;
+} {
+  const partnerDeltas: Partial<Record<GTELPartnerId, number>> = {};
+  if (snapshot.band === 'stalled') {
+    return { partnerDeltas, domesticStressRelief: 0 };
+  }
+  const lift =
+    snapshot.band === 'reopened' ? 0.07 : snapshot.band === 'recovering' ? 0.05 : 0.03;
+  snapshot.restoredPartnerIds.forEach(id => {
+    partnerDeltas[id] = gtelNum(partnerDeltas[id], 0) + lift;
+  });
+  const domesticStressRelief =
+    snapshot.band === 'reopened'
+      ? gtelClamp(snapshot.accessRecoveryIndex * 0.35, 0, 0.05)
+      : snapshot.band === 'recovering'
+        ? gtelClamp(snapshot.accessRecoveryIndex * 0.28, 0, 0.035)
+        : gtelClamp(snapshot.accessRecoveryIndex * 0.2, 0, 0.02);
+  return { partnerDeltas, domesticStressRelief };
+}
+
+export function partnerAccessRestorationWorldEvent(
+  snapshot: GTELPartnerAccessRestorationSnapshot,
+  turn: number,
+): GTELTurnResult['worldEvents'][0] | null {
+  if (snapshot.band !== 'recovering' && snapshot.band !== 'reopened') return null;
+  if (snapshot.restoredPartnerIds.length < 1) return null;
+  return {
+    id: `gtel_access_restore_${turn}`,
+    turn,
+    kind: 'diplomacy',
+    title: 'Partner access restoration',
+    summary: snapshot.summary,
+    regionIds: ['ACT', 'NSW', 'QLD'],
+  };
+}
+
+export function partnerAccessRestorationGiNotes(
+  restoration: GTELPartnerAccessRestorationSnapshot | null | undefined,
+): string[] {
+  if (!restoration) return [];
+  return [
+    `Partner access restoration: ${restoration.band.replace(/_/g, ' ')} (${Math.round(restoration.momentum * 100)}% momentum).`,
+    restoration.summary,
+  ];
+}
+
+
 // --- source: domestic-consequences.ts ---
   GTELCommodityQuote,
   GTELDomesticCoupling,
@@ -4687,6 +5006,17 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   tradeEnforcementGiNotes,
   tradeEnforcementWorldEvent,
 } from './trade-enforcement-intensity.ts';
+  computeExportInsuranceStackSnapshot,
+  exportInsuranceStackDomesticStress,
+  exportInsuranceStackExportScale,
+  exportInsuranceStackGiNotes,
+  exportInsuranceStackWorldEvent,
+} from './export-credit-insurance-stack.ts';
+  computePartnerAccessRestorationSnapshot,
+  deriveAccessRestorationPartnerModifiers,
+  partnerAccessRestorationGiNotes,
+  partnerAccessRestorationWorldEvent,
+} from './partner-access-restoration.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -4757,6 +5087,15 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const tradeReconciliation = reconciliationStep.snapshot;
   const financeDisputeCount = reconciliationEffectiveDisputeCount(openDisputesEarly, tradeReconciliation);
 
+  const restorationStep = computePartnerAccessRestorationSnapshot({
+    tradeDeescalation,
+    tradeReconciliation,
+    persisted,
+  });
+  persisted = restorationStep.persisted;
+  const restorationMods = deriveAccessRestorationPartnerModifiers(restorationStep.snapshot);
+  const partnerAccessRestoration = restorationStep.snapshot;
+
   const enforcementStep = computeTradeEnforcementSnapshot({
     openDisputeCount: openDisputesEarly,
     tradeCompliance: persisted.tradeCompliance,
@@ -4788,7 +5127,10 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       mergePartnerDeltas(
         mergePartnerDeltas(
           mergePartnerDeltas(engagement.partnerDeltas, retaliationMods.partnerDeltas),
-          mergePartnerDeltas(deescalationMods.partnerDeltas, reconciliationMods.partnerDeltas),
+          mergePartnerDeltas(
+            mergePartnerDeltas(deescalationMods.partnerDeltas, reconciliationMods.partnerDeltas),
+            restorationMods.partnerDeltas,
+          ),
         ),
         enforcementMods.partnerDeltas,
       ),
@@ -4841,6 +5183,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   if (deescalationEvent) worldEvents.push(deescalationEvent);
   const reconciliationEvent = tradeReconciliationWorldEvent(tradeReconciliation, turn);
   if (reconciliationEvent) worldEvents.push(reconciliationEvent);
+  const restorationEvent = partnerAccessRestorationWorldEvent(partnerAccessRestoration, turn);
+  if (restorationEvent) worldEvents.push(restorationEvent);
   const enforcementEvent = tradeEnforcementWorldEvent(tradeEnforcement, turn);
   if (enforcementEvent) worldEvents.push(enforcementEvent);
 
@@ -5027,6 +5371,17 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const utilizationEvent = preferentialUtilizationWorldEvent(preferentialUtilization, turn);
   if (utilizationEvent) worldEvents.push(utilizationEvent);
 
+  const insuranceStackStep = computeExportInsuranceStackSnapshot({
+    tradeFinance,
+    maritimeRisk,
+    tradeEnforcement,
+    persisted,
+  });
+  persisted = insuranceStackStep.persisted;
+  const exportInsuranceStack = insuranceStackStep.snapshot;
+  const insuranceStackEvent = exportInsuranceStackWorldEvent(exportInsuranceStack, turn);
+  if (insuranceStackEvent) worldEvents.push(insuranceStackEvent);
+
   const tradeBalanceAdjusted = computeTradeBalanceSnapshot({
     commodities,
     partners,
@@ -5044,6 +5399,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         maritimeRiskExportScale(maritimeRisk) *
         preferentialUtilizationExportScale(preferentialUtilization) *
         enforcementExportScale(tradeEnforcement) *
+        exportInsuranceStackExportScale(exportInsuranceStack) *
         10,
     ) / 10;
 
@@ -5101,10 +5457,12 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       foreignExchangeDomesticStress(foreignExchange) +
       retaliationMods.domesticStress -
       deescalationMods.domesticStressRelief -
-      reconciliationMods.domesticStressRelief +
+      reconciliationMods.domesticStressRelief -
+      restorationMods.domesticStressRelief +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
-      enforcementMods.domesticStress,
+      enforcementMods.domesticStress +
+      exportInsuranceStackDomesticStress(exportInsuranceStack),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -5135,6 +5493,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.maritimeRiskSmoothing,
     persisted.preferentialUtilizationSmoothing,
     persisted.enforcementIntensitySmoothing,
+    persisted.exportInsuranceStackSmoothing,
+    persisted.accessRestorationSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -5197,6 +5557,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     maritimeRisk,
     preferentialUtilization,
     tradeEnforcement,
+    exportInsuranceStack,
+    partnerAccessRestoration,
     inputHash,
   };
 
@@ -5238,6 +5600,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...maritimeRiskGiNotes(state.maritimeRisk));
   lines.push(...preferentialUtilizationGiNotes(state.preferentialUtilization));
   lines.push(...tradeEnforcementGiNotes(state.tradeEnforcement));
+  lines.push(...exportInsuranceStackGiNotes(state.exportInsuranceStack));
+  lines.push(...partnerAccessRestorationGiNotes(state.partnerAccessRestoration));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
@@ -5276,9 +5640,16 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   preferentialUtilizationExportScale,
 } from './preferential-access-utilization.ts';
   computeTradeEnforcementSnapshot,
+  createEmptyTradeEnforcementSnapshot,
   deriveEnforcementPartnerModifiers,
   enforcementExportScale,
 } from './trade-enforcement-intensity.ts';
+  computeExportInsuranceStackSnapshot,
+  exportInsuranceStackExportScale,
+} from './export-credit-insurance-stack.ts';
+  computePartnerAccessRestorationSnapshot,
+  deriveAccessRestorationPartnerModifiers,
+} from './partner-access-restoration.ts';
   validateScenarioShockCatalog,
   triggerCommodityShockScenario,
   COMMODITY_SHOCK_SCENARIOS,
@@ -5980,6 +6351,50 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     const mods = deriveEnforcementPartnerModifiers(heavy);
     gtelAssert(mods.domesticStress > 0, 'expected enforcement domestic stress');
     gtelAssert(enforcementExportScale(heavy) <= enforcementExportScale(light) + 0.01, 'expected enforcement throughput drag');
+  });
+
+  ok('export insurance stack weakens when maritime and enforcement stress finance', () => {
+    const robust = computeExportInsuranceStackSnapshot({
+      tradeFinance: { ...createEmptyTradeFinanceSnapshot(), availabilityScore: 0.82, band: 'fluid', financingPremium: 0.06 },
+      maritimeRisk: createEmptyMaritimeRiskSnapshot(),
+      tradeEnforcement: createEmptyTradeEnforcementSnapshot(),
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const impaired = computeExportInsuranceStackSnapshot({
+      tradeFinance: { ...createEmptyTradeFinanceSnapshot(), availabilityScore: 0.28, band: 'frozen', financingPremium: 0.42 },
+      maritimeRisk: { ...createEmptyMaritimeRiskSnapshot(), premiumIndex: 0.72, band: 'severe', insuranceLoad: 0.22 },
+      tradeEnforcement: { ...createEmptyTradeEnforcementSnapshot(), intensity: 0.68, band: 'sweep', probeLoad: 0.2 },
+      persisted: { ...createEmptyGTELPersisted(), exportInsuranceStackSmoothing: 0.35 },
+    }).snapshot;
+    gtelAssert(impaired.compositeScore < robust.compositeScore, 'expected weaker insurance stack');
+    gtelAssert(exportInsuranceStackExportScale(impaired) <= exportInsuranceStackExportScale(robust) + 0.01, 'expected stack scale drag');
+  });
+
+  ok('partner access restoration gains momentum from de-escalation breakthrough', () => {
+    const stalled = computePartnerAccessRestorationSnapshot({
+      tradeDeescalation: createEmptyTradeDeescalationSnapshot(),
+      tradeReconciliation: createEmptyTradeReconciliationSnapshot(),
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const reopened = computePartnerAccessRestorationSnapshot({
+      tradeDeescalation: {
+        ...createEmptyTradeDeescalationSnapshot(),
+        band: 'breakthrough',
+        momentum: 0.78,
+        coolingPartnerIds: ['asia_pacific'],
+        retaliationAttenuation: 0.14,
+      },
+      tradeReconciliation: {
+        ...createEmptyTradeReconciliationSnapshot(),
+        band: 'settled',
+        progress: 0.8,
+        reconciledPartnerIds: ['asia_pacific'],
+      },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(reopened.momentum > stalled.momentum, 'expected restoration momentum');
+    const mods = deriveAccessRestorationPartnerModifiers(reopened);
+    gtelAssert(mods.domesticStressRelief >= 0, 'restoration relief non-negative');
   });
 
   return { passed, failed };

@@ -27,5 +27,7 @@ export * from './trade-reconciliation.ts';
 export * from './maritime-risk-premium.ts';
 export * from './preferential-access-utilization.ts';
 export * from './trade-enforcement-intensity.ts';
+export * from './export-credit-insurance-stack.ts';
+export * from './partner-access-restoration.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';

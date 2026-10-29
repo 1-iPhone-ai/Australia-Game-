@@ -142,6 +142,10 @@ export interface GTELPersisted {
   preferentialUtilizationSmoothing?: number;
   /** Smoothed customs enforcement intensity (0–1). */
   enforcementIntensitySmoothing?: number;
+  /** Smoothed export credit + marine insurance composite (0–1). */
+  exportInsuranceStackSmoothing?: number;
+  /** Smoothed partner access restoration momentum (0–1). */
+  accessRestorationSmoothing?: number;
 }
 
 export interface GTELState {
@@ -175,6 +179,8 @@ export interface GTELState {
   maritimeRisk: GTELMaritimeRiskSnapshot;
   preferentialUtilization: GTELPreferentialUtilizationSnapshot;
   tradeEnforcement: GTELTradeEnforcementSnapshot;
+  exportInsuranceStack: GTELExportInsuranceStackSnapshot;
+  partnerAccessRestoration: GTELPartnerAccessRestorationSnapshot;
   inputHash: string;
 }
 
@@ -499,6 +505,26 @@ export interface GTELTradeEnforcementSnapshot {
   band: GTELTradeEnforcementBand;
   probeLoad: number;
   clearanceDelayTurns: number;
+  summary: string;
+}
+
+export type GTELExportInsuranceStackBand = 'robust' | 'adequate' | 'strained' | 'impaired';
+
+export interface GTELExportInsuranceStackSnapshot {
+  compositeScore: number;
+  band: GTELExportInsuranceStackBand;
+  blendedPremium: number;
+  creditHeadroom: number;
+  summary: string;
+}
+
+export type GTELPartnerAccessRestorationBand = 'stalled' | 'partial' | 'recovering' | 'reopened';
+
+export interface GTELPartnerAccessRestorationSnapshot {
+  momentum: number;
+  band: GTELPartnerAccessRestorationBand;
+  restoredPartnerIds: GTELPartnerId[];
+  accessRecoveryIndex: number;
   summary: string;
 }
 

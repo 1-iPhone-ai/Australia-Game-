@@ -43,6 +43,8 @@ const FILES = [
   'maritime-risk-premium.ts',
   'preferential-access-utilization.ts',
   'trade-enforcement-intensity.ts',
+  'export-credit-insurance-stack.ts',
+  'partner-access-restoration.ts',
   'domestic-consequences.ts',
   'household-bridge.ts',
   'trade-turn.ts',
