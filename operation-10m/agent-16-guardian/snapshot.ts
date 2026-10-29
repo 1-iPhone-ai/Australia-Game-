@@ -1,5 +1,6 @@
 import type { BuildMonitorSnapshotInput, GuardianCoPilotMonitorSnapshot } from './types.js';
 import { mergeObjectiveContextIntoSnapshot, parseObjectiveContextFromGame } from './objective-context.js';
+import { enrichSnapshotGuardianDepth } from './guardian-depth.js';
 
 function num(v: unknown, fallback = 0): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
@@ -144,7 +145,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     victoryThresholdPct: 80,
     guardianRequiresConfirmation: guardian.responseMode === 'require_confirmation',
     guardianProtectionMaximum: guardian.protectionLevel === 'maximum_protection',
+    guardianAutomationLikelyBlocked: false,
+    guardianConfirmationLikelyRequired: false,
   };
 
-  return mergeObjectiveContextIntoSnapshot(base, objectiveCtx);
+  return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
 }

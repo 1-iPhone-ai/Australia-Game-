@@ -1,6 +1,7 @@
 import type { AdvisoryMonitorRule, AdvisoryOpsKind, AdvisorySeverity, GuardianCoPilotMonitorSnapshot } from './types.js';
 import { COPILOT_MAX_BLOCKED_CONTINUES } from './policy.js';
 import { ADVISORY_MONITOR_RULES_EXPANSION } from './monitor-rules-expansion.js';
+import { ADVISORY_MONITOR_RULES_SCALE_WAVE } from './monitor-rules-scale-wave.js';
 
 export type { AdvisoryMonitorRule };
 
@@ -229,6 +230,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
     evaluate: s => s.cash < s.maxSpendPerAction * 2,
   },
   ...ADVISORY_MONITOR_RULES_EXPANSION,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {

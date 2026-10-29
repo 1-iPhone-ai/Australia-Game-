@@ -14,6 +14,7 @@ import type {
   GuardianCoPilotAdvisoryCycleResult,
   GuardianCoPilotMonitorSnapshot,
 } from './types.js';
+import { enrichSnapshotGuardianDepth } from './guardian-depth.js';
 import { buildGuardianCoPilotMonitorSnapshot } from './snapshot.js';
 
 const ADVISORY_SEVERITY_RANK: Record<AdvisoryRecommendation['severity'], number> = {
@@ -27,7 +28,7 @@ const ADVISORY_SEVERITY_RANK: Record<AdvisoryRecommendation['severity'], number>
 export function createAdvisoryOpsFixtureSnapshot(
   overrides: Partial<GuardianCoPilotMonitorSnapshot> = {}
 ): GuardianCoPilotMonitorSnapshot {
-  return {
+  const snap: GuardianCoPilotMonitorSnapshot = {
     turn: 4,
     day: 4,
     actorId: 'player_1',
@@ -64,12 +65,14 @@ export function createAdvisoryOpsFixtureSnapshot(
     victoryThresholdPct: 80,
     guardianRequiresConfirmation: false,
     guardianProtectionMaximum: false,
+    guardianAutomationLikelyBlocked: false,
+    guardianConfirmationLikelyRequired: false,
     ...overrides,
   };
   if (snap.objectiveTargetRegion && !snap.objectiveRegion) {
     snap.objectiveRegion = snap.objectiveTargetRegion;
   }
-  return snap;
+  return enrichSnapshotGuardianDepth(snap);
 }
 
 function materializeAdvisoryFromRule(

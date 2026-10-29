@@ -70,6 +70,8 @@ export interface GuardianCoPilotMonitorSnapshot {
   victoryThresholdPct: number;
   guardianRequiresConfirmation: boolean;
   guardianProtectionMaximum: boolean;
+  guardianAutomationLikelyBlocked: boolean;
+  guardianConfirmationLikelyRequired: boolean;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -179,6 +181,8 @@ const FIELD_LABELS: Partial<Record<keyof GuardianCoPilotMonitorSnapshot, string>
   guardianRequiresConfirmation: 'Guardian requires confirmation',
   guardianProtectionMaximum: 'Guardian maximum protection',
   guardianProtectionLevel: 'Guardian protection level',
+  guardianAutomationLikelyBlocked: 'Guardian may block automation',
+  guardianConfirmationLikelyRequired: 'Guardian confirmation likely',
 };
 
 export function formatSnapshotValue(value: unknown): string | number | boolean | null {
@@ -339,6 +343,148 @@ export function partitionSuggestionFromExecution<T extends { mayExecute?: boolea
 }
 
 
+// --- source: guardian-depth.ts ---
+
+/** Mirrors canonical V9.4 guardianBlocksAutomation (advisory module copy). */
+export function guardianBlocksAutomation(
+  result: { allowedToProceed?: boolean; highestSeverity?: string; confirmationRequired?: boolean } | null | undefined,
+  protectionLevel?: string
+): boolean {
+  if (!result) return false;
+  if (result.allowedToProceed === false) return true;
+  if (result.highestSeverity === 'critical') return true;
+  if (protectionLevel === 'maximum_protection' && result.confirmationRequired) return true;
+  return false;
+}
+
+export type GuardianRiskVerdictLite = {
+  allowedToProceed: boolean;
+  highestSeverity: 'none' | 'caution' | 'critical';
+  confirmationRequired: boolean;
+  summary: string;
+};
+
+export interface GuardianAdvisoryPosture {
+  protectionLevel: string;
+  responseMode: string;
+  guardianEnabled: boolean;
+  automationLikelyBlocked: boolean;
+  confirmationLikelyRequired: boolean;
+  advisoryReasons: string[];
+}
+
+export function inferGuardianVerdictFromSnapshot(snapshot: GuardianCoPilotMonitorSnapshot): GuardianRiskVerdictLite {
+  const reasons: string[] = [];
+  let highestSeverity: GuardianRiskVerdictLite['highestSeverity'] = 'none';
+  let confirmationRequired = false;
+  let allowedToProceed = true;
+
+  if (!snapshot.guardianEnabled) {
+    return { allowedToProceed: true, highestSeverity: 'none', confirmationRequired: false, summary: 'Guardian disabled' };
+  }
+
+  if (snapshot.cash < snapshot.minCashReserve) {
+    reasons.push('cash_below_reserve');
+    highestSeverity = 'caution';
+    confirmationRequired = true;
+  }
+  if (snapshot.debt > snapshot.cash) {
+    reasons.push('debt_exceeds_cash');
+    highestSeverity = 'caution';
+    confirmationRequired = true;
+  }
+  if (snapshot.maxSpendPerAction > snapshot.cash && snapshot.cash > 0) {
+    reasons.push('spend_exceeds_cash');
+    highestSeverity = 'caution';
+    confirmationRequired = true;
+  }
+  if (snapshot.copilotAutonomousActive && snapshot.guardianRequiresConfirmation) {
+    reasons.push('autonomy_confirmation_tension');
+    highestSeverity = 'critical';
+    confirmationRequired = true;
+    allowedToProceed = false;
+  }
+  if (snapshot.takeoverSessionActive && !snapshot.guardianEnabled) {
+    reasons.push('takeover_without_guardian');
+    highestSeverity = 'critical';
+    allowedToProceed = false;
+  }
+
+  if (snapshot.guardianProtectionMaximum && confirmationRequired) {
+    allowedToProceed = false;
+  }
+
+  return {
+    allowedToProceed,
+    highestSeverity,
+    confirmationRequired,
+    summary: reasons.length ? reasons.join(',') : 'clear',
+  };
+}
+
+export function deriveGuardianAdvisoryPosture(snapshot: GuardianCoPilotMonitorSnapshot): GuardianAdvisoryPosture {
+  const verdict = inferGuardianVerdictFromSnapshot(snapshot);
+  const automationLikelyBlocked = guardianBlocksAutomation(verdict, snapshot.guardianProtectionLevel);
+  const advisoryReasons: string[] = [];
+  if (automationLikelyBlocked) advisoryReasons.push('Guardian posture may block Co-Pilot automation on the next risky action');
+  if (verdict.confirmationRequired && snapshot.guardianRequiresConfirmation) {
+    advisoryReasons.push('Confirmation likely required before spend or travel');
+  }
+  if (!snapshot.guardianEnabled && snapshot.copilotHoldsControl) {
+    advisoryReasons.push('Co-Pilot holds control without Guardian safety net');
+  }
+  return {
+    protectionLevel: snapshot.guardianProtectionLevel,
+    responseMode: snapshot.guardianResponseMode,
+    guardianEnabled: snapshot.guardianEnabled,
+    automationLikelyBlocked,
+    confirmationLikelyRequired: verdict.confirmationRequired,
+    advisoryReasons,
+  };
+}
+
+export function buildGuardianDepthAdviceLines(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const posture = deriveGuardianAdvisoryPosture(snapshot);
+  const lines = [...posture.advisoryReasons];
+  const verdict = inferGuardianVerdictFromSnapshot(snapshot);
+  if (verdict.summary !== 'clear') {
+    lines.push(`Guardian heuristic flags: ${verdict.summary.replace(/,/g, ' · ')}`);
+  }
+  return lines.slice(0, 4);
+}
+
+export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
+  const posture = deriveGuardianAdvisoryPosture(snapshot);
+  return {
+    ...snapshot,
+    guardianAutomationLikelyBlocked: posture.automationLikelyBlocked,
+    guardianConfirmationLikelyRequired: posture.confirmationLikelyRequired,
+  };
+}
+
+export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boolean; detail: string }> {
+  const out: Array<{ id: string; passed: boolean; detail: string }> = [];
+  const ok = (id: string, fn: () => boolean) => {
+    try {
+      const passed = fn();
+      out.push({ id, passed, detail: passed ? 'ok' : 'failed' });
+    } catch (e) {
+      out.push({ id, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  ok('gd_blocks_critical', () =>
+    guardianBlocksAutomation({ allowedToProceed: true, highestSeverity: 'critical', confirmationRequired: false }, 'major_mistakes')
+  );
+  ok('gd_max_confirm', () =>
+    guardianBlocksAutomation({ allowedToProceed: true, highestSeverity: 'caution', confirmationRequired: true }, 'maximum_protection')
+  );
+  ok('gd_clear', () =>
+    !guardianBlocksAutomation({ allowedToProceed: true, highestSeverity: 'none', confirmationRequired: false }, 'major_mistakes')
+  );
+  return out;
+}
+
+
 // --- source: monitor-rules-expansion.ts ---
 
 const rivalNearVictoryThreshold = (s: GuardianCoPilotMonitorSnapshot): boolean => {
@@ -485,6 +631,164 @@ export function countExpansionRulesByKind(): Record<AdvisoryOpsKind, number> {
   for (const r of ADVISORY_MONITOR_RULES_EXPANSION) out[r.kind] += 1;
   return out;
 }
+
+
+// --- source: monitor-rules-scale-wave.ts ---
+
+const rivalMidband = (s: GuardianCoPilotMonitorSnapshot): boolean => {
+  if (s.rivalVictoryProgressPct === null) return false;
+  const lo = s.victoryThresholdPct * 0.65;
+  const hi = s.victoryThresholdPct * 0.85;
+  return s.rivalVictoryProgressPct >= lo && s.rivalVictoryProgressPct < hi;
+};
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE: AdvisoryMonitorRule[] = [
+  {
+    id: 'debt_exceeds_cash',
+    category: 'liquidity',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Debt Exceeds Cash',
+    detailTemplate: 'Outstanding debt is higher than liquid cash',
+    evidenceFields: ['debt', 'cash'],
+    evaluate: s => s.debt > s.cash,
+  },
+  {
+    id: 'liquidity_double_pressure',
+    category: 'liquidity',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Liquidity Double Pressure',
+    detailTemplate: 'Cash below reserve while debt service pressure is elevated',
+    evidenceFields: ['cash', 'minCashReserve', 'debt'],
+    evaluate: s => s.cash < s.minCashReserve && s.debt > s.cash * 0.5,
+  },
+  {
+    id: 'spending_cap_exceeds_cash',
+    category: 'liquidity',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Spending Cap Exceeds Cash',
+    detailTemplate: 'Co-Pilot max spend per action exceeds cash on hand',
+    evidenceFields: ['maxSpendPerAction', 'cash'],
+    evaluate: s => s.cash > 0 && s.maxSpendPerAction > s.cash,
+  },
+  {
+    id: 'guardian_automation_block_heuristic',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Guardian May Block Automation',
+    detailTemplate: 'Guardian posture suggests the next Co-Pilot automation may be blocked',
+    evidenceFields: ['guardianAutomationLikelyBlocked', 'guardianProtectionLevel'],
+    evaluate: s => s.guardianEnabled && s.guardianAutomationLikelyBlocked,
+    followUp: 'Advisory heuristic only — enforcement remains evaluateGuardianRiskPipeline in canonical.',
+  },
+  {
+    id: 'guardian_confirmation_likely',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Guardian Confirmation Likely',
+    detailTemplate: 'Next risky action may require Guardian confirmation',
+    evidenceFields: ['guardianConfirmationLikelyRequired', 'guardianResponseMode'],
+    evaluate: s => s.guardianEnabled && s.guardianConfirmationLikelyRequired,
+  },
+  {
+    id: 'guardian_notify_only_copilot_auto',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Notify Only With Co-Pilot Auto',
+    detailTemplate: 'Guardian notify-only mode while Co-Pilot autonomous session is active',
+    evidenceFields: ['guardianResponseMode', 'copilotAutonomousActive'],
+    evaluate: s =>
+      s.guardianEnabled && s.guardianResponseMode === 'notify_only' && s.copilotAutonomousActive,
+  },
+  {
+    id: 'guardian_replay_guardian_disabled',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Replay Log Without Guardian',
+    detailTemplate: 'Guardian replay events exist but Guardian is currently disabled',
+    evidenceFields: ['guardianReplayCount', 'guardianEnabled'],
+    evaluate: s => !s.guardianEnabled && s.guardianReplayCount > 0,
+  },
+  {
+    id: 'copilot_rescue_critical_guardian',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'low',
+    title: 'Rescue Co-Pilot With Relaxed Guardian',
+    detailTemplate: 'Co-Pilot rescue authority with Guardian critical-only protection',
+    evidenceFields: ['copilotAuthorityMode', 'guardianProtectionLevel'],
+    evaluate: s => s.copilotAuthorityMode === 'rescue' && s.guardianProtectionLevel === 'critical_only',
+  },
+  {
+    id: 'rival_victory_midband',
+    category: 'objective',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Rival Victory Midband',
+    detailTemplate: 'Rival victory progress is rising but not yet at critical threshold',
+    evidenceFields: ['rivalVictoryProgressPct', 'victoryThresholdPct'],
+    evaluate: rivalMidband,
+  },
+  {
+    id: 'objective_near_complete',
+    category: 'objective',
+    kind: 'monitor',
+    defaultSeverity: 'info',
+    title: 'Objective Near Complete',
+    detailTemplate: 'Primary objective is above 90% progress',
+    evidenceFields: ['objectiveProgressPct', 'objectiveActive'],
+    evaluate: s =>
+      s.objectiveActive && s.objectiveProgressPct !== null && s.objectiveProgressPct >= 90 && s.objectiveProgressPct < 100,
+  },
+  {
+    id: 'objective_urgency_ap_remaining',
+    category: 'objective',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Objective Urgency With Ap Left',
+    detailTemplate: 'Deadline pressure with limited AP and incomplete objective',
+    evidenceFields: ['objectiveTurnsRemaining', 'apRemaining', 'objectiveProgressPct'],
+    evaluate: s =>
+      s.objectiveActive &&
+      s.apRemaining > 0 &&
+      s.objectiveTurnsRemaining !== null &&
+      s.objectiveTurnsRemaining <= 2 &&
+      (s.objectiveProgressPct === null || s.objectiveProgressPct < 80),
+  },
+  {
+    id: 'team_plan_and_objective_deadline',
+    category: 'team',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Team Plan And Objective Deadline',
+    detailTemplate: 'Team plan pending while objective deadline is imminent',
+    evidenceFields: ['teamPlanPending', 'objectiveTurnsRemaining'],
+    evaluate: s =>
+      s.teamPlanPending && s.objectiveTurnsRemaining !== null && s.objectiveTurnsRemaining <= 2,
+  },
+  {
+    id: 'guardian_verdict_critical_path',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Critical Path',
+    detailTemplate: 'Guardian heuristic reports critical severity on current posture',
+    evidenceFields: ['guardianEnabled', 'guardianAutomationLikelyBlocked'],
+    evaluate: s => {
+      if (!s.guardianEnabled) return false;
+      const v = inferGuardianVerdictFromSnapshot(s);
+      return v.highestSeverity === 'critical' && guardianBlocksAutomation(v, s.guardianProtectionLevel);
+    },
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE.length;
 
 
 // --- source: monitor-rules.ts ---
@@ -716,6 +1020,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
     evaluate: s => s.cash < s.maxSpendPerAction * 2,
   },
   ...ADVISORY_MONITOR_RULES_EXPANSION,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -1032,9 +1337,11 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     victoryThresholdPct: 80,
     guardianRequiresConfirmation: guardian.responseMode === 'require_confirmation',
     guardianProtectionMaximum: guardian.protectionLevel === 'maximum_protection',
+    guardianAutomationLikelyBlocked: false,
+    guardianConfirmationLikelyRequired: false,
   };
 
-  return mergeObjectiveContextIntoSnapshot(base, objectiveCtx);
+  return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
 }
 
 
@@ -1051,7 +1358,7 @@ const ADVISORY_SEVERITY_RANK: Record<AdvisoryRecommendation['severity'], number>
 export function createAdvisoryOpsFixtureSnapshot(
   overrides: Partial<GuardianCoPilotMonitorSnapshot> = {}
 ): GuardianCoPilotMonitorSnapshot {
-  return {
+  const snap: GuardianCoPilotMonitorSnapshot = {
     turn: 4,
     day: 4,
     actorId: 'player_1',
@@ -1088,12 +1395,14 @@ export function createAdvisoryOpsFixtureSnapshot(
     victoryThresholdPct: 80,
     guardianRequiresConfirmation: false,
     guardianProtectionMaximum: false,
+    guardianAutomationLikelyBlocked: false,
+    guardianConfirmationLikelyRequired: false,
     ...overrides,
   };
   if (snap.objectiveTargetRegion && !snap.objectiveRegion) {
     snap.objectiveRegion = snap.objectiveTargetRegion;
   }
-  return snap;
+  return enrichSnapshotGuardianDepth(snap);
 }
 
 function materializeAdvisoryFromRule(
@@ -1357,6 +1666,44 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['guardian_off_during_takeover'],
     notes: 'Takeover without Guardian safety net',
   },
+  {
+    id: 'sc_debt_exceeds_cash',
+    category: 'liquidity',
+    snapshot: { cash: 400, debt: 900 },
+    expectRuleIds: ['debt_exceeds_cash'],
+    notes: 'Debt above liquid cash',
+  },
+  {
+    id: 'sc_guardian_automation_block',
+    category: 'guardian',
+    snapshot: {
+      guardianEnabled: true,
+      guardianProtectionLevel: 'maximum_protection',
+      guardianProtectionMaximum: true,
+      guardianRequiresConfirmation: true,
+      guardianResponseMode: 'require_confirmation',
+      copilotAutonomousActive: true,
+      copilotAuthorityMode: 'autonomous',
+      cash: 100,
+      minCashReserve: 500,
+    },
+    expectRuleIds: ['guardian_automation_block_heuristic', 'guardian_copilot_autonomy_mismatch', 'cash_below_reserve'],
+    notes: 'Heuristic automation block under max protection',
+  },
+  {
+    id: 'sc_rival_midband',
+    category: 'objective',
+    snapshot: { rivalVictoryProgressPct: 55, victoryThresholdPct: 80 },
+    expectRuleIds: ['rival_victory_midband'],
+    notes: 'Rival between 65% and 85% of threshold',
+  },
+  {
+    id: 'sc_objective_near_complete',
+    category: 'objective',
+    snapshot: { objectiveActive: true, objectiveProgressPct: 92 },
+    expectRuleIds: ['objective_near_complete'],
+    notes: 'Objective above 90%',
+  },
 ];
 
 
@@ -1532,9 +1879,37 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Expansion adds guardian and objective monitor rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 33;
+  check(results, 'a16_expansion_count', 'Scale wave brings monitor rule catalog to 46+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 46;
   });
+
+  check(results, 'a16_depth_advice_lines', 'Guardian depth advice lines are non-executable strings', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      guardianEnabled: true,
+      cash: 50,
+      minCashReserve: 500,
+      copilotHoldsControl: true,
+    });
+    const lines = buildGuardianDepthAdviceLines(snap);
+    return lines.length > 0 && lines.every(l => typeof l === 'string' && !/\bexecute\b/i.test(l));
+  });
+
+  check(results, 'a16_snapshot_depth_enrich', 'Snapshot builder enriches Guardian depth flags', () => {
+    const snap = buildGuardianCoPilotMonitorSnapshot({
+      gameState: {
+        player: { money: 50, currentRegion: 'NSW' },
+        gameSettings: {
+          guardianAiSettings: { enabled: true, protectionLevel: 'maximum_protection', responseMode: 'require_confirmation' },
+          coPilotSettings: { enabled: true, autonomousSessionActive: true, authorityMode: 'autonomous', spendingCaps: { minimumCashReserve: 500 } },
+        },
+      },
+    });
+    return snap.guardianAutomationLikelyBlocked === true;
+  });
+
+  for (const t of runGuardianDepthUnitSelfTests()) {
+    check(results, `a16_${t.id}`, `Guardian depth ${t.id}`, () => t.passed);
+  }
 
   for (const rule of ADVISORY_MONITOR_RULES) {
     check(results, `a16_rule_${rule.id}`, `Rule ${rule.id} evaluates without throw on fixture`, () => {

@@ -66,6 +66,8 @@ export interface GuardianCoPilotMonitorSnapshot {
   victoryThresholdPct: number;
   guardianRequiresConfirmation: boolean;
   guardianProtectionMaximum: boolean;
+  guardianAutomationLikelyBlocked: boolean;
+  guardianConfirmationLikelyRequired: boolean;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {

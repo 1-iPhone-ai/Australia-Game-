@@ -20,6 +20,7 @@ import {
   parseObjectiveContextFromGame,
 } from './objective-context.js';
 import { buildGuardianCoPilotMonitorSnapshot } from './snapshot.js';
+import { buildGuardianDepthAdviceLines, runGuardianDepthUnitSelfTests } from './guardian-depth.js';
 import type { AdvisoryRecommendation, Agent16SelfTestResult, AiSuggestedAction } from './types.js';
 
 function check(
@@ -192,9 +193,37 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Expansion adds guardian and objective monitor rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 33;
+  check(results, 'a16_expansion_count', 'Scale wave brings monitor rule catalog to 46+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 46;
   });
+
+  check(results, 'a16_depth_advice_lines', 'Guardian depth advice lines are non-executable strings', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      guardianEnabled: true,
+      cash: 50,
+      minCashReserve: 500,
+      copilotHoldsControl: true,
+    });
+    const lines = buildGuardianDepthAdviceLines(snap);
+    return lines.length > 0 && lines.every(l => typeof l === 'string' && !/\bexecute\b/i.test(l));
+  });
+
+  check(results, 'a16_snapshot_depth_enrich', 'Snapshot builder enriches Guardian depth flags', () => {
+    const snap = buildGuardianCoPilotMonitorSnapshot({
+      gameState: {
+        player: { money: 50, currentRegion: 'NSW' },
+        gameSettings: {
+          guardianAiSettings: { enabled: true, protectionLevel: 'maximum_protection', responseMode: 'require_confirmation' },
+          coPilotSettings: { enabled: true, autonomousSessionActive: true, authorityMode: 'autonomous', spendingCaps: { minimumCashReserve: 500 } },
+        },
+      },
+    });
+    return snap.guardianAutomationLikelyBlocked === true;
+  });
+
+  for (const t of runGuardianDepthUnitSelfTests()) {
+    check(results, `a16_${t.id}`, `Guardian depth ${t.id}`, () => t.passed);
+  }
 
   for (const rule of ADVISORY_MONITOR_RULES) {
     check(results, `a16_rule_${rule.id}`, `Rule ${rule.id} evaluates without throw on fixture`, () => {
