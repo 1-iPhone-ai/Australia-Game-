@@ -373,8 +373,14 @@ export type MedevacHelicopterStagingPolicy = 'baseline' | 'surge';
 
 export type ReefRestorationLogisticsPolicy = 'baseline' | 'expand';
 
+export type PumpedHydroRenewableExportPolicy = 'baseline' | 'accelerate';
+
+export type WildfireAirtankerStagingPolicy = 'baseline' | 'surge';
+
+export type SuburbanMicroFulfillmentLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/37';
+  schemaVersion: 'agent12/38';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -636,6 +642,14 @@ export interface TransportInfrastructureState {
   reefRestorationLogisticsShare: number;
   nationalReefRestorationLogisticsThroughputIndex: number;
   reefRestorationLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalPumpedHydroRenewableExportIndex: number;
+  pumpedHydroRenewableExportByRegion: Record<AuRegionCode, number>;
+  wildfireAirtankerStagingShare: number;
+  nationalWildfireAirtankerStagingIndex: number;
+  wildfireAirtankerStagingByRegion: Record<AuRegionCode, number>;
+  suburbanMicroFulfillmentLogisticsShare: number;
+  nationalSuburbanMicroFulfillmentLogisticsThroughputIndex: number;
+  suburbanMicroFulfillmentLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -737,6 +751,9 @@ export interface TransportInfrastructureOptions {
   offshoreWindCableExportPolicy?: OffshoreWindCableExportPolicy;
   medevacHelicopterStagingPolicy?: MedevacHelicopterStagingPolicy;
   reefRestorationLogisticsPolicy?: ReefRestorationLogisticsPolicy;
+  pumpedHydroRenewableExportPolicy?: PumpedHydroRenewableExportPolicy;
+  wildfireAirtankerStagingPolicy?: WildfireAirtankerStagingPolicy;
+  suburbanMicroFulfillmentLogisticsPolicy?: SuburbanMicroFulfillmentLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -2308,6 +2325,48 @@ export const TRANSPORT_CORRIDORS_ROUND36: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round37.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND37: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_nsw_sa_pumped_hydro_renewable',
+    name: 'NSW–SA Pumped Hydro Renewable',
+    networkKind: 'trade',
+    regionSequence: ['NSW', 'SA'],
+    requiredTagsByRegion: {
+      NSW: ['pumped_hydro_renewable_export', 'grid_storage_rail_feed', 'renewable_pumped_export'],
+      SA: ['pumped_hydro_renewable_export', 'grid_storage_rail_feed', 'renewable_pumped_export'],
+    },
+    productivitySynergyPoints: 6.1,
+    logisticsRelief: 0.038,
+  },
+  {
+    id: 'corr_vic_nsw_wildfire_airtanker',
+    name: 'VIC–NSW Wildfire Airtanker',
+    networkKind: 'mobility',
+    regionSequence: ['VIC', 'NSW'],
+    requiredTagsByRegion: {
+      VIC: ['wildfire_airtanker_staging', 'aerial_firefighting_base', 'bushfire_tanker_logistics'],
+      NSW: ['wildfire_airtanker_staging', 'aerial_firefighting_base', 'bushfire_tanker_logistics'],
+    },
+    productivitySynergyPoints: 5.9,
+    logisticsRelief: 0.032,
+  },
+  {
+    id: 'corr_nsw_qld_suburban_micro_fulfillment',
+    name: 'NSW–QLD Suburban Micro Fulfillment',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'QLD'],
+    requiredTagsByRegion: {
+      NSW: ['suburban_micro_fulfillment', 'ecom_sortation_hub', 'last_mile_micro_hub'],
+      QLD: ['suburban_micro_fulfillment', 'ecom_sortation_hub', 'last_mile_micro_hub'],
+    },
+    productivitySynergyPoints: 5.8,
+    logisticsRelief: 0.033,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -2491,6 +2550,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND34,
   ...TRANSPORT_CORRIDORS_ROUND35,
   ...TRANSPORT_CORRIDORS_ROUND36,
+  ...TRANSPORT_CORRIDORS_ROUND37,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -4539,6 +4599,62 @@ export const TRANSPORT_SCENARIOS_ROUND36: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round37.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND37: TransportStressScenario[] = [
+  {
+    id: 'scn_nsw_pumped_export_surge',
+    label: 'NSW Pumped Export Surge',
+    description: 'Snowy grid storage overloads pumped export berths.',
+    targetRegions: ['NSW', 'SA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_sa_renewable_feed_delay',
+    label: 'SA Renewable Feed Delay',
+    description: 'Heat delays Port Augusta pumped staging.',
+    targetRegions: ['SA', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'road'],
+  },
+  {
+    id: 'scn_vic_bushfire_tanker_surge',
+    label: 'Victoria Bushfire Tanker Surge',
+    description: 'Fire season strains Latrobe airtanker stores.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.28,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_nsw_micro_fulfillment_peak',
+    label: 'NSW Micro Fulfillment Peak',
+    description: 'Holiday e-commerce peaks Parramatta micro hub.',
+    targetRegions: ['NSW', 'QLD'],
+    networkKind: 'freight',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_qld_sortation_backlog',
+    label: 'Queensland Sortation Backlog',
+    description: 'Brisbane port sortation backlog delays last mile.',
+    targetRegions: ['QLD', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.21,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -4736,6 +4852,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND34,
   ...TRANSPORT_SCENARIOS_ROUND35,
   ...TRANSPORT_SCENARIOS_ROUND36,
+  ...TRANSPORT_SCENARIOS_ROUND37,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -13671,6 +13788,233 @@ export const SCALE_WAVE_ROUND36_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round37-assets.ts ---
+
+export const ROUND37_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_nsw_snowy_pumped_haul',
+    category: 'road',
+    name: 'Snowy Pumped Haul',
+    description: 'NSW pumped hydro renewable export staging road.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'SA'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['pumped_hydro_renewable_export', 'grid_storage_rail_feed', 'renewable_pumped_export'],
+    laneKilometres: 24,
+    designSpeedKmh: 80,
+    freightShare: 0.32,
+    urbanShare: 0.1,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_port_augusta_pumped_feed',
+    category: 'road',
+    name: 'Port Augusta Pumped Feed',
+    description: 'SA renewable pumped export road connector.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NSW'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['trade'],
+    tags: ['pumped_hydro_renewable_export', 'grid_storage_rail_feed', 'renewable_pumped_export'],
+    laneKilometres: 20,
+    designSpeedKmh: 78,
+    freightShare: 0.29,
+    urbanShare: 0.12,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_albury_airtanker_access',
+    category: 'road',
+    name: 'Albury Airtanker Access',
+    description: 'VIC bushfire tanker staging road feed.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['mobility'],
+    tags: ['wildfire_airtanker_staging', 'aerial_firefighting_base', 'bushfire_tanker_logistics'],
+    laneKilometres: 17,
+    designSpeedKmh: 75,
+    freightShare: 0.12,
+    urbanShare: 0.2,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_wagga_airtanker_staging',
+    category: 'road',
+    name: 'Wagga Airtanker Staging',
+    description: 'NSW aerial firefighting base connector.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['wildfire_airtanker_staging', 'aerial_firefighting_base', 'bushfire_tanker_logistics'],
+    laneKilometres: 15,
+    designSpeedKmh: 73,
+    freightShare: 0.11,
+    urbanShare: 0.19,
+    tollRoad: false,
+  },
+];
+
+export const ROUND37_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_nsw_snowy_pumped_rail',
+    category: 'rail',
+    name: 'Snowy Pumped Hydro Rail',
+    description: 'NSW grid storage renewable export feed.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'SA'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['pumped_hydro_renewable_export', 'grid_storage_rail_feed', 'renewable_pumped_export'],
+    trackKilometres: 46,
+    dualTrackShare: 0.44,
+    electrifiedShare: 0.58,
+    designFreightTonnesPerYear: 3_800_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_sa_spencer_gulf_pumped_link',
+    category: 'rail',
+    name: 'Spencer Gulf Pumped Link',
+    description: 'SA renewable pumped export rail handoff.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NSW'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['trade'],
+    tags: ['pumped_hydro_renewable_export', 'grid_storage_rail_feed', 'renewable_pumped_export'],
+    trackKilometres: 34,
+    dualTrackShare: 0.5,
+    electrifiedShare: 0.55,
+    designFreightTonnesPerYear: 2_900_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_nsw_western_micro_fulfillment',
+    category: 'rail',
+    name: 'Western Sydney Micro Fulfillment Rail',
+    description: 'NSW e-commerce sortation hub rail feed.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['suburban_micro_fulfillment', 'ecom_sortation_hub', 'last_mile_micro_hub'],
+    trackKilometres: 28,
+    dualTrackShare: 0.52,
+    electrifiedShare: 0.48,
+    designFreightTonnesPerYear: 2_600_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND37_PORTS: PortAsset[] = [
+  {
+    id: 'port_sa_port_augusta_renewable_export',
+    category: 'port',
+    name: 'Port Augusta Renewable Export',
+    description: 'SA pumped hydro renewable export port.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NSW'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['trade'],
+    tags: ['pumped_hydro_renewable_export', 'grid_storage_rail_feed', 'renewable_pumped_export'],
+    berthCount: 3,
+    maxDraftMetres: 12.6,
+    teuCapacityPerYear: 98_000,
+    automationLevel: 2,
+    bulkShare: 0.38,
+  },
+  {
+    id: 'port_vic_east_sale_airtanker_base',
+    category: 'port',
+    name: 'East Sale Airtanker Base',
+    description: 'Victorian aerial firefighting logistics port.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['wildfire_airtanker_staging', 'aerial_firefighting_base', 'bushfire_tanker_logistics'],
+    berthCount: 2,
+    maxDraftMetres: 11.5,
+    teuCapacityPerYear: 72_000,
+    automationLevel: 1,
+    bulkShare: 0.14,
+  },
+  {
+    id: 'port_qld_brisbane_micro_fulfillment',
+    category: 'port',
+    name: 'Brisbane Micro Fulfillment',
+    description: 'Queensland suburban e-commerce sortation port.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['suburban_micro_fulfillment', 'ecom_sortation_hub', 'last_mile_micro_hub'],
+    berthCount: 3,
+    maxDraftMetres: 12.0,
+    teuCapacityPerYear: 210_000,
+    automationLevel: 2,
+    bulkShare: 0.1,
+  },
+];
+
+export const ROUND37_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_nsw_snowy_pumped_stores',
+    category: 'logistics',
+    name: 'Snowy Pumped Stores',
+    description: 'NSW grid storage export consolidation yard.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'SA'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['trade'],
+    tags: ['pumped_hydro_renewable_export', 'grid_storage_rail_feed', 'renewable_pumped_export'],
+    warehouseSqm: 50_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 42,
+  },
+  {
+    id: 'log_vic_latrobe_airtanker_stores',
+    category: 'logistics',
+    name: 'Latrobe Airtanker Stores',
+    description: 'VIC bushfire tanker logistics consolidation.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['mobility'],
+    tags: ['wildfire_airtanker_staging', 'aerial_firefighting_base', 'bushfire_tanker_logistics'],
+    warehouseSqm: 30_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 50,
+  },
+  {
+    id: 'log_nsw_parramatta_micro_hub',
+    category: 'logistics',
+    name: 'Parramatta Micro Hub',
+    description: 'NSW suburban last-mile micro-fulfillment yard.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['freight'],
+    tags: ['suburban_micro_fulfillment', 'ecom_sortation_hub', 'last_mile_micro_hub'],
+    warehouseSqm: 58_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 68,
+  },
+];
+
+export const SCALE_WAVE_ROUND37_ASSETS = [
+  ...ROUND37_ROADS,
+  ...ROUND37_RAIL,
+  ...ROUND37_PORTS,
+  ...ROUND37_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -13715,6 +14059,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND34_ASSETS,
     ...SCALE_WAVE_ROUND35_ASSETS,
     ...SCALE_WAVE_ROUND36_ASSETS,
+    ...SCALE_WAVE_ROUND37_ASSETS,
   ];
 }
 
@@ -15746,6 +16091,67 @@ export function offshoreWindCableExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.036 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.041 + policyBoost, 0.93, 1.1);
+}
+
+
+// --- source: network/pumped-hydro-renewable-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type PumpedHydroRenewableExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 pumped hydro renewable export throughput by region. */
+export function computePumpedHydroRenewableExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) =>
+        t === 'pumped_hydro_renewable_export' ||
+        t === 'grid_storage_rail_feed' ||
+        t === 'renewable_pumped_export',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.0 + asset.maxDraftMetres * 0.36;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 76_000 + asset.intermodalLinks.length * 0.74;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 500;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 9_600_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalPumpedHydroRenewableExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.48 + max * 0.52, 5, 74) * 10) / 10;
+}
+
+export function pumpedHydroRenewableExportProductivityMultiplier(
+  index: number,
+  policy: PumpedHydroRenewableExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.035 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.04 + policyBoost, 0.93, 1.1);
 }
 
 
@@ -18346,6 +18752,96 @@ export function medevacHelicopterStagingProductivityMultiplier(
 ): number {
   const bias = policy === 'surge' ? 1.021 : 1;
   return (1 + (share - 0.054) * 0.026) * bias;
+}
+
+
+// --- source: operations/wildfire-airtanker-staging-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type TransportAsset,
+  type WildfireAirtankerStagingPolicy,
+} from '../types.ts';
+
+/** 0–100 wildfire airtanker staging readiness by region. */
+export function computeWildfireAirtankerStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'wildfire_airtanker_staging' ||
+          t === 'aerial_firefighting_base' ||
+          t === 'bushfire_tanker_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 70_000 + (asset.coldChainCapable ? 1.2 : 0.75);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 470;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.9;
+    }
+    if (asset.category === 'rail' && 'passengerCapable' in asset && asset.passengerCapable) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 290;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.038 - stress * 0.024), 5, 78) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalWildfireAirtankerStagingIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.51 + max * 0.49, 6, 76) * 10) / 10;
+}
+
+export function computeWildfireAirtankerStagingShare(
+  operationalAssets: TransportAsset[],
+  policy: WildfireAirtankerStagingPolicy = 'baseline',
+): number {
+  let tankerUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('wildfire_airtanker_staging') || asset.tags.includes('bushfire_tanker_logistics')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 63_000;
+        tankerUnits += (asset.warehouseSqm / 63_000) * 0.55;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 440;
+        tankerUnits += (asset.laneKilometres / 440) * 0.49;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.037;
+  const policyBoost = policy === 'surge' ? 0.028 : 0;
+  return Math.round(clamp(tankerUnits / totalUnits + policyBoost, 0.036, 0.26) * 1000) / 1000;
+}
+
+export function wildfireAirtankerStagingProductivityMultiplier(
+  share: number,
+  policy: WildfireAirtankerStagingPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.02 : 1;
+  return (1 + (share - 0.052) * 0.025) * bias;
 }
 
 
@@ -21190,6 +21686,98 @@ export function nationalReefRestorationLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/suburban-micro-fulfillment-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type SuburbanMicroFulfillmentLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of suburban logistics supporting micro-fulfillment hubs. */
+export function computeSuburbanMicroFulfillmentLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: SuburbanMicroFulfillmentLogisticsPolicy = 'baseline',
+): number {
+  let microUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) =>
+          t === 'suburban_micro_fulfillment' ||
+          t === 'ecom_sortation_hub' ||
+          t === 'last_mile_micro_hub',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.2 + asset.teuCapacityPerYear / 350_000;
+        microUnits += (asset.berthCount * 1.2) * 0.61;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 57_000;
+        microUnits += (asset.warehouseSqm / 57_000) * 0.56;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.038;
+  const policyBoost = policy === 'expand' ? 0.03 : 0;
+  return Math.round(clamp(microUnits / totalUnits + policyBoost, 0.037, 0.29) * 1000) / 1000;
+}
+
+export function suburbanMicroFulfillmentLogisticsProductivityMultiplier(
+  share: number,
+  policy: SuburbanMicroFulfillmentLogisticsPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.022 : 1;
+  return (1 + (share - 0.058) * 0.026) * bias;
+}
+
+export function computeSuburbanMicroFulfillmentLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'suburban_micro_fulfillment' ||
+          t === 'ecom_sortation_hub' ||
+          t === 'last_mile_micro_hub',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.6 + asset.teuCapacityPerYear / 320_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 62_000 + asset.lastMileCoveragePct / 120;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 430;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalSuburbanMicroFulfillmentLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 2, 55) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -21819,6 +22407,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalReefRestorationLogisticsThroughputIndex,
   reefRestorationLogisticsProductivityMultiplier,
 } from './reef-restoration-logistics-index.ts';
+  computePumpedHydroRenewableExportByRegion,
+  nationalPumpedHydroRenewableExportIndex,
+  pumpedHydroRenewableExportProductivityMultiplier,
+} from '../network/pumped-hydro-renewable-export-index.ts';
+  computeWildfireAirtankerStagingByRegion,
+  computeWildfireAirtankerStagingShare,
+  nationalWildfireAirtankerStagingIndex,
+  wildfireAirtankerStagingProductivityMultiplier,
+} from '../operations/wildfire-airtanker-staging-index.ts';
+  computeSuburbanMicroFulfillmentLogisticsShare,
+  computeSuburbanMicroFulfillmentLogisticsThroughputByRegion,
+  nationalSuburbanMicroFulfillmentLogisticsThroughputIndex,
+  suburbanMicroFulfillmentLogisticsProductivityMultiplier,
+} from './suburban-micro-fulfillment-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -23029,6 +23631,35 @@ export function computeTransportInfrastructureState(
     reefRestorationLogisticsShare,
     options?.reefRestorationLogisticsPolicy ?? 'baseline',
   );
+  const pumpedHydroRenewableExportByRegion = computePumpedHydroRenewableExportByRegion(ops);
+  const nationalPumpedHydro = nationalPumpedHydroRenewableExportIndex(pumpedHydroRenewableExportByRegion);
+  const pumpedHydroMult = pumpedHydroRenewableExportProductivityMultiplier(
+    nationalPumpedHydro,
+    options?.pumpedHydroRenewableExportPolicy ?? 'baseline',
+  );
+  const wildfireAirtankerStagingByRegion = computeWildfireAirtankerStagingByRegion(ops, networkStress);
+  const nationalWildfireTanker = nationalWildfireAirtankerStagingIndex(wildfireAirtankerStagingByRegion);
+  const wildfireAirtankerStagingShare = computeWildfireAirtankerStagingShare(
+    ops,
+    options?.wildfireAirtankerStagingPolicy ?? 'baseline',
+  );
+  const wildfireTankerMult = wildfireAirtankerStagingProductivityMultiplier(
+    wildfireAirtankerStagingShare,
+    options?.wildfireAirtankerStagingPolicy ?? 'baseline',
+  );
+  const suburbanMicroFulfillmentLogisticsThroughputByRegion =
+    computeSuburbanMicroFulfillmentLogisticsThroughputByRegion(ops);
+  const nationalSuburbanMicro = nationalSuburbanMicroFulfillmentLogisticsThroughputIndex(
+    suburbanMicroFulfillmentLogisticsThroughputByRegion,
+  );
+  const suburbanMicroFulfillmentLogisticsShare = computeSuburbanMicroFulfillmentLogisticsShare(
+    ops,
+    options?.suburbanMicroFulfillmentLogisticsPolicy ?? 'baseline',
+  );
+  const suburbanMicroMult = suburbanMicroFulfillmentLogisticsProductivityMultiplier(
+    suburbanMicroFulfillmentLogisticsShare,
+    options?.suburbanMicroFulfillmentLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -23094,6 +23725,9 @@ export function computeTransportInfrastructureState(
     const windCableBoost = (offshoreWindCableExportByRegion[code] - 5) * 0.0032;
     const medevacHeliBoost = (medevacHelicopterStagingByRegion[code] - 6) * 0.0028;
     const reefLogisticsBoost = (reefRestorationLogisticsThroughputByRegion[code] - 2) * 0.0024;
+    const pumpedHydroBoost = (pumpedHydroRenewableExportByRegion[code] - 5) * 0.0031;
+    const wildfireTankerBoost = (wildfireAirtankerStagingByRegion[code] - 6) * 0.0027;
+    const suburbanMicroBoost = (suburbanMicroFulfillmentLogisticsThroughputByRegion[code] - 2) * 0.0023;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -23158,7 +23792,10 @@ export function computeTransportInfrastructureState(
         baggageRobotBoost +
         windCableBoost +
         medevacHeliBoost +
-        reefLogisticsBoost) *
+        reefLogisticsBoost +
+        pumpedHydroBoost +
+        wildfireTankerBoost +
+        suburbanMicroBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -23221,7 +23858,10 @@ export function computeTransportInfrastructureState(
       baggageRobotMult *
       windCableMult *
       medevacHeliMult *
-      reefLogisticsMult;
+      reefLogisticsMult *
+      pumpedHydroMult *
+      wildfireTankerMult *
+      suburbanMicroMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -23307,7 +23947,10 @@ export function computeTransportInfrastructureState(
     nationalBaggageRobot * 0.003 +
     nationalWindCable * 0.003 +
     nationalMedevacHeli * 0.003 +
-    nationalReefLogistics * 0.003;
+    nationalReefLogistics * 0.003 +
+    nationalPumpedHydro * 0.003 +
+    nationalWildfireTanker * 0.003 +
+    nationalSuburbanMicro * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -23322,7 +23965,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/37',
+    schemaVersion: 'agent12/38',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -23584,6 +24227,14 @@ export function computeTransportInfrastructureState(
     reefRestorationLogisticsShare,
     nationalReefRestorationLogisticsThroughputIndex: nationalReefLogistics,
     reefRestorationLogisticsThroughputByRegion,
+    nationalPumpedHydroRenewableExportIndex: nationalPumpedHydro,
+    pumpedHydroRenewableExportByRegion,
+    wildfireAirtankerStagingShare,
+    nationalWildfireAirtankerStagingIndex: nationalWildfireTanker,
+    wildfireAirtankerStagingByRegion,
+    suburbanMicroFulfillmentLogisticsShare,
+    nationalSuburbanMicroFulfillmentLogisticsThroughputIndex: nationalSuburbanMicro,
+    suburbanMicroFulfillmentLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -23666,7 +24317,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/37' &&
+      infra.schemaVersion === 'agent12/38' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -23796,8 +24447,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalOffshoreWindCableExportIndex >= 5 &&
       infra.nationalMedevacHelicopterStagingIndex >= 6 &&
       infra.reefRestorationLogisticsShare >= 0.03 &&
-      infra.nationalReefRestorationLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} cable=${infra.nationalOffshoreWindCableExportIndex.toFixed(1)} medevac=${infra.nationalMedevacHelicopterStagingIndex.toFixed(1)} reef=${infra.nationalReefRestorationLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalReefRestorationLogisticsThroughputIndex >= 2 &&
+      infra.nationalPumpedHydroRenewableExportIndex >= 5 &&
+      infra.nationalWildfireAirtankerStagingIndex >= 6 &&
+      infra.suburbanMicroFulfillmentLogisticsShare >= 0.03 &&
+      infra.nationalSuburbanMicroFulfillmentLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} pumped=${infra.nationalPumpedHydroRenewableExportIndex.toFixed(1)} tanker=${infra.nationalWildfireAirtankerStagingIndex.toFixed(1)} micro=${infra.nationalSuburbanMicroFulfillmentLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;
