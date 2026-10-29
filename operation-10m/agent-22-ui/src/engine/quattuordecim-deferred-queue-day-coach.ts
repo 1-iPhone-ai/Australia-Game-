@@ -7,11 +7,11 @@ export function buildQuattuordecimDeferredQueueDayCoach(input: {
   combinedQueueDepth: number;
   nextGameDay: number;
 }): QuattuordecimDeferredQueueDayCoach {
-  if (input.combinedQueueDepth !== 14) {
+  if (input.combinedQueueDepth !== 13) {
     return { queueDepth: input.combinedQueueDepth, coachCopy: null };
   }
   return {
-    queueDepth: 14,
+    queueDepth: 13,
     coachCopy: `Day ${input.nextGameDay}: Fourteen coach announcements remain queued — day-advance pacing will drip them across upcoming ticks.`,
   };
 }
