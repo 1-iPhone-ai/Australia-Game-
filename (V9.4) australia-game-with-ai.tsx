@@ -77660,6 +77660,8 @@ export function executeCoPilotActionIntent<T extends GameState | ExtendedGameSta
     coPilotSettings?: Partial<CoPilotSettings>;
     mode?: CoPilotAuthorityMode;
     forceExecution?: boolean;
+    /** The player clicked the recommended action. This is their move, not a Co-Pilot commit. */
+    playerClicked?: boolean;
     dispatchPlayer?: (action: any) => void;
     dispatchGameState?: (action: any) => void;
     context?: CoPilotRuntimeContext;
@@ -77770,8 +77772,9 @@ export function executeCoPilotActionIntent<T extends GameState | ExtendedGameSta
     };
   }
 
+  const playerClicked = Boolean(options?.playerClicked);
   const nonExec: CoPilotAuthorityMode[] = ['off', 'monitor_only', 'warnings', 'recommendations'];
-  if (!settings.coPilotEnabled || nonExec.includes(settings.authorityMode)) {
+  if (!playerClicked && (!settings.coPilotEnabled || nonExec.includes(settings.authorityMode))) {
     const stateHash = hashCoPilotLiveState(gameState);
     return {
       updatedState: gameState,
@@ -77792,7 +77795,7 @@ export function executeCoPilotActionIntent<T extends GameState | ExtendedGameSta
     };
   }
 
-  const askConfirmed = Boolean((options as any)?.confirmed || (options as any)?.userConfirmed || (intent as any)?.confirmed || (intent.parameters as any)?.confirmed);
+  const askConfirmed = Boolean(playerClicked || (options as any)?.confirmed || (options as any)?.userConfirmed || (intent as any)?.confirmed || (intent.parameters as any)?.confirmed);
   if (settings.authorityMode === 'ask_before_acting' && !askConfirmed) {
     const stateHash = hashCoPilotLiveState(gameState);
     return {
@@ -77822,7 +77825,8 @@ export function executeCoPilotActionIntent<T extends GameState | ExtendedGameSta
   };
 
   const validationState = runtimeContext ? { ...gameState, player: playerObj, gameSettings } : gameState;
-  const permCheck = validateCoPilotActionPermissions(settings, actionToValidate, validationState, options?.currentTurnSpend ?? session?.spentThisPlayerTurn ?? 0);
+  const permSettings = playerClicked ? { ...settings, coPilotEnabled: true, authorityMode: 'full_co_pilot' as CoPilotAuthorityMode } : settings;
+  const permCheck = validateCoPilotActionPermissions(permSettings, actionToValidate, validationState, options?.currentTurnSpend ?? session?.spentThisPlayerTurn ?? 0);
   if (!permCheck.allowed) {
     const stateHash = hashCoPilotLiveState(gameState);
     return {
@@ -137445,6 +137449,23 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number; pr
     const full = treasuryResolutionTransactionType('approve_full', false);
     return (emergency === 'emergency_zero_cash_support' && partial === 'partial_funding_approval' && full === 'approved_funding_request') || JSON.stringify({ emergency, partial, full });
   });
+  check('u_player_click_commits_when_copilot_is_off', 'A player click on the recommended depot commits when Co-Pilot is off (SIM-047)', () => {
+    const player = { id: 'player', money: 1000, currentRegion: 'QLD', actionsUsedThisTurn: 0, actionPoints: 3, inventory: ['Iron Ore'] };
+    const state: any = { day: 1, turn: 1, turnCounter: 1, gameMode: 'game', selectedMode: 'single', currentTurn: 'player', currentActorId: 'player', player, actorsById: { player: { ...player } }, gameSettings: { ...DEFAULT_GAME_SETTINGS, actionLimitsEnabled: true, playerActionsPerDay: 3, coPilotSettings: { ...createDefaultCoPilotSettings(), coPilotEnabled: false, authorityMode: 'off' } } };
+    const depot = { actionType: 'start_infrastructure_project', actorId: 'player', parameters: { region: 'QLD', infrastructureType: 'trade_depot', capitalAmount: 350 }, costEstimate: 350, expectedCashDelta: -350, expectedAPDelta: -1 };
+    const clicked = executeCoPilotActionIntent(state, depot, { playerClicked: true });
+    const alone = executeCoPilotActionIntent(state, depot, { forceExecution: true });
+    const seller = { ...player, money: 4000 };
+    const askState: any = { ...state, player: seller, actorsById: { player: { ...seller } }, gameSettings: { ...state.gameSettings, coPilotSettings: { ...createDefaultCoPilotSettings(), coPilotEnabled: true, authorityMode: 'ask_before_acting' } } };
+    const sell = { actionType: 'sell', actorId: 'player', item: 'Iron Ore', price: 100, parameters: { resource: 'Iron Ore', price: 100 }, costEstimate: 100, expectedCashDelta: 100, expectedAPDelta: 0 };
+    const unconfirmed = executeCoPilotActionIntent(askState, sell, { mode: 'ask_before_acting' });
+    const forced = executeCoPilotActionIntent(askState, sell, { mode: 'recommendations', forceExecution: true });
+    const after = clicked.updatedState?.player;
+    const remaining = after ? getRemainingActionPoints(after, state.gameSettings) : -1;
+    const built = Boolean(clicked.executionResult.success && after?.money === 650 && remaining === 2);
+    const held = !alone.executionResult.success && alone.executionResult.error === 'COPILOT_AUTHORITY_DENIED' && state.player.money === 1000 && unconfirmed.executionResult.error === 'AWAITING_CONFIRMATION' && !forced.executionResult.success && forced.executionResult.error === 'COPILOT_AUTHORITY_DENIED';
+    return (built && held) || JSON.stringify({ click: clicked.executionResult.error, money: after?.money, remaining, alone: alone.executionResult.error, ask: unconfirmed.executionResult.error, forced: forced.executionResult.error });
+  });
 
 
 
@@ -184372,7 +184393,7 @@ function dispatchGameSettingsChange(
         sessionToken: takeoverSession?.sessionToken,
         takeoverSession
       },
-      { forceExecution: true }
+      { forceExecution: true, playerClicked: true }
     );
     if (executionResult.success) {
       commitMatchMemory({
@@ -184403,7 +184424,7 @@ function dispatchGameSettingsChange(
         setTakeoverSession(updateTakeoverSession(takeoverSession, costEstimate, gameState.turnCounter, actionType, postState, undefined, true));
       }
     } else {
-      addNotification(`Failed to execute Co-Pilot move: ${executionResult.error || executionResult.failureReason || 'Action failed'}`, 'error');
+      addNotification(`Could not do that: ${executionResult.error || executionResult.failureReason || 'Action failed'}`, 'error');
     }
 
     const stateHashAfter = typeof computeCanonicalStateHash === 'function' ? computeCanonicalStateHash(postState || gameState) : computeGameStateHash(postState || gameState);
