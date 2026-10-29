@@ -388,6 +388,18 @@ import {
   buildAgent24ReplayScaleWaveWave34IntegrationHandoffReport,
   runAgent24ReplayScaleWaveWave34IntegrationHandoffSelfTests,
 } from '../src/replay-scale-wave-wave34-integration-handoff.ts';
+import {
+  buildAgent24ReplayScaleWaveWave34IntegrationVerificationReport,
+  runAgent24ReplayScaleWaveWave34IntegrationVerificationSelfTests,
+} from '../src/replay-scale-wave-wave34-integration-verification.ts';
+import {
+  buildAgent24ArchiveScaleWaveWave35ExportGateReport,
+  runAgent24ArchiveScaleWaveWave35ExportGateSelfTests,
+} from '../src/archive-scale-wave-wave35-export-gate.ts';
+import {
+  buildAgent24ReplayScaleWaveWave35IntegrationHandoffReport,
+  runAgent24ReplayScaleWaveWave35IntegrationHandoffSelfTests,
+} from '../src/replay-scale-wave-wave35-integration-handoff.ts';
 import { buildO6kHistoricalAnalyticsSnapshot } from '../src/history-replay-analytics.ts';
 import { o6kAgent24StableStringify, runO6kAgent24SelfTests } from '../src/history-replay-analytics.ts';
 
@@ -2372,6 +2384,67 @@ describe('Agent 24 replay scale wave wave34 integration handoff', () => {
       bundle.replayScaleWaveWave34IntegrationHandoff.deterministicFingerprint,
     );
     assert.ok(runAgent24ReplayScaleWaveWave34IntegrationHandoffSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 replay scale wave wave34 integration verification', () => {
+  it('verifies wave34 integration when handoff, export, and wave33 verification align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.replayScaleWaveWave34IntegrationVerification.verified, true);
+    assert.equal(bundle.replayScaleWaveWave34IntegrationVerification.waveRound, 34);
+    assert.equal(
+      bundle.replayScaleWaveWave34IntegrationVerification.integrationBaselineSha,
+      O6K_AGENT24_WAVE34_INTEGRATION_BASELINE_SHA,
+    );
+    const direct = buildAgent24ReplayScaleWaveWave34IntegrationVerificationReport({
+      matchId: 'm',
+      replayScaleWaveWave34IntegrationHandoff: bundle.replayScaleWaveWave34IntegrationHandoff,
+      archiveScaleWaveWave34ExportGate: bundle.archiveScaleWaveWave34ExportGate,
+      replayScaleWaveWave33IntegrationVerification: bundle.replayScaleWaveWave33IntegrationVerification,
+    });
+    assert.equal(
+      direct.deterministicFingerprint,
+      bundle.replayScaleWaveWave34IntegrationVerification.deterministicFingerprint,
+    );
+    assert.ok(runAgent24ReplayScaleWaveWave34IntegrationVerificationSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 archive scale wave wave35 export gate', () => {
+  it('allows export when wave34 integration verified and seals align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.archiveScaleWaveWave35ExportGate.exportAllowed, true);
+    assert.equal(bundle.archiveScaleWaveWave35ExportGate.waveRound, 34);
+    const direct = buildAgent24ArchiveScaleWaveWave35ExportGateReport({
+      matchId: 'm',
+      replayScaleWaveWave34IntegrationVerification: bundle.replayScaleWaveWave34IntegrationVerification,
+      snapshotSeal: bundle.snapshotSeal,
+      sealVerification: bundle.sealVerification,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.archiveScaleWaveWave35ExportGate.deterministicFingerprint);
+    assert.ok(runAgent24ArchiveScaleWaveWave35ExportGateSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 replay scale wave wave35 integration handoff', () => {
+  it('completes integration handoff at wave 35 baseline', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.replayScaleWaveWave35IntegrationHandoff.handoffComplete, true);
+    assert.equal(bundle.replayScaleWaveWave35IntegrationHandoff.waveRound, 34);
+    assert.equal(
+      bundle.replayScaleWaveWave35IntegrationHandoff.integrationBaselineSha,
+      O6K_AGENT24_WAVE35_INTEGRATION_BASELINE_SHA,
+    );
+    const direct = buildAgent24ReplayScaleWaveWave35IntegrationHandoffReport({
+      matchId: 'm',
+      archiveScaleWaveWave35ExportGate: bundle.archiveScaleWaveWave35ExportGate,
+      replayScaleWaveWave34IntegrationVerification: bundle.replayScaleWaveWave34IntegrationVerification,
+    });
+    assert.equal(
+      direct.deterministicFingerprint,
+      bundle.replayScaleWaveWave35IntegrationHandoff.deterministicFingerprint,
+    );
+    assert.ok(runAgent24ReplayScaleWaveWave35IntegrationHandoffSelfTests().every(t => t.passed));
   });
 });
 

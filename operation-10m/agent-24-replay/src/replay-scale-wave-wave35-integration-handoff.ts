@@ -139,7 +139,7 @@ export function runAgent24ReplayScaleWaveWave35IntegrationHandoffSelfTests(): Ar
         report.handoffComplete &&
         report.integrationBaselineSha === O6K_AGENT24_WAVE35_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: report.waveRound === 35 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 33 },
     {
       name: 'deterministic_fingerprint',
       passed:

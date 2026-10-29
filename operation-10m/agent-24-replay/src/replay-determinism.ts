@@ -350,6 +350,10 @@ import {
   type Agent24ArchiveScaleWaveWave34ExportGateReport,
 } from './archive-scale-wave-wave34-export-gate.ts';
 import {
+  buildAgent24ReplayScaleWaveWave34IntegrationHandoffReport,
+  type Agent24ReplayScaleWaveWave34IntegrationHandoffReport,
+} from './replay-scale-wave-wave34-integration-handoff.ts';
+import {
   buildAgent24ReplayScaleWaveWave34IntegrationVerificationReport,
   type Agent24ReplayScaleWaveWave34IntegrationVerificationReport,
 } from './replay-scale-wave-wave34-integration-verification.ts';
@@ -1433,6 +1437,9 @@ export function buildAgent24ReplayDeterminismBundle(
     replayScaleWaveWave33IntegrationHandoff,
     replayScaleWaveWave33IntegrationVerification,
     archiveScaleWaveWave34ExportGate,
+    replayScaleWaveWave34IntegrationVerification,
+    archiveScaleWaveWave35ExportGate,
+    replayScaleWaveWave35IntegrationHandoff,
     replayScaleWaveWave34IntegrationHandoff,
     attestation: attestationFinal,
     compositeFingerprint,
