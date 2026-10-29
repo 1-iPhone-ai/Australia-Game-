@@ -1,0 +1,31 @@
+import type { V1030IheatAridBufferEdge } from '../../types/core.ts';
+
+/** Arid buffer graph shard 072 (extreme_heat/drought/dust corridor coupling). */
+export const V1030_IHEAT_ARID_BUFFER_SHARD_072: readonly V1030IheatAridBufferEdge[] = [
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.274, lagTurns: 2, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.28, lagTurns: 3, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.286, lagTurns: 4, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.292, lagTurns: 5, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.298, lagTurns: 2, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.304, lagTurns: 3, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.31, lagTurns: 4, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.316, lagTurns: 5, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.322, lagTurns: 2, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.328, lagTurns: 3, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.334, lagTurns: 4, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.34, lagTurns: 5, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.346, lagTurns: 2, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.352, lagTurns: 3, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.358, lagTurns: 4, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.364, lagTurns: 5, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.268, lagTurns: 2, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.274, lagTurns: 3, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.28, lagTurns: 4, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.286, lagTurns: 5, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.292, lagTurns: 2, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.298, lagTurns: 3, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.304, lagTurns: 4, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.31, lagTurns: 5, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.316, lagTurns: 2, nodeId: 'inland_zone_00' },
+  { fromChannel: 'inland_zone', toChannel: 'specialist_referral', weight: 0.322, lagTurns: 3, nodeId: 'inland_zone_00' },
+];
