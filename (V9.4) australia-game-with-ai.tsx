@@ -136523,6 +136523,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'swr', label: 'World Reaction', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicWorldReactionSelfTests() },
   { id: 'dn2', label: 'Diplomacy', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runDiplomacyNegotiation2SelfTests() },
   { id: 'si2', label: 'Settings Intelligence', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runSettingsIntelligence2SelfTests() },
+  { id: 'async89', label: 'Async Execution (O111 Agent 89)', tier: 'quick', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runAsyncExecutionSelfTests() },
   { id: 'bg', label: 'Background AI', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runBackgroundAISelfTests() },
   { id: 'gi3', label: 'Game Intelligence 3', tier: 'full', section: 'AI Turn Reliability', severity: 'MAJOR', run: () => runGameIntelligence3SelfTests() },
   { id: 'teamos', label: 'Team OS scenarios', tier: 'full', section: 'AI Turn Reliability', severity: 'MAJOR', run: () => runTeamOsScenarioSelfTests() },
@@ -138370,6 +138371,143 @@ async function v96RunScripted(budget: number, script: Array<V96ScriptStep | 'end
     ...extra
   });
   return { rt, reason, executed, decisions: i };
+}
+
+/**
+ * Operation 111 — Agent 89 (Asynchronous Execution Engineer).
+ * Pure gates for deferred timers / AI loops (mirrors v95MatchEpochRef + soloAiTurnSessionTokenRef checks).
+ */
+export function shouldRunMatchEpochDeferredCallback(scheduledEpoch: number, liveEpoch: number): boolean {
+  return Number.isFinite(scheduledEpoch) && Number.isFinite(liveEpoch) && scheduledEpoch === liveEpoch;
+}
+
+export function shouldContinueSoloAiAsyncSession(
+  scheduledToken: symbol | null,
+  liveToken: symbol | null,
+  scheduledEpoch: number,
+  liveEpoch: number
+): boolean {
+  return scheduledToken !== null && scheduledToken === liveToken && shouldRunMatchEpochDeferredCallback(scheduledEpoch, liveEpoch);
+}
+
+/** Yields once so coalesced microtasks / setTimeout(0) callbacks can run (LAB + headless runners). */
+export async function o111YieldToEventLoop(): Promise<void> {
+  await new Promise<void>(resolve => {
+    if (typeof queueMicrotask === 'function') queueMicrotask(() => resolve());
+    else if (typeof setTimeout === 'function') setTimeout(() => resolve(), 0);
+    else resolve();
+  });
+}
+
+export function runAsyncExecutionSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  check('ae_match_epoch_live', 'Match-epoch gate runs deferred work only while epoch unchanged', () =>
+    shouldRunMatchEpochDeferredCallback(3, 3) && !shouldRunMatchEpochDeferredCallback(3, 4) || 'epoch gate wrong');
+
+  check('ae_solo_session_gate', 'Solo AI session gate requires token match and live epoch', () => {
+    const tok = Symbol('solo');
+    return shouldContinueSoloAiAsyncSession(tok, tok, 1, 1)
+      && !shouldContinueSoloAiAsyncSession(tok, Symbol('other'), 1, 1)
+      && !shouldContinueSoloAiAsyncSession(tok, tok, 1, 2)
+      || 'session gate wrong';
+  });
+
+  check('ae_turn_key_epoch_isolation', 'computeSoloAiTurnKey changes when match epoch bumps (load/restart safety)', () => {
+    const base = computeSoloAiTurnKey({ turnCounter: 2, day: 1 }, 0);
+    return base !== computeSoloAiTurnKey({ turnCounter: 2, day: 1 }, 1) && base === 'ai:e0:t2:d1' || base;
+  });
+
+  check('ae_claim_blocks_duplicate', 'Solo AI claim registry rejects duplicate schedulers for one turn key', () => {
+    const reg = createSoloAiClaimRegistry();
+    const first = claimSoloAiTurn(reg, 'ai:e1:t3:d2');
+    const dup = claimSoloAiTurn(reg, 'ai:e1:t3:d2');
+    finishSoloAiTurnClaim(reg, 'ai:e1:t3:d2');
+    const relaunch = claimSoloAiTurn(reg, 'ai:e1:t3:d2');
+    return first && !dup && !relaunch && reg.duplicateStarts === 2 || JSON.stringify([first, dup, relaunch, reg.duplicateStarts]);
+  });
+
+  check('ae_watchdog_contract', 'AI turn watchdog recovers hangs but waits on approvals', () =>
+    (decideAiTurnWatchdog({ isThinking: true, hasPendingApprovals: false, msSinceLastAction: V95_AI_TURN_WATCHDOG_MS + 500 }) === 'recover'
+      && decideAiTurnWatchdog({ isThinking: true, hasPendingApprovals: true, msSinceLastAction: 600000 }) === 'waiting_for_approval') || 'watchdog mismatch');
+
+  check('ae_finalize_single_flight', 'Solo AI finalize is single-flight (duplicate end blocked)', () => {
+    const rt = createSoloAiTurnRuntime('ae', 2, 0);
+    return soloAiBeginFinalize(rt, 'budget_exhausted', 1) && !soloAiBeginFinalize(rt, 'watchdog_recovery', 2) || 'duplicate finalize';
+  });
+
+  return results;
+}
+
+export async function runAsyncExecutionSelfTestsAsync(): Promise<V9SelfTestResult[]> {
+  const results: V9SelfTestResult[] = [];
+  const check = async (id: string, name: string, fn: () => Promise<true | string> | true | string) => {
+    try {
+      const out = await fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  await check('ae_diag2_notify_coalesce', 'DIAG2 listener notify coalesces synchronous bursts into one wave', async () => {
+    let calls = 0;
+    const listener = () => { calls += 1; };
+    diag2Listeners.add(listener);
+    try {
+      notifyDiag2Listeners();
+      notifyDiag2Listeners();
+      notifyDiag2Listeners();
+      await o111YieldToEventLoop();
+      await o111YieldToEventLoop();
+    } finally {
+      diag2Listeners.delete(listener);
+    }
+    return calls === 1 || `calls=${calls}`;
+  });
+
+  await check('ae_solo_loop_stale_after_settle', 'Solo AI loop stops with stale_session when epoch/session invalidated during settle', async () => {
+    let stale = false;
+    const rt = createSoloAiTurnRuntime('stale', 2, 0);
+    const reason = await runSoloAiTurnLoop({
+      runtime: rt,
+      decide: () => ({ type: 'travel', description: 'Travel', data: { region: 'VIC' } }),
+      execute: async () => true,
+      fingerprint: () => '1',
+      isStale: () => stale,
+      ownsTurn: () => true,
+      isGameOver: () => false,
+      settle: async () => { stale = true; }
+    });
+    return reason === 'stale_session' && rt.successfulActions === 1 || `${reason} actions=${rt.successfulActions}`;
+  });
+
+  await check('ae_concurrent_claim_single_loop', 'Parallel claim attempts start at most one solo loop', async () => {
+    const reg = createSoloAiClaimRegistry();
+    let loops = 0;
+    const start = async () => {
+      if (!claimSoloAiTurn(reg, 'ae:parallel')) return;
+      loops += 1;
+      await o111YieldToEventLoop();
+      finishSoloAiTurnClaim(reg, 'ae:parallel');
+    };
+    await Promise.all([start(), start(), start()]);
+    return loops === 1 || `loops=${loops}`;
+  });
+
+  return results;
+}
+
+export async function runAsyncExecutionSelfTestsFull(): Promise<V9SelfTestResult[]> {
+  return [...runAsyncExecutionSelfTests(), ...(await runAsyncExecutionSelfTestsAsync())];
 }
 
 export async function runV96HumanVsAiFidelitySelfTests(): Promise<V9SelfTestResult[]> {
