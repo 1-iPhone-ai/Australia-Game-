@@ -41,6 +41,8 @@ import { runInfrastructureFiscalLoadSelfTests } from './modules/infrastructure-f
 import { runRevenueIntegrityAuditSelfTests } from './modules/revenue-integrity-audit/self-tests';
 import { runAppropriationCarryForwardSelfTests } from './modules/appropriation-carry-forward/self-tests';
 import { runExpenditureGrowthBenchmarkSelfTests } from './modules/expenditure-growth-benchmark/self-tests';
+import { runEfficiencyDividendRegisterSelfTests } from './modules/efficiency-dividend-register/self-tests';
+import { runRevenueForwardReconciliationSelfTests } from './modules/revenue-forward-reconciliation/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -91,6 +93,8 @@ ok = runSuite('Infrastructure fiscal load', runInfrastructureFiscalLoadSelfTests
 ok = runSuite('Revenue integrity audit', runRevenueIntegrityAuditSelfTests) && ok;
 ok = runSuite('Appropriation carry-forward', runAppropriationCarryForwardSelfTests) && ok;
 ok = runSuite('Expenditure growth benchmark', runExpenditureGrowthBenchmarkSelfTests) && ok;
+ok = runSuite('Efficiency dividend register', runEfficiencyDividendRegisterSelfTests) && ok;
+ok = runSuite('Revenue forward reconciliation', runRevenueForwardReconciliationSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

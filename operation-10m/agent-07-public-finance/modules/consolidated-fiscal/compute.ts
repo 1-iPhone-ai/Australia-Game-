@@ -33,6 +33,8 @@ import { buildInfrastructureFiscalLoadReport } from '../infrastructure-fiscal-lo
 import { buildRevenueIntegrityAuditReport } from '../revenue-integrity-audit/compute';
 import { buildAppropriationCarryForwardReport } from '../appropriation-carry-forward/compute';
 import { buildExpenditureGrowthBenchmarkReport } from '../expenditure-growth-benchmark/compute';
+import { buildEfficiencyDividendRegisterReport } from '../efficiency-dividend-register/compute';
+import { buildRevenueForwardReconciliationReport } from '../revenue-forward-reconciliation/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -175,6 +177,19 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     myefo,
     recurring,
     forwardEstimatesIntegrity
+  );
+  const efficiencyDividendRegister = buildEfficiencyDividendRegisterReport(
+    turn,
+    v1012,
+    spendingOffsets,
+    fiscalRules
+  );
+  const revenueForwardReconciliation = buildRevenueForwardReconciliationReport(
+    turn,
+    v1012,
+    ledger,
+    myefo,
+    expenditureGrowthBenchmark
   );
 
   checks.push({
@@ -613,12 +628,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `drift=${forwardEstimatesIntegrity.bandDriftPoints}, revisionGap=${forwardEstimatesIntegrity.aggregateRevisionGap}`
   });
 
+  checks.push({
+    id: 'CF61',
+    label: 'Efficiency dividend within portfolio schedule',
+    passed: efficiencyDividendRegister.withinPortfolioSchedule || v1012.pressure === 'critical',
+    detail: `ratio=${efficiencyDividendRegister.scheduleToRealizationRatio}, scheduled=${efficiencyDividendRegister.aggregateScheduledPoints}`
+  });
+
+  checks.push({
+    id: 'CF62',
+    label: 'Revenue forward reconciliation passes',
+    passed: revenueForwardReconciliation.allPassed || v1012.pressure === 'critical',
+    detail: `gap=${revenueForwardReconciliation.aggregateGapPoints}, checks=${revenueForwardReconciliation.checks.filter(c => c.passed).length}/${revenueForwardReconciliation.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF63',
+    label: 'Efficiency dividend coherent with spending offsets',
+    passed: efficiencyDividendRegister.coherentWithSpendingOffsets,
+    detail: `realized=${efficiencyDividendRegister.aggregateRealizedPoints}, offsets=${spendingOffsets.aggregateOffsets}`
+  });
+
+  checks.push({
+    id: 'CF64',
+    label: 'Revenue forward aligned with growth benchmark',
+    passed: revenueForwardReconciliation.alignedWithGrowthBenchmark,
+    detail: `band=${expenditureGrowthBenchmark.revenueCapacityGrowthBand}, growth=${expenditureGrowthBenchmark.aggregateGrowthRate}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 58
+    layerCount: 60
   };
 }
