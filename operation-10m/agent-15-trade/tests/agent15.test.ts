@@ -47,7 +47,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 41);
+  assert.ok(r.passed >= 43);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -824,5 +824,49 @@ test('round 17: congested logistics lowers orchestration vs fluid baseline', () 
   });
   assert.ok(
     healthy.state.tradeThroughputOrchestration.score >= critical.state.tradeThroughputOrchestration.score - 0.12,
+  );
+});
+
+test('round 18: bilateral cargo scheduling and commitment turn closeout on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.bilateralCargoSchedulingSmoothing = 0.55;
+  persisted.commitmentTurnCloseoutSmoothing = 0.53;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 53,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 100 } } },
+    persisted,
+  });
+  assert.ok(r.state.bilateralCargoScheduling);
+  assert.ok(['on_schedule', 'slipping', 'backlogged', 'gridlocked'].includes(r.state.bilateralCargoScheduling.band));
+  assert.ok(r.state.commitmentTurnCloseout);
+  assert.ok(['closed_clean', 'minor_variance', 'open_slots', 'unsettled'].includes(r.state.commitmentTurnCloseout.band));
+  assert.ok(r.persisted.bilateralCargoSchedulingSmoothing != null);
+  assert.ok(r.persisted.commitmentTurnCloseoutSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Bilateral cargo scheduling/i.test(n)));
+  assert.ok(notes.some(n => /Commitment turn closeout/i.test(n)));
+});
+
+test('round 18: fractured harmonization lowers cargo scheduling vs aligned baseline', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.commitmentLedgerHarmonizationSmoothing = 0.72;
+  persisted.tradeThroughputOrchestrationSmoothing = 0.66;
+  const aligned = advanceGlobalTradeEconomyTurn({
+    turn: 54,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 85 } } },
+    persisted: { ...persisted },
+  });
+  persisted.commitmentLedgerHarmonizationSmoothing = 0.28;
+  persisted.tradeThroughputOrchestrationSmoothing = 0.24;
+  const fractured = advanceGlobalTradeEconomyTurn({
+    turn: 54,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 190 } } },
+    persisted: { ...persisted },
+  });
+  assert.ok(
+    aligned.state.bilateralCargoScheduling.score >= fractured.state.bilateralCargoScheduling.score - 0.14,
   );
 });

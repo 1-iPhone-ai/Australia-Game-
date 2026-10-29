@@ -174,6 +174,10 @@ export interface GTELPersisted {
   tradeThroughputOrchestrationSmoothing?: number;
   /** Smoothed commitment ledger harmonization score (0–1). */
   commitmentLedgerHarmonizationSmoothing?: number;
+  /** Smoothed bilateral cargo scheduling score (0–1). */
+  bilateralCargoSchedulingSmoothing?: number;
+  /** Smoothed commitment turn closeout score (0–1). */
+  commitmentTurnCloseoutSmoothing?: number;
 }
 
 export interface GTELState {
@@ -221,6 +225,8 @@ export interface GTELState {
   tradeFlowCohesion: GTELTradeFlowCohesionSnapshot;
   tradeThroughputOrchestration: GTELTradeThroughputOrchestrationSnapshot;
   commitmentLedgerHarmonization: GTELCommitmentLedgerHarmonizationSnapshot;
+  bilateralCargoScheduling: GTELBilateralCargoSchedulingSnapshot;
+  commitmentTurnCloseout: GTELCommitmentTurnCloseoutSnapshot;
   inputHash: string;
 }
 
@@ -688,6 +694,26 @@ export interface GTELCommitmentLedgerHarmonizationSnapshot {
   summary: string;
 }
 
+export type GTELBilateralCargoSchedulingBand = 'on_schedule' | 'slipping' | 'backlogged' | 'gridlocked';
+
+export interface GTELBilateralCargoSchedulingSnapshot {
+  score: number;
+  band: GTELBilateralCargoSchedulingBand;
+  slotUtilization: number;
+  harmonizationSupport: number;
+  summary: string;
+}
+
+export type GTELCommitmentTurnCloseoutBand = 'closed_clean' | 'minor_variance' | 'open_slots' | 'unsettled';
+
+export interface GTELCommitmentTurnCloseoutSnapshot {
+  score: number;
+  band: GTELCommitmentTurnCloseoutBand;
+  slotVariance: number;
+  schedulingSupport: number;
+  summary: string;
+}
+
 export interface GlobalTradeEconomyPanelProps {
   state: GTELState | null;
   theme?: { isDark?: boolean };
@@ -867,6 +893,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     tradeFlowCohesionSmoothing: 0.52,
     tradeThroughputOrchestrationSmoothing: 0.52,
     commitmentLedgerHarmonizationSmoothing: 0.52,
+    bilateralCargoSchedulingSmoothing: 0.52,
+    commitmentTurnCloseoutSmoothing: 0.52,
   };
 }
 
@@ -1059,6 +1087,10 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   base.commitmentLedgerHarmonizationSmoothing = sanitizeCommitmentLedgerHarmonizationSmoothing(
     r.commitmentLedgerHarmonizationSmoothing,
   );
+  base.bilateralCargoSchedulingSmoothing = sanitizeBilateralCargoSchedulingSmoothing(
+    r.bilateralCargoSchedulingSmoothing,
+  );
+  base.commitmentTurnCloseoutSmoothing = sanitizeCommitmentTurnCloseoutSmoothing(r.commitmentTurnCloseoutSmoothing);
   return base;
 }
 
@@ -6698,6 +6730,18 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   commitmentLedgerHarmonizationGiNotes,
   commitmentLedgerHarmonizationWorldEvent,
 } from './commitment-ledger-harmonization.ts';
+  computeBilateralCargoSchedulingSnapshot,
+  bilateralCargoSchedulingDomesticStress,
+  bilateralCargoSchedulingExportScale,
+  bilateralCargoSchedulingGiNotes,
+  bilateralCargoSchedulingWorldEvent,
+} from './bilateral-cargo-scheduling.ts';
+  computeCommitmentTurnCloseoutSnapshot,
+  commitmentTurnCloseoutDomesticStressRelief,
+  commitmentTurnCloseoutExportScale,
+  commitmentTurnCloseoutGiNotes,
+  commitmentTurnCloseoutWorldEvent,
+} from './commitment-turn-closeout.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -7214,6 +7258,29 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const harmonizationEvent = commitmentLedgerHarmonizationWorldEvent(commitmentLedgerHarmonization, turn);
   if (harmonizationEvent) worldEvents.push(harmonizationEvent);
 
+  const cargoSchedulingStep = computeBilateralCargoSchedulingSnapshot({
+    commitmentLedgerHarmonization,
+    tradeThroughputOrchestration,
+    logistics,
+    persisted,
+  });
+  persisted = cargoSchedulingStep.persisted;
+  const bilateralCargoScheduling = cargoSchedulingStep.snapshot;
+  const cargoSchedulingEvent = bilateralCargoSchedulingWorldEvent(bilateralCargoScheduling, turn);
+  if (cargoSchedulingEvent) worldEvents.push(cargoSchedulingEvent);
+
+  const closeoutStep = computeCommitmentTurnCloseoutSnapshot({
+    exportCommitmentPipeline,
+    importCommitmentPipeline,
+    commitmentLedgerHarmonization,
+    bilateralCargoScheduling,
+    persisted,
+  });
+  persisted = closeoutStep.persisted;
+  const commitmentTurnCloseout = closeoutStep.snapshot;
+  const closeoutEvent = commitmentTurnCloseoutWorldEvent(commitmentTurnCloseout, turn);
+  if (closeoutEvent) worldEvents.push(closeoutEvent);
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -7237,6 +7304,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         tradeFlowCohesionExportScale(tradeFlowCohesion) *
         tradeThroughputOrchestrationExportScale(tradeThroughputOrchestration) *
         commitmentLedgerHarmonizationExportScale(commitmentLedgerHarmonization) *
+        bilateralCargoSchedulingExportScale(bilateralCargoScheduling) *
+        commitmentTurnCloseoutExportScale(commitmentTurnCloseout) *
         10,
     ) / 10;
 
@@ -7301,6 +7370,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       tradeShockAbsorptionDomesticStressRelief(tradeShockAbsorption) +
       tradeFlowCohesionDomesticStressRelief(tradeFlowCohesion) +
       commitmentLedgerHarmonizationDomesticStressRelief(commitmentLedgerHarmonization) +
+      commitmentTurnCloseoutDomesticStressRelief(commitmentTurnCloseout) +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
@@ -7311,7 +7381,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       tradeBalanceStabilizationDomesticStress(tradeBalanceStabilization) +
       exportCommitmentPipelineDomesticStress(exportCommitmentPipeline) +
       importCommitmentPipelineDomesticStress(importCommitmentPipeline) +
-      tradeThroughputOrchestrationDomesticStress(tradeThroughputOrchestration),
+      tradeThroughputOrchestrationDomesticStress(tradeThroughputOrchestration) +
+      bilateralCargoSchedulingDomesticStress(bilateralCargoScheduling),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -7356,6 +7427,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.tradeFlowCohesionSmoothing,
     persisted.tradeThroughputOrchestrationSmoothing,
     persisted.commitmentLedgerHarmonizationSmoothing,
+    persisted.bilateralCargoSchedulingSmoothing,
+    persisted.commitmentTurnCloseoutSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -7432,6 +7505,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     tradeFlowCohesion,
     tradeThroughputOrchestration,
     commitmentLedgerHarmonization,
+    bilateralCargoScheduling,
+    commitmentTurnCloseout,
     inputHash,
   };
 
@@ -7487,6 +7562,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...tradeFlowCohesionGiNotes(state.tradeFlowCohesion));
   lines.push(...tradeThroughputOrchestrationGiNotes(state.tradeThroughputOrchestration));
   lines.push(...commitmentLedgerHarmonizationGiNotes(state.commitmentLedgerHarmonization));
+  lines.push(...bilateralCargoSchedulingGiNotes(state.bilateralCargoScheduling));
+  lines.push(...commitmentTurnCloseoutGiNotes(state.commitmentTurnCloseout));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
@@ -7586,6 +7663,14 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   createEmptyCommitmentLedgerHarmonizationSnapshot,
   commitmentLedgerHarmonizationExportScale,
 } from './commitment-ledger-harmonization.ts';
+  computeBilateralCargoSchedulingSnapshot,
+  createEmptyBilateralCargoSchedulingSnapshot,
+  bilateralCargoSchedulingExportScale,
+} from './bilateral-cargo-scheduling.ts';
+  computeCommitmentTurnCloseoutSnapshot,
+  createEmptyCommitmentTurnCloseoutSnapshot,
+  commitmentTurnCloseoutExportScale,
+} from './commitment-turn-closeout.ts';
   validateScenarioShockCatalog,
   triggerCommodityShockScenario,
   COMMODITY_SHOCK_SCENARIOS,
@@ -8620,6 +8705,54 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       commitmentLedgerHarmonizationExportScale(aligned) >= commitmentLedgerHarmonizationExportScale(fractured),
       'expected harmonization scale lift',
+    );
+  });
+
+  ok('bilateral cargo scheduling improves when ledgers align and logistics are fluid', () => {
+    const harmonization = { ...createEmptyCommitmentLedgerHarmonizationSnapshot(), score: 0.72, band: 'aligned' as const, ledgerGap: 0.06 };
+    const orchestration = { ...createEmptyTradeThroughputOrchestrationSnapshot(), score: 0.68, band: 'fluid' as const, pipelineHeadroom: 0.42 };
+    const onSchedule = computeBilateralCargoSchedulingSnapshot({
+      commitmentLedgerHarmonization: harmonization,
+      tradeThroughputOrchestration: orchestration,
+      logistics: { band: 'fluid', freightPressure: 0.18, redundancyScore: 0.72, effectiveExportThroughput: 95, networkStrain: 0.08, summary: 'test' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const gridlocked = computeBilateralCargoSchedulingSnapshot({
+      commitmentLedgerHarmonization: { ...harmonization, score: 0.32, band: 'fractured', ledgerGap: 0.34 },
+      tradeThroughputOrchestration: { ...orchestration, score: 0.26, band: 'stalled', pipelineHeadroom: 0.1 },
+      logistics: { band: 'congested', freightPressure: 0.78, redundancyScore: 0.28, effectiveExportThroughput: 52, networkStrain: 0.65, summary: 'test' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(onSchedule.score > gridlocked.score, 'expected stronger scheduling when aligned');
+    gtelAssert(
+      bilateralCargoSchedulingExportScale(onSchedule) >= bilateralCargoSchedulingExportScale(gridlocked),
+      'expected scheduling scale lift',
+    );
+  });
+
+  ok('commitment turn closeout improves when cargo scheduling is on schedule', () => {
+    const exportPipe = { ...createEmptyTradeCommitmentPipelineSnapshot(), fillRate: 0.52, band: 'steady' as const };
+    const importPipe = { ...createEmptyImportCommitmentPipelineSnapshot(), fillRate: 0.5, band: 'steady' as const };
+    const harmonization = { ...createEmptyCommitmentLedgerHarmonizationSnapshot(), score: 0.7, band: 'aligned' as const };
+    const scheduling = { ...createEmptyBilateralCargoSchedulingSnapshot(), score: 0.74, band: 'on_schedule' as const };
+    const clean = computeCommitmentTurnCloseoutSnapshot({
+      exportCommitmentPipeline: exportPipe,
+      importCommitmentPipeline: importPipe,
+      commitmentLedgerHarmonization: harmonization,
+      bilateralCargoScheduling: scheduling,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const unsettled = computeCommitmentTurnCloseoutSnapshot({
+      exportCommitmentPipeline: { ...exportPipe, fillRate: 0.82, band: 'booked_out' },
+      importCommitmentPipeline: { ...importPipe, fillRate: 0.38, band: 'slack' },
+      commitmentLedgerHarmonization: { ...harmonization, score: 0.34, band: 'fractured' },
+      bilateralCargoScheduling: { ...scheduling, score: 0.28, band: 'gridlocked' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(clean.score > unsettled.score, 'expected stronger closeout when on schedule');
+    gtelAssert(
+      commitmentTurnCloseoutExportScale(clean) >= commitmentTurnCloseoutExportScale(unsettled),
+      'expected closeout scale lift',
     );
   });
 

@@ -129,6 +129,16 @@ import {
   createEmptyCommitmentLedgerHarmonizationSnapshot,
   commitmentLedgerHarmonizationExportScale,
 } from './commitment-ledger-harmonization.ts';
+import {
+  computeBilateralCargoSchedulingSnapshot,
+  createEmptyBilateralCargoSchedulingSnapshot,
+  bilateralCargoSchedulingExportScale,
+} from './bilateral-cargo-scheduling.ts';
+import {
+  computeCommitmentTurnCloseoutSnapshot,
+  createEmptyCommitmentTurnCloseoutSnapshot,
+  commitmentTurnCloseoutExportScale,
+} from './commitment-turn-closeout.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -1167,6 +1177,54 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       commitmentLedgerHarmonizationExportScale(aligned) >= commitmentLedgerHarmonizationExportScale(fractured),
       'expected harmonization scale lift',
+    );
+  });
+
+  ok('bilateral cargo scheduling improves when ledgers align and logistics are fluid', () => {
+    const harmonization = { ...createEmptyCommitmentLedgerHarmonizationSnapshot(), score: 0.72, band: 'aligned' as const, ledgerGap: 0.06 };
+    const orchestration = { ...createEmptyTradeThroughputOrchestrationSnapshot(), score: 0.68, band: 'fluid' as const, pipelineHeadroom: 0.42 };
+    const onSchedule = computeBilateralCargoSchedulingSnapshot({
+      commitmentLedgerHarmonization: harmonization,
+      tradeThroughputOrchestration: orchestration,
+      logistics: { band: 'fluid', freightPressure: 0.18, redundancyScore: 0.72, effectiveExportThroughput: 95, networkStrain: 0.08, summary: 'test' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const gridlocked = computeBilateralCargoSchedulingSnapshot({
+      commitmentLedgerHarmonization: { ...harmonization, score: 0.32, band: 'fractured', ledgerGap: 0.34 },
+      tradeThroughputOrchestration: { ...orchestration, score: 0.26, band: 'stalled', pipelineHeadroom: 0.1 },
+      logistics: { band: 'congested', freightPressure: 0.78, redundancyScore: 0.28, effectiveExportThroughput: 52, networkStrain: 0.65, summary: 'test' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(onSchedule.score > gridlocked.score, 'expected stronger scheduling when aligned');
+    gtelAssert(
+      bilateralCargoSchedulingExportScale(onSchedule) >= bilateralCargoSchedulingExportScale(gridlocked),
+      'expected scheduling scale lift',
+    );
+  });
+
+  ok('commitment turn closeout improves when cargo scheduling is on schedule', () => {
+    const exportPipe = { ...createEmptyTradeCommitmentPipelineSnapshot(), fillRate: 0.52, band: 'steady' as const };
+    const importPipe = { ...createEmptyImportCommitmentPipelineSnapshot(), fillRate: 0.5, band: 'steady' as const };
+    const harmonization = { ...createEmptyCommitmentLedgerHarmonizationSnapshot(), score: 0.7, band: 'aligned' as const };
+    const scheduling = { ...createEmptyBilateralCargoSchedulingSnapshot(), score: 0.74, band: 'on_schedule' as const };
+    const clean = computeCommitmentTurnCloseoutSnapshot({
+      exportCommitmentPipeline: exportPipe,
+      importCommitmentPipeline: importPipe,
+      commitmentLedgerHarmonization: harmonization,
+      bilateralCargoScheduling: scheduling,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const unsettled = computeCommitmentTurnCloseoutSnapshot({
+      exportCommitmentPipeline: { ...exportPipe, fillRate: 0.82, band: 'booked_out' },
+      importCommitmentPipeline: { ...importPipe, fillRate: 0.38, band: 'slack' },
+      commitmentLedgerHarmonization: { ...harmonization, score: 0.34, band: 'fractured' },
+      bilateralCargoScheduling: { ...scheduling, score: 0.28, band: 'gridlocked' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(clean.score > unsettled.score, 'expected stronger closeout when on schedule');
+    gtelAssert(
+      commitmentTurnCloseoutExportScale(clean) >= commitmentTurnCloseoutExportScale(unsettled),
+      'expected closeout scale lift',
     );
   });
 

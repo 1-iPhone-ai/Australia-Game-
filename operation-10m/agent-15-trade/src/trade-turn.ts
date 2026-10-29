@@ -221,6 +221,20 @@ import {
   commitmentLedgerHarmonizationWorldEvent,
 } from './commitment-ledger-harmonization.ts';
 import {
+  computeBilateralCargoSchedulingSnapshot,
+  bilateralCargoSchedulingDomesticStress,
+  bilateralCargoSchedulingExportScale,
+  bilateralCargoSchedulingGiNotes,
+  bilateralCargoSchedulingWorldEvent,
+} from './bilateral-cargo-scheduling.ts';
+import {
+  computeCommitmentTurnCloseoutSnapshot,
+  commitmentTurnCloseoutDomesticStressRelief,
+  commitmentTurnCloseoutExportScale,
+  commitmentTurnCloseoutGiNotes,
+  commitmentTurnCloseoutWorldEvent,
+} from './commitment-turn-closeout.ts';
+import {
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -740,6 +754,29 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const harmonizationEvent = commitmentLedgerHarmonizationWorldEvent(commitmentLedgerHarmonization, turn);
   if (harmonizationEvent) worldEvents.push(harmonizationEvent);
 
+  const cargoSchedulingStep = computeBilateralCargoSchedulingSnapshot({
+    commitmentLedgerHarmonization,
+    tradeThroughputOrchestration,
+    logistics,
+    persisted,
+  });
+  persisted = cargoSchedulingStep.persisted;
+  const bilateralCargoScheduling = cargoSchedulingStep.snapshot;
+  const cargoSchedulingEvent = bilateralCargoSchedulingWorldEvent(bilateralCargoScheduling, turn);
+  if (cargoSchedulingEvent) worldEvents.push(cargoSchedulingEvent);
+
+  const closeoutStep = computeCommitmentTurnCloseoutSnapshot({
+    exportCommitmentPipeline,
+    importCommitmentPipeline,
+    commitmentLedgerHarmonization,
+    bilateralCargoScheduling,
+    persisted,
+  });
+  persisted = closeoutStep.persisted;
+  const commitmentTurnCloseout = closeoutStep.snapshot;
+  const closeoutEvent = commitmentTurnCloseoutWorldEvent(commitmentTurnCloseout, turn);
+  if (closeoutEvent) worldEvents.push(closeoutEvent);
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -763,6 +800,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         tradeFlowCohesionExportScale(tradeFlowCohesion) *
         tradeThroughputOrchestrationExportScale(tradeThroughputOrchestration) *
         commitmentLedgerHarmonizationExportScale(commitmentLedgerHarmonization) *
+        bilateralCargoSchedulingExportScale(bilateralCargoScheduling) *
+        commitmentTurnCloseoutExportScale(commitmentTurnCloseout) *
         10,
     ) / 10;
 
@@ -827,6 +866,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       tradeShockAbsorptionDomesticStressRelief(tradeShockAbsorption) +
       tradeFlowCohesionDomesticStressRelief(tradeFlowCohesion) +
       commitmentLedgerHarmonizationDomesticStressRelief(commitmentLedgerHarmonization) +
+      commitmentTurnCloseoutDomesticStressRelief(commitmentTurnCloseout) +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
@@ -837,7 +877,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       tradeBalanceStabilizationDomesticStress(tradeBalanceStabilization) +
       exportCommitmentPipelineDomesticStress(exportCommitmentPipeline) +
       importCommitmentPipelineDomesticStress(importCommitmentPipeline) +
-      tradeThroughputOrchestrationDomesticStress(tradeThroughputOrchestration),
+      tradeThroughputOrchestrationDomesticStress(tradeThroughputOrchestration) +
+      bilateralCargoSchedulingDomesticStress(bilateralCargoScheduling),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -882,6 +923,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.tradeFlowCohesionSmoothing,
     persisted.tradeThroughputOrchestrationSmoothing,
     persisted.commitmentLedgerHarmonizationSmoothing,
+    persisted.bilateralCargoSchedulingSmoothing,
+    persisted.commitmentTurnCloseoutSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -958,6 +1001,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     tradeFlowCohesion,
     tradeThroughputOrchestration,
     commitmentLedgerHarmonization,
+    bilateralCargoScheduling,
+    commitmentTurnCloseout,
     inputHash,
   };
 
@@ -1013,6 +1058,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...tradeFlowCohesionGiNotes(state.tradeFlowCohesion));
   lines.push(...tradeThroughputOrchestrationGiNotes(state.tradeThroughputOrchestration));
   lines.push(...commitmentLedgerHarmonizationGiNotes(state.commitmentLedgerHarmonization));
+  lines.push(...bilateralCargoSchedulingGiNotes(state.bilateralCargoScheduling));
+  lines.push(...commitmentTurnCloseoutGiNotes(state.commitmentTurnCloseout));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }

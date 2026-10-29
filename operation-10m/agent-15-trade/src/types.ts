@@ -170,6 +170,10 @@ export interface GTELPersisted {
   tradeThroughputOrchestrationSmoothing?: number;
   /** Smoothed commitment ledger harmonization score (0–1). */
   commitmentLedgerHarmonizationSmoothing?: number;
+  /** Smoothed bilateral cargo scheduling score (0–1). */
+  bilateralCargoSchedulingSmoothing?: number;
+  /** Smoothed commitment turn closeout score (0–1). */
+  commitmentTurnCloseoutSmoothing?: number;
 }
 
 export interface GTELState {
@@ -217,6 +221,8 @@ export interface GTELState {
   tradeFlowCohesion: GTELTradeFlowCohesionSnapshot;
   tradeThroughputOrchestration: GTELTradeThroughputOrchestrationSnapshot;
   commitmentLedgerHarmonization: GTELCommitmentLedgerHarmonizationSnapshot;
+  bilateralCargoScheduling: GTELBilateralCargoSchedulingSnapshot;
+  commitmentTurnCloseout: GTELCommitmentTurnCloseoutSnapshot;
   inputHash: string;
 }
 
@@ -681,6 +687,26 @@ export interface GTELCommitmentLedgerHarmonizationSnapshot {
   band: GTELCommitmentLedgerHarmonizationBand;
   ledgerGap: number;
   orchestrationSupport: number;
+  summary: string;
+}
+
+export type GTELBilateralCargoSchedulingBand = 'on_schedule' | 'slipping' | 'backlogged' | 'gridlocked';
+
+export interface GTELBilateralCargoSchedulingSnapshot {
+  score: number;
+  band: GTELBilateralCargoSchedulingBand;
+  slotUtilization: number;
+  harmonizationSupport: number;
+  summary: string;
+}
+
+export type GTELCommitmentTurnCloseoutBand = 'closed_clean' | 'minor_variance' | 'open_slots' | 'unsettled';
+
+export interface GTELCommitmentTurnCloseoutSnapshot {
+  score: number;
+  band: GTELCommitmentTurnCloseoutBand;
+  slotVariance: number;
+  schedulingSupport: number;
   summary: string;
 }
 
