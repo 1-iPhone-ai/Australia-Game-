@@ -44,4 +44,7 @@ export * from './wellbeing-integration-handoff-brief.ts';
 export * from './integration-trajectory.ts';
 export * from './schedule-readiness-monitor.ts';
 export * from './national-wire-in-readiness-brief.ts';
+export * from './wire-in-trajectory.ts';
+export * from './turn-boundary-activation-monitor.ts';
+export * from './agent25-assembly-handoff-brief.ts';
 export { runAgent14WellbeingSelfTests } from './self-tests.ts';

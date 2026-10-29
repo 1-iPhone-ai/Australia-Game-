@@ -1,6 +1,6 @@
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.14-scale-wave-14' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.15-scale-wave-15' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -125,6 +125,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   integrationTrajectory?: IntegrationTrajectorySnapshot;
   scheduleReadinessMonitor?: ScheduleReadinessMonitor;
   nationalWireInReadinessBrief?: NationalWireInReadinessBrief;
+  wireInTrajectory?: WireInTrajectorySnapshot;
+  turnBoundaryActivationMonitor?: TurnBoundaryActivationMonitor;
+  agent25AssemblyHandoffBrief?: Agent25AssemblyHandoffBrief;
 }
 
 export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
@@ -577,6 +580,42 @@ export interface NationalWireInReadinessBrief {
   turn: number;
   shouldWireNationalTurn: boolean;
   dueCommitCount: number;
+  headlines: string[];
+  summary: string;
+}
+
+export type WireInActivationBand = 'active' | 'pending' | 'blocked';
+
+export interface WireInTrajectorySnapshot {
+  turn: number;
+  wireInActivationEma: number;
+  instantaneousActivation: number;
+  band: WireInActivationBand;
+  trajectory: CouplingTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface WireInTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  wireInActivationEma: number;
+  priorEma?: number;
+}
+
+export interface TurnBoundaryActivationMonitor {
+  turn: number;
+  shouldActivateTurnBoundary: boolean;
+  dueCommitCount: number;
+  deliveryCapacityIndex: number;
+  blockingReasons: string[];
+  summary: string;
+}
+
+export interface Agent25AssemblyHandoffBrief {
+  turn: number;
+  shouldHandoffChunk: boolean;
+  shouldActivateTurnBoundary: boolean;
   headlines: string[];
   summary: string;
 }

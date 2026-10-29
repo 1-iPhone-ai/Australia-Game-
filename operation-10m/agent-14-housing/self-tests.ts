@@ -102,6 +102,13 @@ import {
 } from './integration-trajectory.ts';
 import { buildScheduleReadinessMonitor } from './schedule-readiness-monitor.ts';
 import { composeNationalWireInReadinessBrief } from './national-wire-in-readiness-brief.ts';
+import {
+  advanceWireInTrajectory,
+  createInitialWireInTrajectory,
+  sanitizeWireInTrajectory,
+} from './wire-in-trajectory.ts';
+import { buildTurnBoundaryActivationMonitor } from './turn-boundary-activation-monitor.ts';
+import { composeAgent25AssemblyHandoffBrief } from './agent25-assembly-handoff-brief.ts';
 import { AGENT14_WELLBEING_SCHEMA_VERSION } from './types.ts';
 
 export interface Agent14SelfTestResult {
@@ -603,8 +610,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Thirty housing scenarios registered',
-    listAgent14ScenarioIds().length === 30,
+    'Thirty-two housing scenarios registered',
+    listAgent14ScenarioIds().length === 32,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -832,8 +839,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave5_schema_version',
-    'Wellbeing schema version is wave 14',
-    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.14-scale-wave-14',
+    'Wellbeing schema version is wave 15',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.15-scale-wave-15',
     AGENT14_WELLBEING_SCHEMA_VERSION
   );
 
@@ -2359,6 +2366,160 @@ export function runAgent14WellbeingSelfTests(): {
       'Integration trajectory advance updates persisted turn',
       snap.persisted.lastTurn === 3 && snap.snapshot.integrationReadinessEma > 0,
       `ema=${snap.snapshot.integrationReadinessEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 5, fiscalHeadroom: 45, stateCapacityLoad: 60, workforceReadiness: 'strained' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      wireInTrajectoryPersisted: createInitialWireInTrajectory(),
+    });
+    check(
+      results,
+      'wave15_wire_in_trajectory',
+      'Turn advance attaches wire-in trajectory',
+      adv.inputs.wireInTrajectory !== undefined &&
+        adv.wireInTrajectoryPersisted.lastTurn === 5 &&
+        adv.inputs.wireInTrajectory!.wireInActivationEma > 0,
+      `band=${adv.inputs.wireInTrajectory?.band} ema=${adv.inputs.wireInTrajectory?.wireInActivationEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 6, fiscalHeadroom: 15, stateCapacityLoad: 95, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave15_turn_boundary_monitor',
+      'Turn boundary activation monitor populated under stress',
+      adv.inputs.turnBoundaryActivationMonitor !== undefined &&
+        adv.inputs.turnBoundaryActivationMonitor!.summary.length > 8,
+      adv.inputs.turnBoundaryActivationMonitor?.summary.slice(0, 72)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 53, stateCapacityLoad: 48, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave15_agent25_handoff_brief',
+      'Agent 25 assembly handoff brief includes summary',
+      adv.inputs.agent25AssemblyHandoffBrief !== undefined &&
+        adv.inputs.agent25AssemblyHandoffBrief!.summary.length > 10,
+      `handoff=${adv.inputs.agent25AssemblyHandoffBrief?.shouldHandoffChunk}`
+    );
+  }
+
+  {
+    const raw = sanitizeWireInTrajectory({
+      schemaVersion: '10.14.14-scale-wave-14' as any,
+      lastTurn: 2,
+      emaAlpha: 0.3,
+      wireInActivationEma: 42,
+    });
+    check(
+      results,
+      'wave15_wire_in_sanitize',
+      'Wire-in trajectory sanitize upgrades schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.wireInActivationEma === 42,
+      `schema=${raw.schemaVersion}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('wire_in_trajectory_arc', 10);
+    const last = sim.turns[9];
+    check(
+      results,
+      'wave15_wire_in_arc_scenario',
+      'Wire-in arc wires trajectory, boundary monitor, and Agent 25 brief',
+      last.wireInTrajectory !== undefined &&
+        last.turnBoundaryActivationMonitor !== undefined &&
+        last.agent25AssemblyHandoffBrief !== undefined,
+      `band=${last.wireInTrajectory?.band} activate=${last.turnBoundaryActivationMonitor?.shouldActivateTurnBoundary}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('turn_boundary_activation_stress', 8);
+    const last = sim.turns[7];
+    check(
+      results,
+      'wave15_boundary_stress_scenario',
+      'Boundary stress blocks activation or Agent 25 handoff',
+      last.turnBoundaryActivationMonitor !== undefined &&
+        (!last.turnBoundaryActivationMonitor!.shouldActivateTurnBoundary ||
+          !last.agent25AssemblyHandoffBrief!.shouldHandoffChunk ||
+          last.wireInTrajectory!.band !== 'active'),
+      `activate=${last.turnBoundaryActivationMonitor?.shouldActivateTurnBoundary} handoff=${last.agent25AssemblyHandoffBrief?.shouldHandoffChunk}`
+    );
+  }
+
+  check(
+    results,
+    'wave15_boundary_stub_catalog',
+    'Wave 15 boundary stubs present',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_NSW_turn_boundary') &&
+      AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_SA_agent25_handoff'),
+    `n=${AGENT14_HEALTH_ED_PROGRAM_STUBS.length}`
+  );
+
+  check(
+    results,
+    'wave15_scenario_catalog',
+    'Scenario catalog includes wave 15 scenarios',
+    listAgent14ScenarioIds().includes('wire_in_trajectory_arc') &&
+      listAgent14ScenarioIds().includes('turn_boundary_activation_stress'),
+    `count=${listAgent14ScenarioIds().length}`
+  );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 7, fiscalHeadroom: 21, stateCapacityLoad: 90, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const monitor = buildTurnBoundaryActivationMonitor({
+      turn: 7,
+      wireInBrief: adv.inputs.nationalWireInReadinessBrief!,
+      scheduleReadiness: adv.inputs.scheduleReadinessMonitor!,
+      capacity: adv.inputs.capacity,
+    });
+    const handoff = composeAgent25AssemblyHandoffBrief({
+      turn: 7,
+      activationMonitor: monitor,
+      wireInTrajectory: adv.inputs.wireInTrajectory,
+    });
+    check(
+      results,
+      'wave15_agent25_composer',
+      'Standalone Agent 25 composer returns headlines',
+      handoff.headlines.length > 0 && handoff.summary.length > 10,
+      handoff.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 3, fiscalHeadroom: 50, stateCapacityLoad: 52, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const snap = advanceWireInTrajectory(
+      3,
+      adv.inputs.nationalWireInReadinessBrief!,
+      createInitialWireInTrajectory()
+    );
+    check(
+      results,
+      'wave15_wire_in_advance_unit',
+      'Wire-in trajectory advance updates persisted turn',
+      snap.persisted.lastTurn === 3 && snap.snapshot.wireInActivationEma > 0,
+      `ema=${snap.snapshot.wireInActivationEma}`
     );
   }
 

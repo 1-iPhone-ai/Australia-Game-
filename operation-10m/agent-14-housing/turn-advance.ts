@@ -37,6 +37,9 @@ import { composeWellbeingIntegrationHandoffBrief } from './wellbeing-integration
 import { advanceIntegrationTrajectory } from './integration-trajectory.ts';
 import { buildScheduleReadinessMonitor } from './schedule-readiness-monitor.ts';
 import { composeNationalWireInReadinessBrief } from './national-wire-in-readiness-brief.ts';
+import { advanceWireInTrajectory } from './wire-in-trajectory.ts';
+import { buildTurnBoundaryActivationMonitor } from './turn-boundary-activation-monitor.ts';
+import { composeAgent25AssemblyHandoffBrief } from './agent25-assembly-handoff-brief.ts';
 import { composeAgent14WellbeingExecutiveBrief } from './wellbeing-executive-brief.ts';
 import {
   canAcceptSpendingCommitment,
@@ -58,6 +61,7 @@ import type {
   ResumptionTrajectoryPersisted,
   HandoffTrajectoryPersisted,
   IntegrationTrajectoryPersisted,
+  WireInTrajectoryPersisted,
   SpendingCommitment,
 } from './types.ts';
 
@@ -76,6 +80,7 @@ export interface AdvancePublicServicesTurnArgs {
   resumptionTrajectoryPersisted?: ResumptionTrajectoryPersisted | null;
   handoffTrajectoryPersisted?: HandoffTrajectoryPersisted | null;
   integrationTrajectoryPersisted?: IntegrationTrajectoryPersisted | null;
+  wireInTrajectoryPersisted?: WireInTrajectoryPersisted | null;
   /** New commitments queued this turn (already validated or not). */
   newCommitments?: SpendingCommitment[];
   /** When true, reject commitments that fail capacity gate. */
@@ -97,6 +102,7 @@ export interface AdvancePublicServicesTurnResult {
   resumptionTrajectoryPersisted: ResumptionTrajectoryPersisted;
   handoffTrajectoryPersisted: HandoffTrajectoryPersisted;
   integrationTrajectoryPersisted: IntegrationTrajectoryPersisted;
+  wireInTrajectoryPersisted: WireInTrajectoryPersisted;
   rejectedCommitments: Array<{ commitment: SpendingCommitment; reason: string }>;
 }
 
@@ -379,6 +385,25 @@ export function advancePublicServicesTurn(
     integrationTrajectory: integrationTrajectoryAdvance.snapshot,
   });
 
+  const wireInTrajectoryAdvance = advanceWireInTrajectory(
+    turn,
+    nationalWireInReadinessBrief,
+    args.wireInTrajectoryPersisted
+  );
+
+  const turnBoundaryActivationMonitor = buildTurnBoundaryActivationMonitor({
+    turn,
+    wireInBrief: nationalWireInReadinessBrief,
+    scheduleReadiness: scheduleReadinessMonitor,
+    capacity,
+  });
+
+  const agent25AssemblyHandoffBrief = composeAgent25AssemblyHandoffBrief({
+    turn,
+    activationMonitor: turnBoundaryActivationMonitor,
+    wireInTrajectory: wireInTrajectoryAdvance.snapshot,
+  });
+
   const executiveBrief = composeAgent14WellbeingExecutiveBrief({
     turn,
     warnings: wellbeingWarnings,
@@ -413,6 +438,9 @@ export function advancePublicServicesTurn(
     integrationTrajectory: integrationTrajectoryAdvance.snapshot,
     scheduleReadinessMonitor,
     nationalWireInReadinessBrief,
+    wireInTrajectory: wireInTrajectoryAdvance.snapshot,
+    turnBoundaryActivationMonitor,
+    agent25AssemblyHandoffBrief,
   });
 
   const enriched: EnrichedPublicServiceTurnInputs = {
@@ -464,6 +492,9 @@ export function advancePublicServicesTurn(
     integrationTrajectory: integrationTrajectoryAdvance.snapshot,
     scheduleReadinessMonitor,
     nationalWireInReadinessBrief,
+    wireInTrajectory: wireInTrajectoryAdvance.snapshot,
+    turnBoundaryActivationMonitor,
+    agent25AssemblyHandoffBrief,
   };
 
   return {
@@ -481,6 +512,7 @@ export function advancePublicServicesTurn(
     resumptionTrajectoryPersisted: resumptionTrajectoryAdvance.persisted,
     handoffTrajectoryPersisted: handoffTrajectoryAdvance.persisted,
     integrationTrajectoryPersisted: integrationTrajectoryAdvance.persisted,
+    wireInTrajectoryPersisted: wireInTrajectoryAdvance.persisted,
     rejectedCommitments,
   };
 }

@@ -15,6 +15,18 @@ Agent 25 inlines the chunk (or runs the assembly pipeline) — **do not** hand-e
 
 Integration branch: **`op10m/agent-14-housing`** (canonical worker branch for this module). Scale wave round 4 workers may push **`op10m/agent-14-housing-wellbeing`** for PR #331 head sync.
 
+## Scale wave 15 (wire-in trajectory & Agent 25 handoff)
+
+| Module | Purpose |
+|--------|---------|
+| `wire-in-trajectory.ts` | Cross-turn EMA of national wire-in activation (`WireInTrajectoryPersisted`) |
+| `turn-boundary-activation-monitor.ts` | Turn-boundary activation vs schedule, wire-in, and capacity |
+| `agent25-assembly-handoff-brief.ts` | GI signal when Agent 25 may merge chunk at anchor |
+
+Turn advance attaches `wireInTrajectory`, `turnBoundaryActivationMonitor`, `agent25AssemblyHandoffBrief`, and returns `wireInTrajectoryPersisted`.
+
+Boundary stubs (`ps_xp_NSW_turn_boundary`, `ps_xp_SA_agent25_handoff`); scenarios `wire_in_trajectory_arc`, `turn_boundary_activation_stress`.
+
 ## Scale wave 14 (integration trajectory & schedule readiness)
 
 | Module | Purpose |
@@ -179,7 +191,7 @@ Suggested marker:
 - `advanceDelayedSpendingEffects` / `commitSpendingProgram` / `makeSpendingCommitment`
 - `runAgent14WellbeingSelfTests`
 - `runAgent14HousingScenarioSweep` / `simulateAgent14HousingScenario`
-- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.14-scale-wave-14`)
+- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.15-scale-wave-15`)
 
 ## Upstream inputs (read-only)
 

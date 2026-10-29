@@ -9,7 +9,7 @@ import type {
 
 export function createInitialDelayedSpendingPersisted(): DelayedSpendingPersisted {
   return {
-    schemaVersion: '10.14.14-scale-wave-14' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.15-scale-wave-15' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     active: [],
     history: [],
   };
@@ -31,7 +31,7 @@ export function sanitizeDelayedSpendingPersisted(
         .slice(0, AGENT14_LIMITS.maxActiveCommitments)
     : [];
   return {
-    schemaVersion: '10.14.14-scale-wave-14' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.15-scale-wave-15' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     active,
     history: Array.isArray(raw.history) ? raw.history.slice(-AGENT14_LIMITS.maxHistory) : [],
   };

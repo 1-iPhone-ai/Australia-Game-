@@ -32,6 +32,9 @@ import type {
   IntegrationTrajectorySnapshot,
   ScheduleReadinessMonitor,
   NationalWireInReadinessBrief,
+  WireInTrajectorySnapshot,
+  TurnBoundaryActivationMonitor,
+  Agent25AssemblyHandoffBrief,
   WellbeingTurnForecastPoint,
 } from './types.ts';
 
@@ -70,6 +73,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   integrationTrajectory?: IntegrationTrajectorySnapshot;
   scheduleReadinessMonitor?: ScheduleReadinessMonitor;
   nationalWireInReadinessBrief?: NationalWireInReadinessBrief;
+  wireInTrajectory?: WireInTrajectorySnapshot;
+  turnBoundaryActivationMonitor?: TurnBoundaryActivationMonitor;
+  agent25AssemblyHandoffBrief?: Agent25AssemblyHandoffBrief;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -205,6 +211,17 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   if (args.nationalWireInReadinessBrief?.shouldWireNationalTurn) {
     giNotes.push(args.nationalWireInReadinessBrief.summary);
   }
+  if (args.wireInTrajectory?.band === 'blocked') {
+    giNotes.push(
+      `Wire-in activation ${args.wireInTrajectory.band} (EMA ${args.wireInTrajectory.wireInActivationEma})`
+    );
+  }
+  if (args.turnBoundaryActivationMonitor && !args.turnBoundaryActivationMonitor.shouldActivateTurnBoundary) {
+    giNotes.push(args.turnBoundaryActivationMonitor.summary);
+  }
+  if (args.agent25AssemblyHandoffBrief?.shouldHandoffChunk) {
+    giNotes.push(args.agent25AssemblyHandoffBrief.summary);
+  }
 
   const headlineParts: string[] = [];
   if (args.coupling.band === 'critical' || args.coupling.band === 'strained') {
@@ -234,6 +251,8 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
     headlineParts.push('national integration handoff ready');
   } else if (args.nationalWireInReadinessBrief?.shouldWireNationalTurn) {
     headlineParts.push('national wire-in ready');
+  } else if (args.agent25AssemblyHandoffBrief?.shouldHandoffChunk) {
+    headlineParts.push('Agent 25 assembly handoff ready');
   }
 
   return {

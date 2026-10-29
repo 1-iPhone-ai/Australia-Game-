@@ -38,7 +38,9 @@ export type Agent14HousingScenarioId =
   | 'handoff_trajectory_arc'
   | 'gated_commit_scheduler_stress'
   | 'integration_trajectory_arc'
-  | 'schedule_readiness_stress';
+  | 'schedule_readiness_stress'
+  | 'wire_in_trajectory_arc'
+  | 'turn_boundary_activation_stress';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -333,6 +335,29 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
       'ps_h_WA_remote_housing',
     ],
   },
+  {
+    id: 'wire_in_trajectory_arc',
+    label: 'Wire-in trajectory arc',
+    baseInputs: { fiscalHeadroom: 58, stateCapacityLoad: 42, workforceReadiness: 'balanced' },
+    launchProgramIds: [
+      'ps_xp_NSW_turn_boundary',
+      'ps_h_NSW_social_accel',
+      'ps_he_NSW_primary_care',
+    ],
+  },
+  {
+    id: 'turn_boundary_activation_stress',
+    label: 'Turn boundary activation stress',
+    baseInputs: { fiscalHeadroom: 12, stateCapacityLoad: 98, workforceReadiness: 'blocking', workforceSpecialistGap: 88 },
+    launchProgramIds: [
+      'ps_xp_SA_agent25_handoff',
+      'ps_h_SA_modular',
+      'ps_he_VIC_hospital_backlog',
+      'ps_ed_NSW_skills',
+      'ps_h_QLD_regional_release',
+      'ps_h_VIC_planning_reform',
+    ],
+  },
 ];
 
 export { commitmentFromProgramStub } from './program-stub-commitments.ts';
@@ -360,6 +385,7 @@ export function simulateAgent14HousingScenario(
   let resumptionTrajectoryPersisted = null;
   let handoffTrajectoryPersisted = null;
   let integrationTrajectoryPersisted = null;
+  let wireInTrajectoryPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -385,6 +411,7 @@ export function simulateAgent14HousingScenario(
       resumptionTrajectoryPersisted,
       handoffTrajectoryPersisted,
       integrationTrajectoryPersisted,
+      wireInTrajectoryPersisted,
       newCommitments,
       enforceCapacity: true,
     });
@@ -401,6 +428,7 @@ export function simulateAgent14HousingScenario(
     resumptionTrajectoryPersisted = result.resumptionTrajectoryPersisted;
     handoffTrajectoryPersisted = result.handoffTrajectoryPersisted;
     integrationTrajectoryPersisted = result.integrationTrajectoryPersisted;
+    wireInTrajectoryPersisted = result.wireInTrajectoryPersisted;
     turns.push(result.inputs);
   }
 
