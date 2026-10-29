@@ -384,6 +384,7 @@ export type O10mCommutationPhase = 'petition' | 'review' | 'commutation';
 export type O10mAcquittalPhase = 'brief' | 'review' | 'acquittal';
 export type O10mExonerationPhase = 'claim' | 'review' | 'exoneration';
 export type O10mExpungementPhase = 'filing' | 'review' | 'expungement';
+export type O10mVacaturPhase = 'petition' | 'review' | 'vacatur';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -660,6 +661,17 @@ export interface O10mExpungementSession {
   phaseTag: O10mExpungementPhase;
 }
 
+/** Schema v33 — vacatur arc with merit accrual between phases. */
+export interface O10mVacaturSession {
+  vacaturId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  meritScore: number;
+  phaseTag: O10mVacaturPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -684,6 +696,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'vacatur_step'
     | 'expungement_step'
     | 'exoneration_step'
     | 'acquittal_step'
@@ -827,6 +840,10 @@ export interface O10mCampaignPlan {
   expungementCursor: number | null;
   expungementPhase: O10mExpungementPhase | null;
   expungementSeal: number | null;
+  vacaturId: string | null;
+  vacaturCursor: number | null;
+  vacaturPhase: O10mVacaturPhase | null;
+  vacaturMerit: number | null;
   reason: string;
 }
 
@@ -912,8 +929,10 @@ export interface O10mModesPersistedState {
   acquittalSession?: O10mAcquittalSession | null;
   /** Schema v31 — active exoneration arc (mutually exclusive with expungement / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   exonerationSession?: O10mExonerationSession | null;
-  /** Schema v32 — active expungement arc (mutually exclusive with exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v32 — active expungement arc (mutually exclusive with vacatur / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   expungementSession?: O10mExpungementSession | null;
+  /** Schema v33 — active vacatur arc (mutually exclusive with expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  vacaturSession?: O10mVacaturSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

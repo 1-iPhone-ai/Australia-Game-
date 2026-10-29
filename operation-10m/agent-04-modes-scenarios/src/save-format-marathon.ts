@@ -17,6 +17,7 @@ import { advancePardonSessionAfterRun } from './save-format-pardon.js';
 import { advanceAmnestySessionAfterRun } from './save-format-amnesty.js';
 import { advanceReprieveSessionAfterRun } from './save-format-reprieve.js';
 import { advanceExpungementSessionAfterRun } from './save-format-expungement.js';
+import { advanceVacaturSessionAfterRun } from './save-format-vacatur.js';
 import { advanceExonerationSessionAfterRun } from './save-format-exoneration.js';
 import { advanceAcquittalSessionAfterRun } from './save-format-acquittal.js';
 import { advanceCommutationSessionAfterRun } from './save-format-commutation.js';
@@ -155,6 +156,7 @@ export function attachMarathonQueueToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -272,6 +274,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceVacaturSessionAfterRun(next, run);
   next = advanceExpungementSessionAfterRun(next, run);
   next = advanceExonerationSessionAfterRun(next, run);
   next = advanceAcquittalSessionAfterRun(next, run);

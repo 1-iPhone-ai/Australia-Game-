@@ -32,6 +32,7 @@ import { sanitizeCommutationSession } from './save-format-commutation.js';
 import { sanitizeAcquittalSession } from './save-format-acquittal.js';
 import { sanitizeExonerationSession } from './save-format-exoneration.js';
 import { sanitizeExpungementSession } from './save-format-expungement.js';
+import { sanitizeVacaturSession } from './save-format-vacatur.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -50,7 +51,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 32;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 33;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -181,6 +182,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
   };
 }
 
@@ -232,6 +234,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       acquittalSession: merged.acquittalSession ?? null,
       exonerationSession: merged.exonerationSession ?? null,
       expungementSession: merged.expungementSession ?? null,
+      vacaturSession: merged.vacaturSession ?? null,
     };
     return upgraded;
   }
@@ -307,6 +310,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     acquittalSession: sanitizeAcquittalSession(o.acquittalSession),
     exonerationSession: sanitizeExonerationSession(o.exonerationSession),
     expungementSession: sanitizeExpungementSession(o.expungementSession),
+    vacaturSession: sanitizeVacaturSession(o.vacaturSession),
   };
 }
 
@@ -537,6 +541,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Expungement session failed sanitization; planner will ignore it.');
   } else if (expungement && expungement.cursor >= expungement.scenarioIds.length) {
     warnings.push('Expungement cursor out of range; clamp on next sanitize.');
+  }
+
+  const vacatur = sanitizeVacaturSession(state.vacaturSession);
+  if (state.vacaturSession && !vacatur) {
+    warnings.push('Vacatur session failed sanitization; planner will ignore it.');
+  } else if (vacatur && vacatur.cursor >= vacatur.scenarioIds.length) {
+    warnings.push('Vacatur cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

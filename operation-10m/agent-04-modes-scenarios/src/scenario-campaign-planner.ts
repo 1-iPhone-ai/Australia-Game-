@@ -102,6 +102,11 @@ import {
   sanitizeExpungementSession,
 } from './save-format-expungement.js';
 import {
+  getVacaturScenarioAtCursor,
+  vacaturSessionSummary,
+  sanitizeVacaturSession,
+} from './save-format-vacatur.js';
+import {
   getExonerationScenarioAtCursor,
   exonerationSessionSummary,
   sanitizeExonerationSession,
@@ -167,6 +172,7 @@ import type {
   O10mAcquittalPhase,
   O10mExonerationPhase,
   O10mExpungementPhase,
+  O10mVacaturPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -281,9 +287,31 @@ const emptyQueuePlan = {
   expungementCursor: null as number | null,
   expungementPhase: null as O10mExpungementPhase | null,
   expungementSeal: null as number | null,
+  vacaturId: null as string | null,
+  vacaturCursor: null as number | null,
+  vacaturPhase: null as O10mVacaturPhase | null,
+  vacaturMerit: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const vacatur = sanitizeVacaturSession(state.vacaturSession);
+  const vacaturScenario = getVacaturScenarioAtCursor(vacatur);
+  if (vacatur && vacatur.active && vacaturScenario) {
+    return {
+      kind: 'vacatur_step',
+      scenarioId: vacaturScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      vacaturId: vacatur.vacaturId,
+      vacaturCursor: vacatur.cursor,
+      vacaturPhase: vacatur.phaseTag,
+      vacaturMerit: vacatur.meritScore,
+      reason: `Vacatur "${vacatur.label}" ${vacatur.phaseTag} phase ${vacatur.cursor + 1}/${vacatur.scenarioIds.length} (merit ${vacatur.meritScore}).`,
+    };
+  }
+
   const expungement = sanitizeExpungementSession(state.expungementSession);
   const expungementScenario = getExpungementScenarioAtCursor(expungement);
   if (expungement && expungement.active && expungementScenario) {
@@ -881,6 +909,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   acquittalActive: boolean;
   exonerationActive: boolean;
   expungementActive: boolean;
+  vacaturActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -916,6 +945,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const acquittal = acquittalSessionSummary(state);
   const exoneration = exonerationSessionSummary(state);
   const expungement = expungementSessionSummary(state);
+  const vacatur = vacaturSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -949,6 +979,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     acquittalActive: acquittal.active,
     exonerationActive: exoneration.active,
     expungementActive: expungement.active,
+    vacaturActive: vacatur.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

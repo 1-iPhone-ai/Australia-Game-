@@ -27,6 +27,7 @@ import {
   attachAcquittalSessionToState,
   attachExonerationSessionToState,
   attachExpungementSessionToState,
+  attachVacaturSessionToState,
   attachGauntletSessionToState,
   attachMarathonQueueToState,
   attachRelaySessionToState,
@@ -57,6 +58,7 @@ import {
   createAcquittalSession,
   createExonerationSession,
   createExpungementSession,
+  createVacaturSession,
   createGauntletSession,
   createMarathonQueue,
   createRelaySession,
@@ -232,6 +234,22 @@ describe('scenario campaign planner round 4', () => {
     state = attachReprieveSessionToState(state, reprieve!);
     state = attachParoleSessionToState(state, parole!);
     assert.equal(planNextCampaignAction(state).kind, 'parole_step');
+  });
+
+  it('prefers active vacatur over expungement, exoneration, acquittal, commutation, probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: vacatur } = createVacaturSession({
+      vacaturId: 'o10m_vacatur_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_vacatur_petition_docket', 'o10m_vacatur_review_chamber'],
+    });
+    const { session: expungement } = createExpungementSession({
+      expungementId: 'o10m_expungement_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_expungement_filing_docket', 'o10m_expungement_review_chamber'],
+    });
+    let state = attachExpungementSessionToState(createEmptyO10mModesPersistedState(), expungement!);
+    state = attachVacaturSessionToState(state, vacatur!);
+    assert.equal(planNextCampaignAction(state).kind, 'vacatur_step');
   });
 
   it('prefers active expungement over exoneration, acquittal, commutation, probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {

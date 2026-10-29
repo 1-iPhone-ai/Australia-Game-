@@ -1130,6 +1130,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_vacatur_route',
+    title: 'Vacatur Route',
+    description:
+      'Three-phase vacatur arc with merit accrual between legs — round-33 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_vacatur_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_vacatur_petition_docket',
+        title: 'Petition Docket',
+        narrativeBridge: 'File petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 430 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_vacatur_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 6, NSW: 5 },
+          forcedSettingsPatch: { o10mVacaturMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_vacatur_merit_finale',
+        title: 'Merit Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainVacaturRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

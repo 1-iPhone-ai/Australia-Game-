@@ -388,6 +388,7 @@ export type O10mCommutationPhase = 'petition' | 'review' | 'commutation';
 export type O10mAcquittalPhase = 'brief' | 'review' | 'acquittal';
 export type O10mExonerationPhase = 'claim' | 'review' | 'exoneration';
 export type O10mExpungementPhase = 'filing' | 'review' | 'expungement';
+export type O10mVacaturPhase = 'petition' | 'review' | 'vacatur';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -664,6 +665,17 @@ export interface O10mExpungementSession {
   phaseTag: O10mExpungementPhase;
 }
 
+/** Schema v33 — vacatur arc with merit accrual between phases. */
+export interface O10mVacaturSession {
+  vacaturId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  meritScore: number;
+  phaseTag: O10mVacaturPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -688,6 +700,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'vacatur_step'
     | 'expungement_step'
     | 'exoneration_step'
     | 'acquittal_step'
@@ -831,6 +844,10 @@ export interface O10mCampaignPlan {
   expungementCursor: number | null;
   expungementPhase: O10mExpungementPhase | null;
   expungementSeal: number | null;
+  vacaturId: string | null;
+  vacaturCursor: number | null;
+  vacaturPhase: O10mVacaturPhase | null;
+  vacaturMerit: number | null;
   reason: string;
 }
 
@@ -916,8 +933,10 @@ export interface O10mModesPersistedState {
   acquittalSession?: O10mAcquittalSession | null;
   /** Schema v31 — active exoneration arc (mutually exclusive with expungement / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   exonerationSession?: O10mExonerationSession | null;
-  /** Schema v32 — active expungement arc (mutually exclusive with exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v32 — active expungement arc (mutually exclusive with vacatur / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   expungementSession?: O10mExpungementSession | null;
+  /** Schema v33 — active vacatur arc (mutually exclusive with expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  vacaturSession?: O10mVacaturSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -4569,6 +4588,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Expungement finales', 'Seal ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_vacatur_petition_docket',
+    title: 'Vacatur Petition Docket',
+    description: 'Open a vacatur arc with low-pressure merit pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100508,
+    startingMoney: 3450,
+    startingRegions: ['TAS', 'VIC'],
+    badgeId: 'badge_o10m_vacatur_petition_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100508),
+      o10mVacaturPetitionDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_vpd_obj_day',
+        label: 'Petition Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Vacatur arcs', 'Merit pacing', 'Petition phase'],
+  },
+  {
+    id: 'o10m_vacatur_review_chamber',
+    title: 'Vacatur Review Chamber',
+    description: 'Mid-vacatur review with accrued merit bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100509,
+    startingMoney: 4000,
+    startingRegions: ['NSW', 'WA'],
+    startingStanding: { NSW: 66, WA: 64 },
+    badgeId: 'badge_o10m_vacatur_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100509),
+      regionalStandingEnabled: true,
+      o10mVacaturReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_vrc2_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 72',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 72,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Merit carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_vacatur_merit_finale',
+    title: 'Vacatur Merit Finale',
+    description: 'Finale vacatur stage — net worth gate with full merit bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100510,
+    startingMoney: 4450,
+    startingRegions: ['QLD', 'NT', 'SA'],
+    badgeId: 'badge_o10m_vacatur_merit_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100510),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mVacaturMeritFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_vmf_obj_net',
+        label: 'Merit Net Worth',
+        description: 'Reach $19,800 net worth',
+        targetType: 'netWorth',
+        targetValue: 19800,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Vacatur finales', 'Merit ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -6139,6 +6255,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_vacatur_route',
+    title: 'Vacatur Route',
+    description:
+      'Three-phase vacatur arc with merit accrual between legs — round-33 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_vacatur_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_vacatur_petition_docket',
+        title: 'Petition Docket',
+        narrativeBridge: 'File petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 430 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_vacatur_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 6, NSW: 5 },
+          forcedSettingsPatch: { o10mVacaturMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_vacatur_merit_finale',
+        title: 'Merit Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainVacaturRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -6965,7 +7115,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 32;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 33;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -7096,6 +7246,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
   };
 }
 
@@ -7147,6 +7298,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       acquittalSession: merged.acquittalSession ?? null,
       exonerationSession: merged.exonerationSession ?? null,
       expungementSession: merged.expungementSession ?? null,
+      vacaturSession: merged.vacaturSession ?? null,
     };
     return upgraded;
   }
@@ -7222,6 +7374,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     acquittalSession: sanitizeAcquittalSession(o.acquittalSession),
     exonerationSession: sanitizeExonerationSession(o.exonerationSession),
     expungementSession: sanitizeExpungementSession(o.expungementSession),
+    vacaturSession: sanitizeVacaturSession(o.vacaturSession),
   };
 }
 
@@ -7454,6 +7607,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Expungement cursor out of range; clamp on next sanitize.');
   }
 
+  const vacatur = sanitizeVacaturSession(state.vacaturSession);
+  if (state.vacaturSession && !vacatur) {
+    warnings.push('Vacatur session failed sanitization; planner will ignore it.');
+  } else if (vacatur && vacatur.cursor >= vacatur.scenarioIds.length) {
+    warnings.push('Vacatur cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -7589,6 +7749,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'acquittalSession',
   'exonerationSession',
   'expungementSession',
+  'vacaturSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -8119,6 +8280,7 @@ export function attachMarathonQueueToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -8236,6 +8398,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceVacaturSessionAfterRun(next, run);
   next = advanceExpungementSessionAfterRun(next, run);
   next = advanceExonerationSessionAfterRun(next, run);
   next = advanceAcquittalSessionAfterRun(next, run);
@@ -8416,6 +8579,7 @@ export function attachGauntletSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -8670,6 +8834,7 @@ export function attachRelaySessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -8884,6 +9049,7 @@ export function attachCircuitSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -9116,6 +9282,7 @@ export function attachExpeditionSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -9346,6 +9513,7 @@ export function attachOdysseySessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -9575,6 +9743,7 @@ export function attachPilgrimageSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -9805,6 +9974,7 @@ export function attachCaravanSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -10029,6 +10199,7 @@ export function attachVoyageSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -10253,6 +10424,7 @@ export function attachSiegeSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -10477,6 +10649,7 @@ export function attachConvoySessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -10701,6 +10874,7 @@ export function attachEscortSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -10934,6 +11108,7 @@ export function attachExtractionSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -11175,6 +11350,7 @@ export function attachSubjectSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -11416,6 +11592,7 @@ export function attachWitnessSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -11657,6 +11834,7 @@ export function attachTribunalSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -11898,6 +12076,7 @@ export function attachIndictmentSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -12139,6 +12318,7 @@ export function attachAppealSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -12380,6 +12560,7 @@ export function attachClemencySessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -12621,6 +12802,7 @@ export function attachPardonSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,
@@ -12862,6 +13044,7 @@ export function attachAmnestySessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     pardonSession: null,
     clemencySession: null,
     appealSession: null,
@@ -13103,6 +13286,7 @@ export function attachReprieveSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,
@@ -13344,6 +13528,7 @@ export function attachParoleSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     reprieveSession: null,
     amnestySession: null,
     pardonSession: null,
@@ -13585,6 +13770,7 @@ export function attachProbationSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     paroleSession: null,
     reprieveSession: null,
     amnestySession: null,
@@ -13826,6 +14012,7 @@ export function attachCommutationSessionToState(
     acquittalSession: null,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     probationSession: null,
     paroleSession: null,
     reprieveSession: null,
@@ -14067,6 +14254,7 @@ export function attachAcquittalSessionToState(
     acquittalSession: sanitized,
     exonerationSession: null,
     expungementSession: null,
+    vacaturSession: null,
     commutationSession: null,
     probationSession: null,
     paroleSession: null,
@@ -14308,6 +14496,7 @@ export function attachExonerationSessionToState(
     ...state,
     exonerationSession: sanitized,
     expungementSession: null,
+    vacaturSession: null,
     acquittalSession: null,
     commutationSession: null,
     probationSession: null,
@@ -14549,6 +14738,7 @@ export function attachExpungementSessionToState(
   return {
     ...state,
     expungementSession: sanitized,
+    vacaturSession: null,
     exonerationSession: null,
     acquittalSession: null,
     commutationSession: null,
@@ -14672,6 +14862,249 @@ export function expungementSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-vacatur.ts ---
+export const O10M_VACATUR_SCENARIO_CAP = 6;
+export const O10M_VACATUR_MERIT_SCORE_CAP = 990;
+export const O10M_VACATUR_MERIT_SCORE_MONEY_CAP = 1070;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mVacaturPhase>(['petition', 'review', 'vacatur']);
+
+export function unlockTokenForVacaturId(vacaturId: string): string | null {
+  if (!vacaturId.startsWith('o10m_vacatur_')) return null;
+  return `o10m_unlock_${vacaturId.slice('o10m_vacatur_'.length)}`;
+}
+
+export function vacaturPhaseForCursor(cursor: number, scenarioCount: number): O10mVacaturPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'vacatur';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'petition';
+}
+
+export function vacaturMeritScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(128, Math.max(27, Math.floor(run.playerNetWorth / 144) + standingSlice));
+}
+
+export function sanitizeVacaturSession(raw: unknown): O10mVacaturSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const vacaturId =
+    typeof o.vacaturId === 'string' && o.vacaturId.startsWith('o10m_vacatur_') ? o.vacaturId : null;
+  if (!vacaturId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : vacaturId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_VACATUR_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const meritScore = Math.min(
+    O10M_VACATUR_MERIT_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.meritScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mVacaturPhase)
+      ? (phaseRaw as O10mVacaturPhase)
+      : vacaturPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    vacaturId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    meritScore,
+    phaseTag,
+  };
+}
+
+export function createVacaturSession(params: {
+  vacaturId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mVacaturSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.vacaturId.startsWith('o10m_vacatur_')) {
+    return { session: null, warnings: ['Vacatur ids must start with o10m_vacatur_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_VACATUR_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Vacatur arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      vacaturId: params.vacaturId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      meritScore: 0,
+      phaseTag: vacaturPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachVacaturSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mVacaturSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeVacaturSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    vacaturSession: sanitized,
+    expungementSession: null,
+    exonerationSession: null,
+    acquittalSession: null,
+    commutationSession: null,
+    probationSession: null,
+    paroleSession: null,
+    reprieveSession: null,
+    amnestySession: null,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearVacaturSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, vacaturSession: null };
+}
+
+export function getVacaturScenarioAtCursor(
+  session: O10mVacaturSession | null | undefined,
+): string | null {
+  const vacatur = sanitizeVacaturSession(session);
+  if (!vacatur || !vacatur.active) return null;
+  return vacatur.scenarioIds[vacatur.cursor] ?? null;
+}
+
+export function buildVacaturScenarioStartOverrides(
+  session: O10mVacaturSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const vacatur = sanitizeVacaturSession(session);
+  if (!vacatur) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_VACATUR_MERIT_SCORE_MONEY_CAP,
+    Math.floor(vacatur.meritScore * 0.87),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveVacaturId: vacatur.vacaturId,
+      o10mActiveVacaturStep: vacatur.cursor,
+      o10mActiveVacaturPhase: vacatur.phaseTag,
+      o10mVacaturMeritScore: vacatur.meritScore,
+    },
+  };
+}
+
+export function advanceVacaturSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeVacaturSession(state.vacaturSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const meritScore = Math.min(
+    O10M_VACATUR_MERIT_SCORE_CAP,
+    session.meritScore + vacaturMeritScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      vacaturSession: {
+        ...session,
+        cursor,
+        meritScore,
+        phaseTag: vacaturPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForVacaturId(session.vacaturId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    vacaturSession: { ...session, active: false, meritScore, phaseTag: 'vacatur' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function vacaturSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  meritScore: number;
+  phase: O10mVacaturPhase | null;
+} {
+  const session = sanitizeVacaturSession(state.vacaturSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    meritScore: session?.meritScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -14782,9 +15215,31 @@ const emptyQueuePlan = {
   expungementCursor: null as number | null,
   expungementPhase: null as O10mExpungementPhase | null,
   expungementSeal: null as number | null,
+  vacaturId: null as string | null,
+  vacaturCursor: null as number | null,
+  vacaturPhase: null as O10mVacaturPhase | null,
+  vacaturMerit: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const vacatur = sanitizeVacaturSession(state.vacaturSession);
+  const vacaturScenario = getVacaturScenarioAtCursor(vacatur);
+  if (vacatur && vacatur.active && vacaturScenario) {
+    return {
+      kind: 'vacatur_step',
+      scenarioId: vacaturScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      vacaturId: vacatur.vacaturId,
+      vacaturCursor: vacatur.cursor,
+      vacaturPhase: vacatur.phaseTag,
+      vacaturMerit: vacatur.meritScore,
+      reason: `Vacatur "${vacatur.label}" ${vacatur.phaseTag} phase ${vacatur.cursor + 1}/${vacatur.scenarioIds.length} (merit ${vacatur.meritScore}).`,
+    };
+  }
+
   const expungement = sanitizeExpungementSession(state.expungementSession);
   const expungementScenario = getExpungementScenarioAtCursor(expungement);
   if (expungement && expungement.active && expungementScenario) {
@@ -15382,6 +15837,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   acquittalActive: boolean;
   exonerationActive: boolean;
   expungementActive: boolean;
+  vacaturActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -15417,6 +15873,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const acquittal = acquittalSessionSummary(state);
   const exoneration = exonerationSessionSummary(state);
   const expungement = expungementSessionSummary(state);
+  const vacatur = vacaturSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -15450,6 +15907,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     acquittalActive: acquittal.active,
     exonerationActive: exoneration.active,
     expungementActive: expungement.active,
+    vacaturActive: vacatur.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -15468,7 +15926,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 33, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 34, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -15720,16 +16178,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const expungementState = expungement ? attachExpungementSessionToState(createEmptyO10mModesPersistedState(), expungement) : null;
   push('agent04_chunk_40', expungementState !== null && planNextCampaignAction(expungementState!).kind === 'expungement_step');
 
+  const vacatur = createVacaturSession({
+    vacaturId: 'o10m_vacatur_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_vacatur_petition_docket'],
+  }).session;
+  const vacaturState = vacatur ? attachVacaturSessionToState(createEmptyO10mModesPersistedState(), vacatur) : null;
+  push('agent04_chunk_41', vacaturState !== null && planNextCampaignAction(vacaturState!).kind === 'vacatur_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v33',
+  schemaVersion: 'op10m-agent04-v34',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 32,
+  saveSchemaVersion: 33,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;
