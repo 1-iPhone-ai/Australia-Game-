@@ -112,6 +112,6 @@ describe('Tranche 2 catalog', () => {
       [hook]
     );
     assert.ok(out.narrative.telemetry.regionalHooksFired >= 1);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 4040);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 4360);
   });
 });

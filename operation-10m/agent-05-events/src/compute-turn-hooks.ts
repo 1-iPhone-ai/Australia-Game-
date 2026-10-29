@@ -21,6 +21,7 @@ import { evaluatePendingResponseStabilizationCoordination } from './pending-resp
 import { evaluatePendingStabilizationClosureCoordination } from './pending-stabilization-closure-coordinator.ts';
 import { evaluateComputeTurnIntegrationSyncCoordination } from './compute-turn-integration-sync-coordinator.ts';
 import { evaluateComputeTurnAssemblyHandoffCoordination } from './compute-turn-assembly-handoff-coordinator.ts';
+import { evaluateComputeTurnChunkAssemblySealCoordination } from './compute-turn-chunk-assembly-seal-coordinator.ts';
 import type {
   Op10mChainDescriptor,
   Op10mComputeTurnStage,
@@ -212,6 +213,11 @@ export function executeOp10mNarrativeComputeTurnHook(
   simulation = handoffPass.simulation;
   narrative = handoffPass.narrative;
   log.push(...handoffPass.log);
+
+  const sealPass = evaluateComputeTurnChunkAssemblySealCoordination(simulation, narrative, params.day);
+  simulation = sealPass.simulation;
+  narrative = sealPass.narrative;
+  log.push(...sealPass.log);
 
   const postSettle = settleOp10mComputeTurnDriftAfterReconcile(simulation, narrative);
   simulation = postSettle.simulation;

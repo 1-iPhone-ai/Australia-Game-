@@ -40,6 +40,10 @@ import {
   OP10M_ASSEMBLY_HANDOFF_WAVE_FLAG,
   OP10M_SYNC_MANIFEST_LATCH_FLAG,
 } from './compute-turn-assembly-handoff-coordinator.ts';
+import {
+  OP10M_CHUNK_ASSEMBLY_SEAL_FLAG,
+  OP10M_HANDOFF_MANIFEST_COMMIT_FLAG,
+} from './compute-turn-chunk-assembly-seal-coordinator.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -290,6 +294,16 @@ export function evaluateRequirements(
       case 'sync_manifest_latch':
         if (!sim.flags[OP10M_SYNC_MANIFEST_LATCH_FLAG]) {
           return { ok: false, reason: 'sync manifest not latched' };
+        }
+        break;
+      case 'chunk_assembly_seal':
+        if (!sim.flags[OP10M_CHUNK_ASSEMBLY_SEAL_FLAG]) {
+          return { ok: false, reason: 'chunk assembly not sealed' };
+        }
+        break;
+      case 'handoff_manifest_commit':
+        if (!sim.flags[OP10M_HANDOFF_MANIFEST_COMMIT_FLAG]) {
+          return { ok: false, reason: 'handoff manifest not committed' };
         }
         break;
       default:

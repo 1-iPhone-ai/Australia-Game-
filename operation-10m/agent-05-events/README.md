@@ -13,11 +13,13 @@ State-triggered crisis chains with cooldowns, passive persistent modifiers, and 
 - `generated/chain-catalog-tranche10.ts` — 320 closure-lattice chains (`scripts/generate-catalog-tranche10.py`)
 - `generated/chain-catalog-tranche11.ts` — 320 integration-sync-lattice chains (`scripts/generate-catalog-tranche11.py`)
 - `generated/chain-catalog-tranche12.ts` — 320 assembly-handoff-lattice chains (`scripts/generate-catalog-tranche12.py`)
+- `generated/chain-catalog-tranche13.ts` — 320 chunk-assembly-seal lattice chains (`scripts/generate-catalog-tranche13.py`)
 - `src/pending-response-expiry-coordinator.ts` — expired dilemma prune + queue-clear flags on compute hook
 - `src/pending-response-stabilization-coordinator.ts` — post-clear calm + stabilization wave flags on compute hook
 - `src/pending-stabilization-closure-coordinator.ts` — digest closure latch after finalize on compute hook
 - `src/compute-turn-integration-sync-coordinator.ts` — integration sync gate for Agent 25 assembly after closure
 - `src/compute-turn-assembly-handoff-coordinator.ts` — sync manifest latch for chunk assembly handoff
+- `src/compute-turn-chunk-assembly-seal-coordinator.ts` — handoff manifest commit after assembly handoff
 - `src/compute-turn-reconcile.ts` — digest drift reconcile + eligibility priming on compute turn hook
 - `src/compute-turn-drift-settle.ts` — drift settlement + turn-gap ack flags on compute turn hook
 - `generated/regional-hook-catalog.ts` — 120 cross-region hooks (`scripts/generate-regional-hooks.py`)
