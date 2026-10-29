@@ -124932,7 +124932,9 @@ export const LR_CONTRACT_SECTORS: Record<string, LRSector[]> = {
 /** Which existing contract types answer which regional need (relevance only — contracts stay canonical). */
 export const LR_NEED_CONTRACTS: Partial<Record<LRNeedCategory, string[]>> = {
   transport: ['agricultural_logistics', 'maritime_export_hub', 'defense_logistics_hub', 'freight_capacity'], energy: ['renewable_energy_grid'], emergency_relief: ['disaster_relief_supply', 'crisis_recovery'], technology: ['ai_research_center', 'mining_tech_initiative', 'manufacturing_modernization'],
-  trade: ['maritime_export_hub', 'freight_capacity'], security: ['defense_logistics_hub'], water: ['disaster_relief_supply', 'water_security'], development: ['agricultural_logistics', 'eco_tourism_network', 'tourism_development'], capital: ['financial_services']
+  trade: ['maritime_export_hub', 'freight_capacity'], security: ['defense_logistics_hub'], water: ['disaster_relief_supply', 'water_security'],
+  housing: ['tourism_development', 'crisis_recovery', 'manufacturing_modernization'],
+  development: ['agricultural_logistics', 'eco_tourism_network', 'tourism_development'], capital: ['financial_services']
 };
 const LR_NEED_CAPACITY: Partial<Record<LRNeedCategory, keyof LRCapacity>> = { transport: 'transport', energy: 'energy', water: 'water', technology: 'technology', trade: 'trade' };
 
@@ -125158,6 +125160,11 @@ function lrComputeNeeds(reg: DynamicRegionalState, s: LRInputs, turn: number, so
   if (reg.stability.value !== null && reg.stability.value < 45) raw.push({ category: 'stability', score: (45 - reg.stability.value) * 2 + 20, reason: `Regional stability is low (${Math.round(reg.stability.value)})` });
   if (sec('technology') >= 22) raw.push({ category: 'technology', score: 25 + sec('technology') / 2 - cap.technology, reason: `A growing technology sector lacks digital capacity (${cap.technology}/100)` });
   if (reg.development.score >= 26 && reg.infrastructure.quality < 25) raw.push({ category: 'infrastructure', score: 30 + (26 - reg.infrastructure.quality), reason: 'Development has run ahead of basic infrastructure' });
+  // O111 Agent 31: urban housing need (feeds V10.13 housing pressure via Living Regions; no new persistence).
+  const housingDemand = momPos * 58 + Math.max(0, reg.economy.score - 52) * 0.55 + (LR_MOM_RANK[reg.momentum.band] >= 4 ? 12 : LR_MOM_RANK[reg.momentum.band] >= 3 ? 6 : 0) - reg.infrastructure.quality * 0.32;
+  raw.push({ category: 'housing', score: housingDemand - 18, reason: `Growth and economic activity in ${reg.name} are outrunning urban housing and amenity capacity (infrastructure quality ${Math.round(reg.infrastructure.quality)}/100)` });
+  const civicGap = reg.momentum.value > 0.1 && reg.development.score < 52 ? 22 + momPos * 38 + Math.max(0, 50 - reg.development.score) * 0.45 - reg.infrastructure.quality * 0.15 : reg.development.tier === 'underdeveloped' && reg.economy.score > 38 ? 28 + momPos * 25 : 0;
+  if (civicGap > 0) raw.push({ category: 'development', score: civicGap, reason: reg.development.score < 44 ? `${reg.name} needs civic and urban development investment before growth can be absorbed sustainably` : `Continued growth in ${reg.name} requires more local development capacity` });
   const prevBy = new Map(reg.needs.map(n => [n.category, n]));
   const out: RegionalNeed[] = [];
   raw.map(x => ({ ...x, score: Math.round(lrClamp(x.score, 0, 100)) })).sort((a, b) => b.score - a.score || a.category.localeCompare(b.category)).forEach(x => {
@@ -126428,6 +126435,26 @@ export function runLivingRegions2SelfTests(): V9SelfTestResult[] {
     const st1 = apply(st, ev('project_completed', 'project', 'infra_inland_rail_qld'), s1);
     const after = st1.regions.QLD.needs.find(x => x.category === 'transport');
     return (!after || after.status === 'resolved' || after.score < before.score - 20) || canon({ before, after });
+  });
+
+  check('lr_need_housing', 'High growth + weak urban amenity → Housing need opens (O111 city development)', () => {
+    let s = createLRFixtureInputs();
+    let st = initializeLivingRegions(s);
+    const nsw = st.regions.NSW;
+    st = { ...st, regions: { ...st.regions, NSW: { ...nsw, economy: { ...nsw.economy, score: 68 }, momentum: { ...nsw.momentum, value: 0.38, band: 'growing' }, infrastructure: { ...nsw.infrastructure, quality: 22 } } } };
+    const out = lrRecompute(st.regions.NSW, s, {});
+    const need = out.region.needs.find(x => x.category === 'housing' && x.status === 'open');
+    return (Boolean(need) && LR_SEV_RANK[need!.severity] >= 2) || canon(out.region.needs);
+  });
+
+  check('lr_need_development', 'Underdeveloped region with rising economy → Development need opens', () => {
+    let s = createLRFixtureInputs();
+    let st = initializeLivingRegions(s);
+    const tas = st.regions.TAS;
+    st = { ...st, regions: { ...st.regions, TAS: { ...tas, development: { ...tas.development, tier: 'underdeveloped', score: 28 }, economy: { ...tas.economy, score: 46 }, momentum: { ...tas.momentum, value: 0.22, band: 'growing' } } } };
+    const out = lrRecompute(st.regions.TAS, s, {});
+    const need = out.region.needs.find(x => x.category === 'development' && x.status === 'open');
+    return Boolean(need) || canon(out.region.needs);
   });
 
   check('lr_momentum', 'Several positive events: Stable → Growing only after a sufficient threshold', () => {
