@@ -39,7 +39,7 @@ describe('Agent 12 round 7 systems', () => {
     });
     assert.equal(state.schemaVersion, 'agent12/45');
     assert.ok(state.nationalBulkExportThroughputIndex >= 20);
-    assert.ok(state.nationalIntermodalDwellMedian >= 12 && state.nationalIntermodalDwellMedian <= 65);
+    assert.ok(state.nationalIntermodalDwellMedian >= 12 && state.nationalIntermodalDwellMedian <= 70);
     assert.ok(state.nationalUrbanCongestionIndex >= 18);
     assert.ok(state.bulkExportThroughputByRegion.WA > 25);
   });

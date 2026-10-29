@@ -415,8 +415,14 @@ export type RemoteTelehealthSupplyStagingPolicy = 'baseline' | 'surge';
 
 export type WarehouseVerticalFulfillmentLogisticsPolicy = 'baseline' | 'expand';
 
+export type MarineKelpExportPolicy = 'baseline' | 'accelerate';
+
+export type RemoteDialysisSupplyStagingPolicy = 'baseline' | 'surge';
+
+export type RailAutomatedInspectionLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/44';
+  schemaVersion: 'agent12/45';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -734,6 +740,14 @@ export interface TransportInfrastructureState {
   warehouseVerticalFulfillmentLogisticsShare: number;
   nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex: number;
   warehouseVerticalFulfillmentLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalMarineKelpExportIndex: number;
+  marineKelpExportByRegion: Record<AuRegionCode, number>;
+  remoteDialysisSupplyStagingShare: number;
+  nationalRemoteDialysisSupplyStagingIndex: number;
+  remoteDialysisSupplyStagingByRegion: Record<AuRegionCode, number>;
+  railAutomatedInspectionLogisticsShare: number;
+  nationalRailAutomatedInspectionLogisticsThroughputIndex: number;
+  railAutomatedInspectionLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -856,6 +870,9 @@ export interface TransportInfrastructureOptions {
   tidalLagoonExportPolicy?: TidalLagoonExportPolicy;
   remoteTelehealthSupplyStagingPolicy?: RemoteTelehealthSupplyStagingPolicy;
   warehouseVerticalFulfillmentLogisticsPolicy?: WarehouseVerticalFulfillmentLogisticsPolicy;
+  marineKelpExportPolicy?: MarineKelpExportPolicy;
+  remoteDialysisSupplyStagingPolicy?: RemoteDialysisSupplyStagingPolicy;
+  railAutomatedInspectionLogisticsPolicy?: RailAutomatedInspectionLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -2721,6 +2738,48 @@ export const TRANSPORT_CORRIDORS_ROUND43: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round44.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND44: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_tas_sa_marine_kelp',
+    name: 'TAS–SA Marine Kelp',
+    networkKind: 'trade',
+    regionSequence: ['TAS', 'SA'],
+    requiredTagsByRegion: {
+      TAS: ['marine_kelp_export', 'kelp_hatchery_rail_feed', 'seaweed_bulk_logistics'],
+      SA: ['marine_kelp_export', 'kelp_hatchery_rail_feed', 'seaweed_bulk_logistics'],
+    },
+    productivitySynergyPoints: 6.8,
+    logisticsRelief: 0.043,
+  },
+  {
+    id: 'corr_wa_nt_remote_dialysis',
+    name: 'WA–NT Remote Dialysis',
+    networkKind: 'mobility',
+    regionSequence: ['WA', 'NT'],
+    requiredTagsByRegion: {
+      WA: ['remote_dialysis_supply', 'clinic_dialysis_staging', 'renal_health_logistics'],
+      NT: ['remote_dialysis_supply', 'clinic_dialysis_staging', 'renal_health_logistics'],
+    },
+    productivitySynergyPoints: 6.6,
+    logisticsRelief: 0.037,
+  },
+  {
+    id: 'corr_nsw_qld_rail_inspection',
+    name: 'NSW–QLD Rail Inspection',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'QLD'],
+    requiredTagsByRegion: {
+      NSW: ['rail_automated_inspection', 'track_geometry_scan', 'autonomous_safety_logistics'],
+      QLD: ['rail_automated_inspection', 'track_geometry_scan', 'autonomous_safety_logistics'],
+    },
+    productivitySynergyPoints: 6.5,
+    logisticsRelief: 0.041,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -2911,6 +2970,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND41,
   ...TRANSPORT_CORRIDORS_ROUND42,
   ...TRANSPORT_CORRIDORS_ROUND43,
+  ...TRANSPORT_CORRIDORS_ROUND44,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -5351,6 +5411,62 @@ export const TRANSPORT_SCENARIOS_ROUND43: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round44.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND44: TransportStressScenario[] = [
+  {
+    id: 'scn_tas_kelp_export_surge',
+    label: 'Tasmania Kelp Export Surge',
+    description: 'Harvest peak overloads Strahan kelp berths.',
+    targetRegions: ['TAS', 'SA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.28,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_sa_hatchery_feed_delay',
+    label: 'South Australia Hatchery Feed Delay',
+    description: 'Swell delays Port Lincoln kelp staging.',
+    targetRegions: ['SA', 'TAS'],
+    networkKind: 'trade',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'road'],
+  },
+  {
+    id: 'scn_wa_dialysis_resupply',
+    label: 'WA Dialysis Resupply',
+    description: 'Renal consumables surge strains Broome hub.',
+    targetRegions: ['WA', 'NT'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.31,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_nsw_track_scan_peak',
+    label: 'NSW Track Scan Peak',
+    description: 'Heatwave expands Hunter geometry scan window.',
+    targetRegions: ['NSW', 'QLD'],
+    networkKind: 'freight',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['rail', 'logistics'],
+  },
+  {
+    id: 'scn_qld_inspection_backlog',
+    label: 'Queensland Inspection Backlog',
+    description: 'Flood recovery delays Central inspection fleet.',
+    targetRegions: ['QLD', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail', 'road'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -5555,6 +5671,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND41,
   ...TRANSPORT_SCENARIOS_ROUND42,
   ...TRANSPORT_SCENARIOS_ROUND43,
+  ...TRANSPORT_SCENARIOS_ROUND44,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -16094,6 +16211,233 @@ export const SCALE_WAVE_ROUND43_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round44-assets.ts ---
+
+export const ROUND44_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_tas_strahan_kelp_haul',
+    category: 'road',
+    name: 'Strahan Kelp Haul',
+    description: 'TAS seaweed bulk export staging road.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'SA'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['marine_kelp_export', 'kelp_hatchery_rail_feed', 'seaweed_bulk_logistics'],
+    laneKilometres: 24,
+    designSpeedKmh: 84,
+    freightShare: 0.31,
+    urbanShare: 0.11,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_port_lincoln_kelp_feed',
+    category: 'road',
+    name: 'Port Lincoln Kelp Feed',
+    description: 'SA marine kelp hatchery connector.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'TAS'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['trade'],
+    tags: ['marine_kelp_export', 'kelp_hatchery_rail_feed', 'seaweed_bulk_logistics'],
+    laneKilometres: 22,
+    designSpeedKmh: 82,
+    freightShare: 0.29,
+    urbanShare: 0.13,
+    tollRoad: false,
+  },
+  {
+    id: 'road_wa_broome_dialysis_access',
+    category: 'road',
+    name: 'Broome Dialysis Access',
+    description: 'WA remote renal health logistics road.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'NT'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['mobility'],
+    tags: ['remote_dialysis_supply', 'clinic_dialysis_staging', 'renal_health_logistics'],
+    laneKilometres: 21,
+    designSpeedKmh: 74,
+    freightShare: 0.08,
+    urbanShare: 0.21,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nt_katherine_dialysis_staging',
+    category: 'road',
+    name: 'Katherine Dialysis Staging',
+    description: 'NT clinic dialysis staging connector.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'WA'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['remote_dialysis_supply', 'clinic_dialysis_staging', 'renal_health_logistics'],
+    laneKilometres: 18,
+    designSpeedKmh: 72,
+    freightShare: 0.07,
+    urbanShare: 0.2,
+    tollRoad: false,
+  },
+];
+
+export const ROUND44_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_tas_west_coast_kelp_rail',
+    category: 'rail',
+    name: 'Tasmania West Coast Kelp Rail',
+    description: 'TAS marine kelp export feed.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'SA'],
+    baseProductivityPoints: 5.9,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['marine_kelp_export', 'kelp_hatchery_rail_feed', 'seaweed_bulk_logistics'],
+    trackKilometres: 39,
+    dualTrackShare: 0.42,
+    electrifiedShare: 0.4,
+    designFreightTonnesPerYear: 3_500_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_nsw_hunter_inspection_rail',
+    category: 'rail',
+    name: 'Hunter Inspection Rail',
+    description: 'NSW automated track geometry corridor.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['freight'],
+    tags: ['rail_automated_inspection', 'track_geometry_scan', 'autonomous_safety_logistics'],
+    trackKilometres: 48,
+    dualTrackShare: 0.56,
+    electrifiedShare: 0.52,
+    designFreightTonnesPerYear: 4_100_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_qld_central_inspection_link',
+    category: 'rail',
+    name: 'Central Queensland Inspection Link',
+    description: 'QLD autonomous safety logistics handoff.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['freight'],
+    tags: ['rail_automated_inspection', 'track_geometry_scan', 'autonomous_safety_logistics'],
+    trackKilometres: 36,
+    dualTrackShare: 0.51,
+    electrifiedShare: 0.48,
+    designFreightTonnesPerYear: 3_200_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND44_PORTS: PortAsset[] = [
+  {
+    id: 'port_tas_strahan_kelp_export',
+    category: 'port',
+    name: 'Strahan Kelp Export',
+    description: 'Tasmanian marine kelp export port.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'SA'],
+    baseProductivityPoints: 6.0,
+    strategicNetworks: ['trade'],
+    tags: ['marine_kelp_export', 'kelp_hatchery_rail_feed', 'seaweed_bulk_logistics'],
+    berthCount: 3,
+    maxDraftMetres: 12.6,
+    teuCapacityPerYear: 88_000,
+    automationLevel: 2,
+    bulkShare: 0.42,
+  },
+  {
+    id: 'port_wa_broome_dialysis_hub',
+    category: 'port',
+    name: 'Broome Dialysis Hub',
+    description: 'WA remote dialysis logistics port.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'NT'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['remote_dialysis_supply', 'clinic_dialysis_staging', 'renal_health_logistics'],
+    berthCount: 2,
+    maxDraftMetres: 11.5,
+    teuCapacityPerYear: 118_000,
+    automationLevel: 1,
+    bulkShare: 0.12,
+  },
+  {
+    id: 'port_nsw_newcastle_inspection_base',
+    category: 'port',
+    name: 'Newcastle Inspection Base',
+    description: 'NSW rail inspection equipment staging.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 5.8,
+    strategicNetworks: ['freight'],
+    tags: ['rail_automated_inspection', 'track_geometry_scan', 'autonomous_safety_logistics'],
+    berthCount: 2,
+    maxDraftMetres: 11.9,
+    teuCapacityPerYear: 165_000,
+    automationLevel: 3,
+    bulkShare: 0.08,
+  },
+];
+
+export const ROUND44_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_sa_port_lincoln_kelp_stores',
+    category: 'logistics',
+    name: 'Port Lincoln Kelp Stores',
+    description: 'SA seaweed bulk consolidation yard.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'TAS'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade'],
+    tags: ['marine_kelp_export', 'kelp_hatchery_rail_feed', 'seaweed_bulk_logistics'],
+    warehouseSqm: 44_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 38,
+  },
+  {
+    id: 'log_nt_darwin_dialysis_stores',
+    category: 'logistics',
+    name: 'Darwin Dialysis Stores',
+    description: 'NT renal health consolidation yard.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'WA'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['mobility'],
+    tags: ['remote_dialysis_supply', 'clinic_dialysis_staging', 'renal_health_logistics'],
+    warehouseSqm: 29_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 45,
+  },
+  {
+    id: 'log_qld_rockhampton_inspection_depot',
+    category: 'logistics',
+    name: 'Rockhampton Inspection Depot',
+    description: 'QLD track geometry scan depot.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['freight'],
+    tags: ['rail_automated_inspection', 'track_geometry_scan', 'autonomous_safety_logistics'],
+    warehouseSqm: 38_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 52,
+  },
+];
+
+export const SCALE_WAVE_ROUND44_ASSETS = [
+  ...ROUND44_ROADS,
+  ...ROUND44_RAIL,
+  ...ROUND44_PORTS,
+  ...ROUND44_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -16145,6 +16489,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND41_ASSETS,
     ...SCALE_WAVE_ROUND42_ASSETS,
     ...SCALE_WAVE_ROUND43_ASSETS,
+    ...SCALE_WAVE_ROUND44_ASSETS,
   ];
 }
 
@@ -18601,6 +18946,65 @@ export function tidalLagoonExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.033 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.036 + policyBoost, 0.93, 1.09);
+}
+
+
+// --- source: network/marine-kelp-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type MarineKelpExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 marine kelp export throughput by region. */
+export function computeMarineKelpExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) =>
+        t === 'marine_kelp_export' ||
+        t === 'kelp_hatchery_rail_feed' ||
+        t === 'seaweed_bulk_logistics',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.95 + asset.maxDraftMetres * 0.35;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 70_000 + asset.intermodalLinks.length * 0.64;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 440;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 8_600_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalMarineKelpExportIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.46 + max * 0.54, 5, 72) * 10) / 10;
+}
+
+export function marineKelpExportProductivityMultiplier(
+  index: number,
+  policy: MarineKelpExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.032 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.035 + policyBoost, 0.93, 1.09);
 }
 
 
@@ -21834,6 +22238,96 @@ export function remoteTelehealthSupplyStagingProductivityMultiplier(
 ): number {
   const bias = policy === 'surge' ? 1.014 : 1;
   return (1 + (share - 0.04) * 0.019) * bias;
+}
+
+
+// --- source: operations/remote-dialysis-supply-staging-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RemoteDialysisSupplyStagingPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 remote dialysis supply staging readiness by region. */
+export function computeRemoteDialysisSupplyStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'remote_dialysis_supply' ||
+          t === 'clinic_dialysis_staging' ||
+          t === 'renal_health_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 59_000 + (asset.coldChainCapable ? 1.28 : 0.72);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 415;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.88;
+    }
+    if (asset.category === 'rail' && 'passengerCapable' in asset && asset.passengerCapable) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 248;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.028 - stress * 0.018), 5, 74) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRemoteDialysisSupplyStagingIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 6, 72) * 10) / 10;
+}
+
+export function computeRemoteDialysisSupplyStagingShare(
+  operationalAssets: TransportAsset[],
+  policy: RemoteDialysisSupplyStagingPolicy = 'baseline',
+): number {
+  let renalUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('remote_dialysis_supply') || asset.tags.includes('renal_health_logistics')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 54_000;
+        renalUnits += (asset.warehouseSqm / 54_000) * 0.52;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 375;
+        renalUnits += (asset.laneKilometres / 375) * 0.45;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.031;
+  const policyBoost = policy === 'surge' ? 0.021 : 0;
+  return Math.round(clamp(renalUnits / totalUnits + policyBoost, 0.03, 0.19) * 1000) / 1000;
+}
+
+export function remoteDialysisSupplyStagingProductivityMultiplier(
+  share: number,
+  policy: RemoteDialysisSupplyStagingPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.013 : 1;
+  return (1 + (share - 0.04) * 0.018) * bias;
 }
 
 
@@ -25325,6 +25819,98 @@ export function nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/rail-automated-inspection-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RailAutomatedInspectionLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of rail logistics supporting automated track inspection. */
+export function computeRailAutomatedInspectionLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: RailAutomatedInspectionLogisticsPolicy = 'baseline',
+): number {
+  let inspectionUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) =>
+          t === 'rail_automated_inspection' ||
+          t === 'track_geometry_scan' ||
+          t === 'autonomous_safety_logistics',
+      )
+    ) {
+      if (asset.category === 'rail' && 'trackKilometres' in asset) {
+        totalUnits += asset.trackKilometres / 180;
+        inspectionUnits += (asset.trackKilometres / 180) * 0.55;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 52_000;
+        inspectionUnits += (asset.warehouseSqm / 52_000) * 0.48;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.033;
+  const policyBoost = policy === 'expand' ? 0.023 : 0;
+  return Math.round(clamp(inspectionUnits / totalUnits + policyBoost, 0.032, 0.21) * 1000) / 1000;
+}
+
+export function railAutomatedInspectionLogisticsProductivityMultiplier(
+  share: number,
+  policy: RailAutomatedInspectionLogisticsPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.015 : 1;
+  return (1 + (share - 0.05) * 0.019) * bias;
+}
+
+export function computeRailAutomatedInspectionLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'rail_automated_inspection' ||
+          t === 'track_geometry_scan' ||
+          t === 'autonomous_safety_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'rail' && 'trackKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 95 + asset.designFreightTonnesPerYear / 9_200_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 46_000 + asset.lastMileCoveragePct / 92;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 360;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRailAutomatedInspectionLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.53 + max * 0.47, 2, 50) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -26052,6 +26638,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex,
   warehouseVerticalFulfillmentLogisticsProductivityMultiplier,
 } from './warehouse-vertical-fulfillment-logistics-index.ts';
+  computeMarineKelpExportByRegion,
+  marineKelpExportProductivityMultiplier,
+  nationalMarineKelpExportIndex,
+} from '../network/marine-kelp-export-index.ts';
+  computeRemoteDialysisSupplyStagingByRegion,
+  computeRemoteDialysisSupplyStagingShare,
+  nationalRemoteDialysisSupplyStagingIndex,
+  remoteDialysisSupplyStagingProductivityMultiplier,
+} from '../operations/remote-dialysis-supply-staging-index.ts';
+  computeRailAutomatedInspectionLogisticsShare,
+  computeRailAutomatedInspectionLogisticsThroughputByRegion,
+  nationalRailAutomatedInspectionLogisticsThroughputIndex,
+  railAutomatedInspectionLogisticsProductivityMultiplier,
+} from './rail-automated-inspection-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -27465,6 +28065,35 @@ export function computeTransportInfrastructureState(
     warehouseVerticalFulfillmentLogisticsShare,
     options?.warehouseVerticalFulfillmentLogisticsPolicy ?? 'baseline',
   );
+  const marineKelpExportByRegion = computeMarineKelpExportByRegion(ops);
+  const nationalMarineKelp = nationalMarineKelpExportIndex(marineKelpExportByRegion);
+  const kelpMult = marineKelpExportProductivityMultiplier(
+    nationalMarineKelp,
+    options?.marineKelpExportPolicy ?? 'baseline',
+  );
+  const remoteDialysisSupplyStagingByRegion = computeRemoteDialysisSupplyStagingByRegion(ops, networkStress);
+  const nationalDialysis = nationalRemoteDialysisSupplyStagingIndex(remoteDialysisSupplyStagingByRegion);
+  const remoteDialysisSupplyStagingShare = computeRemoteDialysisSupplyStagingShare(
+    ops,
+    options?.remoteDialysisSupplyStagingPolicy ?? 'baseline',
+  );
+  const dialysisMult = remoteDialysisSupplyStagingProductivityMultiplier(
+    remoteDialysisSupplyStagingShare,
+    options?.remoteDialysisSupplyStagingPolicy ?? 'baseline',
+  );
+  const railAutomatedInspectionLogisticsThroughputByRegion =
+    computeRailAutomatedInspectionLogisticsThroughputByRegion(ops);
+  const nationalRailInspection = nationalRailAutomatedInspectionLogisticsThroughputIndex(
+    railAutomatedInspectionLogisticsThroughputByRegion,
+  );
+  const railAutomatedInspectionLogisticsShare = computeRailAutomatedInspectionLogisticsShare(
+    ops,
+    options?.railAutomatedInspectionLogisticsPolicy ?? 'baseline',
+  );
+  const railInspectionMult = railAutomatedInspectionLogisticsProductivityMultiplier(
+    railAutomatedInspectionLogisticsShare,
+    options?.railAutomatedInspectionLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -27551,6 +28180,9 @@ export function computeTransportInfrastructureState(
     const tidalLagoonBoost = (tidalLagoonExportByRegion[code] - 5) * 0.0025;
     const telehealthBoost = (remoteTelehealthSupplyStagingByRegion[code] - 6) * 0.0021;
     const verticalFulfillmentBoost = (warehouseVerticalFulfillmentLogisticsThroughputByRegion[code] - 2) * 0.0017;
+    const kelpBoost = (marineKelpExportByRegion[code] - 5) * 0.0024;
+    const dialysisBoost = (remoteDialysisSupplyStagingByRegion[code] - 6) * 0.002;
+    const railInspectionBoost = (railAutomatedInspectionLogisticsThroughputByRegion[code] - 2) * 0.0016;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -27636,7 +28268,10 @@ export function computeTransportInfrastructureState(
         containerReeferBoost +
         tidalLagoonBoost +
         telehealthBoost +
-        verticalFulfillmentBoost) *
+        verticalFulfillmentBoost +
+        kelpBoost +
+        dialysisBoost +
+        railInspectionBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -27720,7 +28355,10 @@ export function computeTransportInfrastructureState(
       containerReeferMult *
       tidalLagoonMult *
       telehealthMult *
-      verticalFulfillmentMult;
+      verticalFulfillmentMult *
+      kelpMult *
+      dialysisMult *
+      railInspectionMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -27827,7 +28465,10 @@ export function computeTransportInfrastructureState(
     nationalContainerReefer * 0.003 +
     nationalTidalLagoon * 0.003 +
     nationalTelehealth * 0.003 +
-    nationalVerticalFulfillment * 0.003;
+    nationalVerticalFulfillment * 0.003 +
+    nationalMarineKelp * 0.003 +
+    nationalDialysis * 0.003 +
+    nationalRailInspection * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -27842,7 +28483,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/44',
+    schemaVersion: 'agent12/45',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -28160,6 +28801,14 @@ export function computeTransportInfrastructureState(
     warehouseVerticalFulfillmentLogisticsShare,
     nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex: nationalVerticalFulfillment,
     warehouseVerticalFulfillmentLogisticsThroughputByRegion,
+    nationalMarineKelpExportIndex: nationalMarineKelp,
+    marineKelpExportByRegion,
+    remoteDialysisSupplyStagingShare,
+    nationalRemoteDialysisSupplyStagingIndex: nationalDialysis,
+    remoteDialysisSupplyStagingByRegion,
+    railAutomatedInspectionLogisticsShare,
+    nationalRailAutomatedInspectionLogisticsThroughputIndex: nationalRailInspection,
+    railAutomatedInspectionLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -28242,7 +28891,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/44' &&
+      infra.schemaVersion === 'agent12/45' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -28397,11 +29046,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalMiningCampResupplyStagingIndex >= 6 &&
       infra.portContainerReeferLogisticsShare >= 0.03 &&
       infra.nationalPortContainerReeferLogisticsThroughputIndex >= 2 &&
-      infra.nationalTidalLagoonExportIndex >= 5 &&
-      infra.nationalRemoteTelehealthSupplyStagingIndex >= 6 &&
-      infra.warehouseVerticalFulfillmentLogisticsShare >= 0.03 &&
-      infra.nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} tidal=${infra.nationalTidalLagoonExportIndex.toFixed(1)} telehealth=${infra.nationalRemoteTelehealthSupplyStagingIndex.toFixed(1)} vertical=${infra.nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex >= 2 &&
+      infra.nationalMarineKelpExportIndex >= 5 &&
+      infra.nationalRemoteDialysisSupplyStagingIndex >= 6 &&
+      infra.railAutomatedInspectionLogisticsShare >= 0.03 &&
+      infra.nationalRailAutomatedInspectionLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} kelp=${infra.nationalMarineKelpExportIndex.toFixed(1)} dialysis=${infra.nationalRemoteDialysisSupplyStagingIndex.toFixed(1)} inspection=${infra.nationalRailAutomatedInspectionLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;
