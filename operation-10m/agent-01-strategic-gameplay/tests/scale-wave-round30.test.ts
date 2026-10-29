@@ -140,7 +140,7 @@ describe('scale wave round 30 — omniversal coalition synthesis', () => {
       coalitionOmniversalSynthesisStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(47);
+    expect(save.version).toBe(48);
     expect(save.coalitionOmniversalSynthesisStreakDays).toBe(5);
   });
 });

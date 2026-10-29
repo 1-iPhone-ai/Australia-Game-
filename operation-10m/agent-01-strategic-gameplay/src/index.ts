@@ -137,6 +137,7 @@ export {
   matriarchAscendancyRankingBonus,
   matriarchPerpetuityRankingBonus,
   matriarchEternityRankingBonus,
+  matriarchInfinityRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -613,6 +614,7 @@ export {
 } from './engine/coalition-matriarch-perpetuity.ts';
 
 export { coalitionMatriarchEternityStreakIssues } from './engine/coalition-matriarch-eternity-gates.ts';
+export { coalitionMatriarchInfinityStreakIssues } from './engine/coalition-matriarch-infinity-gates.ts';
 
 export {
   MATRIARCH_COALITION_ETERNITY_THRESHOLD,
@@ -621,7 +623,14 @@ export {
   isMatriarchCoalitionEternity,
   applyMatriarchEternityMandateBonus,
 } from './engine/coalition-matriarch-eternity.ts';
+export {
+  MATRIARCH_COALITION_INFINITY_THRESHOLD,
+  advanceCoalitionMatriarchInfinityStreak,
+  resetCoalitionMatriarchInfinityStreak,
+  isMatriarchCoalitionInfinity,
+  applyMatriarchInfinityMandateBonus,
+} from './engine/coalition-matriarch-infinity.ts';
 
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '5.9.0';
+export const AGENT_01_MODULE_VERSION = '5.10.0';

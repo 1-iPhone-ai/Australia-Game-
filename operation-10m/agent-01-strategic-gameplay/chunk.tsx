@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-01-strategic-gameplay
-// content-sha256-prefix: e638e648ebe07b62
+// content-sha256-prefix: 06b0f5ba0255cbf2
 // Operation 10M — Agent 01 Strategic Gameplay
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -339,6 +339,8 @@ export interface TurnStrategicBriefing {
   coalitionMatriarchPerpetuityStreakDays: number;
   matriarchCoalitionEternity: boolean;
   coalitionMatriarchEternityStreakDays: number;
+  matriarchCoalitionInfinity: boolean;
+  coalitionMatriarchInfinityStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;
@@ -491,6 +493,8 @@ export interface StrategicActionDefinition {
   minCoalitionMatriarchPerpetuityStreakDays?: number;
   /** Action requires matriarch eternity streak after matriarch perpetuity. */
   minCoalitionMatriarchEternityStreakDays?: number;
+  /** Action requires matriarch infinity streak after matriarch eternity. */
+  minCoalitionMatriarchInfinityStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -575,7 +579,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_patriarch_eternity_streak'; minDays: number }
   | { kind: 'min_coalition_matriarch_ascendancy_streak'; minDays: number }
   | { kind: 'min_coalition_matriarch_perpetuity_streak'; minDays: number }
-  | { kind: 'min_coalition_matriarch_eternity_streak'; minDays: number };
+  | { kind: 'min_coalition_matriarch_eternity_streak'; minDays: number }
+  | { kind: 'min_coalition_matriarch_infinity_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -706,6 +711,8 @@ export interface StrategicGameplayState {
   /** Days matriarch ascendancy held matriarch perpetuity eligibility. */
   coalitionMatriarchPerpetuityStreakDays?: number;
   coalitionMatriarchEternityStreakDays?: number;
+  /** Days matriarch eternity held matriarch infinity eligibility. */
+  coalitionMatriarchInfinityStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;
@@ -1635,6 +1642,17 @@ export function matriarchEternityRankingBonus(
   return 2;
 }
 
+
+export function matriarchInfinityRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionMatriarchInfinityStreakDays === undefined) return 0;
+  const streak = state.coalitionMatriarchInfinityStreakDays ?? 0;
+  if (streak >= action.minCoalitionMatriarchInfinityStreakDays) return 43;
+  return 2;
+}
+
 // --- src/engine/mandate-idle-drift.ts ---
 
 const IDLE_GRACE_DAYS = 3;
@@ -2276,6 +2294,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionMatriarchPerpetuityStreakDays: number;
   matriarchCoalitionEternity: boolean;
   coalitionMatriarchEternityStreakDays: number;
+  matriarchCoalitionInfinity: boolean;
+  coalitionMatriarchInfinityStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -2369,6 +2389,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionMatriarchPerpetuityStreakDays: state.coalitionMatriarchPerpetuityStreakDays ?? 0,
     matriarchCoalitionEternity: isMatriarchCoalitionEternity(state),
     coalitionMatriarchEternityStreakDays: state.coalitionMatriarchEternityStreakDays ?? 0,
+    matriarchCoalitionInfinity: isMatriarchCoalitionInfinity(state),
+    coalitionMatriarchInfinityStreakDays: state.coalitionMatriarchInfinityStreakDays ?? 0,
   };
 }
 
@@ -2462,6 +2484,8 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionMatriarchPerpetuityStreakDays: raw?.coalitionMatriarchPerpetuityStreakDays ?? 0,
     matriarchCoalitionEternity: raw?.matriarchCoalitionEternity ?? false,
     coalitionMatriarchEternityStreakDays: raw?.coalitionMatriarchEternityStreakDays ?? 0,
+    matriarchCoalitionInfinity: raw?.matriarchCoalitionInfinity ?? false,
+    coalitionMatriarchInfinityStreakDays: raw?.coalitionMatriarchInfinityStreakDays ?? 0,
   };
 }
 
@@ -3173,6 +3197,3372 @@ export function coalitionTranscendentLegacyStreakIssues(
   ];
 }
 
+// --- src/engine/coalition-sovereign-continuum.ts ---
+
+export const SOVEREIGN_COALITION_CONTINUUM_THRESHOLD = 4;
+const SOVEREIGN_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isSovereignCoalitionContinuum(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionSovereignContinuumStreakDays ?? 0) >= SOVEREIGN_COALITION_CONTINUUM_THRESHOLD
+  );
+}
+
+function sovereignContinuumEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const legacy = state.coalitionTranscendentLegacyStreakDays ?? 0;
+  return (
+    isTranscendentCoalitionLegacy(state) || legacy >= TRANSCENDENT_COALITION_LEGACY_THRESHOLD
+  );
+}
+
+/** Sovereign continuum streak after transcendent legacy is sustained. */
+export function advanceCoalitionSovereignContinuumStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!sovereignContinuumEligible(state)) {
+    if ((state.coalitionSovereignContinuumStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionSovereignContinuumStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionSovereignContinuumStreakDays:
+      (state.coalitionSovereignContinuumStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionSovereignContinuumStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionSovereignContinuumStreakDays: 0 };
+}
+
+export function applySovereignContinuumMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isSovereignCoalitionContinuum(state)) return state;
+
+  const bonusTotal = daysAdvanced * SOVEREIGN_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-sovereign-continuum-gates.ts ---
+
+export function coalitionSovereignContinuumStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionSovereignContinuumStreakDays === undefined) return [];
+
+  const streak = state.coalitionSovereignContinuumStreakDays ?? 0;
+  if (streak >= action.minCoalitionSovereignContinuumStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_SOVEREIGN_CONTINUUM_STREAK_TOO_SHORT',
+      message: `Sovereign continuum streak ${streak} below required ${action.minCoalitionSovereignContinuumStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_sovereign_continuum_streak',
+        minDays: action.minCoalitionSovereignContinuumStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-eternal-ascendance.ts ---
+
+export const ETERNAL_COALITION_ASCENDANCE_THRESHOLD = 4;
+const ETERNAL_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isEternalCoalitionAscendance(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionEternalAscendanceStreakDays ?? 0) >= ETERNAL_COALITION_ASCENDANCE_THRESHOLD
+  );
+}
+
+function eternalAscendanceEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const sovereign = state.coalitionSovereignContinuumStreakDays ?? 0;
+  return (
+    isSovereignCoalitionContinuum(state) || sovereign >= SOVEREIGN_COALITION_CONTINUUM_THRESHOLD
+  );
+}
+
+/** Eternal ascendance streak after sovereign continuum is sustained. */
+export function advanceCoalitionEternalAscendanceStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!eternalAscendanceEligible(state)) {
+    if ((state.coalitionEternalAscendanceStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionEternalAscendanceStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionEternalAscendanceStreakDays:
+      (state.coalitionEternalAscendanceStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionEternalAscendanceStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionEternalAscendanceStreakDays: 0 };
+}
+
+export function applyEternalAscendanceMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isEternalCoalitionAscendance(state)) return state;
+
+  const bonusTotal = daysAdvanced * ETERNAL_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-eternal-ascendance-gates.ts ---
+
+export function coalitionEternalAscendanceStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionEternalAscendanceStreakDays === undefined) return [];
+
+  const streak = state.coalitionEternalAscendanceStreakDays ?? 0;
+  if (streak >= action.minCoalitionEternalAscendanceStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_ETERNAL_ASCENDANCE_STREAK_TOO_SHORT',
+      message: `Eternal ascendance streak ${streak} below required ${action.minCoalitionEternalAscendanceStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_eternal_ascendance_streak',
+        minDays: action.minCoalitionEternalAscendanceStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-infinite-persistence.ts ---
+
+export const INFINITE_COALITION_PERSISTENCE_THRESHOLD = 4;
+const INFINITE_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isInfiniteCoalitionPersistence(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionInfinitePersistenceStreakDays ?? 0) >= INFINITE_COALITION_PERSISTENCE_THRESHOLD
+  );
+}
+
+function infinitePersistenceEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const eternal = state.coalitionEternalAscendanceStreakDays ?? 0;
+  return (
+    isEternalCoalitionAscendance(state) || eternal >= ETERNAL_COALITION_ASCENDANCE_THRESHOLD
+  );
+}
+
+/** Infinite persistence streak after eternal ascendance is sustained. */
+export function advanceCoalitionInfinitePersistenceStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!infinitePersistenceEligible(state)) {
+    if ((state.coalitionInfinitePersistenceStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionInfinitePersistenceStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionInfinitePersistenceStreakDays:
+      (state.coalitionInfinitePersistenceStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionInfinitePersistenceStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionInfinitePersistenceStreakDays: 0 };
+}
+
+export function applyInfinitePersistenceMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isInfiniteCoalitionPersistence(state)) return state;
+
+  const bonusTotal = daysAdvanced * INFINITE_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-infinite-persistence-gates.ts ---
+
+export function coalitionInfinitePersistenceStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionInfinitePersistenceStreakDays === undefined) return [];
+
+  const streak = state.coalitionInfinitePersistenceStreakDays ?? 0;
+  if (streak >= action.minCoalitionInfinitePersistenceStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_INFINITE_PERSISTENCE_STREAK_TOO_SHORT',
+      message: `Infinite persistence streak ${streak} below required ${action.minCoalitionInfinitePersistenceStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_infinite_persistence_streak',
+        minDays: action.minCoalitionInfinitePersistenceStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-primordial-continuity.ts ---
+
+export const PRIMORDIAL_COALITION_CONTINUITY_THRESHOLD = 4;
+const PRIMORDIAL_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isPrimordialCoalitionContinuity(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionPrimordialContinuityStreakDays ?? 0) >= PRIMORDIAL_COALITION_CONTINUITY_THRESHOLD
+  );
+}
+
+function primordialContinuityEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const infinite = state.coalitionInfinitePersistenceStreakDays ?? 0;
+  return (
+    isInfiniteCoalitionPersistence(state) || infinite >= INFINITE_COALITION_PERSISTENCE_THRESHOLD
+  );
+}
+
+/** Primordial continuity streak after infinite persistence is sustained. */
+export function advanceCoalitionPrimordialContinuityStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!primordialContinuityEligible(state)) {
+    if ((state.coalitionPrimordialContinuityStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionPrimordialContinuityStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionPrimordialContinuityStreakDays:
+      (state.coalitionPrimordialContinuityStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionPrimordialContinuityStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionPrimordialContinuityStreakDays: 0 };
+}
+
+export function applyPrimordialContinuityMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isPrimordialCoalitionContinuity(state)) return state;
+
+  const bonusTotal = daysAdvanced * PRIMORDIAL_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-primordial-continuity-gates.ts ---
+
+export function coalitionPrimordialContinuityStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionPrimordialContinuityStreakDays === undefined) return [];
+
+  const streak = state.coalitionPrimordialContinuityStreakDays ?? 0;
+  if (streak >= action.minCoalitionPrimordialContinuityStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_PRIMORDIAL_CONTINUITY_STREAK_TOO_SHORT',
+      message: `Primordial continuity streak ${streak} below required ${action.minCoalitionPrimordialContinuityStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_primordial_continuity_streak',
+        minDays: action.minCoalitionPrimordialContinuityStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-absolute-sanctity.ts ---
+
+export const ABSOLUTE_COALITION_SANCTITY_THRESHOLD = 4;
+const ABSOLUTE_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isAbsoluteCoalitionSanctity(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionAbsoluteSanctityStreakDays ?? 0) >= ABSOLUTE_COALITION_SANCTITY_THRESHOLD
+  );
+}
+
+function absoluteSanctityEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const primordial = state.coalitionPrimordialContinuityStreakDays ?? 0;
+  return (
+    isPrimordialCoalitionContinuity(state) ||
+    primordial >= PRIMORDIAL_COALITION_CONTINUITY_THRESHOLD
+  );
+}
+
+/** Absolute sanctity streak after primordial continuity is sustained. */
+export function advanceCoalitionAbsoluteSanctityStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!absoluteSanctityEligible(state)) {
+    if ((state.coalitionAbsoluteSanctityStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionAbsoluteSanctityStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionAbsoluteSanctityStreakDays:
+      (state.coalitionAbsoluteSanctityStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionAbsoluteSanctityStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionAbsoluteSanctityStreakDays: 0 };
+}
+
+export function applyAbsoluteSanctityMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isAbsoluteCoalitionSanctity(state)) return state;
+
+  const bonusTotal = daysAdvanced * ABSOLUTE_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-absolute-sanctity-gates.ts ---
+
+export function coalitionAbsoluteSanctityStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionAbsoluteSanctityStreakDays === undefined) return [];
+
+  const streak = state.coalitionAbsoluteSanctityStreakDays ?? 0;
+  if (streak >= action.minCoalitionAbsoluteSanctityStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_ABSOLUTE_SANCTITY_STREAK_TOO_SHORT',
+      message: `Absolute sanctity streak ${streak} below required ${action.minCoalitionAbsoluteSanctityStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_absolute_sanctity_streak',
+        minDays: action.minCoalitionAbsoluteSanctityStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-universal-immortality.ts ---
+
+export const UNIVERSAL_COALITION_IMMORTALITY_THRESHOLD = 4;
+const UNIVERSAL_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isUniversalCoalitionImmortality(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionUniversalImmortalityStreakDays ?? 0) >= UNIVERSAL_COALITION_IMMORTALITY_THRESHOLD
+  );
+}
+
+function universalImmortalityEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const absolute = state.coalitionAbsoluteSanctityStreakDays ?? 0;
+  return (
+    isAbsoluteCoalitionSanctity(state) || absolute >= ABSOLUTE_COALITION_SANCTITY_THRESHOLD
+  );
+}
+
+/** Universal immortality streak after absolute sanctity is sustained. */
+export function advanceCoalitionUniversalImmortalityStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!universalImmortalityEligible(state)) {
+    if ((state.coalitionUniversalImmortalityStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionUniversalImmortalityStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionUniversalImmortalityStreakDays:
+      (state.coalitionUniversalImmortalityStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionUniversalImmortalityStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionUniversalImmortalityStreakDays: 0 };
+}
+
+export function applyUniversalImmortalityMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isUniversalCoalitionImmortality(state)) return state;
+
+  const bonusTotal = daysAdvanced * UNIVERSAL_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-universal-immortality-gates.ts ---
+
+export function coalitionUniversalImmortalityStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionUniversalImmortalityStreakDays === undefined) return [];
+
+  const streak = state.coalitionUniversalImmortalityStreakDays ?? 0;
+  if (streak >= action.minCoalitionUniversalImmortalityStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_UNIVERSAL_IMMORTALITY_STREAK_TOO_SHORT',
+      message: `Universal immortality streak ${streak} below required ${action.minCoalitionUniversalImmortalityStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_universal_immortality_streak',
+        minDays: action.minCoalitionUniversalImmortalityStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-cosmic-perpetuity.ts ---
+
+export const COSMIC_COALITION_PERPETUITY_THRESHOLD = 4;
+const COSMIC_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isCosmicCoalitionPerpetuity(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionCosmicPerpetuityStreakDays ?? 0) >= COSMIC_COALITION_PERPETUITY_THRESHOLD
+  );
+}
+
+function cosmicPerpetuityEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const universal = state.coalitionUniversalImmortalityStreakDays ?? 0;
+  return (
+    isUniversalCoalitionImmortality(state) ||
+    universal >= UNIVERSAL_COALITION_IMMORTALITY_THRESHOLD
+  );
+}
+
+/** Cosmic perpetuity streak after universal immortality is sustained. */
+export function advanceCoalitionCosmicPerpetuityStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!cosmicPerpetuityEligible(state)) {
+    if ((state.coalitionCosmicPerpetuityStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionCosmicPerpetuityStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionCosmicPerpetuityStreakDays:
+      (state.coalitionCosmicPerpetuityStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionCosmicPerpetuityStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionCosmicPerpetuityStreakDays: 0 };
+}
+
+export function applyCosmicPerpetuityMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isCosmicCoalitionPerpetuity(state)) return state;
+
+  const bonusTotal = daysAdvanced * COSMIC_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-cosmic-perpetuity-gates.ts ---
+
+export function coalitionCosmicPerpetuityStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionCosmicPerpetuityStreakDays === undefined) return [];
+
+  const streak = state.coalitionCosmicPerpetuityStreakDays ?? 0;
+  if (streak >= action.minCoalitionCosmicPerpetuityStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_COSMIC_PERPETUITY_STREAK_TOO_SHORT',
+      message: `Cosmic perpetuity streak ${streak} below required ${action.minCoalitionCosmicPerpetuityStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_cosmic_perpetuity_streak',
+        minDays: action.minCoalitionCosmicPerpetuityStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-galactic-infinity.ts ---
+
+export const GALACTIC_COALITION_INFINITY_THRESHOLD = 4;
+const GALACTIC_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isGalacticCoalitionInfinity(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionGalacticInfinityStreakDays ?? 0) >= GALACTIC_COALITION_INFINITY_THRESHOLD
+  );
+}
+
+function galacticInfinityEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const cosmic = state.coalitionCosmicPerpetuityStreakDays ?? 0;
+  return (
+    isCosmicCoalitionPerpetuity(state) || cosmic >= COSMIC_COALITION_PERPETUITY_THRESHOLD
+  );
+}
+
+/** Galactic infinity streak after cosmic perpetuity is sustained. */
+export function advanceCoalitionGalacticInfinityStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!galacticInfinityEligible(state)) {
+    if ((state.coalitionGalacticInfinityStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionGalacticInfinityStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionGalacticInfinityStreakDays:
+      (state.coalitionGalacticInfinityStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionGalacticInfinityStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionGalacticInfinityStreakDays: 0 };
+}
+
+export function applyGalacticInfinityMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isGalacticCoalitionInfinity(state)) return state;
+
+  const bonusTotal = daysAdvanced * GALACTIC_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-galactic-infinity-gates.ts ---
+
+export function coalitionGalacticInfinityStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionGalacticInfinityStreakDays === undefined) return [];
+
+  const streak = state.coalitionGalacticInfinityStreakDays ?? 0;
+  if (streak >= action.minCoalitionGalacticInfinityStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_GALACTIC_INFINITY_STREAK_TOO_SHORT',
+      message: `Galactic infinity streak ${streak} below required ${action.minCoalitionGalacticInfinityStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_galactic_infinity_streak',
+        minDays: action.minCoalitionGalacticInfinityStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-stellar-transcendence.ts ---
+
+export const STELLAR_COALITION_TRANSCENDENCE_THRESHOLD = 4;
+const STELLAR_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isStellarCoalitionTranscendence(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionStellarTranscendenceStreakDays ?? 0) >= STELLAR_COALITION_TRANSCENDENCE_THRESHOLD
+  );
+}
+
+function stellarTranscendenceEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const galactic = state.coalitionGalacticInfinityStreakDays ?? 0;
+  return (
+    isGalacticCoalitionInfinity(state) || galactic >= GALACTIC_COALITION_INFINITY_THRESHOLD
+  );
+}
+
+/** Stellar transcendence streak after galactic infinity is sustained. */
+export function advanceCoalitionStellarTranscendenceStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!stellarTranscendenceEligible(state)) {
+    if ((state.coalitionStellarTranscendenceStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionStellarTranscendenceStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionStellarTranscendenceStreakDays:
+      (state.coalitionStellarTranscendenceStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionStellarTranscendenceStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionStellarTranscendenceStreakDays: 0 };
+}
+
+export function applyStellarTranscendenceMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isStellarCoalitionTranscendence(state)) return state;
+
+  const bonusTotal = daysAdvanced * STELLAR_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-stellar-transcendence-gates.ts ---
+
+export function coalitionStellarTranscendenceStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionStellarTranscendenceStreakDays === undefined) return [];
+
+  const streak = state.coalitionStellarTranscendenceStreakDays ?? 0;
+  if (streak >= action.minCoalitionStellarTranscendenceStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_STELLAR_TRANSCENDENCE_STREAK_TOO_SHORT',
+      message: `Stellar transcendence streak ${streak} below required ${action.minCoalitionStellarTranscendenceStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_stellar_transcendence_streak',
+        minDays: action.minCoalitionStellarTranscendenceStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-quantum-omnipresence.ts ---
+
+export const QUANTUM_COALITION_OMNIPRESENCE_THRESHOLD = 4;
+const QUANTUM_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isQuantumCoalitionOmnipresence(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionQuantumOmnipresenceStreakDays ?? 0) >= QUANTUM_COALITION_OMNIPRESENCE_THRESHOLD
+  );
+}
+
+function quantumOmnipresenceEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const stellar = state.coalitionStellarTranscendenceStreakDays ?? 0;
+  return (
+    isStellarCoalitionTranscendence(state) ||
+    stellar >= STELLAR_COALITION_TRANSCENDENCE_THRESHOLD
+  );
+}
+
+/** Quantum omnipresence streak after stellar transcendence is sustained. */
+export function advanceCoalitionQuantumOmnipresenceStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!quantumOmnipresenceEligible(state)) {
+    if ((state.coalitionQuantumOmnipresenceStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionQuantumOmnipresenceStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionQuantumOmnipresenceStreakDays:
+      (state.coalitionQuantumOmnipresenceStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionQuantumOmnipresenceStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionQuantumOmnipresenceStreakDays: 0 };
+}
+
+export function applyQuantumOmnipresenceMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isQuantumCoalitionOmnipresence(state)) return state;
+
+  const bonusTotal = daysAdvanced * QUANTUM_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-quantum-omnipresence-gates.ts ---
+
+export function coalitionQuantumOmnipresenceStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionQuantumOmnipresenceStreakDays === undefined) return [];
+
+  const streak = state.coalitionQuantumOmnipresenceStreakDays ?? 0;
+  if (streak >= action.minCoalitionQuantumOmnipresenceStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_QUANTUM_OMNIPRESENCE_STREAK_TOO_SHORT',
+      message: `Quantum omnipresence streak ${streak} below required ${action.minCoalitionQuantumOmnipresenceStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_quantum_omnipresence_streak',
+        minDays: action.minCoalitionQuantumOmnipresenceStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-multiversal-persistence.ts ---
+
+export const MULTIVERSAL_COALITION_PERSISTENCE_THRESHOLD = 4;
+const MULTIVERSAL_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isMultiversalCoalitionPersistence(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionMultiversalPersistenceStreakDays ?? 0) >=
+    MULTIVERSAL_COALITION_PERSISTENCE_THRESHOLD
+  );
+}
+
+function multiversalPersistenceEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const quantum = state.coalitionQuantumOmnipresenceStreakDays ?? 0;
+  return (
+    isQuantumCoalitionOmnipresence(state) || quantum >= QUANTUM_COALITION_OMNIPRESENCE_THRESHOLD
+  );
+}
+
+/** Multiversal persistence streak after quantum omnipresence is sustained. */
+export function advanceCoalitionMultiversalPersistenceStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!multiversalPersistenceEligible(state)) {
+    if ((state.coalitionMultiversalPersistenceStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionMultiversalPersistenceStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionMultiversalPersistenceStreakDays:
+      (state.coalitionMultiversalPersistenceStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionMultiversalPersistenceStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionMultiversalPersistenceStreakDays: 0 };
+}
+
+export function applyMultiversalPersistenceMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isMultiversalCoalitionPersistence(state)) return state;
+
+  const bonusTotal = daysAdvanced * MULTIVERSAL_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-multiversal-persistence-gates.ts ---
+
+export function coalitionMultiversalPersistenceStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionMultiversalPersistenceStreakDays === undefined) return [];
+
+  const streak = state.coalitionMultiversalPersistenceStreakDays ?? 0;
+  if (streak >= action.minCoalitionMultiversalPersistenceStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_MULTIVERSAL_PERSISTENCE_STREAK_TOO_SHORT',
+      message: `Multiversal persistence streak ${streak} below required ${action.minCoalitionMultiversalPersistenceStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_multiversal_persistence_streak',
+        minDays: action.minCoalitionMultiversalPersistenceStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-metaversal-continuity.ts ---
+
+export const METAVERSE_COALITION_CONTINUITY_THRESHOLD = 4;
+const METAVERSE_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isMetaversalCoalitionContinuity(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionMetaversalContinuityStreakDays ?? 0) >= METAVERSE_COALITION_CONTINUITY_THRESHOLD
+  );
+}
+
+function metaversalContinuityEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const multiversal = state.coalitionMultiversalPersistenceStreakDays ?? 0;
+  return (
+    isMultiversalCoalitionPersistence(state) ||
+    multiversal >= MULTIVERSAL_COALITION_PERSISTENCE_THRESHOLD
+  );
+}
+
+/** Metaversal continuity streak after multiversal persistence is sustained. */
+export function advanceCoalitionMetaversalContinuityStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!metaversalContinuityEligible(state)) {
+    if ((state.coalitionMetaversalContinuityStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionMetaversalContinuityStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionMetaversalContinuityStreakDays:
+      (state.coalitionMetaversalContinuityStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionMetaversalContinuityStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionMetaversalContinuityStreakDays: 0 };
+}
+
+export function applyMetaversalContinuityMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isMetaversalCoalitionContinuity(state)) return state;
+
+  const bonusTotal = daysAdvanced * METAVERSE_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-metaversal-continuity-gates.ts ---
+
+export function coalitionMetaversalContinuityStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionMetaversalContinuityStreakDays === undefined) return [];
+
+  const streak = state.coalitionMetaversalContinuityStreakDays ?? 0;
+  if (streak >= action.minCoalitionMetaversalContinuityStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_METAVERSE_CONTINUITY_STREAK_TOO_SHORT',
+      message: `Metaversal continuity streak ${streak} below required ${action.minCoalitionMetaversalContinuityStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_metaversal_continuity_streak',
+        minDays: action.minCoalitionMetaversalContinuityStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-omniversal-synthesis.ts ---
+
+export const OMNIVERSAL_COALITION_SYNTHESIS_THRESHOLD = 4;
+const OMNIVERSAL_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isOmniversalCoalitionSynthesis(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionOmniversalSynthesisStreakDays ?? 0) >= OMNIVERSAL_COALITION_SYNTHESIS_THRESHOLD
+  );
+}
+
+function omniversalSynthesisEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const metaversal = state.coalitionMetaversalContinuityStreakDays ?? 0;
+  return (
+    isMetaversalCoalitionContinuity(state) ||
+    metaversal >= METAVERSE_COALITION_CONTINUITY_THRESHOLD
+  );
+}
+
+/** Omniversal synthesis streak after metaversal continuity is sustained. */
+export function advanceCoalitionOmniversalSynthesisStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!omniversalSynthesisEligible(state)) {
+    if ((state.coalitionOmniversalSynthesisStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionOmniversalSynthesisStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionOmniversalSynthesisStreakDays:
+      (state.coalitionOmniversalSynthesisStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionOmniversalSynthesisStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionOmniversalSynthesisStreakDays: 0 };
+}
+
+export function applyOmniversalSynthesisMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isOmniversalCoalitionSynthesis(state)) return state;
+
+  const bonusTotal = daysAdvanced * OMNIVERSAL_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-omniversal-synthesis-gates.ts ---
+
+export function coalitionOmniversalSynthesisStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionOmniversalSynthesisStreakDays === undefined) return [];
+
+  const streak = state.coalitionOmniversalSynthesisStreakDays ?? 0;
+  if (streak >= action.minCoalitionOmniversalSynthesisStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_OMNIVERSAL_SYNTHESIS_STREAK_TOO_SHORT',
+      message: `Omniversal synthesis streak ${streak} below required ${action.minCoalitionOmniversalSynthesisStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_omniversal_synthesis_streak',
+        minDays: action.minCoalitionOmniversalSynthesisStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-hyperversal-harmonization.ts ---
+
+export const HYPERVERSAL_COALITION_HARMONIZATION_THRESHOLD = 4;
+const HYPERVERSAL_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isHyperversalCoalitionHarmonization(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionHyperversalHarmonizationStreakDays ?? 0) >=
+    HYPERVERSAL_COALITION_HARMONIZATION_THRESHOLD
+  );
+}
+
+function hyperversalHarmonizationEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const omniversal = state.coalitionOmniversalSynthesisStreakDays ?? 0;
+  return (
+    isOmniversalCoalitionSynthesis(state) ||
+    omniversal >= OMNIVERSAL_COALITION_SYNTHESIS_THRESHOLD
+  );
+}
+
+/** Hyperversal harmonization streak after omniversal synthesis is sustained. */
+export function advanceCoalitionHyperversalHarmonizationStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!hyperversalHarmonizationEligible(state)) {
+    if ((state.coalitionHyperversalHarmonizationStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionHyperversalHarmonizationStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionHyperversalHarmonizationStreakDays:
+      (state.coalitionHyperversalHarmonizationStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionHyperversalHarmonizationStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionHyperversalHarmonizationStreakDays: 0 };
+}
+
+export function applyHyperversalHarmonizationMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isHyperversalCoalitionHarmonization(state)) return state;
+
+  const bonusTotal = daysAdvanced * HYPERVERSAL_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-hyperversal-harmonization-gates.ts ---
+
+export function coalitionHyperversalHarmonizationStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionHyperversalHarmonizationStreakDays === undefined) return [];
+
+  const streak = state.coalitionHyperversalHarmonizationStreakDays ?? 0;
+  if (streak >= action.minCoalitionHyperversalHarmonizationStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_HYPERVERSAL_HARMONIZATION_STREAK_TOO_SHORT',
+      message: `Hyperversal harmonization streak ${streak} below required ${action.minCoalitionHyperversalHarmonizationStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_hyperversal_harmonization_streak',
+        minDays: action.minCoalitionHyperversalHarmonizationStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-transcendent-omnium.ts ---
+
+export const TRANSCENDENT_COALITION_OMNIUM_THRESHOLD = 4;
+const TRANSCENDENT_OMNIUM_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isTranscendentCoalitionOmnium(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionTranscendentOmniumStreakDays ?? 0) >= TRANSCENDENT_COALITION_OMNIUM_THRESHOLD
+  );
+}
+
+function transcendentOmniumEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const hyperversal = state.coalitionHyperversalHarmonizationStreakDays ?? 0;
+  return (
+    isHyperversalCoalitionHarmonization(state) ||
+    hyperversal >= HYPERVERSAL_COALITION_HARMONIZATION_THRESHOLD
+  );
+}
+
+/** Transcendent omnium streak after hyperversal harmonization is sustained. */
+export function advanceCoalitionTranscendentOmniumStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!transcendentOmniumEligible(state)) {
+    if ((state.coalitionTranscendentOmniumStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionTranscendentOmniumStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionTranscendentOmniumStreakDays:
+      (state.coalitionTranscendentOmniumStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionTranscendentOmniumStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionTranscendentOmniumStreakDays: 0 };
+}
+
+export function applyTranscendentOmniumMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isTranscendentCoalitionOmnium(state)) return state;
+
+  const bonusTotal = daysAdvanced * TRANSCENDENT_OMNIUM_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-transcendent-omnium-gates.ts ---
+
+export function coalitionTranscendentOmniumStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionTranscendentOmniumStreakDays === undefined) return [];
+
+  const streak = state.coalitionTranscendentOmniumStreakDays ?? 0;
+  if (streak >= action.minCoalitionTranscendentOmniumStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_TRANSCENDENT_OMNIUM_STREAK_TOO_SHORT',
+      message: `Transcendent omnium streak ${streak} below required ${action.minCoalitionTranscendentOmniumStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_transcendent_omnium_streak',
+        minDays: action.minCoalitionTranscendentOmniumStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-supreme-convergence.ts ---
+
+export const SUPREME_COALITION_CONVERGENCE_THRESHOLD = 4;
+const SUPREME_CONVERGENCE_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isSupremeCoalitionConvergence(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionSupremeConvergenceStreakDays ?? 0) >= SUPREME_COALITION_CONVERGENCE_THRESHOLD
+  );
+}
+
+function supremeConvergenceEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const transcendent = state.coalitionTranscendentOmniumStreakDays ?? 0;
+  return (
+    isTranscendentCoalitionOmnium(state) ||
+    transcendent >= TRANSCENDENT_COALITION_OMNIUM_THRESHOLD
+  );
+}
+
+/** Supreme convergence streak after transcendent omnium is sustained. */
+export function advanceCoalitionSupremeConvergenceStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!supremeConvergenceEligible(state)) {
+    if ((state.coalitionSupremeConvergenceStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionSupremeConvergenceStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionSupremeConvergenceStreakDays:
+      (state.coalitionSupremeConvergenceStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionSupremeConvergenceStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionSupremeConvergenceStreakDays: 0 };
+}
+
+export function applySupremeConvergenceMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isSupremeCoalitionConvergence(state)) return state;
+
+  const bonusTotal = daysAdvanced * SUPREME_CONVERGENCE_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-supreme-convergence-gates.ts ---
+
+export function coalitionSupremeConvergenceStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionSupremeConvergenceStreakDays === undefined) return [];
+
+  const streak = state.coalitionSupremeConvergenceStreakDays ?? 0;
+  if (streak >= action.minCoalitionSupremeConvergenceStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_SUPREME_CONVERGENCE_STREAK_TOO_SHORT',
+      message: `Supreme convergence streak ${streak} below required ${action.minCoalitionSupremeConvergenceStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_supreme_convergence_streak',
+        minDays: action.minCoalitionSupremeConvergenceStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-apex-transcendence.ts ---
+
+export const APEX_COALITION_TRANSCENDENCE_THRESHOLD = 4;
+const APEX_TRANSCENDENCE_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isApexCoalitionTranscendence(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionApexTranscendenceStreakDays ?? 0) >= APEX_COALITION_TRANSCENDENCE_THRESHOLD
+  );
+}
+
+function apexTranscendenceEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const supreme = state.coalitionSupremeConvergenceStreakDays ?? 0;
+  return (
+    isSupremeCoalitionConvergence(state) ||
+    supreme >= SUPREME_COALITION_CONVERGENCE_THRESHOLD
+  );
+}
+
+/** Apex transcendence streak after supreme convergence is sustained. */
+export function advanceCoalitionApexTranscendenceStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!apexTranscendenceEligible(state)) {
+    if ((state.coalitionApexTranscendenceStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionApexTranscendenceStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionApexTranscendenceStreakDays:
+      (state.coalitionApexTranscendenceStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionApexTranscendenceStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionApexTranscendenceStreakDays: 0 };
+}
+
+export function applyApexTranscendenceMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isApexCoalitionTranscendence(state)) return state;
+
+  const bonusTotal = daysAdvanced * APEX_TRANSCENDENCE_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-apex-transcendence-gates.ts ---
+
+export function coalitionApexTranscendenceStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionApexTranscendenceStreakDays === undefined) return [];
+
+  const streak = state.coalitionApexTranscendenceStreakDays ?? 0;
+  if (streak >= action.minCoalitionApexTranscendenceStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_APEX_TRANSCENDENCE_STREAK_TOO_SHORT',
+      message: `Apex transcendence streak ${streak} below required ${action.minCoalitionApexTranscendenceStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_apex_transcendence_streak',
+        minDays: action.minCoalitionApexTranscendenceStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-zenith-perpetuity.ts ---
+
+export const ZENITH_COALITION_PERPETUITY_THRESHOLD = 4;
+const ZENITH_PERPETUITY_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isZenithCoalitionPerpetuity(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionZenithPerpetuityStreakDays ?? 0) >= ZENITH_COALITION_PERPETUITY_THRESHOLD
+  );
+}
+
+function zenithPerpetuityEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const apex = state.coalitionApexTranscendenceStreakDays ?? 0;
+  return (
+    isApexCoalitionTranscendence(state) || apex >= APEX_COALITION_TRANSCENDENCE_THRESHOLD
+  );
+}
+
+/** Zenith perpetuity streak after apex transcendence is sustained. */
+export function advanceCoalitionZenithPerpetuityStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!zenithPerpetuityEligible(state)) {
+    if ((state.coalitionZenithPerpetuityStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionZenithPerpetuityStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionZenithPerpetuityStreakDays:
+      (state.coalitionZenithPerpetuityStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionZenithPerpetuityStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionZenithPerpetuityStreakDays: 0 };
+}
+
+export function applyZenithPerpetuityMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isZenithCoalitionPerpetuity(state)) return state;
+
+  const bonusTotal = daysAdvanced * ZENITH_PERPETUITY_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-zenith-perpetuity-gates.ts ---
+
+export function coalitionZenithPerpetuityStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionZenithPerpetuityStreakDays === undefined) return [];
+
+  const streak = state.coalitionZenithPerpetuityStreakDays ?? 0;
+  if (streak >= action.minCoalitionZenithPerpetuityStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_ZENITH_PERPETUITY_STREAK_TOO_SHORT',
+      message: `Zenith perpetuity streak ${streak} below required ${action.minCoalitionZenithPerpetuityStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_zenith_perpetuity_streak',
+        minDays: action.minCoalitionZenithPerpetuityStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-paragon-infinity.ts ---
+
+export const PARAGON_COALITION_INFINITY_THRESHOLD = 4;
+const PARAGON_INFINITY_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isParagonCoalitionInfinity(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionParagonInfinityStreakDays ?? 0) >= PARAGON_COALITION_INFINITY_THRESHOLD
+  );
+}
+
+function paragonInfinityEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const zenith = state.coalitionZenithPerpetuityStreakDays ?? 0;
+  return (
+    isZenithCoalitionPerpetuity(state) || zenith >= ZENITH_COALITION_PERPETUITY_THRESHOLD
+  );
+}
+
+/** Paragon infinity streak after zenith perpetuity is sustained. */
+export function advanceCoalitionParagonInfinityStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!paragonInfinityEligible(state)) {
+    if ((state.coalitionParagonInfinityStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionParagonInfinityStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionParagonInfinityStreakDays:
+      (state.coalitionParagonInfinityStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionParagonInfinityStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionParagonInfinityStreakDays: 0 };
+}
+
+export function applyParagonInfinityMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isParagonCoalitionInfinity(state)) return state;
+
+  const bonusTotal = daysAdvanced * PARAGON_INFINITY_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-paragon-infinity-gates.ts ---
+
+export function coalitionParagonInfinityStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionParagonInfinityStreakDays === undefined) return [];
+
+  const streak = state.coalitionParagonInfinityStreakDays ?? 0;
+  if (streak >= action.minCoalitionParagonInfinityStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_PARAGON_INFINITY_STREAK_TOO_SHORT',
+      message: `Paragon infinity streak ${streak} below required ${action.minCoalitionParagonInfinityStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_paragon_infinity_streak',
+        minDays: action.minCoalitionParagonInfinityStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-paramount-ascendancy.ts ---
+
+export const PARAMOUNT_COALITION_ASCENDANCY_THRESHOLD = 4;
+const PARAMOUNT_ASCENDANCY_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isParamountCoalitionAscendancy(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionParamountAscendancyStreakDays ?? 0) >= PARAMOUNT_COALITION_ASCENDANCY_THRESHOLD
+  );
+}
+
+function paramountAscendancyEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const paragon = state.coalitionParagonInfinityStreakDays ?? 0;
+  return isParagonCoalitionInfinity(state) || paragon >= PARAGON_COALITION_INFINITY_THRESHOLD;
+}
+
+/** Paramount ascendancy streak after paragon infinity is sustained. */
+export function advanceCoalitionParamountAscendancyStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!paramountAscendancyEligible(state)) {
+    if ((state.coalitionParamountAscendancyStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionParamountAscendancyStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionParamountAscendancyStreakDays:
+      (state.coalitionParamountAscendancyStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionParamountAscendancyStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionParamountAscendancyStreakDays: 0 };
+}
+
+export function applyParamountAscendancyMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isParamountCoalitionAscendancy(state)) return state;
+
+  const bonusTotal = daysAdvanced * PARAMOUNT_ASCENDANCY_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-paramount-ascendancy-gates.ts ---
+
+export function coalitionParamountAscendancyStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionParamountAscendancyStreakDays === undefined) return [];
+
+  const streak = state.coalitionParamountAscendancyStreakDays ?? 0;
+  if (streak >= action.minCoalitionParamountAscendancyStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_PARAMOUNT_ASCENDANCY_STREAK_TOO_SHORT',
+      message: `Paramount ascendancy streak ${streak} below required ${action.minCoalitionParamountAscendancyStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_paramount_ascendancy_streak',
+        minDays: action.minCoalitionParamountAscendancyStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-imperial-perpetuity.ts ---
+
+export const IMPERIAL_COALITION_PERPETUITY_THRESHOLD = 4;
+const IMPERIAL_PERPETUITY_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isImperialCoalitionPerpetuity(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionImperialPerpetuityStreakDays ?? 0) >= IMPERIAL_COALITION_PERPETUITY_THRESHOLD
+  );
+}
+
+function imperialPerpetuityEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const paramount = state.coalitionParamountAscendancyStreakDays ?? 0;
+  return (
+    isParamountCoalitionAscendancy(state) || paramount >= PARAMOUNT_COALITION_ASCENDANCY_THRESHOLD
+  );
+}
+
+/** Imperial perpetuity streak after paramount ascendancy is sustained. */
+export function advanceCoalitionImperialPerpetuityStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!imperialPerpetuityEligible(state)) {
+    if ((state.coalitionImperialPerpetuityStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionImperialPerpetuityStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionImperialPerpetuityStreakDays:
+      (state.coalitionImperialPerpetuityStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionImperialPerpetuityStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionImperialPerpetuityStreakDays: 0 };
+}
+
+export function applyImperialPerpetuityMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isImperialCoalitionPerpetuity(state)) return state;
+
+  const bonusTotal = daysAdvanced * IMPERIAL_PERPETUITY_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-imperial-perpetuity-gates.ts ---
+
+export function coalitionImperialPerpetuityStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionImperialPerpetuityStreakDays === undefined) return [];
+
+  const streak = state.coalitionImperialPerpetuityStreakDays ?? 0;
+  if (streak >= action.minCoalitionImperialPerpetuityStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_IMPERIAL_PERPETUITY_STREAK_TOO_SHORT',
+      message: `Imperial perpetuity streak ${streak} below required ${action.minCoalitionImperialPerpetuityStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_imperial_perpetuity_streak',
+        minDays: action.minCoalitionImperialPerpetuityStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-custodial-eternity.ts ---
+
+export const CUSTODIAL_COALITION_ETERNITY_THRESHOLD = 4;
+const CUSTODIAL_ETERNITY_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isCustodialCoalitionEternity(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionCustodialEternityStreakDays ?? 0) >= CUSTODIAL_COALITION_ETERNITY_THRESHOLD
+  );
+}
+
+function custodialEternityEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const imperial = state.coalitionImperialPerpetuityStreakDays ?? 0;
+  return (
+    isImperialCoalitionPerpetuity(state) || imperial >= IMPERIAL_COALITION_PERPETUITY_THRESHOLD
+  );
+}
+
+/** Custodial eternity streak after imperial perpetuity is sustained. */
+export function advanceCoalitionCustodialEternityStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!custodialEternityEligible(state)) {
+    if ((state.coalitionCustodialEternityStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionCustodialEternityStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionCustodialEternityStreakDays:
+      (state.coalitionCustodialEternityStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionCustodialEternityStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionCustodialEternityStreakDays: 0 };
+}
+
+export function applyCustodialEternityMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isCustodialCoalitionEternity(state)) return state;
+
+  const bonusTotal = daysAdvanced * CUSTODIAL_ETERNITY_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-custodial-eternity-gates.ts ---
+
+export function coalitionCustodialEternityStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionCustodialEternityStreakDays === undefined) return [];
+
+  const streak = state.coalitionCustodialEternityStreakDays ?? 0;
+  if (streak >= action.minCoalitionCustodialEternityStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_CUSTODIAL_ETERNITY_STREAK_TOO_SHORT',
+      message: `Custodial eternity streak ${streak} below required ${action.minCoalitionCustodialEternityStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_custodial_eternity_streak',
+        minDays: action.minCoalitionCustodialEternityStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-vanguard-synthesis.ts ---
+
+export const VANGUARD_COALITION_SYNTHESIS_THRESHOLD = 4;
+const VANGUARD_SYNTHESIS_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isVanguardCoalitionSynthesis(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionVanguardSynthesisStreakDays ?? 0) >= VANGUARD_COALITION_SYNTHESIS_THRESHOLD
+  );
+}
+
+function vanguardSynthesisEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const custodial = state.coalitionCustodialEternityStreakDays ?? 0;
+  return (
+    isCustodialCoalitionEternity(state) || custodial >= CUSTODIAL_COALITION_ETERNITY_THRESHOLD
+  );
+}
+
+/** Vanguard synthesis streak after custodial eternity is sustained. */
+export function advanceCoalitionVanguardSynthesisStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!vanguardSynthesisEligible(state)) {
+    if ((state.coalitionVanguardSynthesisStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionVanguardSynthesisStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionVanguardSynthesisStreakDays:
+      (state.coalitionVanguardSynthesisStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionVanguardSynthesisStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionVanguardSynthesisStreakDays: 0 };
+}
+
+export function applyVanguardSynthesisMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isVanguardCoalitionSynthesis(state)) return state;
+
+  const bonusTotal = daysAdvanced * VANGUARD_SYNTHESIS_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-vanguard-synthesis-gates.ts ---
+
+export function coalitionVanguardSynthesisStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionVanguardSynthesisStreakDays === undefined) return [];
+
+  const streak = state.coalitionVanguardSynthesisStreakDays ?? 0;
+  if (streak >= action.minCoalitionVanguardSynthesisStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_VANGUARD_SYNTHESIS_STREAK_TOO_SHORT',
+      message: `Vanguard synthesis streak ${streak} below required ${action.minCoalitionVanguardSynthesisStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_vanguard_synthesis_streak',
+        minDays: action.minCoalitionVanguardSynthesisStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-sentinel-ascendancy.ts ---
+
+export const SENTINEL_COALITION_ASCENDANCY_THRESHOLD = 4;
+const SENTINEL_ASCENDANCY_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isSentinelCoalitionAscendancy(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionSentinelAscendancyStreakDays ?? 0) >= SENTINEL_COALITION_ASCENDANCY_THRESHOLD
+  );
+}
+
+function sentinelAscendancyEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const vanguard = state.coalitionVanguardSynthesisStreakDays ?? 0;
+  return (
+    isVanguardCoalitionSynthesis(state) || vanguard >= VANGUARD_COALITION_SYNTHESIS_THRESHOLD
+  );
+}
+
+/** Sentinel ascendancy streak after vanguard synthesis is sustained. */
+export function advanceCoalitionSentinelAscendancyStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!sentinelAscendancyEligible(state)) {
+    if ((state.coalitionSentinelAscendancyStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionSentinelAscendancyStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionSentinelAscendancyStreakDays:
+      (state.coalitionSentinelAscendancyStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionSentinelAscendancyStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionSentinelAscendancyStreakDays: 0 };
+}
+
+export function applySentinelAscendancyMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isSentinelCoalitionAscendancy(state)) return state;
+
+  const bonusTotal = daysAdvanced * SENTINEL_ASCENDANCY_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-sentinel-ascendancy-gates.ts ---
+
+export function coalitionSentinelAscendancyStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionSentinelAscendancyStreakDays === undefined) return [];
+
+  const streak = state.coalitionSentinelAscendancyStreakDays ?? 0;
+  if (streak >= action.minCoalitionSentinelAscendancyStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_SENTINEL_ASCENDANCY_STREAK_TOO_SHORT',
+      message: `Sentinel ascendancy streak ${streak} below required ${action.minCoalitionSentinelAscendancyStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_sentinel_ascendancy_streak',
+        minDays: action.minCoalitionSentinelAscendancyStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-oracle-perpetuity.ts ---
+
+export const ORACLE_COALITION_PERPETUITY_THRESHOLD = 4;
+const ORACLE_PERPETUITY_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isOracleCoalitionPerpetuity(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionOraclePerpetuityStreakDays ?? 0) >= ORACLE_COALITION_PERPETUITY_THRESHOLD
+  );
+}
+
+function oraclePerpetuityEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const sentinel = state.coalitionSentinelAscendancyStreakDays ?? 0;
+  return (
+    isSentinelCoalitionAscendancy(state) || sentinel >= SENTINEL_COALITION_ASCENDANCY_THRESHOLD
+  );
+}
+
+/** Oracle perpetuity streak after sentinel ascendancy is sustained. */
+export function advanceCoalitionOraclePerpetuityStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!oraclePerpetuityEligible(state)) {
+    if ((state.coalitionOraclePerpetuityStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionOraclePerpetuityStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionOraclePerpetuityStreakDays:
+      (state.coalitionOraclePerpetuityStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionOraclePerpetuityStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionOraclePerpetuityStreakDays: 0 };
+}
+
+export function applyOraclePerpetuityMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isOracleCoalitionPerpetuity(state)) return state;
+
+  const bonusTotal = daysAdvanced * ORACLE_PERPETUITY_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-oracle-perpetuity-gates.ts ---
+
+export function coalitionOraclePerpetuityStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionOraclePerpetuityStreakDays === undefined) return [];
+
+  const streak = state.coalitionOraclePerpetuityStreakDays ?? 0;
+  if (streak >= action.minCoalitionOraclePerpetuityStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_ORACLE_PERPETUITY_STREAK_TOO_SHORT',
+      message: `Oracle perpetuity streak ${streak} below required ${action.minCoalitionOraclePerpetuityStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_oracle_perpetuity_streak',
+        minDays: action.minCoalitionOraclePerpetuityStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-archon-eternity.ts ---
+
+export const ARCHON_COALITION_ETERNITY_THRESHOLD = 4;
+const ARCHON_ETERNITY_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isArchonCoalitionEternity(state: StrategicGameplayState): boolean {
+  return (state.coalitionArchonEternityStreakDays ?? 0) >= ARCHON_COALITION_ETERNITY_THRESHOLD;
+}
+
+function archonEternityEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const oracle = state.coalitionOraclePerpetuityStreakDays ?? 0;
+  return isOracleCoalitionPerpetuity(state) || oracle >= ORACLE_COALITION_PERPETUITY_THRESHOLD;
+}
+
+/** Archon eternity streak after oracle perpetuity is sustained. */
+export function advanceCoalitionArchonEternityStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!archonEternityEligible(state)) {
+    if ((state.coalitionArchonEternityStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionArchonEternityStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionArchonEternityStreakDays: (state.coalitionArchonEternityStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionArchonEternityStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionArchonEternityStreakDays: 0 };
+}
+
+export function applyArchonEternityMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isArchonCoalitionEternity(state)) return state;
+
+  const bonusTotal = daysAdvanced * ARCHON_ETERNITY_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-archon-eternity-gates.ts ---
+
+export function coalitionArchonEternityStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionArchonEternityStreakDays === undefined) return [];
+
+  const streak = state.coalitionArchonEternityStreakDays ?? 0;
+  if (streak >= action.minCoalitionArchonEternityStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_ARCHON_ETERNITY_STREAK_TOO_SHORT',
+      message: `Archon eternity streak ${streak} below required ${action.minCoalitionArchonEternityStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_archon_eternity_streak',
+        minDays: action.minCoalitionArchonEternityStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-exarch-ascendancy.ts ---
+
+export const EXARCH_COALITION_ASCENDANCY_THRESHOLD = 4;
+const EXARCH_ASCENDANCY_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isExarchCoalitionAscendancy(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionExarchAscendancyStreakDays ?? 0) >= EXARCH_COALITION_ASCENDANCY_THRESHOLD
+  );
+}
+
+function exarchAscendancyEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const archon = state.coalitionArchonEternityStreakDays ?? 0;
+  return isArchonCoalitionEternity(state) || archon >= ARCHON_COALITION_ETERNITY_THRESHOLD;
+}
+
+/** Exarch ascendancy streak after archon eternity is sustained. */
+export function advanceCoalitionExarchAscendancyStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!exarchAscendancyEligible(state)) {
+    if ((state.coalitionExarchAscendancyStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionExarchAscendancyStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionExarchAscendancyStreakDays:
+      (state.coalitionExarchAscendancyStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionExarchAscendancyStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionExarchAscendancyStreakDays: 0 };
+}
+
+export function applyExarchAscendancyMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isExarchCoalitionAscendancy(state)) return state;
+
+  const bonusTotal = daysAdvanced * EXARCH_ASCENDANCY_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-exarch-ascendancy-gates.ts ---
+
+export function coalitionExarchAscendancyStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionExarchAscendancyStreakDays === undefined) return [];
+
+  const streak = state.coalitionExarchAscendancyStreakDays ?? 0;
+  if (streak >= action.minCoalitionExarchAscendancyStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_EXARCH_ASCENDANCY_STREAK_TOO_SHORT',
+      message: `Exarch ascendancy streak ${streak} below required ${action.minCoalitionExarchAscendancyStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_exarch_ascendancy_streak',
+        minDays: action.minCoalitionExarchAscendancyStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-primarch-perpetuity.ts ---
+
+export const PRIMARCH_COALITION_PERPETUITY_THRESHOLD = 4;
+const PRIMARCH_PERPETUITY_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isPrimarchCoalitionPerpetuity(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionPrimarchPerpetuityStreakDays ?? 0) >= PRIMARCH_COALITION_PERPETUITY_THRESHOLD
+  );
+}
+
+function primarchPerpetuityEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const exarch = state.coalitionExarchAscendancyStreakDays ?? 0;
+  return isExarchCoalitionAscendancy(state) || exarch >= EXARCH_COALITION_ASCENDANCY_THRESHOLD;
+}
+
+/** Primarch perpetuity streak after exarch ascendancy is sustained. */
+export function advanceCoalitionPrimarchPerpetuityStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!primarchPerpetuityEligible(state)) {
+    if ((state.coalitionPrimarchPerpetuityStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionPrimarchPerpetuityStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionPrimarchPerpetuityStreakDays:
+      (state.coalitionPrimarchPerpetuityStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionPrimarchPerpetuityStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionPrimarchPerpetuityStreakDays: 0 };
+}
+
+export function applyPrimarchPerpetuityMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isPrimarchCoalitionPerpetuity(state)) return state;
+
+  const bonusTotal = daysAdvanced * PRIMARCH_PERPETUITY_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-primarch-perpetuity-gates.ts ---
+
+export function coalitionPrimarchPerpetuityStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionPrimarchPerpetuityStreakDays === undefined) return [];
+
+  const streak = state.coalitionPrimarchPerpetuityStreakDays ?? 0;
+  if (streak >= action.minCoalitionPrimarchPerpetuityStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_PRIMARCH_PERPETUITY_STREAK_TOO_SHORT',
+      message: `Primarch perpetuity streak ${streak} below required ${action.minCoalitionPrimarchPerpetuityStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_primarch_perpetuity_streak',
+        minDays: action.minCoalitionPrimarchPerpetuityStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-patriarch-eternity.ts ---
+
+export const PATRIARCH_COALITION_ETERNITY_THRESHOLD = 4;
+const PATRIARCH_ETERNITY_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isPatriarchCoalitionEternity(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionPatriarchEternityStreakDays ?? 0) >= PATRIARCH_COALITION_ETERNITY_THRESHOLD
+  );
+}
+
+function patriarchEternityEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const primarch = state.coalitionPrimarchPerpetuityStreakDays ?? 0;
+  return (
+    isPrimarchCoalitionPerpetuity(state) || primarch >= PRIMARCH_COALITION_PERPETUITY_THRESHOLD
+  );
+}
+
+/** Patriarch eternity streak after primarch perpetuity is sustained. */
+export function advanceCoalitionPatriarchEternityStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!patriarchEternityEligible(state)) {
+    if ((state.coalitionPatriarchEternityStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionPatriarchEternityStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionPatriarchEternityStreakDays:
+      (state.coalitionPatriarchEternityStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionPatriarchEternityStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionPatriarchEternityStreakDays: 0 };
+}
+
+export function applyPatriarchEternityMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isPatriarchCoalitionEternity(state)) return state;
+
+  const bonusTotal = daysAdvanced * PATRIARCH_ETERNITY_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-patriarch-eternity-gates.ts ---
+
+export function coalitionPatriarchEternityStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionPatriarchEternityStreakDays === undefined) return [];
+
+  const streak = state.coalitionPatriarchEternityStreakDays ?? 0;
+  if (streak >= action.minCoalitionPatriarchEternityStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_PATRIARCH_ETERNITY_STREAK_TOO_SHORT',
+      message: `Patriarch eternity streak ${streak} below required ${action.minCoalitionPatriarchEternityStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_patriarch_eternity_streak',
+        minDays: action.minCoalitionPatriarchEternityStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-matriarch-ascendancy.ts ---
+
+export const MATRIARCH_COALITION_ASCENDANCY_THRESHOLD = 4;
+const MATRIARCH_ASCENDANCY_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isMatriarchCoalitionAscendancy(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionMatriarchAscendancyStreakDays ?? 0) >= MATRIARCH_COALITION_ASCENDANCY_THRESHOLD
+  );
+}
+
+function matriarchAscendancyEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const patriarch = state.coalitionPatriarchEternityStreakDays ?? 0;
+  return (
+    isPatriarchCoalitionEternity(state) || patriarch >= PATRIARCH_COALITION_ETERNITY_THRESHOLD
+  );
+}
+
+/** Matriarch ascendancy streak after patriarch eternity is sustained. */
+export function advanceCoalitionMatriarchAscendancyStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!matriarchAscendancyEligible(state)) {
+    if ((state.coalitionMatriarchAscendancyStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionMatriarchAscendancyStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionMatriarchAscendancyStreakDays:
+      (state.coalitionMatriarchAscendancyStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionMatriarchAscendancyStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionMatriarchAscendancyStreakDays: 0 };
+}
+
+export function applyMatriarchAscendancyMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isMatriarchCoalitionAscendancy(state)) return state;
+
+  const bonusTotal = daysAdvanced * MATRIARCH_ASCENDANCY_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-matriarch-ascendancy-gates.ts ---
+
+export function coalitionMatriarchAscendancyStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionMatriarchAscendancyStreakDays === undefined) return [];
+
+  const streak = state.coalitionMatriarchAscendancyStreakDays ?? 0;
+  if (streak >= action.minCoalitionMatriarchAscendancyStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_MATRIARCH_ASCENDANCY_STREAK_TOO_SHORT',
+      message: `Matriarch ascendancy streak ${streak} below required ${action.minCoalitionMatriarchAscendancyStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_matriarch_ascendancy_streak',
+        minDays: action.minCoalitionMatriarchAscendancyStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-matriarch-perpetuity.ts ---
+
+export const MATRIARCH_COALITION_PERPETUITY_THRESHOLD = 4;
+const MATRIARCH_PERPETUITY_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isMatriarchCoalitionPerpetuity(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionMatriarchPerpetuityStreakDays ?? 0) >= MATRIARCH_COALITION_PERPETUITY_THRESHOLD
+  );
+}
+
+function matriarchPerpetuityEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const ascendancy = state.coalitionMatriarchAscendancyStreakDays ?? 0;
+  return (
+    isMatriarchCoalitionAscendancy(state) || ascendancy >= MATRIARCH_COALITION_ASCENDANCY_THRESHOLD
+  );
+}
+
+/** Matriarch perpetuity streak after matriarch ascendancy is sustained. */
+export function advanceCoalitionMatriarchPerpetuityStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!matriarchPerpetuityEligible(state)) {
+    if ((state.coalitionMatriarchPerpetuityStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionMatriarchPerpetuityStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionMatriarchPerpetuityStreakDays:
+      (state.coalitionMatriarchPerpetuityStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionMatriarchPerpetuityStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionMatriarchPerpetuityStreakDays: 0 };
+}
+
+export function applyMatriarchPerpetuityMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isMatriarchCoalitionPerpetuity(state)) return state;
+
+  const bonusTotal = daysAdvanced * MATRIARCH_PERPETUITY_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-matriarch-perpetuity-gates.ts ---
+
+export function coalitionMatriarchPerpetuityStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionMatriarchPerpetuityStreakDays === undefined) return [];
+
+  const streak = state.coalitionMatriarchPerpetuityStreakDays ?? 0;
+  if (streak >= action.minCoalitionMatriarchPerpetuityStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_MATRIARCH_PERPETUITY_STREAK_TOO_SHORT',
+      message: `Matriarch perpetuity streak ${streak} below required ${action.minCoalitionMatriarchPerpetuityStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_matriarch_perpetuity_streak',
+        minDays: action.minCoalitionMatriarchPerpetuityStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-matriarch-eternity.ts ---
+
+export const MATRIARCH_COALITION_ETERNITY_THRESHOLD = 4;
+const MATRIARCH_ETERNITY_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isMatriarchCoalitionEternity(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionMatriarchEternityStreakDays ?? 0) >= MATRIARCH_COALITION_ETERNITY_THRESHOLD
+  );
+}
+
+function matriarchEternityEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const perpetuity = state.coalitionMatriarchPerpetuityStreakDays ?? 0;
+  return (
+    isMatriarchCoalitionPerpetuity(state) || perpetuity >= MATRIARCH_COALITION_PERPETUITY_THRESHOLD
+  );
+}
+
+/** Matriarch eternity streak after matriarch perpetuity is sustained. */
+export function advanceCoalitionMatriarchEternityStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!matriarchEternityEligible(state)) {
+    if ((state.coalitionMatriarchEternityStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionMatriarchEternityStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionMatriarchEternityStreakDays:
+      (state.coalitionMatriarchEternityStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionMatriarchEternityStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionMatriarchEternityStreakDays: 0 };
+}
+
+export function applyMatriarchEternityMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isMatriarchCoalitionEternity(state)) return state;
+
+  const bonusTotal = daysAdvanced * MATRIARCH_ETERNITY_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-matriarch-eternity-gates.ts ---
+
+export function coalitionMatriarchEternityStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionMatriarchEternityStreakDays === undefined) return [];
+
+  const streak = state.coalitionMatriarchEternityStreakDays ?? 0;
+  if (streak >= action.minCoalitionMatriarchEternityStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_MATRIARCH_ETERNITY_STREAK_TOO_SHORT',
+      message: `Matriarch eternity streak ${streak} below required ${action.minCoalitionMatriarchEternityStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_matriarch_eternity_streak',
+        minDays: action.minCoalitionMatriarchEternityStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-matriarch-infinity.ts ---
+
+export const MATRIARCH_COALITION_INFINITY_THRESHOLD = 4;
+const MATRIARCH_INFINITY_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isMatriarchCoalitionInfinity(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionMatriarchInfinityStreakDays ?? 0) >= MATRIARCH_COALITION_INFINITY_THRESHOLD
+  );
+}
+
+function matriarchInfinityEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const eternity = state.coalitionMatriarchEternityStreakDays ?? 0;
+  return (
+    isMatriarchCoalitionEternity(state) || eternity >= MATRIARCH_COALITION_ETERNITY_THRESHOLD
+  );
+}
+
+/** Matriarch infinity streak after matriarch eternity is sustained. */
+export function advanceCoalitionMatriarchInfinityStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!matriarchInfinityEligible(state)) {
+    if ((state.coalitionMatriarchInfinityStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionMatriarchInfinityStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionMatriarchInfinityStreakDays:
+      (state.coalitionMatriarchInfinityStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionMatriarchInfinityStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionMatriarchInfinityStreakDays: 0 };
+}
+
+export function applyMatriarchInfinityMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isMatriarchCoalitionInfinity(state)) return state;
+
+  const bonusTotal = daysAdvanced * MATRIARCH_INFINITY_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-matriarch-infinity-gates.ts ---
+
+export function coalitionMatriarchInfinityStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionMatriarchInfinityStreakDays === undefined) return [];
+
+  const streak = state.coalitionMatriarchInfinityStreakDays ?? 0;
+  if (streak >= action.minCoalitionMatriarchInfinityStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_MATRIARCH_INFINITY_STREAK_TOO_SHORT',
+      message: `Matriarch infinity streak ${streak} below required ${action.minCoalitionMatriarchInfinityStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_matriarch_infinity_streak',
+        minDays: action.minCoalitionMatriarchInfinityStreakDays,
+      },
+    },
+  ];
+}
+
 // --- src/engine/coalition-gates.ts ---
 
 export function coalitionBalanceIssues(
@@ -3499,6 +6889,11 @@ export interface StrategicGameplaySaveV47 extends Omit<StrategicGameplaySaveV46,
   coalitionMatriarchEternityStreakDays: number;
 }
 
+export interface StrategicGameplaySaveV48 extends Omit<StrategicGameplaySaveV47, 'version'> {
+  version: 48;
+  coalitionMatriarchInfinityStreakDays: number;
+}
+
 export type StrategicGameplaySaveBlob =
   | StrategicGameplaySaveV1
   | StrategicGameplaySaveV2
@@ -3546,13 +6941,14 @@ export type StrategicGameplaySaveBlob =
   | StrategicGameplaySaveV44
   | StrategicGameplaySaveV45
   | StrategicGameplaySaveV46
-  | StrategicGameplaySaveV47;
+  | StrategicGameplaySaveV47
+  | StrategicGameplaySaveV48;
 
 export function serializeStrategicGameplayState(
   state: StrategicGameplayState,
-): StrategicGameplaySaveV47 {
+): StrategicGameplaySaveV48 {
   return {
-    version: 47,
+    version: 48,
     day: state.day,
     completedActionIds: [...state.completedActionIds],
     pendingDelayed: state.pendingDelayed.map((p) => ({ ...p, effects: { ...p.effects } })),
@@ -3610,6 +7006,7 @@ export function serializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: state.coalitionMatriarchAscendancyStreakDays ?? 0,
     coalitionMatriarchPerpetuityStreakDays: state.coalitionMatriarchPerpetuityStreakDays ?? 0,
     coalitionMatriarchEternityStreakDays: state.coalitionMatriarchEternityStreakDays ?? 0,
+    coalitionMatriarchInfinityStreakDays: state.coalitionMatriarchInfinityStreakDays ?? 0,
   };
 }
 
@@ -3673,6 +7070,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
     };
   }
   if (save.version === 2) {
@@ -3732,6 +7130,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
     };
   }
   if (save.version === 3) {
@@ -3791,6 +7190,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
     };
   }
   if (save.version === 4) {
@@ -3850,6 +7250,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
     };
   }
   if (save.version === 5) {
@@ -3909,6 +7310,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
     };
   }
   if (save.version === 6) {
@@ -3968,6 +7370,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
     };
   }
   if (save.version === 7) {
@@ -4027,6 +7430,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
     };
   }
   if (save.version === 8) {
@@ -4086,6 +7490,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
     };
   }
   if (save.version === 9) {
@@ -4145,6 +7550,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
     };
   }
   if (save.version === 10) {
@@ -4204,6 +7610,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
     };
   }
   if (save.version === 11) {
@@ -4263,6 +7670,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
     };
   }
   if (save.version === 12) {
@@ -4322,6 +7730,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
     };
   }
   if (save.version === 13) {
@@ -4381,6 +7790,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
     };
   }
   if (save.version === 14) {
@@ -4440,6 +7850,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 15) {
@@ -4499,6 +7910,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 16) {
@@ -4558,6 +7970,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 17) {
@@ -4617,6 +8030,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 18) {
@@ -4676,6 +8090,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 19) {
@@ -4735,6 +8150,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 20) {
@@ -4794,6 +8210,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 21) {
@@ -4853,6 +8270,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 22) {
@@ -4912,6 +8330,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 23) {
@@ -4971,6 +8390,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 24) {
@@ -5030,6 +8450,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 25) {
@@ -5089,6 +8510,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 26) {
@@ -5148,6 +8570,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 27) {
@@ -5207,6 +8630,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 28) {
@@ -5266,6 +8690,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 29) {
@@ -5325,6 +8750,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 30) {
@@ -5384,6 +8810,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 31) {
@@ -5443,6 +8870,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 32) {
@@ -5502,6 +8930,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 33) {
@@ -5561,6 +8990,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 34) {
@@ -5620,6 +9050,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 35) {
@@ -5679,6 +9110,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 36) {
@@ -5738,6 +9170,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 37) {
@@ -5797,6 +9230,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 38) {
@@ -5856,6 +9290,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 39) {
@@ -5915,6 +9350,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 40) {
@@ -5974,6 +9410,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 41) {
@@ -6033,6 +9470,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 42) {
@@ -6092,6 +9530,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 43) {
@@ -6151,6 +9590,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 44) {
@@ -6210,6 +9650,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 45) {
@@ -6269,6 +9710,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: save.coalitionMatriarchAscendancyStreakDays,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
   if (save.version === 46) {
@@ -6328,9 +9770,70 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: save.coalitionMatriarchAscendancyStreakDays,
     coalitionMatriarchPerpetuityStreakDays: save.coalitionMatriarchPerpetuityStreakDays,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
   };
   }
-  if (save.version !== 47) {
+  if (save.version === 47) {
+    return {
+      day: save.day,
+      completedActionIds: [...save.completedActionIds],
+      pendingDelayed: save.pendingDelayed.slice(),
+      journal: save.journal.slice(),
+      priorityMomentum: { ...save.priorityMomentum },
+      actionCooldowns: { ...save.actionCooldowns },
+      activeChoice: save.activeChoice ? { ...save.activeChoice } : null,
+      mandateProgress: { ...save.mandateProgress },
+      stakeholderSentiment: { ...save.stakeholderSentiment },
+      lastAlignedActionDay: save.lastAlignedActionDay,
+      coalitionCrisisStreakDays: save.coalitionCrisisStreakDays,
+      coalitionRecoveryStreakDays: save.coalitionRecoveryStreakDays,
+      coalitionVolatilityEvents: save.coalitionVolatilityEvents,
+      coalitionStabilizationStreakDays: save.coalitionStabilizationStreakDays,
+      coalitionLockInStreakDays: save.coalitionLockInStreakDays,
+      crossModuleSyncStreakDays: save.crossModuleSyncStreakDays,
+      integratedCoalitionMaturityStreakDays: save.integratedCoalitionMaturityStreakDays,
+      coalitionStewardshipStreakDays: save.coalitionStewardshipStreakDays,
+      coalitionAnchoredGovernanceStreakDays: save.coalitionAnchoredGovernanceStreakDays,
+      coalitionInstitutionalPermanenceStreakDays: save.coalitionInstitutionalPermanenceStreakDays,
+      coalitionGenerationalContinuityStreakDays: save.coalitionGenerationalContinuityStreakDays,
+      coalitionCivilizationalEnduranceStreakDays: save.coalitionCivilizationalEnduranceStreakDays,
+      coalitionTranscendentLegacyStreakDays: save.coalitionTranscendentLegacyStreakDays,
+      coalitionSovereignContinuumStreakDays: save.coalitionSovereignContinuumStreakDays,
+      coalitionEternalAscendanceStreakDays: save.coalitionEternalAscendanceStreakDays,
+      coalitionInfinitePersistenceStreakDays: save.coalitionInfinitePersistenceStreakDays,
+      coalitionPrimordialContinuityStreakDays: save.coalitionPrimordialContinuityStreakDays,
+      coalitionAbsoluteSanctityStreakDays: save.coalitionAbsoluteSanctityStreakDays,
+      coalitionUniversalImmortalityStreakDays: save.coalitionUniversalImmortalityStreakDays,
+      coalitionCosmicPerpetuityStreakDays: save.coalitionCosmicPerpetuityStreakDays,
+      coalitionGalacticInfinityStreakDays: save.coalitionGalacticInfinityStreakDays,
+      coalitionStellarTranscendenceStreakDays: save.coalitionStellarTranscendenceStreakDays,
+      coalitionQuantumOmnipresenceStreakDays: save.coalitionQuantumOmnipresenceStreakDays,
+      coalitionMultiversalPersistenceStreakDays: save.coalitionMultiversalPersistenceStreakDays,
+      coalitionMetaversalContinuityStreakDays: save.coalitionMetaversalContinuityStreakDays,
+      coalitionOmniversalSynthesisStreakDays: save.coalitionOmniversalSynthesisStreakDays,
+      coalitionHyperversalHarmonizationStreakDays: save.coalitionHyperversalHarmonizationStreakDays,
+      coalitionTranscendentOmniumStreakDays: save.coalitionTranscendentOmniumStreakDays,
+      coalitionSupremeConvergenceStreakDays: save.coalitionSupremeConvergenceStreakDays,
+      coalitionApexTranscendenceStreakDays: save.coalitionApexTranscendenceStreakDays,
+      coalitionZenithPerpetuityStreakDays: save.coalitionZenithPerpetuityStreakDays,
+      coalitionParagonInfinityStreakDays: save.coalitionParagonInfinityStreakDays,
+      coalitionParamountAscendancyStreakDays: save.coalitionParamountAscendancyStreakDays,
+      coalitionImperialPerpetuityStreakDays: save.coalitionImperialPerpetuityStreakDays,
+      coalitionCustodialEternityStreakDays: save.coalitionCustodialEternityStreakDays,
+      coalitionVanguardSynthesisStreakDays: save.coalitionVanguardSynthesisStreakDays,
+      coalitionSentinelAscendancyStreakDays: save.coalitionSentinelAscendancyStreakDays,
+      coalitionOraclePerpetuityStreakDays: save.coalitionOraclePerpetuityStreakDays,
+      coalitionArchonEternityStreakDays: save.coalitionArchonEternityStreakDays,
+      coalitionExarchAscendancyStreakDays: save.coalitionExarchAscendancyStreakDays,
+      coalitionPrimarchPerpetuityStreakDays: save.coalitionPrimarchPerpetuityStreakDays,
+      coalitionPatriarchEternityStreakDays: save.coalitionPatriarchEternityStreakDays,
+      coalitionMatriarchAscendancyStreakDays: save.coalitionMatriarchAscendancyStreakDays,
+      coalitionMatriarchPerpetuityStreakDays: save.coalitionMatriarchPerpetuityStreakDays,
+      coalitionMatriarchEternityStreakDays: save.coalitionMatriarchEternityStreakDays,
+      coalitionMatriarchInfinityStreakDays: 0,
+    };
+  }
+  if (save.version !== 48) {
     throw new Error(`Unsupported strategic save version: ${(save as { version: number }).version}`);
   }
   return {
@@ -6389,6 +9892,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchAscendancyStreakDays: save.coalitionMatriarchAscendancyStreakDays,
     coalitionMatriarchPerpetuityStreakDays: save.coalitionMatriarchPerpetuityStreakDays,
     coalitionMatriarchEternityStreakDays: save.coalitionMatriarchEternityStreakDays,
+    coalitionMatriarchInfinityStreakDays: save.coalitionMatriarchInfinityStreakDays,
   };
 }
 
@@ -6775,6 +10279,7 @@ export function validateAction(
     issues.push(...coalitionMatriarchAscendancyStreakIssues(action, state));
     issues.push(...coalitionMatriarchPerpetuityStreakIssues(action, state));
     issues.push(...coalitionMatriarchEternityStreakIssues(action, state));
+    issues.push(...coalitionMatriarchInfinityStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({
@@ -6927,7 +10432,8 @@ export function rankStrategicActions(
         patriarchEternityRankingBonus(state, action) +
         matriarchAscendancyRankingBonus(state, action) +
         matriarchPerpetuityRankingBonus(state, action) +
-        matriarchEternityRankingBonus(state, action),
+        matriarchEternityRankingBonus(state, action) +
+        matriarchInfinityRankingBonus(state, action),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });
@@ -7053,6 +10559,8 @@ export function buildTurnStrategicBriefing(
     coalitionMatriarchPerpetuityStreakDays: state.coalitionMatriarchPerpetuityStreakDays ?? 0,
     matriarchCoalitionEternity: isMatriarchCoalitionEternity(state),
     coalitionMatriarchEternityStreakDays: state.coalitionMatriarchEternityStreakDays ?? 0,
+    matriarchCoalitionInfinity: isMatriarchCoalitionInfinity(state),
+    coalitionMatriarchInfinityStreakDays: state.coalitionMatriarchInfinityStreakDays ?? 0,
     mandateDriftRisk: classifyMandateDriftRisk(state),
     completedActionCount: state.completedActionIds.length,
     activeChoiceId: state.activeChoice?.choiceId ?? null,
@@ -7281,6 +10789,8 @@ export function advanceStrategicGameplayCalendar(
   next = applyMatriarchPerpetuityMandateBonus(next, daysAdvanced);
   next = advanceCoalitionMatriarchEternityStreak(next, daysAdvanced);
   next = applyMatriarchEternityMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionMatriarchInfinityStreak(next, daysAdvanced);
+  next = applyMatriarchInfinityMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 
@@ -7345,6 +10855,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     coalitionMatriarchAscendancyStreakDays: 0,
     coalitionMatriarchPerpetuityStreakDays: 0,
     coalitionMatriarchEternityStreakDays: 0,
+    coalitionMatriarchInfinityStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -7745,6 +11256,12 @@ export function executeStrategicAction(
   }
   if (action.id === 'sga_coalition_matriarch_eternity_covenant') {
     nextState = resetCoalitionMatriarchEternityStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_matriarch_infinity_charter') {
+    nextState = resetCoalitionMatriarchInfinityStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_matriarch_infinity_covenant') {
+    nextState = resetCoalitionMatriarchInfinityStreak(nextState);
   }
 
   contracts.ui.pushToast({
@@ -10167,6 +13684,51 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
     },
     delayedTradeOffs: [],
   },
+  'sga_coalition_matriarch_infinity_charter': {
+    id: 'sga_coalition_matriarch_infinity_charter',
+    title: 'Matriarch Coalition Infinity Charter',
+    category: 'governance',
+    apCost: 2,
+    cashCost: 78_000,
+    treasuryCost: 210_000,
+    minApproval: 66,
+    alignedPriorities: ['technology_competitiveness', 'economic_diversification'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'matriarch_infinity', 'charter'],
+    repeatable: false,
+    minCoalitionBalanceIndex: 114,
+    maxCoalitionVolatilityEvents: 0,
+    minCoalitionMatriarchEternityStreakDays: 4,
+    minCoalitionMatriarchInfinityStreakDays: 4,
+    immediateEffects: {
+      economy: { cashDelta: -78_000, treasuryDelta: -210_000, netWorthMultiplier: 1.044 },
+      government: { approvalDelta: 12, directiveSlotsDelta: 2, regulatoryBurdenDelta: -6 },
+      population: { publicStabilityDelta: 11, migrationDelta: 6 },
+    },
+    delayedTradeOffs: [],
+  },
+  'sga_coalition_matriarch_infinity_covenant': {
+    id: 'sga_coalition_matriarch_infinity_covenant',
+    title: 'Matriarch Coalition Infinity Covenant',
+    category: 'investment',
+    apCost: 1,
+    cashCost: 59_000,
+    treasuryCost: 146_000,
+    minApproval: 55,
+    alignedPriorities: ['energy_resilience', 'freight_modernization'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'matriarch_infinity', 'covenant'],
+    repeatable: true,
+    maxCoalitionVolatilityEvents: 0,
+    minCoalitionMatriarchInfinityStreakDays: 2,
+    cooldownDays: 4,
+    immediateEffects: {
+      economy: { cashDelta: -59_000, treasuryDelta: -146_000 },
+      government: { approvalDelta: 7 },
+      population: { publicStabilityDelta: 8, essentialAccessDelta: 5 },
+    },
+    delayedTradeOffs: [],
+  },
   'sga_coalition_matriarch_eternity_covenant': {
     id: 'sga_coalition_matriarch_eternity_covenant',
     title: 'Matriarch Coalition Eternity Covenant',
@@ -10725,7 +14287,7 @@ export function createMemoryStrategicContracts(
 
 export const AGENT_01_MODULE_ID = 'operation-10m/agent-01-strategic-gameplay';
 
-export const AGENT_01_MODULE_VERSION = '5.2.0';
+export const AGENT_01_MODULE_VERSION = '5.10.0';
 
 
 

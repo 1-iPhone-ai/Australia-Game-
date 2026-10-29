@@ -162,7 +162,7 @@ describe('scale wave round 43 — archon coalition eternity', () => {
       coalitionArchonEternityStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(47);
+    expect(save.version).toBe(48);
     expect(save.coalitionArchonEternityStreakDays).toBe(5);
   });
 });
