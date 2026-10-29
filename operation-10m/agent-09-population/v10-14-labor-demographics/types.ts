@@ -1,0 +1,236 @@
+/**
+ * V10.14 — Labor demographics types (Agent 09 / Operation 10M)
+ * Serializable types only; no imports from canonical TSX.
+ */
+
+export const V1014_LABOR_SCHEMA_VERSION = '10.14.0';
+
+export const V1014_LABOR_CORE_REGIONS: readonly string[] = [
+  'NSW',
+  'VIC',
+  'QLD',
+  'WA',
+  'SA',
+  'TAS',
+  'NT',
+  'ACT'
+] as const;
+
+export const V1014_LABOR_LIMITS = {
+  maxHistory: 24,
+  maxTransitions: 16,
+  maxIndustryLinks: 8,
+  maxEvidence: 8,
+  hysteresisDeadband: 2.0,
+  maxEventsPerTurn: 6
+} as const;
+
+export type StrategicIndustryKind =
+  | 'energy'
+  | 'mining'
+  | 'agriculture'
+  | 'manufacturing'
+  | 'research'
+  | 'technology'
+  | 'tourism'
+  | 'trade';
+
+export const STRATEGIC_INDUSTRIES: StrategicIndustryKind[] = [
+  'energy',
+  'mining',
+  'agriculture',
+  'manufacturing',
+  'research',
+  'technology',
+  'tourism',
+  'trade'
+];
+
+export const INDUSTRY_LABEL: Record<StrategicIndustryKind, string> = {
+  mining: 'Mining',
+  agriculture: 'Agriculture',
+  energy: 'Energy',
+  manufacturing: 'Manufacturing',
+  technology: 'Technology',
+  research: 'Research',
+  tourism: 'Tourism',
+  trade: 'Trade'
+};
+
+/** Labor-intensity weight per strategic industry (employment linkage to output). */
+export const V1014_LABOR_INDUSTRY_LABOR_WEIGHT: Record<StrategicIndustryKind, number> = {
+  energy: 0.55,
+  mining: 0.72,
+  agriculture: 0.85,
+  manufacturing: 0.95,
+  research: 0.65,
+  technology: 0.78,
+  tourism: 1.05,
+  trade: 0.62
+};
+
+export type DemographicStructureBand =
+  | 'contracting'
+  | 'aging_pressure'
+  | 'stable'
+  | 'youthful_growth'
+  | 'rapid_growth';
+
+export type EmploymentLinkageBand =
+  | 'dislocated'
+  | 'weak'
+  | 'balanced'
+  | 'strong'
+  | 'tight_labor';
+
+export type WagePressureBand =
+  | 'deflationary'
+  | 'soft'
+  | 'stable'
+  | 'elevated'
+  | 'surging';
+
+export type MigrationFlowBand =
+  | 'outflow'
+  | 'slight_outflow'
+  | 'balanced'
+  | 'inflow'
+  | 'strong_inflow';
+
+export const DEMOGRAPHIC_STRUCTURE_LABEL: Record<DemographicStructureBand, string> = {
+  contracting: 'Contracting workforce base',
+  aging_pressure: 'Aging workforce pressure',
+  stable: 'Stable demographic structure',
+  youthful_growth: 'Youthful growth profile',
+  rapid_growth: 'Rapid demographic expansion'
+};
+
+export const EMPLOYMENT_LINKAGE_LABEL: Record<EmploymentLinkageBand, string> = {
+  dislocated: 'Output–employment dislocation',
+  weak: 'Weak employment linkage',
+  balanced: 'Balanced linkage to output',
+  strong: 'Strong output-driven employment',
+  tight_labor: 'Tight labor market linkage'
+};
+
+export const WAGE_PRESSURE_LABEL: Record<WagePressureBand, string> = {
+  deflationary: 'Deflationary wage pressure',
+  soft: 'Soft wage conditions',
+  stable: 'Stable wage pressure',
+  elevated: 'Elevated wage pressure',
+  surging: 'Surging wage pressure'
+};
+
+export const MIGRATION_FLOW_LABEL: Record<MigrationFlowBand, string> = {
+  outflow: 'Net outflow',
+  slight_outflow: 'Slight outflow',
+  balanced: 'Balanced migration',
+  inflow: 'Net inflow',
+  strong_inflow: 'Strong inflow'
+};
+
+export interface LaborDemographicsRegionSnapshot {
+  regionId: string;
+  demographicStructure: DemographicStructureBand;
+  demographicScore: number;
+  employmentLinkage: EmploymentLinkageBand;
+  employmentLinkageScore: number;
+  wagePressure: WagePressureBand;
+  wagePressureScore: number;
+  migrationFlow: MigrationFlowBand;
+  migrationFlowScore: number;
+  dominantIndustry: StrategicIndustryKind | null;
+  industryOutputIndex: number;
+  workforceStrainIndex: number;
+  householdEmploymentFit: number;
+  automationPressureIndex?: number;
+}
+
+export interface LaborDemographicsIndustryLink {
+  industry: StrategicIndustryKind;
+  nationalOutputShare: number;
+  employmentWeight: number;
+  linkageScore: number;
+  regionalHotspots: string[];
+}
+
+export interface LaborDemographicsTransition {
+  id: string;
+  turn: number;
+  scope: 'national' | 'regional';
+  regionId?: string;
+  field: string;
+  from: string;
+  to: string;
+  reason: string;
+}
+
+export interface NationalLaborDemographicsState {
+  schemaVersion: string;
+  turn: number;
+  revision: number;
+  inputHash: string;
+  enabled: boolean;
+  nationalDemographicStructure: DemographicStructureBand;
+  nationalEmploymentLinkage: EmploymentLinkageBand;
+  nationalWagePressure: WagePressureBand;
+  nationalMigrationFlow: MigrationFlowBand;
+  demographicScore: number;
+  employmentLinkageScore: number;
+  wagePressureScore: number;
+  migrationFlowScore: number;
+  regions: Record<string, LaborDemographicsRegionSnapshot>;
+  industryLinks: LaborDemographicsIndustryLink[];
+  summary: string;
+  outlook: string;
+  transitions: LaborDemographicsTransition[];
+  evidence: string[];
+  automationFeedbackSummary?: string;
+}
+
+export interface LaborDemographicsPersisted {
+  schemaVersion: string;
+  revision: number;
+  initializedTurn: number | null;
+  lastUpdatedTurn: number;
+  lastInputHash: string;
+  nationalHysteresis: {
+    demographicStructure: DemographicStructureBand;
+    employmentLinkage: EmploymentLinkageBand;
+    wagePressure: WagePressureBand;
+    migrationFlow: MigrationFlowBand;
+    demographicScore: number;
+    employmentLinkageScore: number;
+    wagePressureScore: number;
+    migrationFlowScore: number;
+  };
+  regionalHysteresis: Record<
+    string,
+    {
+      demographicStructure: DemographicStructureBand;
+      employmentLinkage: EmploymentLinkageBand;
+      wagePressure: WagePressureBand;
+      migrationFlow: MigrationFlowBand;
+    }
+  >;
+  transitions: LaborDemographicsTransition[];
+  history: Array<{ turn: number; hash: string; summary: string }>;
+}
+
+export interface LaborDemographicsInputs {
+  turn: number;
+  enabled?: boolean;
+  industries?: any;
+  workforce?: any;
+  households?: any;
+  livingRegions?: any;
+  economicGeography?: any;
+  capabilities?: Array<{ id: string; active?: boolean; automationShift?: number }>;
+}
+
+export interface LaborDemographicsWorldView {
+  enabled: boolean;
+  state: NationalLaborDemographicsState;
+  persisted: LaborDemographicsPersisted;
+  inputs: LaborDemographicsInputs;
+}
