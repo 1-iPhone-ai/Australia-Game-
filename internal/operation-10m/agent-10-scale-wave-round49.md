@@ -5,7 +5,7 @@ cursor:
 
 # Agent 10 — scale wave round 49 (O10-229)
 
-**Integration baseline:** **`73e5e01`** · **Projected scale:** **2,727,364** · **Merge commit:** **`edae304`** · **Base commit:** `9c3404e` (peer wave-49 feat on branch) · **Gate commit (Agent 10 / 15–16):** **`087841b`** · **Origin tip:** _(post-push)_ · **Task:** O10-229  
+**Integration baseline:** **`73e5e01`** · **Projected scale:** **2,727,364** · **Merge commit:** **`edae304`** · **Base commit:** `9c3404e` (peer wave-49 feat on branch) · **Gate commit (Agent 10 / 15–16):** **`087841b`** · **Origin tip:** **`3e96b12`** · **Task:** O10-229  
 **Branch:** `op10m/agent-10-finance-inflation` · **PR:** [#339](https://github.com/1-iPhone-ai/Australia-Game-/pull/339) open  
 **Worker:** `bc-7c8e8184-52fb-54e6-8247-0f82273ec281`
 
