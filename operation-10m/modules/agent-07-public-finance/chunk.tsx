@@ -8232,6 +8232,211 @@ function debtServiceCoverageRatioGap(debtService: DebtServiceCoverageReport): nu
 }
 
 
+// --- source: contingency-forward-coherence/types.ts ---
+export const CONTINGENCY_FORWARD_COHERENCE_SCHEMA =
+  'op10m-agent07-contingency-forward-coherence-v1';
+
+export interface ContingencyForwardCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface ContingencyForwardCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: ContingencyForwardCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinContingencyForwardBand: boolean;
+  alignedWithFiscalBuffer: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: contingency-forward-coherence/compute.ts ---
+
+const FORWARD_TOLERANCE = 5.9;
+
+export function buildContingencyForwardCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  contingency: ContingencyDrawdownRegisterReport,
+  forwardIntegrity: ForwardEstimatesIntegrityReport,
+  fiscalBuffer: FiscalBufferCoherenceReport
+): ContingencyForwardCoherenceReport {
+  const drawdownGap = Math.abs(
+    contingency.aggregateDrawdownPoints - forwardIntegrity.aggregateRevisionGap * 0.11
+  );
+  const bufferGap = Math.abs(fiscalBuffer.aggregateBufferPoints - drawdownGap * 0.38);
+  const aggregateCoherenceGapPoints = Math.round((drawdownGap + bufferGap) * 10) / 20;
+
+  const checks: ContingencyForwardCheck[] = [
+    {
+      id: 'CFWC01',
+      label: 'Contingency drawdown within cap',
+      passed: contingency.withinDrawdownCap || v1012.pressure === 'critical',
+      detail: `ratio=${contingency.drawdownToOpeningRatio}, draw=${contingency.aggregateDrawdownPoints}`
+    },
+    {
+      id: 'CFWC02',
+      label: 'Forward estimates integrity holds',
+      passed:
+        forwardIntegrity.allPassed ||
+        drawdownGap <= FORWARD_TOLERANCE + 2 ||
+        v1012.pressure === 'critical',
+      detail: `revisionGap=${forwardIntegrity.aggregateRevisionGap}, drawdown=${contingency.aggregateDrawdownPoints}`
+    },
+    {
+      id: 'CFWC03',
+      label: 'Drawdown gap vs fiscal buffer',
+      passed:
+        bufferGap <= FORWARD_TOLERANCE + 1.8 ||
+        fiscalBuffer.allPassed ||
+        v1012.pressure === 'critical',
+      detail: `buffer=${fiscalBuffer.aggregateBufferPoints}, gap=${drawdownGap}`
+    }
+  ];
+
+  const withinContingencyForwardBand =
+    checks.every(c => c.passed) ||
+    (contingency.withinDrawdownCap && forwardIntegrity.allPassed) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithFiscalBuffer =
+    fiscalBuffer.alignedWithRevenueForward &&
+    (aggregateCoherenceGapPoints <= fiscalBuffer.aggregateBufferPoints * 0.15 + 2.5 ||
+      fiscalBuffer.allPassed ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinContingencyForwardBand) {
+    warnings.push(`Contingency forward gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithFiscalBuffer) {
+    warnings.push('Contingency forward diverges from fiscal buffer.');
+  }
+
+  const narrative = withinContingencyForwardBand
+    ? `Contingency forward gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Contingency forward alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: CONTINGENCY_FORWARD_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinContingencyForwardBand,
+    alignedWithFiscalBuffer,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: appropriation-warrant-fiscal-bridge/types.ts ---
+export const APPROPRIATION_WARRANT_FISCAL_BRIDGE_SCHEMA =
+  'op10m-agent07-appropriation-warrant-fiscal-bridge-v1';
+
+export interface WarrantFiscalCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface AppropriationWarrantFiscalBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: WarrantFiscalCheck[];
+  bridgeGapPoints: number;
+  withinWarrantFiscalBand: boolean;
+  alignedWithTimingCoherence: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: appropriation-warrant-fiscal-bridge/compute.ts ---
+
+const WARRANT_TOLERANCE = 6.4;
+
+export function buildAppropriationWarrantFiscalBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  warrantLedger: AppropriationWarrantLedger,
+  timingCoherence: AppropriationTimingCoherenceReport,
+  carryForward: AppropriationCarryForwardReport
+): AppropriationWarrantFiscalBridgeReport {
+  const lapseGap = Math.abs(warrantLedger.aggregateLapseRisk - carryForward.aggregateSourceLapsePoints * 0.22);
+  const timingGap = Math.abs(timingCoherence.aggregateTimingGapPoints - lapseGap * 0.41);
+  const bridgeGapPoints = Math.round((lapseGap + timingGap) * 10) / 20;
+
+  const checks: WarrantFiscalCheck[] = [
+    {
+      id: 'AWFB01',
+      label: 'Warrant lapse within tolerance',
+      passed: warrantLedger.lapseWithinTolerance || v1012.pressure === 'critical',
+      observed: warrantLedger.aggregateLapseRisk,
+      tolerance: warrantLedger.aggregateAppropriation * 0.12 + 2
+    },
+    {
+      id: 'AWFB02',
+      label: 'Timing coherence within window',
+      passed: timingCoherence.withinTimingWindow || v1012.pressure === 'critical',
+      observed: timingCoherence.aggregateTimingGapPoints,
+      tolerance: 9
+    },
+    {
+      id: 'AWFB03',
+      label: 'Warrant lapse vs carry forward',
+      passed:
+        lapseGap <= WARRANT_TOLERANCE + 2 ||
+        carryForward.withinPortfolioCarryCap ||
+        v1012.pressure === 'critical',
+      observed: lapseGap,
+      tolerance: WARRANT_TOLERANCE + 2
+    }
+  ];
+
+  const withinWarrantFiscalBand =
+    checks.every(c => c.passed) ||
+    (warrantLedger.lapseWithinTolerance && timingCoherence.withinTimingWindow) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithTimingCoherence =
+    timingCoherence.coherentWithCarryForward &&
+    (bridgeGapPoints <= timingCoherence.aggregateTimingGapPoints + 2.3 ||
+      timingCoherence.withinTimingWindow ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinWarrantFiscalBand) {
+    warnings.push(`Appropriation warrant fiscal bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithTimingCoherence) {
+    warnings.push('Warrant fiscal bridge diverges from timing coherence.');
+  }
+
+  const narrative = withinWarrantFiscalBand
+    ? `Appropriation warrant fiscal bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Appropriation warrant fiscal alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: APPROPRIATION_WARRANT_FISCAL_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinWarrantFiscalBand,
+    alignedWithTimingCoherence,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -10232,6 +10437,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     debtServiceCoverage,
     sovereignIssuanceCouplingBridge
   );
+  const contingencyForwardCoherence = buildContingencyForwardCoherenceReport(
+    turn,
+    v1012,
+    contingencyDrawdownRegister,
+    forwardEstimatesIntegrity,
+    fiscalBufferCoherence
+  );
+  const appropriationWarrantFiscalBridge = buildAppropriationWarrantFiscalBridgeReport(
+    turn,
+    v1012,
+    warrantLedger,
+    appropriationTimingCoherence,
+    appropriationCarryForward
+  );
 
   checks.push({
     id: 'CF01',
@@ -11005,13 +11224,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `stress=${debtRollover.liquidityStress}, coupling=${sovereignIssuanceCouplingBridge.bridgeCouplingGapPoints}`
   });
 
+  checks.push({
+    id: 'CF109',
+    label: 'Contingency forward coherence within band',
+    passed: contingencyForwardCoherence.withinContingencyForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${contingencyForwardCoherence.aggregateCoherenceGapPoints}, checks=${contingencyForwardCoherence.checks.filter(c => c.passed).length}/${contingencyForwardCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF110',
+    label: 'Appropriation warrant fiscal bridge within band',
+    passed: appropriationWarrantFiscalBridge.withinWarrantFiscalBand || v1012.pressure === 'critical',
+    detail: `gap=${appropriationWarrantFiscalBridge.bridgeGapPoints}, checks=${appropriationWarrantFiscalBridge.checks.filter(c => c.passed).length}/${appropriationWarrantFiscalBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF111',
+    label: 'Contingency forward aligned with fiscal buffer',
+    passed: contingencyForwardCoherence.alignedWithFiscalBuffer,
+    detail: `draw=${contingencyDrawdownRegister.aggregateDrawdownPoints}, buffer=${fiscalBufferCoherence.aggregateBufferPoints}`
+  });
+
+  checks.push({
+    id: 'CF112',
+    label: 'Warrant fiscal aligned with timing coherence',
+    passed: appropriationWarrantFiscalBridge.alignedWithTimingCoherence,
+    detail: `lapse=${warrantLedger.aggregateLapseRisk}, timing=${appropriationTimingCoherence.aggregateTimingGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 82
+    layerCount: 84
   };
 }
 
@@ -12891,12 +13138,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Eighty-two fiscal layers integrated', healthy.layerCount === 82, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Eighty-four fiscal layers integrated', healthy.layerCount === 84, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 108,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 112,
     'ok'
   );
 
@@ -12908,10 +13155,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF108 ids present',
-    healthy.checks.length === 108 &&
+    'CF01–CF112 ids present',
+    healthy.checks.length === 112 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[107]?.id === 'CF108',
+      healthy.checks[111]?.id === 'CF112',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -16570,6 +16817,138 @@ export function runDebtRolloverCoverageBridgeSelfTests(): {
     'DRCB-T03',
     'Aligned with issuance coupling',
     healthy.alignedWithIssuanceCoupling,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: contingency-forward-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runContingencyForwardCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const statutory = buildStatutoryBalancesReport(9, v);
+  const cash = buildCashManagementReport(9, v);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const contingency = buildContingencyDrawdownRegisterReport(9, v, contingencyFlex, fiscalRules);
+  const fiscalBuffer = buildFiscalBufferCoherenceReport(9, v, statutory, cash, contingency, revenueForward);
+  const healthy = buildContingencyForwardCoherenceReport(9, v, contingency, forwardIntegrity, fiscalBuffer);
+
+  record('CFWC-T01', 'Three contingency forward checks', healthy.checks.length === 3, 'ok');
+  record(
+    'CFWC-T02',
+    'Within contingency forward band',
+    healthy.withinContingencyForwardBand,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'CFWC-T03',
+    'Aligned with fiscal buffer',
+    healthy.alignedWithFiscalBuffer,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: appropriation-warrant-fiscal-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runAppropriationWarrantFiscalBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const warrantLedger = buildAppropriationWarrantLedger(9, v);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const lapseRegister = buildAppropriationLapseRegisterReport(9, v, warrantLedger);
+  const carryForward = buildAppropriationCarryForwardReport(9, v, state.budget, lapseRegister, warrantLedger);
+  const timingCoherence = buildAppropriationTimingCoherenceReport(9, v, warrantLedger, supplementary, carryForward);
+  const healthy = buildAppropriationWarrantFiscalBridgeReport(9, v, warrantLedger, timingCoherence, carryForward);
+
+  record('AWFB-T01', 'Three warrant fiscal checks', healthy.checks.length === 3, 'ok');
+  record(
+    'AWFB-T02',
+    'Within warrant fiscal band',
+    healthy.withinWarrantFiscalBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'AWFB-T03',
+    'Aligned with timing coherence',
+    healthy.alignedWithTimingCoherence,
     healthy.narrative
   );
 

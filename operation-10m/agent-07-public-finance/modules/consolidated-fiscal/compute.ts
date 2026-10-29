@@ -57,6 +57,8 @@ import { buildFederalStateGrantCoherenceReport } from '../federal-state-grant-co
 import { buildReconciliationResilienceBridgeReport } from '../reconciliation-resilience-bridge/compute';
 import { buildTaxExpenditureForwardCoherenceReport } from '../tax-expenditure-forward-coherence/compute';
 import { buildDebtRolloverCoverageBridgeReport } from '../debt-rollover-coverage-bridge/compute';
+import { buildContingencyForwardCoherenceReport } from '../contingency-forward-coherence/compute';
+import { buildAppropriationWarrantFiscalBridgeReport } from '../appropriation-warrant-fiscal-bridge/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -368,6 +370,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     debtRollover,
     debtServiceCoverage,
     sovereignIssuanceCouplingBridge
+  );
+  const contingencyForwardCoherence = buildContingencyForwardCoherenceReport(
+    turn,
+    v1012,
+    contingencyDrawdownRegister,
+    forwardEstimatesIntegrity,
+    fiscalBufferCoherence
+  );
+  const appropriationWarrantFiscalBridge = buildAppropriationWarrantFiscalBridgeReport(
+    turn,
+    v1012,
+    warrantLedger,
+    appropriationTimingCoherence,
+    appropriationCarryForward
   );
 
   checks.push({
@@ -1142,12 +1158,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `stress=${debtRollover.liquidityStress}, coupling=${sovereignIssuanceCouplingBridge.bridgeCouplingGapPoints}`
   });
 
+  checks.push({
+    id: 'CF109',
+    label: 'Contingency forward coherence within band',
+    passed: contingencyForwardCoherence.withinContingencyForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${contingencyForwardCoherence.aggregateCoherenceGapPoints}, checks=${contingencyForwardCoherence.checks.filter(c => c.passed).length}/${contingencyForwardCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF110',
+    label: 'Appropriation warrant fiscal bridge within band',
+    passed: appropriationWarrantFiscalBridge.withinWarrantFiscalBand || v1012.pressure === 'critical',
+    detail: `gap=${appropriationWarrantFiscalBridge.bridgeGapPoints}, checks=${appropriationWarrantFiscalBridge.checks.filter(c => c.passed).length}/${appropriationWarrantFiscalBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF111',
+    label: 'Contingency forward aligned with fiscal buffer',
+    passed: contingencyForwardCoherence.alignedWithFiscalBuffer,
+    detail: `draw=${contingencyDrawdownRegister.aggregateDrawdownPoints}, buffer=${fiscalBufferCoherence.aggregateBufferPoints}`
+  });
+
+  checks.push({
+    id: 'CF112',
+    label: 'Warrant fiscal aligned with timing coherence',
+    passed: appropriationWarrantFiscalBridge.alignedWithTimingCoherence,
+    detail: `lapse=${warrantLedger.aggregateLapseRisk}, timing=${appropriationTimingCoherence.aggregateTimingGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 82
+    layerCount: 84
   };
 }
