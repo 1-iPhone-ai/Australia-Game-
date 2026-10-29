@@ -112,7 +112,7 @@ export function runAgent24ReplayScaleWaveWave27IntegrationVerificationSelfTests(
   const wave26IntegrationVerification = {
     reportId: 'w26iv',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     integrationBaselineSha: 'de3079f9',
     verified: true,
     issueCount: 0,
@@ -124,7 +124,7 @@ export function runAgent24ReplayScaleWaveWave27IntegrationVerificationSelfTests(
   const exportGate = {
     reportId: 'eg27',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     exportAllowed: true,
     blockerCount: 0,
     blockers: [],
@@ -134,7 +134,7 @@ export function runAgent24ReplayScaleWaveWave27IntegrationVerificationSelfTests(
   const integrationHandoff = {
     reportId: 'ih27',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     integrationBaselineSha: O6K_AGENT24_WAVE27_INTEGRATION_BASELINE_SHA,
     handoffComplete: true,
     checkpointCount: 3,

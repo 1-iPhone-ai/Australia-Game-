@@ -97,7 +97,7 @@ export function runAgent24ArchiveScaleWaveFullChunksGateSelfTests(): Array<{ nam
   const dryrunVerification = {
     reportId: 'dv',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     dryrunBaselineSha: '634656bb',
     verified: true,
     issueCount: 0,

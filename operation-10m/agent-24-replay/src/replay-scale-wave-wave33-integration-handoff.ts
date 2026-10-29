@@ -1,0 +1,154 @@
+import { o6kAgent24Fingerprint } from './fingerprint.ts';
+import type { Agent24ArchiveScaleWaveWave33ExportGateReport } from './archive-scale-wave-wave33-export-gate.ts';
+import type { Agent24ReplayScaleWaveWave32IntegrationVerificationReport } from './replay-scale-wave-wave32-integration-verification.ts';
+import { O6K_AGENT24_WAVE33_INTEGRATION_BASELINE_SHA } from './replay-scale-wave-integration-closeout.ts';
+
+export interface Agent24ReplayScaleWaveWave33IntegrationHandoffCheckpoint {
+  checkpointId: string;
+  label: string;
+  satisfied: boolean;
+  fingerprint: string;
+}
+
+export interface Agent24ReplayScaleWaveWave33IntegrationHandoffReport {
+  reportId: string;
+  matchId: string;
+  waveRound: number;
+  integrationBaselineSha: string;
+  handoffComplete: boolean;
+  checkpointCount: number;
+  satisfiedCheckpointCount: number;
+  checkpoints: Agent24ReplayScaleWaveWave33IntegrationHandoffCheckpoint[];
+  handoffScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ReplayScaleWaveWave33IntegrationHandoffInput {
+  matchId: string;
+  archiveScaleWaveWave33ExportGate: Agent24ArchiveScaleWaveWave33ExportGateReport;
+  replayScaleWaveWave32IntegrationVerification: Agent24ReplayScaleWaveWave32IntegrationVerificationReport;
+  integrationBaselineSha?: string;
+}
+
+export function buildAgent24ReplayScaleWaveWave33IntegrationHandoffReport(
+  input: Agent24ReplayScaleWaveWave33IntegrationHandoffInput,
+): Agent24ReplayScaleWaveWave33IntegrationHandoffReport {
+  const waveRound = input.replayScaleWaveWave32IntegrationVerification.waveRound;
+  const integrationBaselineSha = input.integrationBaselineSha ?? O6K_AGENT24_WAVE33_INTEGRATION_BASELINE_SHA;
+  const baselineAligned =
+    input.replayScaleWaveWave32IntegrationVerification.verified &&
+    input.archiveScaleWaveWave33ExportGate.exportAllowed;
+
+  const checkpoints: Agent24ReplayScaleWaveWave33IntegrationHandoffCheckpoint[] = [
+    {
+      checkpointId: o6kAgent24Fingerprint('scale_wave_w33_cp', { id: 'wave32_integration_verified', wave: waveRound }),
+      label: 'Wave 31 integration verification',
+      satisfied: input.replayScaleWaveWave32IntegrationVerification.verified,
+      fingerprint: '',
+    },
+    {
+      checkpointId: o6kAgent24Fingerprint('scale_wave_w33_cp', { id: 'wave33_export', wave: waveRound }),
+      label: 'Wave 32 export gate',
+      satisfied: input.archiveScaleWaveWave33ExportGate.exportAllowed,
+      fingerprint: '',
+    },
+    {
+      checkpointId: o6kAgent24Fingerprint('scale_wave_w33_cp', { id: 'integration_baseline', wave: waveRound }),
+      label: 'Integration baseline alignment',
+      satisfied: baselineAligned,
+      fingerprint: '',
+    },
+  ];
+
+  for (const cp of checkpoints) {
+    cp.fingerprint = o6kAgent24Fingerprint('scale_wave_w33_cp_body', {
+      id: cp.checkpointId,
+      satisfied: cp.satisfied,
+      wave: waveRound,
+      baseline: integrationBaselineSha,
+    });
+  }
+
+  const satisfiedCheckpointCount = checkpoints.filter(c => c.satisfied).length;
+
+  let handoffScore = 100;
+  handoffScore -= (checkpoints.length - satisfiedCheckpointCount) * 18;
+  handoffScore -= Math.max(0, 100 - input.archiveScaleWaveWave33ExportGate.exportScore) * 0.08;
+  handoffScore = Math.max(0, Math.min(100, Math.round(handoffScore)));
+
+  const handoffComplete = satisfiedCheckpointCount === checkpoints.length;
+
+  return {
+    reportId: o6kAgent24Fingerprint('replay_scale_wave_wave33_integration_handoff', {
+      matchId: input.matchId,
+      wave: waveRound,
+      baseline: integrationBaselineSha,
+    }),
+    matchId: input.matchId,
+    waveRound,
+    integrationBaselineSha,
+    handoffComplete,
+    checkpointCount: checkpoints.length,
+    satisfiedCheckpointCount,
+    checkpoints,
+    handoffScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('replay_scale_wave_wave33_integration_handoff_body', {
+      waveRound,
+      baseline: integrationBaselineSha,
+      checkpoints: checkpoints.map(c => c.fingerprint),
+      handoffComplete,
+      handoffScore,
+    }),
+  };
+}
+
+export function runAgent24ReplayScaleWaveWave33IntegrationHandoffSelfTests(): Array<{ name: string; passed: boolean }> {
+  const wave32IntegrationVerification = {
+    reportId: 'w31iv',
+    matchId: 'self',
+    waveRound: 32,
+    integrationBaselineSha: 'aa70dace',
+    verified: true,
+    issueCount: 0,
+    issues: [],
+    handoffScore: 100,
+    verificationScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('rsww31iv_t33', { v: 2 }),
+  };
+  const exportGate = {
+    reportId: 'eg32',
+    matchId: 'self',
+    waveRound: 32,
+    exportAllowed: true,
+    blockerCount: 0,
+    blockers: [],
+    exportScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('asww32_t33', { v: 1 }),
+  };
+
+  const report = buildAgent24ReplayScaleWaveWave33IntegrationHandoffReport({
+    matchId: 'self',
+    archiveScaleWaveWave33ExportGate: exportGate,
+    replayScaleWaveWave32IntegrationVerification: wave32IntegrationVerification,
+  });
+
+  return [
+    {
+      name: 'integration_handoff_complete_at_wave33_baseline',
+      passed:
+        report.handoffComplete &&
+        report.integrationBaselineSha === O6K_AGENT24_WAVE33_INTEGRATION_BASELINE_SHA,
+    },
+    { name: 'wave_round_pinned', passed: report.waveRound === 33 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        report.deterministicFingerprint ===
+        buildAgent24ReplayScaleWaveWave33IntegrationHandoffReport({
+          matchId: 'self',
+          archiveScaleWaveWave33ExportGate: exportGate,
+          replayScaleWaveWave32IntegrationVerification: wave32IntegrationVerification,
+        }).deterministicFingerprint,
+    },
+  ];
+}

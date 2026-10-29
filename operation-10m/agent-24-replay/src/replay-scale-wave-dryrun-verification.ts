@@ -110,7 +110,7 @@ export function runAgent24ReplayScaleWaveDryrunVerificationSelfTests(): Array<{ 
   const postProjectionGate = {
     reportId: 'ppg',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     gateOpen: true,
     blockerCount: 0,
     blockers: [],
@@ -120,7 +120,7 @@ export function runAgent24ReplayScaleWaveDryrunVerificationSelfTests(): Array<{ 
   const projectionVerification = {
     reportId: 'pv',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     projectionBaselineSha: '634656bb',
     verified: true,
     issueCount: 0,
@@ -132,7 +132,7 @@ export function runAgent24ReplayScaleWaveDryrunVerificationSelfTests(): Array<{ 
   const dryrunHandoff = {
     reportId: 'dh',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     dryrunBaselineSha: '634656bb',
     handoffComplete: true,
     checkpointCount: 3,

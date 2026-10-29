@@ -16,6 +16,7 @@ import {
   O6K_AGENT24_WAVE30_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE31_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE32_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE33_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
 export { O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA } from './replay-scale-wave-integration-closeout.ts';
@@ -53,7 +54,9 @@ export function buildAgent24ReplayScaleWaveProjectionHandoffSeal(
   const waveRound = input.replayScaleWaveIntegrationVerification.waveRound;
   const projectionBaselineSha =
     input.projectionBaselineSha ??
-    (waveRound >= 32
+    (waveRound >= 33
+      ? O6K_AGENT24_WAVE33_INTEGRATION_BASELINE_SHA
+      : waveRound >= 32
       ? O6K_AGENT24_WAVE32_INTEGRATION_BASELINE_SHA
       : waveRound >= 31
       ? O6K_AGENT24_WAVE31_INTEGRATION_BASELINE_SHA
@@ -151,7 +154,7 @@ export function runAgent24ReplayScaleWaveProjectionHandoffSealSelfTests(): Array
     reportId: 'iv',
     matchId: 'self',
     waveRound: 32,
-    integrationBaselineSha: O6K_AGENT24_WAVE32_INTEGRATION_BASELINE_SHA,
+    integrationBaselineSha: O6K_AGENT24_WAVE33_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -181,7 +184,7 @@ export function runAgent24ReplayScaleWaveProjectionHandoffSealSelfTests(): Array
       name: 'handoff_ready_at_projection_baseline',
       passed:
         seal.handoffReady &&
-        seal.projectionBaselineSha === O6K_AGENT24_WAVE32_INTEGRATION_BASELINE_SHA,
+        seal.projectionBaselineSha === O6K_AGENT24_WAVE33_INTEGRATION_BASELINE_SHA,
     },
     { name: 'wave_round_pinned', passed: seal.waveRound === 32 },
     {

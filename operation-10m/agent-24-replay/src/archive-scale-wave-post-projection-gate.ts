@@ -97,7 +97,7 @@ export function runAgent24ArchiveScaleWavePostProjectionGateSelfTests(): Array<{
   const projectionVerification = {
     reportId: 'pv',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     projectionBaselineSha: '99f2e72b',
     verified: true,
     issueCount: 0,

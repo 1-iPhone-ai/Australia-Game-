@@ -106,7 +106,7 @@ export function runAgent24ReplayScaleWaveWave27IntegrationHandoffSelfTests(): Ar
   const wave26IntegrationVerification = {
     reportId: 'w26iv',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     integrationBaselineSha: 'de3079f9',
     verified: true,
     issueCount: 0,
@@ -118,7 +118,7 @@ export function runAgent24ReplayScaleWaveWave27IntegrationHandoffSelfTests(): Ar
   const exportGate = {
     reportId: 'eg27',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     exportAllowed: true,
     blockerCount: 0,
     blockers: [],

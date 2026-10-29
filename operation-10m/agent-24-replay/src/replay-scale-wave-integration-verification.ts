@@ -110,7 +110,7 @@ export function runAgent24ReplayScaleWaveIntegrationVerificationSelfTests(): Arr
   const handoffGate = {
     reportId: 'hg',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     handoffAllowed: true,
     blockerCount: 0,
     blockers: [],
@@ -120,7 +120,7 @@ export function runAgent24ReplayScaleWaveIntegrationVerificationSelfTests(): Arr
   const attestationVerification = {
     reportId: 'av',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -131,7 +131,7 @@ export function runAgent24ReplayScaleWaveIntegrationVerificationSelfTests(): Arr
   const integrationCloseout = {
     reportId: 'ic',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     integrationBaselineSha: '680b9954',
     closeoutComplete: true,
     checkpointCount: 3,

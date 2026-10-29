@@ -118,7 +118,7 @@ export function runAgent24ReplayScaleWaveWave23IntegrationVerificationSelfTests(
   const fullChunksVerification = {
     reportId: 'fcv',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     fullChunksBaselineSha: O6K_AGENT24_WAVE27_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
@@ -130,7 +130,7 @@ export function runAgent24ReplayScaleWaveWave23IntegrationVerificationSelfTests(
   const exportGate = {
     reportId: 'eg',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     exportAllowed: true,
     blockerCount: 0,
     blockers: [],
@@ -140,7 +140,7 @@ export function runAgent24ReplayScaleWaveWave23IntegrationVerificationSelfTests(
   const integrationHandoff = {
     reportId: 'ih',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     integrationBaselineSha: O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
     handoffComplete: true,
     checkpointCount: 3,

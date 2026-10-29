@@ -94,7 +94,7 @@ export function runAgent24ReplayScaleWaveCloseoutSelfTests(): Array<{ name: stri
   const waveAcceptance = {
     reportId: 'wa',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     accepted: true,
     blockerCount: 0,
     blockers: [],
@@ -114,7 +114,7 @@ export function runAgent24ReplayScaleWaveCloseoutSelfTests(): Array<{ name: stri
   const handoffSeal = {
     sealId: 'sws',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     handoffReady: true,
     linkCount: 3,
     readyLinkCount: 3,

@@ -100,7 +100,7 @@ export function runAgent24ArchiveScaleWaveReleaseHandoffGateSelfTests(): Array<{
   const attestationVerification = {
     reportId: 'av',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -121,7 +121,7 @@ export function runAgent24ArchiveScaleWaveReleaseHandoffGateSelfTests(): Array<{
   const attestation = {
     attestationId: 'att',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     status: 'verified' as const,
     verificationOk: true,
     finalizationOk: true,
