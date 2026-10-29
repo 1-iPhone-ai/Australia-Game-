@@ -245,6 +245,10 @@ export interface NationalLaborDemographicsState {
   reengagementMomentumOutlook?: NationalReengagementMomentumOutlook;
   subjectWaveAssemblyBrief?: NationalSubjectWaveAssemblyBrief;
   nationalWorkforceDurabilityIndex?: NationalWorkforceDurabilityIndex;
+  durabilityAdvocacyCouplingBrief?: NationalDurabilityAdvocacyCouplingBrief;
+  mentorshipEnduranceOutlook?: NationalMentorshipEnduranceOutlook;
+  subjectTrancheReadinessBrief?: NationalSubjectTrancheReadinessBrief;
+  nationalWorkforceEnduranceIndex?: NationalWorkforceEnduranceIndex;
 }
 
 export type MigrationShockKind =
@@ -917,6 +921,50 @@ export interface NationalWorkforceDurabilityIndex {
   durabilityIndex: number;
   band: WorkforceDurabilityBand;
   waveDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type DurabilityAdvocacyCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'reinforced';
+
+export interface NationalDurabilityAdvocacyCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: DurabilityAdvocacyCouplingBand;
+  durabilityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type MentorshipEnduranceBand = 'depleted' | 'thin' | 'sustained' | 'deep';
+
+export interface NationalMentorshipEnduranceOutlook {
+  turn: number;
+  enduranceIndex: number;
+  band: MentorshipEnduranceBand;
+  momentumDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectTrancheReadinessBand = 'blocked' | 'caution' | 'tranche_ready' | 'cleared';
+
+export interface NationalSubjectTrancheReadinessBrief {
+  turn: number;
+  trancheIndex: number;
+  band: SubjectTrancheReadinessBand;
+  trancheDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceEnduranceBand = 'fragile' | 'thin' | 'steady' | 'hardened';
+
+export interface NationalWorkforceEnduranceIndex {
+  turn: number;
+  enduranceIndex: number;
+  band: WorkforceEnduranceBand;
+  trancheDrag: number;
   summary: string;
   stewardNote: string;
 }

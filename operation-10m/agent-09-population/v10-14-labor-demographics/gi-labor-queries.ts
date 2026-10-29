@@ -63,7 +63,11 @@ export type LaborGiQueryTopic =
   | 'continuity_coordination_coupling'
   | 'reengagement_momentum'
   | 'subject_wave_assembly'
-  | 'workforce_durability';
+  | 'workforce_durability'
+  | 'durability_advocacy_coupling'
+  | 'mentorship_endurance'
+  | 'subject_tranche_readiness'
+  | 'workforce_endurance';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -124,6 +128,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(reengagement momentum|reengagement pipeline momentum)/.test(q)) return 'reengagement_momentum';
   if (/\b(subject wave assembly|wave assembly subject)/.test(q)) return 'subject_wave_assembly';
   if (/\b(workforce durability|durability index labor)/.test(q)) return 'workforce_durability';
+  if (/\b(durability advocacy|durability-advocacy coupling)/.test(q)) return 'durability_advocacy_coupling';
+  if (/\b(mentorship endurance|mentorship pipeline endurance)/.test(q)) return 'mentorship_endurance';
+  if (/\b(subject tranche readiness|tranche readiness subject)/.test(q)) return 'subject_tranche_readiness';
+  if (/\b(workforce endurance|endurance index labor)/.test(q)) return 'workforce_endurance';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -622,6 +630,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Durability band ${state.nationalWorkforceDurabilityIndex?.band ?? 'unknown'}; wave drag ${Math.round(state.nationalWorkforceDurabilityIndex?.waveDrag ?? 0)}.`,
         inference: state.nationalWorkforceDurabilityIndex?.stewardNote || state.summary,
         projection: 'Durability synthesizes coordination coupling, reengagement momentum, and subject wave assembly.'
+      };
+    case 'durability_advocacy_coupling':
+      return {
+        topic,
+        headline: state.durabilityAdvocacyCouplingBrief?.summary || 'Durability-advocacy coupling unavailable.',
+        fact: `Coupling band ${state.durabilityAdvocacyCouplingBrief?.band ?? 'unknown'}; durability drag ${Math.round(state.durabilityAdvocacyCouplingBrief?.durabilityDrag ?? 0)}.`,
+        inference: state.durabilityAdvocacyCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce durability with advocacy levers — bounded indices only.'
+      };
+    case 'mentorship_endurance':
+      return {
+        topic,
+        headline: state.mentorshipEnduranceOutlook?.summary || 'Mentorship endurance unavailable.',
+        fact: `Endurance band ${state.mentorshipEnduranceOutlook?.band ?? 'unknown'}; momentum drag ${Math.round(state.mentorshipEnduranceOutlook?.momentumDrag ?? 0)}.`,
+        inference: state.mentorshipEnduranceOutlook?.stewardNote || state.outlook,
+        projection: 'Endurance blends mentorship levers with reengagement momentum — not literal mentor counts.'
+      };
+    case 'subject_tranche_readiness':
+      return {
+        topic,
+        headline: state.subjectTrancheReadinessBrief?.summary || 'Subject tranche readiness unavailable.',
+        fact: `Tranche band ${state.subjectTrancheReadinessBrief?.band ?? 'unknown'}; tranche drag ${Math.round(state.subjectTrancheReadinessBrief?.trancheDrag ?? 0)}.`,
+        inference: state.subjectTrancheReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject tranche readiness gates wave assembly against durability for O10-170 commits.'
+      };
+    case 'workforce_endurance':
+      return {
+        topic,
+        headline: state.nationalWorkforceEnduranceIndex?.summary || 'Workforce endurance unavailable.',
+        fact: `Endurance band ${state.nationalWorkforceEnduranceIndex?.band ?? 'unknown'}; tranche drag ${Math.round(state.nationalWorkforceEnduranceIndex?.trancheDrag ?? 0)}.`,
+        inference: state.nationalWorkforceEnduranceIndex?.stewardNote || state.summary,
+        projection: 'Endurance synthesizes advocacy coupling, mentorship endurance, and subject tranche readiness.'
       };
     default:
       return {

@@ -130,6 +130,10 @@ import { computeNationalContinuityCoordinationCouplingBrief } from './continuity
 import { computeNationalReengagementMomentumOutlook } from './reengagement-momentum-outlook';
 import { computeNationalSubjectWaveAssemblyBrief } from './subject-wave-assembly-brief';
 import { computeNationalWorkforceDurabilityIndex } from './national-workforce-durability-index';
+import { computeNationalDurabilityAdvocacyCouplingBrief } from './durability-advocacy-coupling-brief';
+import { computeNationalMentorshipEnduranceOutlook } from './mentorship-endurance-outlook';
+import { computeNationalSubjectTrancheReadinessBrief } from './subject-tranche-readiness-brief';
+import { computeNationalWorkforceEnduranceIndex } from './national-workforce-endurance-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -1205,6 +1209,66 @@ export function runV1014LaborDemographicsSelfTests(): {
     'durability steward note'
   );
   check('R1916', coordinationEaseForRegion('NSW', 'technology') > 0, 'coordination ease for region');
+
+  check('R2001', Boolean(r1.state.durabilityAdvocacyCouplingBrief?.band), 'durability advocacy on state');
+  check(
+    'R2002',
+    (r1.state.durabilityAdvocacyCouplingBrief?.durabilityDrag ?? 0) >= 0,
+    'durability advocacy drag'
+  );
+  check('R2003', Boolean(r1.state.mentorshipEnduranceOutlook?.band), 'mentorship endurance on state');
+  check('R2004', (r1.state.mentorshipEnduranceOutlook?.momentumDrag ?? 0) >= 0, 'mentorship momentum drag');
+  check('R2005', Boolean(r1.state.subjectTrancheReadinessBrief?.band), 'subject tranche on state');
+  check('R2006', Boolean(r1.state.nationalWorkforceEnduranceIndex?.band), 'workforce endurance on state');
+  check(
+    'R2007',
+    detectLaborDemographicsQuery('durability advocacy coupling') === 'durability_advocacy_coupling',
+    'GI durability advocacy detect'
+  );
+  check(
+    'R2008',
+    detectLaborDemographicsQuery('mentorship endurance') === 'mentorship_endurance',
+    'GI mentorship endurance detect'
+  );
+  check(
+    'R2009',
+    detectLaborDemographicsQuery('subject tranche readiness') === 'subject_tranche_readiness',
+    'GI subject tranche detect'
+  );
+  check(
+    'R2010',
+    detectLaborDemographicsQuery('workforce endurance') === 'workforce_endurance',
+    'GI workforce endurance detect'
+  );
+  check(
+    'R2011',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_endurance').headline.length > 5,
+    'GI workforce endurance answer'
+  );
+  const advocacyCouplingOnly = computeNationalDurabilityAdvocacyCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceDurabilityIndex
+  );
+  check('R2012', advocacyCouplingOnly.summary.length > 10, 'advocacy coupling standalone summary');
+  const mentorshipOnly = computeNationalMentorshipEnduranceOutlook(r1.state, r1.state.reengagementMomentumOutlook);
+  check('R2013', mentorshipOnly.band.length > 3, 'mentorship endurance band string');
+  const trancheOnly = computeNationalSubjectTrancheReadinessBrief(
+    r1.state,
+    r1.state.subjectWaveAssemblyBrief,
+    r1.state.nationalWorkforceDurabilityIndex
+  );
+  check('R2014', trancheOnly.trancheDrag >= 0, 'subject tranche drag');
+  check(
+    'R2015',
+    computeNationalWorkforceEnduranceIndex(
+      rHhBad.state,
+      rHhBad.state.durabilityAdvocacyCouplingBrief,
+      rHhBad.state.mentorshipEnduranceOutlook,
+      rHhBad.state.subjectTrancheReadinessBrief
+    ).stewardNote.length > 8,
+    'endurance steward note'
+  );
+  check('R2016', advocacyEaseForRegion('NSW', 'technology') > 0, 'advocacy ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
