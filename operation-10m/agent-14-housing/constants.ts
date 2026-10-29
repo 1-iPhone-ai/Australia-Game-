@@ -111,6 +111,8 @@ export const AGENT14_HEALTH_ED_PROGRAM_STUBS: readonly {
   { id: 'ps_xp_NT_schedule_readiness', pillar: 'education', regionId: 'NT', fiscalLoadPoints: 16, durationTurns: 4, baseImpact: 7, effectLagTurns: 2 },
   { id: 'ps_xp_NSW_turn_boundary', pillar: 'healthcare', regionId: 'NSW', fiscalLoadPoints: 18, durationTurns: 5, baseImpact: 9, effectLagTurns: 2 },
   { id: 'ps_xp_SA_agent25_handoff', pillar: 'education', regionId: 'SA', fiscalLoadPoints: 15, durationTurns: 4, baseImpact: 7, effectLagTurns: 2 },
+  { id: 'ps_xp_QLD_chunk_anchor', pillar: 'housing', regionId: 'QLD', fiscalLoadPoints: 20, durationTurns: 6, baseImpact: 10, effectLagTurns: 1 },
+  { id: 'ps_xp_WA_assembly_merge', pillar: 'healthcare', regionId: 'WA', fiscalLoadPoints: 17, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
 ];
 
 export const AGENT14_ALL_PROGRAM_STUBS = [

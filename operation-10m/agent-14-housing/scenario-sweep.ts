@@ -40,7 +40,9 @@ export type Agent14HousingScenarioId =
   | 'integration_trajectory_arc'
   | 'schedule_readiness_stress'
   | 'wire_in_trajectory_arc'
-  | 'turn_boundary_activation_stress';
+  | 'turn_boundary_activation_stress'
+  | 'assembly_merge_trajectory_arc'
+  | 'chunk_anchor_alignment_stress';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -358,6 +360,30 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
       'ps_h_VIC_planning_reform',
     ],
   },
+  {
+    id: 'assembly_merge_trajectory_arc',
+    label: 'Assembly merge trajectory arc',
+    baseInputs: { fiscalHeadroom: 60, stateCapacityLoad: 38, workforceReadiness: 'strong' },
+    launchProgramIds: [
+      'ps_xp_QLD_chunk_anchor',
+      'ps_xp_NSW_turn_boundary',
+      'ps_h_QLD_regional_release',
+      'ps_he_NSW_primary_care',
+    ],
+  },
+  {
+    id: 'chunk_anchor_alignment_stress',
+    label: 'Chunk anchor alignment stress',
+    baseInputs: { fiscalHeadroom: 18, stateCapacityLoad: 92, workforceReadiness: 'blocking', workforceSpecialistGap: 80 },
+    launchProgramIds: [
+      'ps_xp_WA_assembly_merge',
+      'ps_xp_SA_agent25_handoff',
+      'ps_h_WA_remote_housing',
+      'ps_he_VIC_hospital_backlog',
+      'ps_ed_NSW_skills',
+      'ps_h_VIC_planning_reform',
+    ],
+  },
 ];
 
 export { commitmentFromProgramStub } from './program-stub-commitments.ts';
@@ -386,6 +412,7 @@ export function simulateAgent14HousingScenario(
   let handoffTrajectoryPersisted = null;
   let integrationTrajectoryPersisted = null;
   let wireInTrajectoryPersisted = null;
+  let assemblyMergeTrajectoryPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -412,6 +439,7 @@ export function simulateAgent14HousingScenario(
       handoffTrajectoryPersisted,
       integrationTrajectoryPersisted,
       wireInTrajectoryPersisted,
+      assemblyMergeTrajectoryPersisted,
       newCommitments,
       enforceCapacity: true,
     });
@@ -429,6 +457,7 @@ export function simulateAgent14HousingScenario(
     handoffTrajectoryPersisted = result.handoffTrajectoryPersisted;
     integrationTrajectoryPersisted = result.integrationTrajectoryPersisted;
     wireInTrajectoryPersisted = result.wireInTrajectoryPersisted;
+    assemblyMergeTrajectoryPersisted = result.assemblyMergeTrajectoryPersisted;
     turns.push(result.inputs);
   }
 

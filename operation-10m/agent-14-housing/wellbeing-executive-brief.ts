@@ -35,6 +35,9 @@ import type {
   WireInTrajectorySnapshot,
   TurnBoundaryActivationMonitor,
   Agent25AssemblyHandoffBrief,
+  AssemblyMergeTrajectorySnapshot,
+  ChunkAnchorAlignmentMonitor,
+  Agent25InlineReadinessBrief,
   WellbeingTurnForecastPoint,
 } from './types.ts';
 
@@ -76,6 +79,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   wireInTrajectory?: WireInTrajectorySnapshot;
   turnBoundaryActivationMonitor?: TurnBoundaryActivationMonitor;
   agent25AssemblyHandoffBrief?: Agent25AssemblyHandoffBrief;
+  assemblyMergeTrajectory?: AssemblyMergeTrajectorySnapshot;
+  chunkAnchorAlignmentMonitor?: ChunkAnchorAlignmentMonitor;
+  agent25InlineReadinessBrief?: Agent25InlineReadinessBrief;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -222,6 +228,17 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   if (args.agent25AssemblyHandoffBrief?.shouldHandoffChunk) {
     giNotes.push(args.agent25AssemblyHandoffBrief.summary);
   }
+  if (args.assemblyMergeTrajectory?.band === 'blocked') {
+    giNotes.push(
+      `Assembly merge ${args.assemblyMergeTrajectory.band} (EMA ${args.assemblyMergeTrajectory.assemblyMergeEma})`
+    );
+  }
+  if (args.chunkAnchorAlignmentMonitor && !args.chunkAnchorAlignmentMonitor.anchorAligned) {
+    giNotes.push(args.chunkAnchorAlignmentMonitor.summary);
+  }
+  if (args.agent25InlineReadinessBrief?.shouldInlineChunk) {
+    giNotes.push(args.agent25InlineReadinessBrief.summary);
+  }
 
   const headlineParts: string[] = [];
   if (args.coupling.band === 'critical' || args.coupling.band === 'strained') {
@@ -253,6 +270,8 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
     headlineParts.push('national wire-in ready');
   } else if (args.agent25AssemblyHandoffBrief?.shouldHandoffChunk) {
     headlineParts.push('Agent 25 assembly handoff ready');
+  } else if (args.agent25InlineReadinessBrief?.shouldInlineChunk) {
+    headlineParts.push('Agent 25 inline readiness clear');
   }
 
   return {

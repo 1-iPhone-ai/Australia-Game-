@@ -40,6 +40,9 @@ import { composeNationalWireInReadinessBrief } from './national-wire-in-readines
 import { advanceWireInTrajectory } from './wire-in-trajectory.ts';
 import { buildTurnBoundaryActivationMonitor } from './turn-boundary-activation-monitor.ts';
 import { composeAgent25AssemblyHandoffBrief } from './agent25-assembly-handoff-brief.ts';
+import { advanceAssemblyMergeTrajectory } from './assembly-merge-trajectory.ts';
+import { buildChunkAnchorAlignmentMonitor } from './chunk-anchor-alignment-monitor.ts';
+import { composeAgent25InlineReadinessBrief } from './agent25-inline-readiness-brief.ts';
 import { composeAgent14WellbeingExecutiveBrief } from './wellbeing-executive-brief.ts';
 import {
   canAcceptSpendingCommitment,
@@ -62,6 +65,7 @@ import type {
   HandoffTrajectoryPersisted,
   IntegrationTrajectoryPersisted,
   WireInTrajectoryPersisted,
+  AssemblyMergeTrajectoryPersisted,
   SpendingCommitment,
 } from './types.ts';
 
@@ -81,6 +85,7 @@ export interface AdvancePublicServicesTurnArgs {
   handoffTrajectoryPersisted?: HandoffTrajectoryPersisted | null;
   integrationTrajectoryPersisted?: IntegrationTrajectoryPersisted | null;
   wireInTrajectoryPersisted?: WireInTrajectoryPersisted | null;
+  assemblyMergeTrajectoryPersisted?: AssemblyMergeTrajectoryPersisted | null;
   /** New commitments queued this turn (already validated or not). */
   newCommitments?: SpendingCommitment[];
   /** When true, reject commitments that fail capacity gate. */
@@ -103,6 +108,7 @@ export interface AdvancePublicServicesTurnResult {
   handoffTrajectoryPersisted: HandoffTrajectoryPersisted;
   integrationTrajectoryPersisted: IntegrationTrajectoryPersisted;
   wireInTrajectoryPersisted: WireInTrajectoryPersisted;
+  assemblyMergeTrajectoryPersisted: AssemblyMergeTrajectoryPersisted;
   rejectedCommitments: Array<{ commitment: SpendingCommitment; reason: string }>;
 }
 
@@ -404,6 +410,28 @@ export function advancePublicServicesTurn(
     wireInTrajectory: wireInTrajectoryAdvance.snapshot,
   });
 
+  const assemblyMergeTrajectoryAdvance = advanceAssemblyMergeTrajectory(
+    turn,
+    agent25AssemblyHandoffBrief,
+    args.assemblyMergeTrajectoryPersisted
+  );
+
+  const chunkAnchorAlignmentMonitor = buildChunkAnchorAlignmentMonitor({
+    turn,
+    handoffBrief: agent25AssemblyHandoffBrief,
+    wireInTrajectory: wireInTrajectoryAdvance.snapshot,
+    integrationTrajectory: integrationTrajectoryAdvance.snapshot,
+    handoffTrajectory: handoffTrajectoryAdvance.snapshot,
+    resumptionTrajectory: resumptionTrajectoryAdvance.snapshot,
+    readinessTrajectory: readinessTrajectoryAdvance.snapshot,
+  });
+
+  const agent25InlineReadinessBrief = composeAgent25InlineReadinessBrief({
+    turn,
+    anchorMonitor: chunkAnchorAlignmentMonitor,
+    assemblyMergeTrajectory: assemblyMergeTrajectoryAdvance.snapshot,
+  });
+
   const executiveBrief = composeAgent14WellbeingExecutiveBrief({
     turn,
     warnings: wellbeingWarnings,
@@ -441,6 +469,9 @@ export function advancePublicServicesTurn(
     wireInTrajectory: wireInTrajectoryAdvance.snapshot,
     turnBoundaryActivationMonitor,
     agent25AssemblyHandoffBrief,
+    assemblyMergeTrajectory: assemblyMergeTrajectoryAdvance.snapshot,
+    chunkAnchorAlignmentMonitor,
+    agent25InlineReadinessBrief,
   });
 
   const enriched: EnrichedPublicServiceTurnInputs = {
@@ -495,6 +526,9 @@ export function advancePublicServicesTurn(
     wireInTrajectory: wireInTrajectoryAdvance.snapshot,
     turnBoundaryActivationMonitor,
     agent25AssemblyHandoffBrief,
+    assemblyMergeTrajectory: assemblyMergeTrajectoryAdvance.snapshot,
+    chunkAnchorAlignmentMonitor,
+    agent25InlineReadinessBrief,
   };
 
   return {
@@ -513,6 +547,7 @@ export function advancePublicServicesTurn(
     handoffTrajectoryPersisted: handoffTrajectoryAdvance.persisted,
     integrationTrajectoryPersisted: integrationTrajectoryAdvance.persisted,
     wireInTrajectoryPersisted: wireInTrajectoryAdvance.persisted,
+    assemblyMergeTrajectoryPersisted: assemblyMergeTrajectoryAdvance.persisted,
     rejectedCommitments,
   };
 }

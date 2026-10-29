@@ -1,6 +1,6 @@
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.15-scale-wave-15' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.16-scale-wave-16' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -128,6 +128,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   wireInTrajectory?: WireInTrajectorySnapshot;
   turnBoundaryActivationMonitor?: TurnBoundaryActivationMonitor;
   agent25AssemblyHandoffBrief?: Agent25AssemblyHandoffBrief;
+  assemblyMergeTrajectory?: AssemblyMergeTrajectorySnapshot;
+  chunkAnchorAlignmentMonitor?: ChunkAnchorAlignmentMonitor;
+  agent25InlineReadinessBrief?: Agent25InlineReadinessBrief;
 }
 
 export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
@@ -616,6 +619,42 @@ export interface Agent25AssemblyHandoffBrief {
   turn: number;
   shouldHandoffChunk: boolean;
   shouldActivateTurnBoundary: boolean;
+  headlines: string[];
+  summary: string;
+}
+
+export type AssemblyMergeBand = 'ready' | 'pending' | 'blocked';
+
+export interface AssemblyMergeTrajectorySnapshot {
+  turn: number;
+  assemblyMergeEma: number;
+  instantaneousMerge: number;
+  band: AssemblyMergeBand;
+  trajectory: CouplingTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface AssemblyMergeTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  assemblyMergeEma: number;
+  priorEma?: number;
+}
+
+export interface ChunkAnchorAlignmentMonitor {
+  turn: number;
+  anchorAligned: boolean;
+  trajectoryCoverage: number;
+  requiredTrajectoryCount: number;
+  blockingReasons: string[];
+  summary: string;
+}
+
+export interface Agent25InlineReadinessBrief {
+  turn: number;
+  shouldInlineChunk: boolean;
+  anchorAligned: boolean;
   headlines: string[];
   summary: string;
 }

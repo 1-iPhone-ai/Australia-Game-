@@ -109,6 +109,13 @@ import {
 } from './wire-in-trajectory.ts';
 import { buildTurnBoundaryActivationMonitor } from './turn-boundary-activation-monitor.ts';
 import { composeAgent25AssemblyHandoffBrief } from './agent25-assembly-handoff-brief.ts';
+import {
+  advanceAssemblyMergeTrajectory,
+  createInitialAssemblyMergeTrajectory,
+  sanitizeAssemblyMergeTrajectory,
+} from './assembly-merge-trajectory.ts';
+import { buildChunkAnchorAlignmentMonitor } from './chunk-anchor-alignment-monitor.ts';
+import { composeAgent25InlineReadinessBrief } from './agent25-inline-readiness-brief.ts';
 import { AGENT14_WELLBEING_SCHEMA_VERSION } from './types.ts';
 
 export interface Agent14SelfTestResult {
@@ -610,8 +617,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Thirty-two housing scenarios registered',
-    listAgent14ScenarioIds().length === 32,
+    'Thirty-four housing scenarios registered',
+    listAgent14ScenarioIds().length === 34,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -840,7 +847,7 @@ export function runAgent14WellbeingSelfTests(): {
     results,
     'wave5_schema_version',
     'Wellbeing schema version is wave 15',
-    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.15-scale-wave-15',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.16-scale-wave-16',
     AGENT14_WELLBEING_SCHEMA_VERSION
   );
 
@@ -2522,6 +2529,150 @@ export function runAgent14WellbeingSelfTests(): {
       `ema=${snap.snapshot.wireInActivationEma}`
     );
   }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 5, fiscalHeadroom: 55, stateCapacityLoad: 44, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave16_assembly_merge_trajectory',
+      'Turn advance attaches assembly merge trajectory',
+      adv.inputs.assemblyMergeTrajectory !== undefined &&
+        adv.assemblyMergeTrajectoryPersisted.lastTurn === 5,
+      `band=${adv.inputs.assemblyMergeTrajectory?.band}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 48, stateCapacityLoad: 50, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave16_chunk_anchor_monitor',
+      'Chunk anchor alignment monitor present',
+      adv.inputs.chunkAnchorAlignmentMonitor !== undefined &&
+        adv.inputs.chunkAnchorAlignmentMonitor!.requiredTrajectoryCount === 5,
+      adv.inputs.chunkAnchorAlignmentMonitor?.summary.slice(0, 72) ?? 'missing'
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 6, fiscalHeadroom: 62, stateCapacityLoad: 36, workforceReadiness: 'strong' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave16_inline_readiness_brief',
+      'Agent 25 inline readiness brief attached',
+      adv.inputs.agent25InlineReadinessBrief !== undefined &&
+        adv.inputs.agent25InlineReadinessBrief!.summary.length > 10,
+      `inline=${adv.inputs.agent25InlineReadinessBrief?.shouldInlineChunk}`
+    );
+  }
+
+  {
+    const raw = sanitizeAssemblyMergeTrajectory({
+      schemaVersion: AGENT14_WELLBEING_SCHEMA_VERSION,
+      lastTurn: 2,
+      emaAlpha: 0.3,
+      assemblyMergeEma: 33,
+    });
+    check(
+      results,
+      'wave16_assembly_merge_sanitize',
+      'Assembly merge trajectory sanitize preserves schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.assemblyMergeEma === 33,
+      `ema=${raw.assemblyMergeEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 8, fiscalHeadroom: 58, stateCapacityLoad: 40, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const inline = composeAgent25InlineReadinessBrief({
+      turn: 8,
+      anchorMonitor: adv.inputs.chunkAnchorAlignmentMonitor!,
+      assemblyMergeTrajectory: adv.inputs.assemblyMergeTrajectory,
+    });
+    check(
+      results,
+      'wave16_inline_composer',
+      'Standalone inline readiness composer returns headlines',
+      inline.headlines.length > 0 && inline.summary.length > 10,
+      inline.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 2, fiscalHeadroom: 50, stateCapacityLoad: 48, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const snap = advanceAssemblyMergeTrajectory(
+      2,
+      adv.inputs.agent25AssemblyHandoffBrief!,
+      createInitialAssemblyMergeTrajectory()
+    );
+    check(
+      results,
+      'wave16_assembly_merge_advance_unit',
+      'Assembly merge trajectory advance updates persisted turn',
+      snap.persisted.lastTurn === 2 && snap.snapshot.assemblyMergeEma > 0,
+      `ema=${snap.snapshot.assemblyMergeEma}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('assembly_merge_trajectory_arc', 10);
+    const last = sim.turns[sim.turns.length - 1];
+    check(
+      results,
+      'wave16_assembly_merge_arc_scenario',
+      'Assembly merge arc scenario surfaces inline brief',
+      last.assemblyMergeTrajectory !== undefined &&
+        last.chunkAnchorAlignmentMonitor !== undefined &&
+        last.agent25InlineReadinessBrief !== undefined,
+      `merge=${last.assemblyMergeTrajectory?.band}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('chunk_anchor_alignment_stress', 8);
+    const last = sim.turns[sim.turns.length - 1];
+    check(
+      results,
+      'wave16_chunk_anchor_stress_scenario',
+      'Chunk anchor stress keeps inline gated under stress',
+      !last.agent25InlineReadinessBrief!.shouldInlineChunk ||
+        last.chunkAnchorAlignmentMonitor!.anchorAligned,
+      `inline=${last.agent25InlineReadinessBrief?.shouldInlineChunk} anchor=${last.chunkAnchorAlignmentMonitor?.anchorAligned}`
+    );
+  }
+
+  check(
+    results,
+    'wave16_assembly_stub_catalog',
+    'Round 16 assembly stubs registered',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_QLD_chunk_anchor') &&
+      AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_WA_assembly_merge'),
+    'chunk_anchor+assembly_merge'
+  );
+
+  check(
+    results,
+    'wave16_scenario_registry',
+    'Round 16 scenarios registered',
+    listAgent14ScenarioIds().includes('assembly_merge_trajectory_arc') &&
+      listAgent14ScenarioIds().includes('chunk_anchor_alignment_stress'),
+    '34 scenarios'
+  );
 
   const passed = results.filter((r) => r.passed).length;
   return { passed, failed: results.length - passed, total: results.length, results };
