@@ -1,0 +1,15 @@
+{
+  "benchmarkedAt": "2026-10-29T06:11:47.193Z",
+  "file": "build/tranche-full-chunks-projection.tsx",
+  "readMs": 27,
+  "hashMs": 28,
+  "scanMs": 315,
+  "bytes": 52058855,
+  "lines": 584429,
+  "exportLines": 11677,
+  "sha256": "4ae50e69bf585838a98aad3747f865d18102c47751beea6d68a07c86d8ce7ed0",
+  "extrapolation10M": {
+    "note": "Linear extrapolation from current scan; not predictive for tsc/vite at 10M.",
+    "estimatedScanMsAt10M": 5390
+  }
+}
