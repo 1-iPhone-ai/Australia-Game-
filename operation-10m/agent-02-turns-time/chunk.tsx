@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
 // @ts-nocheck
-// content-sha256-prefix: 8eb64406926a7c26
+// content-sha256-prefix: eaa6c4cab84906df
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -6482,6 +6482,151 @@ export function exportBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditC
   };
 }
 
+// --- src/batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-gate-audit-gate-audit-gate-export-compare.ts ---
+
+export interface BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateExportCompareResult {
+  ok: boolean;
+  latchDigestMatch: boolean;
+  auditDigestMatch: boolean;
+  okFlagMatch: boolean;
+}
+
+/**
+ * Round 35 wave 35: compare two audit-gate audit gate exports.
+ */
+export function compareBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateExports(
+  baseline: BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateExport,
+  candidate: BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateExport,
+): BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateExportCompareResult {
+  const latchDigestMatch = baseline.latchDigest === candidate.latchDigest;
+  const auditDigestMatch = baseline.auditDigest === candidate.auditDigest;
+  const okFlagMatch = baseline.ok === candidate.ok;
+  return {
+    ok: latchDigestMatch && auditDigestMatch && okFlagMatch,
+    latchDigestMatch,
+    auditDigestMatch,
+    okFlagMatch,
+  };
+}
+
+// --- src/batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-gate-audit-gate-audit-gate-replay-parity.ts ---
+
+export interface BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateReplayParityResult {
+  parityOk: boolean;
+  baseline: BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateResult;
+  replay: BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateResult;
+}
+
+/**
+ * Round 35 wave 35: deterministic replay — two audit-gate audit gates from the same snapshot.
+ */
+export function verifyBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateReplayParity(
+  engine: TurnTimeEngine,
+  budget: TurnAdvanceBudgetState,
+  tickBatches: readonly (readonly NationalTickSessionWaveTickSpec[])[],
+): BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateReplayParityResult {
+  const snapshot = engine.snapshot();
+  const baseline = gateBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAudit(
+    engine,
+    budget,
+    tickBatches,
+  );
+  const replayEngine = TurnTimeEngine.fromSnapshot(snapshot);
+  const replay = gateBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAudit(
+    replayEngine,
+    budget,
+    tickBatches,
+  );
+  const parityOk =
+    baseline.latchDigest === replay.latchDigest &&
+    baseline.ok === replay.ok &&
+    baseline.export.auditDigest === replay.export.auditDigest;
+  return { parityOk, baseline, replay };
+}
+
+// --- src/batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-gate-audit-gate-audit-gate-audit.ts ---
+
+export interface BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateAuditResult {
+  ok: boolean;
+  auditGate: BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateResult;
+  auditGateExport: BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateExport;
+  exportCompareOk: boolean;
+  parityOk: boolean;
+  auditDigest: string;
+}
+
+/**
+ * Round 35 wave 35: audit audit-gate audit gate export twin-compare and replay parity in one pass.
+ */
+export function auditBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGate(
+  engine: TurnTimeEngine,
+  budget: TurnAdvanceBudgetState,
+  tickBatches: readonly (readonly NationalTickSessionWaveTickSpec[])[],
+): BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateAuditResult {
+  const snapshot = engine.snapshot();
+  const auditGate = gateBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAudit(
+    engine,
+    budget,
+    tickBatches,
+  );
+  const auditGateExport =
+    exportBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGate(auditGate);
+  const twinExport = exportBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGate(
+    gateBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAudit(
+      TurnTimeEngine.fromSnapshot(snapshot),
+      budget,
+      tickBatches,
+    ),
+  );
+  const exportCompare =
+    compareBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateExports(
+      auditGateExport,
+      twinExport,
+    );
+  const parity = verifyBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateReplayParity(
+    TurnTimeEngine.fromSnapshot(snapshot),
+    budget,
+    tickBatches,
+  );
+  const exportCompareOk = exportCompare.ok;
+  const parityOk = parity.parityOk;
+  const ok = auditGateExport.ok && exportCompareOk && parityOk;
+  const auditDigest = fnv1a64Hex(
+    JSON.stringify({
+      latch: auditGateExport.latchDigest,
+      exportCompareOk,
+      parityOk,
+      ok,
+    }),
+  );
+  return { ok, auditGate, auditGateExport, exportCompareOk, parityOk, auditDigest };
+}
+
+// --- src/batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-gate-audit-gate-audit-gate-audit-export.ts ---
+
+export interface BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateAuditExport {
+  ok: boolean;
+  auditDigest: string;
+  exportCompareOk: boolean;
+  parityOk: boolean;
+  latchDigest: string;
+}
+
+/**
+ * Round 35 wave 35: flatten audit-gate audit gate audit for Agent 25 manifest hooks.
+ */
+export function exportBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateAudit(
+  audit: BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateAuditResult,
+): BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateAuditExport {
+  return {
+    ok: audit.ok,
+    auditDigest: audit.auditDigest,
+    exportCompareOk: audit.exportCompareOk,
+    parityOk: audit.parityOk,
+    latchDigest: audit.auditGateExport.latchDigest,
+  };
+}
+
 // --- src/fast-forward.ts ---
 
 export interface FastForwardResult {
@@ -6632,7 +6777,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '4.3.0';
+export const AGENT_02_MODULE_VERSION = '4.4.0';
 
 
 
@@ -7655,6 +7800,28 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
     passed: exportBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGate(
 
       gateBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAudit(
+
+        new TurnTimeEngine(),
+
+        createTurnAdvanceBudget(2),
+
+        [[{ maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } }]],
+
+      ),
+
+    ).ok,
+
+  });
+
+  results.push({
+
+    id: 'agent02_national_tick_session_wave_assembly_batch_integration_audit_closure_gate_assembly_gate_audit_gate_audit_gate_audit',
+
+    name: 'assembly batch integration audit closure gate assembly gate audit gate audit gate audit wave 35',
+
+    passed: exportBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateAudit(
+
+      auditBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGate(
 
         new TurnTimeEngine(),
 
