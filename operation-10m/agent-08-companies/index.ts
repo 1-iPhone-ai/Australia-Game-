@@ -100,6 +100,26 @@ export type {
   RegionalProductionRecoveryPlan,
 } from './production-recovery-playbook';
 
+export {
+  AGENT08_STABILIZATION_SCHEMA_VERSION,
+  buildFirmStabilizationOutlook,
+  buildUpstreamCoordinationClusters,
+  classifyStabilizationHorizon,
+  computeNationalProductionStabilizationOutlook,
+  estimateTurnsToStabilize,
+  summarizeRegionalStabilization,
+  runAgent08StabilizationSelfTests,
+} from './production-stabilization-outlook';
+
+export type {
+  FirmProductionStabilizationOutlook,
+  NationalProductionStabilizationOutlook,
+  RegionalProductionStabilizationSummary,
+  StabilizationConfidence,
+  StabilizationHorizonBand,
+  UpstreamCoordinationCluster,
+} from './production-stabilization-outlook';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -107,6 +127,7 @@ import { runAgent08SectorDepthSelfTests } from './sector-production-depth';
 import { runAgent08CascadeSelfTests } from './production-capacity-cascade';
 import { runAgent08IntegratedSelfTests } from './integrated-production-synthesis';
 import { runAgent08RecoverySelfTests } from './production-recovery-playbook';
+import { runAgent08StabilizationSelfTests } from './production-stabilization-outlook';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -146,5 +167,10 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
-  return [...core.slice(0, 5), ...taxLabor, ...supply, ...sector, ...cascade, ...integrated, ...recovery];
+  const stabilization = runAgent08StabilizationSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
+  return [...core.slice(0, 5), ...taxLabor, ...supply, ...sector, ...cascade, ...integrated, ...recovery, ...stabilization];
 }

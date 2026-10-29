@@ -21,6 +21,7 @@ const FILES = [
   'production-capacity-cascade.ts',
   'integrated-production-synthesis.ts',
   'production-recovery-playbook.ts',
+  'production-stabilization-outlook.ts',
   'chunk-exports.ts',
 ];
 

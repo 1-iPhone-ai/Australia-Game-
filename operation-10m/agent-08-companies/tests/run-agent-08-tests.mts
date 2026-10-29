@@ -1,4 +1,4 @@
-import { runAgent08ModuleSelfTests, runAgent08IntegratedSelfTests, runAgent08RecoverySelfTests, runAgent08CascadeSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
+import { runAgent08ModuleSelfTests, runAgent08IntegratedSelfTests, runAgent08RecoverySelfTests, runAgent08StabilizationSelfTests, runAgent08CascadeSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
 
 function main() {
   const tax = runAgent08TaxLaborSelfTests();
@@ -48,6 +48,14 @@ function main() {
     process.exit(1);
   }
   console.log(`Agent 08 recovery playbook: ${recovery.length} passed`);
+
+  const stabilization = runAgent08StabilizationSelfTests();
+  const failedStabilization = stabilization.filter(t => !t.passed);
+  if (failedStabilization.length) {
+    console.error('Agent 08 stabilization outlook tests failed:', failedStabilization);
+    process.exit(1);
+  }
+  console.log(`Agent 08 stabilization outlook: ${stabilization.length} passed`);
 
   const moduleTests = runAgent08ModuleSelfTests();
   const failed = moduleTests.filter(t => !t.passed);
