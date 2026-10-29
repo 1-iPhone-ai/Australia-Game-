@@ -209,6 +209,16 @@ import {
   createEmptyBilateralCycleReentryGateSnapshot,
   bilateralCycleReentryGateExportScale,
 } from './bilateral-cycle-reentry-gate.ts';
+import {
+  computeCycleReentryStabilizationSnapshot,
+  createEmptyCycleReentryStabilizationSnapshot,
+  cycleReentryStabilizationExportScale,
+} from './cycle-reentry-stabilization.ts';
+import {
+  computeBilateralLoopResumptionGateSnapshot,
+  createEmptyBilateralLoopResumptionGateSnapshot,
+  bilateralLoopResumptionGateExportScale,
+} from './bilateral-loop-resumption-gate.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -1583,6 +1593,46 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       bilateralCycleReentryGateExportScale(entered) >= bilateralCycleReentryGateExportScale(denied),
       'expected reentry scale lift',
+    );
+  });
+
+  ok('cycle reentry stabilization improves when reentry gate is entered', () => {
+    const reentry = { ...createEmptyBilateralCycleReentryGateSnapshot(), score: 0.9, band: 'entered' as const, primingSupport: 0.14 };
+    const seal = { ...createEmptyTradeCycleSealVerificationSnapshot(), score: 0.86, band: 'verified' as const };
+    const stable = computeCycleReentryStabilizationSnapshot({
+      bilateralCycleReentryGate: reentry,
+      tradeCycleSealVerification: seal,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const volatile = computeCycleReentryStabilizationSnapshot({
+      bilateralCycleReentryGate: { ...reentry, score: 0.18, band: 'denied', primingSupport: -0.08 },
+      tradeCycleSealVerification: { ...seal, score: 0.16, band: 'failed' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(stable.score > volatile.score, 'expected stronger stabilization when entered');
+    gtelAssert(
+      cycleReentryStabilizationExportScale(stable) >= cycleReentryStabilizationExportScale(volatile),
+      'expected stabilization scale lift',
+    );
+  });
+
+  ok('bilateral loop resumption gate opens when stabilization is stable', () => {
+    const stabilization = { ...createEmptyCycleReentryStabilizationSnapshot(), score: 0.91, band: 'stable' as const };
+    const priming = { ...createEmptyCapacityRenewalPrimingSnapshot(), score: 0.88, band: 'primed' as const };
+    const resumed = computeBilateralLoopResumptionGateSnapshot({
+      cycleReentryStabilization: stabilization,
+      capacityRenewalPriming: priming,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const closed = computeBilateralLoopResumptionGateSnapshot({
+      cycleReentryStabilization: { ...stabilization, score: 0.16, band: 'volatile' },
+      capacityRenewalPriming: { ...priming, score: 0.14, band: 'starved' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(resumed.score > closed.score, 'expected resumption when stable');
+    gtelAssert(
+      bilateralLoopResumptionGateExportScale(resumed) >= bilateralLoopResumptionGateExportScale(closed),
+      'expected resumption scale lift',
     );
   });
 

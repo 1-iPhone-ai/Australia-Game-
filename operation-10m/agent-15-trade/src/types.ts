@@ -194,6 +194,8 @@ export interface GTELPersisted {
   bilateralCapacityRenewalGateSmoothing?: number;
   capacityRenewalPrimingSmoothing?: number;
   bilateralCycleReentryGateSmoothing?: number;
+  cycleReentryStabilizationSmoothing?: number;
+  bilateralLoopResumptionGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -257,6 +259,8 @@ export interface GTELState {
   bilateralCapacityRenewalGate: GTELBilateralCapacityRenewalGateSnapshot;
   capacityRenewalPriming: GTELCapacityRenewalPrimingSnapshot;
   bilateralCycleReentryGate: GTELBilateralCycleReentryGateSnapshot;
+  cycleReentryStabilization: GTELCycleReentryStabilizationSnapshot;
+  bilateralLoopResumptionGate: GTELBilateralLoopResumptionGateSnapshot;
   inputHash: string;
 }
 
@@ -881,6 +885,26 @@ export interface GTELBilateralCycleReentryGateSnapshot {
   band: GTELBilateralCycleReentryGateBand;
   primingSupport: number;
   readinessAnchor: number;
+  summary: string;
+}
+
+export type GTELCycleReentryStabilizationBand = 'stable' | 'settling' | 'unsettled' | 'volatile';
+
+export interface GTELCycleReentryStabilizationSnapshot {
+  score: number;
+  band: GTELCycleReentryStabilizationBand;
+  reentrySupport: number;
+  sealAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralLoopResumptionGateBand = 'resumed' | 'opening' | 'stalled' | 'closed';
+
+export interface GTELBilateralLoopResumptionGateSnapshot {
+  score: number;
+  band: GTELBilateralLoopResumptionGateBand;
+  stabilizationSupport: number;
+  primingLift: number;
   summary: string;
 }
 
