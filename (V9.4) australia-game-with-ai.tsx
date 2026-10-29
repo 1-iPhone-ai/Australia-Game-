@@ -21069,6 +21069,10 @@ export function buildSaveData(
   } as SaveGameData;
 }
 
+/**
+ * Legacy hydration helper for tests and partial payloads. Live UI loads must use
+ * prepareSaveLoadTransaction → verifySaveLoadCandidate → v95MigrateSaveForLoad → the in-app applyLoadedState callback (Section 21B).
+ */
 export function applyLoadedState(saveData: unknown): {
   gameState: any;
   gameSettings: GameSettingsState;
@@ -133964,6 +133968,125 @@ export function runV94GameFeelPolishSelfTests(): V9SelfTestResult[] {
 
 
 // ============================================================================
+// SECTION 20P-A8: O111 TRANSACTION SAFETY — ATOMIC COMMITS • FAILED = NO EFFECT • PURE PREVIEW
+// ============================================================================
+// Agent 82 (Division I). Documents and tests the three canonical transaction boundaries:
+//   1) Gameplay — reduceGameAction (clone → mutate clone → success flag; caller must not apply nextState on failure)
+//   2) Save/load — prepareSaveLoadTransaction + verifySaveLoadCandidate (pure; live match untouched until commit)
+//   3) Settings — applySmartSettingsPlan / undoSmartSettingsTransaction (priorValues for exact rollback)
+// Presentation layers (V9.4 feel, notifications) are never authoritative transaction outcomes.
+
+export type O111TransactionBoundary = 'gameplay_action' | 'save_load' | 'settings_apply';
+
+/** Stable JSON snapshot for transaction audits (test-only fingerprint; not a hash primitive). */
+export function o111TransactionSnapshot(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
+}
+
+/** True when the live input object was not mutated (reference tree unchanged). */
+export function o111InputStateUntouched(beforeJson: string, inputAfter: unknown): boolean {
+  return beforeJson.length > 0 && beforeJson === o111TransactionSnapshot(inputAfter);
+}
+
+/**
+ * Gameplay transaction helper: runs reduceGameAction and reports whether the caller's input tree stayed intact.
+ * Economic / AP effects must be gated on `result.success` before copying `result.nextState` into live slices.
+ */
+export function runO111GameplayActionTransaction(
+  state: CanonicalGameState,
+  action: GameAction,
+  context?: ActionExecutionContext
+): ActionTransitionResult & { inputUntouched: boolean } {
+  const before = o111TransactionSnapshot(state);
+  const result = reduceGameAction(state, action, context);
+  return { ...result, inputUntouched: o111InputStateUntouched(before, state) };
+}
+
+export function runO111TransactionSafetySelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try {
+      const r = fn();
+      results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) });
+    } catch (err) {
+      results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  };
+
+  check('o111_tx01_input_intact', 'Failed reduceGameAction does not mutate the caller input tree', () => {
+    const base: any = {
+      day: 2, turnCounter: 2,
+      player: { id: 'player', money: 800, inventory: [], currentRegion: 'NSW', actionsUsedThisTurn: 0, teamId: 'team_player' },
+      actorsById: { player: { id: 'player', money: 800, inventory: [], currentRegion: 'NSW', actionsUsedThisTurn: 0, teamId: 'team_player' } },
+      teamsById: { team_player: { id: 'team_player', money: 5000 } },
+      gameSettings: { ...DEFAULT_GAME_SETTINGS, actionLimitsEnabled: true, playerActionsPerDay: 1 }
+    };
+    const snap = o111TransactionSnapshot(base);
+    const tx = runO111GameplayActionTransaction(base, { type: 'region_deposit', actorId: 'player', targetRegion: 'VIC', investmentAmount: 50000 } as GameAction);
+    return (tx.inputUntouched && !tx.success && snap === o111TransactionSnapshot(base)) || JSON.stringify({ ok: tx.success, touched: !tx.inputUntouched });
+  });
+
+  check('o111_tx02_negative_transfer', 'Non-positive transfer_cash amounts fail closed (no cash movement)', () => {
+    const base: any = {
+      day: 1,
+      player: { id: 'player', money: 2000, teamId: 'team_player' },
+      actorsById: { player: { id: 'player', money: 2000, teamId: 'team_player' }, ai: { id: 'ai', money: 1500, teamId: 'team_ai' } }
+    };
+    const res: any = reduceGameAction(base, { type: 'transfer_cash', actorId: 'player', targetActorId: 'ai', price: -500 } as GameAction);
+    return (!res.success && res.nextState.player.money === 2000 && res.nextState.actorsById.ai.money === 1500) || JSON.stringify({ p: res.nextState.player.money, ai: res.nextState.actorsById.ai.money });
+  });
+
+  check('o111_tx03_save_tx_idempotent', 'prepareSaveLoadTransaction is idempotent on a valid fixture', () => {
+    const fixture = () => {
+      const raw: any = {
+        metadata: { gameVersion: VERSION_CONSTANTS.GAME_VERSION, timestamp: Date.now() },
+        player: { character: { name: CHARACTERS[0].name }, money: 1200, currentRegion: 'NSW', inventory: [], actionsUsedThisTurn: 0, kind: 'human' },
+        aiPlayer: { character: { name: CHARACTERS[1]?.name || CHARACTERS[0].name }, money: 1200, currentRegion: 'VIC', inventory: [], actionsUsedThisTurn: 0, kind: 'ai' },
+        gameState: { day: 3, turnCounter: 3, currentTurn: 'player', gameMode: 'game' },
+        gameSettings: { ...DEFAULT_GAME_SETTINGS }
+      };
+      return raw;
+    };
+    const a = prepareSaveLoadTransaction(JSON.stringify(fixture()));
+    const b = prepareSaveLoadTransaction(JSON.stringify(fixture()));
+    return (a.ok && b.ok && JSON.stringify(a.data) === JSON.stringify(b.data)) || `a=${a.ok} b=${b.ok}`;
+  });
+
+  check('o111_tx04_reject_no_candidate', 'A rejected save load returns no candidate payload', () => {
+    const t = prepareSaveLoadTransaction('{"metadata":');
+    return (!t.ok && t.data === null && !t.report.loadable) || JSON.stringify({ ok: t.ok, data: t.data });
+  });
+
+  check('o111_tx05_verify_before_commit', 'verifySaveLoadCandidate rejects empty payloads before hydration', () => {
+    const v = verifySaveLoadCandidate({});
+    return (!v.ok && v.errors.length > 0) || v.errors.join('|');
+  });
+
+  check('o111_tx06_settings_undo', 'Smart Settings undo restores exact prior authority values', () => {
+    const s: GameSettingsState = {
+      ...DEFAULT_GAME_SETTINGS,
+      coPilotSettings: { ...(DEFAULT_GAME_SETTINGS.coPilotSettings as any), coPilotEnabled: true, authorityMode: 'recommendations' }
+    };
+    const plan: SmartSettingsPlan = {
+      planId: 'o111_tx_plan',
+      profile: s.smartSettingsProfile || createDefaultSmartSettingsProfile(),
+      changes: [{ settingKey: 'coPilotSettings.authorityMode', value: 'delegated', label: 'Authority', category: 'ai' }]
+    };
+    const res = applySmartSettingsPlan(plan, s, false);
+    if (res.updatedSettings.coPilotSettings?.authorityMode === 'recommendations') return 'apply did not change authority';
+    const undone = undoSmartSettingsTransaction(res.transaction, res.updatedSettings);
+    return (undone.coPilotSettings?.authorityMode === 'recommendations') || String(undone.coPilotSettings?.authorityMode);
+  });
+
+  return results;
+}
+
+
+// ============================================================================
 // SECTION 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
 // ============================================================================
 // Local-only diagnostics. No network, workers, telemetry or storage writes happen in this section; every
@@ -136533,6 +136656,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'intent', label: 'Player Intent', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runPlayerIntentLayerSelfTests() },
   { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
   { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
+  { id: 'o111-a8', label: 'O111 Transaction Safety', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runO111TransactionSafetySelfTests() },
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
     ...runAiMemoryPhase1SelfTests().results, ...runAiMemoryPhase2SelfTests().results, ...runAiMemoryPhase3SelfTests().results,
