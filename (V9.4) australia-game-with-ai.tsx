@@ -8066,6 +8066,22 @@ export interface CareerXPRecord {
   description: string;
 }
 
+export interface CareerAchievementRuntime {
+  consecutiveMajorityControlDays: number;
+  consecutiveNetIncomeSurplusDays: number;
+  lastEvaluatedDay: number;
+  ledgerMarketTradeTally: number;
+}
+
+export interface MatchCareerMilestoneEvent {
+  id: string;
+  day: number;
+  turn: number;
+  label: string;
+  category: 'combat' | 'economy' | 'governance' | 'achievement';
+  achievementId?: string;
+}
+
 export interface CareerProfile {
   playerId: string;
   totalXP: number;
@@ -8073,6 +8089,7 @@ export interface CareerProfile {
   achievements: Record<string, CareerAchievement>;
   unlocks: CareerRewardUnlock[];
   history: CareerXPRecord[];
+  achievementRuntime?: CareerAchievementRuntime;
   stats: {
     gamesPlayed: number;
     wins: number;
@@ -8081,6 +8098,10 @@ export interface CareerProfile {
     relicsFound: number;
     governanceProposalsPassed: number;
     reconMissionsCompleted: number;
+    governanceArbitrationsResolved?: number;
+    leaderGovernanceStreakDays?: number;
+    expeditionsWithoutInjury?: number;
+    matchProfitableTrades?: number;
   };
 }
 
@@ -10601,6 +10622,7 @@ export interface CanonicalGameState {
   activeTimelineId?: string | null;
   // Phase 7-9 State Fields
   careerProfile?: CareerProfile | null;
+  matchCareerMilestoneLog?: MatchCareerMilestoneEvent[];
   achievements?: Record<string, CareerAchievement> | null;
   fogOfWarState?: Record<string, RegionVisibilityState> | null;
   intelInvestments?: Record<string, IntelInvestment> | null;
@@ -80695,6 +80717,7 @@ export function createDefaultCareerProfile(playerId: string = 'player'): CareerP
       { unlockId: 'theme_red_desert', name: 'Red Desert Theme', rewardType: 'theme', requiredLevel: 5, unlocked: false },
     ],
     history: [],
+    achievementRuntime: createDefaultCareerAchievementRuntime(),
     stats: {
       gamesPlayed: 0,
       wins: 0,
@@ -80703,6 +80726,10 @@ export function createDefaultCareerProfile(playerId: string = 'player'): CareerP
       relicsFound: 0,
       governanceProposalsPassed: 0,
       reconMissionsCompleted: 0,
+      governanceArbitrationsResolved: 0,
+      leaderGovernanceStreakDays: 0,
+      expeditionsWithoutInjury: 0,
+      matchProfitableTrades: 0,
     },
   };
 }
@@ -80794,6 +80821,271 @@ export function evaluateAiRelationshipDecay(gameState: any): any {
     },
   };
 }
+
+
+export const CAREER_PRIMARY_REGION_CODES = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT'] as const;
+export const CAREER_ACHIEVEMENT_EVALUATOR_VERSION = 'O111-A18-v1';
+
+export function createDefaultCareerAchievementRuntime(): CareerAchievementRuntime {
+  return {
+    consecutiveMajorityControlDays: 0,
+    consecutiveNetIncomeSurplusDays: 0,
+    lastEvaluatedDay: 0,
+    ledgerMarketTradeTally: 0,
+  };
+}
+
+export interface CareerAchievementEvaluationResult {
+  state: any;
+  newlyUnlocked: CareerAchievement[];
+}
+
+function normalizeCareerProfileForEvaluation(profile: CareerProfile, playerId: string): CareerProfile {
+  const base = profile || createDefaultCareerProfile(playerId);
+  const merged: CareerProfile = {
+    ...base,
+    achievements: {
+      ...JSON.parse(JSON.stringify(DEFAULT_CAREER_ACHIEVEMENTS)),
+      ...(base.achievements || {}),
+    },
+    stats: {
+      ...createDefaultCareerProfile(playerId).stats,
+      ...(base.stats || {}),
+    },
+    achievementRuntime: {
+      ...createDefaultCareerAchievementRuntime(),
+      ...(base.achievementRuntime || {}),
+    },
+  };
+  return merged;
+}
+
+function resolveHumanCareerActorId(gameState: any): string {
+  const gs = gameState || {};
+  if (gs.currentActorId && gs.currentActorId !== 'ai') return String(gs.currentActorId);
+  return String(gs.player?.id || 'player');
+}
+
+function getPlayerActorFromGameState(gameState: any, actorId: string): any {
+  const gs = gameState || {};
+  return gs.actorsById?.[actorId] || (actorId === 'player' ? gs.player : null) || gs.player || null;
+}
+
+function countEquippedHighTierRelics(gameState: any, actorId: string): number {
+  const equipped = gameState?.equippedRelicsByActor?.[actorId] || {};
+  const tiers = new Set(['rare', 'epic', 'legendary', 'artifact']);
+  return Object.values(equipped).filter((r: any) => r && tiers.has(String(r.rarity || '').toLowerCase())).length;
+}
+
+function countPrimaryRegionsControlled(gameState: any, actorId: string): number {
+  const deposits = gameState?.regionDeposits || {};
+  let count = 0;
+  CAREER_PRIMARY_REGION_CODES.forEach(code => {
+    const entry = deposits[code] || {};
+    const snap = getRegionControlSnapshot(entry);
+    if (snap.controllerId === actorId) count += 1;
+  });
+  return count;
+}
+
+function getControlledRegionCount(gameState: any, actorId: string): number {
+  const stats = computeRegionControlStats(
+    sanitizeRegionDeposits(gameState?.regionDeposits),
+    gameState?.regionControlStats?.controlHistory || []
+  );
+  return stats.totalControlled?.[actorId] || 0;
+}
+
+function estimateDailyNetWorthDelta(gameState: any, actorId: string): number {
+  const history = gameState?.netWorthHistory || [];
+  if (history.length < 2) return 0;
+  const last = history[history.length - 1];
+  const prev = history[history.length - 2];
+  if (actorId === 'player' || actorId === String(gameState?.player?.id)) {
+    return (last?.playerWorth ?? 0) - (prev?.playerWorth ?? 0);
+  }
+  return 0;
+}
+
+function tallyMarketTradesFromLedger(gameState: any, actorId: string): number {
+  const events = gameState?.gameActivityLedger?.events || gameState?.eventLogs || [];
+  return events.filter((e: any) => {
+    const summary = String(e?.summary || e?.title || '').toLowerCase();
+    const cat = String(e?.category || e?.domain || '').toLowerCase();
+    const who = String(e?.actorId || e?.payload?.actorId || '');
+    return (who === actorId || who === 'player') && (cat.includes('market') || summary.includes('resource market') || summary.includes('market trade'));
+  }).length;
+}
+
+function careerAchievementCategoryForUnlock(ach: CareerAchievement): MatchCareerMilestoneEvent['category'] {
+  switch (ach.category) {
+    case 'Conquest':
+      return 'combat';
+    case 'Economy':
+      return 'economy';
+    case 'Governance':
+      return 'governance';
+    default:
+      return 'achievement';
+  }
+}
+
+function computeAchievementProgressValues(gameState: any, profile: CareerProfile, actorId: string): Record<string, number> {
+  const runtime = profile.achievementRuntime || createDefaultCareerAchievementRuntime();
+  profile.achievementRuntime = runtime;
+  const totalRegions = Math.max(1, Object.keys(REGIONS).length);
+  const controlled = getControlledRegionCount(gameState, actorId);
+  const primaryHeld = countPrimaryRegionsControlled(gameState, actorId);
+  const treasury = Math.floor(getPlayerActorFromGameState(gameState, actorId)?.money ?? 0);
+  const netDelta = estimateDailyNetWorthDelta(gameState, actorId);
+  const ledgerTrades = tallyMarketTradesFromLedger(gameState, actorId);
+  runtime.ledgerMarketTradeTally = Math.max(runtime.ledgerMarketTradeTally, ledgerTrades, profile.stats.matchProfitableTrades || 0);
+
+  const majority = controlled >= Math.ceil(totalRegions / 2);
+  runtime.consecutiveMajorityControlDays = majority ? runtime.consecutiveMajorityControlDays + 1 : 0;
+  runtime.consecutiveNetIncomeSurplusDays = netDelta >= 5000 ? runtime.consecutiveNetIncomeSurplusDays + 1 : 0;
+
+  const stats = profile.stats;
+  return {
+    ach_outback_dominator: controlled,
+    ach_uncontested_ruler: runtime.consecutiveMajorityControlDays,
+    ach_expansionist_supreme: primaryHeld,
+    ach_tycoon_north: treasury,
+    ach_barter_mogul: runtime.ledgerMarketTradeTally,
+    ach_treasury_citadel: runtime.consecutiveNetIncomeSurplusDays,
+    ach_consensus_architect: stats.governanceProposalsPassed || 0,
+    ach_master_arbitrator: stats.governanceArbitrationsResolved || 0,
+    ach_iron_overseer: stats.leaderGovernanceStreakDays || 0,
+    ach_relic_hunter: countEquippedHighTierRelics(gameState, actorId),
+    ach_outback_scout: stats.expeditionsWithoutInjury || stats.reconMissionsCompleted || 0,
+    ach_legendary_archaeologist: (stats.relicsFound || 0) >= 1 ? 1 : 0,
+  };
+}
+
+function unlockAchievementOnProfile(profile: CareerProfile, achId: string, turn: number): { profile: CareerProfile; unlocked: CareerAchievement | null } {
+  const current = profile.achievements[achId];
+  if (!current || current.unlocked) return { profile, unlocked: null };
+  const FIXED_EPOCH = 1704067200000;
+  const deterministicTime = new Date(FIXED_EPOCH + (turn - 1) * 86400000).toISOString();
+  const updatedAch: CareerAchievement = {
+    ...current,
+    unlocked: true,
+    unlockedAtTurn: turn,
+    unlockedAtTimestamp: deterministicTime,
+    progress: { ...current.progress, current: current.progress.target },
+  };
+  const newXP = profile.totalXP + current.xpReward;
+  const newLevel = Math.floor(newXP / 1000) + 1;
+  return {
+    profile: {
+      ...profile,
+      totalXP: newXP,
+      currentLevel: newLevel,
+      achievements: { ...profile.achievements, [achId]: updatedAch },
+    },
+    unlocked: updatedAch,
+  };
+}
+
+export function evaluateCareerAchievementsAndMilestones(gameState: any): CareerAchievementEvaluationResult {
+  const settings = gameState?.gameSettings || {};
+  if (!settings.achievementsEnabled && !settings.careerProgressionEnabled) {
+    return { state: gameState, newlyUnlocked: [] };
+  }
+  const actorId = resolveHumanCareerActorId(gameState);
+  const day = gameState?.day || gameState?.turnCounter || 1;
+  const turn = gameState?.turnCounter || day;
+  let profile = normalizeCareerProfileForEvaluation(gameState?.careerProfile || createDefaultCareerProfile(actorId), actorId);
+  const runtime = profile.achievementRuntime || createDefaultCareerAchievementRuntime();
+  if (runtime.lastEvaluatedDay === day) {
+    return { state: { ...gameState, careerProfile: profile }, newlyUnlocked: [] };
+  }
+  runtime.lastEvaluatedDay = day;
+  profile.achievementRuntime = runtime;
+
+  const progressValues = computeAchievementProgressValues(gameState, profile, actorId);
+  const updatedAchievements: Record<string, CareerAchievement> = { ...profile.achievements };
+  Object.entries(progressValues).forEach(([achId, currentValue]) => {
+    const ach = updatedAchievements[achId];
+    if (!ach || ach.unlocked) return;
+    updatedAchievements[achId] = {
+      ...ach,
+      progress: {
+        ...ach.progress,
+        current: Math.min(ach.progress.target, Math.max(0, Math.floor(currentValue))),
+      },
+    };
+  });
+  profile = { ...profile, achievements: updatedAchievements };
+
+  const newlyUnlocked: CareerAchievement[] = [];
+  const milestoneLog: MatchCareerMilestoneEvent[] = [...(gameState?.matchCareerMilestoneLog || [])];
+  Object.values(updatedAchievements).forEach(ach => {
+    if (ach.unlocked || ach.progress.current < ach.progress.target) return;
+    const result = unlockAchievementOnProfile(profile, ach.id, turn);
+    profile = result.profile;
+    if (result.unlocked) {
+      newlyUnlocked.push(result.unlocked);
+      milestoneLog.unshift({
+        id: `ms_${ach.id}_${day}_${turn}`,
+        day,
+        turn,
+        label: ach.title,
+        category: careerAchievementCategoryForUnlock(ach),
+        achievementId: ach.id,
+      });
+    }
+  });
+
+  return {
+    state: {
+      ...gameState,
+      careerProfile: profile,
+      matchCareerMilestoneLog: milestoneLog.slice(0, 120),
+    },
+    newlyUnlocked,
+  };
+}
+
+export function runO111Agent18CareerAchievementDevTests(): { ok: boolean; details: string[] } {
+  const details: string[] = [];
+  const deposits: RegionDeposits = {
+    NSW: { player: 9000 },
+    VIC: { player: 8000 },
+    QLD: { player: 7000 },
+    WA: { player: 6000 },
+    SA: { player: 5000 },
+    TAS: { player: 4000 },
+    NT: { player: 3000 },
+  };
+  let gs: any = {
+    day: 3,
+    turnCounter: 3,
+    currentActorId: 'player',
+    player: { id: 'player', money: 120000 },
+    regionDeposits: deposits,
+    regionControlStats: createDefaultRegionControlStats(),
+    netWorthHistory: [
+      { day: 1, playerWorth: 10000, aiWorth: 10000 },
+      { day: 2, playerWorth: 20000, aiWorth: 10000 },
+    ],
+    gameSettings: { achievementsEnabled: true, careerProgressionEnabled: true },
+    careerProfile: createDefaultCareerProfile('player'),
+  };
+  const first = evaluateCareerAchievementsAndMilestones(gs);
+  gs = first.state;
+  const dominator = gs.careerProfile.achievements.ach_outback_dominator;
+  details.push(`dominator progress ${dominator.progress.current}/${dominator.progress.target}`);
+  gs.day = 4;
+  gs.careerProfile.achievementRuntime.lastEvaluatedDay = 0;
+  const tycoon = evaluateCareerAchievementsAndMilestones(gs);
+  const tycoonAch = tycoon.state.careerProfile.achievements.ach_tycoon_north;
+  const tycoonOk = Boolean(tycoonAch.unlocked);
+  details.push(`tycoon unlocked=${tycoonOk}`);
+  const ok = dominator.progress.current >= 5 && tycoonOk && tycoon.newlyUnlocked.some(a => a.id === 'ach_tycoon_north');
+  return { ok, details };
+}
+
 
 export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   const startTime = Date.now();
@@ -80911,6 +81203,10 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (!migrated.careerProfile) {
     migrated.careerProfile = createDefaultCareerProfile(migrated.player?.id || 'player');
     patches.push('Initialized default CareerProfile.');
+  }
+  if (migrated.careerProfile && !migrated.careerProfile.achievementRuntime) {
+    migrated.careerProfile.achievementRuntime = createDefaultCareerAchievementRuntime();
+    patches.push('Initialized career achievement runtime tracker.');
   }
 
   if (!migrated.aiRelationshipState) {
@@ -199946,6 +200242,13 @@ function dispatchGameSettingsChange(
     if (gameSettings?.aiRivalryEnabled) {
       nextState = evaluateAiRelationshipDecay(nextState);
     }
+    if (gameSettings?.achievementsEnabled || gameSettings?.careerProgressionEnabled) {
+      const careerEval = evaluateCareerAchievementsAndMilestones({ ...nextState, day: newDay, turnCounter: gameState.turnCounter });
+      nextState = careerEval.state;
+      careerEval.newlyUnlocked.forEach(ach => {
+        addNotification(`🏆 Achievement unlocked: ${ach.title} (+${ach.xpReward} XP)`, 'success', true);
+      });
+    }
     if (gameSettings.aiMemoryEnabled !== false) {
       const decayTurn = Math.max(newDay, gameState.turnCounter || 0);
       const nextMemories = applyTurnDecayToAiMemories(aiMemoriesRef.current || gameState.aiMemoriesByActor || {}, decayTurn);
@@ -199984,6 +200287,18 @@ function dispatchGameSettingsChange(
     }
     if (nextState.campaignState !== gameState.campaignState) {
       dispatchGameState({ type: 'SET_CAMPAIGN_STATE', payload: nextState.campaignState });
+    }
+    if (
+      nextState.careerProfile !== gameState.careerProfile
+      || nextState.matchCareerMilestoneLog !== gameState.matchCareerMilestoneLog
+    ) {
+      dispatchGameState({
+        type: 'LOAD_STATE',
+        payload: {
+          careerProfile: nextState.careerProfile,
+          matchCareerMilestoneLog: nextState.matchCareerMilestoneLog,
+        },
+      });
     }
 
     if (gameSettings.automationDailyDigestEnabled) {
