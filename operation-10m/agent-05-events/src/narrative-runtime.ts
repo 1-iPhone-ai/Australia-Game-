@@ -105,6 +105,8 @@ export function createDefaultOp10mNarrativeEngineState(): Op10mNarrativeEngineSt
       agent25ProjectionWaveReadyPasses: 0,
       scaleWaveDryRunGates: 0,
       agent25DryRunWaveAttestedPasses: 0,
+      scaleWaveGateClosureLatches: 0,
+      agent25GateClosureWaveReadyPasses: 0,
     },
     regional: createDefaultRegionalContagionLedger(),
   };
@@ -213,6 +215,14 @@ export function sanitizeOp10mNarrativeEngineState(raw: unknown): Op10mNarrativeE
     base.telemetry.agent25DryRunWaveAttestedPasses = Math.max(
       0,
       Number(t.agent25DryRunWaveAttestedPasses) || 0
+    );
+    base.telemetry.scaleWaveGateClosureLatches = Math.max(
+      0,
+      Number(t.scaleWaveGateClosureLatches) || 0
+    );
+    base.telemetry.agent25GateClosureWaveReadyPasses = Math.max(
+      0,
+      Number(t.agent25GateClosureWaveReadyPasses) || 0
     );
   }
 

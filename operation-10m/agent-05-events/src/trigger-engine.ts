@@ -76,6 +76,10 @@ import {
   OP10M_AGENT25_DRY_RUN_WAVE_ATTESTED_FLAG,
   OP10M_SCALE_WAVE_DRY_RUN_GATE_FLAG,
 } from './compute-turn-scale-wave-dry-run-gate-coordinator.ts';
+import {
+  OP10M_AGENT25_GATE_CLOSURE_WAVE_READY_FLAG,
+  OP10M_SCALE_WAVE_GATE_CLOSURE_LATCH_FLAG,
+} from './compute-turn-scale-wave-gate-closure-latch-coordinator.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -416,6 +420,16 @@ export function evaluateRequirements(
       case 'agent25_dry_run_wave_attested':
         if (!sim.flags[OP10M_AGENT25_DRY_RUN_WAVE_ATTESTED_FLAG]) {
           return { ok: false, reason: 'agent25 dry-run wave not attested' };
+        }
+        break;
+      case 'scale_wave_gate_closure_latch':
+        if (!sim.flags[OP10M_SCALE_WAVE_GATE_CLOSURE_LATCH_FLAG]) {
+          return { ok: false, reason: 'scale wave gate closure not latched' };
+        }
+        break;
+      case 'agent25_gate_closure_wave_ready':
+        if (!sim.flags[OP10M_AGENT25_GATE_CLOSURE_WAVE_READY_FLAG]) {
+          return { ok: false, reason: 'agent25 gate closure wave not ready' };
         }
         break;
       default:
