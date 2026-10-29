@@ -744,6 +744,23 @@ export type {
   TransitionResolutionBand,
 } from './production-transition-resolution';
 
+export {
+  AGENT08_TRANSITION_SETTLEMENT_SCHEMA_VERSION,
+  buildFirmProductionTransitionSettlement,
+  classifyNationalSettlementBand,
+  computeNationalSettlementPressure,
+  computeNationalProductionTransitionSettlement,
+  summarizeRegionalTransitionSettlement,
+  runAgent08TransitionSettlementSelfTests,
+} from './production-transition-settlement';
+
+export type {
+  FirmProductionTransitionSettlement,
+  NationalProductionTransitionSettlement,
+  RegionalTransitionSettlementSummary,
+  TransitionSettlementBand,
+} from './production-transition-settlement';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -788,6 +805,7 @@ import { runAgent08TransitionFinalizationSelfTests } from './production-transiti
 import { runAgent08TransitionClosureSelfTests } from './production-transition-closure';
 import { runAgent08TransitionCompletionSelfTests } from './production-transition-completion';
 import { runAgent08TransitionResolutionSelfTests } from './production-transition-resolution';
+import { runAgent08TransitionSettlementSelfTests } from './production-transition-settlement';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -1012,6 +1030,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionSettlement = runAgent08TransitionSettlementSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -1057,5 +1080,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionClosure,
     ...transitionCompletion,
     ...transitionResolution,
+    ...transitionSettlement,
   ];
 }
