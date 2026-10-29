@@ -336,6 +336,23 @@ export type {
   TransitionMobilizationBand,
 } from './production-transition-mobilization';
 
+export {
+  AGENT08_TRANSITION_DEPLOYMENT_SCHEMA_VERSION,
+  buildFirmProductionTransitionDeployment,
+  classifyNationalDeploymentBand,
+  computeNationalDeploymentPressure,
+  computeNationalProductionTransitionDeployment,
+  summarizeRegionalTransitionDeployment,
+  runAgent08TransitionDeploymentSelfTests,
+} from './production-transition-deployment';
+
+export type {
+  FirmProductionTransitionDeployment,
+  NationalProductionTransitionDeployment,
+  RegionalTransitionDeploymentSummary,
+  TransitionDeploymentBand,
+} from './production-transition-deployment';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -356,6 +373,7 @@ import { runAgent08ReadinessPortfolioSelfTests } from './production-readiness-po
 import { runAgent08TransitionHorizonSelfTests } from './production-transition-horizon';
 import { runAgent08TransitionCommitmentSelfTests } from './production-transition-commitment';
 import { runAgent08TransitionMobilizationSelfTests } from './production-transition-mobilization';
+import { runAgent08TransitionDeploymentSelfTests } from './production-transition-deployment';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -460,6 +478,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionDeployment = runAgent08TransitionDeploymentSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -481,5 +504,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionHorizon,
     ...transitionCommitment,
     ...transitionMobilization,
+    ...transitionDeployment,
   ];
 }
