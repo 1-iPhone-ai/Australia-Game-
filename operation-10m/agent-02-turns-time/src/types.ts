@@ -57,6 +57,7 @@ export type TraceKind =
   | 'phase_enter'
   | 'obligation_fired'
   | 'event_dispatched'
+  | 'follow_up_scheduled'
   | 'construction_labor'
   | 'construction_completed'
   | 'fast_forward_step'
@@ -113,11 +114,29 @@ export interface PauseDiagnosticsState {
   blockedAdvanceCount: number;
 }
 
+export type FollowUpTrigger = 'obligation_fired' | 'event_dispatched';
+
+export type FollowUpSpawnKind = 'obligation' | 'event';
+
+export interface FollowUpRule {
+  id: string;
+  triggerRefId: string;
+  trigger: FollowUpTrigger;
+  dueTurnOffset: number;
+  spawnKind: FollowUpSpawnKind;
+  spawnId: string;
+  spawnKindLabel: string;
+  priority?: number;
+  duePhase?: TurnPhase;
+  status: 'armed' | 'consumed' | 'cancelled';
+}
+
 export interface TurnTimeSnapshot {
   clock: TurnClock;
   obligations: ScheduledObligation[];
   projects: ConstructionProject[];
   events: ScheduledEvent[];
+  followUpRules: FollowUpRule[];
   pause: PauseDiagnosticsState;
   trace: EffectTraceEntry[];
 }

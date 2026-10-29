@@ -30,6 +30,13 @@ import {
   activeConstruction,
 } from './multi-turn-construction.js';
 import { appendTrace, validateTurnTimeIntegrity } from './diagnostics.js';
+import { deferObligationDueTurn, deferEventDueTurn } from './defer-schedule.js';
+import {
+  applyFollowUpsForTrigger,
+  registerFollowUpRule,
+  type RegisterFollowUpInput,
+} from './delayed-consequences.js';
+import { buildTurnTimeAuditReport, snapshotDigest, type TurnTimeAuditReport } from './turn-audit.js';
 import {
   createInitialPauseState,
   clonePauseState,
@@ -38,7 +45,15 @@ import {
   recordBlockedAdvance,
   isTimePaused,
 } from './pause-resume.js';
-import type { ConstructionProject, PauseDiagnosticsState, ScheduledEvent, ScheduledObligation } from './types.js';
+import type {
+  ConstructionProject,
+  FollowUpRule,
+  PauseDiagnosticsState,
+  ScheduledEvent,
+  ScheduledObligation,
+} from './types.js';
+
+export type { RegisterFollowUpInput, TurnTimeAuditReport };
 
 export interface StepTurnResult {
   clockBefore: TurnClock;
@@ -55,6 +70,7 @@ export class TurnTimeEngine {
   private obligations: ScheduledObligation[];
   private projects: ConstructionProject[];
   private events: ScheduledEvent[];
+  private followUpRules: FollowUpRule[];
   private pauseState: PauseDiagnosticsState;
   private trace: EffectTraceEntry[];
   private traceConsumedThrough: number;
@@ -64,6 +80,7 @@ export class TurnTimeEngine {
     this.obligations = snapshot?.obligations ? snapshot.obligations.map((o) => ({ ...o })) : [];
     this.projects = snapshot?.projects ? snapshot.projects.map((p) => ({ ...p })) : [];
     this.events = snapshot?.events ? snapshot.events.map((e) => ({ ...e })) : [];
+    this.followUpRules = snapshot?.followUpRules ? snapshot.followUpRules.map((r) => ({ ...r })) : [];
     this.pauseState = snapshot?.pause ? clonePauseState(snapshot.pause) : createInitialPauseState();
     this.trace = snapshot?.trace ? [...snapshot.trace] : [];
     this.traceConsumedThrough = this.trace.length;
@@ -79,6 +96,7 @@ export class TurnTimeEngine {
       obligations: this.obligations.map((o) => ({ ...o })),
       projects: this.projects.map((p) => ({ ...p })),
       events: this.events.map((e) => ({ ...e })),
+      followUpRules: this.followUpRules.map((r) => ({ ...r })),
       pause: clonePauseState(this.pauseState),
       trace: [...this.trace],
     };
@@ -98,6 +116,26 @@ export class TurnTimeEngine {
 
   cancelEvent(id: string): void {
     this.events = cancelScheduledEvent(this.events, id);
+  }
+
+  registerFollowUp(input: RegisterFollowUpInput): void {
+    this.followUpRules = registerFollowUpRule(this.followUpRules, input);
+  }
+
+  deferObligation(id: string, newDueTurn: number): void {
+    this.obligations = deferObligationDueTurn(this.obligations, id, newDueTurn);
+  }
+
+  deferEvent(id: string, newDueTurn: number): void {
+    this.events = deferEventDueTurn(this.events, id, newDueTurn);
+  }
+
+  getAuditReport(): TurnTimeAuditReport {
+    return buildTurnTimeAuditReport(this.snapshot());
+  }
+
+  getSnapshotDigest(): string {
+    return snapshotDigest(this.snapshot());
   }
 
   startConstruction(input: StartConstructionInput): void {
@@ -244,6 +282,42 @@ export class TurnTimeEngine {
       };
       this.trace = appendTrace(this.trace, t);
       traceEntries.push(t);
+      this.processFollowUps('obligation_fired', obligation.id, turnView, phase, traceEntries);
+    }
+  }
+
+  private processFollowUps(
+    trigger: 'obligation_fired' | 'event_dispatched',
+    triggerRefId: string,
+    turnView: TurnClock,
+    phase: TurnPhase,
+    traceEntries: EffectTraceEntry[],
+  ): void {
+    const applied = applyFollowUpsForTrigger(
+      this.followUpRules,
+      this.obligations,
+      this.events,
+      turnView,
+      trigger,
+      triggerRefId,
+    );
+    this.followUpRules = applied.rules;
+    this.obligations = applied.obligations;
+    this.events = applied.events;
+    for (const spawnId of applied.scheduledIds) {
+      const seq = this.clock.effectSequence + 1;
+      this.clock = { ...this.clock, effectSequence: seq };
+      const t = {
+        sequence: seq,
+        turnIndex: turnView.turnIndex,
+        dayIndex: turnView.dayIndex,
+        phase,
+        kind: 'follow_up_scheduled' as const,
+        refId: spawnId,
+        detail: triggerRefId,
+      };
+      this.trace = appendTrace(this.trace, t);
+      traceEntries.push(t);
     }
   }
 
@@ -272,6 +346,7 @@ export class TurnTimeEngine {
       };
       this.trace = appendTrace(this.trace, t);
       traceEntries.push(t);
+      this.processFollowUps('event_dispatched', event.id, turnView, phase, traceEntries);
     }
   }
 

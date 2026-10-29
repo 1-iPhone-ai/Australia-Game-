@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
-// content-sha256-prefix: 180f809ac95ee578
+// content-sha256-prefix: 19c0b2e16a622752
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -67,6 +67,7 @@ export type TraceKind =
   | 'phase_enter'
   | 'obligation_fired'
   | 'event_dispatched'
+  | 'follow_up_scheduled'
   | 'construction_labor'
   | 'construction_completed'
   | 'fast_forward_step'
@@ -123,11 +124,29 @@ export interface PauseDiagnosticsState {
   blockedAdvanceCount: number;
 }
 
+export type FollowUpTrigger = 'obligation_fired' | 'event_dispatched';
+
+export type FollowUpSpawnKind = 'obligation' | 'event';
+
+export interface FollowUpRule {
+  id: string;
+  triggerRefId: string;
+  trigger: FollowUpTrigger;
+  dueTurnOffset: number;
+  spawnKind: FollowUpSpawnKind;
+  spawnId: string;
+  spawnKindLabel: string;
+  priority?: number;
+  duePhase?: TurnPhase;
+  status: 'armed' | 'consumed' | 'cancelled';
+}
+
 export interface TurnTimeSnapshot {
   clock: TurnClock;
   obligations: ScheduledObligation[];
   projects: ConstructionProject[];
   events: ScheduledEvent[];
+  followUpRules: FollowUpRule[];
   pause: PauseDiagnosticsState;
   trace: EffectTraceEntry[];
 }
@@ -553,6 +572,145 @@ export function constructionDueForCompletion(projects: ConstructionProject[], tu
   );
 }
 
+// --- src/defer-schedule.ts ---
+
+export function deferObligationDueTurn(
+  obligations: ScheduledObligation[],
+  id: string,
+  newDueTurn: number,
+): ScheduledObligation[] {
+  const due = Math.floor(newDueTurn);
+  if (!Number.isFinite(due) || due < 1) {
+    throw new Error(`deferObligationDueTurn: invalid dueTurn for ${id}`);
+  }
+  return obligations.map((o) => {
+    if (o.id !== id) return o;
+    if (o.status !== 'pending') return o;
+    return { ...o, dueTurn: due };
+  });
+}
+
+export function deferEventDueTurn(events: ScheduledEvent[], id: string, newDueTurn: number): ScheduledEvent[] {
+  const due = Math.floor(newDueTurn);
+  if (!Number.isFinite(due) || due < 1) {
+    throw new Error(`deferEventDueTurn: invalid dueTurn for ${id}`);
+  }
+  return events.map((e) => {
+    if (e.id !== id) return e;
+    if (e.status !== 'queued') return e;
+    return { ...e, dueTurn: due };
+  });
+}
+
+export function obligationsDueThroughTurn(obligations: ScheduledObligation[], throughTurn: number): ScheduledObligation[] {
+  return obligations.filter((o) => o.status === 'pending' && o.dueTurn <= throughTurn);
+}
+
+export function eventsDueThroughTurn(events: ScheduledEvent[], throughTurn: number): ScheduledEvent[] {
+  return events.filter((e) => e.status === 'queued' && e.dueTurn <= throughTurn);
+}
+
+// --- src/delayed-consequences.ts ---
+
+export type { FollowUpRule, FollowUpTrigger, FollowUpSpawnKind } from './types.js';
+
+export interface RegisterFollowUpInput {
+  id: string;
+  triggerRefId: string;
+  trigger: FollowUpTrigger;
+  dueTurnOffset: number;
+  spawnKind: FollowUpRule['spawnKind'];
+  spawnId: string;
+  spawnKindLabel: string;
+  priority?: number;
+  duePhase?: FollowUpRule['duePhase'];
+}
+
+export function registerFollowUpRule(rules: FollowUpRule[], input: RegisterFollowUpInput): FollowUpRule[] {
+  if (rules.some((r) => r.id === input.id)) {
+    throw new Error(`registerFollowUpRule: duplicate id ${input.id}`);
+  }
+  const offset = Math.floor(input.dueTurnOffset);
+  if (!Number.isFinite(offset) || offset < 0) {
+    throw new Error(`registerFollowUpRule: invalid dueTurnOffset for ${input.id}`);
+  }
+  const rule: FollowUpRule = {
+    id: input.id,
+    triggerRefId: input.triggerRefId,
+    trigger: input.trigger,
+    dueTurnOffset: offset,
+    spawnKind: input.spawnKind,
+    spawnId: input.spawnId,
+    spawnKindLabel: input.spawnKindLabel,
+    priority: input.priority,
+    duePhase: input.duePhase,
+    status: 'armed',
+  };
+  return [...rules, rule];
+}
+
+export interface ApplyFollowUpResult {
+  rules: FollowUpRule[];
+  obligations: ScheduledObligation[];
+  events: ScheduledEvent[];
+  scheduledIds: string[];
+}
+
+export function applyFollowUpsForTrigger(
+  rules: FollowUpRule[],
+  obligations: ScheduledObligation[],
+  events: ScheduledEvent[],
+  clock: TurnClock,
+  trigger: FollowUpTrigger,
+  triggerRefId: string,
+): ApplyFollowUpResult {
+  const scheduledIds: string[] = [];
+  let nextRules = rules;
+  let nextObligations = obligations;
+  let nextEvents = events;
+
+  for (const rule of rules) {
+    if (rule.status !== 'armed') continue;
+    if (rule.trigger !== trigger || rule.triggerRefId !== triggerRefId) continue;
+
+    const dueTurn = clock.turnIndex + rule.dueTurnOffset;
+    if (rule.spawnKind === 'obligation') {
+      if (nextObligations.some((o) => o.id === rule.spawnId) || nextEvents.some((e) => e.id === rule.spawnId)) {
+        continue;
+      }
+      const input: RegisterObligationInput = {
+        id: rule.spawnId,
+        dueTurn,
+        priority: rule.priority,
+        kind: rule.spawnKindLabel,
+      };
+      nextObligations = registerObligation(nextObligations, input);
+      scheduledIds.push(rule.spawnId);
+    } else {
+      if (nextEvents.some((e) => e.id === rule.spawnId) || nextObligations.some((o) => o.id === rule.spawnId)) {
+        continue;
+      }
+      const input: ScheduleEventInput = {
+        id: rule.spawnId,
+        dueTurn,
+        duePhase: rule.duePhase,
+        priority: rule.priority,
+        kind: rule.spawnKindLabel,
+      };
+      nextEvents = enqueueScheduledEvent(nextEvents, clock, input);
+      scheduledIds.push(rule.spawnId);
+    }
+
+    nextRules = nextRules.map((r) => (r.id === rule.id ? { ...r, status: 'consumed' } : r));
+  }
+
+  return { rules: nextRules, obligations: nextObligations, events: nextEvents, scheduledIds };
+}
+
+export function armedFollowUpCount(rules: FollowUpRule[]): number {
+  return rules.filter((r) => r.status === 'armed').length;
+}
+
 // --- src/diagnostics.ts ---
 
 export function appendTrace(trace: EffectTraceEntry[], entry: Omit<EffectTraceEntry, 'sequence'> & { sequence: number }): EffectTraceEntry[] {
@@ -698,6 +856,80 @@ export function projectsBehindSchedule(projects: ConstructionProject[], clock: T
   return constructionDueForCompletion(projects, clock.turnIndex);
 }
 
+// --- src/turn-audit.ts ---
+
+export interface TurnTimeAuditReport {
+  turnIndex: number;
+  dayIndex: number;
+  effectSequence: number;
+  pendingObligations: number;
+  firedObligations: number;
+  queuedEvents: number;
+  dispatchedEvents: number;
+  activeConstruction: number;
+  completedConstruction: number;
+  armedFollowUps: number;
+  paused: boolean;
+  blockedAdvanceCount: number;
+}
+
+export function buildTurnTimeAuditReport(snapshot: TurnTimeSnapshot): TurnTimeAuditReport {
+  const { clock, obligations, projects, events, pause, followUpRules } = snapshot;
+  return {
+    turnIndex: clock.turnIndex,
+    dayIndex: clock.dayIndex,
+    effectSequence: clock.effectSequence,
+    pendingObligations: obligations.filter((o) => o.status === 'pending').length,
+    firedObligations: obligations.filter((o) => o.status === 'fired').length,
+    queuedEvents: events.filter((e) => e.status === 'queued').length,
+    dispatchedEvents: events.filter((e) => e.status === 'dispatched').length,
+    activeConstruction: projects.filter((p) => p.status === 'under_construction').length,
+    completedConstruction: projects.filter((p) => p.status === 'completed').length,
+    armedFollowUps: armedFollowUpCount(followUpRules),
+    paused: pause.paused,
+    blockedAdvanceCount: pause.blockedAdvanceCount,
+  };
+}
+
+function stableSnapshotPayload(snapshot: TurnTimeSnapshot): string {
+  const normalized = {
+    clock: {
+      turnIndex: snapshot.clock.turnIndex,
+      dayIndex: snapshot.clock.dayIndex,
+      effectSequence: snapshot.clock.effectSequence,
+      phase: snapshot.clock.phase,
+      epochIso: snapshot.clock.epochIso,
+      phaseTokens: snapshot.clock.phaseTokens,
+    },
+    obligations: [...snapshot.obligations].sort((a, b) => a.id.localeCompare(b.id)),
+    events: [...snapshot.events].sort((a, b) => a.id.localeCompare(b.id)),
+    projects: [...snapshot.projects].sort((a, b) => a.id.localeCompare(b.id)),
+    followUpRules: [...snapshot.followUpRules].sort((a, b) => a.id.localeCompare(b.id)),
+    pause: snapshot.pause,
+  };
+  return JSON.stringify(normalized);
+}
+
+/** Browser-safe deterministic fingerprint (FNV-1a 64-bit). */
+export function fnv1a64Hex(input: string): string {
+  let hash = 0xcbf29ce484222325n;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= BigInt(input.charCodeAt(i));
+    hash = (hash * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+  return hash.toString(16).padStart(16, '0');
+}
+
+export function snapshotDigest(snapshot: TurnTimeSnapshot): string {
+  return fnv1a64Hex(stableSnapshotPayload(snapshot));
+}
+
+export function clockAtLeast(clock: TurnClock, turnIndex: number, dayIndex?: number): boolean {
+  if (clock.turnIndex < turnIndex) return false;
+  if (dayIndex !== undefined && clock.dayIndex < dayIndex) return false;
+  return true;
+}
+
 // --- src/pause-resume.ts ---
 
 export function createInitialPauseState(): PauseDiagnosticsState {
@@ -807,6 +1039,8 @@ export function isTimePaused(pause: PauseDiagnosticsState): boolean {
 
 // --- src/engine.ts ---
 
+export type { RegisterFollowUpInput, TurnTimeAuditReport };
+
 export interface StepTurnResult {
   clockBefore: TurnClock;
   clockAfter: TurnClock;
@@ -822,6 +1056,7 @@ export class TurnTimeEngine {
   private obligations: ScheduledObligation[];
   private projects: ConstructionProject[];
   private events: ScheduledEvent[];
+  private followUpRules: FollowUpRule[];
   private pauseState: PauseDiagnosticsState;
   private trace: EffectTraceEntry[];
   private traceConsumedThrough: number;
@@ -831,6 +1066,7 @@ export class TurnTimeEngine {
     this.obligations = snapshot?.obligations ? snapshot.obligations.map((o) => ({ ...o })) : [];
     this.projects = snapshot?.projects ? snapshot.projects.map((p) => ({ ...p })) : [];
     this.events = snapshot?.events ? snapshot.events.map((e) => ({ ...e })) : [];
+    this.followUpRules = snapshot?.followUpRules ? snapshot.followUpRules.map((r) => ({ ...r })) : [];
     this.pauseState = snapshot?.pause ? clonePauseState(snapshot.pause) : createInitialPauseState();
     this.trace = snapshot?.trace ? [...snapshot.trace] : [];
     this.traceConsumedThrough = this.trace.length;
@@ -846,6 +1082,7 @@ export class TurnTimeEngine {
       obligations: this.obligations.map((o) => ({ ...o })),
       projects: this.projects.map((p) => ({ ...p })),
       events: this.events.map((e) => ({ ...e })),
+      followUpRules: this.followUpRules.map((r) => ({ ...r })),
       pause: clonePauseState(this.pauseState),
       trace: [...this.trace],
     };
@@ -865,6 +1102,26 @@ export class TurnTimeEngine {
 
   cancelEvent(id: string): void {
     this.events = cancelScheduledEvent(this.events, id);
+  }
+
+  registerFollowUp(input: RegisterFollowUpInput): void {
+    this.followUpRules = registerFollowUpRule(this.followUpRules, input);
+  }
+
+  deferObligation(id: string, newDueTurn: number): void {
+    this.obligations = deferObligationDueTurn(this.obligations, id, newDueTurn);
+  }
+
+  deferEvent(id: string, newDueTurn: number): void {
+    this.events = deferEventDueTurn(this.events, id, newDueTurn);
+  }
+
+  getAuditReport(): TurnTimeAuditReport {
+    return buildTurnTimeAuditReport(this.snapshot());
+  }
+
+  getSnapshotDigest(): string {
+    return snapshotDigest(this.snapshot());
   }
 
   startConstruction(input: StartConstructionInput): void {
@@ -1011,6 +1268,42 @@ export class TurnTimeEngine {
       };
       this.trace = appendTrace(this.trace, t);
       traceEntries.push(t);
+      this.processFollowUps('obligation_fired', obligation.id, turnView, phase, traceEntries);
+    }
+  }
+
+  private processFollowUps(
+    trigger: 'obligation_fired' | 'event_dispatched',
+    triggerRefId: string,
+    turnView: TurnClock,
+    phase: TurnPhase,
+    traceEntries: EffectTraceEntry[],
+  ): void {
+    const applied = applyFollowUpsForTrigger(
+      this.followUpRules,
+      this.obligations,
+      this.events,
+      turnView,
+      trigger,
+      triggerRefId,
+    );
+    this.followUpRules = applied.rules;
+    this.obligations = applied.obligations;
+    this.events = applied.events;
+    for (const spawnId of applied.scheduledIds) {
+      const seq = this.clock.effectSequence + 1;
+      this.clock = { ...this.clock, effectSequence: seq };
+      const t = {
+        sequence: seq,
+        turnIndex: turnView.turnIndex,
+        dayIndex: turnView.dayIndex,
+        phase,
+        kind: 'follow_up_scheduled' as const,
+        refId: spawnId,
+        detail: triggerRefId,
+      };
+      this.trace = appendTrace(this.trace, t);
+      traceEntries.push(t);
     }
   }
 
@@ -1039,6 +1332,7 @@ export class TurnTimeEngine {
       };
       this.trace = appendTrace(this.trace, t);
       traceEntries.push(t);
+      this.processFollowUps('event_dispatched', event.id, turnView, phase, traceEntries);
     }
   }
 
@@ -1176,7 +1470,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '1.1.0';
+export const AGENT_02_MODULE_VERSION = '1.2.0';
 
 
 
@@ -1247,6 +1541,42 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
     name: 'validate() ok after resume step',
 
     passed: paused.validate().ok,
+
+  });
+
+  const chain = new TurnTimeEngine();
+
+  chain.registerObligation({ id: 'parent', dueTurn: 1, kind: 'seed' });
+
+  chain.registerFollowUp({
+
+    id: 'fu1',
+
+    triggerRefId: 'parent',
+
+    trigger: 'obligation_fired',
+
+    dueTurnOffset: 1,
+
+    spawnKind: 'obligation',
+
+    spawnId: 'child',
+
+    spawnKindLabel: 'ripple',
+
+  });
+
+  chain.stepFullTurn();
+
+  chain.stepFullTurn();
+
+  results.push({
+
+    id: 'agent02_follow_up',
+
+    name: 'follow-up obligation fires on schedule',
+
+    passed: chain.snapshot().obligations.find((o) => o.id === 'child')?.status === 'fired',
 
   });
 

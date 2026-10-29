@@ -8,7 +8,9 @@
     "skipLibCheck": true,
     "rootDir": ".",
     "lib": ["ES2022"],
-    "types": ["node"]
+    "types": ["node"],
+    "jsx": "preserve",
+    "allowImportingTsExtensions": true
   },
   "include": ["src/**/*.ts", "tests/**/*.ts", "chunk.tsx"]
 }
