@@ -1,4 +1,4 @@
-import { runAgent08ModuleSelfTests, runAgent08IntegratedSelfTests, runAgent08RecoverySelfTests, runAgent08StabilizationSelfTests, runAgent08MandateSelfTests, runAgent08ComplianceSelfTests, runAgent08RemediationSelfTests, runAgent08ExecutionSelfTests, runAgent08UtilizationDepthSelfTests, runAgent08ReconciliationSelfTests, runAgent08OperatingPrioritySelfTests, runAgent08OperatingDigestSelfTests, runAgent08ReadinessPortfolioSelfTests, runAgent08TransitionHorizonSelfTests, runAgent08TransitionCommitmentSelfTests, runAgent08TransitionMobilizationSelfTests, runAgent08TransitionDeploymentSelfTests, runAgent08TransitionValidationSelfTests, runAgent08TransitionConsolidationSelfTests, runAgent08CascadeSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
+import { runAgent08ModuleSelfTests, runAgent08IntegratedSelfTests, runAgent08RecoverySelfTests, runAgent08StabilizationSelfTests, runAgent08MandateSelfTests, runAgent08ComplianceSelfTests, runAgent08RemediationSelfTests, runAgent08ExecutionSelfTests, runAgent08UtilizationDepthSelfTests, runAgent08ReconciliationSelfTests, runAgent08OperatingPrioritySelfTests, runAgent08OperatingDigestSelfTests, runAgent08ReadinessPortfolioSelfTests, runAgent08TransitionHorizonSelfTests, runAgent08TransitionCommitmentSelfTests, runAgent08TransitionMobilizationSelfTests, runAgent08TransitionDeploymentSelfTests, runAgent08TransitionValidationSelfTests, runAgent08TransitionConsolidationSelfTests, runAgent08TransitionSustainmentSelfTests, runAgent08CascadeSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
 
 function main() {
   const tax = runAgent08TaxLaborSelfTests();
@@ -176,6 +176,14 @@ function main() {
     process.exit(1);
   }
   console.log(`Agent 08 transition consolidation: ${transitionConsolidation.length} passed`);
+
+  const transitionSustainment = runAgent08TransitionSustainmentSelfTests();
+  const failedSustainment = transitionSustainment.filter(t => !t.passed);
+  if (failedSustainment.length) {
+    console.error('Agent 08 transition sustainment tests failed:', failedSustainment);
+    process.exit(1);
+  }
+  console.log(`Agent 08 transition sustainment: ${transitionSustainment.length} passed`);
 
   const moduleTests = runAgent08ModuleSelfTests();
   const failed = moduleTests.filter(t => !t.passed);
