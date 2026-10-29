@@ -168,6 +168,18 @@ export function SimulationUiEvolutionBridge({
       {result.phaseShellPlanDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-shell-plan-day">{result.phaseShellPlanDayCoachCopy}</div>
       ) : null}
+      {result.milestoneForecastDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-milestone-day">{result.milestoneForecastDayCoachCopy}</div>
+      ) : null}
+      {result.focusSessionSuppressionDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-focus-suppression-day">{result.focusSessionSuppressionDayCoachCopy}</div>
+      ) : null}
+      {result.progressionSignalDeltaDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-signal-delta-day">{result.progressionSignalDeltaDayCoachCopy}</div>
+      ) : null}
+      {result.layoutOnboardingDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-layout-onboarding-day">{result.layoutOnboardingDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets

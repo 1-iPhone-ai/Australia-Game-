@@ -73,3 +73,7 @@ export { LegacyNavAuditDayCoachStrip } from './LegacyNavAuditDayCoachStrip.js';
 export { ProgressionCoverageDayCoachStrip } from './ProgressionCoverageDayCoachStrip.js';
 export { AnnouncementPacingDayHintStrip } from './AnnouncementPacingDayHintStrip.js';
 export { PhaseShellPlanDayCoachStrip } from './PhaseShellPlanDayCoachStrip.js';
+export { MilestoneForecastDayCoachStrip } from './MilestoneForecastDayCoachStrip.js';
+export { FocusSessionSuppressionDayCoachStrip } from './FocusSessionSuppressionDayCoachStrip.js';
+export { ProgressionSignalDeltaDayCoachStrip } from './ProgressionSignalDeltaDayCoachStrip.js';
+export { LayoutOnboardingDayCoachStrip } from './LayoutOnboardingDayCoachStrip.js';

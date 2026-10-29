@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: a21d0007e57bdf93
+// content-sha256-prefix: 0f88299492391421
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -915,6 +915,10 @@ export interface DayAdvanceUiEvolutionResult {
   progressionCoverageDayCoachCopy: string | null;
   announcementPacingDayHintCopy: string | null;
   phaseShellPlanDayCoachCopy: string | null;
+  milestoneForecastDayCoachCopy: string | null;
+  focusSessionSuppressionDayCoachCopy: string | null;
+  progressionSignalDeltaDayCoachCopy: string | null;
+  layoutOnboardingDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1313,6 +1317,37 @@ export function tickEvolvingUiOnDayAdvance(
         })
       : { visibleShellRegionCount: 0, shellSummary: '', coachCopy: null };
 
+  const milestoneForecastDayCoach = buildMilestoneForecastDayCoach({
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const focusSessionSuppressionDayCoach =
+    context.phase != null
+      ? buildFocusSessionSuppressionDayCoach({
+          phase: context.phase,
+          signals: nextSignals,
+          policy,
+          focusSessionSnoozedUntilDay: persistedAfterCalm.focusSessionSnoozedUntilDay,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { active: false, suppressedCount: 0, coachCopy: null };
+
+  const progressionSignalDeltaDayCoach = buildProgressionSignalDeltaDayCoach({
+    prior: priorSignals,
+    next: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const layoutOnboardingDayCoach = buildLayoutOnboardingDayCoach({
+    panelIds: Object.keys(EVOLVING_UI_PANEL_BY_ID),
+    layoutPreset: context.layoutPreset,
+    signals: nextSignals,
+    policy,
+    persisted: persistedAfterCalm,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   if (context.phase) {
@@ -1389,6 +1424,10 @@ export function tickEvolvingUiOnDayAdvance(
     progressionCoverageDayCoachCopy: progressionCoverageDayCoach.coachCopy,
     announcementPacingDayHintCopy: announcementPacingDayHint.coachCopy,
     phaseShellPlanDayCoachCopy: phaseShellPlanDayCoach.coachCopy,
+    milestoneForecastDayCoachCopy: milestoneForecastDayCoach.coachCopy,
+    focusSessionSuppressionDayCoachCopy: focusSessionSuppressionDayCoach.coachCopy,
+    progressionSignalDeltaDayCoachCopy: progressionSignalDeltaDayCoach.coachCopy,
+    layoutOnboardingDayCoachCopy: layoutOnboardingDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -5525,6 +5564,291 @@ export function buildPhaseShellPlanDayCoach(input: {
     shellSummary,
     coachCopy,
   };
+}
+
+// --- source: engine/milestone-forecast-day-coach.ts ---
+export interface MilestoneForecastDayCoach {
+  forecastCount: number;
+  coachCopy: string | null;
+}
+
+export function buildMilestoneForecastDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  nextGameDay: number;
+  limit?: number;
+}): MilestoneForecastDayCoach {
+  const entries = forecastUpcomingMilestones(input.signals, input.limit ?? 2);
+  const base = milestoneForecastCoachCopy(entries);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+  return {
+    forecastCount: entries.length,
+    coachCopy,
+  };
+}
+
+// --- source: engine/focus-session-suppression-day-coach.ts ---
+export interface FocusSessionSuppressionDayCoach {
+  active: boolean;
+  suppressedCount: number;
+  coachCopy: string | null;
+}
+
+export function buildFocusSessionSuppressionDayCoach(input: {
+  phase: V94StandardizedGamePhase;
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  focusSessionSnoozedUntilDay?: number;
+  nextGameDay: number;
+}): FocusSessionSuppressionDayCoach {
+  const summary = summarizeFocusSessionSuppression({
+    phase: input.phase,
+    signals: input.signals,
+    policy: input.policy,
+    focusSessionSnoozedUntilDay: input.focusSessionSnoozedUntilDay,
+  });
+  const coachCopy = summary.coachCopy ? `Day ${input.nextGameDay}: ${summary.coachCopy}` : null;
+  return {
+    active: summary.active,
+    suppressedCount: summary.suppressedCount,
+    coachCopy,
+  };
+}
+
+// --- source: engine/progression-signal-delta-day-coach.ts ---
+export interface ProgressionSignalDeltaDayCoach {
+  dayDelta: number;
+  interfaceLevelChanged: boolean;
+  coachCopy: string | null;
+}
+
+export function buildProgressionSignalDeltaDayCoach(input: {
+  prior: ProgressionSignalSnapshot;
+  next: ProgressionSignalSnapshot;
+  nextGameDay: number;
+}): ProgressionSignalDeltaDayCoach {
+  const delta = computeProgressionSignalDelta(input.prior, input.next);
+  const coachCopy = delta.coachCopy ? `Day ${input.nextGameDay}: ${delta.coachCopy}` : null;
+  return {
+    dayDelta: delta.dayDelta,
+    interfaceLevelChanged: delta.interfaceLevelChanged,
+    coachCopy,
+  };
+}
+
+// --- source: engine/layout-onboarding-day-coach.ts ---
+export interface LayoutOnboardingDayCoach {
+  layoutBlockedHighlightCount: number;
+  coachCopy: string | null;
+}
+
+export function buildLayoutOnboardingDayCoach(input: {
+  panelIds: string[];
+  layoutPreset: V94LayoutPreset | undefined;
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  persisted: EvolvingUiPersistedState;
+  nextGameDay: number;
+}): LayoutOnboardingDayCoach {
+  const hints = buildLayoutOnboardingVisibilityHints({
+    panelIds: input.panelIds,
+    layoutPreset: input.layoutPreset,
+    signals: input.signals,
+    policy: input.policy,
+    persisted: input.persisted,
+  });
+  const layoutBlockedHighlightCount = hints.filter(h => h.onboardingHighlight && h.layoutBlocked).length;
+  const base = layoutOnboardingCoachCopy(hints);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+  return {
+    layoutBlockedHighlightCount,
+    coachCopy,
+  };
+}
+
+// --- source: engine/round25-self-tests.ts ---
+export function runAgent22Round25SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r25_milestone_forecast',
+    'milestone forecast day coach on early day',
+    (() => {
+      const coach = buildMilestoneForecastDayCoach({
+        signals: { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        nextGameDay: 1,
+      });
+      return coach.forecastCount >= 0 && (coach.coachCopy === null || coach.coachCopy.includes('Day 1'));
+    })()
+  );
+
+  check(
+    'r25_focus_suppression',
+    'focus session suppression day coach shape',
+    (() => {
+      const coach = buildFocusSessionSuppressionDayCoach({
+        phase: 'human_turn',
+        signals: { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        nextGameDay: 5,
+      });
+      return typeof coach.active === 'boolean' && (coach.coachCopy === null || coach.coachCopy.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r25_signal_delta_jump',
+    'progression signal delta day coach on large jump',
+    (() => {
+      const coach = buildProgressionSignalDeltaDayCoach({
+        prior: { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        next: { gameDay: 5, turnCount: 5, interfaceLevel: 'simple' },
+        nextGameDay: 5,
+      });
+      return coach.dayDelta === 4 && Boolean(coach.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r25_signal_delta_level',
+    'progression signal delta day coach on level change',
+    (() => {
+      const coach = buildProgressionSignalDeltaDayCoach({
+        prior: { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        next: { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        nextGameDay: 4,
+      });
+      return coach.interfaceLevelChanged && Boolean(coach.coachCopy?.includes('guided'));
+    })()
+  );
+
+  check(
+    'r25_layout_onboarding',
+    'layout onboarding day coach with panel ids',
+    (() => {
+      const coach = buildLayoutOnboardingDayCoach({
+        panelIds: Object.keys(EVOLVING_UI_PANEL_BY_ID).slice(0, 8),
+        layoutPreset: 'Clean',
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        persisted: createDefaultEvolvingUiPersistedState(),
+        nextGameDay: 2,
+      });
+      return coach.layoutBlockedHighlightCount >= 0 && (coach.coachCopy === null || coach.coachCopy.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r25_tick_milestone_field',
+    'day advance exposes milestone forecast day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.milestoneForecastDayCoachCopy === 'string' || r.milestoneForecastDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r25_tick_focus_field',
+    'day advance exposes focus suppression day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.focusSessionSuppressionDayCoachCopy === 'string' || r.focusSessionSuppressionDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r25_tick_delta_field',
+    'day advance exposes progression signal delta day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.progressionSignalDeltaDayCoachCopy === 'string' || r.progressionSignalDeltaDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r25_tick_layout_field',
+    'day advance exposes layout onboarding day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 6, turnCount: 6, interfaceLevel: 'guided' },
+        { gameDay: 7, turnCount: 7, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn', layoutPreset: 'Clean' }
+      );
+      return typeof r.layoutOnboardingDayCoachCopy === 'string' || r.layoutOnboardingDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r25_tick_delta_active',
+    'day advance signal delta copy on interface shift',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 8, turnCount: 8, interfaceLevel: 'guided' },
+        { gameDay: 9, turnCount: 9, interfaceLevel: 'expert' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.progressionSignalDeltaDayCoachCopy?.includes('Day 9'));
+    })()
+  );
+
+  check(
+    'r25_tick_milestone_active',
+    'day advance milestone forecast includes day prefix when present',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return r.milestoneForecastDayCoachCopy === null || r.milestoneForecastDayCoachCopy.includes('Day 2');
+    })()
+  );
+
+  check(
+    'r25_milestone_nonempty',
+    'milestone forecast day coach copy when milestones pending',
+    (() => {
+      const coach = buildMilestoneForecastDayCoach({
+        signals: { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        nextGameDay: 1,
+        limit: 3,
+      });
+      return coach.forecastCount > 0 && Boolean(coach.coachCopy);
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round24-self-tests.ts ---
@@ -10129,6 +10453,18 @@ export function SimulationUiEvolutionBridge({
       {result.phaseShellPlanDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-shell-plan-day">{result.phaseShellPlanDayCoachCopy}</div>
       ) : null}
+      {result.milestoneForecastDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-milestone-day">{result.milestoneForecastDayCoachCopy}</div>
+      ) : null}
+      {result.focusSessionSuppressionDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-focus-suppression-day">{result.focusSessionSuppressionDayCoachCopy}</div>
+      ) : null}
+      {result.progressionSignalDeltaDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-signal-delta-day">{result.progressionSignalDeltaDayCoachCopy}</div>
+      ) : null}
+      {result.layoutOnboardingDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-layout-onboarding-day">{result.layoutOnboardingDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -12179,7 +12515,7 @@ export function ContextualWidgetDayCoachStrip({
 }
 
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.24.0';
+export const AGENT_22_MODULE_VERSION = '1.25.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -12330,6 +12666,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round25 = runAgent22Round25SelfTests();
+  for (const r of round25.results) {
+    check(`agent22_round25_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round24 = runAgent22Round24SelfTests();

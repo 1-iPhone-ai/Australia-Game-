@@ -77,6 +77,10 @@ import { buildLegacyNavAuditDayCoach } from '../engine/legacy-nav-audit-day-coac
 import { buildProgressionCoverageDayCoach } from '../engine/progression-coverage-day-coach.js';
 import { buildAnnouncementPacingDayHint } from '../engine/announcement-pacing-day-hint.js';
 import { buildPhaseShellPlanDayCoach } from '../engine/phase-shell-plan-day-coach.js';
+import { buildMilestoneForecastDayCoach } from '../engine/milestone-forecast-day-coach.js';
+import { buildFocusSessionSuppressionDayCoach } from '../engine/focus-session-suppression-day-coach.js';
+import { buildProgressionSignalDeltaDayCoach } from '../engine/progression-signal-delta-day-coach.js';
+import { buildLayoutOnboardingDayCoach } from '../engine/layout-onboarding-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -162,6 +166,10 @@ export interface DayAdvanceUiEvolutionResult {
   progressionCoverageDayCoachCopy: string | null;
   announcementPacingDayHintCopy: string | null;
   phaseShellPlanDayCoachCopy: string | null;
+  milestoneForecastDayCoachCopy: string | null;
+  focusSessionSuppressionDayCoachCopy: string | null;
+  progressionSignalDeltaDayCoachCopy: string | null;
+  layoutOnboardingDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -560,6 +568,37 @@ export function tickEvolvingUiOnDayAdvance(
         })
       : { visibleShellRegionCount: 0, shellSummary: '', coachCopy: null };
 
+  const milestoneForecastDayCoach = buildMilestoneForecastDayCoach({
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const focusSessionSuppressionDayCoach =
+    context.phase != null
+      ? buildFocusSessionSuppressionDayCoach({
+          phase: context.phase,
+          signals: nextSignals,
+          policy,
+          focusSessionSnoozedUntilDay: persistedAfterCalm.focusSessionSnoozedUntilDay,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { active: false, suppressedCount: 0, coachCopy: null };
+
+  const progressionSignalDeltaDayCoach = buildProgressionSignalDeltaDayCoach({
+    prior: priorSignals,
+    next: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const layoutOnboardingDayCoach = buildLayoutOnboardingDayCoach({
+    panelIds: Object.keys(EVOLVING_UI_PANEL_BY_ID),
+    layoutPreset: context.layoutPreset,
+    signals: nextSignals,
+    policy,
+    persisted: persistedAfterCalm,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   if (context.phase) {
@@ -636,6 +675,10 @@ export function tickEvolvingUiOnDayAdvance(
     progressionCoverageDayCoachCopy: progressionCoverageDayCoach.coachCopy,
     announcementPacingDayHintCopy: announcementPacingDayHint.coachCopy,
     phaseShellPlanDayCoachCopy: phaseShellPlanDayCoach.coachCopy,
+    milestoneForecastDayCoachCopy: milestoneForecastDayCoach.coachCopy,
+    focusSessionSuppressionDayCoachCopy: focusSessionSuppressionDayCoach.coachCopy,
+    progressionSignalDeltaDayCoachCopy: progressionSignalDeltaDayCoach.coachCopy,
+    layoutOnboardingDayCoachCopy: layoutOnboardingDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
