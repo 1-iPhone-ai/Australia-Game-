@@ -5,4 +5,5 @@ Store handoff: `/cursor/stores/self/internal/operation-10m/agent-19-scale-wave-r
 
 **Commit subject:** O10-215 · wave 42 · round 42  
 **Gate token:** O10-215 · **wave 42** · round 42  
-**Wave depth:** **`6a94ded7`** · baseline **`431df5d1`** · chunk **17,933** lines · **300** self-tests
+**Wave depth:** **`6a94ded7`** · baseline **`431df5d1`** · chunk **17,933** lines · **300** self-tests  
+**Origin tip:** **`0f497b4f`**

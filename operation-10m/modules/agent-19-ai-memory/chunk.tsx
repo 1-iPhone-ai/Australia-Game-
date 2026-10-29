@@ -11417,6 +11417,293 @@ export function preeminenceRecoveryOrchestratorWithinCap(report: PreeminenceReco
 }
 
 
+// --- source: match-explainability-paramount-bundle.ts ---
+  auditMatchExplainabilityParamountGate,
+  matchExplainabilityParamountAllowed,
+} from './match-explainability-paramount-gate.ts';
+  buildMatchExplainabilityPreeminenceBundle,
+  matchExplainabilityPreeminenceReady,
+} from './match-explainability-preeminence-bundle.ts';
+  buildSessionPreeminenceExportBundle,
+  sessionPreeminenceExportShipped,
+} from './session-preeminence-export-bundle.ts';
+
+export const AGENT19_PARAMOUNT_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityParamountBundle {
+  paramountReady: boolean;
+  paramountAllowed: boolean;
+  preeminenceReady: boolean;
+  preeminenceExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type ParamountParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Paramount bundle: paramount gate and preeminence export must both be green. */
+export function buildMatchExplainabilityParamountBundle(
+  packs: TurnExplainabilityPack[],
+  params: ParamountParams,
+): MatchExplainabilityParamountBundle {
+  const paramount = auditMatchExplainabilityParamountGate(packs, params);
+  const preeminence = buildMatchExplainabilityPreeminenceBundle(packs, params);
+  const preeminenceExport = buildSessionPreeminenceExportBundle(packs, params);
+  const paramountAllowed = matchExplainabilityParamountAllowed(paramount);
+  const preeminenceReady = matchExplainabilityPreeminenceReady(preeminence);
+  const preeminenceExportShipped = sessionPreeminenceExportShipped(preeminenceExport);
+  const paramountReady = paramountAllowed && preeminenceReady && preeminenceExportShipped;
+  const narrativeLines = [
+    `Match explainability paramount bundle: ${paramountReady ? 'READY' : 'PENDING'} (gate ${paramountAllowed ? 'ok' : 'fail'}, preeminence ${preeminenceReady ? 'ok' : 'fail'}).`,
+    ...paramount.narrativeLines.slice(0, 2),
+    ...preeminence.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_PARAMOUNT_NARRATIVE_CAP);
+  return {
+    paramountReady,
+    paramountAllowed,
+    preeminenceReady,
+    preeminenceExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityParamountReady(bundle: MatchExplainabilityParamountBundle): boolean {
+  return bundle.paramountReady;
+}
+
+
+// --- source: session-paramount-export-bundle.ts ---
+  buildSessionPreeminenceExportBundle,
+  type SessionPreeminenceExportBundle,
+} from './session-preeminence-export-bundle.ts';
+  buildMatchExplainabilityParamountBundle,
+  matchExplainabilityParamountReady,
+} from './match-explainability-paramount-bundle.ts';
+
+export interface SessionParamountExportBundle extends SessionPreeminenceExportBundle {
+  paramountReady: boolean;
+  paramountSchema: string;
+}
+
+/** Paramount export wraps preeminence export when paramount bundle is ready. */
+export function buildSessionParamountExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionParamountExportBundle {
+  const base = buildSessionPreeminenceExportBundle(packs, params);
+  const paramount = buildMatchExplainabilityParamountBundle(packs, params);
+  const paramountReady = matchExplainabilityParamountReady(paramount);
+  const exports = paramountReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    paramountReady,
+    paramountSchema: 'agent19.paramount.v1',
+    releaseReady: paramountReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Paramount export: ${paramountReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionParamountExportShipped(bundle: SessionParamountExportBundle): boolean {
+  return (
+    bundle.paramountReady &&
+    bundle.exports.length > 0 &&
+    bundle.paramountSchema === 'agent19.paramount.v1'
+  );
+}
+
+
+// --- source: preeminence-paramount-bridge.ts ---
+  buildMatchExplainabilityParamountBundle,
+  matchExplainabilityParamountReady,
+} from './match-explainability-paramount-bundle.ts';
+  buildMatchExplainabilityPreeminenceBundle,
+  matchExplainabilityPreeminenceReady,
+} from './match-explainability-preeminence-bundle.ts';
+
+export interface PreeminenceParamountBridgeReport {
+  aligned: boolean;
+  paramountReady: boolean;
+  preeminenceReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Paramount-ready should match preeminence-ready when preeminence export stack passes. */
+export function auditPreeminenceParamountBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): PreeminenceParamountBridgeReport {
+  const paramount = buildMatchExplainabilityParamountBundle(packs, params);
+  const preeminence = buildMatchExplainabilityPreeminenceBundle(packs, params);
+  const paramountReady = matchExplainabilityParamountReady(paramount);
+  const preeminenceReady = matchExplainabilityPreeminenceReady(preeminence);
+  const aligned = paramountReady === preeminenceReady;
+  const narrativeLines = [
+    `Preeminence/paramount bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (paramount ${paramountReady ? 'ok' : 'fail'}, preeminence ${preeminenceReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, paramountReady, preeminenceReady, narrativeLines };
+}
+
+export function preeminenceParamountBridgeHealthy(report: PreeminenceParamountBridgeReport): boolean {
+  return report.paramountReady && report.preeminenceReady && report.aligned;
+}
+
+
+// --- source: match-explainability-pinnacle-gate.ts ---
+  buildMatchExplainabilityParamountBundle,
+  matchExplainabilityParamountReady,
+} from './match-explainability-paramount-bundle.ts';
+  buildSessionParamountExportBundle,
+  sessionParamountExportShipped,
+} from './session-paramount-export-bundle.ts';
+
+export interface MatchExplainabilityPinnacleGateReport {
+  pinnacleAllowed: boolean;
+  paramountReady: boolean;
+  paramountExportShipped: boolean;
+  preeminenceParamountHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Pinnacle gate: paramount bundle + paramount export + preeminence/paramount bridge. */
+export function auditMatchExplainabilityPinnacleGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityPinnacleGateReport {
+  const paramount = buildMatchExplainabilityParamountBundle(packs, params);
+  const paramountExport = buildSessionParamountExportBundle(packs, params);
+  const bridge = auditPreeminenceParamountBridge(packs, params);
+  const paramountReady = matchExplainabilityParamountReady(paramount);
+  const paramountExportShipped = sessionParamountExportShipped(paramountExport);
+  const preeminenceParamountHealthy = preeminenceParamountBridgeHealthy(bridge);
+  const pinnacleAllowed = paramountReady && paramountExportShipped && preeminenceParamountHealthy;
+  const narrativeLines = [
+    `Match explainability pinnacle: ${pinnacleAllowed ? 'ALLOWED' : 'DENIED'} (paramount ${paramountReady ? 'ok' : 'fail'}, export ${paramountExportShipped ? 'ok' : 'fail'}).`,
+    ...paramount.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    pinnacleAllowed,
+    paramountReady,
+    paramountExportShipped,
+    preeminenceParamountHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityPinnacleAllowed(report: MatchExplainabilityPinnacleGateReport): boolean {
+  return report.pinnacleAllowed;
+}
+
+
+// --- source: paramount-recovery-orchestrator.ts ---
+  auditMatchExplainabilityParamountGate,
+  matchExplainabilityParamountAllowed,
+} from './match-explainability-paramount-gate.ts';
+
+export const AGENT19_PARAMOUNT_RECOVERY_CAP = 10;
+
+export interface ParamountRecoveryOrchestratorReport {
+  paramountBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when paramount gate blocks pinnacle rollout. */
+export function buildParamountRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): ParamountRecoveryOrchestratorReport {
+  const paramount = auditMatchExplainabilityParamountGate(packs, params);
+  const paramountBlocked = !matchExplainabilityParamountAllowed(paramount);
+  const steps: string[] = [];
+  if (paramountBlocked) {
+    if (!paramount.preeminenceReady) {
+      steps.push('Restore preeminence bundle: ascendancy and preeminence export must pass.');
+    }
+    if (!paramount.preeminenceExportShipped) {
+      steps.push('Emit session preeminence export before paramount clearance.');
+    }
+    if (!paramount.ascendancyPreeminenceHealthy) {
+      steps.push('Reconcile ascendancy/preeminence bridge before paramount.');
+    }
+    steps.push(...buildPreeminenceRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const preeminence = buildMatchExplainabilityPreeminenceBundle(packs, params);
+    if (!preeminence.preeminenceReady) {
+      steps.push('Re-run preeminence readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Paramount gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_PARAMOUNT_RECOVERY_CAP);
+  return {
+    paramountBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Paramount recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function paramountRecoveryOrchestratorWithinCap(report: ParamountRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_PARAMOUNT_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -11997,6 +12284,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityParamountGate,
   matchExplainabilityParamountAllowed,
 } from '../match-explainability-paramount-gate.ts';
+  buildMatchExplainabilityParamountBundle,
+  matchExplainabilityParamountReady,
+} from '../match-explainability-paramount-bundle.ts';
+  buildSessionParamountExportBundle,
+  sessionParamountExportShipped,
+} from '../session-paramount-export-bundle.ts';
+  buildParamountRecoveryOrchestrator,
+  paramountRecoveryOrchestratorWithinCap,
+} from '../paramount-recovery-orchestrator.ts';
+  auditMatchExplainabilityPinnacleGate,
+  matchExplainabilityPinnacleAllowed,
+} from '../match-explainability-pinnacle-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -17786,6 +18085,270 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilityPreeminenceAllowed(report) && !report.ascendancyReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r42_preeminence_ready',
+        'Preeminence bundle ready when preeminence gate and ascendancy export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilityPreeminenceBundle([pack], params);
+          return matchExplainabilityPreeminenceReady(bundle) && bundle.preeminenceAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r42_preeminence_held',
+        'Preeminence bundle pending when preeminence gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 59, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityPreeminenceBundle([pack], {
+            memory: null,
+            currentTurn: 59,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityPreeminenceReady(bundle) && !bundle.preeminenceAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r42_preeminence_recovery',
+        'Preeminence recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 25, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 25, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildPreeminenceRecoveryOrchestrator([pack], params);
+          return report.preeminenceBlocked && preeminenceRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r42_ascendancy_preeminence_bridge',
+        'Ascendancy preeminence bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditAscendancyPreeminenceBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return ascendancyPreeminenceBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r42_preeminence_export',
+        'Preeminence export shipped when preeminence ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionPreeminenceExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionPreeminenceExportShipped(bundle) && bundle.preeminenceSchema === 'agent19.preeminence.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r42_paramount_gate_ok',
+        'Paramount gate allowed on healthy preeminence stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityParamountGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityParamountAllowed(report) && report.preeminenceExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r42_paramount_gate_block',
+        'Paramount gate denied when preeminence pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 60, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityParamountGate([pack], {
+            memory: null,
+            currentTurn: 60,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityParamountAllowed(report) && !report.preeminenceReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r43_paramount_ready',
+        'Paramount bundle ready when paramount gate and preeminence export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilityParamountBundle([pack], params);
+          return matchExplainabilityParamountReady(bundle) && bundle.paramountAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r43_paramount_held',
+        'Paramount bundle pending when paramount gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 61, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityParamountBundle([pack], {
+            memory: null,
+            currentTurn: 61,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityParamountReady(bundle) && !bundle.paramountAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r43_paramount_recovery',
+        'Paramount recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 25, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 25, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildParamountRecoveryOrchestrator([pack], params);
+          return report.paramountBlocked && paramountRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r43_preeminence_paramount_bridge',
+        'Preeminence paramount bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditPreeminenceParamountBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return preeminenceParamountBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r43_paramount_export',
+        'Paramount export shipped when paramount ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionParamountExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionParamountExportShipped(bundle) && bundle.paramountSchema === 'agent19.paramount.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r43_pinnacle_gate_ok',
+        'Pinnacle gate allowed on healthy paramount stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityPinnacleGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityPinnacleAllowed(report) && report.paramountExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r43_pinnacle_gate_block',
+        'Pinnacle gate denied when paramount pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 62, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityPinnacleGate([pack], {
+            memory: null,
+            currentTurn: 62,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityPinnacleAllowed(report) && !report.paramountReady || JSON.stringify(report);
         },
       ],
     ]),
