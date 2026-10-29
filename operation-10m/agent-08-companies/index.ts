@@ -249,6 +249,23 @@ export type {
   RegionalProductionOperatingSummary,
 } from './production-operating-priorities';
 
+export {
+  AGENT08_OPERATING_DIGEST_SCHEMA_VERSION,
+  buildFirmOperatingDigestEntry,
+  classifyNationalOperatingPosture,
+  classifyRegionalOperatingPosture,
+  computeNationalProductionOperatingDigest,
+  summarizeRegionalOperatingDigest,
+  runAgent08OperatingDigestSelfTests,
+} from './production-operating-digest';
+
+export type {
+  FirmOperatingDigestEntry,
+  NationalOperatingPostureBand,
+  NationalProductionOperatingDigest,
+  RegionalOperatingDigestSlice,
+} from './production-operating-digest';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -264,6 +281,7 @@ import { runAgent08ExecutionSelfTests } from './production-remediation-execution
 import { runAgent08UtilizationDepthSelfTests } from './production-utilization-depth';
 import { runAgent08ReconciliationSelfTests } from './production-capacity-reconciliation';
 import { runAgent08OperatingPrioritySelfTests } from './production-operating-priorities';
+import { runAgent08OperatingDigestSelfTests } from './production-operating-digest';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -343,6 +361,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const operatingDigest = runAgent08OperatingDigestSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -359,5 +382,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...utilizationDepth,
     ...reconciliation,
     ...operatingPriority,
+    ...operatingDigest,
   ];
 }

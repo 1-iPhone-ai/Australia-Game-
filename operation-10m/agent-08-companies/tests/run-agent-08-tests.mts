@@ -1,4 +1,4 @@
-import { runAgent08ModuleSelfTests, runAgent08IntegratedSelfTests, runAgent08RecoverySelfTests, runAgent08StabilizationSelfTests, runAgent08MandateSelfTests, runAgent08ComplianceSelfTests, runAgent08RemediationSelfTests, runAgent08ExecutionSelfTests, runAgent08UtilizationDepthSelfTests, runAgent08ReconciliationSelfTests, runAgent08OperatingPrioritySelfTests, runAgent08CascadeSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
+import { runAgent08ModuleSelfTests, runAgent08IntegratedSelfTests, runAgent08RecoverySelfTests, runAgent08StabilizationSelfTests, runAgent08MandateSelfTests, runAgent08ComplianceSelfTests, runAgent08RemediationSelfTests, runAgent08ExecutionSelfTests, runAgent08UtilizationDepthSelfTests, runAgent08ReconciliationSelfTests, runAgent08OperatingPrioritySelfTests, runAgent08OperatingDigestSelfTests, runAgent08CascadeSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
 
 function main() {
   const tax = runAgent08TaxLaborSelfTests();
@@ -112,6 +112,14 @@ function main() {
     process.exit(1);
   }
   console.log(`Agent 08 operating priorities: ${operatingPriority.length} passed`);
+
+  const operatingDigest = runAgent08OperatingDigestSelfTests();
+  const failedDigest = operatingDigest.filter(t => !t.passed);
+  if (failedDigest.length) {
+    console.error('Agent 08 operating digest tests failed:', failedDigest);
+    process.exit(1);
+  }
+  console.log(`Agent 08 operating digest: ${operatingDigest.length} passed`);
 
   const moduleTests = runAgent08ModuleSelfTests();
   const failed = moduleTests.filter(t => !t.passed);
