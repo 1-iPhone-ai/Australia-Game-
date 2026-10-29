@@ -2,10 +2,14 @@
  * Runs Agent 13 modular self-tests (supplements + core SECTION 20AL suite).
  * Usage: npx tsx operation-10m/agent-13-energy/tests/run-self-tests.mts
  */
+import { runAgent13ChunkManifestTests } from './chunk-manifest-tests.mts';
 import { runAgent13SupplementTests } from './supplement-tests.mts';
 import { runV1014IndustrialEnergyEnvironmentalSelfTests } from '../modules/industrial-energy-environmental.tsx';
 
 async function main() {
+  const chunk = runAgent13ChunkManifestTests();
+  console.log(`Chunk manifest: ${chunk.passed}/${chunk.total} passed (${chunk.failed} failed)`);
+
   const sup = runAgent13SupplementTests();
   console.log(`Supplements: ${sup.passed}/${sup.total} passed (${sup.failed} failed)`);
 
@@ -17,7 +21,7 @@ async function main() {
     }
   }
 
-  const failed = sup.failed + core.failed;
+  const failed = chunk.failed + sup.failed + core.failed;
   process.exit(failed ? 1 : 0);
 }
 

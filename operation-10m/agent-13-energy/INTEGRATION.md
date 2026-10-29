@@ -8,6 +8,8 @@
 
 ```
 operation-10m/agent-13-energy/
+  chunk.tsx                                  # Agent 25 bundle (OP10M_MODULE_BEGIN/END)
+  scripts/bundle-chunk.mjs                   # regenerates chunk.tsx from modules/
   modules/industrial-energy-environmental.tsx  # primary inline block
   modules/grid-coupling.ts
   modules/grid-recovery-extraction-efficiency.ts
@@ -41,3 +43,13 @@ operation-10m/agent-13-energy/
 ## Agent id constant
 
 `V1014_INDUSTRIAL_ENERGY_AGENT = 'op10m/agent-13-energy'`
+
+## Agent 25 chunk
+
+Regenerate before merge:
+
+```bash
+npm run build:agent-13-chunk
+```
+
+Output: `chunk.tsx` wrapped with `// OP10M_MODULE_BEGIN agent-13-energy` … `// OP10M_MODULE_END agent-13-energy`. No `import` lines; `React.useState` for inspector UI.

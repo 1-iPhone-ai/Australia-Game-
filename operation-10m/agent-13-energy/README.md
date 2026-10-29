@@ -4,6 +4,7 @@ Modular **V10.14 SECTION 20AL** slice: extraction sites, renewable assets, envir
 
 | Artifact | Path |
 |----------|------|
+| Agent 25 chunk | `chunk.tsx` (run `npm run build:agent-13-chunk`) |
 | Core module | `modules/industrial-energy-environmental.tsx` |
 | Grid coupling | `modules/grid-coupling.ts` |
 | Grid recovery & extraction efficiency (slice 2) | `modules/grid-recovery-extraction-efficiency.ts` |
