@@ -57,4 +57,7 @@ export * from './workstream-barrier-staleness-index.ts';
 export * from './workstream-deadlock-pressure-index.ts';
 export * from './suppression-quota-coupling-index.ts';
 export * from './handoff-lease-overlap-index.ts';
+export * from './saturation-deadlock-coupling-index.ts';
+export * from './cascade-lease-convergence-index.ts';
+export * from './gradient-audit-tension-index.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';

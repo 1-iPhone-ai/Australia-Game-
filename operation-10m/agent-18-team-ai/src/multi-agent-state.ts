@@ -71,6 +71,9 @@ import { computeWorkstreamBarrierStalenessIndex } from './workstream-barrier-sta
 import { computeWorkstreamDeadlockPressureIndex } from './workstream-deadlock-pressure-index.ts';
 import { computeSuppressionQuotaCouplingIndex } from './suppression-quota-coupling-index.ts';
 import { computeHandoffLeaseOverlapIndex } from './handoff-lease-overlap-index.ts';
+import { computeSaturationDeadlockCouplingIndex } from './saturation-deadlock-coupling-index.ts';
+import { computeCascadeLeaseConvergenceIndex } from './cascade-lease-convergence-index.ts';
+import { computeGradientAuditTensionIndex } from './gradient-audit-tension-index.ts';
 import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
@@ -388,6 +391,18 @@ export function sanitizeTeamMultiAgentCoordinationState(
         typeof metaRaw.handoffLeaseOverlapIndex === 'number'
           ? metaRaw.handoffLeaseOverlapIndex
           : undefined,
+      saturationDeadlockCouplingIndex:
+        typeof metaRaw.saturationDeadlockCouplingIndex === 'number'
+          ? metaRaw.saturationDeadlockCouplingIndex
+          : undefined,
+      cascadeLeaseConvergenceIndex:
+        typeof metaRaw.cascadeLeaseConvergenceIndex === 'number'
+          ? metaRaw.cascadeLeaseConvergenceIndex
+          : undefined,
+      gradientAuditTensionIndex:
+        typeof metaRaw.gradientAuditTensionIndex === 'number'
+          ? metaRaw.gradientAuditTensionIndex
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -640,6 +655,19 @@ export function evaluateTeamMultiAgentLayer(
   );
   handoffLeaseOverlap.notes.forEach(n => diagnostics.push(n));
 
+  const saturationDeadlockCoupling = computeSaturationDeadlockCouplingIndex(
+    coordinationSaturation.saturationIndex,
+    workstreamDeadlockPressure.pressureIndex,
+    workstreamDeadlocks.deadlockCount,
+  );
+  saturationDeadlockCoupling.notes.forEach(n => diagnostics.push(n));
+  const cascadeLeaseConvergence = computeCascadeLeaseConvergenceIndex(
+    handoffCascade.cascadeRiskIndex,
+    handoffLeaseOverlap.overlapIndex,
+    handoffCascade.cascadeChainActorIds.length,
+  );
+  cascadeLeaseConvergence.notes.forEach(n => diagnostics.push(n));
+
   const coordinationComposite = computeCoordinationComposite({
     handoffSlaCompliance: handoffSla.complianceScore,
     handoffReadinessAverage: handoffReadiness.averageReadiness,
@@ -735,6 +763,8 @@ export function evaluateTeamMultiAgentLayer(
       workstreamDeadlockPressureIndex: workstreamDeadlockPressure.pressureIndex,
       suppressionQuotaCouplingIndex: suppressionQuotaCoupling.couplingIndex,
       handoffLeaseOverlapIndex: handoffLeaseOverlap.overlapIndex,
+      saturationDeadlockCouplingIndex: saturationDeadlockCoupling.couplingIndex,
+      cascadeLeaseConvergenceIndex: cascadeLeaseConvergence.convergenceIndex,
     },
   };
 
@@ -776,6 +806,19 @@ export function evaluateTeamMultiAgentLayer(
     auditPressureIndex: auditPressure.pressureIndex,
     recoveryActionBreadthIndex: recoveryBreadth.breadthGapIndex,
   });
+  const gradientAuditTension = computeGradientAuditTensionIndex(
+    state.meta.compositeHealthGradientIndex ?? 0,
+    state.meta.compositeHealthTrend,
+    state.meta.auditPressureIndex ?? 0,
+  );
+  gradientAuditTension.notes.forEach(n => diagnostics.push(n));
+  state = {
+    ...state,
+    meta: {
+      ...state.meta,
+      gradientAuditTensionIndex: gradientAuditTension.tensionIndex,
+    },
+  };
   state = { ...state, diagnostics };
 
   const coordinationIssues = [

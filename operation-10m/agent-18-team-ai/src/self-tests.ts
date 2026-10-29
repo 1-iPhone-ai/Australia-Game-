@@ -79,6 +79,9 @@ import { computeWorkstreamBarrierStalenessIndex } from './workstream-barrier-sta
 import { computeWorkstreamDeadlockPressureIndex } from './workstream-deadlock-pressure-index.ts';
 import { computeSuppressionQuotaCouplingIndex } from './suppression-quota-coupling-index.ts';
 import { computeHandoffLeaseOverlapIndex } from './handoff-lease-overlap-index.ts';
+import { computeSaturationDeadlockCouplingIndex } from './saturation-deadlock-coupling-index.ts';
+import { computeCascadeLeaseConvergenceIndex } from './cascade-lease-convergence-index.ts';
+import { computeGradientAuditTensionIndex } from './gradient-audit-tension-index.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -2266,6 +2269,56 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.workstreamDeadlockPressureCombined === 'number' &&
       typeof dual.suppressionQuotaCouplingCombined === 'number' &&
       typeof dual.handoffLeaseOverlapCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_saturation_deadlock_coupling', 'Saturation–deadlock coupling: dual elevation scores high', () => {
+    const report = computeSaturationDeadlockCouplingIndex(55, 48, 2);
+    return report.couplingIndex >= 45;
+  });
+
+  check(results, 'a18_cascade_lease_convergence', 'Cascade–lease convergence: cascade plus overlap scores high', () => {
+    const report = computeCascadeLeaseConvergenceIndex(50, 48, 2);
+    return report.convergenceIndex >= 47;
+  });
+
+  check(results, 'a18_gradient_audit_tension', 'Gradient–audit tension: declining gradient under audit pressure', () => {
+    const report = computeGradientAuditTensionIndex(45, 'declining', 42);
+    return report.tensionIndex >= 46;
+  });
+
+  check(results, 'a18_eval_round18_meta', 'Layer: round-18 meta exposes saturation coupling, cascade convergence, gradient tension', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.saturationDeadlockCouplingIndex === 'number' &&
+      typeof m.cascadeLeaseConvergenceIndex === 'number' &&
+      typeof m.gradientAuditTensionIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_cascade_lease_convergence', 'Audit: cascade–lease convergence surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, cascadeLeaseConvergenceIndex: 72 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /Cascade–lease convergence/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round18_combined', 'Dual team: round-18 combined coupling, convergence, tension exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.saturationDeadlockCouplingCombined === 'number' &&
+      typeof dual.cascadeLeaseConvergenceCombined === 'number' &&
+      typeof dual.gradientAuditTensionCombined === 'number'
     );
   });
 

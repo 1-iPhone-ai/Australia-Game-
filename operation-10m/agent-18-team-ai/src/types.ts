@@ -300,6 +300,9 @@ export interface TeamMultiAgentCoordinationMeta {
   workstreamDeadlockPressureIndex?: number;
   suppressionQuotaCouplingIndex?: number;
   handoffLeaseOverlapIndex?: number;
+  saturationDeadlockCouplingIndex?: number;
+  cascadeLeaseConvergenceIndex?: number;
+  gradientAuditTensionIndex?: number;
 }
 
 export const AGENT18_LIMITS = {

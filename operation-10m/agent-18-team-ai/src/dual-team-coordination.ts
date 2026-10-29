@@ -38,6 +38,9 @@ import { combineDualTeamWorkstreamBarrierStaleness } from './workstream-barrier-
 import { combineDualTeamWorkstreamDeadlockPressure } from './workstream-deadlock-pressure-index.ts';
 import { combineDualTeamSuppressionQuotaCoupling } from './suppression-quota-coupling-index.ts';
 import { combineDualTeamHandoffLeaseOverlap } from './handoff-lease-overlap-index.ts';
+import { combineDualTeamSaturationDeadlockCoupling } from './saturation-deadlock-coupling-index.ts';
+import { combineDualTeamCascadeLeaseConvergence } from './cascade-lease-convergence-index.ts';
+import { combineDualTeamGradientAuditTension } from './gradient-audit-tension-index.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -93,6 +96,9 @@ export interface DualTeamMultiAgentResult {
   workstreamDeadlockPressureCombined: number;
   suppressionQuotaCouplingCombined: number;
   handoffLeaseOverlapCombined: number;
+  saturationDeadlockCouplingCombined: number;
+  cascadeLeaseConvergenceCombined: number;
+  gradientAuditTensionCombined: number;
 }
 
 /**
@@ -164,6 +170,9 @@ export function evaluateDualTeamMultiAgentLayers(
       workstreamDeadlockPressureCombined: friendly.state.meta.workstreamDeadlockPressureIndex ?? 0,
       suppressionQuotaCouplingCombined: friendly.state.meta.suppressionQuotaCouplingIndex ?? 0,
       handoffLeaseOverlapCombined: friendly.state.meta.handoffLeaseOverlapIndex ?? 0,
+      saturationDeadlockCouplingCombined: friendly.state.meta.saturationDeadlockCouplingIndex ?? 0,
+      cascadeLeaseConvergenceCombined: friendly.state.meta.cascadeLeaseConvergenceIndex ?? 0,
+      gradientAuditTensionCombined: friendly.state.meta.gradientAuditTensionIndex ?? 0,
     };
   }
 
@@ -399,6 +408,18 @@ export function evaluateDualTeamMultiAgentLayers(
     handoffLeaseOverlapCombined: combineDualTeamHandoffLeaseOverlap(
       friendly.state.meta.handoffLeaseOverlapIndex ?? 0,
       enemy.state.meta.handoffLeaseOverlapIndex ?? 0,
+    ),
+    saturationDeadlockCouplingCombined: combineDualTeamSaturationDeadlockCoupling(
+      friendly.state.meta.saturationDeadlockCouplingIndex ?? 0,
+      enemy.state.meta.saturationDeadlockCouplingIndex ?? 0,
+    ),
+    cascadeLeaseConvergenceCombined: combineDualTeamCascadeLeaseConvergence(
+      friendly.state.meta.cascadeLeaseConvergenceIndex ?? 0,
+      enemy.state.meta.cascadeLeaseConvergenceIndex ?? 0,
+    ),
+    gradientAuditTensionCombined: combineDualTeamGradientAuditTension(
+      friendly.state.meta.gradientAuditTensionIndex ?? 0,
+      enemy.state.meta.gradientAuditTensionIndex ?? 0,
     ),
   };
 }
