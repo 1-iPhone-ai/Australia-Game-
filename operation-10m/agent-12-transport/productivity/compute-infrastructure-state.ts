@@ -72,6 +72,20 @@ import {
   computeColdChainReliabilityByRegion,
   nationalColdChainReliabilityIndex,
 } from '../operations/cold-chain-reliability.ts';
+import {
+  computeIntermodalDwellByRegion,
+  dwellProductivityPenalty,
+  nationalIntermodalDwellMedian,
+} from '../operations/intermodal-dwell-index.ts';
+import {
+  computeBulkExportThroughputByRegion,
+  nationalBulkExportThroughputIndex,
+} from '../network/bulk-export-throughput-index.ts';
+import {
+  computeUrbanCongestionByRegion,
+  congestionReliefMultiplier,
+  nationalUrbanCongestionIndex,
+} from './congestion-relief-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -297,6 +311,34 @@ export function computeTransportInfrastructureState(
     intercapitalConnectivityIndex * 2.5 +
     nationalContainerThroughput * 0.04;
 
+  const freightUtil = inputs.networkUtilization?.freight ?? 0.5;
+  const bulkExportThroughputByRegion = computeBulkExportThroughputByRegion(ops);
+  const nationalBulkExport = nationalBulkExportThroughputIndex(bulkExportThroughputByRegion);
+  const intermodalDwellByRegion = computeIntermodalDwellByRegion(ops, freightUtil);
+  const nationalIntermodalDwell = nationalIntermodalDwellMedian(intermodalDwellByRegion);
+  const dwellMult = dwellProductivityPenalty(nationalIntermodalDwell);
+  const urbanCongestionByRegion = computeUrbanCongestionByRegion(ops, freightUtil);
+  const nationalUrbanCongestion = nationalUrbanCongestionIndex(urbanCongestionByRegion);
+  const congestionMult = congestionReliefMultiplier(
+    nationalUrbanCongestion,
+    options?.congestionReliefPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const bulkBoost = (bulkExportThroughputByRegion[code] - 18) * 0.007;
+    const dwellPenalty = (intermodalDwellByRegion[code] - 30) * 0.012;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + bulkBoost - dwellPenalty) *
+      dwellMult *
+      congestionMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -310,7 +352,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/7',
+    schemaVersion: 'agent12/8',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -345,6 +387,12 @@ export function computeTransportInfrastructureState(
     coldChainReliabilityIndex,
     coldChainReliabilityByRegion,
     greenFreightShare,
+    nationalBulkExportThroughputIndex: nationalBulkExport,
+    bulkExportThroughputByRegion,
+    nationalIntermodalDwellMedian: nationalIntermodalDwell,
+    intermodalDwellByRegion,
+    nationalUrbanCongestionIndex: nationalUrbanCongestion,
+    urbanCongestionByRegion,
     computeMs,
   };
 }

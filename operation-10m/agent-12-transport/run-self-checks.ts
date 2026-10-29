@@ -66,9 +66,9 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
 
   const infra = computeTransportInfrastructureState(defaultInfrastructureInputs(5));
   results.push({
-    id: 'infrastructure_state_v7',
+    id: 'infrastructure_state_v8',
     ok:
-      infra.schemaVersion === 'agent12/7' &&
+      infra.schemaVersion === 'agent12/8' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -79,8 +79,11 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalLastMileCoverage > 45 &&
       infra.nationalContainerThroughputIndex > 15 &&
       infra.coldChainReliabilityIndex > 0.35 &&
-      infra.greenFreightShare > 0.12,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} throughput=${infra.nationalContainerThroughputIndex.toFixed(1)} cold=${infra.coldChainReliabilityIndex.toFixed(2)} green=${infra.greenFreightShare.toFixed(2)}`,
+      infra.greenFreightShare > 0.12 &&
+      infra.nationalBulkExportThroughputIndex > 18 &&
+      infra.nationalIntermodalDwellMedian > 10 &&
+      infra.nationalUrbanCongestionIndex > 15,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} bulk=${infra.nationalBulkExportThroughputIndex.toFixed(1)} dwell=${infra.nationalIntermodalDwellMedian.toFixed(1)} congestion=${infra.nationalUrbanCongestionIndex.toFixed(1)}`,
   });
 
   return results;

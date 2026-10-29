@@ -199,8 +199,10 @@ export type ModalShiftPolicy = 'road' | 'balanced' | 'rail';
 
 export type GreenFreightPolicy = 'baseline' | 'accelerate';
 
+export type CongestionReliefPolicy = 'baseline' | 'invest' | 'priority_freight';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/7';
+  schemaVersion: 'agent12/8';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -235,6 +237,12 @@ export interface TransportInfrastructureState {
   coldChainReliabilityIndex: number;
   coldChainReliabilityByRegion: Record<AuRegionCode, number>;
   greenFreightShare: number;
+  nationalBulkExportThroughputIndex: number;
+  bulkExportThroughputByRegion: Record<AuRegionCode, number>;
+  nationalIntermodalDwellMedian: number;
+  intermodalDwellByRegion: Record<AuRegionCode, number>;
+  nationalUrbanCongestionIndex: number;
+  urbanCongestionByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -249,6 +257,7 @@ export interface TransportInfrastructureOptions {
   seasonalDemandBand?: SeasonalDemandBand;
   modalShiftPolicy?: ModalShiftPolicy;
   greenFreightPolicy?: GreenFreightPolicy;
+  congestionReliefPolicy?: CongestionReliefPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -568,6 +577,47 @@ export const TRANSPORT_CORRIDORS_ROUND6: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round7.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND7: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_pilbara_lithium_bulk',
+    name: 'Pilbara Lithium Bulk Export Chain',
+    networkKind: 'trade',
+    regionSequence: ['WA'],
+    requiredTagsByRegion: {
+      WA: ['mining', 'heavy_haul', 'bulk'],
+    },
+    productivitySynergyPoints: 8.6,
+    logisticsRelief: 0.048,
+  },
+  {
+    id: 'corr_nt_barkly_remote_supply',
+    name: 'Barkly Remote Supply Chain',
+    networkKind: 'freight',
+    regionSequence: ['NT', 'QLD'],
+    requiredTagsByRegion: {
+      NT: ['remote', 'gateway'],
+      QLD: ['national_highway', 'freight'],
+    },
+    productivitySynergyPoints: 5.2,
+    logisticsRelief: 0.034,
+  },
+  {
+    id: 'corr_tas_devonport_fresh_export',
+    name: 'Devonport Fresh Export Loop',
+    networkKind: 'trade',
+    regionSequence: ['TAS', 'VIC'],
+    requiredTagsByRegion: {
+      TAS: ['island', 'export'],
+      VIC: ['intermodal', 'container'],
+    },
+    productivitySynergyPoints: 4.6,
+    logisticsRelief: 0.029,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -721,6 +771,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND4,
   ...TRANSPORT_CORRIDORS_ROUND5,
   ...TRANSPORT_CORRIDORS_ROUND6,
+  ...TRANSPORT_CORRIDORS_ROUND7,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -1089,6 +1140,62 @@ export const TRANSPORT_SCENARIOS_ROUND6: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round7.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND7: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_hedland_cyclone_hold',
+    label: 'Port Hedland Cyclone Hold',
+    description: 'Tropical cyclone closes bulk loaders and Karratha haul road.',
+    targetRegions: ['WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.31,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'road', 'rail'],
+  },
+  {
+    id: 'scn_nt_darwin_port_congestion',
+    label: 'Darwin Port Congestion Surge',
+    description: 'Remote supply surge queues intermodal handoffs at East Arm.',
+    targetRegions: ['NT'],
+    networkKind: 'trade',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_nsw_newcastle_loader_strike',
+    label: 'Newcastle Bulk Loader Strike',
+    description: 'Coal loader industrial action backs up bulk export ring.',
+    targetRegions: ['NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.28,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_vic_westgate_dwell_crisis',
+    label: 'West Gate Intermodal Dwell Crisis',
+    description: 'Melbourne port diversion extends container dwell at Geelong.',
+    targetRegions: ['VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'rail'],
+  },
+  {
+    id: 'scn_tas_bass_fresh_delay',
+    label: 'Bass Strait Fresh Export Delay',
+    description: 'Rough seas delay Devonport ferry slots for chilled produce.',
+    targetRegions: ['TAS', 'VIC'],
+    networkKind: 'trade',
+    utilizationAdd: 0.21,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -1256,6 +1363,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND4,
   ...TRANSPORT_SCENARIOS_ROUND5,
   ...TRANSPORT_SCENARIOS_ROUND6,
+  ...TRANSPORT_SCENARIOS_ROUND7,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -3323,6 +3431,232 @@ export const SCALE_WAVE_ROUND6_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round7-assets.ts ---
+
+export const ROUND7_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_karratha_bulk',
+    category: 'road',
+    name: 'Karratha Bulk Haul Road',
+    description: 'Pilbara mine-to-port iron ore and lithium concentrate feed.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['mining', 'bulk', 'port_access'],
+    laneKilometres: 210,
+    designSpeedKmh: 90,
+    freightShare: 0.52,
+    urbanShare: 0.04,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nt_barkly_supply',
+    category: 'road',
+    name: 'Barkly Tablelands Supply Route',
+    description: 'Remote cattle and mining supply spine toward Darwin gateway.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'QLD'],
+    baseProductivityPoints: 3.1,
+    strategicNetworks: ['freight', 'mobility'],
+    tags: ['remote', 'bulk', 'national_highway'],
+    laneKilometres: 640,
+    designSpeedKmh: 110,
+    freightShare: 0.41,
+    urbanShare: 0.02,
+    tollRoad: false,
+  },
+  {
+    id: 'road_tas_devonport_feed',
+    category: 'road',
+    name: 'Devonport Fresh Export Feed',
+    description: 'North-west coast produce and dairy to Bass Strait ferry terminal.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS'],
+    baseProductivityPoints: 3.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['regional', 'island', 'export'],
+    laneKilometres: 95,
+    designSpeedKmh: 100,
+    freightShare: 0.33,
+    urbanShare: 0.11,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_newcastle_bulk_ring',
+    category: 'road',
+    name: 'Newcastle Bulk Export Ring',
+    description: 'Hunter coal and grain loader drayage bypass.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['bulk', 'port_access', 'motorway'],
+    laneKilometres: 58,
+    designSpeedKmh: 100,
+    freightShare: 0.46,
+    urbanShare: 0.19,
+    tollRoad: true,
+  },
+];
+
+export const ROUND7_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_pilbara_heavy_haul',
+    category: 'rail',
+    name: 'Pilbara Heavy Haul Mainline',
+    description: 'Automated iron ore and lithium concentrate unit trains.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 7.8,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['mining', 'heavy_haul', 'bulk', 'port_access'],
+    trackKilometres: 420,
+    dualTrackShare: 0.72,
+    electrifiedShare: 0.15,
+    designFreightTonnesPerYear: 280_000_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nt_ghan_freight_feed',
+    category: 'rail',
+    name: 'Ghan Freight Feed Extension',
+    description: 'Alice Springs to Darwin intermodal bulk and container feed.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'SA'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['remote', 'freight_rail', 'intercapital'],
+    trackKilometres: 1_420,
+    dualTrackShare: 0.08,
+    electrifiedShare: 0,
+    designFreightTonnesPerYear: 3_200_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_vic_geelong_intermodal',
+    category: 'rail',
+    name: 'Geelong Port Intermodal Shuttle',
+    description: 'Melbourne overflow container shuttle to Geelong wharf.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['container', 'intermodal', 'port_access'],
+    trackKilometres: 72,
+    dualTrackShare: 0.55,
+    electrifiedShare: 0.62,
+    designFreightTonnesPerYear: 6_500_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND7_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_port_hedland_bulk',
+    category: 'port',
+    name: 'Port Hedland Bulk Export Terminal',
+    description: 'World-scale iron ore and lithium bulk loading.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 8.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['mining', 'bulk', 'port_access'],
+    berthCount: 14,
+    maxDraftMetres: 18.5,
+    teuCapacityPerYear: 420_000,
+    automationLevel: 2,
+    bulkShare: 0.88,
+  },
+  {
+    id: 'port_tas_devonport_fresh',
+    category: 'port',
+    name: 'Devonport Fresh Export Wharf',
+    description: 'Bass Strait ferry and chilled produce export berths.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['export', 'regional', 'island'],
+    berthCount: 5,
+    maxDraftMetres: 11,
+    teuCapacityPerYear: 140_000,
+    automationLevel: 1,
+    bulkShare: 0.42,
+  },
+];
+
+export const ROUND7_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_wa_karratha_bulk_staging',
+    category: 'logistics',
+    name: 'Karratha Bulk Staging Yard',
+    description: 'Mine concentrate and reagent staging for Hedland loaders.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['mining', 'warehouse', 'intermodal'],
+    warehouseSqm: 210_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 48,
+  },
+  {
+    id: 'log_nt_darwin_intermodal',
+    category: 'logistics',
+    name: 'Darwin Gateway Intermodal Hub',
+    description: 'Northern gateway container and remote supply consolidation.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'QLD'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['remote', 'gateway', 'intermodal'],
+    warehouseSqm: 165_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 54,
+  },
+  {
+    id: 'log_nsw_newcastle_bulk_dc',
+    category: 'logistics',
+    name: 'Newcastle Bulk Export DC',
+    description: 'Coal and grain staging with automated loader feed.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['bulk', 'warehouse', 'port_access'],
+    warehouseSqm: 140_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 61,
+  },
+  {
+    id: 'log_vic_westgate_congestion_relief',
+    category: 'logistics',
+    name: 'West Gate Congestion Relief DC',
+    description: 'Melbourne port drayage bypass and urban freight consolidation.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC'],
+    baseProductivityPoints: 3.9,
+    strategicNetworks: ['freight', 'mobility'],
+    tags: ['container', 'warehouse', 'intermodal'],
+    warehouseSqm: 175_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 78,
+  },
+];
+
+export const SCALE_WAVE_ROUND7_ASSETS = [
+  ...ROUND7_ROADS,
+  ...ROUND7_RAIL,
+  ...ROUND7_PORTS,
+  ...ROUND7_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -3337,6 +3671,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND4_ASSETS,
     ...SCALE_WAVE_ROUND5_ASSETS,
     ...SCALE_WAVE_ROUND6_ASSETS,
+    ...SCALE_WAVE_ROUND7_ASSETS,
   ];
 }
 
@@ -3690,6 +4025,49 @@ export function nationalContainerThroughputIndex(
   const max = Math.max(...values);
   const composite = avg * 0.65 + max * 0.35;
   return Math.round(clamp(composite, 8, 98) * 10) / 10;
+}
+
+
+// --- source: network/bulk-export-throughput-index.ts ---
+
+/** 0–100 normalized bulk export handling (iron ore, grain, coal, LNG feed). */
+export function computeBulkExportThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'port' && 'bulkShare' in asset) {
+      const bulkScore = (asset.bulkShare * asset.teuCapacityPerYear) / 120_000;
+      const draftBoost = 1 + Math.min(0.12, (asset.maxDraftMetres - 10) * 0.02);
+      byRegion[asset.hostRegion] += bulkScore * draftBoost;
+      for (const r of asset.servedRegions) {
+        if (r !== asset.hostRegion) byRegion[r] += bulkScore * 0.14;
+      }
+    }
+    if (asset.category === 'rail' && asset.tags.some((t) => t === 'bulk' || t === 'heavy_haul' || t === 'mining')) {
+      const haulScore = asset.designFreightTonnesPerYear / 8_000_000;
+      byRegion[asset.hostRegion] += haulScore * (0.5 + asset.dualTrackShare * 0.5);
+    }
+    if (asset.category === 'road' && asset.tags.includes('bulk') && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += (asset.laneKilometres * asset.freightShare) / 900;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalBulkExportThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  const composite = avg * 0.55 + max * 0.45;
+  return Math.round(clamp(composite, 6, 96) * 10) / 10;
 }
 
 
@@ -4054,6 +4432,55 @@ export function nationalColdChainReliabilityIndex(
 }
 
 
+// --- source: operations/intermodal-dwell-index.ts ---
+
+/**
+ * Normalized intermodal dwell pressure (0 = efficient handoffs, 100 = severe queueing).
+ * Higher logistics–port–rail linkage without capacity lowers dwell scores.
+ */
+export function computeIntermodalDwellByRegion(
+  operationalAssets: TransportAsset[],
+  freightUtilization = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 22])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'logistics') {
+      const linkCount = asset.intermodalLinks.length;
+      const baseDwell = 18 - linkCount * 2.5 + (100 - asset.lastMileCoveragePct) * 0.08;
+      byRegion[asset.hostRegion] += baseDwell * 0.35;
+    }
+    if (asset.category === 'port' && 'automationLevel' in asset) {
+      const autoRelief = asset.automationLevel * 4;
+      byRegion[asset.hostRegion] -= autoRelief;
+    }
+    if (asset.category === 'rail' && asset.passengerCapable && asset.designFreightTonnesPerYear > 2_000_000) {
+      byRegion[asset.hostRegion] += 6 * freightUtilization;
+    }
+  }
+
+  const stress = clamp(freightUtilization, 0.05, 1.15);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (0.85 + stress * 0.3), 4, 88) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalIntermodalDwellMedian(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const sorted = AU_REGION_CODES.map((c) => byRegion[c]).sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median =
+    sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+  return Math.round(clamp(median, 8, 72) * 10) / 10;
+}
+
+export function dwellProductivityPenalty(dwellMedian: number): number {
+  return clamp(1 - (dwellMedian - 28) * 0.004, 0.88, 1.04);
+}
+
+
 // --- source: productivity/regional-investment-tiers.ts ---
 
 const TIERS: TransportInvestmentTier[] = ['emerging', 'regional', 'integrated', 'national_gateway'];
@@ -4331,6 +4758,52 @@ export function electrifiedBaselineShare(operationalAssets: TransportAsset[]): n
 }
 
 
+// --- source: productivity/congestion-relief-index.ts ---
+
+/** 0–100 urban freight congestion pressure (higher = worse). */
+export function computeUrbanCongestionByRegion(
+  operationalAssets: TransportAsset[],
+  freightUtilization = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 28])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'road' && 'urbanShare' in asset) {
+      const pressure = asset.urbanShare * asset.freightShare * (asset.laneKilometres / 120);
+      byRegion[asset.hostRegion] += pressure * 12;
+      if (asset.tollRoad) byRegion[asset.hostRegion] -= 2.5;
+    }
+    if (asset.category === 'logistics' && asset.lastMileCoveragePct > 65) {
+      byRegion[asset.hostRegion] -= 3;
+    }
+  }
+
+  const utilStress = clamp(freightUtilization, 0.05, 1.15);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (0.9 + utilStress * 0.25), 8, 92) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalUrbanCongestionIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  return Math.round(clamp(avg, 12, 78) * 10) / 10;
+}
+
+export function congestionReliefMultiplier(
+  congestionIndex: number,
+  policy: CongestionReliefPolicy = 'baseline',
+): number {
+  const policyRelief =
+    policy === 'invest' ? 0.06 : policy === 'priority_freight' ? 0.09 : 0;
+  const normalized = (congestionIndex - 35) / 100;
+  return clamp(1 - normalized * 0.08 + policyRelief, 0.9, 1.08);
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -4555,6 +5028,17 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   computeColdChainReliabilityByRegion,
   nationalColdChainReliabilityIndex,
 } from '../operations/cold-chain-reliability.ts';
+  computeIntermodalDwellByRegion,
+  dwellProductivityPenalty,
+  nationalIntermodalDwellMedian,
+} from '../operations/intermodal-dwell-index.ts';
+  computeBulkExportThroughputByRegion,
+  nationalBulkExportThroughputIndex,
+} from '../network/bulk-export-throughput-index.ts';
+  computeUrbanCongestionByRegion,
+  congestionReliefMultiplier,
+  nationalUrbanCongestionIndex,
+} from './congestion-relief-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -4779,6 +5263,34 @@ export function computeTransportInfrastructureState(
     intercapitalConnectivityIndex * 2.5 +
     nationalContainerThroughput * 0.04;
 
+  const freightUtil = inputs.networkUtilization?.freight ?? 0.5;
+  const bulkExportThroughputByRegion = computeBulkExportThroughputByRegion(ops);
+  const nationalBulkExport = nationalBulkExportThroughputIndex(bulkExportThroughputByRegion);
+  const intermodalDwellByRegion = computeIntermodalDwellByRegion(ops, freightUtil);
+  const nationalIntermodalDwell = nationalIntermodalDwellMedian(intermodalDwellByRegion);
+  const dwellMult = dwellProductivityPenalty(nationalIntermodalDwell);
+  const urbanCongestionByRegion = computeUrbanCongestionByRegion(ops, freightUtil);
+  const nationalUrbanCongestion = nationalUrbanCongestionIndex(urbanCongestionByRegion);
+  const congestionMult = congestionReliefMultiplier(
+    nationalUrbanCongestion,
+    options?.congestionReliefPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const bulkBoost = (bulkExportThroughputByRegion[code] - 18) * 0.007;
+    const dwellPenalty = (intermodalDwellByRegion[code] - 30) * 0.012;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + bulkBoost - dwellPenalty) *
+      dwellMult *
+      congestionMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -4792,7 +5304,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/7',
+    schemaVersion: 'agent12/8',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -4827,6 +5339,12 @@ export function computeTransportInfrastructureState(
     coldChainReliabilityIndex,
     coldChainReliabilityByRegion,
     greenFreightShare,
+    nationalBulkExportThroughputIndex: nationalBulkExport,
+    bulkExportThroughputByRegion,
+    nationalIntermodalDwellMedian: nationalIntermodalDwell,
+    intermodalDwellByRegion,
+    nationalUrbanCongestionIndex: nationalUrbanCongestion,
+    urbanCongestionByRegion,
     computeMs,
   };
 }
@@ -4907,9 +5425,9 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
 
   const infra = computeTransportInfrastructureState(defaultInfrastructureInputs(5));
   results.push({
-    id: 'infrastructure_state_v7',
+    id: 'infrastructure_state_v8',
     ok:
-      infra.schemaVersion === 'agent12/7' &&
+      infra.schemaVersion === 'agent12/8' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -4920,8 +5438,11 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalLastMileCoverage > 45 &&
       infra.nationalContainerThroughputIndex > 15 &&
       infra.coldChainReliabilityIndex > 0.35 &&
-      infra.greenFreightShare > 0.12,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} throughput=${infra.nationalContainerThroughputIndex.toFixed(1)} cold=${infra.coldChainReliabilityIndex.toFixed(2)} green=${infra.greenFreightShare.toFixed(2)}`,
+      infra.greenFreightShare > 0.12 &&
+      infra.nationalBulkExportThroughputIndex > 18 &&
+      infra.nationalIntermodalDwellMedian > 10 &&
+      infra.nationalUrbanCongestionIndex > 15,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} bulk=${infra.nationalBulkExportThroughputIndex.toFixed(1)} dwell=${infra.nationalIntermodalDwellMedian.toFixed(1)} congestion=${infra.nationalUrbanCongestionIndex.toFixed(1)}`,
   });
 
   return results;

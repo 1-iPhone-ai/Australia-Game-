@@ -195,8 +195,10 @@ export type ModalShiftPolicy = 'road' | 'balanced' | 'rail';
 
 export type GreenFreightPolicy = 'baseline' | 'accelerate';
 
+export type CongestionReliefPolicy = 'baseline' | 'invest' | 'priority_freight';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/7';
+  schemaVersion: 'agent12/8';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -231,6 +233,12 @@ export interface TransportInfrastructureState {
   coldChainReliabilityIndex: number;
   coldChainReliabilityByRegion: Record<AuRegionCode, number>;
   greenFreightShare: number;
+  nationalBulkExportThroughputIndex: number;
+  bulkExportThroughputByRegion: Record<AuRegionCode, number>;
+  nationalIntermodalDwellMedian: number;
+  intermodalDwellByRegion: Record<AuRegionCode, number>;
+  nationalUrbanCongestionIndex: number;
+  urbanCongestionByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -245,6 +253,7 @@ export interface TransportInfrastructureOptions {
   seasonalDemandBand?: SeasonalDemandBand;
   modalShiftPolicy?: ModalShiftPolicy;
   greenFreightPolicy?: GreenFreightPolicy;
+  congestionReliefPolicy?: CongestionReliefPolicy;
 }
 
 export interface V94ProjectSnapshot {
