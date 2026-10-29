@@ -34,6 +34,7 @@ import type {
   ResearchScaleWaveContinuityHandoffBandEvent,
   ResearchScaleWaveHandoffIntegrationBandEvent,
   ResearchScaleWaveHandoffIntegrationSealBandEvent,
+  ResearchScaleWaveIntegrationSealHandoffBandEvent,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { RESEARCH_UNLOCK_EVENT_LOG_CAP } from './unlock-event-log.ts';
@@ -90,6 +91,8 @@ import { mergeHandoffIntegrationSnapshots } from './scale-wave-handoff-integrati
 import { RESEARCH_HANDOFF_INTEGRATION_BAND_LOG_CAP } from './scale-wave-handoff-integration-band-log.ts';
 import { mergeHandoffIntegrationSealSnapshots } from './scale-wave-handoff-integration-seal-snapshot.ts';
 import { RESEARCH_HANDOFF_INTEGRATION_SEAL_BAND_LOG_CAP } from './scale-wave-handoff-integration-seal-band-log.ts';
+import { mergeIntegrationSealHandoffSnapshots } from './scale-wave-integration-seal-handoff-snapshot.ts';
+import { RESEARCH_INTEGRATION_SEAL_HANDOFF_BAND_LOG_CAP } from './scale-wave-integration-seal-handoff-band-log.ts';
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
@@ -417,6 +420,18 @@ function mergeHandoffIntegrationSealBandLogs(
   return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_HANDOFF_INTEGRATION_SEAL_BAND_LOG_CAP);
 }
 
+function mergeIntegrationSealHandoffBandLogs(
+  local: ResearchScaleWaveIntegrationSealHandoffBandEvent[] | undefined,
+  remote: ResearchScaleWaveIntegrationSealHandoffBandEvent[] | undefined
+): ResearchScaleWaveIntegrationSealHandoffBandEvent[] {
+  const byKey = new Map<string, ResearchScaleWaveIntegrationSealHandoffBandEvent>();
+  for (const ev of [...(local ?? []), ...(remote ?? [])]) {
+    const key = `${ev.seq}:${ev.band}:${ev.phase}`;
+    byKey.set(key, ev);
+  }
+  return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_INTEGRATION_SEAL_HANDOFF_BAND_LOG_CAP);
+}
+
 function stableCoreSnapshot(core: ResearchProgressPersistedCore): Record<string, unknown> {
   const { coreFingerprint, ...rest } = core;
   void coreFingerprint;
@@ -705,6 +720,15 @@ export function mergeResearchPersistedCores(
         local.handoffIntegrationSealSnapshot ?? undefined,
         remote.handoffIntegrationSealSnapshot ?? undefined
       ) ?? null,
+    integrationSealHandoffBandLog: mergeIntegrationSealHandoffBandLogs(
+      local.integrationSealHandoffBandLog,
+      remote.integrationSealHandoffBandLog
+    ),
+    integrationSealHandoffSnapshot:
+      mergeIntegrationSealHandoffSnapshots(
+        local.integrationSealHandoffSnapshot ?? undefined,
+        remote.integrationSealHandoffSnapshot ?? undefined
+      ) ?? null,
     lastReconciledAtTurn: Math.max(local.lastReconciledAtTurn ?? 0, remote.lastReconciledAtTurn ?? 0),
   });
 }
@@ -781,6 +805,8 @@ export function reconcileResearchProgressOnLoad(
         handoffIntegrationSnapshot: persist.handoffIntegrationSnapshot,
         handoffIntegrationSealBandLog: persist.handoffIntegrationSealBandLog,
         handoffIntegrationSealSnapshot: persist.handoffIntegrationSealSnapshot,
+        integrationSealHandoffBandLog: persist.integrationSealHandoffBandLog,
+        integrationSealHandoffSnapshot: persist.integrationSealHandoffSnapshot,
       },
       persist,
     };
@@ -849,6 +875,8 @@ export function reconcileResearchProgressOnLoad(
     handoffIntegrationSnapshot: mergedCore.handoffIntegrationSnapshot,
     handoffIntegrationSealBandLog: mergedCore.handoffIntegrationSealBandLog,
     handoffIntegrationSealSnapshot: mergedCore.handoffIntegrationSealSnapshot,
+    integrationSealHandoffBandLog: mergedCore.integrationSealHandoffBandLog,
+    integrationSealHandoffSnapshot: mergedCore.integrationSealHandoffSnapshot,
     lastReconciledAtTurn: ctx.turn,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
   };
@@ -918,6 +946,8 @@ export function reconcileResearchProgressOnLoad(
       handoffIntegrationSnapshot: persist.handoffIntegrationSnapshot,
       handoffIntegrationSealBandLog: persist.handoffIntegrationSealBandLog,
       handoffIntegrationSealSnapshot: persist.handoffIntegrationSealSnapshot,
+      integrationSealHandoffBandLog: persist.integrationSealHandoffBandLog,
+      integrationSealHandoffSnapshot: persist.integrationSealHandoffSnapshot,
     },
     persist,
   };
