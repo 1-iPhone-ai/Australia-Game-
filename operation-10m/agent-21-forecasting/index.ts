@@ -61,4 +61,8 @@ export * from './forecast-governance-remediation-plan';
 export * from './forecast-origin-gate-attestation';
 export * from './forecast-lab-continuity-verdict';
 export * from './forecast-round15-console';
+export * from './forecast-full-chunks-dry-run-readiness';
+export * from './forecast-wave16-projection-sync';
+export * from './forecast-integration-dry-run-attestation';
+export * from './forecast-round16-console';
 export * from './strategic-forecast-policy-lab';

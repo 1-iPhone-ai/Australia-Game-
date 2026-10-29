@@ -75,7 +75,11 @@ const SOURCE_FILES = [
   'operation-10m/agent-21-forecasting/forecast-governance-remediation-plan.ts',
   'operation-10m/agent-21-forecasting/forecast-origin-gate-attestation.ts',
   'operation-10m/agent-21-forecasting/forecast-lab-continuity-verdict.ts',
-  'operation-10m/agent-21-forecasting/forecast-round15-console.tsx'
+  'operation-10m/agent-21-forecasting/forecast-round15-console.tsx',
+  'operation-10m/agent-21-forecasting/forecast-full-chunks-dry-run-readiness.ts',
+  'operation-10m/agent-21-forecasting/forecast-wave16-projection-sync.ts',
+  'operation-10m/agent-21-forecasting/forecast-integration-dry-run-attestation.ts',
+  'operation-10m/agent-21-forecasting/forecast-round16-console.tsx'
 ];
 
 function stripModuleImports(src) {
@@ -239,6 +243,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21LabContinuityVerdictSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21FullChunksDryRunReadinessSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21Wave16ProjectionSyncSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21IntegrationDryRunAttestationSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({
