@@ -26,6 +26,7 @@ import type {
   ResearchTrancheProjectionBandEvent,
   ResearchScaleWaveIntegrationGateBandEvent,
   ResearchTrancheDryRunHandoffBandEvent,
+  ResearchMergedIntegrationBaselineBandEvent,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { RESEARCH_UNLOCK_EVENT_LOG_CAP } from './unlock-event-log.ts';
@@ -64,6 +65,10 @@ import { mergeScaleWaveProjectionSnapshots } from './scale-wave-projection-snaps
 import { mergeTrancheProjectionSnapshots } from './tranche-projection-snapshot.ts';
 import { mergeIntegrationGateSnapshots } from './scale-wave-integration-gate-snapshot.ts';
 import { mergeDryRunHandoffSnapshots } from './tranche-dry-run-handoff-snapshot.ts';
+import {
+  mergeMergedIntegrationBaselineSnapshots,
+} from './merged-integration-baseline-snapshot.ts';
+import { RESEARCH_MERGED_INTEGRATION_BASELINE_BAND_LOG_CAP } from './merged-integration-baseline-band-log.ts';
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
@@ -295,6 +300,18 @@ function mergeDryRunHandoffBandLogs(
   return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_DRY_RUN_HANDOFF_BAND_LOG_CAP);
 }
 
+function mergeMergedIntegrationBaselineBandLogs(
+  local: ResearchMergedIntegrationBaselineBandEvent[] | undefined,
+  remote: ResearchMergedIntegrationBaselineBandEvent[] | undefined
+): ResearchMergedIntegrationBaselineBandEvent[] {
+  const byKey = new Map<string, ResearchMergedIntegrationBaselineBandEvent>();
+  for (const ev of [...(local ?? []), ...(remote ?? [])]) {
+    const key = `${ev.seq}:${ev.band}:${ev.phase}`;
+    byKey.set(key, ev);
+  }
+  return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_MERGED_INTEGRATION_BASELINE_BAND_LOG_CAP);
+}
+
 function stableCoreSnapshot(core: ResearchProgressPersistedCore): Record<string, unknown> {
   const { coreFingerprint, ...rest } = core;
   void coreFingerprint;
@@ -511,6 +528,15 @@ export function mergeResearchPersistedCores(
         local.dryRunHandoffSnapshot ?? undefined,
         remote.dryRunHandoffSnapshot ?? undefined
       ) ?? null,
+    mergedIntegrationBaselineBandLog: mergeMergedIntegrationBaselineBandLogs(
+      local.mergedIntegrationBaselineBandLog,
+      remote.mergedIntegrationBaselineBandLog
+    ),
+    mergedIntegrationBaselineSnapshot:
+      mergeMergedIntegrationBaselineSnapshots(
+        local.mergedIntegrationBaselineSnapshot ?? undefined,
+        remote.mergedIntegrationBaselineSnapshot ?? undefined
+      ) ?? null,
     lastReconciledAtTurn: Math.max(local.lastReconciledAtTurn ?? 0, remote.lastReconciledAtTurn ?? 0),
   });
 }
@@ -571,6 +597,8 @@ export function reconcileResearchProgressOnLoad(
         integrationGateSnapshot: persist.integrationGateSnapshot,
         dryRunHandoffBandLog: persist.dryRunHandoffBandLog,
         dryRunHandoffSnapshot: persist.dryRunHandoffSnapshot,
+        mergedIntegrationBaselineBandLog: persist.mergedIntegrationBaselineBandLog,
+        mergedIntegrationBaselineSnapshot: persist.mergedIntegrationBaselineSnapshot,
       },
       persist,
     };
@@ -623,6 +651,8 @@ export function reconcileResearchProgressOnLoad(
     integrationGateSnapshot: mergedCore.integrationGateSnapshot,
     dryRunHandoffBandLog: mergedCore.dryRunHandoffBandLog,
     dryRunHandoffSnapshot: mergedCore.dryRunHandoffSnapshot,
+    mergedIntegrationBaselineBandLog: mergedCore.mergedIntegrationBaselineBandLog,
+    mergedIntegrationBaselineSnapshot: mergedCore.mergedIntegrationBaselineSnapshot,
     lastReconciledAtTurn: ctx.turn,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
   };
@@ -676,6 +706,8 @@ export function reconcileResearchProgressOnLoad(
       integrationGateSnapshot: persist.integrationGateSnapshot,
       dryRunHandoffBandLog: persist.dryRunHandoffBandLog,
       dryRunHandoffSnapshot: persist.dryRunHandoffSnapshot,
+      mergedIntegrationBaselineBandLog: persist.mergedIntegrationBaselineBandLog,
+      mergedIntegrationBaselineSnapshot: persist.mergedIntegrationBaselineSnapshot,
     },
     persist,
   };

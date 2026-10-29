@@ -1,7 +1,7 @@
 # Agent 03 — Integration Contract (Research / Technology / Progression)
 
 **Module root:** `operation-10m/agent-03-research-tech/`  
-**Schema version:** `op10m-agent03-v22` (dry-run handoff band log + snapshot persisted; merged integration baseline derived, v21 migration)  
+**Schema version:** `op10m-agent03-v23` (merged integration baseline band log + snapshot persisted; post-integration dry-run derived, v22 migration)  
 **Owner:** Agent 03 (content + pure engine). **Assembly:** Agent 25 only.
 
 ## Purpose
@@ -35,9 +35,9 @@ gameState.researchProgress: ResearchProgressPersistedCore | null;
 
 Use `prepareResearchProgressForSave(state)` before write; on load `applyResearchProgressSavePipeline(inputs, raw)` or `computeResearchProgressFromSave`.
 
-**v22 persisted core** adds bounded `dryRunHandoffBandLog` and `dryRunHandoffSnapshot` on top of v21 (`integrationGateBandLog`, `integrationGateSnapshot`, prior waves). Derived analytics including `mergedIntegrationBaselineOutlook` recomputed each turn (Agent 25 baseline **`634656bb`**, projection **1,401,419**).
+**v23 persisted core** adds bounded `mergedIntegrationBaselineBandLog` and `mergedIntegrationBaselineSnapshot` on top of v22. Derived `scaleWavePostIntegrationDryRunOutlook` each turn (baseline **`b23e1449`**, projection **1,448,902**).
 
-Legacy `op10m-agent03-v21`, `op10m-agent03-v20`, `op10m-agent03-v19`, `op10m-agent03-v18`, `op10m-agent03-v17`, `op10m-agent03-v16`, `op10m-agent03-v15`, `op10m-agent03-v14`, `op10m-agent03-v13`, `op10m-agent03-v12`, `op10m-agent03-v11`, `op10m-agent03-v10`, `op10m-agent03-v9`, `op10m-agent03-v8`, `op10m-agent03-v7`, `op10m-agent03-v6`, `op10m-agent03-v5`, `op10m-agent03-v4`, `op10m-agent03-v3`, `op10m-agent03-v2`, and `op10m-agent03-v1` migrate via `migrateResearchProgressSave()`.
+Legacy `op10m-agent03-v22`, `op10m-agent03-v21`, `op10m-agent03-v20`, `op10m-agent03-v19`, `op10m-agent03-v18`, `op10m-agent03-v17`, `op10m-agent03-v16`, `op10m-agent03-v15`, `op10m-agent03-v14`, `op10m-agent03-v13`, `op10m-agent03-v12`, `op10m-agent03-v11`, `op10m-agent03-v10`, `op10m-agent03-v9`, `op10m-agent03-v8`, `op10m-agent03-v7`, `op10m-agent03-v6`, `op10m-agent03-v5`, `op10m-agent03-v4`, `op10m-agent03-v3`, `op10m-agent03-v2`, and `op10m-agent03-v1` migrate via `migrateResearchProgressSave()`.
 
 ### Input wiring
 
