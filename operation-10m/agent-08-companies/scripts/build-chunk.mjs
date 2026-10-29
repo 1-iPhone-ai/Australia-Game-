@@ -35,6 +35,7 @@ const FILES = [
   'production-transition-commitment.ts',
   'production-transition-mobilization.ts',
   'production-transition-deployment.ts',
+  'production-transition-validation.ts',
   'chunk-exports.ts',
 ];
 
