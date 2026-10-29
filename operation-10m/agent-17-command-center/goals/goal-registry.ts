@@ -149,6 +149,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'computeAgent17DelegationDepthScore returns 0–100.',
     severity: 'minor',
   },
+  {
+    id: 'G17-022',
+    title: 'Intent queue on planning depth',
+    category: 'planning',
+    acceptance: 'intentQueue.queueDepth ≥ 1 when objective present.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-023',
+    title: 'Verification policy gates',
+    category: 'validation',
+    acceptance: 'Unchanged fingerprint blocks allowVerification.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-024',
+    title: 'GI coordination brief attached',
+    category: 'integration',
+    acceptance: 'coordinationBrief has ≥3 sections and GI handoff tags.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

@@ -20,6 +20,9 @@ import { detectAgent17RecoverySignals, pickAgent17RecoveryTemplateId } from './r
 import { buildAgent17DelegationLadder } from './delegation-ladder.ts';
 import { summarizeAgent17PlanLedger } from './plan-ledger.ts';
 import { refineAgent17DelegationSuggestion } from './delegation-depth.ts';
+import { buildAgent17IntentQueue } from './intent-synthesis.ts';
+import { buildAgent17VerificationPolicy } from './verification-policy.ts';
+import { buildAgent17CoordinationBrief } from './coordination-brief.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -104,7 +107,9 @@ export function buildAgent17PlanningDepthSnapshot(
     suggestion,
     recommendedDelegateKind
   );
-  return {
+  const intentQueue = buildAgent17IntentQueue(ops, state, settings, actorId, planHealth);
+  const verificationPolicy = buildAgent17VerificationPolicy(ops, state, actorId);
+  const core = {
     turn,
     actorId,
     planHealth,
@@ -114,6 +119,20 @@ export function buildAgent17PlanningDepthSnapshot(
     delegationLadder,
     planLedger,
     catalogDepth: summarizeAgent17CatalogDepth(),
+  };
+  const coordinationBrief = buildAgent17CoordinationBrief(
+    core,
+    intentQueue,
+    verificationPolicy,
+    ops,
+    state,
+    settings
+  );
+  return {
+    ...core,
+    intentQueue,
+    verificationPolicy,
+    coordinationBrief,
   };
 }
 

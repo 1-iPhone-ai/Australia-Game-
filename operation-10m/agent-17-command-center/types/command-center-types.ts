@@ -180,7 +180,49 @@ export interface Agent17PlanningDepthSnapshot {
   delegationAnalytics: Agent17DelegationAnalyticsRow[];
   delegationLadder: Agent17DelegationLadderSnapshot;
   planLedger: Agent17PlanLedgerSummary;
+  intentQueue: Agent17IntentQueueSnapshot;
+  verificationPolicy: Agent17VerificationPolicySnapshot;
+  coordinationBrief: Agent17CoordinationBrief;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
+}
+
+export interface Agent17IntentItem {
+  id: string;
+  priority: number;
+  label: string;
+  source: 'objective' | 'gi3' | 'recovery' | 'plan_health' | 'delegation';
+  actionHint?: string;
+}
+
+export interface Agent17IntentQueueSnapshot {
+  items: Agent17IntentItem[];
+  primaryIntentId: string | null;
+  queueDepth: number;
+}
+
+export interface Agent17VerificationPolicyRule {
+  id: string;
+  description: string;
+  satisfied: boolean;
+}
+
+export interface Agent17VerificationPolicySnapshot {
+  rules: Agent17VerificationPolicyRule[];
+  allowVerification: boolean;
+  blockingRuleIds: string[];
+}
+
+export interface Agent17CoordinationBriefSection {
+  id: string;
+  heading: string;
+  bullets: string[];
+}
+
+export interface Agent17CoordinationBrief {
+  headline: string;
+  sections: Agent17CoordinationBriefSection[];
+  giHandoffTags: string[];
+  confidence: number;
 }
 
 export interface Agent17DelegationLadderRung {

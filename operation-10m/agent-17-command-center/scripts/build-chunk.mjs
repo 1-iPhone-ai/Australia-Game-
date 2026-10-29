@@ -26,6 +26,9 @@ const FILES = [
   'planning/delegation-ladder.ts',
   'planning/plan-ledger.ts',
   'planning/delegation-depth.ts',
+  'planning/intent-synthesis.ts',
+  'planning/verification-policy.ts',
+  'planning/coordination-brief.ts',
   'planning/planning-orchestrator.ts',
   'evaluation/operations-evaluator.ts',
   'rollback/rollback-controller.ts',
@@ -35,6 +38,7 @@ const FILES = [
   'harness/run-recovery-path-tests.ts',
   'harness/run-planning-depth-tests.ts',
   'harness/run-delegation-depth-tests.ts',
+  'harness/run-coordination-depth-tests.ts',
 ];
 
 function stripModulePreamble(source) {
@@ -71,18 +75,26 @@ parts.push(`export function runAgent17Op10mModuleSelfTests(): {
   recovery: ReturnType<typeof runAgent17RecoveryPathTests>;
   depth: ReturnType<typeof runAgent17PlanningDepthTests>;
   delegation: ReturnType<typeof runAgent17DelegationDepthTests>;
+  coordination: ReturnType<typeof runAgent17CoordinationDepthTests>;
   success: boolean;
 } {
   const acc17 = runAgent17Acc17DevTests();
   const recovery = runAgent17RecoveryPathTests();
   const depth = runAgent17PlanningDepthTests();
   const delegation = runAgent17DelegationDepthTests();
+  const coordination = runAgent17CoordinationDepthTests();
   return {
     acc17,
     recovery,
     depth,
     delegation,
-    success: acc17.success && recovery.success && depth.success && delegation.success,
+    coordination,
+    success:
+      acc17.success &&
+      recovery.success &&
+      depth.success &&
+      delegation.success &&
+      coordination.success,
   };
 }`);
 parts.push('');

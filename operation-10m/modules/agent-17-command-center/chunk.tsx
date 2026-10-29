@@ -184,7 +184,49 @@ export interface Agent17PlanningDepthSnapshot {
   delegationAnalytics: Agent17DelegationAnalyticsRow[];
   delegationLadder: Agent17DelegationLadderSnapshot;
   planLedger: Agent17PlanLedgerSummary;
+  intentQueue: Agent17IntentQueueSnapshot;
+  verificationPolicy: Agent17VerificationPolicySnapshot;
+  coordinationBrief: Agent17CoordinationBrief;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
+}
+
+export interface Agent17IntentItem {
+  id: string;
+  priority: number;
+  label: string;
+  source: 'objective' | 'gi3' | 'recovery' | 'plan_health' | 'delegation';
+  actionHint?: string;
+}
+
+export interface Agent17IntentQueueSnapshot {
+  items: Agent17IntentItem[];
+  primaryIntentId: string | null;
+  queueDepth: number;
+}
+
+export interface Agent17VerificationPolicyRule {
+  id: string;
+  description: string;
+  satisfied: boolean;
+}
+
+export interface Agent17VerificationPolicySnapshot {
+  rules: Agent17VerificationPolicyRule[];
+  allowVerification: boolean;
+  blockingRuleIds: string[];
+}
+
+export interface Agent17CoordinationBriefSection {
+  id: string;
+  heading: string;
+  bullets: string[];
+}
+
+export interface Agent17CoordinationBrief {
+  headline: string;
+  sections: Agent17CoordinationBriefSection[];
+  giHandoffTags: string[];
+  confidence: number;
 }
 
 export interface Agent17DelegationLadderRung {
@@ -1945,6 +1987,234 @@ export function computeAgent17DelegationDepthScore(
 }
 
 
+// --- source: planning/intent-synthesis.ts ---
+  Acc17CommandCenterOpsState,
+  Agent17GameStateSlice,
+  Agent17IntentItem,
+  Agent17IntentQueueSnapshot,
+  Agent17PlanHealthBand,
+  Agent17SettingsSlice,
+} from '../types/command-center-types.ts';
+
+export function buildAgent17IntentQueue(
+  ops: Acc17CommandCenterOpsState,
+  state: Agent17GameStateSlice,
+  settings: Agent17SettingsSlice,
+  actorId: string,
+  planHealth: Agent17PlanHealthBand
+): Agent17IntentQueueSnapshot {
+  const items: Agent17IntentItem[] = [];
+  const push = (item: Agent17IntentItem) => items.push(item);
+
+  const objective = defaultObjectiveResolver(state, settings, actorId);
+  if (objective?.title) {
+    push({
+      id: 'intent_objective',
+      priority: 100,
+      label: objective.title,
+      source: 'objective',
+      actionHint: objective.recommendedNextStep?.actionType,
+    });
+  }
+
+  if (state.gi3Strategy?.headline) {
+    push({
+      id: 'intent_gi3',
+      priority: 90,
+      label: state.gi3Strategy.headline,
+      source: 'gi3',
+      actionHint: 'verify_objective',
+    });
+  }
+
+  const signals = detectAgent17RecoverySignals(state, actorId);
+  if (signals[0]) {
+    push({
+      id: `intent_recovery_${signals[0].lane}`,
+      priority: 80 + Math.min(15, Math.floor(signals[0].severity / 10)),
+      label: signals[0].reason,
+      source: 'recovery',
+      actionHint: 'wait',
+    });
+  }
+
+  if (planHealth.band === 'at_risk' || planHealth.band === 'critical') {
+    push({
+      id: 'intent_plan_health',
+      priority: 95,
+      label: `Plan health ${planHealth.band} (score ${planHealth.score})`,
+      source: 'plan_health',
+      actionHint: ops.activePlan?.steps.find(s => s.status === 'in_progress')?.actionType,
+    });
+  }
+
+  if (ops.delegatedProjects.length > 0) {
+    push({
+      id: 'intent_delegation',
+      priority: 70,
+      label: `${ops.delegatedProjects.length} active delegation(s)`,
+      source: 'delegation',
+      actionHint: 'invest',
+    });
+  }
+
+  items.sort((a, b) => b.priority - a.priority);
+  return {
+    items: items.slice(0, 8),
+    primaryIntentId: items[0]?.id ?? null,
+    queueDepth: items.length,
+  };
+}
+
+export function intentQueueRequiresRecovery(intent: Agent17IntentQueueSnapshot): boolean {
+  return intent.items.some(i => i.source === 'recovery' && i.priority >= 90);
+}
+
+
+// --- source: planning/verification-policy.ts ---
+  Acc17CommandCenterOpsState,
+  Agent17GameStateSlice,
+  Agent17VerificationPolicyRule,
+  Agent17VerificationPolicySnapshot,
+} from '../types/command-center-types.ts';
+
+export function buildAgent17VerificationPolicy(
+  ops: Acc17CommandCenterOpsState,
+  state: Agent17GameStateSlice,
+  actorId: string
+): Agent17VerificationPolicySnapshot {
+  const fp = acc17ComputeRelevantStateFingerprint(state, actorId);
+  const prev = ops.lastContextFingerprint || '';
+  const rules: Agent17VerificationPolicyRule[] = [
+    {
+      id: 'vp_fingerprint_delta',
+      description: 'State fingerprint must differ from last evaluation to verify progress.',
+      satisfied: prev !== '' && fp !== prev,
+    },
+    {
+      id: 'vp_active_plan',
+      description: 'An active multi-step plan must exist.',
+      satisfied: !!ops.activePlan && ops.activePlan.steps.length > 0,
+    },
+    {
+      id: 'vp_last_action',
+      description: 'Last executed action must be recorded.',
+      satisfied: !!(state.lastExecutedAction?.type || state.lastAction?.type),
+    },
+    {
+      id: 'vp_not_evaluating',
+      description: 'Command center must not be in a blocked-only terminal state.',
+      satisfied: !(
+        ops.activePlan?.steps.every(s => s.status === 'blocked' || s.status === 'failed') ?? false
+      ),
+    },
+    {
+      id: 'vp_ops_enabled',
+      description: 'Ops pipeline enabled.',
+      satisfied: ops.enabled !== false,
+    },
+  ];
+
+  const blockingRuleIds = rules.filter(r => !r.satisfied).map(r => r.id);
+  return {
+    rules,
+    allowVerification: blockingRuleIds.length === 0,
+    blockingRuleIds,
+  };
+}
+
+export function verificationPolicyBlocksAdvance(policy: Agent17VerificationPolicySnapshot): boolean {
+  return !policy.allowVerification && policy.blockingRuleIds.includes('vp_fingerprint_delta');
+}
+
+
+// --- source: planning/coordination-brief.ts ---
+  Acc17CommandCenterOpsState,
+  Agent17CoordinationBrief,
+  Agent17CoordinationBriefSection,
+  Agent17GameStateSlice,
+  Agent17IntentQueueSnapshot,
+  Agent17PlanningDepthSnapshot,
+  Agent17SettingsSlice,
+  Agent17VerificationPolicySnapshot,
+} from '../types/command-center-types.ts';
+
+export function buildAgent17CoordinationBrief(
+  depth: Omit<
+    Agent17PlanningDepthSnapshot,
+    'intentQueue' | 'verificationPolicy' | 'coordinationBrief'
+  >,
+  intentQueue: Agent17IntentQueueSnapshot,
+  verificationPolicy: Agent17VerificationPolicySnapshot,
+  ops: Acc17CommandCenterOpsState,
+  _state: Agent17GameStateSlice,
+  _settings: Agent17SettingsSlice
+): Agent17CoordinationBrief {
+  const sections: Agent17CoordinationBriefSection[] = [];
+
+  sections.push({
+    id: 'intent',
+    heading: 'Primary intents',
+    bullets: intentQueue.items.slice(0, 4).map(i => `[${i.source}] ${i.label}`),
+  });
+
+  sections.push({
+    id: 'plan',
+    heading: 'Plan posture',
+    bullets: [
+      depth.planHealth
+        ? `${depth.planHealth.band} · score ${depth.planHealth.score} · replans ${depth.planHealth.replanCount}`
+        : 'No plan health',
+      depth.suggestion.headline,
+      depth.delegationLadder.headline,
+    ],
+  });
+
+  sections.push({
+    id: 'verify',
+    heading: 'Verification policy',
+    bullets: verificationPolicy.allowVerification
+      ? ['All verification gates satisfied.']
+      : verificationPolicy.blockingRuleIds.map(id => `Blocked: ${id}`),
+  });
+
+  if (ops.activePlan) {
+    sections.push({
+      id: 'steps',
+      heading: 'Active plan steps',
+      bullets: ops.activePlan.steps.slice(0, 5).map(
+        (s, idx) => `${idx + 1}. ${s.title} (${s.status})`
+      ),
+    });
+  }
+
+  const giHandoffTags = [
+    'agent17_command_center',
+    `category_${depth.templateRouting.matchedCategory}`,
+    depth.planHealth.band,
+    verificationPolicy.allowVerification ? 'verify_ready' : 'verify_hold',
+  ];
+  if (intentQueue.primaryIntentId) giHandoffTags.push(intentQueue.primaryIntentId);
+
+  const confidence =
+    (depth.suggestion.confidence +
+      (verificationPolicy.allowVerification ? 0.15 : 0) +
+      (depth.planHealth.band === 'strong' ? 0.1 : 0)) /
+    1.25;
+
+  return {
+    headline: depth.suggestion.headline || 'Command center coordination brief',
+    sections,
+    giHandoffTags,
+    confidence: Math.min(0.99, Math.max(0.35, confidence)),
+  };
+}
+
+export function coordinationBriefReadyForGi(brief: Agent17CoordinationBrief): boolean {
+  return brief.sections.length >= 3 && brief.giHandoffTags.length >= 4;
+}
+
+
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -2044,7 +2314,9 @@ export function buildAgent17PlanningDepthSnapshot(
     suggestion,
     recommendedDelegateKind
   );
-  return {
+  const intentQueue = buildAgent17IntentQueue(ops, state, settings, actorId, planHealth);
+  const verificationPolicy = buildAgent17VerificationPolicy(ops, state, actorId);
+  const core = {
     turn,
     actorId,
     planHealth,
@@ -2054,6 +2326,20 @@ export function buildAgent17PlanningDepthSnapshot(
     delegationLadder,
     planLedger,
     catalogDepth: summarizeAgent17CatalogDepth(),
+  };
+  const coordinationBrief = buildAgent17CoordinationBrief(
+    core,
+    intentQueue,
+    verificationPolicy,
+    ops,
+    state,
+    settings
+  );
+  return {
+    ...core,
+    intentQueue,
+    verificationPolicy,
+    coordinationBrief,
   };
 }
 
@@ -2493,6 +2779,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'computeAgent17DelegationDepthScore returns 0–100.',
     severity: 'minor',
   },
+  {
+    id: 'G17-022',
+    title: 'Intent queue on planning depth',
+    category: 'planning',
+    acceptance: 'intentQueue.queueDepth ≥ 1 when objective present.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-023',
+    title: 'Verification policy gates',
+    category: 'validation',
+    acceptance: 'Unchanged fingerprint blocks allowVerification.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-024',
+    title: 'GI coordination brief attached',
+    category: 'integration',
+    acceptance: 'coordinationBrief has ≥3 sections and GI handoff tags.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -2807,6 +3114,36 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     result('G17-021', depthScore >= 0 && depthScore <= 100, String(depthScore))
   );
 
+  const intentQ = buildAgent17IntentQueue(
+    depthEval.ops,
+    baseState,
+    settings,
+    'player',
+    assessAgent17PlanHealth(depthEval.ops.activePlan, baseState, 'player')
+  );
+  goalResults.push(
+    result('G17-022', intentQ.queueDepth >= 1, String(intentQ.queueDepth))
+  );
+
+  const fp = acc17ComputeRelevantStateFingerprint(baseState, 'player');
+  const pol = buildAgent17VerificationPolicy(
+    { ...depthEval.ops, lastContextFingerprint: fp },
+    baseState,
+    'player'
+  );
+  goalResults.push(
+    result('G17-023', pol.allowVerification === false, pol.blockingRuleIds.join(','))
+  );
+
+  const brief = depthEval.snapshot.planningDepth?.coordinationBrief;
+  goalResults.push(
+    result(
+      'G17-024',
+      !!brief && coordinationBriefReadyForGi(brief),
+      brief?.giHandoffTags?.join(',') || 'none'
+    )
+  );
+
   const passedCount = goalResults.filter(r => r.passed).length;
   const failedCount = goalResults.length - passedCount;
   return {
@@ -2850,6 +3187,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-019',
     'G17-020',
     'G17-021',
+    'G17-022',
+    'G17-023',
+    'G17-024',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
@@ -3414,23 +3754,194 @@ export function runAgent17DelegationDepthTests(): Agent17DevTestReport {
 }
 
 
+// --- source: harness/run-coordination-depth-tests.ts ---
+  buildAgent17VerificationPolicy,
+  verificationPolicyBlocksAdvance,
+} from '../planning/verification-policy.ts';
+  buildAgent17CoordinationBrief,
+  coordinationBriefReadyForGi,
+} from '../planning/coordination-brief.ts';
+
+export function runAgent17CoordinationDepthTests(): Agent17DevTestReport {
+  const start = Date.now();
+  const testResults: Agent17DevTestReport['testResults'] = [];
+  const push = (id: string, name: string, ok: boolean, detail?: string) => {
+    testResults.push({
+      id,
+      name,
+      status: ok ? 'passed' : 'failed',
+      durationMs: 0,
+      errorMessage: ok ? undefined : detail,
+    });
+  };
+
+  try {
+    const settings = {
+      commandCenterSettings: { enabled: true },
+      aiCommunicationAutonomyLevel: 'assisted' as const,
+    };
+    const actor = {
+      id: 'player',
+      money: 150,
+      netWorth: 4000,
+      currentRegion: 'QLD',
+      currentSupplies: 15,
+    };
+    const state: Agent17GameStateSlice = {
+      turnCounter: 9,
+      day: 9,
+      player: actor,
+      actorsById: { player: actor },
+      playerTrackedObjective: { title: 'Restock and recover supplies', sourceType: 'contract' },
+      gi3Strategy: { headline: 'Hold liquidity above $500' },
+      lastExecutedAction: { type: 'restock_supplies' },
+    };
+    const ops = createDefaultAcc17CommandCenterOpsState();
+    const plan = acc17CreateMultiStepPlanFromObjective(
+      state,
+      settings,
+      'player',
+      (s, st, id) => defaultObjectiveResolver(s, st, id)
+    );
+    const opsWithPlan = { ...ops, activePlan: plan };
+    const health = assessAgent17PlanHealth(null, state, 'player');
+    const intent = buildAgent17IntentQueue(opsWithPlan, state, settings, 'player', health);
+    push(
+      'coord_intent_queue',
+      'Intent queue prioritizes objective and recovery',
+      intent.queueDepth >= 3 && intent.primaryIntentId === 'intent_objective',
+      `depth=${intent.queueDepth} primary=${intent.primaryIntentId}`
+    );
+    push(
+      'coord_recovery_intent',
+      'Low supplies emit recovery intent',
+      intentQueueRequiresRecovery(intent) || intent.items.some(i => i.source === 'recovery'),
+      intent.items.map(i => i.source).join(',')
+    );
+
+    const fp = acc17ComputeRelevantStateFingerprint(state, 'player');
+    const policySame = buildAgent17VerificationPolicy(
+      { ...opsWithPlan, lastContextFingerprint: fp },
+      state,
+      'player'
+    );
+    push(
+      'coord_verify_block_same_fp',
+      'Verification blocked when fingerprint unchanged',
+      !policySame.allowVerification,
+      policySame.blockingRuleIds.join(',')
+    );
+
+    const policyDelta = buildAgent17VerificationPolicy(
+      { ...opsWithPlan, lastContextFingerprint: 'old_fp' },
+      state,
+      'player'
+    );
+    push(
+      'coord_verify_allow_delta',
+      'Verification allowed when fingerprint delta satisfied',
+      policyDelta.allowVerification === true,
+      String(policyDelta.allowVerification)
+    );
+    push(
+      'coord_verify_blocks_advance',
+      'Policy helper detects fingerprint hold',
+      verificationPolicyBlocksAdvance(policySame) === true,
+      String(verificationPolicyBlocksAdvance(policySame))
+    );
+
+    const evalRes = evaluateAcc17CommandCenterOperations(state, settings, 'player', ops);
+    const depth = evalRes.snapshot.planningDepth;
+    push(
+      'coord_brief_attached',
+      'Evaluator attaches coordination brief',
+      !!depth?.coordinationBrief?.headline && (depth.coordinationBrief.sections.length ?? 0) >= 3,
+      String(depth?.coordinationBrief?.sections.length)
+    );
+    push(
+      'coord_gi_handoff',
+      'Coordination brief ready for GI handoff tags',
+      depth?.coordinationBrief
+        ? coordinationBriefReadyForGi(depth.coordinationBrief)
+        : false,
+      depth?.coordinationBrief?.giHandoffTags?.join(',')
+    );
+
+    if (depth) {
+      const manualBrief = buildAgent17CoordinationBrief(
+        {
+          turn: depth.turn,
+          actorId: depth.actorId,
+          planHealth: depth.planHealth,
+          suggestion: depth.suggestion,
+          templateRouting: depth.templateRouting,
+          delegationAnalytics: depth.delegationAnalytics,
+          delegationLadder: depth.delegationLadder,
+          planLedger: depth.planLedger,
+          catalogDepth: depth.catalogDepth,
+        },
+        depth.intentQueue,
+        depth.verificationPolicy,
+        evalRes.ops,
+        state,
+        settings
+      );
+      push(
+        'coord_brief_confidence',
+        'Brief confidence bounded',
+        manualBrief.confidence >= 0.35 && manualBrief.confidence <= 0.99,
+        String(manualBrief.confidence)
+      );
+    } else {
+      push('coord_brief_confidence', 'Brief confidence bounded', false, 'no depth');
+    }
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    push('coord_throw', 'Coordination harness did not throw', false, msg);
+  }
+
+  const passedCount = testResults.filter(t => t.status === 'passed').length;
+  const failedCount = testResults.filter(t => t.status === 'failed').length;
+  const overallStatus: 'passed' | 'failed' = failedCount === 0 ? 'passed' : 'failed';
+  return {
+    timestamp: Date.now(),
+    totalTests: testResults.length,
+    passedCount,
+    failedCount,
+    executionTimeMs: Date.now() - start,
+    overallStatus,
+    success: overallStatus === 'passed',
+    testResults,
+    summary: `Agent 17 Coordination Depth Tests: ${passedCount}/${testResults.length} Passed`,
+  };
+}
+
+
 export function runAgent17Op10mModuleSelfTests(): {
   acc17: ReturnType<typeof runAgent17Acc17DevTests>;
   recovery: ReturnType<typeof runAgent17RecoveryPathTests>;
   depth: ReturnType<typeof runAgent17PlanningDepthTests>;
   delegation: ReturnType<typeof runAgent17DelegationDepthTests>;
+  coordination: ReturnType<typeof runAgent17CoordinationDepthTests>;
   success: boolean;
 } {
   const acc17 = runAgent17Acc17DevTests();
   const recovery = runAgent17RecoveryPathTests();
   const depth = runAgent17PlanningDepthTests();
   const delegation = runAgent17DelegationDepthTests();
+  const coordination = runAgent17CoordinationDepthTests();
   return {
     acc17,
     recovery,
     depth,
     delegation,
-    success: acc17.success && recovery.success && depth.success && delegation.success,
+    coordination,
+    success:
+      acc17.success &&
+      recovery.success &&
+      depth.success &&
+      delegation.success &&
+      coordination.success,
   };
 }
 

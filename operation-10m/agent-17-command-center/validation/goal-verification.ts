@@ -24,6 +24,11 @@ import { buildAgent17DelegationAnalytics } from '../planning/delegation-analytic
 import { buildAgent17DelegationLadder } from '../planning/delegation-ladder.ts';
 import { summarizeAgent17PlanLedger } from '../planning/plan-ledger.ts';
 import { computeAgent17DelegationDepthScore } from '../planning/delegation-depth.ts';
+import { buildAgent17IntentQueue } from '../planning/intent-synthesis.ts';
+import { buildAgent17VerificationPolicy } from '../planning/verification-policy.ts';
+import { coordinationBriefReadyForGi } from '../planning/coordination-brief.ts';
+import { assessAgent17PlanHealth } from '../planning/plan-health.ts';
+import { acc17ComputeRelevantStateFingerprint } from '../planning/fingerprint.ts';
 import { evaluateAcc17CommandCenterOperations } from '../evaluation/operations-evaluator.ts';
 import {
   Agent17RollbackController,
@@ -314,6 +319,36 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     result('G17-021', depthScore >= 0 && depthScore <= 100, String(depthScore))
   );
 
+  const intentQ = buildAgent17IntentQueue(
+    depthEval.ops,
+    baseState,
+    settings,
+    'player',
+    assessAgent17PlanHealth(depthEval.ops.activePlan, baseState, 'player')
+  );
+  goalResults.push(
+    result('G17-022', intentQ.queueDepth >= 1, String(intentQ.queueDepth))
+  );
+
+  const fp = acc17ComputeRelevantStateFingerprint(baseState, 'player');
+  const pol = buildAgent17VerificationPolicy(
+    { ...depthEval.ops, lastContextFingerprint: fp },
+    baseState,
+    'player'
+  );
+  goalResults.push(
+    result('G17-023', pol.allowVerification === false, pol.blockingRuleIds.join(','))
+  );
+
+  const brief = depthEval.snapshot.planningDepth?.coordinationBrief;
+  goalResults.push(
+    result(
+      'G17-024',
+      !!brief && coordinationBriefReadyForGi(brief),
+      brief?.giHandoffTags?.join(',') || 'none'
+    )
+  );
+
   const passedCount = goalResults.filter(r => r.passed).length;
   const failedCount = goalResults.length - passedCount;
   return {
@@ -357,6 +392,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-019',
     'G17-020',
     'G17-021',
+    'G17-022',
+    'G17-023',
+    'G17-024',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

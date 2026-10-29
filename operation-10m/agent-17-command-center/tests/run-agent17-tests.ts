@@ -3,55 +3,31 @@ import { runAgent17Acc17DevTests } from '../harness/run-acc17-dev-tests.ts';
 import { runAgent17RecoveryPathTests } from '../harness/run-recovery-path-tests.ts';
 import { runAgent17PlanningDepthTests } from '../harness/run-planning-depth-tests.ts';
 import { runAgent17DelegationDepthTests } from '../harness/run-delegation-depth-tests.ts';
+import { runAgent17CoordinationDepthTests } from '../harness/run-coordination-depth-tests.ts';
 import { verifyAgent17Goals, validateGoalRegistryCoverage } from '../validation/goal-verification.ts';
 import { createAgent17RollbackController } from '../rollback/rollback-controller.ts';
 
-const devReport = runAgent17Acc17DevTests();
-const recoveryReport = runAgent17RecoveryPathTests();
-const depthReport = runAgent17PlanningDepthTests();
-const delegationReport = runAgent17DelegationDepthTests();
-const combinedSuccess =
-  devReport.success &&
-  recoveryReport.success &&
-  depthReport.success &&
-  delegationReport.success;
+const reports = [
+  runAgent17Acc17DevTests(),
+  runAgent17RecoveryPathTests(),
+  runAgent17PlanningDepthTests(),
+  runAgent17DelegationDepthTests(),
+  runAgent17CoordinationDepthTests(),
+];
+
+const combinedSuccess = reports.every(r => r.success);
 const lastDevReport = {
-  ...devReport,
-  totalTests:
-    devReport.totalTests +
-    recoveryReport.totalTests +
-    depthReport.totalTests +
-    delegationReport.totalTests,
-  passedCount:
-    devReport.passedCount +
-    recoveryReport.passedCount +
-    depthReport.passedCount +
-    delegationReport.passedCount,
-  failedCount:
-    devReport.failedCount +
-    recoveryReport.failedCount +
-    depthReport.failedCount +
-    delegationReport.failedCount,
-  success: combinedSuccess,
+  timestamp: Date.now(),
+  totalTests: reports.reduce((n, r) => n + r.totalTests, 0),
+  passedCount: reports.reduce((n, r) => n + r.passedCount, 0),
+  failedCount: reports.reduce((n, r) => n + r.failedCount, 0),
+  executionTimeMs: reports.reduce((n, r) => n + r.executionTimeMs, 0),
   overallStatus: combinedSuccess ? ('passed' as const) : ('failed' as const),
-  testResults: [
-    ...devReport.testResults,
-    ...recoveryReport.testResults,
-    ...depthReport.testResults,
-    ...delegationReport.testResults,
-  ],
-  summary: `Agent 17 combined: ${
-    devReport.passedCount +
-    recoveryReport.passedCount +
-    depthReport.passedCount +
-    delegationReport.passedCount
-  }/${
-    devReport.totalTests +
-    recoveryReport.totalTests +
-    depthReport.totalTests +
-    delegationReport.totalTests
-  } passed`,
+  success: combinedSuccess,
+  testResults: reports.flatMap(r => r.testResults),
+  summary: `Agent 17 combined: ${reports.reduce((n, r) => n + r.passedCount, 0)}/${reports.reduce((n, r) => n + r.totalTests, 0)} passed`,
 };
+
 const rollback = createAgent17RollbackController();
 const validationReport = verifyAgent17Goals({ rollback, lastDevReport });
 const coverage = validateGoalRegistryCoverage();
@@ -60,10 +36,11 @@ const exitCode =
   combinedSuccess && validationReport.success && coverage.ok ? 0 : 1;
 
 const payload = {
-  devReport,
-  recoveryReport,
-  depthReport,
-  delegationReport,
+  devReport: reports[0],
+  recoveryReport: reports[1],
+  depthReport: reports[2],
+  delegationReport: reports[3],
+  coordinationReport: reports[4],
   validationReport,
   goalRegistryCoverage: coverage,
   exitCode,
