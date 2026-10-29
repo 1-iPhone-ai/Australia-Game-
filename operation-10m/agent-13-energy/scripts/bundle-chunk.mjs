@@ -22,12 +22,14 @@ const FILES = [
   'grid-recovery-extraction-efficiency.ts',
   'regional-grid-scenarios-climate-transition.ts',
   'turn-simulation-depth.ts',
+  'storage-permit-lifecycle.ts',
   'industrial-energy-environmental.tsx',
 ];
 
 const EXPORT_MANIFEST = [
   'V1014_INDUSTRIAL_ENERGY_SCHEMA_VERSION',
   'V1014_INDUSTRIAL_ENERGY_AGENT',
+  'V1014_STORAGE_FLEXIBILITY_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -46,6 +48,7 @@ const EXPORT_MANIFEST = [
   'executeAgent13IndustrialEnergyTurnHook',
   'runV1014IndustrialEnergyEnvironmentalSelfTests',
   'runAgent13TurnSimulationDepthSelfTests',
+  'runAgent13StoragePermitScaleSelfTests',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

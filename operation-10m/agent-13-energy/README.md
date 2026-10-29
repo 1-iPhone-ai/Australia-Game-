@@ -10,6 +10,7 @@ Modular **V10.14 SECTION 20AL** slice: extraction sites, renewable assets, envir
 | Grid recovery & extraction efficiency (slice 2) | `modules/grid-recovery-extraction-efficiency.ts` |
 | Regional grid scenarios & climate transition (scale wave) | `modules/regional-grid-scenarios-climate-transition.ts` |
 | Turn depth, spillover, GI & scenarios (scale wave r2) | `modules/turn-simulation-depth.ts` |
+| Storage flexibility & permit lifecycle (scale wave r3) | `modules/storage-permit-lifecycle.ts` |
 | Climate hazards | `modules/climate-hazards.ts` |
 | Household links | `modules/household-industry-links.ts` |
 | Generator (catalog) | `../../scripts/generate-v1014-agent13.py` |

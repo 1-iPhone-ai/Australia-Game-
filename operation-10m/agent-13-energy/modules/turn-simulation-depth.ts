@@ -61,7 +61,7 @@ const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, Numbe
 export function computeInterRegionalSpillover(
   regions: Record<string, V1014RegionalEnergyProfileSpillover>,
 ): { flows: V1014InterRegionalFlow[]; adjustedRegions: Record<string, V1014RegionalEnergyProfileSpillover> } {
-  const adjusted: Record<string, V1014RegionalEnergyProfile> = { ...regions };
+  const adjusted: Record<string, V1014RegionalEnergyProfileSpillover> = { ...regions };
   const flows: V1014InterRegionalFlow[] = [];
 
   for (const link of V1014_INTERREGIONAL_GRID_LINKS) {

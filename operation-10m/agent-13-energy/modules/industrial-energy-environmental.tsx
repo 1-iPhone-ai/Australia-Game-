@@ -27,6 +27,11 @@ import {
   type V1014InterRegionalFlow,
 } from './turn-simulation-depth';
 import {
+  advanceRegionalPermitLedger,
+  computeRegionalStorageFlexibility,
+  type V1014RegionalPermitLedger,
+} from './storage-permit-lifecycle';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25489,6 +25494,9 @@ export interface V1014RegionalEnergyProfile {
   activeGridScenarioId: string;
   climateTransitionStage: V1014ClimateTransitionProfile['stage'];
   climateTransitionDepth: number;
+  storageFlexibilityBand: string;
+  storageStressRelief: number;
+  permitUtilizationBand: string;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25528,6 +25536,7 @@ export interface IndustrialEnergyEnvironmentalState {
   householdEnergyHints: V1014HouseholdEnergyHint[];
   interRegionalFlows: V1014InterRegionalFlow[];
   turnSimulationDigest: string;
+  regionalPermitLedgers: Record<string, V1014RegionalPermitLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25538,6 +25547,7 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   initializedTurn: number | null;
   lastInputHash: string;
   regionalHysteresis: Record<string, { extractionScore: number; renewableScore: number; pressure: number }>;
+  regionalPermitMemory: Record<string, { utilized: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25560,6 +25570,7 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     initializedTurn: null,
     lastInputHash: '',
     regionalHysteresis: {},
+    regionalPermitMemory: {},
     history: [],
   };
 }
@@ -25574,6 +25585,7 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
     initializedTurn: typeof raw.initializedTurn === 'number' ? raw.initializedTurn : null,
     lastInputHash: String(raw.lastInputHash || ''),
     regionalHysteresis: typeof raw.regionalHysteresis === 'object' && raw.regionalHysteresis ? raw.regionalHysteresis : {},
+    regionalPermitMemory: typeof raw.regionalPermitMemory === 'object' && raw.regionalPermitMemory ? raw.regionalPermitMemory : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -25683,6 +25695,7 @@ export function computeIndustrialEnergyEnvironmentalState(
       householdEnergyHints: [],
       interRegionalFlows: [],
       turnSimulationDigest: `t${turn}|disabled`,
+      regionalPermitLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -25696,6 +25709,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const regions: Record<string, V1014RegionalEnergyProfile> = {};
   const modifiers: V1014IndustryModifierEntry[] = [];
   const householdHintLists: V1014HouseholdEnergyHint[][] = [];
+  const permitLedgers: Record<string, V1014RegionalPermitLedger> = {};
+  const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
 
@@ -25749,6 +25764,24 @@ export function computeIndustrialEnergyEnvironmentalState(
       extractionScore,
     });
 
+    const storageFlex = computeRegionalStorageFlexibility({
+      regionId,
+      renewableShareScore,
+      gridStressPoints: gridStress.stressPoints,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+    });
+
+    const highRiskCount = sites.filter(s => s.environmentalRisk === 'high').length;
+    const permitStep = advanceRegionalPermitLedger({
+      regionId,
+      siteCount: sites.length,
+      highRiskSiteCount: highRiskCount,
+      extractionScore,
+      prev: nextPermitMemory[regionId] || null,
+    });
+    nextPermitMemory[regionId] = permitStep.next;
+    permitLedgers[regionId] = permitStep.ledger;
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -25757,7 +25790,9 @@ export function computeIndustrialEnergyEnvironmentalState(
 
     let pressure = activeRules.reduce((a, r) => a + r.constraintLoss * 100, 0) + energyStress + climatePressure;
     pressure += gridScenario.stressModifier;
+    pressure += permitStep.ledger.pressureAdd;
     pressure -= gridRecovery.pressureRelief;
+    pressure -= storageFlex.gridStressRelief;
     pressure -= activeRules.reduce((a, r) => a + r.renewableRelief * Math.min(1, renewableShareScore / 55), 0) * 12;
     pressure += sites.filter(s => s.environmentalRisk === 'high').length * 4;
     pressure = v1014Clamp(pressure, 0, 100);
@@ -25787,6 +25822,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       extractionEfficiency.summary,
       `Grid scenario ${gridScenario.label}`,
       climateTransition.summary,
+      storageFlex.summary,
+      permitStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -25861,7 +25898,7 @@ export function computeIndustrialEnergyEnvironmentalState(
       renewableShareScore,
       environmentalPressure: v1014Round(pressure, 1),
       gridStressBand: gridStress.band,
-      gridStressPoints: gridStress.stressPoints,
+      gridStressPoints: Math.max(0, v1014Round(gridStress.stressPoints - storageFlex.gridStressRelief, 1)),
       gridRecoveryBand: gridRecovery.band,
       gridRecoveryPoints: gridRecovery.recoveryPoints,
       extractionEfficiencyScore: extractionEfficiency.score,
@@ -25869,6 +25906,9 @@ export function computeIndustrialEnergyEnvironmentalState(
       activeGridScenarioId: gridScenario.id,
       climateTransitionStage: climateTransition.stage,
       climateTransitionDepth: climateTransition.depth,
+      storageFlexibilityBand: storageFlex.band,
+      storageStressRelief: storageFlex.gridStressRelief,
+      permitUtilizationBand: permitStep.ledger.band,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -25937,6 +25977,7 @@ export function computeIndustrialEnergyEnvironmentalState(
     householdEnergyHints: mergeHouseholdEnergyHints(householdHintLists).slice(0, 48),
     interRegionalFlows,
     turnSimulationDigest,
+    regionalPermitLedgers: permitLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -25947,6 +25988,7 @@ export function computeIndustrialEnergyEnvironmentalState(
     initializedTurn: persisted.initializedTurn ?? turn,
     lastInputHash: inputHash,
     regionalHysteresis: nextHyst,
+    regionalPermitMemory: nextPermitMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -26097,6 +26139,14 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     r1.state,
   );
   check('GI alignment', gi.relevanceDelta > 0, gi.reason || '');
+
+  const batInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: ['battery_grid', 'pumped_hydro', 'renewable_grid'],
+  };
+  const rb = computeIndustrialEnergyEnvironmentalState(batInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check('STORAGE flexibility relief', (rb.state.regions.SA?.storageStressRelief || 0) > 0, String(rb.state.regions.SA?.storageStressRelief));
+  check('PERMIT ledger tracked', !!rb.state.regionalPermitLedgers.WA?.band, rb.state.regionalPermitLedgers.WA?.band || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');
