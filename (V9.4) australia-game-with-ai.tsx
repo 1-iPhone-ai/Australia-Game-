@@ -11278,7 +11278,8 @@ export function applySimpleLoanTick(state: { money: number; loans?: any[] }): { 
     // longer compounds — one unpayable $500 loan used to exceed $4,600 within 10 days (1.25^n death spiral).
     const principal = typeof loan.principal === 'number' && loan.principal > 0 ? loan.principal : Math.min(loan.amount, LOAN_AMOUNT);
     const interest = Math.floor(principal * LOAN_INTEREST_RATE);
-    const payment = Math.min(interest, money);
+    const payable = Number.isFinite(money) && money > 0 ? money : 0;
+    const payment = Math.min(interest, payable);
     money -= payment;
     return { ...loan, principal, amount: loan.amount + interest - payment, accrued: (loan.accrued || 0) + interest };
   }).filter((loan: any) => loan.amount > 0.5);
@@ -11324,13 +11325,15 @@ export function reduceGameAction(
         case 'movement':
         case 'travel': {
           const targetRegion = action.targetRegion || action.parameters?.region || action.parameters?.destinationRegion || action.parameters?.targetRegion || action.parameters?.destination;
-          const cost = action.price || action.parameters?.cost || 0;
-          if (actor && targetRegion) {
+          const rawCost = action.price ?? action.parameters?.cost ?? 0;
+          const cost = Number(rawCost);
+          const knownRegion = typeof targetRegion === 'string' && (Boolean(REGIONS[targetRegion]) || Boolean(EXTERNAL_TERRITORIES[targetRegion]));
+          if (actor && knownRegion && Number.isFinite(cost) && cost >= 0 && actor.money >= cost) {
             actor.currentRegion = targetRegion;
             if (!actor.visitedRegions?.includes(targetRegion)) {
               actor.visitedRegions = [...(actor.visitedRegions || []), targetRegion];
             }
-            if (cost > 0 && actor.money >= cost) {
+            if (cost > 0) {
               actor.money -= cost;
             }
             actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
@@ -11359,8 +11362,9 @@ export function reduceGameAction(
         case 'take_advanced_loan':
         case 'take_loan':
         case 'draw_credit_line': {
-          const principal = action.investmentAmount || action.price || action.parameters?.principal || action.parameters?.amount || 1000;
-          if (actor) {
+          const specifiedPrincipal = [action.investmentAmount, action.price, action.parameters?.principal, action.parameters?.amount].find(v => v !== undefined && v !== null);
+          const principal = specifiedPrincipal === undefined ? 1000 : Number(specifiedPrincipal);
+          if (actor && Number.isFinite(principal) && principal > 0) {
             actor.money += principal;
             const scheduleId = nextCorrelationId(nextState.counters || globalDeterministicCounters, 'loan');
             const termDays = Number(action.parameters?.termDays || action.parameters?.term) || 5;
@@ -11419,7 +11423,8 @@ export function reduceGameAction(
 
         case 'refinance_advanced_loan': {
           const newPrincipal = action.parameters?.newPrincipal ?? 5000;
-          const oldPrincipal = actor?.debt || actor?.loans || 0;
+          const scheduledPrincipal = Array.isArray(actor?.advancedLoans) ? actor.advancedLoans.reduce((sum: number, loan: any) => sum + (Number(loan?.amount) > 0 ? Number(loan.amount) : 0), 0) : 0;
+          const oldPrincipal = Number(actor?.debt) > 0 ? Number(actor.debt) : scheduledPrincipal;
           const debtDelta = newPrincipal - oldPrincipal;
           if (actor) {
             if (debtDelta > 0) {
@@ -11547,8 +11552,9 @@ export function reduceGameAction(
         }
 
         case 'work': {
-          const wage = action.price || action.parameters?.wage || action.parameters?.amount || 50;
-          if (actor) {
+          const specifiedWage = action.price ?? action.parameters?.wage ?? action.parameters?.amount;
+          const wage = specifiedWage === undefined ? 50 : Number(specifiedWage);
+          if (actor && Number.isFinite(wage) && wage >= 0) {
             actor.money += wage;
             actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
             actionExecuted = true;
@@ -11560,37 +11566,45 @@ export function reduceGameAction(
           const item = action.item || action.parameters?.output || action.parameters?.recipeId;
           const inputs: Record<string, number> = action.parameters?.inputs || {};
           const craftTime = action.parameters?.craftTime || 1;
-          if (actor) {
-            if (actor.inventory) {
-              for (const [res, count] of Object.entries(inputs)) {
-                for (let i = 0; i < (count as number); i++) {
-                  const idx = actor.inventory.indexOf(res);
-                  if (idx !== -1) actor.inventory.splice(idx, 1);
-                }
-              }
-            }
-            if (item) {
+          const inputRows = Object.entries(inputs);
+          if (actor && item && inputRows.length > 0) {
+            const bag = Array.isArray(actor.inventory) ? [...actor.inventory] : [];
+            const affordable = inputRows.every(([res, count]) => {
+              const need = Number(count);
+              return Number.isFinite(need) && need > 0 && bag.filter(entry => entry === res).length >= need;
+            });
+            if (affordable) {
+              inputRows.forEach(([res, count]) => {
+                let left = Number(count);
+                actor.inventory = (actor.inventory || []).filter((entry: string) => {
+                  if (entry === res && left > 0) { left -= 1; return false; }
+                  return true;
+                });
+              });
               actor.inventory = [...(actor.inventory || []), item];
+              actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
+              void craftTime;
+              actionExecuted = true;
             }
-            actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
-            actionExecuted = true;
           }
           break;
         }
 
         case 'challenge': {
-          const wager = action.parameters?.wager || action.price || 0;
-          const isWin = action.parameters?.isWin !== false;
-          const reward = action.parameters?.reward || wager * 2;
+          const wager = Number(action.parameters?.wager ?? action.price ?? 0);
+          const isWin = action.parameters?.isWin === true;
+          const reward = Number(action.parameters?.reward ?? (Number.isFinite(wager) ? wager * 2 : NaN));
           const xpGain = action.parameters?.xpGain || 20;
-          if (actor) {
+          if (actor && action.parameters && typeof action.parameters.isWin === 'boolean' && Number.isFinite(wager) && wager >= 0 && Number.isFinite(reward) && reward >= 0) {
             if (isWin) {
               actor.money += reward;
               actor.consecutiveWins = (actor.consecutiveWins || 0) + 1;
               actor.xp = (actor.xp || 0) + xpGain;
-            } else {
+            } else if (actor.money >= wager) {
               actor.money = Math.max(0, actor.money - wager);
               actor.consecutiveWins = 0;
+            } else {
+              break;
             }
             actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
             actionExecuted = true;
@@ -11635,9 +11649,9 @@ export function reduceGameAction(
           const amount = action.price || action.parameters?.amount || 50;
           const recipient = targetId ? nextState.actorsById[targetId] : null;
           // V9.5: a negative / non-finite amount used to reverse the transfer (taking the recipient's cash).
-          if (actor && Number.isFinite(amount) && amount > 0 && actor.money >= amount) {
+          if (actor && recipient && Number.isFinite(amount) && amount > 0 && actor.money >= amount) {
             actor.money -= amount;
-            if (recipient) recipient.money += amount;
+            recipient.money += amount;
             if (team) {
               team.supportLedger = team.supportLedger || createDefaultTeamSupportLedger();
               const ledgerAny = team.supportLedger as unknown as Record<string, any>;
@@ -11706,10 +11720,13 @@ export function reduceGameAction(
         case 'sell':
         case 'sellResource': {
           const item = action.item || action.parameters?.resource || action.parameters?.item;
-          const quantity = action.parameters?.quantity || 1;
+          const rawQuantity = action.parameters?.quantity;
+          const quantity = rawQuantity === undefined || rawQuantity === null ? 1 : Number(rawQuantity);
           const isBuy = action.type === 'buy_market' || action.type === 'buyResource' || (action.parameters?.isBuy !== false && action.type !== 'sell' && action.type !== 'sellResource');
-          const unitPrice = action.price || action.parameters?.unitPrice || action.parameters?.price || nextState.markets?.resourcePrices?.[item] || 100;
+          const specifiedPrice = [action.price, action.parameters?.unitPrice, action.parameters?.price].find(v => v !== undefined && v !== null);
+          const unitPrice = specifiedPrice === undefined ? Number(nextState.markets?.resourcePrices?.[item] ?? 100) : Number(specifiedPrice);
           const totalPrice = unitPrice * quantity;
+          if (!Number.isFinite(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice < 0 || !Number.isFinite(totalPrice)) break;
           if (actor && item) {
             if (isBuy && actor.money >= totalPrice) {
               actor.money -= totalPrice;
@@ -11730,18 +11747,16 @@ export function reduceGameAction(
                 actionExecuted = true;
               }
             }
-          } else if (actor && typeof action.parameters?.moneyDelta === 'number') {
-            actor.money += action.parameters.moneyDelta;
-            actionExecuted = true;
           }
           break;
         }
 
         case 'sabotage': {
           const targetId = action.targetActorId || action.parameters?.targetActorId;
-          const cost = action.price || action.parameters?.cost || 0;
+          const rawSabotageCost = action.price ?? action.parameters?.cost ?? 0;
+          const cost = Number(rawSabotageCost);
           const targetActor = targetId ? nextState.actorsById[targetId] : null;
-          if (actor && actor.money >= cost) {
+          if (actor && Number.isFinite(cost) && cost >= 0 && actor.money >= cost) {
             actor.money -= cost;
             if (targetActor) {
               targetActor.debuffs = [...(targetActor.debuffs || []), {
@@ -11774,12 +11789,9 @@ export function reduceGameAction(
         }
 
         case 'ai_action': {
-          if (action.parameters?.payload) {
-            const p = action.parameters.payload;
-            if (p.moneyDelta && actor) actor.money += p.moneyDelta;
-            if (p.region && actor) actor.currentRegion = p.region;
-            actionExecuted = true;
-          } else {
+          const region = action.parameters?.payload?.region;
+          if (actor && typeof region === 'string' && (REGIONS[region] || EXTERNAL_TERRITORIES[region])) {
+            actor.currentRegion = region;
             actionExecuted = true;
           }
           break;
@@ -11855,6 +11867,11 @@ export function reduceGameAction(
                 }
               }
             }
+          }
+          if (nextState.gameState && typeof nextState.gameState === 'object' && nextState.gameState !== nextState) {
+            nextState.gameState.turnCounter = nextState.turnCounter;
+            nextState.gameState.turn = nextState.turn;
+            if (typeof nextState.day === 'number') nextState.gameState.day = nextState.day;
           }
           actionExecuted = true;
           break;
@@ -13187,11 +13204,11 @@ export function reduceGameAction(
           break;
         }
 
+        case 'think':
+        case 'wait':
+          break;
+
         default: {
-          if (actor && action.parameters?.moneyDelta) {
-            actor.money += action.parameters.moneyDelta;
-          }
-          actionExecuted = true;
           break;
         }
       }
@@ -13242,7 +13259,7 @@ export function reduceGameAction(
           }
         }
       }
-      if (team && actor) {
+      if (actionExecuted && team && actor) {
         (team as FlexibleTeamState).money = actor.money;
         (team as FlexibleTeamState).netWorth = actor.money;
         if (nextState.teamsById && nextState.teamsById[teamId]) (nextState.teamsById[teamId] as FlexibleTeamState).money = actor.money;
@@ -15907,7 +15924,23 @@ export interface DrawGameRandomOptions {
 }
 
 export function drawGameplayRandom(domain?: RngScopeDomain): number {
-  return globalRngRegistry.draw(domain);
+  const resultVal = globalRngRegistry.draw(domain);
+  const streamState = domain && typeof getRngStreamState === 'function' ? getRngStreamState(domain) : undefined;
+  pendingReplayRandomDraws.push({
+    timestamp: Date.now(),
+    step: 1,
+    scope: String(domain || 'default'),
+    seed: streamState ? (streamState.seed ?? streamState.streamSeed) : undefined,
+    state: streamState ? String(streamState.step ?? streamState.drawCount) : undefined,
+    value: resultVal,
+    stream: String(domain || 'default'),
+    context: String(domain || 'default'),
+    mode: 'deterministic',
+    system: String(domain || 'default'),
+    day: 1,
+    turn: 1
+  });
+  return resultVal;
 }
 
 export function drawGameRandom(
@@ -15958,6 +15991,7 @@ export function drawGameRandom(
   }
 
   let resultVal: number;
+  let gameplayDrawRecorded = false;
   switch (selectedMode) {
     case 'legacy_random':
       resultVal = NATIVE_MATH_RANDOM();
@@ -15989,6 +16023,7 @@ export function drawGameRandom(
     case 'hybrid':
       try {
         resultVal = drawGameplayRandom(domain);
+        gameplayDrawRecorded = true;
       } catch {
         // V9.5: hybrid mode may fall back, but never silently claim a certified deterministic replay.
         globalRngRegistry.markReplayUncertified(`Hybrid RNG fallback to native random for ${String(domain || 'World')}`);
@@ -15999,6 +16034,7 @@ export function drawGameRandom(
     case 'deterministic':
     default:
       resultVal = drawGameplayRandom(domain);
+      gameplayDrawRecorded = true;
       break;
   }
 
@@ -16017,7 +16053,7 @@ export function drawGameRandom(
     day: gameStateRef?.day ?? 1,
     turn: gameStateRef?.turn ?? 1
   };
-  if (selectedMode === 'recorded_chaos' || selectedMode === 'hybrid' || selectedMode === 'deterministic') {
+  if (!gameplayDrawRecorded && (selectedMode === 'recorded_chaos' || selectedMode === 'hybrid')) {
     pendingReplayRandomDraws.push(drawRecord);
   }
   const activeReplay = gameStateRef?.autoModeRuntime?.replayEvents?.[gameStateRef.autoModeRuntime.replayEvents.length - 1];
@@ -128733,7 +128769,8 @@ export const BALANCE_PACE_PRESETS: Record<'fast' | 'normal' | 'long_strategic', 
 };
 
 export function createBalanceSimConfig(o: Partial<BalanceSimConfig> = {}): BalanceSimConfig {
-  return { seed: 1, days: 30, apPerDay: 3, winCondition: 'money', startingMoney: 1000, features: { ...BAL_DEFAULT_FEATURES, ...(o.features || {}) }, ...o, ...(o.features ? { features: { ...BAL_DEFAULT_FEATURES, ...o.features } } : {}) };
+  const { features: featureOverride, ...balanceRest } = o;
+  return { seed: 1, days: 30, apPerDay: 3, winCondition: 'money', startingMoney: 1000, ...balanceRest, features: { ...BAL_DEFAULT_FEATURES, ...(featureOverride && typeof featureOverride === 'object' ? featureOverride : {}) } };
 }
 
 function balNext(w: BalanceWorld): number { const r = mulberry32Next(w.rng >>> 0); w.rng = r.nextState; return r.value; }
@@ -133690,6 +133727,28 @@ export function sanitizeSavedRngRegistryState(raw: unknown): Record<string, RngS
 }
 
 /** Counters are id sources: non-finite / negative values are repaired so ids can never be reused after load. */
+export function deterministicCountersCoveringSaveIds(raw: unknown, saved?: DeterministicCounters): DeterministicCounters {
+  const base = { ...(saved || createInitialDeterministicCounters()) };
+  let blob = '';
+  try { blob = JSON.stringify(raw ?? null); } catch { blob = ''; }
+  const patterns: Array<[keyof DeterministicCounters, RegExp]> = [
+    ['correlation', /:corr:(\d+)/g],
+    ['actionAttempt', /:action:(\d+)/g],
+    ['ledgerEvent', /:glevt:(\d+)/g],
+    ['replayEvent', /:replayevt:(\d+)/g]
+  ];
+  patterns.forEach(([key, re]) => {
+    let max = Number(base[key]) || 0;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(blob))) {
+      const n = Number(match[1]);
+      if (Number.isFinite(n) && n > max) max = n;
+    }
+    base[key] = max;
+  });
+  return base;
+}
+
 export function sanitizeSavedDeterministicCounters(raw: unknown): DeterministicCounters | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
   const base = createInitialDeterministicCounters();
@@ -133982,10 +134041,10 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         stats: sanitizeStats(data?.stats),
         level: v95IsFiniteNum(data?.level) ? Math.max(1, Math.floor(data.level)) : initialPlayerState.level,
         xp: v95IsFiniteNum(data?.xp) ? Math.max(0, data.xp) : initialPlayerState.xp,
-        consecutiveWins: typeof data?.consecutiveWins === 'number' ? data.consecutiveWins : 0,
+        consecutiveWins: v95IsFiniteNum(data?.consecutiveWins) ? Math.max(0, Math.floor(data.consecutiveWins)) : 0,
         specialAbilityUses: typeof data?.specialAbilityUses === 'number' ? data.specialAbilityUses : character.specialAbility.usesLeft,
         name: typeof data?.name === 'string' && data.name.trim() ? data.name : fallbackName,
-        actionsUsedThisTurn: typeof data?.actionsUsedThisTurn === 'number' ? data.actionsUsedThisTurn : 0,
+        actionsUsedThisTurn: v95IsFiniteNum(data?.actionsUsedThisTurn) ? Math.max(0, Math.floor(data.actionsUsedThisTurn)) : 0,
         overridesUsedToday: typeof data?.overridesUsedToday === 'number' ? data.overridesUsedToday : 0,
         overrideFatigue: typeof data?.overrideFatigue === 'number' ? data.overrideFatigue : 0,
         lentActionsUsedToday: typeof data?.lentActionsUsedToday === 'number' ? data.lentActionsUsedToday : 0,
@@ -135460,7 +135519,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
       // V9.5: these were written by buildSaveData but silently dropped here, so every load reseeded the
       // gameplay RNG streams and reset id counters (determinism drift + possible id reuse after load).
       rngRegistryState: sanitizeSavedRngRegistryState(raw.rngRegistryState),
-      deterministicCounters: sanitizeSavedDeterministicCounters(raw.deterministicCounters)
+      deterministicCounters: deterministicCountersCoveringSaveIds(raw, sanitizeSavedDeterministicCounters(raw.deterministicCounters))
     };
 }
 
@@ -136777,7 +136836,7 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number; pr
   });
   check('u_replay_prehash_is_not_divergence', 'A money event stamped from the pre-state does not diverge when cash matches (SAVE-005)', () => v95WithIsolatedGlobals(() => {
     const pre = { day: 1, turnCounter: 1, actorsById: { player: { id: 'player', money: 100, inventory: [] } }, player: { id: 'player', money: 100, inventory: [] }, teamsById: {}, regions: {}, activeEvents: [] };
-    const payload = { actionType: 'sell', moneyDelta: 40 };
+    const payload = { actionType: 'take_loan', investmentAmount: 40 };
     const stamped = stampReplayEventHashes({ payload }, pre);
     const ev = { id: 'e0', sequence: 0, category: 'market' as const, day: 1, turn: 1, actorId: 'player', teamId: 'team_player', summary: 'balance updated', payload, timestamp: 1, stateHashBefore: stamped.stateHashBefore, stateHashAfter: stamped.stateHashAfter, stateHash: stamped.stateHash };
     const file = {
@@ -136898,6 +136957,87 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number; pr
       internals.H = previous;
     }
   }));
+  check('u_bad_amounts_do_not_mint', 'Bad loan, buy, sell, sabotage, and challenge amounts do not mint cash (SIM-001)', () => {
+    const base: any = { day: 1, turnCounter: 1, player: { id: 'player', money: 1000, inventory: ['wool'], currentRegion: 'QLD', actionsUsedThisTurn: 0 }, actorsById: { player: { id: 'player', money: 1000, inventory: ['wool'], currentRegion: 'QLD', actionsUsedThisTurn: 0 }, ai: { id: 'ai', money: 1000 } }, teamsById: { team_player: { id: 'team_player', money: 99999 } }, gameState: { day: 1, turnCounter: 4 } };
+    const cash = (r: any) => r.nextState.player.money;
+    const loan = reduceGameAction(base, { type: 'take_loan', actorId: 'player', investmentAmount: -5000 } as any);
+    const zero = reduceGameAction(base, { type: 'take_loan', actorId: 'player', investmentAmount: 0 } as any);
+    const inf = reduceGameAction(base, { type: 'take_loan', actorId: 'player', investmentAmount: Infinity } as any);
+    const nan = reduceGameAction(base, { type: 'take_loan', actorId: 'player', investmentAmount: NaN, price: NaN, parameters: { principal: NaN, amount: NaN } } as any);
+    const buy = reduceGameAction(base, { type: 'buy_market', actorId: 'player', item: 'Wheat', price: 50, parameters: { quantity: -4, resource: 'Wheat' } } as any);
+    const none = reduceGameAction(base, { type: 'buy_market', actorId: 'player', item: 'Wheat', price: 50, parameters: { quantity: 0, resource: 'Wheat' } } as any);
+    const sell = reduceGameAction(base, { type: 'sell', actorId: 'player', parameters: { moneyDelta: 250000 } } as any);
+    const mint = reduceGameAction(base, { type: 'mint_cash', actorId: 'player', parameters: { moneyDelta: 9000 } } as any);
+    const sab = reduceGameAction(base, { type: 'sabotage', actorId: 'player', targetActorId: 'ai', price: -800, parameters: { sabotageId: 'delay' } } as any);
+    const chal = reduceGameAction(base, { type: 'challenge', actorId: 'player', parameters: { reward: 1000000 } } as any);
+    const wage = reduceGameAction(base, { type: 'work', actorId: 'player', price: -400 } as any);
+    const gift = reduceGameAction(base, { type: 'give_cash', actorId: 'player', targetActorId: 'nobody', price: 300 } as any);
+    const borrowed = reduceGameAction(base, { type: 'take_loan', actorId: 'player', investmentAmount: 1000 } as any);
+    const refinanced = reduceGameAction(borrowed.nextState, { type: 'refinance_advanced_loan', actorId: 'player', parameters: { newPrincipal: 1000 } } as any);
+    const ok = !loan.success && cash(loan) === 1000 && !zero.success && cash(zero) === 1000 && !inf.success && Number.isFinite(cash(inf)) && cash(inf) === 1000 && !nan.success && cash(nan) === 1000 && !buy.success && cash(buy) === 1000 && !none.success && cash(none) === 1000 && !sell.success && cash(sell) === 1000 && !mint.success && cash(mint) === 1000 && !sab.success && cash(sab) === 1000 && !chal.success && cash(chal) === 1000 && !wage.success && cash(wage) === 1000 && !gift.success && cash(gift) === 1000 && borrowed.success && cash(borrowed) === 2000 && cash(refinanced) === 2000;
+    return ok || JSON.stringify({ loan: cash(loan), zero: cash(zero), inf: cash(inf), nan: cash(nan), buy: cash(buy), sell: cash(sell), mint: cash(mint), sab: cash(sab), chal: cash(chal) });
+  });
+  check('u_travel_requires_fare_and_region', 'Travel does not move without a known region and the fare (SIM-002)', () => {
+    const base: any = { day: 1, turnCounter: 1, player: { id: 'player', money: 100, inventory: [], currentRegion: 'QLD' }, actorsById: { player: { id: 'player', money: 100, inventory: [], currentRegion: 'QLD' } } };
+    const dear = reduceGameAction(base, { type: 'travel', actorId: 'player', targetRegion: 'NSW', price: 5000 } as any);
+    const unknown = reduceGameAction(base, { type: 'travel', actorId: 'player', targetRegion: 'NOT_A_REGION', price: 10 } as any);
+    return (!dear.success && dear.nextState.player.currentRegion === 'QLD' && dear.nextState.player.money === 100 && !unknown.success && unknown.nextState.player.currentRegion === 'QLD') || JSON.stringify({ dear: dear.nextState.player, unknown: unknown.nextState.player.currentRegion });
+  });
+  check('u_craft_needs_inputs', 'Crafting does not grant an output the inputs cannot pay for (SIM-003)', () => {
+    const base: any = { day: 1, turnCounter: 1, player: { id: 'player', money: 1000, inventory: ['wool'], currentRegion: 'QLD' }, actorsById: { player: { id: 'player', money: 1000, inventory: ['wool'], currentRegion: 'QLD' } } };
+    const crafted = reduceGameAction(base, { type: 'craft', actorId: 'player', item: 'jacket', parameters: { output: 'jacket', inputs: { wool: 2, steel: 1 } } } as any);
+    const bag = crafted.nextState.player.inventory || [];
+    return (!crafted.success && bag.includes('wool') && !bag.includes('jacket')) || JSON.stringify(bag);
+  });
+  check('u_failed_action_keeps_team_cash', 'A rejected action does not rewrite team cash (SIM-004)', () => {
+    const base: any = { day: 1, turnCounter: 1, player: { id: 'player', money: 1000, inventory: [], currentRegion: 'QLD', teamId: 'team_player' }, actorsById: { player: { id: 'player', money: 1000, inventory: [], currentRegion: 'QLD', teamId: 'team_player' } }, teamsById: { team_player: { id: 'team_player', money: 99999 } } };
+    const deposited = reduceGameAction(base, { type: 'region_deposit', actorId: 'player', teamId: 'team_player', investmentAmount: 50000, targetRegion: 'NSW' } as any);
+    return (!deposited.success && deposited.nextState.player.money === 1000 && deposited.nextState.teamsById.team_player.money === 99999) || JSON.stringify({ player: deposited.nextState.player.money, team: deposited.nextState.teamsById.team_player.money, ok: deposited.success });
+  });
+  check('u_noop_actions_do_not_succeed', 'think, wait, and unknown actions do not spend an action or succeed (SIM-005)', () => {
+    const base: any = { day: 4, turn: 4, turnCounter: 4, player: { id: 'player', money: 1000, inventory: [], currentRegion: 'QLD', actionsUsedThisTurn: 0, actionPoints: 3 }, actorsById: { player: { id: 'player', money: 1000, inventory: [], currentRegion: 'QLD', actionsUsedThisTurn: 0, actionPoints: 3 } }, gameState: { day: 4, turnCounter: 4 } };
+    const think = reduceGameAction(base, { type: 'think', actorId: 'player' } as any);
+    const wait = reduceGameAction(base, { type: 'wait', actorId: 'player' } as any);
+    const unknown = reduceGameAction(base, { type: 'not_a_real_action', actorId: 'player' } as any);
+    const ended = reduceGameAction(base, { type: 'end_turn', actorId: 'player' } as any);
+    const quiet = !think.success && think.nextState.player.actionsUsedThisTurn === 0 && !wait.success && wait.nextState.player.actionsUsedThisTurn === 0 && !unknown.success && unknown.nextState.player.money === 1000;
+    const turned = ended.success && ended.nextState.turnCounter === 5 && ended.nextState.gameState.turnCounter === 5;
+    return (quiet && turned) || JSON.stringify({ think: think.success, wait: wait.success, unknown: unknown.success, end: ended.success, root: ended.nextState.turnCounter, nested: ended.nextState.gameState.turnCounter, used: think.nextState.player.actionsUsedThisTurn });
+  });
+  check('u_save_repairs_infinite_counters', 'A live save does not keep infinite action counters (SIM-006)', () => {
+    const saved: any = JSON.parse(JSON.stringify(createV95SaveFixture()));
+    saved.player.actionsUsedThisTurn = Infinity;
+    saved.player.consecutiveWins = Infinity;
+    const validated = validateSaveDataCore(saved);
+    return (validated.player.actionsUsedThisTurn === 0 && validated.player.consecutiveWins === 0) || JSON.stringify({ used: validated.player.actionsUsedThisTurn, wins: validated.player.consecutiveWins });
+  });
+  check('u_missing_counters_do_not_reuse_ids', 'A save without counters does not reissue an existing correlation id (SIM-007)', () => {
+    const saved: any = JSON.parse(JSON.stringify(createV95SaveFixture()));
+    delete saved.deterministicCounters;
+    saved.notifications = [{ id: 'x:corr:5', type: 'info', message: 'kept', read: true }];
+    const loaded = prepareSaveLoadTransaction(saved);
+    const counters = loaded.data?.deterministicCounters;
+    const next = counters ? nextCorrelationId({ ...counters }, 'x') : '';
+    return (Boolean(loaded.ok && counters && counters.correlation >= 5 && next === 'x:corr:6')) || JSON.stringify({ ok: loaded.ok, counters, next });
+  });
+  check('u_gameplay_random_is_logged', 'A World draw from drawGameplayRandom is on the replay draw log (SIM-008)', () => {
+    drainPendingReplayRandomDraws();
+    const drawn = v95WithIsolatedGlobals(() => {
+      setRngMasterSeed(77001, true);
+      const value = drawGameplayRandom('World');
+      return { value, draws: drainPendingReplayRandomDraws() };
+    });
+    drainPendingReplayRandomDraws();
+    return (drawn.draws.length === 1 && drawn.draws[0].value === drawn.value && drawn.draws[0].stream === 'World') || JSON.stringify(drawn);
+  });
+  check('u_negative_cash_does_not_pay_a_loan', 'A loan tick does not treat negative cash as a payment (SIM-009)', () => {
+    const ticked = applySimpleLoanTick({ money: -100, loans: [{ id: 'L', amount: 500, accrued: 0 }] });
+    return (ticked.money === -100 && ticked.loans.length === 1 && ticked.loans[0].amount === 625) || JSON.stringify(ticked);
+  });
+  check('u_balance_config_keeps_features', 'An explicit undefined features override does not wipe the balance sim (SIM-010)', () => {
+    const cfg = createBalanceSimConfig({ features: undefined as any });
+    return Boolean(cfg.features && cfg.features.contracts !== undefined) || JSON.stringify(cfg.features);
+  });
 
 
 
@@ -191344,9 +191484,9 @@ function dispatchGameSettingsChange(
       setRngMasterSeed(seed, true);
     }
     if (data.deterministicCounters) {
-      setGlobalDeterministicCounters(data.deterministicCounters);
+      setGlobalDeterministicCounters(deterministicCountersCoveringSaveIds(data, data.deterministicCounters));
     } else {
-      resetGlobalDeterministicCounters();
+      setGlobalDeterministicCounters(deterministicCountersCoveringSaveIds(data));
     }
     const selectedCharacterIndex = CHARACTERS.findIndex(char => char.name === data.player.character.name);
 	    updateUiState({
