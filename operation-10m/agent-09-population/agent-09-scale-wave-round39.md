@@ -6,7 +6,7 @@
 | --- | --- |
 | Branch | `op10m/agent-09-population` |
 | Base commit | `5c1621b` — wave **38** / round 38 reengagement stack |
-| Origin (round 39 feat) | **`<FEAT>`** — pushed first |
+| Origin (round 39 feat) | **`14500ba`** — pushed first |
 | Wave baseline | **`6134c6a`** projected (O10-209) |
 | Round **39** / wave **39** | Reengagement-mentorship coupling, mentorship sustain, subject mentorship, workforce mentorship |
 | Self-tests | **666** cases (`npm run test:agent09`) |
