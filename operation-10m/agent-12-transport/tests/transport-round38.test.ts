@@ -37,13 +37,13 @@ describe('Agent 12 round 38 catalog', () => {
 });
 
 describe('Agent 12 round 38 systems', () => {
-  it('returns agent12/40 with geothermal, flood evac, robot sortation', () => {
+  it('returns agent12/41 with geothermal, flood evac, robot sortation', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(350), {
       deepGeothermalExportPolicy: 'accelerate',
       coastalFloodEvacStagingPolicy: 'surge',
       warehouseRobotSortationLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/40');
+    assert.equal(state.schemaVersion, 'agent12/41');
     assert.ok(state.nationalDeepGeothermalExportIndex >= 5);
     assert.ok(state.nationalCoastalFloodEvacStagingIndex >= 6);
     assert.ok(state.warehouseRobotSortationLogisticsShare >= 0.03);

@@ -618,6 +618,23 @@ import {
   nationalPortLithiumHydroxideLogisticsThroughputIndex,
   portLithiumHydroxideLogisticsProductivityMultiplier,
 } from './port-lithium-hydroxide-logistics-index.ts';
+import {
+  computeDesalinationBrineExportByRegion,
+  desalinationBrineExportProductivityMultiplier,
+  nationalDesalinationBrineExportIndex,
+} from '../network/desalination-brine-export-index.ts';
+import {
+  computeWildlifeRescueAirliftStagingByRegion,
+  computeWildlifeRescueAirliftStagingShare,
+  nationalWildlifeRescueAirliftStagingIndex,
+  wildlifeRescueAirliftStagingProductivityMultiplier,
+} from '../operations/wildlife-rescue-airlift-staging-index.ts';
+import {
+  computeUrbanEvFreightChargingLogisticsShare,
+  computeUrbanEvFreightChargingLogisticsThroughputByRegion,
+  nationalUrbanEvFreightChargingLogisticsThroughputIndex,
+  urbanEvFreightChargingLogisticsProductivityMultiplier,
+} from './urban-ev-freight-charging-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1916,6 +1933,35 @@ export function computeTransportInfrastructureState(
     portLithiumHydroxideLogisticsShare,
     options?.portLithiumHydroxideLogisticsPolicy ?? 'baseline',
   );
+  const desalinationBrineExportByRegion = computeDesalinationBrineExportByRegion(ops);
+  const nationalDesalBrine = nationalDesalinationBrineExportIndex(desalinationBrineExportByRegion);
+  const desalBrineMult = desalinationBrineExportProductivityMultiplier(
+    nationalDesalBrine,
+    options?.desalinationBrineExportPolicy ?? 'baseline',
+  );
+  const wildlifeRescueAirliftStagingByRegion = computeWildlifeRescueAirliftStagingByRegion(ops, networkStress);
+  const nationalWildlifeRescue = nationalWildlifeRescueAirliftStagingIndex(wildlifeRescueAirliftStagingByRegion);
+  const wildlifeRescueAirliftStagingShare = computeWildlifeRescueAirliftStagingShare(
+    ops,
+    options?.wildlifeRescueAirliftStagingPolicy ?? 'baseline',
+  );
+  const wildlifeRescueMult = wildlifeRescueAirliftStagingProductivityMultiplier(
+    wildlifeRescueAirliftStagingShare,
+    options?.wildlifeRescueAirliftStagingPolicy ?? 'baseline',
+  );
+  const urbanEvFreightChargingLogisticsThroughputByRegion =
+    computeUrbanEvFreightChargingLogisticsThroughputByRegion(ops);
+  const nationalEvFreightCharging = nationalUrbanEvFreightChargingLogisticsThroughputIndex(
+    urbanEvFreightChargingLogisticsThroughputByRegion,
+  );
+  const urbanEvFreightChargingLogisticsShare = computeUrbanEvFreightChargingLogisticsShare(
+    ops,
+    options?.urbanEvFreightChargingLogisticsPolicy ?? 'baseline',
+  );
+  const evFreightChargingMult = urbanEvFreightChargingLogisticsProductivityMultiplier(
+    urbanEvFreightChargingLogisticsShare,
+    options?.urbanEvFreightChargingLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1990,6 +2036,9 @@ export function computeTransportInfrastructureState(
     const waveEnergyBoost = (offshoreWaveEnergyExportByRegion[code] - 5) * 0.0029;
     const schoolSupplyBoost = (remoteSchoolSupplyStagingByRegion[code] - 6) * 0.0025;
     const lithiumHydroxideBoost = (portLithiumHydroxideLogisticsThroughputByRegion[code] - 2) * 0.0021;
+    const desalBrineBoost = (desalinationBrineExportByRegion[code] - 5) * 0.0028;
+    const wildlifeRescueBoost = (wildlifeRescueAirliftStagingByRegion[code] - 6) * 0.0024;
+    const evFreightChargingBoost = (urbanEvFreightChargingLogisticsThroughputByRegion[code] - 2) * 0.002;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -2063,7 +2112,10 @@ export function computeTransportInfrastructureState(
         robotSortationBoost +
         waveEnergyBoost +
         schoolSupplyBoost +
-        lithiumHydroxideBoost) *
+        lithiumHydroxideBoost +
+        desalBrineBoost +
+        wildlifeRescueBoost +
+        evFreightChargingBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -2135,7 +2187,10 @@ export function computeTransportInfrastructureState(
       robotSortationMult *
       waveEnergyMult *
       schoolSupplyMult *
-      lithiumHydroxideMult;
+      lithiumHydroxideMult *
+      desalBrineMult *
+      wildlifeRescueMult *
+      evFreightChargingMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -2230,7 +2285,10 @@ export function computeTransportInfrastructureState(
     nationalRobotSortation * 0.003 +
     nationalWaveEnergy * 0.003 +
     nationalSchoolSupply * 0.003 +
-    nationalLithiumHydroxide * 0.003;
+    nationalLithiumHydroxide * 0.003 +
+    nationalDesalBrine * 0.003 +
+    nationalWildlifeRescue * 0.003 +
+    nationalEvFreightCharging * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -2245,7 +2303,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/40',
+    schemaVersion: 'agent12/41',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -2531,6 +2589,14 @@ export function computeTransportInfrastructureState(
     portLithiumHydroxideLogisticsShare,
     nationalPortLithiumHydroxideLogisticsThroughputIndex: nationalLithiumHydroxide,
     portLithiumHydroxideLogisticsThroughputByRegion,
+    nationalDesalinationBrineExportIndex: nationalDesalBrine,
+    desalinationBrineExportByRegion,
+    wildlifeRescueAirliftStagingShare,
+    nationalWildlifeRescueAirliftStagingIndex: nationalWildlifeRescue,
+    wildlifeRescueAirliftStagingByRegion,
+    urbanEvFreightChargingLogisticsShare,
+    nationalUrbanEvFreightChargingLogisticsThroughputIndex: nationalEvFreightCharging,
+    urbanEvFreightChargingLogisticsThroughputByRegion,
     computeMs,
   };
 }

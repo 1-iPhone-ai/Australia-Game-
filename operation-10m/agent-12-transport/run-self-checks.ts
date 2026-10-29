@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/40' &&
+      infra.schemaVersion === 'agent12/41' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -210,8 +210,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalOffshoreWaveEnergyExportIndex >= 5 &&
       infra.nationalRemoteSchoolSupplyStagingIndex >= 6 &&
       infra.portLithiumHydroxideLogisticsShare >= 0.03 &&
-      infra.nationalPortLithiumHydroxideLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} wave=${infra.nationalOffshoreWaveEnergyExportIndex.toFixed(1)} school=${infra.nationalRemoteSchoolSupplyStagingIndex.toFixed(1)} hydroxide=${infra.nationalPortLithiumHydroxideLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalPortLithiumHydroxideLogisticsThroughputIndex >= 2 &&
+      infra.nationalDesalinationBrineExportIndex >= 5 &&
+      infra.nationalWildlifeRescueAirliftStagingIndex >= 6 &&
+      infra.urbanEvFreightChargingLogisticsShare >= 0.03 &&
+      infra.nationalUrbanEvFreightChargingLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} brine=${infra.nationalDesalinationBrineExportIndex.toFixed(1)} wildlife=${infra.nationalWildlifeRescueAirliftStagingIndex.toFixed(1)} evfreight=${infra.nationalUrbanEvFreightChargingLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;

@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 40
+
+- Schema **`agent12/41`**: desalination brine export throughput, wildlife rescue airlift staging readiness, urban EV freight charging logistics share (`desalinationBrineExportPolicy`, `wildlifeRescueAirliftStagingPolicy`, `urbanEvFreightChargingLogisticsPolicy`)
+- Catalog: **550** assets, **134** corridors, **218** scenarios
+- Systems: `network/desalination-brine-export-index.ts`, `operations/wildlife-rescue-airlift-staging-index.ts`, `productivity/urban-ev-freight-charging-logistics-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 39
 
 - Schema **`agent12/40`**: offshore wave energy export throughput, remote school supply staging readiness, port lithium hydroxide logistics share (`offshoreWaveEnergyExportPolicy`, `remoteSchoolSupplyStagingPolicy`, `portLithiumHydroxideLogisticsPolicy`)

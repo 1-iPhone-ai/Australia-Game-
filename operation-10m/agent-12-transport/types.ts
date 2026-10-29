@@ -387,8 +387,14 @@ export type RemoteSchoolSupplyStagingPolicy = 'baseline' | 'surge';
 
 export type PortLithiumHydroxideLogisticsPolicy = 'baseline' | 'expand';
 
+export type DesalinationBrineExportPolicy = 'baseline' | 'accelerate';
+
+export type WildlifeRescueAirliftStagingPolicy = 'baseline' | 'surge';
+
+export type UrbanEvFreightChargingLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/40';
+  schemaVersion: 'agent12/41';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -674,6 +680,14 @@ export interface TransportInfrastructureState {
   portLithiumHydroxideLogisticsShare: number;
   nationalPortLithiumHydroxideLogisticsThroughputIndex: number;
   portLithiumHydroxideLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalDesalinationBrineExportIndex: number;
+  desalinationBrineExportByRegion: Record<AuRegionCode, number>;
+  wildlifeRescueAirliftStagingShare: number;
+  nationalWildlifeRescueAirliftStagingIndex: number;
+  wildlifeRescueAirliftStagingByRegion: Record<AuRegionCode, number>;
+  urbanEvFreightChargingLogisticsShare: number;
+  nationalUrbanEvFreightChargingLogisticsThroughputIndex: number;
+  urbanEvFreightChargingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -784,6 +798,9 @@ export interface TransportInfrastructureOptions {
   offshoreWaveEnergyExportPolicy?: OffshoreWaveEnergyExportPolicy;
   remoteSchoolSupplyStagingPolicy?: RemoteSchoolSupplyStagingPolicy;
   portLithiumHydroxideLogisticsPolicy?: PortLithiumHydroxideLogisticsPolicy;
+  desalinationBrineExportPolicy?: DesalinationBrineExportPolicy;
+  wildlifeRescueAirliftStagingPolicy?: WildlifeRescueAirliftStagingPolicy;
+  urbanEvFreightChargingLogisticsPolicy?: UrbanEvFreightChargingLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {

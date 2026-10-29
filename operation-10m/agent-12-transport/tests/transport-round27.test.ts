@@ -37,13 +37,13 @@ describe('Agent 12 round 27 catalog', () => {
 });
 
 describe('Agent 12 round 27 systems', () => {
-  it('returns agent12/40 with wind tow, battery recycle, courier microhub', () => {
+  it('returns agent12/41 with wind tow, battery recycle, courier microhub', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(240), {
       offshoreWindTowInstallPolicy: 'deploy',
       evBatteryRecyclingLogisticsPolicy: 'accelerate',
       urbanCourierMicrohubPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/40');
+    assert.equal(state.schemaVersion, 'agent12/41');
     assert.ok(state.nationalOffshoreWindTowInstallIndex >= 5);
     assert.ok(state.nationalEvBatteryRecyclingLogisticsIndex >= 5);
     assert.ok(state.urbanCourierMicrohubShare >= 0.03);
