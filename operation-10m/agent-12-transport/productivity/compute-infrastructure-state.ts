@@ -117,6 +117,22 @@ import {
   computeAutonomousFreightShare,
   nationalAutonomousCorridorThroughputIndex,
 } from './autonomous-freight-index.ts';
+import {
+  deepSeaGatewayProductivityMultiplier,
+  computeDeepSeaGatewayThroughputByRegion,
+  nationalDeepSeaGatewayThroughputIndex,
+} from '../network/deep-sea-gateway-throughput-index.ts';
+import {
+  computeInfrastructurePermittingByRegion,
+  infrastructurePermittingProductivityMultiplier,
+  nationalInfrastructurePermittingIndex,
+} from '../operations/infrastructure-permitting-index.ts';
+import {
+  computeElectricCorridorThroughputByRegion,
+  computeElectricFreightShare,
+  electricFreightProductivityMultiplier,
+  nationalElectricCorridorThroughputIndex,
+} from './electric-freight-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -448,6 +464,50 @@ export function computeTransportInfrastructureState(
     nationalCoastalShipping * 0.026 +
     nationalAutonomousCorridor * 0.024;
 
+  const networkStress = aggregateNetworkStress(inputs.networkUtilization);
+  const deepSeaGatewayThroughputByRegion = computeDeepSeaGatewayThroughputByRegion(ops);
+  const nationalDeepSeaGateway = nationalDeepSeaGatewayThroughputIndex(deepSeaGatewayThroughputByRegion);
+  const deepSeaMult = deepSeaGatewayProductivityMultiplier(
+    nationalDeepSeaGateway,
+    options?.deepSeaGatewayPolicy ?? 'baseline',
+  );
+  const infrastructurePermittingByRegion = computeInfrastructurePermittingByRegion(ops, networkStress);
+  const nationalInfrastructurePermitting = nationalInfrastructurePermittingIndex(infrastructurePermittingByRegion);
+  const permittingMult = infrastructurePermittingProductivityMultiplier(
+    nationalInfrastructurePermitting,
+    options?.permittingStreamlinePolicy ?? 'baseline',
+  );
+  const electricCorridorThroughputByRegion = computeElectricCorridorThroughputByRegion(ops);
+  const nationalElectricCorridor = nationalElectricCorridorThroughputIndex(electricCorridorThroughputByRegion);
+  const electricFreightShare = computeElectricFreightShare(ops, options?.electricFreightPolicy ?? 'baseline');
+  const electricMult = electricFreightProductivityMultiplier(
+    electricFreightShare,
+    options?.electricFreightPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const deepSeaBoost = (deepSeaGatewayThroughputByRegion[code] - 12) * 0.006;
+    const permittingBoost = (infrastructurePermittingByRegion[code] - 42) * 0.004;
+    const electricBoost = (electricCorridorThroughputByRegion[code] - 5) * 0.006;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + deepSeaBoost + permittingBoost + electricBoost) *
+      deepSeaMult *
+      permittingMult *
+      electricMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035 +
+    nationalAviationCargo * 0.03 +
+    nationalHydrogenCorridor * 0.028 +
+    nationalCoastalShipping * 0.026 +
+    nationalAutonomousCorridor * 0.024 +
+    nationalDeepSeaGateway * 0.027 +
+    nationalElectricCorridor * 0.023;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -461,7 +521,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/10',
+    schemaVersion: 'agent12/11',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -516,6 +576,13 @@ export function computeTransportInfrastructureState(
     autonomousFreightShare,
     nationalAutonomousCorridorThroughputIndex: nationalAutonomousCorridor,
     autonomousCorridorThroughputByRegion,
+    nationalDeepSeaGatewayThroughputIndex: nationalDeepSeaGateway,
+    deepSeaGatewayThroughputByRegion,
+    nationalInfrastructurePermittingIndex: nationalInfrastructurePermitting,
+    infrastructurePermittingByRegion,
+    electricFreightShare,
+    nationalElectricCorridorThroughputIndex: nationalElectricCorridor,
+    electricCorridorThroughputByRegion,
     computeMs,
   };
 }

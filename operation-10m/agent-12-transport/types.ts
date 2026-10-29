@@ -207,8 +207,14 @@ export type BiosecurityStreamlinePolicy = 'baseline' | 'preclear';
 
 export type AutonomousFreightPolicy = 'baseline' | 'deploy';
 
+export type DeepSeaGatewayPolicy = 'baseline' | 'expand';
+
+export type PermittingStreamlinePolicy = 'baseline' | 'fast_track';
+
+export type ElectricFreightPolicy = 'baseline' | 'accelerate';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/10';
+  schemaVersion: 'agent12/11';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -263,6 +269,13 @@ export interface TransportInfrastructureState {
   autonomousFreightShare: number;
   nationalAutonomousCorridorThroughputIndex: number;
   autonomousCorridorThroughputByRegion: Record<AuRegionCode, number>;
+  nationalDeepSeaGatewayThroughputIndex: number;
+  deepSeaGatewayThroughputByRegion: Record<AuRegionCode, number>;
+  nationalInfrastructurePermittingIndex: number;
+  infrastructurePermittingByRegion: Record<AuRegionCode, number>;
+  electricFreightShare: number;
+  nationalElectricCorridorThroughputIndex: number;
+  electricCorridorThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -283,6 +296,9 @@ export interface TransportInfrastructureOptions {
   coastalShippingPolicy?: CoastalShippingPolicy;
   biosecurityStreamlinePolicy?: BiosecurityStreamlinePolicy;
   autonomousFreightPolicy?: AutonomousFreightPolicy;
+  deepSeaGatewayPolicy?: DeepSeaGatewayPolicy;
+  permittingStreamlinePolicy?: PermittingStreamlinePolicy;
+  electricFreightPolicy?: ElectricFreightPolicy;
 }
 
 export interface V94ProjectSnapshot {

@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/10' &&
+      infra.schemaVersion === 'agent12/11' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -90,8 +90,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalCoastalShippingThroughputIndex > 8 &&
       infra.nationalBiosecurityClearanceIndex > 36 &&
       infra.autonomousFreightShare >= 0.05 &&
-      infra.nationalAutonomousCorridorThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} coastal=${infra.nationalCoastalShippingThroughputIndex.toFixed(1)} biosecurity=${infra.nationalBiosecurityClearanceIndex.toFixed(1)} autonomous=${infra.nationalAutonomousCorridorThroughputIndex.toFixed(1)}`,
+      infra.nationalAutonomousCorridorThroughputIndex >= 2 &&
+      infra.nationalDeepSeaGatewayThroughputIndex > 10 &&
+      infra.nationalInfrastructurePermittingIndex > 38 &&
+      infra.electricFreightShare >= 0.06 &&
+      infra.nationalElectricCorridorThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} deepSea=${infra.nationalDeepSeaGatewayThroughputIndex.toFixed(1)} permitting=${infra.nationalInfrastructurePermittingIndex.toFixed(1)} electric=${infra.nationalElectricCorridorThroughputIndex.toFixed(1)}`,
   });
 
   return results;

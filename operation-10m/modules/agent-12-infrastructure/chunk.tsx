@@ -211,8 +211,14 @@ export type BiosecurityStreamlinePolicy = 'baseline' | 'preclear';
 
 export type AutonomousFreightPolicy = 'baseline' | 'deploy';
 
+export type DeepSeaGatewayPolicy = 'baseline' | 'expand';
+
+export type PermittingStreamlinePolicy = 'baseline' | 'fast_track';
+
+export type ElectricFreightPolicy = 'baseline' | 'accelerate';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/10';
+  schemaVersion: 'agent12/11';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -267,6 +273,13 @@ export interface TransportInfrastructureState {
   autonomousFreightShare: number;
   nationalAutonomousCorridorThroughputIndex: number;
   autonomousCorridorThroughputByRegion: Record<AuRegionCode, number>;
+  nationalDeepSeaGatewayThroughputIndex: number;
+  deepSeaGatewayThroughputByRegion: Record<AuRegionCode, number>;
+  nationalInfrastructurePermittingIndex: number;
+  infrastructurePermittingByRegion: Record<AuRegionCode, number>;
+  electricFreightShare: number;
+  nationalElectricCorridorThroughputIndex: number;
+  electricCorridorThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -287,6 +300,9 @@ export interface TransportInfrastructureOptions {
   coastalShippingPolicy?: CoastalShippingPolicy;
   biosecurityStreamlinePolicy?: BiosecurityStreamlinePolicy;
   autonomousFreightPolicy?: AutonomousFreightPolicy;
+  deepSeaGatewayPolicy?: DeepSeaGatewayPolicy;
+  permittingStreamlinePolicy?: PermittingStreamlinePolicy;
+  electricFreightPolicy?: ElectricFreightPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -728,6 +744,48 @@ export const TRANSPORT_CORRIDORS_ROUND9: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round10.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND10: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_nsw_melbourne_deep_sea',
+    name: 'Sydney–Melbourne Deep-Sea Gateway',
+    networkKind: 'trade',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['deep_sea', 'tradelane', 'mega_container'],
+      VIC: ['deep_sea', 'container', 'gateway'],
+    },
+    productivitySynergyPoints: 7.4,
+    logisticsRelief: 0.044,
+  },
+  {
+    id: 'corr_qld_brisbane_tradelane',
+    name: 'Brisbane Pacific Tradelane Chain',
+    networkKind: 'trade',
+    regionSequence: ['QLD'],
+    requiredTagsByRegion: {
+      QLD: ['deep_sea', 'tradelane', 'gateway'],
+    },
+    productivitySynergyPoints: 6.9,
+    logisticsRelief: 0.041,
+  },
+  {
+    id: 'corr_nsw_vic_electric_freight',
+    name: 'NSW–VIC Electric Freight Corridor',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'VIC', 'ACT'],
+    requiredTagsByRegion: {
+      NSW: ['electric_freight', 'charging', 'motorway'],
+      VIC: ['bev', 'charging', 'freight'],
+      ACT: ['electric_freight', 'capital'],
+    },
+    productivitySynergyPoints: 6.0,
+    logisticsRelief: 0.035,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -884,6 +942,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND7,
   ...TRANSPORT_CORRIDORS_ROUND8,
   ...TRANSPORT_CORRIDORS_ROUND9,
+  ...TRANSPORT_CORRIDORS_ROUND10,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -1420,6 +1479,62 @@ export const TRANSPORT_SCENARIOS_ROUND9: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round10.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND10: TransportStressScenario[] = [
+  {
+    id: 'scn_nsw_deep_sea_berth_queue',
+    label: 'NSW Deep-Sea Berth Queue',
+    description: 'Mega-container vessel bunching delays Port Botany tradelane slots.',
+    targetRegions: ['NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.28,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_vic_melbourne_tradelane_surge',
+    label: 'Melbourne Tradelane Surge',
+    description: 'Pacific import peak overwhelms Webb Dock deep-sea feeders.',
+    targetRegions: ['VIC'],
+    networkKind: 'trade',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_qld_permitting_backlog',
+    label: 'Queensland Permitting Backlog',
+    description: 'Environmental approval delays stall freight corridor upgrades.',
+    targetRegions: ['QLD'],
+    networkKind: 'freight',
+    utilizationAdd: 0.18,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['road', 'rail'],
+  },
+  {
+    id: 'scn_nsw_electric_freight_outage',
+    label: 'NSW Electric Freight Charging Outage',
+    description: 'Grid event idles Hume BEV charging depots.',
+    targetRegions: ['NSW', 'ACT'],
+    networkKind: 'freight',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['road', 'logistics'],
+  },
+  {
+    id: 'scn_wa_fremantle_deep_sea_draft',
+    label: 'Fremantle Deep-Sea Draft Restriction',
+    description: 'Swell limits max draft on outer harbour mega-ships.',
+    targetRegions: ['WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -1590,6 +1705,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND7,
   ...TRANSPORT_SCENARIOS_ROUND8,
   ...TRANSPORT_SCENARIOS_ROUND9,
+  ...TRANSPORT_SCENARIOS_ROUND10,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -4335,6 +4451,232 @@ export const SCALE_WAVE_ROUND9_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round10-assets.ts ---
+
+export const ROUND10_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_nsw_botany_deep_sea_feed',
+    category: 'road',
+    name: 'Port Botany Deep-Sea Feed',
+    description: 'Mega-container drayage from Botany deep-sea berths.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['deep_sea', 'tradelane', 'mega_container', 'port_access'],
+    laneKilometres: 38,
+    designSpeedKmh: 90,
+    freightShare: 0.49,
+    urbanShare: 0.2,
+    tollRoad: true,
+  },
+  {
+    id: 'road_vic_webb_dock_tradelane',
+    category: 'road',
+    name: 'Webb Dock Tradelane Link',
+    description: 'Deep-sea container feed to Melbourne intermodal yards.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['deep_sea', 'tradelane', 'container', 'motorway'],
+    laneKilometres: 44,
+    designSpeedKmh: 100,
+    freightShare: 0.46,
+    urbanShare: 0.17,
+    tollRoad: true,
+  },
+  {
+    id: 'road_nsw_hume_bev_charging',
+    category: 'road',
+    name: 'Hume BEV Charging Corridor',
+    description: 'Electric heavy freight charging stations on Hume Highway.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC', 'ACT'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['freight'],
+    tags: ['electric_freight', 'bev', 'charging', 'motorway', 'freight'],
+    laneKilometres: 128,
+    designSpeedKmh: 110,
+    freightShare: 0.48,
+    urbanShare: 0.06,
+    tollRoad: true,
+  },
+  {
+    id: 'road_qld_cairns_permitting_feed',
+    category: 'road',
+    name: 'Cairns Northern Permitting Feed',
+    description: 'Northern development corridor planning and approval staging.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NT'],
+    baseProductivityPoints: 3.8,
+    strategicNetworks: ['freight'],
+    tags: ['permitting', 'planning', 'remote', 'national_highway'],
+    laneKilometres: 92,
+    designSpeedKmh: 100,
+    freightShare: 0.33,
+    urbanShare: 0.05,
+    tollRoad: false,
+  },
+];
+
+export const ROUND10_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_nsw_sydney_tradelane_shuttle',
+    category: 'rail',
+    name: 'Sydney Tradelane Port Shuttle',
+    description: 'Deep-sea container shuttle from Botany to intermodal.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW'],
+    baseProductivityPoints: 5.8,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['deep_sea', 'tradelane', 'container', 'port_access'],
+    trackKilometres: 52,
+    dualTrackShare: 0.64,
+    electrifiedShare: 0.72,
+    designFreightTonnesPerYear: 7_200_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_vic_melbourne_electric_haul',
+    category: 'rail',
+    name: 'Melbourne Electric Haul Line',
+    description: 'Electrified freight with BEV-first last-mile handoff.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['freight'],
+    tags: ['electric_freight', 'charging', 'freight_rail', 'bev'],
+    trackKilometres: 198,
+    dualTrackShare: 0.58,
+    electrifiedShare: 0.88,
+    designFreightTonnesPerYear: 8_400_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_qld_brisbane_deep_sea',
+    category: 'rail',
+    name: 'Brisbane Deep-Sea Port Rail',
+    description: 'Pacific tradelane container rail to Fisherman Islands.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 6.1,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['deep_sea', 'tradelane', 'gateway', 'container'],
+    trackKilometres: 68,
+    dualTrackShare: 0.61,
+    electrifiedShare: 0.52,
+    designFreightTonnesPerYear: 9_100_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND10_PORTS: PortAsset[] = [
+  {
+    id: 'port_nsw_botany_deep_sea',
+    category: 'port',
+    name: 'Port Botany Deep-Sea Terminal',
+    description: 'Mega-container tradelane berths on deep draft channels.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 8.2,
+    strategicNetworks: ['trade'],
+    tags: ['deep_sea', 'tradelane', 'mega_container', 'gateway', 'container'],
+    berthCount: 9,
+    maxDraftMetres: 16.8,
+    teuCapacityPerYear: 1_450_000,
+    automationLevel: 3,
+    bulkShare: 0.18,
+  },
+  {
+    id: 'port_wa_fremantle_deep_sea',
+    category: 'port',
+    name: 'Fremantle Deep-Sea Outer Harbour',
+    description: 'Indian Ocean tradelane mega-ship berths.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 7.6,
+    strategicNetworks: ['trade'],
+    tags: ['deep_sea', 'tradelane', 'mega_container', 'gateway'],
+    berthCount: 8,
+    maxDraftMetres: 16.2,
+    teuCapacityPerYear: 980_000,
+    automationLevel: 2,
+    bulkShare: 0.24,
+  },
+];
+
+export const ROUND10_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_nsw_sydney_permitting_hub',
+    category: 'logistics',
+    name: 'Sydney Infrastructure Permitting Hub',
+    description: 'State coordination for freight corridor approvals.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'ACT'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['freight'],
+    tags: ['permitting', 'planning', 'approval_hub', 'gateway'],
+    warehouseSqm: 72_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 68,
+  },
+  {
+    id: 'log_vic_melbourne_tradelane_dc',
+    category: 'logistics',
+    name: 'Melbourne Tradelane DC',
+    description: 'Deep-sea import deconsolidation and tradelane staging.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW', 'SA'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['trade'],
+    tags: ['deep_sea', 'tradelane', 'cargo_terminal', 'gateway'],
+    warehouseSqm: 210_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 71,
+  },
+  {
+    id: 'log_act_capital_bev_depot',
+    category: 'logistics',
+    name: 'Canberra BEV Freight Depot',
+    description: 'Capital region electric freight charging and staging.',
+    hostRegion: 'ACT',
+    servedRegions: ['ACT', 'NSW'],
+    baseProductivityPoints: 3.9,
+    strategicNetworks: ['freight'],
+    tags: ['electric_freight', 'bev', 'charging', 'capital'],
+    warehouseSqm: 64_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road'],
+    lastMileCoveragePct: 74,
+  },
+  {
+    id: 'log_qld_brisbane_tradelane_bond',
+    category: 'logistics',
+    name: 'Brisbane Tradelane Bond Hub',
+    description: 'Pacific tradelane customs bond and deep-sea staging.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['trade'],
+    tags: ['tradelane', 'deep_sea', 'gateway', 'customs'],
+    warehouseSqm: 175_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 63,
+  },
+];
+
+export const SCALE_WAVE_ROUND10_ASSETS = [
+  ...ROUND10_ROADS,
+  ...ROUND10_RAIL,
+  ...ROUND10_PORTS,
+  ...ROUND10_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -4352,6 +4694,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND7_ASSETS,
     ...SCALE_WAVE_ROUND8_ASSETS,
     ...SCALE_WAVE_ROUND9_ASSETS,
+    ...SCALE_WAVE_ROUND10_ASSETS,
   ];
 }
 
@@ -4859,6 +5202,65 @@ export function coastalShippingProductivityMultiplier(
   const policyBoost = policy === 'short_sea_boost' ? 0.045 : 0;
   const normalized = (throughputIndex - 14) / 100;
   return clamp(1 + normalized * 0.055 + policyBoost, 0.93, 1.11);
+}
+
+
+// --- source: network/deep-sea-gateway-throughput-index.ts ---
+
+/** 0–100 deep-sea gateway throughput (mega-container berths, tradelane feeders). */
+export function computeDeepSeaGatewayThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const deepSeaTagged =
+      asset.tags.some((t) => t === 'deep_sea' || t === 'tradelane' || t === 'mega_container') ||
+      (asset.category === 'port' && asset.maxDraftMetres >= 14.5 && asset.teuCapacityPerYear >= 400_000);
+
+    if (!deepSeaTagged) continue;
+
+    if (asset.category === 'port') {
+      const draftBoost = 1 + Math.min(0.12, (asset.maxDraftMetres - 13) * 0.02);
+      byRegion[asset.hostRegion] +=
+        (asset.berthCount * 2.8 + asset.teuCapacityPerYear / 140_000) * draftBoost * (0.5 + asset.automationLevel * 0.08);
+      for (const r of asset.servedRegions) {
+        if (r !== asset.hostRegion) byRegion[r] += 2.1;
+      }
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 4_800_000;
+    }
+    if (asset.category === 'logistics' && asset.tags.includes('tradelane')) {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 92_000;
+    }
+    if (asset.category === 'road' && asset.tags.includes('deep_sea') && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += (asset.laneKilometres * asset.freightShare) / 580;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalDeepSeaGatewayThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.52 + max * 0.48, 5, 92) * 10) / 10;
+}
+
+export function deepSeaGatewayProductivityMultiplier(
+  throughputIndex: number,
+  policy: DeepSeaGatewayPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'expand' ? 0.042 : 0;
+  const normalized = (throughputIndex - 16) / 100;
+  return clamp(1 + normalized * 0.052 + policyBoost, 0.93, 1.11);
 }
 
 
@@ -5384,6 +5786,60 @@ export function biosecurityClearanceProductivityMultiplier(
 }
 
 
+// --- source: operations/infrastructure-permitting-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type PermittingStreamlinePolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 infrastructure permitting velocity (higher = faster project approvals). */
+export function computeInfrastructurePermittingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 36])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('permitting') || asset.tags.includes('planning') || asset.tags.includes('approval_hub')) {
+      if (asset.category === 'logistics') {
+        byRegion[asset.hostRegion] += asset.warehouseSqm / 105_000 + asset.intermodalLinks.length * 1.6;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        byRegion[asset.hostRegion] += asset.laneKilometres / 380;
+      }
+    }
+    if (asset.linkedProjectType && asset.baseProductivityPoints >= 5) {
+      byRegion[asset.hostRegion] += 1.8;
+    }
+    if (asset.category === 'port' && asset.automationLevel >= 2) {
+      byRegion[asset.hostRegion] += 1.2;
+    }
+  }
+
+  const stressDrag = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.03 - stressDrag * 0.06), 18, 92) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalInfrastructurePermittingIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  return Math.round(clamp(avg, 22, 86) * 10) / 10;
+}
+
+export function infrastructurePermittingProductivityMultiplier(
+  permittingIndex: number,
+  policy: PermittingStreamlinePolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'fast_track' ? 0.046 : 0;
+  const normalized = (permittingIndex - 44) / 100;
+  return clamp(1 + normalized * 0.05 + policyBoost, 0.92, 1.1);
+}
+
+
 // --- source: productivity/regional-investment-tiers.ts ---
 
 const TIERS: TransportInvestmentTier[] = ['emerging', 'regional', 'integrated', 'national_gateway'];
@@ -5872,6 +6328,93 @@ export function nationalAutonomousCorridorThroughputIndex(
 }
 
 
+// --- source: productivity/electric-freight-index.ts ---
+
+/** 0–1 share of road/rail freight tied to electric charging corridors. */
+export function computeElectricFreightShare(
+  operationalAssets: TransportAsset[],
+  policy: ElectricFreightPolicy = 'baseline',
+): number {
+  let electricUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      const units = asset.laneKilometres * (0.28 + asset.freightShare);
+      totalUnits += units;
+      if (
+        asset.tags.includes('electric_freight') ||
+        asset.tags.includes('bev') ||
+        asset.tags.includes('charging')
+      ) {
+        electricUnits += units * (0.65 + asset.designSpeedKmh / 450);
+      }
+    }
+    if (asset.category === 'rail' && 'electrifiedShare' in asset) {
+      const units = asset.trackKilometres * (0.32 + asset.electrifiedShare);
+      totalUnits += units;
+      if (asset.tags.includes('electric_freight') || asset.tags.includes('charging')) {
+        electricUnits += units * (0.45 + asset.electrifiedShare * 0.4);
+      }
+    }
+    if (asset.category === 'logistics' && asset.tags.includes('charging')) {
+      totalUnits += asset.warehouseSqm / 75_000;
+      electricUnits += asset.warehouseSqm / 75_000 * 0.75;
+    }
+  }
+
+  if (totalUnits <= 0) return 0.07;
+  const policyBoost = policy === 'accelerate' ? 0.045 : 0;
+  return Math.round(clamp(electricUnits / totalUnits + policyBoost, 0.06, 0.62) * 1000) / 1000;
+}
+
+export function electricFreightProductivityMultiplier(
+  share: number,
+  policy: ElectricFreightPolicy,
+): number {
+  const bias = policy === 'accelerate' ? 1.024 : 1;
+  return (1 + (share - 0.11) * 0.038) * bias;
+}
+
+export function computeElectricCorridorThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some((t) => t === 'electric_freight' || t === 'bev' || t === 'charging')
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += (asset.laneKilometres * asset.freightShare) / 480;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += (asset.designFreightTonnesPerYear / 7_000_000) * (0.4 + asset.electrifiedShare);
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 98_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalElectricCorridorThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.58 + max * 0.42, 2, 76) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -6132,6 +6675,19 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   computeAutonomousFreightShare,
   nationalAutonomousCorridorThroughputIndex,
 } from './autonomous-freight-index.ts';
+  deepSeaGatewayProductivityMultiplier,
+  computeDeepSeaGatewayThroughputByRegion,
+  nationalDeepSeaGatewayThroughputIndex,
+} from '../network/deep-sea-gateway-throughput-index.ts';
+  computeInfrastructurePermittingByRegion,
+  infrastructurePermittingProductivityMultiplier,
+  nationalInfrastructurePermittingIndex,
+} from '../operations/infrastructure-permitting-index.ts';
+  computeElectricCorridorThroughputByRegion,
+  computeElectricFreightShare,
+  electricFreightProductivityMultiplier,
+  nationalElectricCorridorThroughputIndex,
+} from './electric-freight-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -6462,6 +7018,50 @@ export function computeTransportInfrastructureState(
     nationalCoastalShipping * 0.026 +
     nationalAutonomousCorridor * 0.024;
 
+  const networkStress = aggregateNetworkStress(inputs.networkUtilization);
+  const deepSeaGatewayThroughputByRegion = computeDeepSeaGatewayThroughputByRegion(ops);
+  const nationalDeepSeaGateway = nationalDeepSeaGatewayThroughputIndex(deepSeaGatewayThroughputByRegion);
+  const deepSeaMult = deepSeaGatewayProductivityMultiplier(
+    nationalDeepSeaGateway,
+    options?.deepSeaGatewayPolicy ?? 'baseline',
+  );
+  const infrastructurePermittingByRegion = computeInfrastructurePermittingByRegion(ops, networkStress);
+  const nationalInfrastructurePermitting = nationalInfrastructurePermittingIndex(infrastructurePermittingByRegion);
+  const permittingMult = infrastructurePermittingProductivityMultiplier(
+    nationalInfrastructurePermitting,
+    options?.permittingStreamlinePolicy ?? 'baseline',
+  );
+  const electricCorridorThroughputByRegion = computeElectricCorridorThroughputByRegion(ops);
+  const nationalElectricCorridor = nationalElectricCorridorThroughputIndex(electricCorridorThroughputByRegion);
+  const electricFreightShare = computeElectricFreightShare(ops, options?.electricFreightPolicy ?? 'baseline');
+  const electricMult = electricFreightProductivityMultiplier(
+    electricFreightShare,
+    options?.electricFreightPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const deepSeaBoost = (deepSeaGatewayThroughputByRegion[code] - 12) * 0.006;
+    const permittingBoost = (infrastructurePermittingByRegion[code] - 42) * 0.004;
+    const electricBoost = (electricCorridorThroughputByRegion[code] - 5) * 0.006;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + deepSeaBoost + permittingBoost + electricBoost) *
+      deepSeaMult *
+      permittingMult *
+      electricMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035 +
+    nationalAviationCargo * 0.03 +
+    nationalHydrogenCorridor * 0.028 +
+    nationalCoastalShipping * 0.026 +
+    nationalAutonomousCorridor * 0.024 +
+    nationalDeepSeaGateway * 0.027 +
+    nationalElectricCorridor * 0.023;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -6475,7 +7075,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/10',
+    schemaVersion: 'agent12/11',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -6530,6 +7130,13 @@ export function computeTransportInfrastructureState(
     autonomousFreightShare,
     nationalAutonomousCorridorThroughputIndex: nationalAutonomousCorridor,
     autonomousCorridorThroughputByRegion,
+    nationalDeepSeaGatewayThroughputIndex: nationalDeepSeaGateway,
+    deepSeaGatewayThroughputByRegion,
+    nationalInfrastructurePermittingIndex: nationalInfrastructurePermitting,
+    infrastructurePermittingByRegion,
+    electricFreightShare,
+    nationalElectricCorridorThroughputIndex: nationalElectricCorridor,
+    electricCorridorThroughputByRegion,
     computeMs,
   };
 }
@@ -6612,7 +7219,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/10' &&
+      infra.schemaVersion === 'agent12/11' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -6634,8 +7241,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalCoastalShippingThroughputIndex > 8 &&
       infra.nationalBiosecurityClearanceIndex > 36 &&
       infra.autonomousFreightShare >= 0.05 &&
-      infra.nationalAutonomousCorridorThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} coastal=${infra.nationalCoastalShippingThroughputIndex.toFixed(1)} biosecurity=${infra.nationalBiosecurityClearanceIndex.toFixed(1)} autonomous=${infra.nationalAutonomousCorridorThroughputIndex.toFixed(1)}`,
+      infra.nationalAutonomousCorridorThroughputIndex >= 2 &&
+      infra.nationalDeepSeaGatewayThroughputIndex > 10 &&
+      infra.nationalInfrastructurePermittingIndex > 38 &&
+      infra.electricFreightShare >= 0.06 &&
+      infra.nationalElectricCorridorThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} deepSea=${infra.nationalDeepSeaGatewayThroughputIndex.toFixed(1)} permitting=${infra.nationalInfrastructurePermittingIndex.toFixed(1)} electric=${infra.nationalElectricCorridorThroughputIndex.toFixed(1)}`,
   });
 
   return results;

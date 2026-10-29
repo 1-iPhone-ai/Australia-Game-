@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 10
+
+- Schema **`agent12/11`**: deep-sea gateway throughput, infrastructure permitting velocity, electric freight corridor share (`deepSeaGatewayPolicy`, `permittingStreamlinePolicy`, `electricFreightPolicy`)
+- Catalog: **155** assets, **44** corridors, **68** scenarios
+- Systems: `network/deep-sea-gateway-throughput-index.ts`, `operations/infrastructure-permitting-index.ts`, `productivity/electric-freight-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 9
 
 - Schema **`agent12/10`**: coastal shipping throughput, biosecurity clearance efficiency, autonomous freight share (`coastalShippingPolicy`, `biosecurityStreamlinePolicy`, `autonomousFreightPolicy`)
