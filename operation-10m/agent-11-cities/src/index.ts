@@ -64,5 +64,8 @@ export * from './settlement-terminal-state-lock-in.ts';
 export * from './regional-governance-vacuum-escalation.ts';
 export * from './interregional-settlement-abandonment-spiral.ts';
 export * from './settlement-post-collapse-recovery-impossibility.ts';
+export * from './regional-state-collapse-cascade-amplification.ts';
+export * from './interregional-hollow-region-contagion.ts';
+export * from './settlement-permanent-depopulation-lock.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';

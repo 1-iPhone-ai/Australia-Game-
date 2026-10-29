@@ -102,6 +102,9 @@ import { op10mA11ComputeSettlementTerminalStateLockIn } from './settlement-termi
 import { op10mA11ComputeRegionalGovernanceVacuumEscalation } from './regional-governance-vacuum-escalation.ts';
 import { op10mA11ComputeInterregionalSettlementAbandonmentSpiral } from './interregional-settlement-abandonment-spiral.ts';
 import { op10mA11ComputeSettlementPostCollapseRecoveryImpossibility } from './settlement-post-collapse-recovery-impossibility.ts';
+import { op10mA11ComputeRegionalStateCollapseCascadeAmplification } from './regional-state-collapse-cascade-amplification.ts';
+import { op10mA11ComputeInterregionalHollowRegionContagion } from './interregional-hollow-region-contagion.ts';
+import { op10mA11ComputeSettlementPermanentDepopulationLock } from './settlement-permanent-depopulation-lock.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -428,7 +431,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.19',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.20',
     composite.state.schemaVersion,
   );
 
@@ -561,7 +564,10 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastTerminalStateLockInIndex === composite.state.nationalTerminalStateLockInIndex &&
       composite.persisted.lastGovernanceVacuumEscalationIndex === composite.state.nationalGovernanceVacuumEscalationIndex &&
       composite.persisted.lastSettlementAbandonmentSpiralIndex === composite.state.nationalSettlementAbandonmentSpiralIndex &&
-      composite.persisted.lastPostCollapseRecoveryImpossibilityIndex === composite.state.nationalPostCollapseRecoveryImpossibilityIndex,
+      composite.persisted.lastPostCollapseRecoveryImpossibilityIndex === composite.state.nationalPostCollapseRecoveryImpossibilityIndex &&
+      composite.persisted.lastStateCollapseCascadeAmplificationIndex === composite.state.nationalStateCollapseCascadeAmplificationIndex &&
+      composite.persisted.lastHollowRegionContagionIndex === composite.state.nationalHollowRegionContagionIndex &&
+      composite.persisted.lastPermanentDepopulationLockIndex === composite.state.nationalPermanentDepopulationLockIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -1876,6 +1882,90 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_176',
     composite.state.postCollapseRecoveryImpossibility.every((p) => p.narrative.includes('post-collapse recovery impossibility')),
     composite.state.postCollapseRecoveryImpossibility[0]?.band ?? 'none',
+  );
+
+  const stateCollapseCascadeAmplification = op10mA11ComputeRegionalStateCollapseCascadeAmplification({
+    governanceVacuumEscalation: composite.state.governanceVacuumEscalation,
+    settlementAbandonmentSpiral: composite.state.settlementAbandonmentSpiral,
+    postCollapseRecoveryImpossibility: composite.state.postCollapseRecoveryImpossibility,
+  });
+  push(
+    out,
+    'a11_177',
+    composite.state.stateCollapseCascadeAmplification.length === 8 &&
+      composite.state.nationalStateCollapseCascadeAmplificationIndex === stateCollapseCascadeAmplification.nationalIndex,
+    `cascade amplification ${composite.state.nationalStateCollapseCascadeAmplificationIndex}`,
+  );
+
+  const hollowRegionContagion = op10mA11ComputeInterregionalHollowRegionContagion({
+    settlementAbandonmentSpiral: composite.state.settlementAbandonmentSpiral,
+    fiscalPanicContagion: composite.state.fiscalPanicContagion,
+    governanceVacuumEscalation: composite.state.governanceVacuumEscalation,
+  });
+  push(
+    out,
+    'a11_178',
+    composite.state.hollowRegionContagion.length === 8 &&
+      composite.state.nationalHollowRegionContagionIndex === hollowRegionContagion.nationalIndex,
+    `hollow contagion ${composite.state.nationalHollowRegionContagionIndex}`,
+  );
+
+  const permanentDepopulationLock = op10mA11ComputeSettlementPermanentDepopulationLock({
+    postCollapseRecoveryImpossibility: composite.state.postCollapseRecoveryImpossibility,
+    settlementAbandonmentSpiral: composite.state.settlementAbandonmentSpiral,
+    terminalStateLockIn: composite.state.terminalStateLockIn,
+  });
+  push(
+    out,
+    'a11_179',
+    composite.state.permanentDepopulationLock.length === 8 &&
+      composite.state.nationalPermanentDepopulationLockIndex === permanentDepopulationLock.nationalIndex,
+    `depopulation lock ${composite.state.nationalPermanentDepopulationLockIndex}`,
+  );
+
+  push(
+    out,
+    'a11_180',
+    composite.state.stateCollapseCascadeAmplification.every((s) => s.narrative.includes('state collapse cascade amplification')),
+    composite.state.stateCollapseCascadeAmplification[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_181',
+    composite.derived.some((d) => d.kind === 'state_collapse_cascade_amplification') ||
+      composite.state.stateCollapseCascadeAmplification.some((s) => s.band === 'runaway' || s.band === 'total'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_182',
+    composite.derived.some((d) => d.kind === 'hollow_region_contagion') ||
+      composite.state.hollowRegionContagion.some((h) => h.band === 'contagion' || h.band === 'voided'),
+    composite.state.hollowRegionContagion[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_183',
+    composite.persisted.lastHollowRegionContagionIndex === composite.state.nationalHollowRegionContagionIndex,
+    `persisted hollow ${composite.persisted.lastHollowRegionContagionIndex}`,
+  );
+
+  push(
+    out,
+    'a11_184',
+    composite.derived.some((d) => d.kind === 'permanent_depopulation_lock') ||
+      composite.state.permanentDepopulationLock.some((p) => p.band === 'locked' || p.band === 'permanent'),
+    composite.state.permanentDepopulationLock[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_185',
+    composite.state.permanentDepopulationLock.every((p) => p.narrative.includes('permanent depopulation lock')),
+    composite.state.permanentDepopulationLock[0]?.band ?? 'none',
   );
 
   return out;
