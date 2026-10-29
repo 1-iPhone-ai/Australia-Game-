@@ -906,6 +906,42 @@ export function auditTeamMultiAgentLayer(
     });
   }
 
+  if (
+    typeof state.meta.synthesisStackAmplificationIndex === 'number' &&
+    state.meta.synthesisStackAmplificationIndex >= 48
+  ) {
+    push({
+      severity: 'warning',
+      message: `Synthesis–stack amplification (${state.meta.synthesisStackAmplificationIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.amplificationConvergenceCascadeIndex === 'number' &&
+    state.meta.amplificationConvergenceCascadeIndex >= 47
+  ) {
+    push({
+      severity: 'warning',
+      message: `Amplification–convergence cascade (${state.meta.amplificationConvergenceCascadeIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.stackSynthesisResonanceIndex === 'number' &&
+    state.meta.stackSynthesisResonanceIndex >= 46
+  ) {
+    push({
+      severity: 'warning',
+      message: `Stack–synthesis resonance (${state.meta.stackSynthesisResonanceIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
   state.coordination.leases.forEach(lease => {
     if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
       push({

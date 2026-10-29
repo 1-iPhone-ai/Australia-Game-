@@ -65,6 +65,9 @@ import { combineDualTeamResonancePressureSynthesis } from './resonance-pressure-
 import { combineDualTeamConvergenceCascadeSynthesis } from './convergence-cascade-synthesis-index.ts';
 import { combineDualTeamSynthesisConvergenceStack } from './synthesis-convergence-stack-index.ts';
 import { combineDualTeamCascadeResonanceAmplification } from './cascade-resonance-amplification-index.ts';
+import { combineDualTeamSynthesisStackAmplification } from './synthesis-stack-amplification-index.ts';
+import { combineDualTeamAmplificationConvergenceCascade } from './amplification-convergence-cascade-index.ts';
+import { combineDualTeamStackSynthesisResonance } from './stack-synthesis-resonance-index.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -147,6 +150,9 @@ export interface DualTeamMultiAgentResult {
   convergenceCascadeSynthesisCombined: number;
   synthesisConvergenceStackCombined: number;
   cascadeResonanceAmplificationCombined: number;
+  synthesisStackAmplificationCombined: number;
+  amplificationConvergenceCascadeCombined: number;
+  stackSynthesisResonanceCombined: number;
 }
 
 /**
@@ -245,6 +251,9 @@ export function evaluateDualTeamMultiAgentLayers(
       convergenceCascadeSynthesisCombined: friendly.state.meta.convergenceCascadeSynthesisIndex ?? 0,
       synthesisConvergenceStackCombined: friendly.state.meta.synthesisConvergenceStackIndex ?? 0,
       cascadeResonanceAmplificationCombined: friendly.state.meta.cascadeResonanceAmplificationIndex ?? 0,
+      synthesisStackAmplificationCombined: friendly.state.meta.synthesisStackAmplificationIndex ?? 0,
+      amplificationConvergenceCascadeCombined: friendly.state.meta.amplificationConvergenceCascadeIndex ?? 0,
+      stackSynthesisResonanceCombined: friendly.state.meta.stackSynthesisResonanceIndex ?? 0,
     };
   }
 
@@ -588,6 +597,18 @@ export function evaluateDualTeamMultiAgentLayers(
     cascadeResonanceAmplificationCombined: combineDualTeamCascadeResonanceAmplification(
       friendly.state.meta.cascadeResonanceAmplificationIndex ?? 0,
       enemy.state.meta.cascadeResonanceAmplificationIndex ?? 0,
+    ),
+    synthesisStackAmplificationCombined: combineDualTeamSynthesisStackAmplification(
+      friendly.state.meta.synthesisStackAmplificationIndex ?? 0,
+      enemy.state.meta.synthesisStackAmplificationIndex ?? 0,
+    ),
+    amplificationConvergenceCascadeCombined: combineDualTeamAmplificationConvergenceCascade(
+      friendly.state.meta.amplificationConvergenceCascadeIndex ?? 0,
+      enemy.state.meta.amplificationConvergenceCascadeIndex ?? 0,
+    ),
+    stackSynthesisResonanceCombined: combineDualTeamStackSynthesisResonance(
+      friendly.state.meta.stackSynthesisResonanceIndex ?? 0,
+      enemy.state.meta.stackSynthesisResonanceIndex ?? 0,
     ),
   };
 }
