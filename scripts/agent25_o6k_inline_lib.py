@@ -475,6 +475,49 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  createEmptyV1024DgovPersisted,\n  v1024DgovInputHash,\n  sanitizeV1024DgovPersisted,\n} from '../engine/digital-governance-orchestrator';",
             "  v1024DgovInputHash,\n} from '../engine/digital-governance-orchestrator';\nimport {\n  createEmptyV1024DgovPersisted,\n  sanitizeV1024DgovPersisted,\n} from '../persistence/migrations';",
         )
+    if "v1025-biodiversity-stewardship" in name.replace("\\", "/"):
+        src = src.replace("SECTION 20BT", "SECTION 20BU")
+        src = src.replace("SECTION 20BS", "SECTION 20BU")
+        src = src.replace("SECTION 20BR", "SECTION 20BU")
+    if "biodiversity-stewardship/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1025BioClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1025BioClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1025_BIO_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1025_BIO_MIG_REGIONS", src)
+    if "biodiversity-stewardship-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1025BioPersisted, sanitizeV1025BioPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1025_BIO_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1025_BIO_ORCH_REGIONS.forEach", src)
+    if "biodiversity-stewardship-utils.ts" in name:
+        src = re.sub(
+            r"export function V1025_BIO_conservationOffsetGraphHash",
+            "export function V1025_BIO_utilConservationOffsetGraphHash",
+            src,
+        )
+    if "v1025-biodiversity-stewardship/conservation-offset-stacks/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"V1025_BIO_conservationOffsetGraphHash as dgovGraphHashCore",
+            "V1025_BIO_utilConservationOffsetGraphHash as dgovGraphHashCore",
+            src,
+        )
+    if "run-v1025-bio-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1025BioSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1025BioSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1025BioBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1025BioBaseInput(", src)
+        src = src.replace(
+            "  runV1025BioTurn,\n  createEmptyV1025BioPersisted,\n  v1025BioInputHash,\n  sanitizeV1025BioPersisted,\n} from '../engine/biodiversity-stewardship-orchestrator';",
+            "  runV1025BioTurn,\n  v1025BioInputHash,\n} from '../engine/biodiversity-stewardship-orchestrator';\nimport {\n  createEmptyV1025BioPersisted,\n  sanitizeV1025BioPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1025BioPersisted,\n  v1025BioInputHash,\n  sanitizeV1025BioPersisted,\n} from '../engine/biodiversity-stewardship-orchestrator';",
+            "  v1025BioInputHash,\n} from '../engine/biodiversity-stewardship-orchestrator';\nimport {\n  createEmptyV1025BioPersisted,\n  sanitizeV1025BioPersisted,\n} from '../persistence/migrations';",
+        )
     return src
 
 
@@ -1075,6 +1118,58 @@ def digital_governance_paths() -> list[str]:
         if "/adapters/" in s:
             return (8, s)
         if "digital-governance-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
+        if "stress-registry" in s or "supply-pipeline" in s:
+            return (98, s)
+        if "drought-buffer-bundle" in s or "hazard-registry" in s:
+            return (98, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+            and not (p.parent.name == "generated" and p.name == "index.ts")
+            and "stress-registry" not in str(p)
+            and "supply-pipeline" not in str(p)
+            and "drought-buffer-bundle" not in str(p)
+            and "hazard-registry" not in str(p)
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def biodiversity_stewardship_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1025-biodiversity-stewardship"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/conservation-offset-stacks/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/recovery-scenarios/" in s:
+            return (3, s)
+        if "/generated/conservation-offset-stacks/" in s:
+            return (4, s)
+        if "recovery-registry" in s or "conservation-offset-bundle" in s:
+            return (5, s)
+        if "/protected-area-nodes/" in s:
+            return (6, s)
+        if "biodiversity-stewardship-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "biodiversity-stewardship-orchestrator" in s:
             return (9, s)
         if "/self-tests/" in s:
             return (10, s)

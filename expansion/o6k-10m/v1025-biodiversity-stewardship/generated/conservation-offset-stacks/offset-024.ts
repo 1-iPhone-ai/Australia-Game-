@@ -1,0 +1,31 @@
+import type { V1025BioConservationOffsetEdge } from '../../types/core.ts';
+
+/** Conservation offset graph shard 024 (species/habitat/offset corridor coupling). */
+export const V1025_BIO_CONSERVATION_OFFSET_SHARD_024: readonly V1025BioConservationOffsetEdge[] = [
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.4, lagTurns: 8, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.406, lagTurns: 9, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.412, lagTurns: 10, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.418, lagTurns: 11, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.424, lagTurns: 8, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.43, lagTurns: 9, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.436, lagTurns: 10, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.442, lagTurns: 11, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.448, lagTurns: 8, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.454, lagTurns: 9, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.46, lagTurns: 10, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.364, lagTurns: 11, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.37, lagTurns: 8, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.376, lagTurns: 9, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.382, lagTurns: 10, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.388, lagTurns: 11, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.394, lagTurns: 8, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.4, lagTurns: 9, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.406, lagTurns: 10, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.412, lagTurns: 11, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.418, lagTurns: 8, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.424, lagTurns: 9, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.43, lagTurns: 10, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.436, lagTurns: 11, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.442, lagTurns: 8, nodeId: 'protected_area_00' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.448, lagTurns: 9, nodeId: 'protected_area_00' },
+];

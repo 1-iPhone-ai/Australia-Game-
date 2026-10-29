@@ -1,0 +1,31 @@
+import type { V1025BioConservationOffsetEdge } from '../../types/core.ts';
+
+/** Conservation offset graph shard 027 (species/habitat/offset corridor coupling). */
+export const V1025_BIO_CONSERVATION_OFFSET_SHARD_027: readonly V1025BioConservationOffsetEdge[] = [
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.526, lagTurns: 2, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.532, lagTurns: 3, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.538, lagTurns: 4, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.544, lagTurns: 5, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.55, lagTurns: 2, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.556, lagTurns: 3, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.46, lagTurns: 4, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.466, lagTurns: 5, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.472, lagTurns: 2, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.478, lagTurns: 3, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.484, lagTurns: 4, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.49, lagTurns: 5, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.496, lagTurns: 2, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.502, lagTurns: 3, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.508, lagTurns: 4, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.514, lagTurns: 5, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.52, lagTurns: 2, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.526, lagTurns: 3, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.532, lagTurns: 4, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.538, lagTurns: 5, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.544, lagTurns: 2, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.55, lagTurns: 3, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.556, lagTurns: 4, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.46, lagTurns: 5, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.466, lagTurns: 2, nodeId: 'protected_area_03' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.472, lagTurns: 3, nodeId: 'protected_area_03' },
+];
