@@ -24,12 +24,12 @@ const moduleRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 describe('Tranche 3 cross-system catalog', () => {
   it('adds 360 synergy chains', () => {
     assert.equal(OP10M_AGENT05_CHAIN_CATALOG_TRANCHE3.length, 360);
-    assert.equal(OP10M_AGENT05_CATALOG_STATS.totalChains, 11400);
+    assert.equal(OP10M_AGENT05_CATALOG_STATS.totalChains, 11720);
   });
 
   it('uses unique op10m_t3 ids', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 11400);
+    assert.equal(ids.size, 11720);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE3) {
       assert.match(c.chainId, /^op10m_t3_/);
     }
@@ -148,7 +148,7 @@ describe('Assembly manifest', () => {
     const manifest = JSON.parse(
       readFileSync(resolve(moduleRoot, 'module.manifest.json'), 'utf8')
     ) as { chainCount: number; chunkLineCount: number; contentSha256: string };
-    assert.equal(manifest.chainCount, 11400);
+    assert.equal(manifest.chainCount, 11720);
     assert.ok(manifest.chunkLineCount > 195000);
     assert.match(manifest.contentSha256, /^[a-f0-9]{64}$/);
   });

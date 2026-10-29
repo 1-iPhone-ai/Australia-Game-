@@ -40,6 +40,7 @@ export * from './compute-turn-scale-wave-full-chunks-handoff-sync-latch-coordina
 export * from './compute-turn-scale-wave-full-chunks-handoff-sync-commit-coordinator.ts';
 export * from './compute-turn-scale-wave-full-chunks-handoff-closure-latch-coordinator.ts';
 export * from './compute-turn-scale-wave-full-chunks-handoff-closure-commit-coordinator.ts';
+export * from './compute-turn-scale-wave-full-chunks-handoff-closure-sync-latch-coordinator.ts';
 export * from './compute-turn-hooks.ts';
 export * from './chain-catalog-aggregate.ts';
 export {
