@@ -47,7 +47,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 51);
+  assert.ok(r.passed >= 53);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -1043,5 +1043,49 @@ test('round 22: rejected certification weakens sustainment vs certified baseline
   assert.ok(
     certified.state.certifiedThroughputSustainment.score >=
       rejected.state.certifiedThroughputSustainment.score - 0.14,
+  );
+});
+
+test('round 23: capacity handoff absorption and trade window continuity on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.capacityHandoffAbsorptionSmoothing = 0.55;
+  persisted.bilateralTradeWindowContinuitySmoothing = 0.53;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 63,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 100 } } },
+    persisted,
+  });
+  assert.ok(r.state.capacityHandoffAbsorption);
+  assert.ok(['absorbed', 'integrating', 'leaking', 'rejected'].includes(r.state.capacityHandoffAbsorption.band));
+  assert.ok(r.state.bilateralTradeWindowContinuity);
+  assert.ok(['continuous', 'bridging', 'gapped', 'severed'].includes(r.state.bilateralTradeWindowContinuity.band));
+  assert.ok(r.persisted.capacityHandoffAbsorptionSmoothing != null);
+  assert.ok(r.persisted.bilateralTradeWindowContinuitySmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Capacity handoff absorption/i.test(n)));
+  assert.ok(notes.some(n => /Bilateral trade window continuity/i.test(n)));
+});
+
+test('round 23: closed handoff gate weakens absorption vs open baseline', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.bilateralCapacityHandoffGateSmoothing = 0.82;
+  persisted.certifiedThroughputSustainmentSmoothing = 0.76;
+  const open = advanceGlobalTradeEconomyTurn({
+    turn: 64,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 85 } } },
+    persisted: { ...persisted },
+  });
+  persisted.bilateralCapacityHandoffGateSmoothing = 0.18;
+  persisted.certifiedThroughputSustainmentSmoothing = 0.16;
+  const closed = advanceGlobalTradeEconomyTurn({
+    turn: 64,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 205 } } },
+    persisted: { ...persisted },
+  });
+  assert.ok(
+    open.state.capacityHandoffAbsorption.score >= closed.state.capacityHandoffAbsorption.score - 0.14,
   );
 });

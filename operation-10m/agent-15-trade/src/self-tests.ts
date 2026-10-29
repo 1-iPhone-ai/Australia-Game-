@@ -179,6 +179,16 @@ import {
   createEmptyBilateralCapacityHandoffGateSnapshot,
   bilateralCapacityHandoffGateExportScale,
 } from './bilateral-capacity-handoff-gate.ts';
+import {
+  computeCapacityHandoffAbsorptionSnapshot,
+  createEmptyCapacityHandoffAbsorptionSnapshot,
+  capacityHandoffAbsorptionExportScale,
+} from './capacity-handoff-absorption.ts';
+import {
+  computeBilateralTradeWindowContinuitySnapshot,
+  createEmptyBilateralTradeWindowContinuitySnapshot,
+  bilateralTradeWindowContinuityExportScale,
+} from './bilateral-trade-window-continuity.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -1433,6 +1443,46 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       bilateralCapacityHandoffGateExportScale(open) >= bilateralCapacityHandoffGateExportScale(closed),
       'expected handoff scale lift',
+    );
+  });
+
+  ok('capacity handoff absorption improves when handoff gate is open', () => {
+    const gate = { ...createEmptyBilateralCapacityHandoffGateSnapshot(), score: 0.84, band: 'open' as const, readinessLift: 0.12 };
+    const sustainment = { ...createEmptyCertifiedThroughputSustainmentSnapshot(), score: 0.8, band: 'sustained' as const };
+    const absorbed = computeCapacityHandoffAbsorptionSnapshot({
+      bilateralCapacityHandoffGate: gate,
+      certifiedThroughputSustainment: sustainment,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const rejected = computeCapacityHandoffAbsorptionSnapshot({
+      bilateralCapacityHandoffGate: { ...gate, score: 0.24, band: 'closed', readinessLift: -0.08 },
+      certifiedThroughputSustainment: { ...sustainment, score: 0.22, band: 'exhausted' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(absorbed.score > rejected.score, 'expected stronger absorption when open');
+    gtelAssert(
+      capacityHandoffAbsorptionExportScale(absorbed) >= capacityHandoffAbsorptionExportScale(rejected),
+      'expected absorption scale lift',
+    );
+  });
+
+  ok('bilateral trade window continuity improves when absorption is absorbed', () => {
+    const absorption = { ...createEmptyCapacityHandoffAbsorptionSnapshot(), score: 0.85, band: 'absorbed' as const };
+    const readiness = { ...createEmptyAnchoredBookReadinessSnapshot(), score: 0.82, band: 'ready' as const };
+    const continuous = computeBilateralTradeWindowContinuitySnapshot({
+      capacityHandoffAbsorption: absorption,
+      anchoredBookReadiness: readiness,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const severed = computeBilateralTradeWindowContinuitySnapshot({
+      capacityHandoffAbsorption: { ...absorption, score: 0.24, band: 'rejected' },
+      anchoredBookReadiness: { ...readiness, score: 0.22, band: 'blocked' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(continuous.score > severed.score, 'expected stronger continuity when absorbed');
+    gtelAssert(
+      bilateralTradeWindowContinuityExportScale(continuous) >= bilateralTradeWindowContinuityExportScale(severed),
+      'expected window continuity scale lift',
     );
   });
 

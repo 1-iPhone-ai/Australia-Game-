@@ -188,6 +188,8 @@ export interface GTELPersisted {
   bilateralThroughputCertificationSmoothing?: number;
   certifiedThroughputSustainmentSmoothing?: number;
   bilateralCapacityHandoffGateSmoothing?: number;
+  capacityHandoffAbsorptionSmoothing?: number;
+  bilateralTradeWindowContinuitySmoothing?: number;
 }
 
 export interface GTELState {
@@ -245,6 +247,8 @@ export interface GTELState {
   bilateralThroughputCertification: GTELBilateralThroughputCertificationSnapshot;
   certifiedThroughputSustainment: GTELCertifiedThroughputSustainmentSnapshot;
   bilateralCapacityHandoffGate: GTELBilateralCapacityHandoffGateSnapshot;
+  capacityHandoffAbsorption: GTELCapacityHandoffAbsorptionSnapshot;
+  bilateralTradeWindowContinuity: GTELBilateralTradeWindowContinuitySnapshot;
   inputHash: string;
 }
 
@@ -809,6 +813,26 @@ export interface GTELBilateralCapacityHandoffGateSnapshot {
   band: GTELBilateralCapacityHandoffGateBand;
   sustainmentSupport: number;
   readinessLift: number;
+  summary: string;
+}
+
+export type GTELCapacityHandoffAbsorptionBand = 'absorbed' | 'integrating' | 'leaking' | 'rejected';
+
+export interface GTELCapacityHandoffAbsorptionSnapshot {
+  score: number;
+  band: GTELCapacityHandoffAbsorptionBand;
+  handoffSupport: number;
+  sustainmentLift: number;
+  summary: string;
+}
+
+export type GTELBilateralTradeWindowContinuityBand = 'continuous' | 'bridging' | 'gapped' | 'severed';
+
+export interface GTELBilateralTradeWindowContinuitySnapshot {
+  score: number;
+  band: GTELBilateralTradeWindowContinuityBand;
+  absorptionSupport: number;
+  readinessAnchor: number;
   summary: string;
 }
 
