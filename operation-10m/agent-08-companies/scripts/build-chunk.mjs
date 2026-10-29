@@ -70,6 +70,7 @@ const FILES = [
   'production-transition-apotheosis.ts',
   'production-transition-deification.ts',
   'production-transition-divinization.ts',
+  'production-transition-sanctification.ts',
   'chunk-exports.ts',
 ];
 
