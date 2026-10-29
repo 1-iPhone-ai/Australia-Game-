@@ -173,6 +173,8 @@ const FILES = [
   'harmony-resonance-synthesis-index.ts',
   'harmony-resonance-convergence-index.ts',
   'resonance-harmony-convergence-index.ts',
+  'harmony-resonance-convergence-stack-index.ts',
+  'resonance-harmony-convergence-stack-index.ts',
   'coordination-audit.ts',
   'coordination-reconcile.ts',
   'multi-agent-state.ts',

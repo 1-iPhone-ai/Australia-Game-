@@ -171,3 +171,7 @@ export * from './harmony-resonance-synthesis-index.ts';
 export * from './harmony-resonance-convergence-index.ts';
 
 export * from './resonance-harmony-convergence-index.ts';
+
+export * from './harmony-resonance-convergence-stack-index.ts';
+
+export * from './resonance-harmony-convergence-stack-index.ts';
