@@ -17,6 +17,7 @@ Modular work lives under `operation-10m/agent-NN-*` until Agent 25 controlled as
 - `buildAiMemoryHorizonSnapshot` — match vs cross-match prior labeling (`horizon.ts`)
 - `auditMemoryInfluenceDecisions` — bounded influence + trace integrity (`influence-audit.ts`)
 - `buildMemoryExplainabilityBrief` — player-facing explainability lines (`explainability.ts`)
+- `buildTurnExplainabilityPack` — turn rollup for horizon diff + influence + timeline (`turn-explainability-pack.ts`)
 - `runAgent19MemoryEvalSuite` — modular eval + canonical Phase 7 parity (`eval/run-suite.ts`)
 
 ### Invariants (must hold after merge)

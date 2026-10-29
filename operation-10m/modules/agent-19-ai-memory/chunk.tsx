@@ -793,6 +793,214 @@ export function formatGiClaimsAsBrief(claims: MemoryGiClaim[]): string[] {
 }
 
 
+// --- source: memory-event-timeline.ts ---
+
+export interface MemoryEventTimelineEntry {
+  turn: number;
+  actionType: string;
+  actorId: string;
+  targetId: string | null;
+  summaryLine: string;
+  valenceLabel: 'positive' | 'negative' | 'neutral';
+  importance: number;
+}
+
+export const AGENT19_TIMELINE_DISPLAY_CAP = 12;
+
+function valenceLabel(valence: number): MemoryEventTimelineEntry['valenceLabel'] {
+  if (valence > 0.05) return 'positive';
+  if (valence < -0.05) return 'negative';
+  return 'neutral';
+}
+
+export function formatMemoryEventForTimeline(event: AiMemoryEvent): MemoryEventTimelineEntry {
+  const target = event.targetId ? ` → ${event.targetId}` : '';
+  return {
+    turn: event.turn,
+    actionType: event.actionType,
+    actorId: event.actorId,
+    targetId: event.targetId,
+    summaryLine: `Turn ${event.turn}: ${event.actorId} ${event.actionType}${target} — ${event.summary}`,
+    valenceLabel: valenceLabel(event.valence),
+    importance: event.importance,
+  };
+}
+
+/** Chronological, capped timeline for explainability panels (newest last). */
+export function buildMemoryEventTimeline(
+  memory: AiActorMemory | null | undefined,
+  opts?: { limit?: number; minImportance?: number },
+): MemoryEventTimelineEntry[] {
+  const limit = opts?.limit ?? AGENT19_TIMELINE_DISPLAY_CAP;
+  const minImportance = opts?.minImportance ?? 0;
+  const events = (memory?.events || [])
+    .filter(e => e.importance >= minImportance)
+    .slice()
+    .sort((a, b) => a.turn - b.turn || a.id.localeCompare(b.id));
+  const tail = events.length > limit ? events.slice(-limit) : events;
+  return tail.map(formatMemoryEventForTimeline);
+}
+
+export function summarizeMemoryEventTimeline(entries: MemoryEventTimelineEntry[]): string[] {
+  if (!entries.length) return ['No committed memory events in this view yet.'];
+  const lines = [`${entries.length} event(s) in timeline (most recent last).`];
+  entries.slice(-5).forEach(e => lines.push(`• ${e.summaryLine}`));
+  return lines;
+}
+
+
+// --- source: relationship-explainability.ts ---
+
+export interface RelationshipExplainabilityAxis {
+  key: keyof Pick<AiRelationship, 'trust' | 'respect' | 'rivalry' | 'cooperation' | 'grievance' | 'gratitude'>;
+  label: string;
+  value: number;
+}
+
+const AXIS_LABELS: Record<RelationshipExplainabilityAxis['key'], string> = {
+  trust: 'Trust',
+  respect: 'Respect',
+  rivalry: 'Rivalry',
+  cooperation: 'Cooperation',
+  grievance: 'Grievance',
+  gratitude: 'Gratitude',
+};
+
+export function pickDominantRelationshipAxes(rel: AiRelationship, limit = 3): RelationshipExplainabilityAxis[] {
+  const keys = Object.keys(AXIS_LABELS) as RelationshipExplainabilityAxis['key'][];
+  const ranked = keys
+    .map(key => ({ key, label: AXIS_LABELS[key], value: rel[key] ?? 0 }))
+    .sort((a, b) => Math.abs(b.value - 50) - Math.abs(a.value - 50) || b.value - a.value);
+  return ranked.slice(0, limit);
+}
+
+export function buildRelationshipExplainabilityBrief(
+  memory: AiActorMemory | null | undefined,
+  targetActorId: string,
+): string[] {
+  const rel = memory?.relationships?.[targetActorId];
+  if (!rel) {
+    return [`No relationship track yet toward ${targetActorId} — influence from match events will appear after committed actions.`];
+  }
+  const axes = pickDominantRelationshipAxes(rel);
+  const lines = [
+    `Relationship toward ${targetActorId} (updated turn ${rel.lastUpdatedTurn}):`,
+    ...axes.map(a => `• ${a.label} ${a.value}/100`),
+  ];
+  if (rel.threat >= 60) lines.push('High perceived threat may push defensive or aggressive memory nudges.');
+  if (rel.grievance >= 55) lines.push('Stored grievances can amplify punitive score adjustments.');
+  if (rel.gratitude >= 55) lines.push('Gratitude can soften rivalry-driven penalties when cooperation is high.');
+  return lines;
+}
+
+export function listTrackedRelationshipActorIds(memory: AiActorMemory | null | undefined): string[] {
+  return Object.keys(memory?.relationships || {}).sort();
+}
+
+
+// --- source: memory-retention-audit.ts ---
+
+/** Read-only retention / ordering checks (eviction is canonical-side; this audits explainability safety). */
+export function auditMemoryRetentionOrdering(memory: AiActorMemory | null | undefined): MemoryInfluenceAuditFinding[] {
+  const findings: MemoryInfluenceAuditFinding[] = [];
+  if (!memory?.events?.length) return findings;
+  const events = memory.events;
+  for (let i = 1; i < events.length; i++) {
+    const prev = events[i - 1];
+    const cur = events[i];
+    if (cur.turn < prev.turn) {
+      findings.push({
+        code: 'events_turn_order',
+        severity: 'warn',
+        message: `Event ${i} turn ${cur.turn} precedes prior turn ${prev.turn} in storage order.`,
+      });
+    }
+  }
+  const keyCounts = new Map<string, number>();
+  events.forEach(e => {
+    const k = e.stableKey?.trim();
+    if (!k) return;
+    keyCounts.set(k, (keyCounts.get(k) || 0) + 1);
+  });
+  keyCounts.forEach((count, key) => {
+    if (count > 1) {
+      findings.push({
+        code: 'duplicate_stable_key',
+        severity: 'warn',
+        message: `stableKey "${key}" appears ${count} times — idempotent commits may be duplicated in narrative.`,
+      });
+    }
+  });
+  if (events.length >= AGENT19_AI_MEMORY_EVENT_CAP) {
+    findings.push({
+      code: 'events_at_cap',
+      severity: 'info',
+      message: `Event list at cap (${AGENT19_AI_MEMORY_EVENT_CAP}); oldest entries may be evicted canonically while summaries stay bounded.`,
+    });
+  }
+  return findings;
+}
+
+export function retentionAuditOk(findings: MemoryInfluenceAuditFinding[]): boolean {
+  return !findings.some(f => f.severity === 'fail');
+}
+
+
+// --- source: turn-explainability-pack.ts ---
+
+export interface TurnExplainabilityPack {
+  turn: number;
+  horizonBefore: AiMemoryHorizonSnapshot;
+  horizonAfter: AiMemoryHorizonSnapshot;
+  horizonDiffLines: string[];
+  influenceSummary: ReturnType<typeof summarizeTurnMemoryInfluence>;
+  topSlices: ReturnType<typeof rankInfluenceSlicesByMagnitude>;
+  timelineLines: string[];
+  narrativeLines: string[];
+}
+
+export function buildTurnExplainabilityPack(params: {
+  turn: number;
+  memoryBefore: AiActorMemory | null | undefined;
+  memoryAfter: AiActorMemory | null | undefined;
+  decisionsBefore: MemoryInfluenceDecisionLike[];
+  decisionsAfter: MemoryInfluenceDecisionLike[];
+  persistentMemoryEnabled?: boolean;
+}): TurnExplainabilityPack {
+  const horizonBefore = buildAiMemoryHorizonSnapshot(params.memoryBefore, {
+    persistentMemoryEnabled: params.persistentMemoryEnabled,
+  });
+  const horizonAfter = buildAiMemoryHorizonSnapshot(params.memoryAfter, {
+    persistentMemoryEnabled: params.persistentMemoryEnabled,
+  });
+  const horizonDiffLines = compareHorizonSnapshots(horizonBefore, horizonAfter);
+  const influenceSummary = summarizeTurnMemoryInfluence(params.decisionsBefore, params.decisionsAfter);
+  const allSlices = params.decisionsAfter.flatMap(d => d.memoryInfluenceSlices || []);
+  const topSlices = rankInfluenceSlicesByMagnitude(allSlices, 4);
+  const timelineLines = summarizeMemoryEventTimeline(buildMemoryEventTimeline(params.memoryAfter));
+  const narrativeLines = [
+    `Turn ${params.turn} memory explainability pack.`,
+    ...horizonDiffLines,
+    ...influenceSummary.narrativeLines,
+    ...timelineLines.slice(0, 3),
+  ];
+  if (topSlices.length) {
+    narrativeLines.push('Strongest influence slices this turn:');
+    topSlices.forEach(s => narrativeLines.push(`• [${s.horizon}] ${s.delta >= 0 ? '+' : ''}${s.delta.toFixed(2)} — ${s.reason}`));
+  }
+  return {
+    turn: params.turn,
+    horizonBefore,
+    horizonAfter,
+    horizonDiffLines,
+    influenceSummary,
+    topSlices,
+    timelineLines,
+    narrativeLines,
+  };
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -899,6 +1107,13 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   compareHorizonSnapshots,
   labelMemoryHorizon,
 } from '../decision-trace.ts';
+  buildMemoryEventTimeline,
+  summarizeMemoryEventTimeline,
+  AGENT19_TIMELINE_DISPLAY_CAP,
+} from '../memory-event-timeline.ts';
+  buildRelationshipExplainabilityBrief,
+  listTrackedRelationshipActorIds,
+} from '../relationship-explainability.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -1184,6 +1399,153 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
         () => {
           const lines = formatMemoryHealthBrief(computeMemoryHealthScorecard(createEmptyAiActorMemory('x')));
           return lines[0].includes('100') || lines[0];
+        },
+      ],
+      [
+        'a19_r4_timeline_order',
+        'Event timeline sorts by turn and caps display',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.events = [
+            {
+              id: 'b',
+              turn: 2,
+              actionType: 'sell',
+              actorId: 'player',
+              targetId: null,
+              regionId: null,
+              summary: 'late',
+              importance: 1,
+              valence: 0.2,
+              stableKey: 'k2',
+            },
+            {
+              id: 'a',
+              turn: 1,
+              actionType: 'buy',
+              actorId: 'player',
+              targetId: null,
+              regionId: null,
+              summary: 'early',
+              importance: 1,
+              valence: -0.1,
+              stableKey: 'k1',
+            },
+          ];
+          const tl = buildMemoryEventTimeline(mem);
+          return tl.length === 2 && tl[0].turn === 1 && tl[1].valenceLabel === 'positive' || JSON.stringify(tl);
+        },
+      ],
+      [
+        'a19_r4_timeline_cap',
+        'Timeline respects display cap constant',
+        () => AGENT19_TIMELINE_DISPLAY_CAP >= 5 && AGENT19_TIMELINE_DISPLAY_CAP <= 20,
+      ],
+      [
+        'a19_r4_relationship_brief',
+        'Relationship brief surfaces dominant axes',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.relationships.player = {
+            actorId: 'player',
+            trust: 30,
+            respect: 40,
+            rivalry: 80,
+            reliability: 50,
+            cooperation: 20,
+            threat: 70,
+            grievance: 60,
+            gratitude: 10,
+            lastUpdatedTurn: 3,
+          };
+          const lines = buildRelationshipExplainabilityBrief(mem, 'player');
+          return lines.some(l => l.includes('Rivalry')) && listTrackedRelationshipActorIds(mem).includes('player') || lines.join('|');
+        },
+      ],
+      [
+        'a19_r4_retention_dup_key',
+        'Retention audit warns on duplicate stableKey',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.events = [
+            {
+              id: '1',
+              turn: 1,
+              actionType: 'sell',
+              actorId: 'p',
+              targetId: null,
+              regionId: null,
+              summary: 'a',
+              importance: 1,
+              valence: 0,
+              stableKey: 'dup',
+            },
+            {
+              id: '2',
+              turn: 2,
+              actionType: 'buy',
+              actorId: 'p',
+              targetId: null,
+              regionId: null,
+              summary: 'b',
+              importance: 1,
+              valence: 0,
+              stableKey: 'dup',
+            },
+          ];
+          const findings = auditMemoryRetentionOrdering(mem);
+          return retentionAuditOk(findings) && findings.some(f => f.code === 'duplicate_stable_key') || JSON.stringify(findings);
+        },
+      ],
+      [
+        'a19_r4_turn_pack',
+        'Turn explainability pack merges horizon, influence, timeline',
+        () => {
+          const before = createEmptyAiActorMemory('ai');
+          const after = createEmptyAiActorMemory('ai');
+          after.events = [
+            {
+              id: 'e1',
+              turn: 1,
+              actionType: 'sabotage',
+              actorId: 'player',
+              targetId: 'ai',
+              regionId: null,
+              summary: 'hit',
+              importance: 2,
+              valence: -0.5,
+              stableKey: 's1',
+            },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: before,
+            memoryAfter: after,
+            decisionsBefore: [{ type: 'a', score: 5 }],
+            decisionsAfter: [
+              {
+                type: 'a',
+                score: 8,
+                memoryInfluence: 3,
+                memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 3, reason: 'grievance' }],
+              },
+            ],
+          });
+          const summaryLines = summarizeMemoryEventTimeline(buildMemoryEventTimeline(after));
+          return (
+            pack.influenceSummary.influencedDecisionCount === 1 &&
+            pack.horizonDiffLines.some(l => l.includes('Match events')) &&
+            pack.narrativeLines.length >= 4 &&
+            summaryLines[0].includes('1 event')
+          ) || JSON.stringify({ pack, summaryLines });
+        },
+      ],
+      [
+        'a19_r4_timeline_empty',
+        'Empty timeline summary is explicit',
+        () => {
+          const lines = summarizeMemoryEventTimeline([]);
+          return lines[0].includes('No committed') || lines[0];
         },
       ],
     ]),

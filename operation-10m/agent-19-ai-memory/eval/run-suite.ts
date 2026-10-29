@@ -26,6 +26,17 @@ import { explainAdaptivePlan } from '../adaptive-plan-explainability.ts';
 import { computeMemoryHealthScorecard, formatMemoryHealthBrief } from '../memory-health-scorecard.ts';
 import { summarizeTurnMemoryInfluence } from '../turn-influence-summary.ts';
 import { buildMemoryGiClaims, formatGiClaimsAsBrief } from '../explainability-claims.ts';
+import {
+  buildMemoryEventTimeline,
+  summarizeMemoryEventTimeline,
+  AGENT19_TIMELINE_DISPLAY_CAP,
+} from '../memory-event-timeline.ts';
+import {
+  buildRelationshipExplainabilityBrief,
+  listTrackedRelationshipActorIds,
+} from '../relationship-explainability.ts';
+import { auditMemoryRetentionOrdering, retentionAuditOk } from '../memory-retention-audit.ts';
+import { buildTurnExplainabilityPack } from '../turn-explainability-pack.ts';
 import type { MemoryEvalResult } from '../types.ts';
 
 type Case = [string, string, () => boolean | string];
@@ -312,6 +323,153 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
         () => {
           const lines = formatMemoryHealthBrief(computeMemoryHealthScorecard(createEmptyAiActorMemory('x')));
           return lines[0].includes('100') || lines[0];
+        },
+      ],
+      [
+        'a19_r4_timeline_order',
+        'Event timeline sorts by turn and caps display',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.events = [
+            {
+              id: 'b',
+              turn: 2,
+              actionType: 'sell',
+              actorId: 'player',
+              targetId: null,
+              regionId: null,
+              summary: 'late',
+              importance: 1,
+              valence: 0.2,
+              stableKey: 'k2',
+            },
+            {
+              id: 'a',
+              turn: 1,
+              actionType: 'buy',
+              actorId: 'player',
+              targetId: null,
+              regionId: null,
+              summary: 'early',
+              importance: 1,
+              valence: -0.1,
+              stableKey: 'k1',
+            },
+          ];
+          const tl = buildMemoryEventTimeline(mem);
+          return tl.length === 2 && tl[0].turn === 1 && tl[1].valenceLabel === 'positive' || JSON.stringify(tl);
+        },
+      ],
+      [
+        'a19_r4_timeline_cap',
+        'Timeline respects display cap constant',
+        () => AGENT19_TIMELINE_DISPLAY_CAP >= 5 && AGENT19_TIMELINE_DISPLAY_CAP <= 20,
+      ],
+      [
+        'a19_r4_relationship_brief',
+        'Relationship brief surfaces dominant axes',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.relationships.player = {
+            actorId: 'player',
+            trust: 30,
+            respect: 40,
+            rivalry: 80,
+            reliability: 50,
+            cooperation: 20,
+            threat: 70,
+            grievance: 60,
+            gratitude: 10,
+            lastUpdatedTurn: 3,
+          };
+          const lines = buildRelationshipExplainabilityBrief(mem, 'player');
+          return lines.some(l => l.includes('Rivalry')) && listTrackedRelationshipActorIds(mem).includes('player') || lines.join('|');
+        },
+      ],
+      [
+        'a19_r4_retention_dup_key',
+        'Retention audit warns on duplicate stableKey',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.events = [
+            {
+              id: '1',
+              turn: 1,
+              actionType: 'sell',
+              actorId: 'p',
+              targetId: null,
+              regionId: null,
+              summary: 'a',
+              importance: 1,
+              valence: 0,
+              stableKey: 'dup',
+            },
+            {
+              id: '2',
+              turn: 2,
+              actionType: 'buy',
+              actorId: 'p',
+              targetId: null,
+              regionId: null,
+              summary: 'b',
+              importance: 1,
+              valence: 0,
+              stableKey: 'dup',
+            },
+          ];
+          const findings = auditMemoryRetentionOrdering(mem);
+          return retentionAuditOk(findings) && findings.some(f => f.code === 'duplicate_stable_key') || JSON.stringify(findings);
+        },
+      ],
+      [
+        'a19_r4_turn_pack',
+        'Turn explainability pack merges horizon, influence, timeline',
+        () => {
+          const before = createEmptyAiActorMemory('ai');
+          const after = createEmptyAiActorMemory('ai');
+          after.events = [
+            {
+              id: 'e1',
+              turn: 1,
+              actionType: 'sabotage',
+              actorId: 'player',
+              targetId: 'ai',
+              regionId: null,
+              summary: 'hit',
+              importance: 2,
+              valence: -0.5,
+              stableKey: 's1',
+            },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: before,
+            memoryAfter: after,
+            decisionsBefore: [{ type: 'a', score: 5 }],
+            decisionsAfter: [
+              {
+                type: 'a',
+                score: 8,
+                memoryInfluence: 3,
+                memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 3, reason: 'grievance' }],
+              },
+            ],
+          });
+          const summaryLines = summarizeMemoryEventTimeline(buildMemoryEventTimeline(after));
+          return (
+            pack.influenceSummary.influencedDecisionCount === 1 &&
+            pack.horizonDiffLines.some(l => l.includes('Match events')) &&
+            pack.narrativeLines.length >= 4 &&
+            summaryLines[0].includes('1 event')
+          ) || JSON.stringify({ pack, summaryLines });
+        },
+      ],
+      [
+        'a19_r4_timeline_empty',
+        'Empty timeline summary is explicit',
+        () => {
+          const lines = summarizeMemoryEventTimeline([]);
+          return lines[0].includes('No committed') || lines[0];
         },
       ],
     ]),
