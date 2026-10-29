@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 5173"
+    "preview": "vite preview --host 0.0.0.0 --port 5173",
+    "test:onboarding-contracts": "node src/onboarding-systems/contract.mjs"
   },
   "dependencies": {
     "react": "19.3.1",
