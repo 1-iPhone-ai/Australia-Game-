@@ -103422,6 +103422,8 @@ export interface GIWorld {
   factions?: RegionalFactionsWorldView | null;
   /** V10.0 National Systems view (public interregional network state). */
   national?: NationalSystemsWorldView | null;
+  /** V10.9 Strategic Capital Allocation (computed read-only snapshot for intelligence). */
+  strategicCapital?: StrategicCapitalState | null;
   tools: {
     simulate?: (intent: GISimulationIntent) => GISimulationOutcome;
     searchSettings?: (query: string) => any;
@@ -115979,7 +115981,7 @@ export function computeBackgroundDomainHashes(world: GIWorld): Record<BGDomain, 
   const g3 = world.gi3?.active;
   const team = world.team;
   return {
-    economy: bgHash([world.player.money, world.player.debtTotal, inv, Object.entries(world.market).sort().map(([k, v]) => `${k}${Math.round(v)}`).join(','), world.contracts.map(c => `${c.id}:${c.status}:${c.turnsRemaining ?? ''}`).join(','), world.projects.map(p => `${p.id}:${p.invested}`).join(','), world.systems?.team?.treasuryBalance ?? ''].join('#')),
+    economy: bgHash([world.player.money, world.player.debtTotal, inv, Object.entries(world.market).sort().map(([k, v]) => `${k}${Math.round(v)}`).join(','), world.contracts.map(c => `${c.id}:${c.status}:${c.turnsRemaining ?? ''}`).join(','), world.projects.map(p => `${p.id}:${p.invested}`).join(','), world.systems?.team?.treasuryBalance ?? '', world.strategicCapital ? deriveBackgroundAICapitalAlerts(world.strategicCapital).map(a => `${a.category}:${a.severity}`).join(',') : ''].join('#')),
     // Living Regions: a region's semantic condition (momentum band, needs, risks) re-triggers the regions domain.
     regions: bgHash(`${regions}#${actors}#${world.player.location}#${world.livingRegions ? Object.values(world.livingRegions.state.regions).map(r => `${r.regionId}:${r.momentum.band}:${r.needs.filter(n => n.status === 'open').map(n => n.category + n.severity).join('/')}:${r.risks.map(x => x.kind).join('/')}`).join(',') : ''}`),
     team: bgHash(team ? [team.state.contract?.id, team.state.contract?.revision, team.evaluation.health.health, (team.state.contract?.taskGraph || []).map(t => `${t.id}:${t.status}`).join(','), team.inputs.actors.map(a => `${a.id}:${a.money}:${a.inRecovery ? 1 : 0}`).join(',')].join('#') : 'none'),
@@ -116733,7 +116735,8 @@ export function evaluateBackgroundAI(prevIn: BackgroundAIState | null | undefine
   const regionInputs = backgroundLivingRegionInputs(world);
   // Regional Factions: observable stakeholder competition, requests, coalitions and commitments due.
   const factionInputs = backgroundFactionInputs(world);
-  const worldInputs = { attention: [...worldInputsRaw.attention, ...regionInputs.attention.filter(r => !worldInputsRaw.attention.some(w => w.subject === r.subject && w.id === r.id)), ...factionInputs.attention].slice(0, 7), opportunities: [...worldInputsRaw.opportunities, ...regionInputs.opportunities, ...factionInputs.opportunities].slice(0, 6) };
+  const capitalInputs = backgroundStrategicCapitalInputs(world);
+  const worldInputs = { attention: [...worldInputsRaw.attention, ...regionInputs.attention.filter(r => !worldInputsRaw.attention.some(w => w.subject === r.subject && w.id === r.id)), ...factionInputs.attention, ...capitalInputs.attention].slice(0, 7), opportunities: [...worldInputsRaw.opportunities, ...regionInputs.opportunities, ...factionInputs.opportunities, ...capitalInputs.opportunities].slice(0, 6) };
   const opportunitiesAll = worldInputs.opportunities.length ? [...opportunities.filter(o => !worldInputs.opportunities.some(w => w.id === o.id)), ...worldInputs.opportunities].slice(0, 8) : opportunities;
   const attentionBase = deriveBackgroundAttention(world, threats, opportunitiesAll, predictions, prev.attentionQueue);
   const attentionQueue = worldInputs.attention.length ? [...attentionBase.filter(a => !worldInputs.attention.some(w => w.id === a.id)), ...worldInputs.attention.filter(w => !attentionBase.some(a => a.subject === w.subject && a.reason === w.reason))].sort((a, b) => ({ critical: 4, high: 3, medium: 2, low: 1, watching: 0 } as Record<string, number>)[b.importance] - ({ critical: 4, high: 3, medium: 2, low: 1, watching: 0 } as Record<string, number>)[a.importance]).slice(0, Math.max(attentionBase.length, 6)) : attentionBase;
@@ -117511,6 +117514,15 @@ export function runBackgroundAISelfTests(): V9SelfTestResult[] {
     w = withGi3(STD(setRival(turnOf(setCash(base(), 900), 11), 9000)), w.gi3);
     const t5 = ev(st, w).state;
     return (t5.shadowPlan !== null && t5.overrides.length >= 1 && t5.history.some(x => x.kind === 'copilot_return') && t5.lastEvaluationTurn === 11) || 'T5 continuity lost';
+  });
+  check('bg_strategic_capital', 'Strategic Capital: V10.9 capital alerts feed Background AI attention/opportunities (read-only)', () => {
+    const sc = computeStrategicCapital(createStrategicCapitalFixture()).state;
+    if (deriveBackgroundAICapitalAlerts(sc).length < 2) return 'fixture lacks capital alerts';
+    const w = { ...STD(base()), strategicCapital: sc };
+    const s = ev(fresh('advisor'), w).state;
+    const hasCapitalSignal = s.attentionQueue.some(a => /capital|crowd|liquidity|sequence|stranded|concentration|discretionary|committed/i.test(`${a.subject} ${a.reason}`))
+      || s.opportunities.some(o => /sequenc|capital/i.test(o.reason));
+    return hasCapitalSignal || `attention=${s.attentionQueue.map(a => a.subject).join('; ')} opps=${s.opportunities.map(o => o.reason).join('; ')}`;
   });
   return results;
 }
@@ -127456,6 +127468,50 @@ export function gi3ConsiderFactionLandscape(state: GI3StrategyState, st: Regiona
     });
   });
   return next;
+}
+
+/** Background AI: V10.9 strategic capital alerts (liquidity, crowd-out, sequences) — metadata only. */
+export function backgroundStrategicCapitalInputs(world: GIWorld): { attention: BackgroundAttentionItem[]; opportunities: BackgroundOpportunity[] } {
+  const sc = world.strategicCapital;
+  if (!sc) return { attention: [], opportunities: [] };
+  const turn = world.turn;
+  const attention: BackgroundAttentionItem[] = [];
+  const opportunities: BackgroundOpportunity[] = [];
+  deriveBackgroundAICapitalAlerts(sc).forEach(alert => {
+    const importance: BGSeverity = alert.severity === 'critical' ? 'critical' : alert.severity === 'warning' ? 'high' : 'medium';
+    if (alert.category === 'sequence_ready') {
+      opportunities.push({
+        id: alert.id.slice(0, 80),
+        type: 'infrastructure_affordable',
+        subject: 'Capital sequencing',
+        value: null,
+        urgency: 'soon',
+        confidence: 'moderate',
+        expiresTurn: null,
+        strategicAlignment: 'aligned',
+        resourceRequirement: 0,
+        reason: `${alert.headline} — ${alert.explanation}`,
+        actionIds: []
+      });
+    } else {
+      attention.push({
+        id: alert.id.slice(0, 80),
+        domain: 'economy',
+        subject: alert.headline.slice(0, 72),
+        importance,
+        urgency: alert.category === 'liquidity_pressure' ? 'now' : 'soon',
+        confidence: alert.severity === 'info' ? 'moderate' : 'high',
+        reversibility: alert.category === 'stranded_capital' ? 'hard_to_reverse' : 'reversible',
+        deadline: null,
+        trend: 'new',
+        reason: alert.explanation,
+        evidence: [alert.headline],
+        lastUpdated: turn,
+        status: 'active'
+      });
+    }
+  });
+  return { attention: attention.slice(0, 4), opportunities: opportunities.slice(0, 2) };
 }
 
 /** Background AI (owner ranks): observable faction competition, requests, deterioration, coalitions. */
@@ -156085,7 +156141,7 @@ function strategicCapitalToWorldEvent(ev: StrategicCapitalDerivedEvent): {
   };
 }
 
-function deriveBackgroundAICapitalAlerts(state: StrategicCapitalState | null | undefined): Array<{
+export function deriveBackgroundAICapitalAlerts(state: StrategicCapitalState | null | undefined): Array<{
   id: string;
   category: 'liquidity_pressure' | 'crowd_out' | 'stranded_capital' | 'sequence_ready' | 'concentration_imbalance';
   severity: 'info' | 'warning' | 'critical';
@@ -183346,6 +183402,7 @@ function AustraliaGame() {
   const dnViewRef = useRef<DiplomacyWorldView | null>(null);
   const swrViewRef = useRef<WorldReactionWorldView | null>(null);
   const lrViewRef = useRef<LivingRegionsWorldView | null>(null);
+  const capStateRef = useRef<StrategicCapitalState | null>(null);
   const nsViewRef = useRef<NationalSystemsWorldView | null>(null);
   const rfViewRef = useRef<RegionalFactionsWorldView | null>(null);
   // Live Team OS hooks used by AI decision scoring / Governor explanations (set once the Team OS
@@ -212392,6 +212449,7 @@ function dispatchGameSettingsChange(
       livingRegions: lrViewRef.current,
       factions: rfViewRef.current,
       national: nsViewRef.current,
+      strategicCapital: capStateRef.current,
       systems: (() => {
         // Read-only adapters over canonical systems (team plan, treasury, governor, Guardian, Auto Mode…).
         const team: any = player?.teamId ? (teamsById as any)?.[player.teamId] : null;
@@ -214531,6 +214589,7 @@ function dispatchGameSettingsChange(
       return null;
     }
   }, [capEnabled, nsState, lrInputs.turn, player?.id, player?.money, gameState.infrastructureProjects, gameState.regionDeposits, (gameState as any).strategicCapital, scState, inState]);
+  capStateRef.current = capState;
   const wfEnabled = Boolean(nsEnabled && gameSettings.workforceHumanCapitalEnabled !== false);
   const wfStoredRaw = (gameState as any).workforceHumanCapital;
   const wfPersisted = useMemo(() => (wfStoredRaw ? sanitizeWorkforcePersisted(wfStoredRaw) : null), [wfStoredRaw]);
