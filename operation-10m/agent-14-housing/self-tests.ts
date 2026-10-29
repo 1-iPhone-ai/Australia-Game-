@@ -333,6 +333,13 @@ import {
 } from './wave47-gate-trajectory.ts';
 import { buildWave47IntegrationMonitor } from './wave47-integration-monitor.ts';
 import { composeAgent25Wave47ProjectionHandoffBrief } from './agent25-wave47-projection-handoff-brief.ts';
+import {
+  advanceWave48GateTrajectory,
+  createInitialWave48GateTrajectory,
+  sanitizeWave48GateTrajectory,
+} from './wave48-gate-trajectory.ts';
+import { buildWave48IntegrationMonitor } from './wave48-integration-monitor.ts';
+import { composeAgent25Wave48ProjectionHandoffBrief } from './agent25-wave48-projection-handoff-brief.ts';
 import { AGENT14_WELLBEING_SCHEMA_VERSION } from './types.ts';
 
 export interface Agent14SelfTestResult {
@@ -834,8 +841,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Ninety-six housing scenarios registered',
-    listAgent14ScenarioIds().length === 96,
+    'Ninety-eight housing scenarios registered',
+    listAgent14ScenarioIds().length === 98,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -1064,7 +1071,7 @@ export function runAgent14WellbeingSelfTests(): {
     results,
     'wave5_schema_version',
     'Wellbeing schema version is wave 15',
-    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.47-scale-wave-47',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.48-scale-wave-48',
     AGENT14_WELLBEING_SCHEMA_VERSION
   );
 
@@ -6201,6 +6208,50 @@ export function runAgent14WellbeingSelfTests(): {
   }
   check(results, 'wave47_projection_stub_catalog', 'Round 47 projection stubs registered', AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_QLD_wave47_projection') && AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_WA_o10m225_gate'), 'wave47_projection+o10m225_gate');
   check(results, 'wave47_scenario_registry', 'Round 47 scenarios registered', listAgent14ScenarioIds().includes('wave47_gate_trajectory_arc') && listAgent14ScenarioIds().includes('wave47_integration_stress'), '96 scenarios');
+
+  {
+    const adv = advancePublicServicesTurn({ inputs: { turn: 14, fiscalHeadroom: 85, stateCapacityLoad: 11, workforceReadiness: 'strong' }, spendingPersisted: createInitialDelayedSpendingPersisted() });
+    check(results, 'wave48_gate_trajectory', 'Turn advance attaches wave 48 gate trajectory', adv.inputs.wave48GateTrajectory !== undefined && adv.wave48GateTrajectoryPersisted.lastTurn === 14, `band=${adv.inputs.wave48GateTrajectory?.band}`);
+  }
+  {
+    const adv = advancePublicServicesTurn({ inputs: { turn: 11, fiscalHeadroom: 82, stateCapacityLoad: 15, workforceReadiness: 'balanced' }, spendingPersisted: createInitialDelayedSpendingPersisted() });
+    check(results, 'wave48_integration_monitor', 'Wave 48 integration monitor present', adv.inputs.wave48IntegrationMonitor !== undefined && adv.inputs.wave48IntegrationMonitor!.summary.length > 10, adv.inputs.wave48IntegrationMonitor?.summary.slice(0, 72) ?? 'missing');
+  }
+  {
+    const adv = advancePublicServicesTurn({ inputs: { turn: 15, fiscalHeadroom: 85, stateCapacityLoad: 11, workforceReadiness: 'strong' }, spendingPersisted: createInitialDelayedSpendingPersisted() });
+    check(results, 'wave48_projection_handoff_brief', 'Agent 25 wave 48 projection handoff attached', adv.inputs.agent25Wave48ProjectionHandoffBrief !== undefined && adv.inputs.agent25Wave48ProjectionHandoffBrief!.summary.length > 10, `project=${adv.inputs.agent25Wave48ProjectionHandoffBrief?.shouldProjectWave48}`);
+  }
+  {
+    const raw = sanitizeWave48GateTrajectory({ schemaVersion: AGENT14_WELLBEING_SCHEMA_VERSION, lastTurn: 10, emaAlpha: 0.3, wave48GateEma: 1 });
+    check(results, 'wave48_gate_sanitize', 'Wave 48 gate trajectory sanitize preserves schema', raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.wave48GateEma === 1, `ema=${raw.wave48GateEma}`);
+  }
+  {
+    const adv = advancePublicServicesTurn({ inputs: { turn: 14, fiscalHeadroom: 83, stateCapacityLoad: 13, workforceReadiness: 'strong' }, spendingPersisted: createInitialDelayedSpendingPersisted() });
+    const wave48 = composeAgent25Wave48ProjectionHandoffBrief({ turn: 14, wave48IntegrationMonitor: adv.inputs.wave48IntegrationMonitor!, wave48GateTrajectory: adv.inputs.wave48GateTrajectory });
+    check(results, 'wave48_projection_composer', 'Standalone wave 48 projection composer returns headlines', wave48.headlines.length > 0 && wave48.summary.length > 10, wave48.summary.slice(0, 64));
+  }
+  {
+    const brief = { turn: 8, shouldProjectWave47: true, shouldRunO10m225DryRun: true, headlines: ['x'], summary: 'ok' };
+    const snap = advanceWave48GateTrajectory(10, brief, createInitialWave48GateTrajectory());
+    check(results, 'wave48_gate_advance_unit', 'Wave 48 gate advance updates persisted EMA', snap.persisted.lastTurn === 10 && snap.snapshot.wave48GateEma > 0, `ema=${snap.snapshot.wave48GateEma}`);
+  }
+  {
+    const adv = advancePublicServicesTurn({ inputs: { turn: 9, fiscalHeadroom: 81, stateCapacityLoad: 17, workforceReadiness: 'balanced' }, spendingPersisted: createInitialDelayedSpendingPersisted() });
+    const monitor = buildWave48IntegrationMonitor({ turn: 9, wave47ProjectionBrief: adv.inputs.agent25Wave47ProjectionHandoffBrief!, wave48GateTrajectory: adv.inputs.wave48GateTrajectory, wave47IntegrationMonitor: adv.inputs.wave47IntegrationMonitor! });
+    check(results, 'wave48_integration_monitor_unit', 'Standalone wave 48 integration monitor returns summary', monitor.summary.length > 10, monitor.summary.slice(0, 64));
+  }
+  {
+    const sim = simulateAgent14HousingScenario('wave48_gate_trajectory_arc', 10);
+    const last = sim.turns[sim.turns.length - 1]!;
+    check(results, 'wave48_gate_arc_scenario', 'Wave 48 gate arc scenario attaches wave 48 chain', last.wave48GateTrajectory !== undefined && last.wave48IntegrationMonitor !== undefined && last.agent25Wave48ProjectionHandoffBrief !== undefined, `gate=${last.wave48GateTrajectory?.band}`);
+  }
+  {
+    const sim = simulateAgent14HousingScenario('wave48_integration_stress', 8);
+    const last = sim.turns[sim.turns.length - 1]!;
+    check(results, 'wave48_integration_stress_scenario', 'Wave 48 integration stress keeps O10-226 gated under stress', !last.agent25Wave48ProjectionHandoffBrief!.shouldProjectWave48 || last.wave48IntegrationMonitor!.shouldRunO10m226DryRun, `project=${last.agent25Wave48ProjectionHandoffBrief?.shouldProjectWave48} o10m226=${last.wave48IntegrationMonitor?.shouldRunO10m226DryRun}`);
+  }
+  check(results, 'wave48_projection_stub_catalog', 'Round 48 projection stubs registered', AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_VIC_wave48_projection') && AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_SA_o10m226_gate'), 'wave48_projection+o10m226_gate');
+  check(results, 'wave48_scenario_registry', 'Round 48 scenarios registered', listAgent14ScenarioIds().includes('wave48_gate_trajectory_arc') && listAgent14ScenarioIds().includes('wave48_integration_stress'), '98 scenarios');
 
   const passed = results.filter((r) => r.passed).length;
   return { passed, failed: results.length - passed, total: results.length, results };

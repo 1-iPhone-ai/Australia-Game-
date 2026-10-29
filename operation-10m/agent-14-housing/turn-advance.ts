@@ -136,6 +136,9 @@ import { composeAgent25Wave46ProjectionHandoffBrief } from './agent25-wave46-pro
 import { advanceWave47GateTrajectory } from './wave47-gate-trajectory.ts';
 import { buildWave47IntegrationMonitor } from './wave47-integration-monitor.ts';
 import { composeAgent25Wave47ProjectionHandoffBrief } from './agent25-wave47-projection-handoff-brief.ts';
+import { advanceWave48GateTrajectory } from './wave48-gate-trajectory.ts';
+import { buildWave48IntegrationMonitor } from './wave48-integration-monitor.ts';
+import { composeAgent25Wave48ProjectionHandoffBrief } from './agent25-wave48-projection-handoff-brief.ts';
 import { composeAgent14WellbeingExecutiveBrief } from './wellbeing-executive-brief.ts';
 import {
   canAcceptSpendingCommitment,
@@ -190,6 +193,7 @@ import type {
   Wave45GateTrajectoryPersisted,
   Wave46GateTrajectoryPersisted,
   Wave47GateTrajectoryPersisted,
+  Wave48GateTrajectoryPersisted,
   SpendingCommitment,
 } from './types.ts';
 
@@ -241,6 +245,7 @@ export interface AdvancePublicServicesTurnArgs {
   wave45GateTrajectoryPersisted?: Wave45GateTrajectoryPersisted | null;
   wave46GateTrajectoryPersisted?: Wave46GateTrajectoryPersisted | null;
   wave47GateTrajectoryPersisted?: Wave47GateTrajectoryPersisted | null;
+  wave48GateTrajectoryPersisted?: Wave48GateTrajectoryPersisted | null;
   /** New commitments queued this turn (already validated or not). */
   newCommitments?: SpendingCommitment[];
   /** When true, reject commitments that fail capacity gate. */
@@ -295,6 +300,7 @@ export interface AdvancePublicServicesTurnResult {
   wave45GateTrajectoryPersisted: Wave45GateTrajectoryPersisted;
   wave46GateTrajectoryPersisted: Wave46GateTrajectoryPersisted;
   wave47GateTrajectoryPersisted: Wave47GateTrajectoryPersisted;
+  wave48GateTrajectoryPersisted: Wave48GateTrajectoryPersisted;
   rejectedCommitments: Array<{ commitment: SpendingCommitment; reason: string }>;
 }
 
@@ -1207,6 +1213,25 @@ export function advancePublicServicesTurn(
     wave47GateTrajectory: wave47GateTrajectoryAdvance.snapshot,
   });
 
+  const wave48GateTrajectoryAdvance = advanceWave48GateTrajectory(
+    turn,
+    agent25Wave47ProjectionHandoffBrief,
+    args.wave48GateTrajectoryPersisted
+  );
+
+  const wave48IntegrationMonitor = buildWave48IntegrationMonitor({
+    turn,
+    wave47ProjectionBrief: agent25Wave47ProjectionHandoffBrief,
+    wave48GateTrajectory: wave48GateTrajectoryAdvance.snapshot,
+    wave47IntegrationMonitor,
+  });
+
+  const agent25Wave48ProjectionHandoffBrief = composeAgent25Wave48ProjectionHandoffBrief({
+    turn,
+    wave48IntegrationMonitor,
+    wave48GateTrajectory: wave48GateTrajectoryAdvance.snapshot,
+  });
+
   const executiveBrief = composeAgent14WellbeingExecutiveBrief({
     turn,
     warnings: wellbeingWarnings,
@@ -1340,6 +1365,9 @@ export function advancePublicServicesTurn(
     wave47GateTrajectory: wave47GateTrajectoryAdvance.snapshot,
     wave47IntegrationMonitor,
     agent25Wave47ProjectionHandoffBrief,
+    wave48GateTrajectory: wave48GateTrajectoryAdvance.snapshot,
+    wave48IntegrationMonitor,
+    agent25Wave48ProjectionHandoffBrief,
   });
 
   const enriched: EnrichedPublicServiceTurnInputs = {
@@ -1490,6 +1518,9 @@ export function advancePublicServicesTurn(
     wave47GateTrajectory: wave47GateTrajectoryAdvance.snapshot,
     wave47IntegrationMonitor,
     agent25Wave47ProjectionHandoffBrief,
+    wave48GateTrajectory: wave48GateTrajectoryAdvance.snapshot,
+    wave48IntegrationMonitor,
+    agent25Wave48ProjectionHandoffBrief,
   };
 
   return {
@@ -1540,6 +1571,7 @@ export function advancePublicServicesTurn(
     wave45GateTrajectoryPersisted: wave45GateTrajectoryAdvance.persisted,
     wave46GateTrajectoryPersisted: wave46GateTrajectoryAdvance.persisted,
     wave47GateTrajectoryPersisted: wave47GateTrajectoryAdvance.persisted,
+    wave48GateTrajectoryPersisted: wave48GateTrajectoryAdvance.persisted,
     rejectedCommitments,
   };
 }
