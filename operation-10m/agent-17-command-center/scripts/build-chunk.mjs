@@ -137,6 +137,7 @@ const FILES = [
     'planning/wave57-vigil-accord-extension.ts',
   'planning/wave58-vigil-accord-extension.ts',
   'planning/wave59-vigil-accord-extension.ts',
+  'planning/wave60-vigil-accord-extension.ts',
   'planning/planning-orchestrator.ts',
   'evaluation/operations-evaluator.ts',
   'rollback/rollback-controller.ts',
