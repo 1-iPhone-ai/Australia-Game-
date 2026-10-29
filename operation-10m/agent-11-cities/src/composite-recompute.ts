@@ -34,6 +34,19 @@ import {
   op10mA11DeeplyIsolatedRegions,
   op10mA11OverloadedHubs,
 } from './linkage-hub-centrality.ts';
+import {
+  op10mA11ComputeFiscalUrbanCoupling,
+  op10mA11MisalignedFiscalRegions,
+  op10mA11RegionalCohesionIndex,
+} from './fiscal-urban-coupling.ts';
+import {
+  op10mA11ComputeMigrationPressure,
+  op10mA11RegionsWithMigrationSurge,
+} from './regional-migration-pressure.ts';
+import {
+  op10mA11ComputeSettlementVulnerability,
+  op10mA11CriticalSettlementRegions,
+} from './settlement-vulnerability.ts';
 
 export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePersisted {
   return {
@@ -44,6 +57,7 @@ export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePe
     infra: createEmptyOP10M_A11_InfraPersisted(),
     lastFragilityIndex: 0,
     lastMaxCorridorFlow: 0,
+    lastCohesionIndex: 0,
     inputHash: '',
   };
 }
@@ -56,6 +70,10 @@ export function validateOP10M_A11_CompositeState(state: OP10M_A11_CompositeState
   if (state.hierarchy.length !== 8) errs.push('hierarchy row count');
   if (state.linkageHubs.length !== 8) errs.push('hub profile count');
   if (state.maxCorridorFlow < 0 || state.maxCorridorFlow > 100) errs.push('max corridor flow');
+  if (state.migrationPressure.length !== 8) errs.push('migration pressure row count');
+  if (state.settlementVulnerability.length !== 8) errs.push('settlement vulnerability count');
+  if (state.fiscalUrbanCoupling.length !== 8) errs.push('fiscal coupling count');
+  if (state.regionalCohesionIndex < 0 || state.regionalCohesionIndex > 100) errs.push('cohesion out of range');
   return errs;
 }
 
@@ -108,6 +126,33 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     bottlenecks: infraOut.state.bottlenecks,
     hierarchy,
     weakLinkageRegions: weakRegions,
+  });
+
+  const migrationPressure = op10mA11ComputeMigrationPressure({
+    regions: urbanOut.state.regions,
+    bottlenecks: infraOut.state.bottlenecks,
+    linkageHubs,
+    corridorFlows,
+  });
+  const maxMigrationPressure = migrationPressure[0]?.netPressure ?? 0;
+
+  const settlementVulnerability = op10mA11ComputeSettlementVulnerability({
+    regions: urbanOut.state.regions,
+    bottlenecks: infraOut.state.bottlenecks,
+    linkageHubs,
+    fragilityIndex,
+  });
+
+  const fiscalOut = op10mA11ComputeFiscalUrbanCoupling({
+    national: inputs.urban.national,
+    regions: urbanOut.state.regions,
+  });
+
+  const regionalCohesionIndex = op10mA11RegionalCohesionIndex({
+    inequalityIndex: urbanOut.state.inequalityIndex,
+    fragilityIndex,
+    fiscalNationalIndex: fiscalOut.nationalIndex,
+    maxMigrationPressure,
   });
 
   const derivedRaw: Omit<OP10M_A11_CompositeDerivedEvent, 'id'>[] = [];
@@ -176,16 +221,70 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     );
   }
 
+  const migrationSurge = op10mA11RegionsWithMigrationSurge(migrationPressure);
+  if (migrationSurge.length >= 2) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'migration_pressure_spike',
+      migrationSurge,
+      `Migration pressure elevated in ${migrationSurge.join(', ')} (peak ${maxMigrationPressure.toFixed(1)}).`,
+      maxMigrationPressure >= 58 ? 'major' : 'meaningful',
+    );
+  }
+
+  const criticalSettlement = op10mA11CriticalSettlementRegions(settlementVulnerability);
+  if (criticalSettlement.length >= 1) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'settlement_vulnerability_critical',
+      criticalSettlement.slice(0, 4),
+      `Settlement vulnerability critical for ${criticalSettlement.slice(0, 3).join(', ')}.`,
+      criticalSettlement.length >= 3 ? 'major' : 'meaningful',
+    );
+  }
+
+  const fiscalMisaligned = op10mA11MisalignedFiscalRegions(fiscalOut.rows);
+  if (
+    fiscalMisaligned.length >= 3 ||
+    (inputs.urban.national.distributionBand === 'highly_uneven' && fiscalOut.nationalIndex < 40)
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'fiscal_coupling_mismatch',
+      fiscalMisaligned.slice(0, 5),
+      `Fiscal–urban coupling strained (national index ${fiscalOut.nationalIndex.toFixed(1)}).`,
+      fiscalOut.nationalIndex < 32 ? 'major' : 'meaningful',
+    );
+  }
+
+  if (
+    base.revision > 0 &&
+    regionalCohesionIndex < base.lastCohesionIndex - 8 &&
+    regionalCohesionIndex < 45
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'regional_linkage_fragility',
+      weakRegions,
+      `Regional cohesion slipped to ${regionalCohesionIndex.toFixed(1)} (was ${base.lastCohesionIndex.toFixed(1)}).`,
+    );
+  }
+
   base.revision += 1;
   base.urban = urbanOut.persisted;
   base.infra = infraOut.persisted;
   base.lastFragilityIndex = fragilityIndex;
   base.lastMaxCorridorFlow = maxCorridorFlow;
+  base.lastCohesionIndex = regionalCohesionIndex;
   base.inputHash = op10mA11HashInputs({
     turn: inputs.urban.turn,
     cityCount: inputs.urban.cities.length,
     regionKeys: 'composite',
-    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}`,
+    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}`,
   });
 
   const state: OP10M_A11_CompositeState = {
@@ -202,7 +301,12 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     fragilityIndex,
     nationalPrimateIndex,
     maxCorridorFlow,
-    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}.`,
+    migrationPressure,
+    settlementVulnerability,
+    fiscalUrbanCoupling: fiscalOut.rows,
+    fiscalUrbanCouplingIndex: fiscalOut.nationalIndex,
+    regionalCohesionIndex,
+    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}.`,
     inputHash: base.inputHash,
   };
 

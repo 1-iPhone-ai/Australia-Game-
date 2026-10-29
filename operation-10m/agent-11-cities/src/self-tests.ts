@@ -35,6 +35,16 @@ import {
   op10mA11MaxCorridorFlow,
 } from './urban-corridor-flow.ts';
 import { op10mA11AnalyzeLinkageHubs } from './linkage-hub-centrality.ts';
+import {
+  op10mA11ComputeMigrationPressure,
+  op10mA11RegionsWithMigrationSurge,
+} from './regional-migration-pressure.ts';
+import {
+  op10mA11ComputeFiscalUrbanCoupling,
+  op10mA11RegionalCohesionIndex,
+} from './fiscal-urban-coupling.ts';
+import { op10mA11ComputeSettlementVulnerability } from './settlement-vulnerability.ts';
+import { runOP10M_A11_RegionalRegressionHarness } from './integration/regional-regression-harness.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -361,7 +371,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.2',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.3',
     composite.state.schemaVersion,
   );
 
@@ -377,6 +387,83 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_28',
     composite.state.corridorFlows[0].explanation.includes('corridor'),
     composite.state.corridorFlows[0]?.band ?? 'none',
+  );
+
+  const migration = op10mA11ComputeMigrationPressure({
+    regions: composite.state.urban.regions,
+    bottlenecks: composite.state.infra.bottlenecks,
+    linkageHubs: composite.state.linkageHubs,
+    corridorFlows: composite.state.corridorFlows,
+  });
+  push(
+    out,
+    'a11_29',
+    migration.length === 8 && migration.every((m) => m.narrative.includes('migration')),
+    `top pressure ${migration[0]?.regionId} ${migration[0]?.band}`,
+  );
+
+  const settlement = op10mA11ComputeSettlementVulnerability({
+    regions: composite.state.urban.regions,
+    bottlenecks: composite.state.infra.bottlenecks,
+    linkageHubs: composite.state.linkageHubs,
+    fragilityIndex: composite.state.fragilityIndex,
+  });
+  push(
+    out,
+    'a11_30',
+    settlement.length === 8 && settlement[0].drivers.length >= 1,
+    `top vulnerability ${settlement[0]?.regionId} (${settlement[0]?.band})`,
+  );
+
+  const fiscal = op10mA11ComputeFiscalUrbanCoupling({
+    national: inputs.national,
+    regions: composite.state.urban.regions,
+  });
+  push(
+    out,
+    'a11_31',
+    fiscal.rows.length === 8 && fiscal.nationalIndex > 0,
+    `fiscal national index ${fiscal.nationalIndex}`,
+  );
+
+  const cohesion = op10mA11RegionalCohesionIndex({
+    inequalityIndex: composite.state.urban.inequalityIndex,
+    fragilityIndex: composite.state.fragilityIndex,
+    fiscalNationalIndex: fiscal.nationalIndex,
+    maxMigrationPressure: migration[0]?.netPressure ?? 0,
+  });
+  push(
+    out,
+    'a11_32',
+    composite.state.regionalCohesionIndex === cohesion &&
+      composite.state.migrationPressure.length === 8 &&
+      composite.state.fiscalUrbanCoupling.length === 8,
+    `cohesion ${composite.state.regionalCohesionIndex}`,
+  );
+
+  push(
+    out,
+    'a11_33',
+    composite.derived.some((d) => d.kind === 'migration_pressure_spike') ||
+      op10mA11RegionsWithMigrationSurge(migration).length >= 1,
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  const harness = runOP10M_A11_RegionalRegressionHarness(6);
+  push(out, 'a11_34', harness.ok, harness.detail);
+
+  push(
+    out,
+    'a11_35',
+    composite.state.settlementVulnerability.every((s) => s.narrative.includes('settlement')),
+    composite.state.settlementVulnerability[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_36',
+    composite.persisted.lastCohesionIndex === composite.state.regionalCohesionIndex,
+    `persisted cohesion ${composite.persisted.lastCohesionIndex}`,
   );
 
   return out;

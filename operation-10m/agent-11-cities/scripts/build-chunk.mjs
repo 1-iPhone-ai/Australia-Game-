@@ -29,6 +29,10 @@ const FILES = [
   'composite-recompute.ts',
   'urban-corridor-flow.ts',
   'linkage-hub-centrality.ts',
+  'regional-migration-pressure.ts',
+  'settlement-vulnerability.ts',
+  'fiscal-urban-coupling.ts',
+  'integration/regional-regression-harness.ts',
   'self-tests.ts',
 ];
 

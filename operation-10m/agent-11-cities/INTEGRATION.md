@@ -33,6 +33,14 @@ All symbols are prefixed `OP10M_A11_` for grep-safe assembly.
 4. Persist infra slice under `gameState.op10mAgent11IntercityInfra` (`createEmptyOP10M_A11_InfraPersisted()`).
 5. Register `runOP10M_A11_SelfTests` in quick regression suite beside `runV1014_CITIES_CityRegionalIntercitySelfTests`.
 
+### Scale wave round 4 (schema `10m.a11.composite.3`)
+
+- **Regional migration pressure** — pull/push from growth gaps, bottlenecks, corridor surges (`op10mA11ComputeMigrationPressure`)
+- **Settlement vulnerability** — composite exposure from inequality, bottlenecks, isolation (`op10mA11ComputeSettlementVulnerability`)
+- **Fiscal–urban coupling** — national distribution band vs regional catch-up (`op10mA11ComputeFiscalUrbanCoupling`, `regionalCohesionIndex`)
+- **Multi-turn regression harness** — `runOP10M_A11_RegionalRegressionHarness`
+- Derived events: `migration_pressure_spike`, `settlement_vulnerability_critical`, `fiscal_coupling_mismatch`
+
 ## Tests
 
 ```bash

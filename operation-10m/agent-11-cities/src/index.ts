@@ -13,4 +13,8 @@ export * from './relief-playbook.ts';
 export * from './composite-recompute.ts';
 export * from './urban-corridor-flow.ts';
 export * from './linkage-hub-centrality.ts';
+export * from './regional-migration-pressure.ts';
+export * from './settlement-vulnerability.ts';
+export * from './fiscal-urban-coupling.ts';
+export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';

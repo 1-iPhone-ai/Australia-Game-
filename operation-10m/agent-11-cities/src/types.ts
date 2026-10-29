@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.2' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.3' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -227,7 +227,42 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'integrated_relief_priority'
   | 'corridor_flow_surge'
   | 'linkage_hub_overload'
-  | 'peripheral_isolation_deepening';
+  | 'peripheral_isolation_deepening'
+  | 'migration_pressure_spike'
+  | 'settlement_vulnerability_critical'
+  | 'fiscal_coupling_mismatch';
+
+export type OP10M_A11_MigrationPressureBand = 'stable' | 'elevated' | 'high' | 'surge';
+
+export interface OP10M_A11_MigrationPressureRow {
+  regionId: OP10M_A11_RegionId;
+  pullScore: number;
+  pushScore: number;
+  netPressure: number;
+  band: OP10M_A11_MigrationPressureBand;
+  primaryDirection: 'inbound' | 'outbound' | 'balanced';
+  narrative: string;
+}
+
+export type OP10M_A11_SettlementVulnerabilityBand = 'resilient' | 'exposed' | 'fragile' | 'critical';
+
+export interface OP10M_A11_SettlementVulnerabilityRow {
+  regionId: OP10M_A11_RegionId;
+  vulnerabilityScore: number;
+  band: OP10M_A11_SettlementVulnerabilityBand;
+  drivers: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_FiscalCouplingBand = 'aligned' | 'partial' | 'strained' | 'misaligned';
+
+export interface OP10M_A11_FiscalUrbanCouplingRow {
+  regionId: OP10M_A11_RegionId;
+  couplingScore: number;
+  band: OP10M_A11_FiscalCouplingBand;
+  catchUpPotential: number;
+  narrative: string;
+}
 
 export interface OP10M_A11_UrbanHierarchyRow {
   regionId: OP10M_A11_RegionId;
@@ -303,6 +338,11 @@ export interface OP10M_A11_CompositeState {
   fragilityIndex: number;
   nationalPrimateIndex: number;
   maxCorridorFlow: number;
+  migrationPressure: OP10M_A11_MigrationPressureRow[];
+  settlementVulnerability: OP10M_A11_SettlementVulnerabilityRow[];
+  fiscalUrbanCoupling: OP10M_A11_FiscalUrbanCouplingRow[];
+  fiscalUrbanCouplingIndex: number;
+  regionalCohesionIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -315,5 +355,6 @@ export interface OP10M_A11_CompositePersisted {
   infra: OP10M_A11_InfraPersisted;
   lastFragilityIndex: number;
   lastMaxCorridorFlow: number;
+  lastCohesionIndex: number;
   inputHash: string;
 }
