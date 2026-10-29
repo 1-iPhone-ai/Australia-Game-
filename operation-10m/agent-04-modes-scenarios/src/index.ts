@@ -30,4 +30,5 @@ export * from './save-format-escort.js';
 export * from './save-format-extraction.js';
 export * from './save-format-subject.js';
 export * from './save-format-witness.js';
+export * from './save-format-tribunal.js';
 export * from './scenario-campaign-planner.js';

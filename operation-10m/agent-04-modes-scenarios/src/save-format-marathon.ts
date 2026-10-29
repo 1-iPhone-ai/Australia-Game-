@@ -9,6 +9,7 @@ import { advanceEscortSessionAfterRun } from './save-format-escort.js';
 import { advanceExtractionSessionAfterRun } from './save-format-extraction.js';
 import { advanceSubjectSessionAfterRun } from './save-format-subject.js';
 import { advanceWitnessSessionAfterRun } from './save-format-witness.js';
+import { advanceTribunalSessionAfterRun } from './save-format-tribunal.js';
 import { advanceSiegeSessionAfterRun } from './save-format-siege.js';
 import { advanceVoyageSessionAfterRun } from './save-format-voyage.js';
 import { advanceRelaySessionAfterRun } from './save-format-relay.js';
@@ -129,6 +130,7 @@ export function attachMarathonQueueToState(
   extractionSession: null,
     subjectSession: null,
     witnessSession: null,
+    tribunalSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -246,6 +248,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceTribunalSessionAfterRun(next, run);
   next = advanceWitnessSessionAfterRun(next, run);
   next = advanceSubjectSessionAfterRun(next, run);
   next = advanceExtractionSessionAfterRun(next, run);

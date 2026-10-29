@@ -123,6 +123,7 @@ export function attachSiegeSessionToState(
   extractionSession: null,
     subjectSession: null,
     witnessSession: null,
+    tribunalSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,

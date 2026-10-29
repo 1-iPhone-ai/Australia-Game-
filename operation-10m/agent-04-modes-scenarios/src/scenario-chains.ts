@@ -688,6 +688,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_tribunal_route',
+    title: 'Tribunal Route',
+    description:
+      'Three-phase tribunal arc with gravitas accrual between legs — round-20 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_tribunal_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_tribunal_docket_brief',
+        title: 'Docket Brief',
+        narrativeBridge: 'Open the docket before the hearing chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 300 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_tribunal_hearing_chamber',
+        title: 'Hearing Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, ACT: 5 },
+          forcedSettingsPatch: { o10mTribunalMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_tribunal_seal_finale',
+        title: 'Seal Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainTribunalRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

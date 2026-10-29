@@ -14,6 +14,7 @@ import {
   attachExtractionSessionToState,
   attachSubjectSessionToState,
   attachWitnessSessionToState,
+  attachTribunalSessionToState,
   attachGauntletSessionToState,
   attachMarathonQueueToState,
   attachRelaySessionToState,
@@ -31,6 +32,7 @@ import {
   createExtractionSession,
   createSubjectSession,
   createWitnessSession,
+  createTribunalSession,
   createGauntletSession,
   createMarathonQueue,
   createRelaySession,
@@ -60,7 +62,12 @@ describe('scenario campaign planner round 4', () => {
     assert.equal(plan.chainId, 'o10m_chain_continuity_arc');
   });
 
-  it('prefers active witness over subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+  it('prefers active tribunal over witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: tribunal } = createTribunalSession({
+      tribunalId: 'o10m_tribunal_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_tribunal_docket_brief', 'o10m_tribunal_hearing_chamber'],
+    });
     const { session: witness } = createWitnessSession({
       witnessId: 'o10m_witness_priority',
       label: 'Priority',
@@ -157,12 +164,18 @@ describe('scenario campaign planner round 4', () => {
     state = attachExtractionSessionToState(state, extraction!);
     state = attachSubjectSessionToState(state, subject!);
     state = attachWitnessSessionToState(state, witness!);
-    assert.equal(planNextCampaignAction(state).kind, 'witness_step');
+    state = attachTribunalSessionToState(state, tribunal!);
+    assert.equal(planNextCampaignAction(state).kind, 'tribunal_step');
   });
 
-  it('prefers active subject over extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+  it('prefers active witness over subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: witness } = createWitnessSession({
+      witnessId: 'o10m_witness_priority_only',
+      label: 'Priority',
+      scenarioIds: ['o10m_witness_brief_room', 'o10m_witness_testimony_floor'],
+    });
     const { session: subject } = createSubjectSession({
-      subjectId: 'o10m_subject_priority_only',
+      subjectId: 'o10m_subject_priority_wit',
       label: 'Priority',
       scenarioIds: ['o10m_subject_intake_brief', 'o10m_subject_probe_field'],
     });
@@ -234,6 +247,101 @@ describe('scenario campaign planner round 4', () => {
     let state = createEmptyO10mModesPersistedState();
     state = pinCampaignSlot(state, {
       slotId: 'o10m_slot_lab_only',
+      scenarioId: 'o10m_slot_rotation_lab',
+      turn: 4,
+    }).state;
+    state = attachMarathonQueueToState(state, queue!);
+    state = attachGauntletSessionToState(state, gauntlet!);
+    state = attachRelaySessionToState(state, relay!);
+    state = attachCircuitSessionToState(state, circuit!);
+    state = attachExpeditionSessionToState(state, expedition!);
+    state = attachOdysseySessionToState(state, odyssey!);
+    state = attachPilgrimageSessionToState(state, pilgrimage!);
+    state = attachCaravanSessionToState(state, caravan!);
+    state = attachVoyageSessionToState(state, voyage!);
+    state = attachSiegeSessionToState(state, siege!);
+    state = attachConvoySessionToState(state, convoy!);
+    state = attachEscortSessionToState(state, escort!);
+    state = attachExtractionSessionToState(state, extraction!);
+    state = attachSubjectSessionToState(state, subject!);
+    state = attachWitnessSessionToState(state, witness!);
+    assert.equal(planNextCampaignAction(state).kind, 'witness_step');
+  });
+
+  it('prefers active subject over extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: subject } = createSubjectSession({
+      subjectId: 'o10m_subject_priority_only',
+      label: 'Priority',
+      scenarioIds: ['o10m_subject_intake_brief', 'o10m_subject_probe_field'],
+    });
+    const { session: extraction } = createExtractionSession({
+      extractionId: 'o10m_extraction_priority_only_sub',
+      label: 'Priority',
+      scenarioIds: ['o10m_extraction_intel_brief', 'o10m_extraction_rescue_site'],
+    });
+    const { session: escort } = createEscortSession({
+      escortId: 'o10m_escort_priority_only_ext',
+      label: 'Priority',
+      scenarioIds: ['o10m_escort_briefing_yard', 'o10m_escort_corridor_patrol'],
+    });
+    const { session: convoy } = createConvoySession({
+      convoyId: 'o10m_convoy_priority_only_ext',
+      label: 'Priority',
+      scenarioIds: ['o10m_convoy_staging_depot', 'o10m_convoy_transit_corridor'],
+    });
+    const { session: siege } = createSiegeSession({
+      siegeId: 'o10m_siege_priority_only_ext',
+      label: 'Priority',
+      scenarioIds: ['o10m_siege_mustering_yard', 'o10m_siege_breach_wall'],
+    });
+    const { session: voyage } = createVoyageSession({
+      voyageId: 'o10m_voyage_priority_only_ext',
+      label: 'Priority',
+      scenarioIds: ['o10m_voyage_embark_pier', 'o10m_voyage_open_sea_passage'],
+    });
+    const { session: caravan } = createCaravanSession({
+      caravanId: 'o10m_caravan_priority_only_ext',
+      label: 'Priority',
+      scenarioIds: ['o10m_caravan_assembly_yard', 'o10m_caravan_dune_crossing'],
+    });
+    const { session: pilgrimage } = createPilgrimageSession({
+      pilgrimageId: 'o10m_pilgrimage_priority_only_ext',
+      label: 'Priority',
+      scenarioIds: ['o10m_pilgrimage_setting_out', 'o10m_pilgrimage_midway_shrine'],
+    });
+    const { session: odyssey } = createOdysseySession({
+      odysseyId: 'o10m_odyssey_priority_only_ext',
+      label: 'Priority',
+      scenarioIds: ['o10m_odyssey_opening_winds', 'o10m_odyssey_crossing_shelves'],
+    });
+    const { session: expedition } = createExpeditionSession({
+      expeditionId: 'o10m_expedition_priority_only_ext',
+      label: 'Priority',
+      scenarioIds: ['o10m_expedition_departure_dock', 'o10m_expedition_transit_pass'],
+    });
+    const { session: circuit } = createCircuitSession({
+      circuitId: 'o10m_circuit_priority_only_ext',
+      label: 'Priority',
+      scenarioIds: ['o10m_circuit_warmup_laps', 'o10m_circuit_ridge_climb'],
+    });
+    const { session: relay } = createRelaySession({
+      relayId: 'o10m_relay_priority_only_ext',
+      label: 'Priority',
+      scenarioIds: ['o10m_relay_dust_corridor', 'o10m_relay_coastal_handoff'],
+    });
+    const { session: gauntlet } = createGauntletSession({
+      gauntletId: 'o10m_gauntlet_priority_only_ext',
+      label: 'Priority',
+      scenarioIds: ['o10m_gauntlet_opening_gate', 'o10m_gauntlet_midfield_press'],
+    });
+    const { queue } = createMarathonQueue({
+      queueId: 'o10m_marathon_priority_only_ext',
+      label: 'Priority',
+      scenarioIds: ['o10m_marathon_pace_setter'],
+    });
+    let state = createEmptyO10mModesPersistedState();
+    state = pinCampaignSlot(state, {
+      slotId: 'o10m_slot_lab_only_ext',
       scenarioId: 'o10m_slot_rotation_lab',
       turn: 4,
     }).state;

@@ -122,6 +122,7 @@ export function attachConvoySessionToState(
   extractionSession: null,
     subjectSession: null,
     witnessSession: null,
+    tribunalSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,

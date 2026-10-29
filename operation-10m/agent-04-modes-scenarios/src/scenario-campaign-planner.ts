@@ -67,6 +67,11 @@ import {
   sanitizeWitnessSession,
 } from './save-format-witness.js';
 import {
+  getTribunalScenarioAtCursor,
+  tribunalSessionSummary,
+  sanitizeTribunalSession,
+} from './save-format-tribunal.js';
+import {
   getSiegeScenarioAtCursor,
   siegeSessionSummary,
   sanitizeSiegeSession,
@@ -89,6 +94,7 @@ import type {
   O10mExtractionPhase,
   O10mSubjectPhase,
   O10mWitnessPhase,
+  O10mTribunalPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -151,9 +157,31 @@ const emptyQueuePlan = {
   witnessCursor: null as number | null,
   witnessPhase: null as O10mWitnessPhase | null,
   witnessCredibility: null as number | null,
+  tribunalId: null as string | null,
+  tribunalCursor: null as number | null,
+  tribunalPhase: null as O10mTribunalPhase | null,
+  tribunalGravitas: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const tribunal = sanitizeTribunalSession(state.tribunalSession);
+  const tribunalScenario = getTribunalScenarioAtCursor(tribunal);
+  if (tribunal && tribunal.active && tribunalScenario) {
+    return {
+      kind: 'tribunal_step',
+      scenarioId: tribunalScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      tribunalId: tribunal.tribunalId,
+      tribunalCursor: tribunal.cursor,
+      tribunalPhase: tribunal.phaseTag,
+      tribunalGravitas: tribunal.gravitasScore,
+      reason: `Tribunal "${tribunal.label}" ${tribunal.phaseTag} phase ${tribunal.cursor + 1}/${tribunal.scenarioIds.length} (gravitas ${tribunal.gravitasScore}).`,
+    };
+  }
+
   const witness = sanitizeWitnessSession(state.witnessSession);
   const witnessScenario = getWitnessScenarioAtCursor(witness);
   if (witness && witness.active && witnessScenario) {
@@ -504,6 +532,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   extractionActive: boolean;
   subjectActive: boolean;
   witnessActive: boolean;
+  tribunalActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -526,6 +555,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const extraction = extractionSessionSummary(state);
   const subject = subjectSessionSummary(state);
   const witness = witnessSessionSummary(state);
+  const tribunal = tribunalSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -546,6 +576,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     extractionActive: extraction.active,
     subjectActive: subject.active,
     witnessActive: witness.active,
+    tribunalActive: tribunal.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

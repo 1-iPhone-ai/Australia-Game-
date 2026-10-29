@@ -129,6 +129,7 @@ export function attachExtractionSessionToState(
     extractionSession: sanitized,
     subjectSession: null,
     witnessSession: null,
+    tribunalSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
