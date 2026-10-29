@@ -429,8 +429,14 @@ export type RemotePathologySupplyStagingPolicy = 'baseline' | 'surge';
 
 export type AirportDroneCargoLogisticsPolicy = 'baseline' | 'expand';
 
+export type EWasteCriticalMineralsRecoveryExportPolicy = 'baseline' | 'accelerate';
+
+export type RegionalOncologyRadiotherapySupplyStagingPolicy = 'baseline' | 'surge';
+
+export type PortAutonomousTugBerthingLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/47';
+  schemaVersion: 'agent12/48';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -772,6 +778,14 @@ export interface TransportInfrastructureState {
   airportDroneCargoLogisticsShare: number;
   nationalAirportDroneCargoLogisticsThroughputIndex: number;
   airportDroneCargoLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalEWasteCriticalMineralsRecoveryExportIndex: number;
+  eWasteCriticalMineralsRecoveryExportByRegion: Record<AuRegionCode, number>;
+  regionalOncologyRadiotherapySupplyStagingShare: number;
+  nationalRegionalOncologyRadiotherapySupplyStagingIndex: number;
+  regionalOncologyRadiotherapySupplyStagingByRegion: Record<AuRegionCode, number>;
+  portAutonomousTugBerthingLogisticsShare: number;
+  nationalPortAutonomousTugBerthingLogisticsThroughputIndex: number;
+  portAutonomousTugBerthingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -903,6 +917,9 @@ export interface TransportInfrastructureOptions {
   recycledSteelExportPolicy?: RecycledSteelExportPolicy;
   remotePathologySupplyStagingPolicy?: RemotePathologySupplyStagingPolicy;
   airportDroneCargoLogisticsPolicy?: AirportDroneCargoLogisticsPolicy;
+  eWasteCriticalMineralsRecoveryExportPolicy?: EWasteCriticalMineralsRecoveryExportPolicy;
+  regionalOncologyRadiotherapySupplyStagingPolicy?: RegionalOncologyRadiotherapySupplyStagingPolicy;
+  portAutonomousTugBerthingLogisticsPolicy?: PortAutonomousTugBerthingLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {

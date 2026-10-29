@@ -36,13 +36,13 @@ describe('Agent 12 round 20 catalog', () => {
 });
 
 describe('Agent 12 round 20 systems', () => {
-  it('returns agent12/47 with offshore CCS, H2 LNG, urban microfreight', () => {
+  it('returns agent12/48 with offshore CCS, H2 LNG, urban microfreight', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(170), {
       offshoreCcsLogisticsPolicy: 'deploy',
       hydrogenLngExportPolicy: 'accelerate',
       urbanMicrofreightHubPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/47');
+    assert.equal(state.schemaVersion, 'agent12/48');
     assert.ok(state.nationalOffshoreCcsLogisticsIndex >= 5);
     assert.ok(state.nationalHydrogenLngExportIndex >= 11);
     assert.ok(state.urbanMicrofreightHubShare >= 0.035);

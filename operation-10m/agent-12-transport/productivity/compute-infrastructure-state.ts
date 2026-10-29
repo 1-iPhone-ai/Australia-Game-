@@ -737,6 +737,23 @@ import {
   computeAirportDroneCargoLogisticsThroughputByRegion,
   nationalAirportDroneCargoLogisticsThroughputIndex,
 } from './airport-drone-cargo-logistics-index.ts';
+import {
+  computeEWasteCriticalMineralsRecoveryExportByRegion,
+  eWasteCriticalMineralsRecoveryExportProductivityMultiplier,
+  nationalEWasteCriticalMineralsRecoveryExportIndex,
+} from '../network/e-waste-critical-minerals-recovery-export-index.ts';
+import {
+  computeRegionalOncologyRadiotherapySupplyStagingByRegion,
+  computeRegionalOncologyRadiotherapySupplyStagingShare,
+  nationalRegionalOncologyRadiotherapySupplyStagingIndex,
+  regionalOncologyRadiotherapySupplyStagingProductivityMultiplier,
+} from '../operations/regional-oncology-radiotherapy-supply-staging-index.ts';
+import {
+  computePortAutonomousTugBerthingLogisticsShare,
+  computePortAutonomousTugBerthingLogisticsThroughputByRegion,
+  nationalPortAutonomousTugBerthingLogisticsThroughputIndex,
+  portAutonomousTugBerthingLogisticsProductivityMultiplier,
+} from './port-autonomous-tug-berthing-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -2241,6 +2258,42 @@ export function computeTransportInfrastructureState(
     airportDroneCargoLogisticsShare,
     options?.airportDroneCargoLogisticsPolicy ?? 'baseline',
   );
+  const eWasteCriticalMineralsRecoveryExportByRegion =
+    computeEWasteCriticalMineralsRecoveryExportByRegion(ops);
+  const nationalEWaste = nationalEWasteCriticalMineralsRecoveryExportIndex(
+    eWasteCriticalMineralsRecoveryExportByRegion,
+  );
+  const eWasteMult = eWasteCriticalMineralsRecoveryExportProductivityMultiplier(
+    nationalEWaste,
+    options?.eWasteCriticalMineralsRecoveryExportPolicy ?? 'baseline',
+  );
+  const regionalOncologyRadiotherapySupplyStagingByRegion =
+    computeRegionalOncologyRadiotherapySupplyStagingByRegion(ops, networkStress);
+  const nationalOncology = nationalRegionalOncologyRadiotherapySupplyStagingIndex(
+    regionalOncologyRadiotherapySupplyStagingByRegion,
+  );
+  const regionalOncologyRadiotherapySupplyStagingShare =
+    computeRegionalOncologyRadiotherapySupplyStagingShare(
+      ops,
+      options?.regionalOncologyRadiotherapySupplyStagingPolicy ?? 'baseline',
+    );
+  const oncologyMult = regionalOncologyRadiotherapySupplyStagingProductivityMultiplier(
+    regionalOncologyRadiotherapySupplyStagingShare,
+    options?.regionalOncologyRadiotherapySupplyStagingPolicy ?? 'baseline',
+  );
+  const portAutonomousTugBerthingLogisticsThroughputByRegion =
+    computePortAutonomousTugBerthingLogisticsThroughputByRegion(ops);
+  const nationalAutonomousTug = nationalPortAutonomousTugBerthingLogisticsThroughputIndex(
+    portAutonomousTugBerthingLogisticsThroughputByRegion,
+  );
+  const portAutonomousTugBerthingLogisticsShare = computePortAutonomousTugBerthingLogisticsShare(
+    ops,
+    options?.portAutonomousTugBerthingLogisticsPolicy ?? 'baseline',
+  );
+  const autonomousTugMult = portAutonomousTugBerthingLogisticsProductivityMultiplier(
+    portAutonomousTugBerthingLogisticsShare,
+    options?.portAutonomousTugBerthingLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -2336,6 +2389,9 @@ export function computeTransportInfrastructureState(
     const recycledSteelBoost = (recycledSteelExportByRegion[code] - 5) * 0.0022;
     const pathologyBoost = (remotePathologySupplyStagingByRegion[code] - 6) * 0.0018;
     const droneCargoBoost = (airportDroneCargoLogisticsThroughputByRegion[code] - 2) * 0.0014;
+    const eWasteBoost = (eWasteCriticalMineralsRecoveryExportByRegion[code] - 5) * 0.0021;
+    const oncologyBoost = (regionalOncologyRadiotherapySupplyStagingByRegion[code] - 6) * 0.0017;
+    const autonomousTugBoost = (portAutonomousTugBerthingLogisticsThroughputByRegion[code] - 2) * 0.0013;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -2430,7 +2486,10 @@ export function computeTransportInfrastructureState(
         batterySwapBoost +
         recycledSteelBoost +
         pathologyBoost +
-        droneCargoBoost) *
+        droneCargoBoost +
+        eWasteBoost +
+        oncologyBoost +
+        autonomousTugBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -2523,7 +2582,10 @@ export function computeTransportInfrastructureState(
       batterySwapMult *
       recycledSteelMult *
       pathologyMult *
-      droneCargoMult;
+      droneCargoMult *
+      eWasteMult *
+      oncologyMult *
+      autonomousTugMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -2639,7 +2701,10 @@ export function computeTransportInfrastructureState(
     nationalBatterySwap * 0.003 +
     nationalRecycledSteel * 0.003 +
     nationalPathology * 0.003 +
-    nationalDroneCargo * 0.003;
+    nationalDroneCargo * 0.003 +
+    nationalEWaste * 0.003 +
+    nationalOncology * 0.003 +
+    nationalAutonomousTug * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -2654,7 +2719,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/47',
+    schemaVersion: 'agent12/48',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -2996,6 +3061,14 @@ export function computeTransportInfrastructureState(
     airportDroneCargoLogisticsShare,
     nationalAirportDroneCargoLogisticsThroughputIndex: nationalDroneCargo,
     airportDroneCargoLogisticsThroughputByRegion,
+    nationalEWasteCriticalMineralsRecoveryExportIndex: nationalEWaste,
+    eWasteCriticalMineralsRecoveryExportByRegion,
+    regionalOncologyRadiotherapySupplyStagingShare,
+    nationalRegionalOncologyRadiotherapySupplyStagingIndex: nationalOncology,
+    regionalOncologyRadiotherapySupplyStagingByRegion,
+    portAutonomousTugBerthingLogisticsShare,
+    nationalPortAutonomousTugBerthingLogisticsThroughputIndex: nationalAutonomousTug,
+    portAutonomousTugBerthingLogisticsThroughputByRegion,
     computeMs,
   };
 }

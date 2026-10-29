@@ -37,13 +37,13 @@ describe('Agent 12 round 35 catalog', () => {
 });
 
 describe('Agent 12 round 35 systems', () => {
-  it('returns agent12/47 with silicon wafer, coal phaseout, baggage robot', () => {
+  it('returns agent12/48 with silicon wafer, coal phaseout, baggage robot', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(320), {
       siliconSolarWaferExportPolicy: 'accelerate',
       railCoalPhaseoutStagingPolicy: 'accelerate',
       airportBaggageRobotLogisticsPolicy: 'deploy',
     });
-    assert.equal(state.schemaVersion, 'agent12/47');
+    assert.equal(state.schemaVersion, 'agent12/48');
     assert.ok(state.nationalSiliconSolarWaferExportIndex >= 5);
     assert.ok(state.nationalRailCoalPhaseoutStagingIndex >= 6);
     assert.ok(state.airportBaggageRobotLogisticsShare >= 0.03);

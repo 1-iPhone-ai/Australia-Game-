@@ -37,13 +37,13 @@ describe('Agent 12 round 37 catalog', () => {
 });
 
 describe('Agent 12 round 37 systems', () => {
-  it('returns agent12/47 with pumped hydro, wildfire tanker, micro fulfillment', () => {
+  it('returns agent12/48 with pumped hydro, wildfire tanker, micro fulfillment', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(340), {
       pumpedHydroRenewableExportPolicy: 'accelerate',
       wildfireAirtankerStagingPolicy: 'surge',
       suburbanMicroFulfillmentLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/47');
+    assert.equal(state.schemaVersion, 'agent12/48');
     assert.ok(state.nationalPumpedHydroRenewableExportIndex >= 5);
     assert.ok(state.nationalWildfireAirtankerStagingIndex >= 6);
     assert.ok(state.suburbanMicroFulfillmentLogisticsShare >= 0.03);

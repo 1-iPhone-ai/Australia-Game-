@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 47
+
+- Schema **`agent12/48`**: e-waste critical minerals recovery export throughput, regional oncology radiotherapy supply staging readiness, port autonomous tug berthing logistics share (`eWasteCriticalMineralsRecoveryExportPolicy`, `regionalOncologyRadiotherapySupplyStagingPolicy`, `portAutonomousTugBerthingLogisticsPolicy`)
+- Catalog: **641** assets, **155** corridors, **253** scenarios
+- Systems: `network/e-waste-critical-minerals-recovery-export-index.ts`, `operations/regional-oncology-radiotherapy-supply-staging-index.ts`, `productivity/port-autonomous-tug-berthing-logistics-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 46
 
 - Schema **`agent12/47`**: recycled steel export throughput, remote pathology supply staging readiness, airport drone cargo logistics share (`recycledSteelExportPolicy`, `remotePathologySupplyStagingPolicy`, `airportDroneCargoLogisticsPolicy`)

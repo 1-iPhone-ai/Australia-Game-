@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/47' &&
+      infra.schemaVersion === 'agent12/48' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -229,8 +229,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalRecycledSteelExportIndex >= 5 &&
       infra.nationalRemotePathologySupplyStagingIndex >= 6 &&
       infra.airportDroneCargoLogisticsShare >= 0.03 &&
-      infra.nationalAirportDroneCargoLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} steel=${infra.nationalRecycledSteelExportIndex.toFixed(1)} pathology=${infra.nationalRemotePathologySupplyStagingIndex.toFixed(1)} drone=${infra.nationalAirportDroneCargoLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalAirportDroneCargoLogisticsThroughputIndex >= 2 &&
+      infra.nationalEWasteCriticalMineralsRecoveryExportIndex >= 5 &&
+      infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex >= 6 &&
+      infra.portAutonomousTugBerthingLogisticsShare >= 0.03 &&
+      infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} eWaste=${infra.nationalEWasteCriticalMineralsRecoveryExportIndex.toFixed(1)} oncology=${infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex.toFixed(1)} tug=${infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;
