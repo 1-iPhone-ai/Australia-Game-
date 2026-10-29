@@ -29458,12 +29458,209 @@ const TEAM_DIFFICULTY_BEHAVIOR: Record<keyof typeof AI_DIFFICULTY_PROFILES, Team
   }
 };
 
+// ============================================================================
+// SECTION 20N-A71 (O111): GAME MODE SELECTION CATALOG — ONE TRUTH FOR MATCH MODES
+// ============================================================================
+// Division H / Agent 71. `selectedMode` (`GameModeSelection`) drives rival structure,
+// competitive rules, solo AI turns (Section 20R), and AE10 algorithm gating. `gameMode` is
+// UI lifecycle only (`menu` | `game` | …). Use `resolveEffectiveGameModeSelection` for rules.
+
+export const GAME_MODE_SELECTIONS: readonly GameModeSelection[] = [
+  'single',
+  'ai',
+  'grand_tour',
+  'team_human_ai_vs_ai_ai',
+  'team_ai_vs_ai',
+  'scenario'
+] as const;
+
+export interface GameModeSelectionMeta {
+  id: GameModeSelection;
+  label: string;
+  shortLabel: string;
+  description: string;
+  category: 'solo' | 'rival' | 'team' | 'scenario';
+}
+
+export const GAME_MODE_SELECTION_META: Record<GameModeSelection, GameModeSelectionMeta> = {
+  single: {
+    id: 'single',
+    label: 'Single Player',
+    shortLabel: 'Solo',
+    description: 'Sandbox progression without a structured rival turn loop.',
+    category: 'solo'
+  },
+  ai: {
+    id: 'ai',
+    label: 'Human vs AI',
+    shortLabel: '1v1',
+    description: 'Classic competitive match against a solo rival AI (V9.6 turn fidelity).',
+    category: 'rival'
+  },
+  grand_tour: {
+    id: 'grand_tour',
+    label: 'Grand Tour',
+    shortLabel: 'Tour',
+    description: 'Competitive tour with rival turns; classic layered AI only (no AE10 engine).',
+    category: 'rival'
+  },
+  team_human_ai_vs_ai_ai: {
+    id: 'team_human_ai_vs_ai_ai',
+    label: 'Human + AI vs AI + AI',
+    shortLabel: 'Team 2v2',
+    description: 'Mixed human/AI team versus an all-AI team.',
+    category: 'team'
+  },
+  team_ai_vs_ai: {
+    id: 'team_ai_vs_ai',
+    label: 'Team AI vs Team AI',
+    shortLabel: 'AI teams',
+    description: 'Fully automated team match (spectator / LAB friendly).',
+    category: 'team'
+  },
+  scenario: {
+    id: 'scenario',
+    label: 'Scenario',
+    shortLabel: 'Scenario',
+    description: 'Objective-driven scenario pack with solo rival turns when configured.',
+    category: 'scenario'
+  }
+};
+
+export interface GameModeCapabilities {
+  id: GameModeSelection | null;
+  teamMatch: boolean;
+  competitiveEconomy: boolean;
+  soloRivalTurn: boolean;
+  aiDecisionEngine: boolean;
+  adaptiveAi: boolean;
+  scenarioPack: boolean;
+}
+
+const GAME_MODE_CAPABILITIES_BY_ID: Record<GameModeSelection, Omit<GameModeCapabilities, 'id'>> = {
+  single: {
+    teamMatch: false,
+    competitiveEconomy: false,
+    soloRivalTurn: false,
+    aiDecisionEngine: false,
+    adaptiveAi: false,
+    scenarioPack: false
+  },
+  ai: {
+    teamMatch: false,
+    competitiveEconomy: true,
+    soloRivalTurn: true,
+    aiDecisionEngine: true,
+    adaptiveAi: true,
+    scenarioPack: false
+  },
+  grand_tour: {
+    teamMatch: false,
+    competitiveEconomy: true,
+    soloRivalTurn: true,
+    aiDecisionEngine: false,
+    adaptiveAi: true,
+    scenarioPack: false
+  },
+  team_human_ai_vs_ai_ai: {
+    teamMatch: true,
+    competitiveEconomy: true,
+    soloRivalTurn: false,
+    aiDecisionEngine: true,
+    adaptiveAi: true,
+    scenarioPack: false
+  },
+  team_ai_vs_ai: {
+    teamMatch: true,
+    competitiveEconomy: true,
+    soloRivalTurn: false,
+    aiDecisionEngine: true,
+    adaptiveAi: true,
+    scenarioPack: false
+  },
+  scenario: {
+    teamMatch: false,
+    competitiveEconomy: false,
+    soloRivalTurn: true,
+    aiDecisionEngine: false,
+    adaptiveAi: false,
+    scenarioPack: true
+  }
+};
+
+export function sanitizeGameModeSelection(value: unknown): GameModeSelection | null {
+  return typeof value === 'string' && (GAME_MODE_SELECTIONS as readonly string[]).includes(value)
+    ? (value as GameModeSelection)
+    : null;
+}
+
+/** Match rules: prefer `selectedMode`, then legacy `mode` alias. Ignores UI `gameMode`. */
+export function resolveEffectiveGameModeSelection(
+  source: { selectedMode?: unknown; mode?: unknown } | null | undefined
+): GameModeSelection | null {
+  return sanitizeGameModeSelection(source?.selectedMode) ?? sanitizeGameModeSelection(source?.mode) ?? null;
+}
+
+export function resolveGameModeCapabilities(mode: GameModeSelection | string | null | undefined): GameModeCapabilities {
+  const id = sanitizeGameModeSelection(mode);
+  if (!id) {
+    return {
+      id: null,
+      teamMatch: false,
+      competitiveEconomy: false,
+      soloRivalTurn: false,
+      aiDecisionEngine: false,
+      adaptiveAi: false,
+      scenarioPack: false
+    };
+  }
+  return { id, ...GAME_MODE_CAPABILITIES_BY_ID[id] };
+}
+
+export function runO111GameModesSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const r = fn();
+      results.push({ id, name, passed: r === true, detail: r === true ? 'ok' : String(r) });
+    } catch (err) {
+      results.push({
+        id,
+        name,
+        passed: false,
+        detail: err instanceof Error ? err.message : String(err)
+      });
+    }
+  };
+  check('gm_meta_complete', 'Catalog meta covers every GameModeSelection id', () =>
+    GAME_MODE_SELECTIONS.every(m => GAME_MODE_SELECTION_META[m]?.id === m)
+  );
+  check('gm_sanitize', 'sanitizeGameModeSelection rejects unknown values', () =>
+    sanitizeGameModeSelection('coop') === null && sanitizeGameModeSelection('ai') === 'ai'
+  );
+  check('gm_effective', 'resolveEffectiveGameModeSelection prefers selectedMode', () =>
+    resolveEffectiveGameModeSelection({ selectedMode: 'scenario', mode: 'ai' }) === 'scenario'
+  );
+  const expectTeam = new Set<GameModeSelection>(['team_human_ai_vs_ai_ai', 'team_ai_vs_ai']);
+  const expectCompetitive = new Set<GameModeSelection>(['ai', 'grand_tour', 'team_human_ai_vs_ai_ai', 'team_ai_vs_ai']);
+  const expectSoloRival = new Set<GameModeSelection>(['ai', 'grand_tour', 'scenario']);
+  const expectAiEngine = new Set<GameModeSelection>(['ai', 'team_human_ai_vs_ai_ai', 'team_ai_vs_ai']);
+  for (const m of GAME_MODE_SELECTIONS) {
+    const cap = resolveGameModeCapabilities(m);
+    check(`gm_cap_team_${m}`, `${m} teamMatch`, () => cap.teamMatch === expectTeam.has(m));
+    check(`gm_cap_comp_${m}`, `${m} competitiveEconomy`, () => cap.competitiveEconomy === expectCompetitive.has(m));
+    check(`gm_cap_solo_${m}`, `${m} soloRivalTurn`, () => cap.soloRivalTurn === expectSoloRival.has(m));
+    check(`gm_cap_ai_${m}`, `${m} aiDecisionEngine`, () => cap.aiDecisionEngine === expectAiEngine.has(m));
+  }
+  return results;
+}
+
 export function isTeamModeSelection(mode: GameModeSelection | string | null | undefined): boolean {
-  return mode === 'team_human_ai_vs_ai_ai' || mode === 'team_ai_vs_ai';
+  return resolveGameModeCapabilities(mode).teamMatch;
 }
 
 const isCompetitiveModeSelection = (mode: GameModeSelection | string | null | undefined) => {
-  return mode === 'ai' || mode === 'grand_tour' || isTeamModeSelection(mode);
+  return resolveGameModeCapabilities(mode).competitiveEconomy;
 };
 
 // AE10 (closing verification/acceptance pass — the AI Thinking & Algorithm System's Shared AI
@@ -29494,7 +29691,7 @@ const isCompetitiveModeSelection = (mode: GameModeSelection | string | null | un
 // Mode-gating helper mirrors shouldShowDecisionTransparencyForMode's shape (deliberately its own
 // explicit mode list rather than reusing isCompetitiveModeSelection, which folds in Grand Tour).
 const isAiAlgorithmFeatureActiveForMode = (mode: GameModeSelection | string | null | undefined) => {
-  return mode === 'ai' || mode === 'team_human_ai_vs_ai_ai' || mode === 'team_ai_vs_ai';
+  return resolveGameModeCapabilities(mode).aiDecisionEngine;
 };
 
 const createDefaultContributionStats = (): ActorContributionStats => ({
@@ -134445,9 +134642,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         stateData.currentDirectiveStrength ?? settingsData.directiveStrength ?? DEFAULT_GAME_SETTINGS.directiveStrength
       ),
       directiveStrengthSource: stateData.directiveStrengthSource === 'manual' ? 'manual' : 'default',
-      selectedMode: ['single', 'ai', 'grand_tour', 'team_human_ai_vs_ai_ai', 'team_ai_vs_ai', 'scenario'].includes(stateData.selectedMode)
-        ? stateData.selectedMode
-        : null,
+      selectedMode: sanitizeGameModeSelection(stateData.selectedMode),
       gameMode: ['menu', 'game', 'end'].includes(stateData.gameMode) ? stateData.gameMode : 'game',
       aiDifficulty: typeof stateData.aiDifficulty === 'string' && AI_DIFFICULTY_PROFILES[stateData.aiDifficulty]
         ? stateData.aiDifficulty
@@ -136533,6 +136728,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'intent', label: 'Player Intent', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runPlayerIntentLayerSelfTests() },
   { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
   { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
+  { id: 'o111_a71', label: 'O111 Game Mode catalog', tier: 'quick', section: 'Critical Invariants', severity: 'MAJOR', run: () => runO111GameModesSelfTests() },
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
     ...runAiMemoryPhase1SelfTests().results, ...runAiMemoryPhase2SelfTests().results, ...runAiMemoryPhase3SelfTests().results,
@@ -137912,7 +138108,8 @@ export const ReleaseReadinessCenter: React.FC<{
 // decides whether the loop may continue and records what happened (ephemeral, never persisted).
 
 /** Solo modes whose rival AI takes its own turn through performAiTurn (team modes use their own engine). */
-export const isSoloRivalModeSelection = (mode: unknown): boolean => mode === 'ai' || mode === 'grand_tour' || mode === 'scenario';
+export const isSoloRivalModeSelection = (mode: unknown): boolean =>
+  resolveGameModeCapabilities(typeof mode === 'string' ? mode : null).soloRivalTurn;
 
 /** Named limits. A valid configuration never reaches the absolute ceilings; they are last-resort invariants. */
 export const V96_SOLO_AI_LIMITS = {
