@@ -285,6 +285,8 @@ export interface Agent17PlanningDepthSnapshot {
   sentinelAccord: Agent17SentinelAccordSnapshot;
   watchershipIndex: Agent17WatchershipIndexSnapshot;
   watchAccord: Agent17WatchAccordSnapshot;
+  vigilanceIndex: Agent17VigilanceIndexSnapshot;
+  vigilAccord: Agent17VigilAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -2011,6 +2013,38 @@ export interface Agent17WatchAccordSnapshot {
   directives: Agent17WatchDirective[];
   watchershipBand: Agent17WatchershipIndexSnapshot['band'];
   watchSeated: boolean;
+  headline: string;
+}
+
+export interface Agent17VigilanceMandate {
+  id: string;
+  label: string;
+  engaged: boolean;
+  weight: number;
+}
+
+export interface Agent17VigilanceIndexSnapshot {
+  vigilanceScore: number;
+  band: 'engaged' | 'tentative' | 'revoked';
+  mandates: Agent17VigilanceMandate[];
+  watchBand: Agent17WatchAccordSnapshot['band'];
+  vigilanceEngaged: boolean;
+  headline: string;
+}
+
+export interface Agent17VigilDirective {
+  id: string;
+  label: string;
+  seated: boolean;
+  weight: number;
+}
+
+export interface Agent17VigilAccordSnapshot {
+  vigilScore: number;
+  band: 'seated' | 'interim' | 'vacated';
+  directives: Agent17VigilDirective[];
+  vigilanceBand: Agent17VigilanceIndexSnapshot['band'];
+  vigilSeated: boolean;
   headline: string;
 }
 

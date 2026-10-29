@@ -425,6 +425,14 @@ import {
   watchAccordBlocksSentinel,
 } from '../planning/watch-accord.ts';
 import {
+  buildAgent17VigilanceIndex,
+  vigilanceIndexBlocksVigil,
+} from '../planning/vigilance-index.ts';
+import {
+  buildAgent17VigilAccord,
+  vigilAccordBlocksWatch,
+} from '../planning/vigil-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -3108,6 +3116,62 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const vigilanceIndex = depthEval.snapshot.planningDepth?.vigilanceIndex;
+  goalResults.push(
+    result(
+      'G17-175',
+      !!vigilanceIndex &&
+        vigilanceIndex.mandates.length >= 5 &&
+        vigilanceIndex.vigilanceScore >= 0 &&
+        vigilanceIndex.vigilanceScore <= 100 &&
+        (vigilanceIndex.band === 'engaged' ||
+          vigilanceIndex.band === 'tentative' ||
+          vigilanceIndex.band === 'revoked'),
+      `mandates=${vigilanceIndex?.mandates.length} score=${vigilanceIndex?.vigilanceScore}`
+    )
+  );
+
+  const vigilAccord = depthEval.snapshot.planningDepth?.vigilAccord;
+  goalResults.push(
+    result(
+      'G17-176',
+      !!vigilAccord &&
+        vigilAccord.directives.length >= 5 &&
+        vigilAccord.vigilScore >= 0 &&
+        vigilAccord.vigilScore <= 100,
+      `directives=${vigilAccord?.directives.length} score=${vigilAccord?.vigilScore}`
+    )
+  );
+
+  const revokedWatchershipForVigil = buildAgent17WatchershipIndex({
+    sentinelAccord: vacatedSentinel,
+    sentinelshipIndex: revokedSentinelship,
+  });
+  const vacatedWatchForVigil = buildAgent17WatchAccord({
+    watchershipIndex: revokedWatchershipForVigil,
+    sentinelAccord: vacatedSentinel,
+    sentinelshipIndex: revokedSentinelship,
+  });
+  const revokedVigilance = buildAgent17VigilanceIndex({
+    watchAccord: vacatedWatchForVigil,
+    watchershipIndex: revokedWatchershipForVigil,
+  });
+  const vacatedVigil = buildAgent17VigilAccord({
+    vigilanceIndex: revokedVigilance,
+    watchAccord: vacatedWatchForVigil,
+    watchershipIndex: revokedWatchershipForVigil,
+  });
+  goalResults.push(
+    result(
+      'G17-177',
+      watchAccordBlocksSentinel(vacatedWatchForVigil) ||
+        watchershipIndexBlocksWatch(revokedWatchershipForVigil) ||
+        vigilanceIndexBlocksVigil(revokedVigilance) ||
+        vigilAccordBlocksWatch(vacatedVigil),
+      `${revokedVigilance.band}/${vacatedVigil.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -3312,6 +3376,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-172',
     'G17-173',
     'G17-174',
+    'G17-175',
+    'G17-176',
+    'G17-177',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

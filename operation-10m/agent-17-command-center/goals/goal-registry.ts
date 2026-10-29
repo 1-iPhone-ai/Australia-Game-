@@ -1247,6 +1247,29 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Vacated sentinel or revoked watchership yields watchAccordBlocksSentinel.',
     severity: 'major',
   },
+  {
+    id: 'G17-175',
+    title: 'Vigilance index on planning depth',
+    category: 'telemetry',
+    acceptance:
+      'vigilanceIndex reports vigilanceScore 0–100 with engaged/tentative/revoked band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-176',
+    title: 'Vigil accord directives complete',
+    category: 'telemetry',
+    acceptance: 'vigilAccord exposes ≥5 directives and vigilScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-177',
+    title: 'Vacated watch suspends vigil accord',
+    category: 'integration',
+    acceptance:
+      'Vacated watch or revoked vigilance yields vigilAccordBlocksWatch.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

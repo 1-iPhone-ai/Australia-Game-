@@ -131,6 +131,8 @@ const FILES = [
     'planning/sentinel-accord.ts',
     'planning/watchership-index.ts',
     'planning/watch-accord.ts',
+    'planning/vigilance-index.ts',
+    'planning/vigil-accord.ts',
   'planning/planning-orchestrator.ts',
   'evaluation/operations-evaluator.ts',
   'rollback/rollback-controller.ts',
