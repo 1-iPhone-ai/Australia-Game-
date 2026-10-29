@@ -438,6 +438,23 @@ export type {
   TransitionEquilibriumBand,
 } from './production-transition-equilibrium';
 
+export {
+  AGENT08_TRANSITION_MATURITY_SCHEMA_VERSION,
+  buildFirmProductionTransitionMaturity,
+  classifyNationalMaturityBand,
+  computeNationalMaturityPressure,
+  computeNationalProductionTransitionMaturity,
+  summarizeRegionalTransitionMaturity,
+  runAgent08TransitionMaturitySelfTests,
+} from './production-transition-maturity';
+
+export type {
+  FirmProductionTransitionMaturity,
+  NationalProductionTransitionMaturity,
+  RegionalTransitionMaturitySummary,
+  TransitionMaturityBand,
+} from './production-transition-maturity';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -464,6 +481,7 @@ import { runAgent08TransitionConsolidationSelfTests } from './production-transit
 import { runAgent08TransitionSustainmentSelfTests } from './production-transition-sustainment';
 import { runAgent08TransitionResilienceSelfTests } from './production-transition-resilience';
 import { runAgent08TransitionEquilibriumSelfTests } from './production-transition-equilibrium';
+import { runAgent08TransitionMaturitySelfTests } from './production-transition-maturity';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -598,6 +616,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionMaturity = runAgent08TransitionMaturitySelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -625,5 +648,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionSustainment,
     ...transitionResilience,
     ...transitionEquilibrium,
+    ...transitionMaturity,
   ];
 }
