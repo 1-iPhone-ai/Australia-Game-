@@ -180,6 +180,10 @@ const FILES = [
   'revenue-integrity-outlook-bridge/compute.ts',
   'efficiency-dividend-forward-bridge/types.ts',
   'efficiency-dividend-forward-bridge/compute.ts',
+  'federal-state-outlook-coherence/types.ts',
+  'federal-state-outlook-coherence/compute.ts',
+  'debt-rollover-outlook-bridge/types.ts',
+  'debt-rollover-outlook-bridge/compute.ts',
   'infrastructure-financing/types.ts',
   'infrastructure-financing/compute.ts',
   'recurring-commitments/types.ts',
@@ -307,7 +311,9 @@ const FILES = [
   'budget-neutral-outlook-bridge/self-tests.ts',
   'portfolio-reprioritisation-forward-bridge/self-tests.ts',
   'revenue-integrity-outlook-bridge/self-tests.ts',
-  'efficiency-dividend-forward-bridge/self-tests.ts'
+  'efficiency-dividend-forward-bridge/self-tests.ts',
+  'federal-state-outlook-coherence/self-tests.ts',
+  'debt-rollover-outlook-bridge/self-tests.ts'
 ];
 
 function stripModulePreamble(source) {

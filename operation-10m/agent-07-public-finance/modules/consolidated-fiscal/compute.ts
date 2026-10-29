@@ -85,6 +85,8 @@ import { buildBudgetNeutralOutlookBridgeReport } from '../budget-neutral-outlook
 import { buildPortfolioReprioritisationForwardBridgeReport } from '../portfolio-reprioritisation-forward-bridge/compute';
 import { buildRevenueIntegrityOutlookBridgeReport } from '../revenue-integrity-outlook-bridge/compute';
 import { buildEfficiencyDividendForwardBridgeReport } from '../efficiency-dividend-forward-bridge/compute';
+import { buildFederalStateOutlookCoherenceReport } from '../federal-state-outlook-coherence/compute';
+import { buildDebtRolloverOutlookBridgeReport } from '../debt-rollover-outlook-bridge/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -590,6 +592,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     efficiencyDividendRegister,
     efficiencyOffsetForwardCoherence,
     revenueForwardReconciliation
+  );
+  const federalStateOutlookCoherence = buildFederalStateOutlookCoherenceReport(
+    turn,
+    v1012,
+    igr,
+    federalStateGrantCoherence,
+    outlook
+  );
+  const debtRolloverOutlookBridge = buildDebtRolloverOutlookBridgeReport(
+    turn,
+    v1012,
+    debtRolloverCoverageBridge,
+    debtServiceCoverage,
+    outlook
   );
 
   checks.push({
@@ -1756,12 +1772,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `realized=${efficiencyDividendRegister.aggregateRealizedPoints}, offset=${efficiencyOffsetForwardCoherence.aggregateCoherenceGapPoints}`
   });
 
+  checks.push({
+    id: 'CF165',
+    label: 'Federal state outlook coherence within band',
+    passed: federalStateOutlookCoherence.withinFederalStateOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${federalStateOutlookCoherence.aggregateCoherenceGapPoints}, checks=${federalStateOutlookCoherence.checks.filter(c => c.passed).length}/${federalStateOutlookCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF166',
+    label: 'Debt rollover outlook bridge within band',
+    passed: debtRolloverOutlookBridge.withinDebtRolloverOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${debtRolloverOutlookBridge.bridgeGapPoints}, checks=${debtRolloverOutlookBridge.checks.filter(c => c.passed).length}/${debtRolloverOutlookBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF167',
+    label: 'Federal state aligned with grant coherence',
+    passed: federalStateOutlookCoherence.alignedWithFederalGrantCoherence,
+    detail: `residual=${igr.residualFederal}, grant=${federalStateGrantCoherence.aggregateCoherenceGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF168',
+    label: 'Debt rollover aligned with coverage bridge',
+    passed: debtRolloverOutlookBridge.alignedWithRolloverCoverage,
+    detail: `coverage=${debtServiceCoverage.coverageRatio}, rollover=${debtRolloverCoverageBridge.bridgeGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 110
+    layerCount: 112
   };
 }

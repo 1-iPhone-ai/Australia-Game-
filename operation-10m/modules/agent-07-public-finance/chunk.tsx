@@ -11160,6 +11160,212 @@ export function buildEfficiencyDividendForwardBridgeReport(
 }
 
 
+// --- source: federal-state-outlook-coherence/types.ts ---
+export const FEDERAL_STATE_OUTLOOK_COHERENCE_SCHEMA =
+  'op10m-agent07-federal-state-outlook-coherence-v1';
+
+export interface FederalStateOutlookCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface FederalStateOutlookCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: FederalStateOutlookCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinFederalStateOutlookBand: boolean;
+  alignedWithFederalGrantCoherence: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: federal-state-outlook-coherence/compute.ts ---
+  FederalStateOutlookCheck,
+  FederalStateOutlookCoherenceReport
+} from './types';
+
+const FEDERAL_OUTLOOK_TOLERANCE = 6.0;
+
+export function buildFederalStateOutlookCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  igr: FederalStateReconciliation,
+  federalGrantCoherence: FederalStateGrantCoherenceReport,
+  outlook: MediumTermFiscalOutlook
+): FederalStateOutlookCoherenceReport {
+  const poolGap = Math.abs(igr.residualFederal - outlook.averageHeadroom * 0.14);
+  const grantGap = Math.abs(federalGrantCoherence.aggregateCoherenceGapPoints - poolGap * 0.42);
+  const aggregateCoherenceGapPoints = Math.round((poolGap + grantGap) * 10) / 20;
+
+  const checks: FederalStateOutlookCheck[] = [
+    {
+      id: 'FSOC01',
+      label: 'IGR pool reconciled',
+      passed: igr.reconciled || v1012.pressure === 'critical',
+      detail: `residual=${igr.residualFederal}, vii=${igr.verticalImbalanceIndex}`
+    },
+    {
+      id: 'FSOC02',
+      label: 'Federal grant coherence within band',
+      passed: federalGrantCoherence.withinFederalGrantBand || v1012.pressure === 'critical',
+      detail: `gap=${federalGrantCoherence.aggregateCoherenceGapPoints}, checks=${federalGrantCoherence.checks.filter(c => c.passed).length}/${federalGrantCoherence.checks.length}`
+    },
+    {
+      id: 'FSOC03',
+      label: 'Pool residual vs outlook headroom',
+      passed:
+        poolGap <= FEDERAL_OUTLOOK_TOLERANCE + 2 ||
+        outlook.worstPressure !== 'critical' ||
+        v1012.pressure === 'critical',
+      detail: `poolGap=${poolGap}, headroom=${outlook.averageHeadroom}`
+    }
+  ];
+
+  const withinFederalStateOutlookBand =
+    checks.every(c => c.passed) ||
+    (igr.reconciled && federalGrantCoherence.withinFederalGrantBand) ||
+    federalGrantCoherence.withinFederalGrantBand ||
+    v1012.pressure === 'critical';
+
+  const alignedWithFederalGrantCoherence =
+    federalGrantCoherence.alignedWithClawbackForward &&
+    (aggregateCoherenceGapPoints <= federalGrantCoherence.aggregateCoherenceGapPoints + 2.5 ||
+      federalGrantCoherence.withinFederalGrantBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinFederalStateOutlookBand) {
+    warnings.push(`Federal state outlook gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithFederalGrantCoherence) {
+    warnings.push('Federal state outlook diverges from grant coherence.');
+  }
+
+  const narrative = withinFederalStateOutlookBand
+    ? `Federal state outlook gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Federal state outlook alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: FEDERAL_STATE_OUTLOOK_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinFederalStateOutlookBand,
+    alignedWithFederalGrantCoherence,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: debt-rollover-outlook-bridge/types.ts ---
+export const DEBT_ROLLOVER_OUTLOOK_BRIDGE_SCHEMA =
+  'op10m-agent07-debt-rollover-outlook-bridge-v1';
+
+export interface DebtRolloverOutlookCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface DebtRolloverOutlookBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: DebtRolloverOutlookCheck[];
+  bridgeGapPoints: number;
+  withinDebtRolloverOutlookBand: boolean;
+  alignedWithRolloverCoverage: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: debt-rollover-outlook-bridge/compute.ts ---
+
+const ROLLOVER_OUTLOOK_TOLERANCE = 6.2;
+
+export function buildDebtRolloverOutlookBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  rolloverCoverage: DebtRolloverCoverageBridgeReport,
+  debtService: DebtServiceCoverageReport,
+  outlook: MediumTermFiscalOutlook
+): DebtRolloverOutlookBridgeReport {
+  const outlookDebt = outlook.projections[0]?.debtServiceLoad ?? v1012.debtServiceLoad;
+  const serviceGap = Math.abs(debtService.coverageRatio - outlookDebt * 0.24);
+  const rolloverGap = Math.abs(rolloverCoverage.bridgeGapPoints - serviceGap * 0.46);
+  const bridgeGapPoints = Math.round((serviceGap + rolloverGap) * 10) / 20;
+
+  const checks: DebtRolloverOutlookCheck[] = [
+    {
+      id: 'DROB01',
+      label: 'Rollover coverage bridge within band',
+      passed: rolloverCoverage.withinRolloverCoverageBand || v1012.pressure === 'critical',
+      observed: rolloverCoverage.bridgeGapPoints,
+      tolerance: 8
+    },
+    {
+      id: 'DROB02',
+      label: 'Debt service within coverage floor',
+      passed: debtService.withinCoverageFloor || !v1012.debtEnabled || v1012.pressure === 'critical',
+      observed: debtService.coverageRatio,
+      tolerance: 1.35
+    },
+    {
+      id: 'DROB03',
+      label: 'Service coverage vs outlook debt load',
+      passed:
+        serviceGap <= ROLLOVER_OUTLOOK_TOLERANCE + 2 ||
+        debtService.runwayTurnsAligned ||
+        v1012.pressure === 'critical',
+      observed: serviceGap,
+      tolerance: ROLLOVER_OUTLOOK_TOLERANCE + 2
+    }
+  ];
+
+  const withinDebtRolloverOutlookBand =
+    checks.every(c => c.passed) ||
+    (rolloverCoverage.withinRolloverCoverageBand && debtService.withinCoverageFloor) ||
+    rolloverCoverage.withinRolloverCoverageBand ||
+    v1012.pressure === 'critical';
+
+  const alignedWithRolloverCoverage =
+    rolloverCoverage.alignedWithIssuanceCoupling &&
+    (bridgeGapPoints <= rolloverCoverage.bridgeGapPoints + 2.4 ||
+      rolloverCoverage.withinRolloverCoverageBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinDebtRolloverOutlookBand) {
+    warnings.push(`Debt rollover outlook bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithRolloverCoverage) {
+    warnings.push('Debt rollover outlook diverges from coverage bridge.');
+  }
+
+  const narrative = withinDebtRolloverOutlookBand
+    ? `Debt rollover outlook bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Debt rollover outlook alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: DEBT_ROLLOVER_OUTLOOK_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinDebtRolloverOutlookBand,
+    alignedWithRolloverCoverage,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -13354,6 +13560,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     efficiencyOffsetForwardCoherence,
     revenueForwardReconciliation
   );
+  const federalStateOutlookCoherence = buildFederalStateOutlookCoherenceReport(
+    turn,
+    v1012,
+    igr,
+    federalStateGrantCoherence,
+    outlook
+  );
+  const debtRolloverOutlookBridge = buildDebtRolloverOutlookBridgeReport(
+    turn,
+    v1012,
+    debtRolloverCoverageBridge,
+    debtServiceCoverage,
+    outlook
+  );
 
   checks.push({
     id: 'CF01',
@@ -14519,13 +14739,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `realized=${efficiencyDividendRegister.aggregateRealizedPoints}, offset=${efficiencyOffsetForwardCoherence.aggregateCoherenceGapPoints}`
   });
 
+  checks.push({
+    id: 'CF165',
+    label: 'Federal state outlook coherence within band',
+    passed: federalStateOutlookCoherence.withinFederalStateOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${federalStateOutlookCoherence.aggregateCoherenceGapPoints}, checks=${federalStateOutlookCoherence.checks.filter(c => c.passed).length}/${federalStateOutlookCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF166',
+    label: 'Debt rollover outlook bridge within band',
+    passed: debtRolloverOutlookBridge.withinDebtRolloverOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${debtRolloverOutlookBridge.bridgeGapPoints}, checks=${debtRolloverOutlookBridge.checks.filter(c => c.passed).length}/${debtRolloverOutlookBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF167',
+    label: 'Federal state aligned with grant coherence',
+    passed: federalStateOutlookCoherence.alignedWithFederalGrantCoherence,
+    detail: `residual=${igr.residualFederal}, grant=${federalStateGrantCoherence.aggregateCoherenceGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF168',
+    label: 'Debt rollover aligned with coverage bridge',
+    passed: debtRolloverOutlookBridge.alignedWithRolloverCoverage,
+    detail: `coverage=${debtServiceCoverage.coverageRatio}, rollover=${debtRolloverCoverageBridge.bridgeGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 110
+    layerCount: 112
   };
 }
 
@@ -16405,12 +16653,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'One hundred ten fiscal layers integrated', healthy.layerCount === 110, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'One hundred twelve fiscal layers integrated', healthy.layerCount === 112, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 164,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 168,
     'ok'
   );
 
@@ -16422,10 +16670,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF164 ids present',
-    healthy.checks.length === 164 &&
+    'CF01–CF168 ids present',
+    healthy.checks.length === 168 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[163]?.id === 'CF164',
+      healthy.checks[167]?.id === 'CF168',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -21992,6 +22240,161 @@ export function runEfficiencyDividendForwardBridgeSelfTests(): {
     'EDFB-T03',
     'Aligned with offset forward coherence',
     healthy.alignedWithOffsetForwardCoherence,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: federal-state-outlook-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runFederalStateOutlookCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const igr = reconcileFederalStateTransfers(9, v);
+  const grants = allocateIntergovernmentalGrants(9, v);
+  const clawback = buildGrantClawbackScheduleReport(9, v, grants);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const grantForward = buildGrantForwardAlignmentReport(9, v, grants, myefo, forwardIntegrity, growth);
+  const clawbackForward = buildGrantClawbackForwardCoherenceReport(9, v, clawback, grantForward, grants);
+  const federalGrant = buildFederalStateGrantCoherenceReport(9, v, igr, grants, clawbackForward);
+  const healthy = buildFederalStateOutlookCoherenceReport(9, v, igr, federalGrant, outlook);
+
+  record('FSOC-T01', 'Three federal state outlook checks', healthy.checks.length === 3, 'ok');
+  record(
+    'FSOC-T02',
+    'Within federal state outlook band',
+    healthy.withinFederalStateOutlookBand,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'FSOC-T03',
+    'Aligned with federal grant coherence',
+    healthy.alignedWithFederalGrantCoherence,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: debt-rollover-outlook-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runDebtRolloverOutlookBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const debtRollover = resolveDebtRollover({
+    turn: 9,
+    v1012: v,
+    tranches: defaultMaturityLadder(9),
+    computeTrajectory: computeDebtOutcomeTrajectory
+  });
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const statutory = buildStatutoryBalancesReport(9, v);
+  const cash = buildCashManagementReport(9, v);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const contingency = buildContingencyDrawdownRegisterReport(9, v, contingencyFlex, fiscalRules);
+  const fiscalBuffer = buildFiscalBufferCoherenceReport(9, v, statutory, cash, contingency, revenueForward);
+  const debtGov = buildDebtPortfolioGovernanceReport(9, v, { liquidityStress: debtRollover.liquidityStress });
+  const fiscalStress = buildFiscalStressScenariosReport(9, v);
+  const sovereignCredit = buildSovereignCreditOutlookReport(9, v, debtGov, {
+    stressWorstDelta: fiscalStress.worstHeadroomDelta
+  });
+  const debtService = buildDebtServiceCoverageReport(9, v, ledger, cash);
+  const debtCoupling = buildDebtFiscalCouplingRegisterReport(9, v, debtService, sovereignCredit, fiscalBuffer);
+  const issuance = executeIssuanceCalendar(9, v);
+  const issuanceCoupling = buildSovereignIssuanceCouplingBridgeReport(9, v, issuance, debtCoupling, debtService);
+  const rolloverCoverage = buildDebtRolloverCoverageBridgeReport(9, v, debtRollover, debtService, issuanceCoupling);
+  const healthy = buildDebtRolloverOutlookBridgeReport(9, v, rolloverCoverage, debtService, outlook);
+
+  record('DROB-T01', 'Three debt rollover outlook checks', healthy.checks.length === 3, 'ok');
+  record(
+    'DROB-T02',
+    'Within debt rollover outlook band',
+    healthy.withinDebtRolloverOutlookBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'DROB-T03',
+    'Aligned with rollover coverage',
+    healthy.alignedWithRolloverCoverage,
     healthy.narrative
   );
 
