@@ -89,6 +89,8 @@ import { buildFederalStateOutlookCoherenceReport } from '../federal-state-outloo
 import { buildDebtRolloverOutlookBridgeReport } from '../debt-rollover-outlook-bridge/compute';
 import { buildTransparencyOutlookBridgeReport } from '../transparency-outlook-bridge/compute';
 import { buildBalanceSheetOutlookCoherenceReport } from '../balance-sheet-outlook-coherence/compute';
+import { buildReconciliationOutlookBridgeReport } from '../reconciliation-outlook-bridge/compute';
+import { buildContingentLiabilityOutlookCoherenceReport } from '../contingent-liability-outlook-coherence/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -621,6 +623,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     v1012,
     publicBalanceSheet,
     balanceSheetFiscalCoherence,
+    outlook
+  );
+  const reconciliationOutlookBridge = buildReconciliationOutlookBridgeReport(
+    turn,
+    v1012,
+    reconciliationResilienceBridge,
+    forwardEstimatesIntegrity,
+    outlook
+  );
+  const contingentLiabilityOutlookCoherence = buildContingentLiabilityOutlookCoherenceReport(
+    turn,
+    v1012,
+    contingent,
+    contingentLiabilityForwardBridge,
     outlook
   );
 
@@ -1844,12 +1860,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `netWorth=${publicBalanceSheet.netWorthPoints}, fiscal=${balanceSheetFiscalCoherence.aggregateCoherenceGapPoints}`
   });
 
+  checks.push({
+    id: 'CF173',
+    label: 'Reconciliation outlook bridge within band',
+    passed: reconciliationOutlookBridge.withinReconciliationOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${reconciliationOutlookBridge.bridgeGapPoints}, checks=${reconciliationOutlookBridge.checks.filter(c => c.passed).length}/${reconciliationOutlookBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF174',
+    label: 'Contingent liability outlook coherence within band',
+    passed: contingentLiabilityOutlookCoherence.withinContingentOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${contingentLiabilityOutlookCoherence.aggregateCoherenceGapPoints}, checks=${contingentLiabilityOutlookCoherence.checks.filter(c => c.passed).length}/${contingentLiabilityOutlookCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF175',
+    label: 'Reconciliation outlook aligned with resilience bridge',
+    passed: reconciliationOutlookBridge.alignedWithResilienceBridge,
+    detail: `resilience=${reconciliationResilienceBridge.bridgeGapPoints}, revision=${forwardEstimatesIntegrity.aggregateRevisionGap}`
+  });
+
+  checks.push({
+    id: 'CF176',
+    label: 'Contingent liability aligned with forward bridge',
+    passed: contingentLiabilityOutlookCoherence.alignedWithContingentForwardBridge,
+    detail: `expected=${contingent.expectedLossPoints}, forward=${contingentLiabilityForwardBridge.bridgeExposureGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 114
+    layerCount: 116
   };
 }
