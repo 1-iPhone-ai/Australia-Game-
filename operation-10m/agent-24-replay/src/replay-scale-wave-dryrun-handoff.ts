@@ -147,7 +147,7 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
   const projectionVerification = {
     reportId: 'pv',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     projectionBaselineSha: O6K_AGENT24_WAVE33_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
@@ -159,7 +159,7 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
   const postProjectionGate = {
     reportId: 'ppg',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     gateOpen: true,
     blockerCount: 0,
     blockers: [],

@@ -139,7 +139,7 @@ export function runAgent24ArchiveScaleWaveReleaseHandoffGateSelfTests(): Array<{
 
   return [
     { name: 'handoff_allowed_when_release_stack_ready', passed: report.handoffAllowed && report.blockerCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 32 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 33 },
     {
       name: 'deterministic_fingerprint',
       passed:

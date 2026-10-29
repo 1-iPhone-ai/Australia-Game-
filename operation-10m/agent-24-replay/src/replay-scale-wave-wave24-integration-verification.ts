@@ -161,7 +161,7 @@ export function runAgent24ReplayScaleWaveWave24IntegrationVerificationSelfTests(
         report.verified &&
         report.integrationBaselineSha === O6K_AGENT24_WAVE24_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: report.waveRound === 32 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 33 },
     {
       name: 'deterministic_fingerprint',
       passed:

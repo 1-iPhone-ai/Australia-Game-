@@ -150,7 +150,7 @@ export function runAgent24ReplayScaleWaveIntegrationVerificationSelfTests(): Arr
 
   return [
     { name: 'verified_when_integration_stack_ready', passed: report.verified && report.issueCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 32 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 33 },
     {
       name: 'deterministic_fingerprint',
       passed:

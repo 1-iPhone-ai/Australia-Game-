@@ -152,7 +152,7 @@ export function runAgent24ReplayScaleWaveFullChunksVerificationSelfTests(): Arra
 
   return [
     { name: 'verified_when_full_chunks_stack_ready', passed: report.verified && report.issueCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 32 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 33 },
     {
       name: 'deterministic_fingerprint',
       passed:

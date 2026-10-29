@@ -94,7 +94,7 @@ export function runAgent24ArchiveScaleWaveWave33ExportGateSelfTests(): Array<{ n
   const wave32IntegrationVerification = {
     reportId: 'w31iv',
     matchId: 'self',
-    waveRound: 32,
+    waveRound: 33,
     integrationBaselineSha: 'aa70dace',
     verified: true,
     issueCount: 0,

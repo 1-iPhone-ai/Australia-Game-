@@ -132,7 +132,7 @@ export function runAgent24ReplayScaleWaveHandoffSealSelfTests(): Array<{ name: s
 
   return [
     { name: 'handoff_ready_when_wave_release_aligned', passed: seal.handoffReady && seal.readyLinkCount === 3 },
-    { name: 'wave_round_pinned', passed: seal.waveRound === 32 },
+    { name: 'wave_round_pinned', passed: seal.waveRound === 33 },
     {
       name: 'deterministic_fingerprint',
       passed:

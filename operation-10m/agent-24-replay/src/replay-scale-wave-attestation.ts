@@ -111,7 +111,7 @@ export function runAgent24ReplayScaleWaveAttestationSelfTests(): Array<{ name: s
 
   return [
     { name: 'verified_when_scale_wave_attestation_ready', passed: attestation.status === 'verified' },
-    { name: 'wave_round_pinned', passed: attestation.waveRound === 32 },
+    { name: 'wave_round_pinned', passed: attestation.waveRound === 33 },
     {
       name: 'deterministic_fingerprint',
       passed:
