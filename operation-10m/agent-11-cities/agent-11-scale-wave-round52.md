@@ -10,8 +10,8 @@ Store canonical closeout: Project Agent Store `internal/operation-10m/agent-11-s
 | Role | SHA |
 |------|-----|
 | Integration | `ba97bdce` |
-| Merge | _(see store closeout after push)_ |
-| Gate feat | _(see store closeout after push)_ |
-| Bundle tip | _(see store closeout after push)_ |
+| Merge | `bbfcb07d` |
+| Gate feat | `3dd1ea02` |
+| Bundle tip | `88c21e8f` |
 
 Self-tests **464/464** · chunk **23255** lines · sha256 `3d2e221503eb4dad193e530fdd3f0f5e9e489e11d971099caf4666d74ee66336`.
