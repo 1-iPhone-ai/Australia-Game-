@@ -32,6 +32,7 @@ import { evaluateComputeTurnScaleWaveProjectionLatchCoordination } from './compu
 import { evaluateComputeTurnScaleWaveDryRunGateCoordination } from './compute-turn-scale-wave-dry-run-gate-coordinator.ts';
 import { evaluateComputeTurnScaleWaveGateClosureLatchCoordination } from './compute-turn-scale-wave-gate-closure-latch-coordinator.ts';
 import { evaluateComputeTurnScaleWavePostClosureCommitCoordination } from './compute-turn-scale-wave-post-closure-commit-coordinator.ts';
+import { evaluateComputeTurnScaleWaveTrancheSyncLatchCoordination } from './compute-turn-scale-wave-tranche-sync-latch-coordinator.ts';
 import type {
   Op10mChainDescriptor,
   Op10mComputeTurnStage,
@@ -314,6 +315,15 @@ export function executeOp10mNarrativeComputeTurnHook(
   simulation = postClosurePass.simulation;
   narrative = postClosurePass.narrative;
   log.push(...postClosurePass.log);
+
+  const trancheSyncPass = evaluateComputeTurnScaleWaveTrancheSyncLatchCoordination(
+    simulation,
+    narrative,
+    params.day
+  );
+  simulation = trancheSyncPass.simulation;
+  narrative = trancheSyncPass.narrative;
+  log.push(...trancheSyncPass.log);
 
   const postSettle = settleOp10mComputeTurnDriftAfterReconcile(simulation, narrative);
   simulation = postSettle.simulation;

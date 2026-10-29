@@ -28,6 +28,7 @@ export * from './compute-turn-scale-wave-projection-latch-coordinator.ts';
 export * from './compute-turn-scale-wave-dry-run-gate-coordinator.ts';
 export * from './compute-turn-scale-wave-gate-closure-latch-coordinator.ts';
 export * from './compute-turn-scale-wave-post-closure-commit-coordinator.ts';
+export * from './compute-turn-scale-wave-tranche-sync-latch-coordinator.ts';
 export * from './compute-turn-hooks.ts';
 export * from './chain-catalog-aggregate.ts';
 export {

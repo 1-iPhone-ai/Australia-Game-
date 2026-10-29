@@ -84,6 +84,10 @@ import {
   OP10M_AGENT25_POST_CLOSURE_WAVE_SEALED_FLAG,
   OP10M_SCALE_WAVE_POST_CLOSURE_COMMIT_FLAG,
 } from './compute-turn-scale-wave-post-closure-commit-coordinator.ts';
+import {
+  OP10M_AGENT25_TRANCHE_SYNC_WAVE_READY_FLAG,
+  OP10M_SCALE_WAVE_TRANCHE_SYNC_LATCH_FLAG,
+} from './compute-turn-scale-wave-tranche-sync-latch-coordinator.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -444,6 +448,16 @@ export function evaluateRequirements(
       case 'agent25_post_closure_wave_sealed':
         if (!sim.flags[OP10M_AGENT25_POST_CLOSURE_WAVE_SEALED_FLAG]) {
           return { ok: false, reason: 'agent25 post-closure wave not sealed' };
+        }
+        break;
+      case 'scale_wave_tranche_sync_latch':
+        if (!sim.flags[OP10M_SCALE_WAVE_TRANCHE_SYNC_LATCH_FLAG]) {
+          return { ok: false, reason: 'scale wave tranche sync not latched' };
+        }
+        break;
+      case 'agent25_tranche_sync_wave_ready':
+        if (!sim.flags[OP10M_AGENT25_TRANCHE_SYNC_WAVE_READY_FLAG]) {
+          return { ok: false, reason: 'agent25 tranche sync wave not ready' };
         }
         break;
       default:
