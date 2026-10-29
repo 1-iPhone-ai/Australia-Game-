@@ -14,5 +14,8 @@ export * from './integration.ts';
 export * from './accounting/ledger.ts';
 export * from './accounting/validate-state.ts';
 export * from './accounting/reconciliation-tests.ts';
+export * from './accounting/regional-reconciliation.ts';
+export * from './catalog/cyclical-shocks.ts';
+export * from './catalog/cyclical-shocks-self-tests.ts';
 export * from './self-tests.ts';
 export { MacroEconomyInspectorLab } from './react/MacroEconomyInspectorLab.tsx';

@@ -1,3 +1,4 @@
+import { cyclicalShockRegionalWeightMultiplier, resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
 import { V1014_MACRO_CORE_REGIONS, V1014_MACRO_LIMITS, V1014_MACRO_REGION_BASE_WEIGHT } from './constants.ts';
 import { regionalInvestmentIntensity } from './investment.ts';
 import {
@@ -35,6 +36,7 @@ export function computeRegionalWeightRows(
   pushEv: (factor: string, contribution: number, sourceSystem: string, sourceId: string, regionIds?: string[]) => void
 ): Array<{ regionId: string; weight: number }> {
   const lr: any = inputs.livingRegions;
+  const shockIds = resolveActiveCyclicalShockIds(inputs);
   const weights: Array<{ regionId: string; weight: number }> = [];
   for (const code of V1014_MACRO_CORE_REGIONS) {
     const lrReg = lr?.regions?.[code];
@@ -42,7 +44,10 @@ export function computeRegionalWeightRows(
     const econ = Number(ex?.economyScore ?? lrReg?.economy?.score ?? 55);
     const mom = String(ex?.momentumBand ?? lrReg?.momentum?.band ?? 'stable');
     const dev = Number(ex?.developmentScore ?? lrReg?.development?.score ?? 50);
-    let w = (V1014_MACRO_REGION_BASE_WEIGHT[code] ?? 0.125) * (0.55 + econ / 200 + dev / 400);
+    let w =
+      (V1014_MACRO_REGION_BASE_WEIGHT[code] ?? 0.125) *
+      (0.55 + econ / 200 + dev / 400) *
+      cyclicalShockRegionalWeightMultiplier(shockIds, code);
     if (mom === 'surging') w *= 1.08;
     if (mom === 'declining') w *= 0.92;
     weights.push({ regionId: code, weight: w });

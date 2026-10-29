@@ -1,3 +1,7 @@
+import {
+  applyCyclicalShockLibrary,
+  resolveActiveCyclicalShockIds
+} from './catalog/cyclical-shocks.ts';
 import type { MacroEconomyEvidence, MacroEconomyInputs } from './types.ts';
 
 export type MacroScoreBundle = {
@@ -14,11 +18,11 @@ export type MacroEvidenceSink = (
   regionIds?: string[]
 ) => void;
 
-/** Apply innovation, workforce, household demand, inflation, and credit shocks to macro scores. */
+/** Apply innovation, workforce, and household demand adjustments. */
 export function applyMacroStructuralAdjustments(
   inputs: MacroEconomyInputs,
   base: MacroScoreBundle,
-  pushEv: MacroEvidenceSink
+  _pushEv: MacroEvidenceSink
 ): MacroScoreBundle {
   let { productivityScore, investmentScore, cycleScore } = base;
 
@@ -32,26 +36,18 @@ export function applyMacroStructuralAdjustments(
   return { productivityScore, investmentScore, cycleScore };
 }
 
+/** Apply cyclical shock catalog (includes legacy inflation/credit flags). */
 export function applyMacroShockAdjustments(
   inputs: MacroEconomyInputs,
   base: MacroScoreBundle,
   pushEv: MacroEvidenceSink
 ): MacroScoreBundle {
-  let { productivityScore, investmentScore, cycleScore } = base;
+  const activeIds = resolveActiveCyclicalShockIds(inputs);
+  return applyCyclicalShockLibrary(activeIds, base, pushEv);
+}
 
-  if (inputs.highInflationScenarioActive) {
-    productivityScore -= 4;
-    investmentScore -= 6;
-    cycleScore -= 5;
-    pushEv('inflation_scenario', -0.04, 'scenario', 'high_inflation');
-  }
-  if (inputs.creditShockActive) {
-    investmentScore -= 10;
-    cycleScore -= 8;
-    pushEv('credit_shock', -0.1, 'crisis', 'credit');
-  }
-
-  return { productivityScore, investmentScore, cycleScore };
+export function listActiveMacroShockIds(inputs: MacroEconomyInputs): string[] {
+  return resolveActiveCyclicalShockIds(inputs);
 }
 
 export function createMacroEvidencePush(

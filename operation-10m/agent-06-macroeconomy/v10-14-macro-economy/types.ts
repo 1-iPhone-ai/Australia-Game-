@@ -117,6 +117,8 @@ export interface MacroEconomyInputs {
   economicGeography?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;
+  /** Additional catalog shock ids (see catalog/cyclical-shocks.ts). Legacy flags merge in. */
+  activeCyclicalShockIds?: string[];
   regions?: Record<string, { economyScore?: number; momentumBand?: string; developmentScore?: number }>;
 }
 
