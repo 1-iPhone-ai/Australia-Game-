@@ -421,8 +421,14 @@ export type RemoteDialysisSupplyStagingPolicy = 'baseline' | 'surge';
 
 export type RailAutomatedInspectionLogisticsPolicy = 'baseline' | 'expand';
 
+export type FloatingSolarArrayExportPolicy = 'baseline' | 'accelerate';
+
+export type CoastalRescueHelicopterStagingPolicy = 'baseline' | 'surge';
+
+export type PortBatterySwappingLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/45';
+  schemaVersion: 'agent12/46';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -748,6 +754,14 @@ export interface TransportInfrastructureState {
   railAutomatedInspectionLogisticsShare: number;
   nationalRailAutomatedInspectionLogisticsThroughputIndex: number;
   railAutomatedInspectionLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalFloatingSolarArrayExportIndex: number;
+  floatingSolarArrayExportByRegion: Record<AuRegionCode, number>;
+  coastalRescueHelicopterStagingShare: number;
+  nationalCoastalRescueHelicopterStagingIndex: number;
+  coastalRescueHelicopterStagingByRegion: Record<AuRegionCode, number>;
+  portBatterySwappingLogisticsShare: number;
+  nationalPortBatterySwappingLogisticsThroughputIndex: number;
+  portBatterySwappingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -873,6 +887,9 @@ export interface TransportInfrastructureOptions {
   marineKelpExportPolicy?: MarineKelpExportPolicy;
   remoteDialysisSupplyStagingPolicy?: RemoteDialysisSupplyStagingPolicy;
   railAutomatedInspectionLogisticsPolicy?: RailAutomatedInspectionLogisticsPolicy;
+  floatingSolarArrayExportPolicy?: FloatingSolarArrayExportPolicy;
+  coastalRescueHelicopterStagingPolicy?: CoastalRescueHelicopterStagingPolicy;
+  portBatterySwappingLogisticsPolicy?: PortBatterySwappingLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -2780,6 +2797,48 @@ export const TRANSPORT_CORRIDORS_ROUND44: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round45.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND45: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_qld_floating_solar',
+    name: 'WA–QLD Floating Solar',
+    networkKind: 'trade',
+    regionSequence: ['WA', 'QLD'],
+    requiredTagsByRegion: {
+      WA: ['floating_solar_export', 'floating_pv_marine_feed', 'offshore_solar_logistics'],
+      QLD: ['floating_solar_export', 'floating_pv_marine_feed', 'offshore_solar_logistics'],
+    },
+    productivitySynergyPoints: 6.9,
+    logisticsRelief: 0.042,
+  },
+  {
+    id: 'corr_nsw_vic_coastal_rescue',
+    name: 'NSW–VIC Coastal Rescue',
+    networkKind: 'mobility',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['coastal_rescue_staging', 'sar_helicopter_hub', 'maritime_emergency_logistics'],
+      VIC: ['coastal_rescue_staging', 'sar_helicopter_hub', 'maritime_emergency_logistics'],
+    },
+    productivitySynergyPoints: 6.7,
+    logisticsRelief: 0.036,
+  },
+  {
+    id: 'corr_nsw_qld_battery_swap',
+    name: 'NSW–QLD Battery Swap',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'QLD'],
+    requiredTagsByRegion: {
+      NSW: ['port_battery_swapping', 'shore_power_exchange', 'electric_ferry_logistics'],
+      QLD: ['port_battery_swapping', 'shore_power_exchange', 'electric_ferry_logistics'],
+    },
+    productivitySynergyPoints: 6.6,
+    logisticsRelief: 0.039,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -2971,6 +3030,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND42,
   ...TRANSPORT_CORRIDORS_ROUND43,
   ...TRANSPORT_CORRIDORS_ROUND44,
+  ...TRANSPORT_CORRIDORS_ROUND45,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -5467,6 +5527,62 @@ export const TRANSPORT_SCENARIOS_ROUND44: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round45.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND45: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_floating_solar_export_surge',
+    label: 'WA Floating Solar Export Surge',
+    description: 'Array build overloads Onslow staging berths.',
+    targetRegions: ['WA', 'QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_qld_pv_marine_feed_delay',
+    label: 'Queensland PV Marine Feed Delay',
+    description: 'Cyclone delays Gladstone floating solar feed.',
+    targetRegions: ['QLD', 'WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'road'],
+  },
+  {
+    id: 'scn_nsw_sar_helicopter_surge',
+    label: 'NSW SAR Helicopter Surge',
+    description: 'Maritime emergency strains Port Kembla hub.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.3,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics', 'port'],
+  },
+  {
+    id: 'scn_qld_ferry_battery_peak',
+    label: 'Queensland Ferry Battery Peak',
+    description: 'Holiday peak loads Cairns swap terminal.',
+    targetRegions: ['QLD', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_nsw_shore_power_backlog',
+    label: 'NSW Shore Power Backlog',
+    description: 'Grid upgrade delays Port Stephens battery depot.',
+    targetRegions: ['NSW', 'QLD'],
+    networkKind: 'freight',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics', 'road'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -5672,6 +5788,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND42,
   ...TRANSPORT_SCENARIOS_ROUND43,
   ...TRANSPORT_SCENARIOS_ROUND44,
+  ...TRANSPORT_SCENARIOS_ROUND45,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -16438,6 +16555,233 @@ export const SCALE_WAVE_ROUND44_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round45-assets.ts ---
+
+export const ROUND45_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_karratha_floating_solar_haul',
+    category: 'road',
+    name: 'Karratha Floating Solar Haul',
+    description: 'WA offshore solar array staging road.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['floating_solar_export', 'floating_pv_marine_feed', 'offshore_solar_logistics'],
+    laneKilometres: 25,
+    designSpeedKmh: 85,
+    freightShare: 0.3,
+    urbanShare: 0.1,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_gladstone_floating_solar_feed',
+    category: 'road',
+    name: 'Gladstone Floating Solar Feed',
+    description: 'Queensland floating PV marine connector.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade'],
+    tags: ['floating_solar_export', 'floating_pv_marine_feed', 'offshore_solar_logistics'],
+    laneKilometres: 23,
+    designSpeedKmh: 83,
+    freightShare: 0.28,
+    urbanShare: 0.12,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_wollongong_rescue_access',
+    category: 'road',
+    name: 'Wollongong Rescue Access',
+    description: 'NSW coastal SAR helicopter staging road.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['mobility'],
+    tags: ['coastal_rescue_staging', 'sar_helicopter_hub', 'maritime_emergency_logistics'],
+    laneKilometres: 19,
+    designSpeedKmh: 76,
+    freightShare: 0.07,
+    urbanShare: 0.22,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_geelong_rescue_staging',
+    category: 'road',
+    name: 'Geelong Rescue Staging',
+    description: 'Victorian maritime emergency logistics connector.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['coastal_rescue_staging', 'sar_helicopter_hub', 'maritime_emergency_logistics'],
+    laneKilometres: 17,
+    designSpeedKmh: 74,
+    freightShare: 0.06,
+    urbanShare: 0.21,
+    tollRoad: false,
+  },
+];
+
+export const ROUND45_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_pilbara_floating_solar_rail',
+    category: 'rail',
+    name: 'Pilbara Floating Solar Rail',
+    description: 'WA offshore solar export feed.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 6.0,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['floating_solar_export', 'floating_pv_marine_feed', 'offshore_solar_logistics'],
+    trackKilometres: 42,
+    dualTrackShare: 0.45,
+    electrifiedShare: 0.43,
+    designFreightTonnesPerYear: 3_800_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_nsw_illawarra_rescue_rail',
+    category: 'rail',
+    name: 'Illawarra Rescue Rail',
+    description: 'NSW SAR helicopter hub rail feed.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['mobility'],
+    tags: ['coastal_rescue_staging', 'sar_helicopter_hub', 'maritime_emergency_logistics'],
+    trackKilometres: 28,
+    dualTrackShare: 0.52,
+    electrifiedShare: 0.5,
+    designFreightTonnesPerYear: 1_900_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_qld_cairns_battery_swap_rail',
+    category: 'rail',
+    name: 'Cairns Battery Swap Rail',
+    description: 'QLD electric ferry logistics handoff.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['freight'],
+    tags: ['port_battery_swapping', 'shore_power_exchange', 'electric_ferry_logistics'],
+    trackKilometres: 24,
+    dualTrackShare: 0.49,
+    electrifiedShare: 0.58,
+    designFreightTonnesPerYear: 2_600_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND45_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_onslow_floating_solar_export',
+    category: 'port',
+    name: 'Onslow Floating Solar Export',
+    description: 'Western Australia offshore solar staging port.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 6.1,
+    strategicNetworks: ['trade'],
+    tags: ['floating_solar_export', 'floating_pv_marine_feed', 'offshore_solar_logistics'],
+    berthCount: 3,
+    maxDraftMetres: 12.8,
+    teuCapacityPerYear: 92_000,
+    automationLevel: 2,
+    bulkShare: 0.35,
+  },
+  {
+    id: 'port_nsw_port_kembla_rescue_hub',
+    category: 'port',
+    name: 'Port Kembla Rescue Hub',
+    description: 'NSW coastal rescue helicopter staging port.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.7,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['coastal_rescue_staging', 'sar_helicopter_hub', 'maritime_emergency_logistics'],
+    berthCount: 2,
+    maxDraftMetres: 11.7,
+    teuCapacityPerYear: 125_000,
+    automationLevel: 1,
+    bulkShare: 0.11,
+  },
+  {
+    id: 'port_qld_cairns_battery_swap_terminal',
+    category: 'port',
+    name: 'Cairns Battery Swap Terminal',
+    description: 'Queensland shore power exchange terminal.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.9,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['port_battery_swapping', 'shore_power_exchange', 'electric_ferry_logistics'],
+    berthCount: 3,
+    maxDraftMetres: 12.1,
+    teuCapacityPerYear: 178_000,
+    automationLevel: 3,
+    bulkShare: 0.06,
+  },
+];
+
+export const ROUND45_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_qld_gladstone_floating_solar_stores',
+    category: 'logistics',
+    name: 'Gladstone Floating Solar Stores',
+    description: 'QLD offshore PV consolidation yard.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['trade'],
+    tags: ['floating_solar_export', 'floating_pv_marine_feed', 'offshore_solar_logistics'],
+    warehouseSqm: 46_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 39,
+  },
+  {
+    id: 'log_vic_warrnambool_rescue_stores',
+    category: 'logistics',
+    name: 'Warrnambool Rescue Stores',
+    description: 'VIC maritime emergency consolidation yard.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['mobility'],
+    tags: ['coastal_rescue_staging', 'sar_helicopter_hub', 'maritime_emergency_logistics'],
+    warehouseSqm: 27_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 47,
+  },
+  {
+    id: 'log_nsw_port_stephens_battery_depot',
+    category: 'logistics',
+    name: 'Port Stephens Battery Depot',
+    description: 'NSW electric ferry battery swap depot.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['freight'],
+    tags: ['port_battery_swapping', 'shore_power_exchange', 'electric_ferry_logistics'],
+    warehouseSqm: 36_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 54,
+  },
+];
+
+export const SCALE_WAVE_ROUND45_ASSETS = [
+  ...ROUND45_ROADS,
+  ...ROUND45_RAIL,
+  ...ROUND45_PORTS,
+  ...ROUND45_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -16490,6 +16834,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND42_ASSETS,
     ...SCALE_WAVE_ROUND43_ASSETS,
     ...SCALE_WAVE_ROUND44_ASSETS,
+    ...SCALE_WAVE_ROUND45_ASSETS,
   ];
 }
 
@@ -19005,6 +19350,67 @@ export function marineKelpExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.032 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.035 + policyBoost, 0.93, 1.09);
+}
+
+
+// --- source: network/floating-solar-array-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type FloatingSolarArrayExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 floating solar array export throughput by region. */
+export function computeFloatingSolarArrayExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) =>
+        t === 'floating_solar_export' ||
+        t === 'floating_pv_marine_feed' ||
+        t === 'offshore_solar_logistics',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.88 + asset.maxDraftMetres * 0.36;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 67_000 + asset.intermodalLinks.length * 0.62;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 450;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 8_500_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalFloatingSolarArrayExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.47 + max * 0.53, 5, 71) * 10) / 10;
+}
+
+export function floatingSolarArrayExportProductivityMultiplier(
+  index: number,
+  policy: FloatingSolarArrayExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.031 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.034 + policyBoost, 0.93, 1.09);
 }
 
 
@@ -22328,6 +22734,96 @@ export function remoteDialysisSupplyStagingProductivityMultiplier(
 ): number {
   const bias = policy === 'surge' ? 1.013 : 1;
   return (1 + (share - 0.04) * 0.018) * bias;
+}
+
+
+// --- source: operations/coastal-rescue-helicopter-staging-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type CoastalRescueHelicopterStagingPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 coastal rescue helicopter staging readiness by region. */
+export function computeCoastalRescueHelicopterStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'coastal_rescue_staging' ||
+          t === 'sar_helicopter_hub' ||
+          t === 'maritime_emergency_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 58_000 + (asset.coldChainCapable ? 1.22 : 0.7);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 408;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.92;
+    }
+    if (asset.category === 'rail' && 'passengerCapable' in asset && asset.passengerCapable) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 242;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.026 - stress * 0.017), 5, 73) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalCoastalRescueHelicopterStagingIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.51 + max * 0.49, 6, 71) * 10) / 10;
+}
+
+export function computeCoastalRescueHelicopterStagingShare(
+  operationalAssets: TransportAsset[],
+  policy: CoastalRescueHelicopterStagingPolicy = 'baseline',
+): number {
+  let rescueUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('coastal_rescue_staging') || asset.tags.includes('maritime_emergency_logistics')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 53_000;
+        rescueUnits += (asset.warehouseSqm / 53_000) * 0.51;
+      }
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 0.85;
+        rescueUnits += asset.berthCount * 0.44;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.031;
+  const policyBoost = policy === 'surge' ? 0.02 : 0;
+  return Math.round(clamp(rescueUnits / totalUnits + policyBoost, 0.03, 0.18) * 1000) / 1000;
+}
+
+export function coastalRescueHelicopterStagingProductivityMultiplier(
+  share: number,
+  policy: CoastalRescueHelicopterStagingPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.012 : 1;
+  return (1 + (share - 0.04) * 0.017) * bias;
 }
 
 
@@ -25911,6 +26407,98 @@ export function nationalRailAutomatedInspectionLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/port-battery-swapping-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type PortBatterySwappingLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of port logistics supporting battery swapping. */
+export function computePortBatterySwappingLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: PortBatterySwappingLogisticsPolicy = 'baseline',
+): number {
+  let swapUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) =>
+          t === 'port_battery_swapping' ||
+          t === 'shore_power_exchange' ||
+          t === 'electric_ferry_logistics',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.05 + asset.teuCapacityPerYear / 400_000;
+        swapUnits += (asset.berthCount * 1.05) * 0.56;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 51_000;
+        swapUnits += (asset.warehouseSqm / 51_000) * 0.5;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.034;
+  const policyBoost = policy === 'expand' ? 0.022 : 0;
+  return Math.round(clamp(swapUnits / totalUnits + policyBoost, 0.033, 0.2) * 1000) / 1000;
+}
+
+export function portBatterySwappingLogisticsProductivityMultiplier(
+  share: number,
+  policy: PortBatterySwappingLogisticsPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.014 : 1;
+  return (1 + (share - 0.05) * 0.018) * bias;
+}
+
+export function computePortBatterySwappingLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'port_battery_swapping' ||
+          t === 'shore_power_exchange' ||
+          t === 'electric_ferry_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.35 + asset.teuCapacityPerYear / 370_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 47_000 + asset.lastMileCoveragePct / 94;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 355;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalPortBatterySwappingLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.52 + max * 0.48, 2, 48) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -26652,6 +27240,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalRailAutomatedInspectionLogisticsThroughputIndex,
   railAutomatedInspectionLogisticsProductivityMultiplier,
 } from './rail-automated-inspection-logistics-index.ts';
+  computeFloatingSolarArrayExportByRegion,
+  floatingSolarArrayExportProductivityMultiplier,
+  nationalFloatingSolarArrayExportIndex,
+} from '../network/floating-solar-array-export-index.ts';
+  coastalRescueHelicopterStagingProductivityMultiplier,
+  computeCoastalRescueHelicopterStagingByRegion,
+  computeCoastalRescueHelicopterStagingShare,
+  nationalCoastalRescueHelicopterStagingIndex,
+} from '../operations/coastal-rescue-helicopter-staging-index.ts';
+  computePortBatterySwappingLogisticsShare,
+  computePortBatterySwappingLogisticsThroughputByRegion,
+  nationalPortBatterySwappingLogisticsThroughputIndex,
+  portBatterySwappingLogisticsProductivityMultiplier,
+} from './port-battery-swapping-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -28094,6 +28696,38 @@ export function computeTransportInfrastructureState(
     railAutomatedInspectionLogisticsShare,
     options?.railAutomatedInspectionLogisticsPolicy ?? 'baseline',
   );
+  const floatingSolarArrayExportByRegion = computeFloatingSolarArrayExportByRegion(ops);
+  const nationalFloatingSolar = nationalFloatingSolarArrayExportIndex(floatingSolarArrayExportByRegion);
+  const floatingSolarMult = floatingSolarArrayExportProductivityMultiplier(
+    nationalFloatingSolar,
+    options?.floatingSolarArrayExportPolicy ?? 'baseline',
+  );
+  const coastalRescueHelicopterStagingByRegion = computeCoastalRescueHelicopterStagingByRegion(
+    ops,
+    networkStress,
+  );
+  const nationalCoastalRescue = nationalCoastalRescueHelicopterStagingIndex(coastalRescueHelicopterStagingByRegion);
+  const coastalRescueHelicopterStagingShare = computeCoastalRescueHelicopterStagingShare(
+    ops,
+    options?.coastalRescueHelicopterStagingPolicy ?? 'baseline',
+  );
+  const coastalRescueMult = coastalRescueHelicopterStagingProductivityMultiplier(
+    coastalRescueHelicopterStagingShare,
+    options?.coastalRescueHelicopterStagingPolicy ?? 'baseline',
+  );
+  const portBatterySwappingLogisticsThroughputByRegion =
+    computePortBatterySwappingLogisticsThroughputByRegion(ops);
+  const nationalBatterySwap = nationalPortBatterySwappingLogisticsThroughputIndex(
+    portBatterySwappingLogisticsThroughputByRegion,
+  );
+  const portBatterySwappingLogisticsShare = computePortBatterySwappingLogisticsShare(
+    ops,
+    options?.portBatterySwappingLogisticsPolicy ?? 'baseline',
+  );
+  const batterySwapMult = portBatterySwappingLogisticsProductivityMultiplier(
+    portBatterySwappingLogisticsShare,
+    options?.portBatterySwappingLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -28183,6 +28817,9 @@ export function computeTransportInfrastructureState(
     const kelpBoost = (marineKelpExportByRegion[code] - 5) * 0.0024;
     const dialysisBoost = (remoteDialysisSupplyStagingByRegion[code] - 6) * 0.002;
     const railInspectionBoost = (railAutomatedInspectionLogisticsThroughputByRegion[code] - 2) * 0.0016;
+    const floatingSolarBoost = (floatingSolarArrayExportByRegion[code] - 5) * 0.0023;
+    const coastalRescueBoost = (coastalRescueHelicopterStagingByRegion[code] - 6) * 0.0019;
+    const batterySwapBoost = (portBatterySwappingLogisticsThroughputByRegion[code] - 2) * 0.0015;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -28271,7 +28908,10 @@ export function computeTransportInfrastructureState(
         verticalFulfillmentBoost +
         kelpBoost +
         dialysisBoost +
-        railInspectionBoost) *
+        railInspectionBoost +
+        floatingSolarBoost +
+        coastalRescueBoost +
+        batterySwapBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -28358,7 +28998,10 @@ export function computeTransportInfrastructureState(
       verticalFulfillmentMult *
       kelpMult *
       dialysisMult *
-      railInspectionMult;
+      railInspectionMult *
+      floatingSolarMult *
+      coastalRescueMult *
+      batterySwapMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -28468,7 +29111,10 @@ export function computeTransportInfrastructureState(
     nationalVerticalFulfillment * 0.003 +
     nationalMarineKelp * 0.003 +
     nationalDialysis * 0.003 +
-    nationalRailInspection * 0.003;
+    nationalRailInspection * 0.003 +
+    nationalFloatingSolar * 0.003 +
+    nationalCoastalRescue * 0.003 +
+    nationalBatterySwap * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -28483,7 +29129,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/45',
+    schemaVersion: 'agent12/46',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -28809,6 +29455,14 @@ export function computeTransportInfrastructureState(
     railAutomatedInspectionLogisticsShare,
     nationalRailAutomatedInspectionLogisticsThroughputIndex: nationalRailInspection,
     railAutomatedInspectionLogisticsThroughputByRegion,
+    nationalFloatingSolarArrayExportIndex: nationalFloatingSolar,
+    floatingSolarArrayExportByRegion,
+    coastalRescueHelicopterStagingShare,
+    nationalCoastalRescueHelicopterStagingIndex: nationalCoastalRescue,
+    coastalRescueHelicopterStagingByRegion,
+    portBatterySwappingLogisticsShare,
+    nationalPortBatterySwappingLogisticsThroughputIndex: nationalBatterySwap,
+    portBatterySwappingLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -28891,7 +29545,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/45' &&
+      infra.schemaVersion === 'agent12/46' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -29047,11 +29701,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.portContainerReeferLogisticsShare >= 0.03 &&
       infra.nationalPortContainerReeferLogisticsThroughputIndex >= 2 &&
       infra.nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex >= 2 &&
-      infra.nationalMarineKelpExportIndex >= 5 &&
-      infra.nationalRemoteDialysisSupplyStagingIndex >= 6 &&
-      infra.railAutomatedInspectionLogisticsShare >= 0.03 &&
-      infra.nationalRailAutomatedInspectionLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} kelp=${infra.nationalMarineKelpExportIndex.toFixed(1)} dialysis=${infra.nationalRemoteDialysisSupplyStagingIndex.toFixed(1)} inspection=${infra.nationalRailAutomatedInspectionLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalRailAutomatedInspectionLogisticsThroughputIndex >= 2 &&
+      infra.nationalFloatingSolarArrayExportIndex >= 5 &&
+      infra.nationalCoastalRescueHelicopterStagingIndex >= 6 &&
+      infra.portBatterySwappingLogisticsShare >= 0.03 &&
+      infra.nationalPortBatterySwappingLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} solar=${infra.nationalFloatingSolarArrayExportIndex.toFixed(1)} rescue=${infra.nationalCoastalRescueHelicopterStagingIndex.toFixed(1)} swap=${infra.nationalPortBatterySwappingLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;
