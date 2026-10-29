@@ -1,0 +1,8 @@
+{
+  "moduleId": "agent-10-finance",
+  "slot": "append-only-self-tests",
+  "touchesSaveFormat": false,
+  "anchorComment": "// Agent 25 tranche — V10.14 macro-financial (Agent 10)",
+  "sourceRoot": "operation-10m/agent-10-finance/src",
+  "regenerate": "node operation-10m/agent-10-finance/scripts/build-chunk.mjs"
+}

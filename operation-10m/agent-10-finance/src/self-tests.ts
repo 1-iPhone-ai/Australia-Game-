@@ -1,0 +1,666 @@
+import { V1014_FINSTAB_CORE_REGIONS, V1014_FINSTAB_LIMITS, V1014_FINSTAB_SCHEMA_VERSION } from './definitions/constants.js';
+import {
+  computeNationalMacroFinancialConditions,
+  createInitialMacroFinancialPersisted,
+  macroFinancialEconomyCostMultiplier,
+  macroFinancialInputHash,
+  macroFinancialLoanSpreadMultiplier,
+  makeDefaultMacroFinancialTestInputs,
+  sanitizeMacroFinancialPersisted,
+  buildMacroFinancialInputs,
+} from './compute/national-macro-financial.js';
+import {
+  detectMacroFinancialQuery,
+  macroFinancialActionAlignment,
+  macroFinancialGuardianWarning,
+  macroFinancialWorldRoots,
+  answerMacroFinancialQuestion,
+} from './integration/query-co-pilot.js';
+import { evaluatePolicyTransmissionChannels, sumActiveTransmissionWeight } from './transmission/channels.js';
+import { applyMacroCostOfLivingToEconomyLayer, compareInflationBands } from './inflation/pass-through.js';
+import { quoteAdvancedLoanPricing, refinanceTimingSignal } from './credit/loan-pricing.js';
+import { runFinancialShockSequence } from './shocks/scenario-runner.js';
+import { referencePolicyRate } from './rates/reference-rate.js';
+import { stepResourceMarketPriceDeterministic, cycleMarketTrendDeterministic } from './prices/market-dynamics.js';
+import { assessInvestmentClimateLink } from './investment/climate-link.js';
+import {
+  validateNationalMacroFinancialState,
+  auditModifierIntegrity,
+  dedupeMacroFinancialEvidence,
+} from './persistence/validate-state.js';
+import { simulateMacroFinancialTurns, detectSimulationStressSpiral } from './integration/regression-harness.js';
+import {
+  applyMacroFinancialScenarioPreset,
+  getMacroFinancialScenarioPreset,
+  MACRO_FINANCIAL_SCENARIO_PRESETS,
+} from './catalog/fiscal-inflation-scenarios.js';
+import { exportMacroFinancialSaveBridge, importMacroFinancialSaveBridge } from './integration/save-bridge.js';
+import { effectiveTierLoanRate } from './credit/tier-spreads.js';
+import { assessWagePriceSpiral, wageSpiralInflationScoreAdjustment } from './inflation/wage-price-spiral.js';
+import { recommendMonetaryStance, stanceDriftTowardRecommendation } from './rates/monetary-reaction.js';
+import { decomposeMacroCpiBasket, macroCpiBasketWeightSum } from './inflation/cpi-basket.js';
+import { stepInflationExpectations, initialInflationAnchoringScore } from './inflation/expectations-anchor.js';
+import { mergeAgent06IntoMacroFinancialInputs, agent06BridgeIntegrationNote } from './integration/agent06-macro-bridge.js';
+import { projectInflationForecastPath } from './integration/inflation-forecast.js';
+import { assessPhillipsSlack, phillipsSlackInflationScoreAdjustment } from './inflation/phillips-slack.js';
+import { computeCoreHeadlineSpread } from './inflation/core-headline-spread.js';
+import { classifyInflationShockDrivers } from './inflation/supply-demand-shock.js';
+import { assessFiscalDominance } from './fiscal/fiscal-dominance.js';
+import { assessInflationTargetBreach, inflationScoreToImpliedTargetPercent } from './rates/inflation-target-breach.js';
+import {
+  stepInflationRegimeTracker,
+  createInitialInflationRegimeTracker,
+  inflationRegimePersistenceHalfLifeTurns,
+} from './integration/inflation-regime-tracker.js';
+import { buildAgent21InflationForecastBundle, agent21ForecastBridgeIntegrationNote } from './integration/agent21-forecast-bridge.js';
+import { assessRealRateGap, realRateGapTighteningBias } from './rates/real-rate-gap.js';
+import {
+  createInitialInflationMomentumState,
+  stepInflationMomentum,
+  inflationMomentumInflationScoreNudge,
+} from './inflation/inflation-momentum.js';
+import { estimateDisinflationSacrifice } from './inflation/disinflation-sacrifice.js';
+import { assessCreditInflationFeedback } from './credit/credit-inflation-feedback.js';
+import {
+  mergeAgent07IntoMacroFinancialInputs,
+  agent07FiscalBridgeIntegrationNote,
+} from './integration/agent07-fiscal-bridge.js';
+import {
+  mergeAgent09IntoMacroFinancialInputs,
+  agent09HouseholdBridgeIntegrationNote,
+} from './integration/agent09-household-bridge.js';
+import {
+  assessImportPricePassThrough,
+  importPassThroughInflationScoreAdjustment,
+} from './inflation/import-price-pass-through.js';
+import {
+  assessTermPremiumInflationSignal,
+  termPremiumTighteningBias,
+} from './rates/term-premium-inflation-signal.js';
+import {
+  mergeAgent15IntoMacroFinancialInputs,
+  agent15TradeBridgeIntegrationNote,
+} from './integration/agent15-trade-bridge.js';
+import {
+  mergeAgent08IntoMacroFinancialInputs,
+  agent08CorporateBridgeIntegrationNote,
+} from './integration/agent08-corporate-bridge.js';
+
+export function runAgent10FinanceSelfTests(): {
+  passed: number;
+  failed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const check = (id: string, name: string, ok: boolean, detail = 'ok') =>
+    results.push({ id, name, passed: ok, detail: ok ? 'ok' : detail });
+
+  check('a10_t01', 'schema version', createInitialMacroFinancialPersisted().schemaVersion === V1014_FINSTAB_SCHEMA_VERSION);
+  check('a10_t02', 'sanitize null', sanitizeMacroFinancialPersisted(null) === null);
+  check(
+    'a10_t03',
+    'default compute',
+    !!computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state,
+  );
+  check(
+    'a10_t04',
+    'high inflation cost mult',
+    computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs({ highInflationScenario: true }), null, null)
+      .state.modifiers.costOfLivingMultiplier > 1.1,
+  );
+  check(
+    'a10_t05',
+    'credit shock spread',
+    computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs({ creditShockActive: true }), null, null)
+      .state.modifiers.creditSpreadMultiplier > 1.05,
+  );
+  check(
+    'a10_t06',
+    'hash stable',
+    macroFinancialInputHash(makeDefaultMacroFinancialTestInputs()) ===
+      macroFinancialInputHash(makeDefaultMacroFinancialTestInputs()),
+  );
+  check(
+    'a10_t07',
+    'hash turn delta',
+    macroFinancialInputHash(makeDefaultMacroFinancialTestInputs({ turn: 1 })) !==
+      macroFinancialInputHash(makeDefaultMacroFinancialTestInputs({ turn: 2 })),
+  );
+  check('a10_t08', 'economy mult off', macroFinancialEconomyCostMultiplier(null) === 1);
+  check('a10_t09', 'loan spread off', macroFinancialLoanSpreadMultiplier(undefined) === 1);
+  check('a10_t10', 'detect stability', detectMacroFinancialQuery('How is financial stability?')?.topic === 'stability');
+  check('a10_t11', 'detect credit', detectMacroFinancialQuery('Are credit conditions tight?')?.topic === 'credit');
+  check(
+    'a10_t12',
+    'detect inflation not commodity',
+    detectMacroFinancialQuery('inflation and cost of living')?.topic === 'inflation',
+  );
+  check(
+    'a10_t13',
+    'commodity query excluded',
+    detectMacroFinancialQuery('commodity inflation prices')?.topic !== 'inflation' ||
+      detectMacroFinancialQuery('commodity inflation prices') === null,
+  );
+
+  const frozenState = {
+    ...computeNationalMacroFinancialConditions(
+      makeDefaultMacroFinancialTestInputs({ creditShockActive: true, fiscalPressure: 'critical', actorCreditStressIndex: 0.9 }),
+      null,
+      null,
+    ).state,
+    credit: 'frozen' as const,
+  };
+  check(
+    'a10_t14',
+    'alignment loans frozen',
+    (macroFinancialActionAlignment(frozenState, { category: 'loans_and_credit' })?.scoreDelta ?? 0) <= 0,
+  );
+  check(
+    'a10_t15',
+    'guardian frozen credit',
+    !!macroFinancialGuardianWarning(frozenState, { category: 'loans_and_credit' }),
+  );
+  check(
+    'a10_t16',
+    'world roots disabled',
+    macroFinancialWorldRoots(false, [{ id: 'x', turn: 1, kind: 'k', significance: 'minor', title: 't', summary: 's', dedupeKey: 'd' }])
+      .length === 0,
+  );
+  check(
+    'a10_t17',
+    'world roots enabled',
+    macroFinancialWorldRoots(true, [{ id: 'x', turn: 1, kind: 'k', significance: 'minor', title: 't', summary: 's', dedupeKey: 'd' }])
+      .length === 1,
+  );
+  check(
+    'a10_t18',
+    'scenario id inflation',
+    buildMacroFinancialInputs({ turn: 3, gameSettings: { selectedScenarioId: 'high_inflation' } }).highInflationScenario === true,
+  );
+  check(
+    'a10_t19',
+    'non-CPI note',
+    computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state.integrationNotes.some((n) =>
+      n.includes('commodity'),
+    ),
+  );
+  check(
+    'a10_t20',
+    'regional spreads count',
+    computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state.regionalSpreads.length ===
+      V1014_FINSTAB_CORE_REGIONS.length,
+  );
+
+  const hits = evaluatePolicyTransmissionChannels(makeDefaultMacroFinancialTestInputs({ fiscalPressure: 'critical' }));
+  check('a10_t21', 'transmission fiscal active', hits.some((h) => h.id === 'fiscal_strain_tightens_credit' && h.active));
+  check(
+    'a10_t22',
+    'transmission credit weight',
+    sumActiveTransmissionWeight(hits, 'credit') >= 1,
+  );
+
+  check(
+    'a10_t23',
+    'economy layer cost apply',
+    applyMacroCostOfLivingToEconomyLayer(100, 1.2) === 120,
+  );
+  check(
+    'a10_t24',
+    'inflation band order',
+    compareInflationBands('elevated', 'anchored') > 0,
+  );
+
+  const st = computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state;
+  const quote = quoteAdvancedLoanPricing(0.1, st.modifiers.creditSpreadMultiplier, st.credit, st.modifiers.loanAffordabilityIndex);
+  check('a10_t25', 'loan quote effective', quote.effectiveRate > 0 && quote.effectiveRate <= 1);
+
+  check('a10_t26', 'refinance defer frozen', refinanceTimingSignal('frozen', 0.2) === 'defer');
+  check('a10_t27', 'refinance favorable', refinanceTimingSignal('accommodative', 0.3) === 'favorable');
+
+  const seq = runFinancialShockSequence({ inflation: 50, credit: 55, stability: 60 }, [
+    'shock_credit_tightening',
+    'shock_household_cost_surge',
+    'bogus_id',
+  ]);
+  check('a10_t28', 'shock sequence applied', seq.appliedShockIds.length === 2);
+  check('a10_t29', 'shock sequence skip', seq.skippedShockIds.includes('bogus_id'));
+  check('a10_t30', 'shock sequence flag', seq.creditShockActive === true);
+
+  check(
+    'a10_t31',
+    'reference rate tight > easy',
+    referencePolicyRate('tightening', 'restricted') > referencePolicyRate('neutral', 'accommodative'),
+  );
+
+  check(
+    'a10_t32',
+    'answer shapes',
+    !!answerMacroFinancialQuestion(st, 'macro financial overview').fact,
+  );
+
+  check(
+    'a10_t33',
+    'evidence bounded',
+    computeNationalMacroFinancialConditions(
+      makeDefaultMacroFinancialTestInputs({ highInflationScenario: true, creditShockActive: true, fiscalPressure: 'critical' }),
+      null,
+      null,
+    ).state.evidence.length <= V1014_FINSTAB_LIMITS.maxEvidence,
+  );
+
+  check(
+    'a10_t34',
+    'investment risk cap',
+    computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state.modifiers.investmentRiskPremium <=
+      0.35,
+  );
+
+  check(
+    'a10_t35',
+    'cached hash reuse',
+    (() => {
+      const p = createInitialMacroFinancialPersisted();
+      const inp = makeDefaultMacroFinancialTestInputs();
+      p.lastInputHash = macroFinancialInputHash(inp);
+      const prev = computeNationalMacroFinancialConditions(inp, p, null).state;
+      const r = computeNationalMacroFinancialConditions(inp, p, prev);
+      return r.state === prev;
+    })(),
+  );
+
+  for (let i = 0; i < 15; i++) {
+    const turn = i + 1;
+    const r = computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs({ turn }), null, null);
+    check(
+      `a10_t${36 + i}`,
+      `turn ${turn} revision`,
+      r.state.revision >= 1 && r.state.turn === turn,
+    );
+  }
+
+  // --- Round 3 scale wave ---
+  {
+    const step = stepResourceMarketPriceDeterministic({
+      resource: 'Gold',
+      basePrice: 150,
+      currentPrice: 180,
+      trend: 'falling',
+      randCentered: 0,
+    });
+    check('a10_r3_01', 'market step mean reversion', step.nextPrice < 180);
+  }
+  check(
+    'a10_r3_02',
+    'trend cycle deterministic',
+    cycleMarketTrendDeterministic(4, 'stable', 0.5) === 'stable' || cycleMarketTrendDeterministic(4, '', 0.5) === 'rising',
+  );
+  {
+    const link = assessInvestmentClimateLink('expansionary', 'accommodative', 'anchored');
+    check('a10_r3_03', 'investment link ready', link.readinessScore >= 70 && !link.deferMegaproject);
+  }
+  {
+    const link = assessInvestmentClimateLink('crisis_defensive', 'frozen', 'scenario_runaway');
+    check('a10_r3_04', 'investment link defer', link.deferMegaproject);
+  }
+  {
+    const st = computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state;
+    check('a10_r3_05', 'validate clean state', validateNationalMacroFinancialState(st).every((i) => i.severity !== 'error'));
+    check('a10_r3_06', 'audit modifiers', auditModifierIntegrity(st));
+  }
+  {
+    const sim = simulateMacroFinancialTurns(12, (turn, base) =>
+      turn >= 8 ? { ...base, creditShockActive: true, fiscalPressure: 'critical' } : base,
+    );
+    check('a10_r3_07', 'simulation rows', sim.rows.length === 12);
+    check('a10_r3_08', 'stress spiral detect', detectSimulationStressSpiral(sim.rows));
+  }
+  {
+    const st = computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state;
+    const duped = dedupeMacroFinancialEvidence([...st.evidence, ...st.evidence]);
+    check('a10_r3_09', 'evidence dedupe', duped.length <= st.evidence.length);
+  }
+  check(
+    'a10_r3_10',
+    'regional spread NSW',
+    computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state.regionalSpreads.some((r) => r.regionId === 'NSW'),
+  );
+
+  check('a10_r3b_01', 'scenario preset count', MACRO_FINANCIAL_SCENARIO_PRESETS.length >= 9);
+  check(
+    'a10_r3b_02',
+    'apply credit shock preset',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'credit_shock_stack');
+      return inp?.creditShockActive === true && inp.fiscalPressure === 'strained';
+    })(),
+  );
+  check('a10_r3b_03', 'unknown preset null', applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'nope') === null);
+  check(
+    'a10_r3b_04',
+    'high infl preset raises cost',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'high_inflation_pass_through');
+      if (!inp) return false;
+      const r = computeNationalMacroFinancialConditions(inp, null, null);
+      return r.state.modifiers.costOfLivingMultiplier > 1.05;
+    })(),
+  );
+  {
+    const p = computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).persisted;
+    const bridge = exportMacroFinancialSaveBridge(p);
+    const back = importMacroFinancialSaveBridge(bridge);
+    check('a10_r3b_05', 'save bridge round-trip', back?.persisted.lastCreditBand === p.lastCreditBand);
+  }
+  check(
+    'a10_r3b_06',
+    'tier rate frozen credit',
+    effectiveTierLoanRate('standard', 0.1, 1.2, 'frozen') > effectiveTierLoanRate('standard', 0.1, 1.2, 'accommodative'),
+  );
+  check('a10_r3b_07', 'get preset by id', getMacroFinancialScenarioPreset('liquidity_crisis')?.tags.includes('liquidity'));
+
+  // --- Round 4 scale wave ---
+  check('a10_r4_01', 'CPI basket weights sum', Math.abs(macroCpiBasketWeightSum() - 1) < 0.001);
+  {
+    const cpi = decomposeMacroCpiBasket('elevated', 5, 0.07);
+    check('a10_r4_02', 'CPI decompose excludes commodity', cpi.excludesCommodityQuotes === true && cpi.headlineIndex > 100);
+  }
+  {
+    const spiral = assessWagePriceSpiral({
+      inflationBand: 'high',
+      householdAffordability: 'severe_pressure',
+      fiscalPressure: 'critical',
+      wageGrowthPressureScore: 70,
+      turn: 3,
+    });
+    check('a10_r4_03', 'wage spiral elevated+', spiral.spiralRisk === 'elevated' || spiral.spiralRisk === 'critical');
+    check('a10_r4_04', 'wage spiral delta', wageSpiralInflationScoreAdjustment(spiral) > 0);
+  }
+  {
+    const rec = recommendMonetaryStance({
+      inflationBand: 'high',
+      creditBand: 'tight',
+      inflationScore: 78,
+      creditScore: 48,
+    });
+    check('a10_r4_05', 'monetary reaction tighten', rec.recommendedStance === 'tightening' || rec.recommendedStance === 'restrictive');
+    check(
+      'a10_r4_06',
+      'stance drift',
+      stanceDriftTowardRecommendation('neutral', rec.recommendedStance, 2) !== 'neutral' ||
+        rec.recommendedStance === 'neutral',
+    );
+  }
+  {
+    const exp = stepInflationExpectations({
+      currentBand: 'high',
+      priorAnchoringScore: initialInflationAnchoringScore(),
+      fiscalPressure: 'critical',
+      highInflationScenario: true,
+      turn: 2,
+    });
+    check('a10_r4_07', 'expectations deanchor risk', exp.deanchoringRisk !== 'low');
+  }
+  {
+    const merged = mergeAgent06IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 4,
+      gdpGrowthBand: 'contraction',
+      unemploymentBand: 'severe',
+      outputGap: -0.04,
+      nominalDemandPressure: 0.5,
+    });
+    check('a10_r4_08', 'agent06 bridge merge', (merged.inflationSettingMultiplier ?? 1) > 1 && merged.fiscalPressure !== 'healthy');
+    check('a10_r4_09', 'agent06 bridge note', agent06BridgeIntegrationNote().includes('commodity'));
+  }
+  {
+    const path = projectInflationForecastPath(8);
+    check('a10_r4_10', 'forecast path rows', path.points.length === 8);
+    check('a10_r4_11', 'forecast max cost', path.maxCostMultiplier >= 1);
+  }
+  check(
+    'a10_r4_12',
+    'round4 preset wage',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'wage_spiral_services');
+      return inp?.householdAffordability === 'severe_pressure' && inp.highInflationScenario === true;
+    })(),
+  );
+
+  // --- Round 5 scale wave ---
+  {
+    const ph = assessPhillipsSlack('elevated', {
+      turn: 2,
+      gdpGrowthBand: 'strong',
+      unemploymentBand: 'low',
+      outputGap: 0.05,
+      nominalDemandPressure: 0.55,
+    });
+    check('a10_r5_01', 'phillips overheated', ph.slackBand === 'overheated');
+    check('a10_r5_02', 'phillips delta positive', phillipsSlackInflationScoreAdjustment(ph) > 0);
+  }
+  {
+    const spread = computeCoreHeadlineSpread('high', 4, 0.05);
+    check('a10_r5_03', 'core headline spread', spread.headlineIndex > 0 && spread.coreIndex > 0);
+  }
+  {
+    const shock = classifyInflationShockDrivers(
+      'high',
+      makeDefaultMacroFinancialTestInputs({ highInflationScenario: true, inflationSettingMultiplier: 1.3 }),
+      {
+        turn: 1,
+        gdpGrowthBand: 'strong',
+        unemploymentBand: 'low',
+        outputGap: 0.04,
+        nominalDemandPressure: 0.6,
+      },
+    );
+    check('a10_r5_04', 'shock driver demand or mixed', shock.driver === 'demand_pull' || shock.driver === 'mixed');
+  }
+  {
+    const dom = assessFiscalDominance(makeDefaultMacroFinancialTestInputs({ fiscalPressure: 'critical', sovereignDebtPressure: 'high' }));
+    check('a10_r5_05', 'fiscal dominance elevated+', dom.band === 'elevated' || dom.band === 'dominant');
+  }
+  {
+    const breach = assessInflationTargetBreach(82);
+    check('a10_r5_06', 'target breach above', breach.side === 'above' && breach.breachSeverity !== 'none');
+    check('a10_r5_07', 'implied target percent', inflationScoreToImpliedTargetPercent(50) > 2);
+  }
+  {
+    let reg = createInitialInflationRegimeTracker();
+    reg = stepInflationRegimeTracker(reg, 1, 'elevated');
+    reg = stepInflationRegimeTracker(reg, 2, 'elevated');
+    reg = stepInflationRegimeTracker(reg, 3, 'elevated');
+    check('a10_r5_08', 'regime streak', reg.bandStreak === 3);
+    check('a10_r5_09', 'persistence half life', inflationRegimePersistenceHalfLifeTurns(reg.persistenceScore) >= 2);
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('anchored', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(52),
+    });
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r7');
+    check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
+  }
+  check(
+    'a10_r5_12',
+    'round5 preset fiscal dominance',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'fiscal_dominance_inflation');
+      return inp?.fiscalPressure === 'critical' && inp.sovereignDebtPressure === 'high';
+    })(),
+  );
+  check('a10_r5_13', 'agent21 bridge note', agent21ForecastBridgeIntegrationNote().includes('Agent 21'));
+
+  // --- Round 6 scale wave ---
+  {
+    const gap = assessRealRateGap(82, 'accommodative', 'high');
+    check('a10_r6_01', 'real rate gap negative when hot', gap.gapBand === 'negative' || gap.gapBand === 'deeply_negative');
+    check('a10_r6_02', 'real rate tightening bias', realRateGapTighteningBias(gap) > 0);
+  }
+  {
+    let mom = createInitialInflationMomentumState();
+    let snap = stepInflationMomentum(mom, 1, 'anchored').snapshot;
+    const stepped = stepInflationMomentum(stepInflationMomentum(mom, 1, 'anchored').state, 2, 'elevated');
+    snap = stepped.snapshot;
+    check('a10_r6_03', 'momentum accelerating', snap.direction === 'accelerating' || snap.bandDelta > 0);
+    check('a10_r6_04', 'momentum nudge', inflationMomentumInflationScoreNudge(snap) >= 0);
+  }
+  {
+    const sacrifice = estimateDisinflationSacrifice('high', 78, null);
+    check('a10_r6_05', 'disinflation sacrifice ratio', sacrifice.sacrificeRatio >= 0.5);
+    check('a10_r6_06', 'turns to anchor', sacrifice.turnsToAnchor >= 2);
+  }
+  {
+    const fb = assessCreditInflationFeedback('high', 'restricted', true);
+    check('a10_r6_07', 'credit inflation vicious or amplifying', fb.feedbackLoop === 'vicious' || fb.feedbackLoop === 'amplifying');
+  }
+  {
+    const merged07 = mergeAgent07IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      consolidatedDeficitBand: 'large_deficit',
+      revenueMomentum: 'weak',
+      debtServicePressure: 'critical',
+    });
+    check('a10_r6_08', 'agent07 fiscal merge', merged07.fiscalPressure === 'critical');
+    check('a10_r6_09', 'agent07 bridge note', agent07FiscalBridgeIntegrationNote().includes('Agent 07'));
+  }
+  {
+    const merged09 = mergeAgent09IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      laborParticipationBand: 'steady',
+      wageGrowthBand: 'surge',
+      costOfLivingStress: 'extreme',
+    });
+    check('a10_r6_10', 'agent09 household merge', merged09.householdAffordability === 'severe_pressure');
+    check('a10_r6_11', 'agent09 bridge note', agent09HouseholdBridgeIntegrationNote().includes('Agent 09'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check('a10_r6_12', 'forecast momentum fields', path.points.every((p) => p.momentumScore >= 0 && !!p.momentumDirection));
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(60),
+      momentum: path.points[path.points.length - 1]
+        ? {
+            turn: path.points[path.points.length - 1].turn,
+            momentumScore: path.points[path.points.length - 1].momentumScore,
+            direction: path.points[path.points.length - 1].momentumDirection,
+            bandDelta: 0,
+            streakTurns: 1,
+          }
+        : null,
+      realRateGap: assessRealRateGap(60, 'neutral', 'elevated'),
+      creditFeedback: assessCreditInflationFeedback('elevated', 'neutral', false),
+    });
+    check('a10_r6_13', 'agent21 r6 fields', bundle.realRateGapBand !== undefined && bundle.creditInflationFeedback !== undefined);
+  }
+  check(
+    'a10_r6_14',
+    'round6 preset vicious loop',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'credit_inflation_vicious_loop');
+      return inp?.creditShockActive === true && inp.householdInflationScenarioActive === true;
+    })(),
+  );
+
+  // --- Round 7 scale wave ---
+  {
+    const imp = assessImportPricePassThrough({
+      tradeOpennessBand: 'open',
+      exchangeRatePressure: 'sharp_depreciation',
+      commodityImportShare: 0.5,
+      inflationBand: 'high',
+      turn: 3,
+    });
+    check('a10_r7_01', 'import pass-through strong or surge', imp.passThroughBand === 'strong' || imp.passThroughBand === 'surge');
+    check('a10_r7_02', 'import score adj', importPassThroughInflationScoreAdjustment(imp.passThroughBand) >= 4);
+  }
+  {
+    const term = assessTermPremiumInflationSignal({
+      inflationBand: 'scenario_runaway',
+      fiscalPressure: 'critical',
+      sovereignDebtPressure: 'critical',
+      highInflationScenario: true,
+    });
+    check('a10_r7_03', 'term premium stress', term.signalBand === 'stress' || term.signalBand === 'unanchored');
+    check('a10_r7_04', 'term tightening bias', termPremiumTighteningBias(term) > 0);
+  }
+  {
+    const merged15 = mergeAgent15IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      tradeOpennessBand: 'open',
+      exchangeRatePressure: 'sharp_depreciation',
+      commodityImportShare: 0.42,
+    });
+    check('a10_r7_05', 'agent15 trade merge', merged15.highInflationScenario === true);
+    check('a10_r7_06', 'agent15 bridge note', agent15TradeBridgeIntegrationNote().includes('Agent 15'));
+  }
+  {
+    const merged08 = mergeAgent08IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      pricingPowerBand: 'dominant',
+      marginCompression: 'none',
+      passThroughIntent: 'full',
+    });
+    check('a10_r7_07', 'agent08 corporate merge', (merged08.inflationSettingMultiplier ?? 1) > 1.05);
+    check('a10_r7_08', 'agent08 bridge note', agent08CorporateBridgeIntegrationNote().includes('Agent 08'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r7_09',
+      'forecast import and term fields',
+      path.points.every((p) => !!p.importPassThroughBand && !!p.termPremiumSignalBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r7_10',
+      'agent21 r7 fields',
+      bundle.schemaVersion === '10.14.agent10.r7' &&
+        bundle.terminalImportPassThrough !== undefined &&
+        bundle.terminalTermPremiumSignal !== undefined,
+    );
+  }
+  check(
+    'a10_r7_11',
+    'round7 preset import shock',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'import_shock_pass_through');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.2;
+    })(),
+  );
+  check(
+    'a10_r7_12',
+    'round7 preset term premium',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'term_premium_fiscal_stress');
+      return inp?.fiscalPressure === 'critical' && inp.sovereignDebtPressure === 'critical';
+    })(),
+  );
+  check(
+    'a10_r7_13',
+    'round7 preset corporate pricing',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'corporate_pricing_power_spike');
+      return (inp?.inflationSettingMultiplier ?? 1) > 1.3;
+    })(),
+  );
+
+  const passed = results.filter((r) => r.passed).length;
+  const failed = results.length - passed;
+  return { passed, failed, total: results.length, allPassed: failed === 0, results };
+}
