@@ -88,6 +88,13 @@ import {
 } from './resumption-trajectory.ts';
 import { adviseCommitGating } from './commit-gating-advisor.ts';
 import { composePortfolioHandoffBrief } from './portfolio-handoff-brief.ts';
+import {
+  advanceHandoffTrajectory,
+  createInitialHandoffTrajectory,
+  sanitizeHandoffTrajectory,
+} from './handoff-trajectory.ts';
+import { buildGatedCommitSchedule } from './gated-commit-scheduler.ts';
+import { composeWellbeingIntegrationHandoffBrief } from './wellbeing-integration-handoff-brief.ts';
 import { AGENT14_WELLBEING_SCHEMA_VERSION } from './types.ts';
 
 export interface Agent14SelfTestResult {
@@ -589,8 +596,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Twenty-six housing scenarios registered',
-    listAgent14ScenarioIds().length === 26,
+    'Twenty-eight housing scenarios registered',
+    listAgent14ScenarioIds().length === 28,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -818,8 +825,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave5_schema_version',
-    'Wellbeing schema version is wave 12',
-    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.12-scale-wave-12',
+    'Wellbeing schema version is wave 13',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.13-scale-wave-13',
     AGENT14_WELLBEING_SCHEMA_VERSION
   );
 
@@ -2037,6 +2044,161 @@ export function runAgent14WellbeingSelfTests(): {
       'Resumption trajectory advance updates persisted turn',
       snap.persisted.lastTurn === 3 && snap.snapshot.resumptionFrictionEma > 0,
       `ema=${snap.snapshot.resumptionFrictionEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 5, fiscalHeadroom: 43, stateCapacityLoad: 64, workforceReadiness: 'strained' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      handoffTrajectoryPersisted: createInitialHandoffTrajectory(),
+    });
+    check(
+      results,
+      'wave13_handoff_trajectory',
+      'Turn advance attaches handoff trajectory',
+      adv.inputs.handoffTrajectory !== undefined &&
+        adv.handoffTrajectoryPersisted.lastTurn === 5 &&
+        adv.inputs.handoffTrajectory!.handoffReadinessEma > 0,
+      `band=${adv.inputs.handoffTrajectory?.band} ema=${adv.inputs.handoffTrajectory?.handoffReadinessEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 6, fiscalHeadroom: 17, stateCapacityLoad: 93, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave13_gated_commit_schedule',
+      'Gated commit schedule populated under stress',
+      adv.inputs.gatedCommitSchedule !== undefined &&
+        adv.inputs.gatedCommitSchedule!.summary.length > 8,
+      adv.inputs.gatedCommitSchedule?.summary.slice(0, 72)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 49, stateCapacityLoad: 52, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave13_integration_handoff_brief',
+      'Integration handoff brief includes summary',
+      adv.inputs.wellbeingIntegrationHandoffBrief !== undefined &&
+        adv.inputs.wellbeingIntegrationHandoffBrief!.summary.length > 10,
+      `publish=${adv.inputs.wellbeingIntegrationHandoffBrief?.shouldPublishIntegration}`
+    );
+  }
+
+  {
+    const raw = sanitizeHandoffTrajectory({
+      schemaVersion: '10.14.12-scale-wave-12' as any,
+      lastTurn: 2,
+      emaAlpha: 0.3,
+      handoffReadinessEma: 41,
+    });
+    check(
+      results,
+      'wave13_handoff_sanitize',
+      'Handoff trajectory sanitize upgrades schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.handoffReadinessEma === 41,
+      `schema=${raw.schemaVersion}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('handoff_trajectory_arc', 10);
+    const last = sim.turns[9];
+    check(
+      results,
+      'wave13_handoff_arc_scenario',
+      'Handoff arc wires trajectory, schedule, and integration brief',
+      last.handoffTrajectory !== undefined &&
+        last.gatedCommitSchedule !== undefined &&
+        last.wellbeingIntegrationHandoffBrief !== undefined,
+      `band=${last.handoffTrajectory?.band} defer=${last.gatedCommitSchedule?.shouldDeferAll}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('gated_commit_scheduler_stress', 8);
+    const last = sim.turns[7];
+    check(
+      results,
+      'wave13_scheduler_stress_scenario',
+      'Scheduler stress defers commits or blocks integration publish',
+      last.gatedCommitSchedule !== undefined &&
+        (last.gatedCommitSchedule!.shouldDeferAll ||
+          last.commitGatingAdvice!.shouldBlockAllCommits ||
+          !last.wellbeingIntegrationHandoffBrief!.shouldPublishIntegration),
+      `defer=${last.gatedCommitSchedule?.shouldDeferAll} publish=${last.wellbeingIntegrationHandoffBrief?.shouldPublishIntegration}`
+    );
+  }
+
+  check(
+    results,
+    'wave13_integration_stub_catalog',
+    'Wave 13 integration stubs present',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_NSW_integration_handoff') &&
+      AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_SA_gated_commit_wave'),
+    `n=${AGENT14_HEALTH_ED_PROGRAM_STUBS.length}`
+  );
+
+  check(
+    results,
+    'wave13_scenario_catalog',
+    'Scenario catalog includes wave 13 scenarios',
+    listAgent14ScenarioIds().includes('handoff_trajectory_arc') &&
+      listAgent14ScenarioIds().includes('gated_commit_scheduler_stress'),
+    `count=${listAgent14ScenarioIds().length}`
+  );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 7, fiscalHeadroom: 23, stateCapacityLoad: 88, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const schedule = buildGatedCommitSchedule({
+      turn: 7,
+      commitGating: adv.inputs.commitGatingAdvice!,
+      resumptionPlan: adv.inputs.portfolioResumptionPlan!,
+      recommendations: adv.inputs.programRecommendations,
+    });
+    const integration = composeWellbeingIntegrationHandoffBrief({
+      turn: 7,
+      portfolioHandoff: adv.inputs.portfolioHandoffBrief!,
+      handoffTrajectory: adv.inputs.handoffTrajectory,
+      gatedCommitSchedule: schedule,
+    });
+    check(
+      results,
+      'wave13_integration_composer',
+      'Standalone integration composer returns headlines',
+      integration.headlines.length > 0 && integration.summary.length > 10,
+      integration.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 3, fiscalHeadroom: 46, stateCapacityLoad: 58, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const snap = advanceHandoffTrajectory(
+      3,
+      adv.inputs.portfolioHandoffBrief!,
+      createInitialHandoffTrajectory()
+    );
+    check(
+      results,
+      'wave13_handoff_advance_unit',
+      'Handoff trajectory advance updates persisted turn',
+      snap.persisted.lastTurn === 3 && snap.snapshot.handoffReadinessEma > 0,
+      `ema=${snap.snapshot.handoffReadinessEma}`
     );
   }
 

@@ -1,6 +1,6 @@
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.12-scale-wave-12' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.13-scale-wave-13' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -119,6 +119,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   resumptionTrajectory?: ResumptionTrajectorySnapshot;
   commitGatingAdvice?: CommitGatingAdvice;
   portfolioHandoffBrief?: PortfolioHandoffBrief;
+  handoffTrajectory?: HandoffTrajectorySnapshot;
+  gatedCommitSchedule?: GatedCommitSchedule;
+  wellbeingIntegrationHandoffBrief?: WellbeingIntegrationHandoffBrief;
 }
 
 export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
@@ -487,6 +490,53 @@ export interface PortfolioHandoffBrief {
   shouldSignalHandoff: boolean;
   queuedResumptionActions: number;
   allowedNewCommits: number;
+  headlines: string[];
+  summary: string;
+}
+
+export type HandoffReadinessBand = 'ready' | 'pending' | 'blocked';
+
+export interface HandoffTrajectorySnapshot {
+  turn: number;
+  handoffReadinessEma: number;
+  instantaneousReadiness: number;
+  band: HandoffReadinessBand;
+  trajectory: CouplingTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface HandoffTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  handoffReadinessEma: number;
+  priorEma?: number;
+}
+
+export type GatedCommitSource = 'resumption' | 'sequencing';
+
+export interface GatedCommitScheduleItem {
+  programId: string;
+  regionId: string;
+  pillar: PublicServicePillar;
+  targetTurn: number;
+  source: GatedCommitSource;
+  rationale: string;
+}
+
+export interface GatedCommitSchedule {
+  turn: number;
+  deferUntilTurn: number;
+  shouldDeferAll: boolean;
+  items: GatedCommitScheduleItem[];
+  summary: string;
+}
+
+export interface WellbeingIntegrationHandoffBrief {
+  turn: number;
+  shouldPublishIntegration: boolean;
+  scheduledCommitCount: number;
+  deferUntilTurn: number;
   headlines: string[];
   summary: string;
 }

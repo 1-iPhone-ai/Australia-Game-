@@ -34,7 +34,9 @@ export type Agent14HousingScenarioId =
   | 'readiness_trajectory_arc'
   | 'fulfillment_aging_stress'
   | 'resumption_trajectory_arc'
-  | 'commit_gating_stress';
+  | 'commit_gating_stress'
+  | 'handoff_trajectory_arc'
+  | 'gated_commit_scheduler_stress';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -283,6 +285,29 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
       'ps_h_VIC_planning_reform',
     ],
   },
+  {
+    id: 'handoff_trajectory_arc',
+    label: 'Handoff trajectory arc',
+    baseInputs: { fiscalHeadroom: 54, stateCapacityLoad: 46, workforceReadiness: 'balanced' },
+    launchProgramIds: [
+      'ps_xp_NSW_integration_handoff',
+      'ps_h_NSW_social_accel',
+      'ps_he_NSW_primary_care',
+    ],
+  },
+  {
+    id: 'gated_commit_scheduler_stress',
+    label: 'Gated commit scheduler stress',
+    baseInputs: { fiscalHeadroom: 14, stateCapacityLoad: 96, workforceReadiness: 'blocking', workforceSpecialistGap: 84 },
+    launchProgramIds: [
+      'ps_xp_SA_gated_commit_wave',
+      'ps_h_SA_modular',
+      'ps_he_VIC_hospital_backlog',
+      'ps_ed_NSW_skills',
+      'ps_h_WA_remote_housing',
+      'ps_h_QLD_regional_release',
+    ],
+  },
 ];
 
 export { commitmentFromProgramStub } from './program-stub-commitments.ts';
@@ -308,6 +333,7 @@ export function simulateAgent14HousingScenario(
   let reliefFulfillmentPersisted = null;
   let readinessTrajectoryPersisted = null;
   let resumptionTrajectoryPersisted = null;
+  let handoffTrajectoryPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -331,6 +357,7 @@ export function simulateAgent14HousingScenario(
       reliefFulfillmentPersisted,
       readinessTrajectoryPersisted,
       resumptionTrajectoryPersisted,
+      handoffTrajectoryPersisted,
       newCommitments,
       enforceCapacity: true,
     });
@@ -345,6 +372,7 @@ export function simulateAgent14HousingScenario(
     reliefFulfillmentPersisted = result.reliefFulfillmentPersisted;
     readinessTrajectoryPersisted = result.readinessTrajectoryPersisted;
     resumptionTrajectoryPersisted = result.resumptionTrajectoryPersisted;
+    handoffTrajectoryPersisted = result.handoffTrajectoryPersisted;
     turns.push(result.inputs);
   }
 

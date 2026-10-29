@@ -15,6 +15,18 @@ Agent 25 inlines the chunk (or runs the assembly pipeline) — **do not** hand-e
 
 Integration branch: **`op10m/agent-14-housing`** (canonical worker branch for this module). Scale wave round 4 workers may push **`op10m/agent-14-housing-wellbeing`** for PR #331 head sync.
 
+## Scale wave 13 (handoff trajectory & gated commit schedule)
+
+| Module | Purpose |
+|--------|---------|
+| `handoff-trajectory.ts` | Cross-turn EMA of portfolio handoff readiness with trajectory band |
+| `gated-commit-scheduler.ts` | Deferred/allowed commit schedule from gating and resumption actions |
+| `wellbeing-integration-handoff-brief.ts` | GI signal when national integration publish preconditions clear |
+
+Turn advance attaches `handoffTrajectory`, `gatedCommitSchedule`, `wellbeingIntegrationHandoffBrief`, and returns `handoffTrajectoryPersisted`.
+
+Integration stubs (`ps_xp_NSW_integration_handoff`, `ps_xp_SA_gated_commit_wave`); scenarios `handoff_trajectory_arc`, `gated_commit_scheduler_stress`.
+
 ## Scale wave 12 (resumption trajectory & commit gating)
 
 | Module | Purpose |
@@ -155,7 +167,7 @@ Suggested marker:
 - `advanceDelayedSpendingEffects` / `commitSpendingProgram` / `makeSpendingCommitment`
 - `runAgent14WellbeingSelfTests`
 - `runAgent14HousingScenarioSweep` / `simulateAgent14HousingScenario`
-- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.12-scale-wave-12`)
+- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.13-scale-wave-13`)
 
 ## Upstream inputs (read-only)
 

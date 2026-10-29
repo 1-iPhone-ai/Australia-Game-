@@ -38,4 +38,7 @@ export * from './portfolio-resumption-plan.ts';
 export * from './resumption-trajectory.ts';
 export * from './commit-gating-advisor.ts';
 export * from './portfolio-handoff-brief.ts';
+export * from './handoff-trajectory.ts';
+export * from './gated-commit-scheduler.ts';
+export * from './wellbeing-integration-handoff-brief.ts';
 export { runAgent14WellbeingSelfTests } from './self-tests.ts';

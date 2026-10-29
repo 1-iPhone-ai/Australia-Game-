@@ -26,6 +26,9 @@ import type {
   ResumptionTrajectorySnapshot,
   CommitGatingAdvice,
   PortfolioHandoffBrief,
+  HandoffTrajectorySnapshot,
+  GatedCommitSchedule,
+  WellbeingIntegrationHandoffBrief,
   WellbeingTurnForecastPoint,
 } from './types.ts';
 
@@ -58,6 +61,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   resumptionTrajectory?: ResumptionTrajectorySnapshot;
   commitGatingAdvice?: CommitGatingAdvice;
   portfolioHandoffBrief?: PortfolioHandoffBrief;
+  handoffTrajectory?: HandoffTrajectorySnapshot;
+  gatedCommitSchedule?: GatedCommitSchedule;
+  wellbeingIntegrationHandoffBrief?: WellbeingIntegrationHandoffBrief;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -171,6 +177,17 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   if (args.portfolioHandoffBrief?.shouldSignalHandoff) {
     giNotes.push(args.portfolioHandoffBrief.summary);
   }
+  if (args.handoffTrajectory?.band === 'blocked') {
+    giNotes.push(
+      `Handoff readiness ${args.handoffTrajectory.band} (EMA ${args.handoffTrajectory.handoffReadinessEma})`
+    );
+  }
+  if (args.gatedCommitSchedule?.shouldDeferAll) {
+    giNotes.push(args.gatedCommitSchedule.summary);
+  }
+  if (args.wellbeingIntegrationHandoffBrief?.shouldPublishIntegration) {
+    giNotes.push(args.wellbeingIntegrationHandoffBrief.summary);
+  }
 
   const headlineParts: string[] = [];
   if (args.coupling.band === 'critical' || args.coupling.band === 'strained') {
@@ -196,6 +213,8 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
     headlineParts.push('portfolio resumption on hold');
   } else if (args.portfolioHandoffBrief?.shouldSignalHandoff) {
     headlineParts.push('portfolio handoff ready');
+  } else if (args.wellbeingIntegrationHandoffBrief?.shouldPublishIntegration) {
+    headlineParts.push('national integration handoff ready');
   }
 
   return {

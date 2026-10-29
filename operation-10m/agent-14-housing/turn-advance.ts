@@ -31,6 +31,9 @@ import { buildPortfolioResumptionPlan } from './portfolio-resumption-plan.ts';
 import { advanceResumptionTrajectory } from './resumption-trajectory.ts';
 import { adviseCommitGating } from './commit-gating-advisor.ts';
 import { composePortfolioHandoffBrief } from './portfolio-handoff-brief.ts';
+import { advanceHandoffTrajectory } from './handoff-trajectory.ts';
+import { buildGatedCommitSchedule } from './gated-commit-scheduler.ts';
+import { composeWellbeingIntegrationHandoffBrief } from './wellbeing-integration-handoff-brief.ts';
 import { composeAgent14WellbeingExecutiveBrief } from './wellbeing-executive-brief.ts';
 import {
   canAcceptSpendingCommitment,
@@ -50,6 +53,7 @@ import type {
   ReliefFulfillmentPersisted,
   ReadinessTrajectoryPersisted,
   ResumptionTrajectoryPersisted,
+  HandoffTrajectoryPersisted,
   SpendingCommitment,
 } from './types.ts';
 
@@ -66,6 +70,7 @@ export interface AdvancePublicServicesTurnArgs {
   reliefFulfillmentPersisted?: ReliefFulfillmentPersisted | null;
   readinessTrajectoryPersisted?: ReadinessTrajectoryPersisted | null;
   resumptionTrajectoryPersisted?: ResumptionTrajectoryPersisted | null;
+  handoffTrajectoryPersisted?: HandoffTrajectoryPersisted | null;
   /** New commitments queued this turn (already validated or not). */
   newCommitments?: SpendingCommitment[];
   /** When true, reject commitments that fail capacity gate. */
@@ -85,6 +90,7 @@ export interface AdvancePublicServicesTurnResult {
   reliefFulfillmentPersisted: ReliefFulfillmentPersisted;
   readinessTrajectoryPersisted: ReadinessTrajectoryPersisted;
   resumptionTrajectoryPersisted: ResumptionTrajectoryPersisted;
+  handoffTrajectoryPersisted: HandoffTrajectoryPersisted;
   rejectedCommitments: Array<{ commitment: SpendingCommitment; reason: string }>;
 }
 
@@ -329,6 +335,26 @@ export function advancePublicServicesTurn(
     resumptionTrajectory: resumptionTrajectoryAdvance.snapshot,
   });
 
+  const handoffTrajectoryAdvance = advanceHandoffTrajectory(
+    turn,
+    portfolioHandoffBrief,
+    args.handoffTrajectoryPersisted
+  );
+
+  const gatedCommitSchedule = buildGatedCommitSchedule({
+    turn,
+    commitGating: commitGatingAdvice,
+    resumptionPlan: portfolioResumptionPlan,
+    recommendations: programRecommendations,
+  });
+
+  const wellbeingIntegrationHandoffBrief = composeWellbeingIntegrationHandoffBrief({
+    turn,
+    portfolioHandoff: portfolioHandoffBrief,
+    handoffTrajectory: handoffTrajectoryAdvance.snapshot,
+    gatedCommitSchedule,
+  });
+
   const executiveBrief = composeAgent14WellbeingExecutiveBrief({
     turn,
     warnings: wellbeingWarnings,
@@ -357,6 +383,9 @@ export function advancePublicServicesTurn(
     resumptionTrajectory: resumptionTrajectoryAdvance.snapshot,
     commitGatingAdvice,
     portfolioHandoffBrief,
+    handoffTrajectory: handoffTrajectoryAdvance.snapshot,
+    gatedCommitSchedule,
+    wellbeingIntegrationHandoffBrief,
   });
 
   const enriched: EnrichedPublicServiceTurnInputs = {
@@ -402,6 +431,9 @@ export function advancePublicServicesTurn(
     resumptionTrajectory: resumptionTrajectoryAdvance.snapshot,
     commitGatingAdvice,
     portfolioHandoffBrief,
+    handoffTrajectory: handoffTrajectoryAdvance.snapshot,
+    gatedCommitSchedule,
+    wellbeingIntegrationHandoffBrief,
   };
 
   return {
@@ -417,6 +449,7 @@ export function advancePublicServicesTurn(
     reliefFulfillmentPersisted: reliefFulfillmentAdvance.persisted,
     readinessTrajectoryPersisted: readinessTrajectoryAdvance.persisted,
     resumptionTrajectoryPersisted: resumptionTrajectoryAdvance.persisted,
+    handoffTrajectoryPersisted: handoffTrajectoryAdvance.persisted,
     rejectedCommitments,
   };
 }
