@@ -157,6 +157,14 @@ export * from './replay-scale-wave-wave51-integration-handoff.ts';
 export * from './replay-scale-wave-wave51-integration-verification.ts';
 export * from './archive-scale-wave-wave52-export-gate.ts';
 export * from './replay-scale-wave-wave52-integration-handoff.ts';
+export * from './replay-scale-wave-wave53-integration-verification.ts';
+export * from './archive-scale-wave-wave54-export-gate.ts';
+export * from './replay-scale-wave-wave54-integration-handoff.ts';
+
+export * from './replay-scale-wave-wave52-integration-verification.ts';
+export * from './archive-scale-wave-wave53-export-gate.ts';
+export * from './replay-scale-wave-wave53-integration-handoff.ts';
+
 export * from './replay-determinism.ts';
 export * from './history-replay-analytics.ts';
 export { O6kHistoricalAnalyticsDashboard } from './historical-analytics-dashboard.tsx';

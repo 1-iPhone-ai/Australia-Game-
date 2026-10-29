@@ -172,6 +172,14 @@ const FILES = [
     'replay-scale-wave-wave51-integration-verification.ts',
     'archive-scale-wave-wave52-export-gate.ts',
     'replay-scale-wave-wave52-integration-handoff.ts',
+  'replay-scale-wave-wave53-integration-verification.ts',
+  'archive-scale-wave-wave54-export-gate.ts',
+  'replay-scale-wave-wave54-integration-handoff.ts',
+
+  'replay-scale-wave-wave52-integration-verification.ts',
+  'archive-scale-wave-wave53-export-gate.ts',
+  'replay-scale-wave-wave53-integration-handoff.ts',
+
   'history-replay-analytics.ts',
   'replay-determinism.ts',
   'historical-analytics-dashboard.tsx',
