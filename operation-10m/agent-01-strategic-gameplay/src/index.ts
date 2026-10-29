@@ -110,6 +110,7 @@ export {
   infinitePersistenceRankingBonus,
   primordialContinuityRankingBonus,
   absoluteSanctityRankingBonus,
+  universalImmortalityRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -325,6 +326,16 @@ export {
   applyAbsoluteSanctityMandateBonus,
 } from './engine/coalition-absolute-sanctity.ts';
 
+export { coalitionUniversalImmortalityStreakIssues } from './engine/coalition-universal-immortality-gates.ts';
+
+export {
+  UNIVERSAL_COALITION_IMMORTALITY_THRESHOLD,
+  advanceCoalitionUniversalImmortalityStreak,
+  resetCoalitionUniversalImmortalityStreak,
+  isUniversalCoalitionImmortality,
+  applyUniversalImmortalityMandateBonus,
+} from './engine/coalition-universal-immortality.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '3.2.0';
+export const AGENT_01_MODULE_VERSION = '3.3.0';

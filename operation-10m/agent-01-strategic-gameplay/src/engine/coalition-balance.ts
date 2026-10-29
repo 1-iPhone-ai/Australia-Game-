@@ -198,3 +198,13 @@ export function absoluteSanctityRankingBonus(
   if (streak >= action.minCoalitionAbsoluteSanctityStreakDays) return 15;
   return 2;
 }
+
+export function universalImmortalityRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionUniversalImmortalityStreakDays === undefined) return 0;
+  const streak = state.coalitionUniversalImmortalityStreakDays ?? 0;
+  if (streak >= action.minCoalitionUniversalImmortalityStreakDays) return 16;
+  return 2;
+}

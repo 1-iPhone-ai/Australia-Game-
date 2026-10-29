@@ -99,7 +99,7 @@ describe('scale wave round 12 — integrated coalition stewardship', () => {
       coalitionStewardshipStreakDays: 4,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(20);
+    expect(save.version).toBe(21);
     expect(save.coalitionStewardshipStreakDays).toBe(4);
   });
 });
