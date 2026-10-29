@@ -1,3 +1,4 @@
+import { advanceGauntletSessionAfterRun } from './save-format-gauntlet.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
 import type {
   O10mMarathonQueue,
@@ -219,5 +220,6 @@ export function applyPostRunPersistedUpdates(
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
   next = advanceMarathonQueueAfterRun(next, run);
+  next = advanceGauntletSessionAfterRun(next, run);
   return next;
 }

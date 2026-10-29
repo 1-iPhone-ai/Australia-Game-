@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   O10M_SCENARIO_CHAINS,
+  attachGauntletSessionToState,
   attachMarathonQueueToState,
   campaignProgressSummary,
   createEmptyO10mModesPersistedState,
+  createGauntletSession,
   createMarathonQueue,
   initializeChainProgress,
   pinCampaignSlot,
@@ -32,7 +34,28 @@ describe('scenario campaign planner round 4', () => {
     assert.equal(plan.chainId, 'o10m_chain_continuity_arc');
   });
 
-  it('prefers active marathon queue over campaign slot', () => {
+  it('prefers active gauntlet over marathon queue and campaign slot', () => {
+    const { session } = createGauntletSession({
+      gauntletId: 'o10m_gauntlet_top',
+      label: 'Top',
+      scenarioIds: ['o10m_gauntlet_opening_gate'],
+    });
+    const { queue } = createMarathonQueue({
+      queueId: 'o10m_marathon_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_marathon_pace_setter', 'o10m_marathon_rhythm_hold'],
+    });
+    let state = pinCampaignSlot(createEmptyO10mModesPersistedState(), {
+      slotId: 'o10m_slot_lab',
+      scenarioId: 'o10m_slot_rotation_lab',
+      turn: 4,
+    }).state;
+    state = attachMarathonQueueToState(state, queue!);
+    state = attachGauntletSessionToState(state, session!);
+    assert.equal(planNextCampaignAction(state).kind, 'gauntlet_step');
+  });
+
+  it('prefers active marathon queue over campaign slot when no gauntlet', () => {
     const { queue } = createMarathonQueue({
       queueId: 'o10m_marathon_priority',
       label: 'Priority',

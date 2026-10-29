@@ -212,6 +212,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_iron_gauntlet',
+    title: 'Iron Gauntlet',
+    description:
+      'Three-scenario lives-based gauntlet with ironman challenge lock-in — round-6 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_iron_gauntlet',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_gauntlet_opening_gate',
+        title: 'Opening Gate',
+        narrativeBridge: 'Prove the opening gate before the midfield press.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 250 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_gauntlet_midfield_press',
+        title: 'Midfield Press',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 5, NSW: 5 },
+          forcedSettingsPatch: { o10mGauntletMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_gauntlet_iron_finish',
+        title: 'Iron Finish',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainIronGauntletComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

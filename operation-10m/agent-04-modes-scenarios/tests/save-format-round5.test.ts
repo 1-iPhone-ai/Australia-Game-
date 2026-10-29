@@ -107,7 +107,7 @@ describe('save format round 5 marathon schema', () => {
     const imported = importO10mModesProgressJson(JSON.stringify(state));
     assert.equal(imported.errors.length, 0);
     assert.ok(imported.state);
-    assert.equal(imported.state!.schemaVersion, 5);
+    assert.equal(imported.state!.schemaVersion, O10M_MODES_SAVE_SCHEMA_VERSION);
 
     const other = applyPostRunPersistedUpdates(createEmptyO10mModesPersistedState(), sampleRun, 8);
     const merged = mergeO10mModesPersistedStates(state, other, 'union_milestones');

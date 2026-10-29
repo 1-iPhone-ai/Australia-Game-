@@ -2,13 +2,42 @@ import { getO10mScenarioChain } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
 import { sanitizeCampaignSlots } from './save-format-campaign.js';
 import {
+  getGauntletScenarioAtCursor,
+  gauntletSessionSummary,
+  sanitizeGauntletSession,
+} from './save-format-gauntlet.js';
+import {
   getMarathonScenarioAtCursor,
   sanitizeMarathonQueue,
 } from './save-format-marathon.js';
 import { objectiveProgressCompletionRatio } from './save-format-objective-sync.js';
 import type { O10mCampaignPlan, O10mModesPersistedState } from './types.js';
 
+const emptyGauntletPlan = {
+  gauntletId: null as string | null,
+  gauntletCursor: null as number | null,
+  gauntletLives: null as number | null,
+};
+
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const gauntlet = sanitizeGauntletSession(state.gauntletSession);
+  const gauntletScenario = getGauntletScenarioAtCursor(gauntlet);
+  if (gauntlet && gauntlet.active && gauntletScenario) {
+    return {
+      kind: 'gauntlet_step',
+      scenarioId: gauntletScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      marathonQueueId: null,
+      marathonCursor: null,
+      gauntletId: gauntlet.gauntletId,
+      gauntletCursor: gauntlet.cursor,
+      gauntletLives: gauntlet.livesRemaining,
+      reason: `Gauntlet "${gauntlet.label}" step ${gauntlet.cursor + 1}/${gauntlet.scenarioIds.length} (${gauntlet.livesRemaining} lives).`,
+    };
+  }
+
   const marathon = sanitizeMarathonQueue(state.marathonQueue);
   const marathonScenario = getMarathonScenarioAtCursor(marathon);
   if (marathon && marathon.active && marathonScenario) {
@@ -20,6 +49,7 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
       slotId: state.activeCampaignSlotId ?? null,
       marathonQueueId: marathon.queueId,
       marathonCursor: marathon.cursor,
+      ...emptyGauntletPlan,
       reason: `Marathon "${marathon.label}" step ${marathon.cursor + 1}/${marathon.scenarioIds.length}.`,
     };
   }
@@ -35,6 +65,7 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
         slotId: slot.slotId,
         marathonQueueId: null,
         marathonCursor: null,
+        ...emptyGauntletPlan,
         reason: `Resume pinned slot "${slot.label}".`,
       };
     }
@@ -52,6 +83,7 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
         slotId: null,
         marathonQueueId: null,
         marathonCursor: null,
+        ...emptyGauntletPlan,
         reason: `Continue chain "${chain?.title ?? state.chainProgress.chainId}" at step ${step.stepIndex + 1}.`,
       };
     }
@@ -67,6 +99,7 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
       slotId: null,
       marathonQueueId: null,
       marathonCursor: null,
+      ...emptyGauntletPlan,
       reason:
         ratio > 0 && ratio < 1
           ? `Resume in-progress scenario (${Math.round(ratio * 100)}% objectives captured).`
@@ -82,6 +115,7 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
     slotId: null,
     marathonQueueId: null,
     marathonCursor: null,
+    ...emptyGauntletPlan,
     reason: 'No active chain, slot, or scenario — pick from catalog.',
   };
 }
@@ -97,19 +131,24 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   recentVictories: number;
   activeChainTitle: string | null;
   marathonActive: boolean;
+  gauntletActive: boolean;
   replayTracked: number;
+  unlockTokens: number;
   nextPlan: O10mCampaignPlan;
 } {
   const nextPlan = planNextCampaignAction(state);
   const chain = state.chainProgress ? getO10mScenarioChain(state.chainProgress.chainId) : undefined;
   const recentVictories = state.recentRuns.filter(r => r.primaryVictory).length;
   const marathon = sanitizeMarathonQueue(state.marathonQueue);
+  const gauntlet = gauntletSessionSummary(state);
   return {
     completedChains: state.completedChainIds.length,
     recentVictories,
     activeChainTitle: chain?.title ?? null,
     marathonActive: marathon?.active === true,
+    gauntletActive: gauntlet.active,
     replayTracked: (state.replayLedger ?? []).length,
+    unlockTokens: gauntlet.unlockTokenCount,
     nextPlan,
   };
 }

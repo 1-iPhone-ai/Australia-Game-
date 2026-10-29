@@ -351,14 +351,29 @@ export interface O10mScenarioReplayRow {
   lastPlayedTurn: number;
 }
 
+/** Schema v6 — lives-based sequential gauntlet with optional challenge lock-in. */
+export interface O10mGauntletSession {
+  gauntletId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  livesRemaining: number;
+  requiredChallengeId: O10mChallengeModeId | null;
+  active: boolean;
+  failures: number;
+}
+
 export interface O10mCampaignPlan {
-  kind: 'marathon_step' | 'chain_step' | 'slot_resume' | 'free_play';
+  kind: 'gauntlet_step' | 'marathon_step' | 'chain_step' | 'slot_resume' | 'free_play';
   scenarioId: string | null;
   chainId: string | null;
   chainStepIndex: number | null;
   slotId: string | null;
   marathonQueueId: string | null;
   marathonCursor: number | null;
+  gauntletId: string | null;
+  gauntletCursor: number | null;
+  gauntletLives: number | null;
   reason: string;
 }
 
@@ -390,6 +405,10 @@ export interface O10mModesPersistedState {
   marathonQueue?: O10mMarathonQueue | null;
   /** Schema v5 — replay counts for scenario selection UX. */
   replayLedger?: O10mScenarioReplayRow[];
+  /** Schema v6 — active gauntlet rotation (mutually exclusive with marathon queue). */
+  gauntletSession?: O10mGauntletSession | null;
+  /** Schema v6 — catalog unlock tokens earned from gauntlet completion. */
+  catalogUnlockTokens?: string[];
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

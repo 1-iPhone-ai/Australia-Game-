@@ -14,6 +14,7 @@ import type {
 } from './types.js';
 import { sanitizeCampaignSlots } from './save-format-campaign.js';
 import { mergeReplayLedgers } from './save-format-marathon.js';
+import { mergeCatalogUnlockTokens } from './save-format-gauntlet.js';
 import { mergeObjectiveProgressOnImport } from './save-format-objective-sync.js';
 
 const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
@@ -30,6 +31,8 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'challengeStreak',
   'marathonQueue',
   'replayLedger',
+  'gauntletSession',
+  'catalogUnlockTokens',
 ];
 
 function stableStringify(value: unknown): string {
@@ -120,6 +123,10 @@ export function mergeO10mModesPersistedStates(
       ),
       campaignSlots: sanitizeCampaignSlots([...(primary.campaignSlots ?? []), ...(secondary.campaignSlots ?? [])]),
       replayLedger: mergeReplayLedgers(primary.replayLedger ?? [], secondary.replayLedger ?? []),
+      catalogUnlockTokens: mergeCatalogUnlockTokens(
+        primary.catalogUnlockTokens ?? [],
+        secondary.catalogUnlockTokens ?? [],
+      ),
     };
   }
 

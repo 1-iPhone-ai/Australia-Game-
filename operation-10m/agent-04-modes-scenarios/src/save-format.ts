@@ -5,6 +5,7 @@ import {
   createEmptyChallengeStreak,
 } from './save-format-campaign.js';
 import { sanitizeMarathonQueue, sanitizeReplayLedger } from './save-format-marathon.js';
+import { sanitizeCatalogUnlockTokens, sanitizeGauntletSession } from './save-format-gauntlet.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -23,7 +24,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 5;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 6;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -126,6 +127,8 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     challengeStreak: createEmptyChallengeStreak(),
     marathonQueue: null,
     replayLedger: [],
+    gauntletSession: null,
+    catalogUnlockTokens: [],
   };
 }
 
@@ -149,6 +152,8 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       challengeStreak: merged.challengeStreak ?? createEmptyChallengeStreak(),
       marathonQueue: merged.marathonQueue ?? null,
       replayLedger: merged.replayLedger ?? [],
+      gauntletSession: merged.gauntletSession ?? null,
+      catalogUnlockTokens: merged.catalogUnlockTokens ?? [],
     };
     return upgraded;
   }
@@ -196,6 +201,8 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     challengeStreak: sanitizeChallengeStreak(o.challengeStreak),
     marathonQueue: sanitizeMarathonQueue(o.marathonQueue),
     replayLedger: sanitizeReplayLedger(o.replayLedger),
+    gauntletSession: sanitizeGauntletSession(o.gauntletSession),
+    catalogUnlockTokens: sanitizeCatalogUnlockTokens(o.catalogUnlockTokens),
   };
 }
 
@@ -237,6 +244,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Marathon queue failed sanitization; planner will ignore it.');
   } else if (marathon && marathon.cursor >= marathon.scenarioIds.length) {
     warnings.push('Marathon cursor out of range; clamp on next sanitize.');
+  }
+
+  const gauntlet = sanitizeGauntletSession(state.gauntletSession);
+  if (state.gauntletSession && !gauntlet) {
+    warnings.push('Gauntlet session failed sanitization; planner will ignore it.');
+  } else if (gauntlet && gauntlet.cursor >= gauntlet.scenarioIds.length) {
+    warnings.push('Gauntlet cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

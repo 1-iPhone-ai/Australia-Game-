@@ -30,6 +30,7 @@ const SOURCE_FILES = [
   'operation-10m/agent-04-modes-scenarios/src/save-format-objective-sync.ts',
   'operation-10m/agent-04-modes-scenarios/src/save-format-campaign.ts',
   'operation-10m/agent-04-modes-scenarios/src/save-format-marathon.ts',
+  'operation-10m/agent-04-modes-scenarios/src/save-format-gauntlet.ts',
   'operation-10m/agent-04-modes-scenarios/src/scenario-campaign-planner.ts',
 ];
 
@@ -64,8 +65,8 @@ export function runAgent04ModesScenariosSelfTests(): {
   const push = (id: string, passed: boolean, detail?: string) => results.push({ id, passed, detail });
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
-  push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 14, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 6, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 22, String(O10M_OPERATION_SCENARIOS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 7, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -101,16 +102,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const marathonState = marathon ? attachMarathonQueueToState(createEmptyO10mModesPersistedState(), marathon) : null;
   push('agent04_chunk_13', marathonState !== null && planNextCampaignAction(marathonState!).kind === 'marathon_step');
 
+  const gauntlet = createGauntletSession({
+    gauntletId: 'o10m_gauntlet_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_gauntlet_opening_gate'],
+  }).session;
+  const gauntletState = gauntlet ? attachGauntletSessionToState(createEmptyO10mModesPersistedState(), gauntlet) : null;
+  push('agent04_chunk_14', gauntletState !== null && planNextCampaignAction(gauntletState!).kind === 'gauntlet_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: '${MODULE_ID}',
-  schemaVersion: 'op10m-agent04-v6',
+  schemaVersion: 'op10m-agent04-v7',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 5,
+  saveSchemaVersion: 6,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;
@@ -151,9 +160,9 @@ const manifest = {
   touchesSaveFormat: true,
   proposedGameStateFields: ['o10mModesProgress'],
   saveFormat: {
-    schemaVersion: 5,
+    schemaVersion: 6,
     gameStateKey: 'o10mModesProgress',
-    nestedFields: ['chainProgress', 'milestones', 'challengeModeIds', 'sandboxProfileId', 'recentRuns', 'integrityFingerprint', 'saveKind', 'objectiveProgress', 'campaignSlots', 'challengeStreak', 'marathonQueue', 'replayLedger'],
+    nestedFields: ['chainProgress', 'milestones', 'challengeModeIds', 'sandboxProfileId', 'recentRuns', 'integrityFingerprint', 'saveKind', 'objectiveProgress', 'campaignSlots', 'challengeStreak', 'marathonQueue', 'replayLedger', 'gauntletSession', 'catalogUnlockTokens'],
   },
   contentSha256: hash,
   chunkPath: 'operation-10m/modules/agent-04-modes-scenarios/chunk.tsx',

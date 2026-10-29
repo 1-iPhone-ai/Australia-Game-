@@ -355,14 +355,29 @@ export interface O10mScenarioReplayRow {
   lastPlayedTurn: number;
 }
 
+/** Schema v6 — lives-based sequential gauntlet with optional challenge lock-in. */
+export interface O10mGauntletSession {
+  gauntletId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  livesRemaining: number;
+  requiredChallengeId: O10mChallengeModeId | null;
+  active: boolean;
+  failures: number;
+}
+
 export interface O10mCampaignPlan {
-  kind: 'marathon_step' | 'chain_step' | 'slot_resume' | 'free_play';
+  kind: 'gauntlet_step' | 'marathon_step' | 'chain_step' | 'slot_resume' | 'free_play';
   scenarioId: string | null;
   chainId: string | null;
   chainStepIndex: number | null;
   slotId: string | null;
   marathonQueueId: string | null;
   marathonCursor: number | null;
+  gauntletId: string | null;
+  gauntletCursor: number | null;
+  gauntletLives: number | null;
   reason: string;
 }
 
@@ -394,6 +409,10 @@ export interface O10mModesPersistedState {
   marathonQueue?: O10mMarathonQueue | null;
   /** Schema v5 — replay counts for scenario selection UX. */
   replayLedger?: O10mScenarioReplayRow[];
+  /** Schema v6 — active gauntlet rotation (mutually exclusive with marathon queue). */
+  gauntletSession?: O10mGauntletSession | null;
+  /** Schema v6 — catalog unlock tokens earned from gauntlet completion. */
+  catalogUnlockTokens?: string[];
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -1412,6 +1431,110 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Marathon finales', 'Queue completion', 'Gauntlet closure'],
   },
+  {
+    id: 'o10m_gauntlet_opening_gate',
+    title: 'Gauntlet Opening Gate',
+    description: 'First iron-locked step: survive with a primary cash gate under challenge overlay pressure.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100420,
+    startingMoney: 1500,
+    startingRegions: ['NSW'],
+    badgeId: 'badge_o10m_gauntlet_opening_gate',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100420),
+      scenarioEngineV73Enabled: true,
+      o10mGauntletOpeningGate: true,
+      totalDays: 12,
+    },
+    objectives: [
+      {
+        id: 'o10m_gog_obj_cash',
+        label: 'Gate Float',
+        description: 'Hold $3,200 cash',
+        targetType: 'money',
+        targetValue: 3200,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Gauntlet sessions', 'Challenge lock-in', 'Lives economy'],
+  },
+  {
+    id: 'o10m_gauntlet_midfield_press',
+    title: 'Gauntlet Midfield Press',
+    description: 'Mid-gauntlet standing squeeze with regional pressure before the iron finish.',
+    category: 'challenge',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100421,
+    startingMoney: 2200,
+    startingRegions: ['VIC', 'NSW'],
+    startingStanding: { VIC: 42, NSW: 45 },
+    badgeId: 'badge_o10m_gauntlet_midfield_press',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100421),
+      regionalStandingEnabled: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_gmp_obj_avg',
+        label: 'Press Through',
+        description: 'Average standing of 48',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 48,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Gauntlet midpoints', 'Standing under overlay'],
+  },
+  {
+    id: 'o10m_gauntlet_iron_finish',
+    title: 'Gauntlet Iron Finish',
+    description: 'Final gauntlet scenario — net worth and region control with limited lives remaining.',
+    category: 'expert',
+    difficulty: 'Expert',
+    complexity: 'Expert',
+    forcedSeed: 100422,
+    startingMoney: 3200,
+    startingRegions: ['NSW', 'QLD', 'VIC'],
+    badgeId: 'badge_o10m_gauntlet_iron_finish',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100422),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      totalDays: 18,
+    },
+    objectives: [
+      {
+        id: 'o10m_gif_obj_net',
+        label: 'Iron Net Worth',
+        description: 'Reach $16,000 net worth',
+        targetType: 'netWorth',
+        targetValue: 16000,
+        isPrimary: true,
+      },
+      {
+        id: 'o10m_gif_obj_regions',
+        label: 'Tri-State Hold',
+        description: 'Control 3 regions',
+        targetType: 'regions_controlled',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Gauntlet finales', 'Unlock tokens', 'Catalog progression'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -2061,6 +2184,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
         title: 'Sprint Close',
         requiresPrimaryVictory: true,
         carryBonusOnComplete: { forcedSettingsPatch: { o10mChainMarathonSprintComplete: true } },
+      },
+    ],
+  },
+  {
+    id: 'o10m_chain_iron_gauntlet',
+    title: 'Iron Gauntlet',
+    description:
+      'Three-scenario lives-based gauntlet with ironman challenge lock-in — round-6 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_iron_gauntlet',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_gauntlet_opening_gate',
+        title: 'Opening Gate',
+        narrativeBridge: 'Prove the opening gate before the midfield press.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 250 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_gauntlet_midfield_press',
+        title: 'Midfield Press',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 5, NSW: 5 },
+          forcedSettingsPatch: { o10mGauntletMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_gauntlet_iron_finish',
+        title: 'Iron Finish',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainIronGauntletComplete: true } },
       },
     ],
   },
@@ -2890,7 +3047,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 5;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 6;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -2993,6 +3150,8 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     challengeStreak: createEmptyChallengeStreak(),
     marathonQueue: null,
     replayLedger: [],
+    gauntletSession: null,
+    catalogUnlockTokens: [],
   };
 }
 
@@ -3016,6 +3175,8 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       challengeStreak: merged.challengeStreak ?? createEmptyChallengeStreak(),
       marathonQueue: merged.marathonQueue ?? null,
       replayLedger: merged.replayLedger ?? [],
+      gauntletSession: merged.gauntletSession ?? null,
+      catalogUnlockTokens: merged.catalogUnlockTokens ?? [],
     };
     return upgraded;
   }
@@ -3063,6 +3224,8 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     challengeStreak: sanitizeChallengeStreak(o.challengeStreak),
     marathonQueue: sanitizeMarathonQueue(o.marathonQueue),
     replayLedger: sanitizeReplayLedger(o.replayLedger),
+    gauntletSession: sanitizeGauntletSession(o.gauntletSession),
+    catalogUnlockTokens: sanitizeCatalogUnlockTokens(o.catalogUnlockTokens),
   };
 }
 
@@ -3104,6 +3267,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Marathon queue failed sanitization; planner will ignore it.');
   } else if (marathon && marathon.cursor >= marathon.scenarioIds.length) {
     warnings.push('Marathon cursor out of range; clamp on next sanitize.');
+  }
+
+  const gauntlet = sanitizeGauntletSession(state.gauntletSession);
+  if (state.gauntletSession && !gauntlet) {
+    warnings.push('Gauntlet session failed sanitization; planner will ignore it.');
+  } else if (gauntlet && gauntlet.cursor >= gauntlet.scenarioIds.length) {
+    warnings.push('Gauntlet cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
@@ -3213,6 +3383,8 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'challengeStreak',
   'marathonQueue',
   'replayLedger',
+  'gauntletSession',
+  'catalogUnlockTokens',
 ];
 
 function stableStringify(value: unknown): string {
@@ -3303,6 +3475,10 @@ export function mergeO10mModesPersistedStates(
       ),
       campaignSlots: sanitizeCampaignSlots([...(primary.campaignSlots ?? []), ...(secondary.campaignSlots ?? [])]),
       replayLedger: mergeReplayLedgers(primary.replayLedger ?? [], secondary.replayLedger ?? []),
+      catalogUnlockTokens: mergeCatalogUnlockTokens(
+        primary.catalogUnlockTokens ?? [],
+        secondary.catalogUnlockTokens ?? [],
+      ),
     };
   }
 
@@ -3830,11 +4006,256 @@ export function applyPostRunPersistedUpdates(
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
   next = advanceMarathonQueueAfterRun(next, run);
+  next = advanceGauntletSessionAfterRun(next, run);
   return next;
 }
 
+// --- bundled from src/save-format-gauntlet.ts ---
+export const O10M_GAUNTLET_SCENARIO_CAP = 6;
+export const O10M_GAUNTLET_LIVES_MAX = 5;
+export const O10M_UNLOCK_TOKEN_CAP = 16;
+
+const VALID_CHALLENGES = new Set(listO10mChallengeModeIds());
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+export function unlockTokenForGauntletId(gauntletId: string): string | null {
+  if (!gauntletId.startsWith('o10m_gauntlet_')) return null;
+  return `o10m_unlock_${gauntletId.slice('o10m_gauntlet_'.length)}`;
+}
+
+export function sanitizeCatalogUnlockTokens(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((t): t is string => typeof t === 'string' && t.startsWith('o10m_unlock_'))
+    .slice(0, O10M_UNLOCK_TOKEN_CAP);
+}
+
+export function sanitizeGauntletSession(raw: unknown): O10mGauntletSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const gauntletId =
+    typeof o.gauntletId === 'string' && o.gauntletId.startsWith('o10m_gauntlet_') ? o.gauntletId : null;
+  if (!gauntletId) return null;
+  const label = typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : gauntletId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_GAUNTLET_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const livesRaw = Math.floor(num(o.livesRemaining, O10M_GAUNTLET_LIVES_MAX));
+  const livesRemaining = Math.min(Math.max(1, livesRaw), O10M_GAUNTLET_LIVES_MAX);
+  const failures = Math.max(0, Math.floor(num(o.failures, 0)));
+  const challengeRaw = o.requiredChallengeId;
+  const requiredChallengeId =
+    typeof challengeRaw === 'string' && VALID_CHALLENGES.has(challengeRaw as O10mChallengeModeId)
+      ? (challengeRaw as O10mChallengeModeId)
+      : null;
+  const active = o.active !== false;
+  return {
+    gauntletId,
+    label,
+    scenarioIds,
+    cursor,
+    livesRemaining,
+    requiredChallengeId,
+    active,
+    failures,
+  };
+}
+
+export function createGauntletSession(params: {
+  gauntletId: string;
+  label: string;
+  scenarioIds: string[];
+  livesRemaining?: number;
+  requiredChallengeId?: O10mChallengeModeId | null;
+}): { session: O10mGauntletSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.gauntletId.startsWith('o10m_gauntlet_')) {
+    return { session: null, warnings: ['Gauntlet ids must start with o10m_gauntlet_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_GAUNTLET_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return { session: null, warnings: [...warnings, 'Gauntlet requires at least one valid scenario.'] };
+  }
+  const livesRemaining = Math.min(
+    O10M_GAUNTLET_LIVES_MAX,
+    Math.max(1, params.livesRemaining ?? 3),
+  );
+  const requiredChallengeId =
+    params.requiredChallengeId && VALID_CHALLENGES.has(params.requiredChallengeId)
+      ? params.requiredChallengeId
+      : null;
+  return {
+    session: {
+      gauntletId: params.gauntletId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      livesRemaining,
+      requiredChallengeId,
+      active: true,
+      failures: 0,
+    },
+    warnings,
+  };
+}
+
+export function attachGauntletSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mGauntletSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeGauntletSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  const challengeModeIds = sanitized.requiredChallengeId
+    ? [sanitized.requiredChallengeId]
+    : state.challengeModeIds;
+  return {
+    ...state,
+    gauntletSession: sanitized,
+    marathonQueue: null,
+    scenarioId,
+    challengeModeIds,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearGauntletSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, gauntletSession: null };
+}
+
+export function getGauntletScenarioAtCursor(session: O10mGauntletSession | null | undefined): string | null {
+  const g = sanitizeGauntletSession(session);
+  if (!g || !g.active) return null;
+  return g.scenarioIds[g.cursor] ?? null;
+}
+
+export function grantCatalogUnlockToken(
+  state: O10mModesPersistedState,
+  token: string,
+): O10mModesPersistedState {
+  if (!token.startsWith('o10m_unlock_')) return state;
+  const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
+  if (tokens.includes(token)) return state;
+  return { ...state, catalogUnlockTokens: [...tokens, token].slice(-O10M_UNLOCK_TOKEN_CAP) };
+}
+
+export function mergeCatalogUnlockTokens(a: string[], b: string[]): string[] {
+  return [...new Set([...sanitizeCatalogUnlockTokens(a), ...sanitizeCatalogUnlockTokens(b)])].slice(
+    0,
+    O10M_UNLOCK_TOKEN_CAP,
+  );
+}
+
+export function advanceGauntletSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeGauntletSession(state.gauntletSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+
+  if (session.requiredChallengeId && !run.challengeModeIds.includes(session.requiredChallengeId)) {
+    return state;
+  }
+
+  if (run.primaryVictory) {
+    const atEnd = session.cursor >= session.scenarioIds.length - 1;
+    if (!atEnd) {
+      const cursor = session.cursor + 1;
+      const nextScenario = session.scenarioIds[cursor] ?? null;
+      return {
+        ...state,
+        gauntletSession: { ...session, cursor, failures: session.failures },
+        scenarioId: nextScenario ?? state.scenarioId,
+      };
+    }
+
+    const token = unlockTokenForGauntletId(session.gauntletId);
+    let next: O10mModesPersistedState = {
+      ...state,
+      gauntletSession: { ...session, active: false },
+    };
+    if (token) next = grantCatalogUnlockToken(next, token);
+    return next;
+  }
+
+  const failures = session.failures + 1;
+  const livesRemaining = session.livesRemaining - 1;
+  if (livesRemaining <= 0) {
+    return {
+      ...state,
+      gauntletSession: { ...session, active: false, failures, livesRemaining: 0 },
+    };
+  }
+  return {
+    ...state,
+    gauntletSession: { ...session, failures, livesRemaining },
+  };
+}
+
+export function gauntletSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  livesRemaining: number | null;
+  unlockTokenCount: number;
+} {
+  const session = sanitizeGauntletSession(state.gauntletSession);
+  const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    livesRemaining: session?.active ? session.livesRemaining : null,
+    unlockTokenCount: tokens.length,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
+const emptyGauntletPlan = {
+  gauntletId: null as string | null,
+  gauntletCursor: null as number | null,
+  gauntletLives: null as number | null,
+};
+
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const gauntlet = sanitizeGauntletSession(state.gauntletSession);
+  const gauntletScenario = getGauntletScenarioAtCursor(gauntlet);
+  if (gauntlet && gauntlet.active && gauntletScenario) {
+    return {
+      kind: 'gauntlet_step',
+      scenarioId: gauntletScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      marathonQueueId: null,
+      marathonCursor: null,
+      gauntletId: gauntlet.gauntletId,
+      gauntletCursor: gauntlet.cursor,
+      gauntletLives: gauntlet.livesRemaining,
+      reason: `Gauntlet "${gauntlet.label}" step ${gauntlet.cursor + 1}/${gauntlet.scenarioIds.length} (${gauntlet.livesRemaining} lives).`,
+    };
+  }
+
   const marathon = sanitizeMarathonQueue(state.marathonQueue);
   const marathonScenario = getMarathonScenarioAtCursor(marathon);
   if (marathon && marathon.active && marathonScenario) {
@@ -3846,6 +4267,7 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
       slotId: state.activeCampaignSlotId ?? null,
       marathonQueueId: marathon.queueId,
       marathonCursor: marathon.cursor,
+      ...emptyGauntletPlan,
       reason: `Marathon "${marathon.label}" step ${marathon.cursor + 1}/${marathon.scenarioIds.length}.`,
     };
   }
@@ -3861,6 +4283,7 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
         slotId: slot.slotId,
         marathonQueueId: null,
         marathonCursor: null,
+        ...emptyGauntletPlan,
         reason: `Resume pinned slot "${slot.label}".`,
       };
     }
@@ -3878,6 +4301,7 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
         slotId: null,
         marathonQueueId: null,
         marathonCursor: null,
+        ...emptyGauntletPlan,
         reason: `Continue chain "${chain?.title ?? state.chainProgress.chainId}" at step ${step.stepIndex + 1}.`,
       };
     }
@@ -3893,6 +4317,7 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
       slotId: null,
       marathonQueueId: null,
       marathonCursor: null,
+      ...emptyGauntletPlan,
       reason:
         ratio > 0 && ratio < 1
           ? `Resume in-progress scenario (${Math.round(ratio * 100)}% objectives captured).`
@@ -3908,6 +4333,7 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
     slotId: null,
     marathonQueueId: null,
     marathonCursor: null,
+    ...emptyGauntletPlan,
     reason: 'No active chain, slot, or scenario — pick from catalog.',
   };
 }
@@ -3923,19 +4349,24 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   recentVictories: number;
   activeChainTitle: string | null;
   marathonActive: boolean;
+  gauntletActive: boolean;
   replayTracked: number;
+  unlockTokens: number;
   nextPlan: O10mCampaignPlan;
 } {
   const nextPlan = planNextCampaignAction(state);
   const chain = state.chainProgress ? getO10mScenarioChain(state.chainProgress.chainId) : undefined;
   const recentVictories = state.recentRuns.filter(r => r.primaryVictory).length;
   const marathon = sanitizeMarathonQueue(state.marathonQueue);
+  const gauntlet = gauntletSessionSummary(state);
   return {
     completedChains: state.completedChainIds.length,
     recentVictories,
     activeChainTitle: chain?.title ?? null,
     marathonActive: marathon?.active === true,
+    gauntletActive: gauntlet.active,
     replayTracked: (state.replayLedger ?? []).length,
+    unlockTokens: gauntlet.unlockTokenCount,
     nextPlan,
   };
 }
@@ -3951,8 +4382,8 @@ export function runAgent04ModesScenariosSelfTests(): {
   const push = (id: string, passed: boolean, detail?: string) => results.push({ id, passed, detail });
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
-  push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 14, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 6, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 22, String(O10M_OPERATION_SCENARIOS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 7, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -3988,16 +4419,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const marathonState = marathon ? attachMarathonQueueToState(createEmptyO10mModesPersistedState(), marathon) : null;
   push('agent04_chunk_13', marathonState !== null && planNextCampaignAction(marathonState!).kind === 'marathon_step');
 
+  const gauntlet = createGauntletSession({
+    gauntletId: 'o10m_gauntlet_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_gauntlet_opening_gate'],
+  }).session;
+  const gauntletState = gauntlet ? attachGauntletSessionToState(createEmptyO10mModesPersistedState(), gauntlet) : null;
+  push('agent04_chunk_14', gauntletState !== null && planNextCampaignAction(gauntletState!).kind === 'gauntlet_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v6',
+  schemaVersion: 'op10m-agent04-v7',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 5,
+  saveSchemaVersion: 6,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;
