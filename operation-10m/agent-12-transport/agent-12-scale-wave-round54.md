@@ -1,0 +1,7 @@
+# Agent 12 scale wave — round 54 (O10-240)
+
+| Item | Value |
+| --- | --- |
+| Branch | `op10m/agent-12-transport-infrastructure` |
+| Integration merge | **`5bd043ad`** |
+| Gate latch | `scale-wave-round54-origin-gate-latch.ts` |
