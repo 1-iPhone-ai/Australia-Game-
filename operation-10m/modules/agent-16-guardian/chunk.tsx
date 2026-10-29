@@ -187,6 +187,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   exonerationStrainIndex: number;
   exonerationIntegrityScore: number;
   governanceSpunkScore: number;
+  vindicationStrainIndex: number;
+  vindicationIntegrityScore: number;
+  governanceDashScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -2669,6 +2672,62 @@ export function buildGuardianDepthExonerationReport(snapshot: GuardianCoPilotMon
   return lines.slice(0, 3);
 }
 
+export function computeVindicationStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceSpunkScore < 50) load += Math.min(25, 50 - snapshot.governanceSpunkScore);
+  if (snapshot.governanceSpunkScore < 35) load += 10;
+  if (snapshot.exonerationIntegrityScore < 45) load += 20;
+  if (snapshot.exonerationIntegrityScore < 35) load += 10;
+  if (snapshot.exonerationStrainIndex >= 55) load += 20;
+  if (snapshot.exonerationStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeVindicationIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.vindicationStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.vindicationStrainIndex * 0.35));
+  if (snapshot.exonerationIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.exonerationIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceSpunkScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceDashScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.vindicationStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.vindicationStrainIndex * 0.32));
+  if (snapshot.vindicationIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.vindicationIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceSpunkScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthVindicationReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.vindicationStrainIndex >= 55) {
+    lines.push(
+      `Vindication strain ${snapshot.vindicationStrainIndex} — stacked vindication review may exceed operator vindication capacity`
+    );
+  }
+  if (snapshot.vindicationIntegrityScore < 45) {
+    lines.push(
+      `Vindication integrity ${snapshot.vindicationIntegrityScore} — align Co-Pilot vindications with Guardian vindication posture`
+    );
+  }
+  if (snapshot.governanceDashScore < 40) {
+    lines.push(
+      `Governance dash ${snapshot.governanceDashScore} — little dash to sustain vindication oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -3083,9 +3142,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withExonerationStrain: GuardianCoPilotMonitorSnapshot = { ...withMoxie, exonerationStrainIndex };
   const exonerationIntegrityScore = computeExonerationIntegrityScore(withExonerationStrain);
   const withExoneration: GuardianCoPilotMonitorSnapshot = { ...withExonerationStrain, exonerationIntegrityScore };
-  return {
+  const withSpunk: GuardianCoPilotMonitorSnapshot = {
     ...withExoneration,
     governanceSpunkScore: computeGovernanceSpunkScore(withExoneration),
+    vindicationStrainIndex: 0,
+    vindicationIntegrityScore: 100,
+    governanceDashScore: 100,
+  };
+  const vindicationStrainIndex = computeVindicationStrainIndex(withSpunk);
+  const withVindicationStrain: GuardianCoPilotMonitorSnapshot = { ...withSpunk, vindicationStrainIndex };
+  const vindicationIntegrityScore = computeVindicationIntegrityScore(withVindicationStrain);
+  const withVindication: GuardianCoPilotMonitorSnapshot = { ...withVindicationStrain, vindicationIntegrityScore };
+  return {
+    ...withVindication,
+    governanceDashScore: computeGovernanceDashScore(withVindication),
   };
 }
 
@@ -4394,6 +4464,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceSpunkScore(snap) < 35;
+  });
+  ok('gd_vindication_strain', () => {
+    const snap = {
+      governanceSpunkScore: 30,
+      exonerationIntegrityScore: 32,
+      exonerationStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeVindicationStrainIndex(snap) >= 70;
+  });
+  ok('gd_vindication_integrity', () => {
+    const snap = {
+      vindicationStrainIndex: 72,
+      exonerationIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceSpunkScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeVindicationIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_dash', () => {
+    const snap = {
+      vindicationStrainIndex: 78,
+      vindicationIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceSpunkScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceDashScore(snap) < 35;
   });
   return out;
 }
@@ -9759,6 +9863,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_39: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_39_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_39.length;
 
 
+// --- source: monitor-rules-scale-wave-40.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_40: AdvisoryMonitorRule[] = [
+  {
+    id: 'vindication_strain_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Vindication Strain High',
+    detailTemplate: 'Vindication strain is in the high band — reduce overlapping warn-only vindication review demands',
+    evidenceFields: ['vindicationStrainIndex', 'governanceSpunkScore', 'vindicationIntegrityScore'],
+    evaluate: s => s.vindicationStrainIndex >= 70,
+  },
+  {
+    id: 'vindication_strain_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Vindication Strain Elevated',
+    detailTemplate: 'Vindication strain is elevated — expect slower vindication review across turns',
+    evidenceFields: ['vindicationStrainIndex', 'exonerationStrainIndex'],
+    evaluate: s => s.vindicationStrainIndex >= 45 && s.vindicationStrainIndex < 70,
+  },
+  {
+    id: 'vindication_integrity_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Vindication Integrity Low',
+    detailTemplate: 'Vindication integrity is critically low — defer stacked autonomous actions',
+    evidenceFields: ['vindicationIntegrityScore', 'vindicationStrainIndex', 'exonerationIntegrityScore'],
+    evaluate: s => s.vindicationIntegrityScore < 35,
+  },
+  {
+    id: 'vindication_integrity_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Vindication While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate vindication integrity',
+    evidenceFields: ['vindicationIntegrityScore', 'copilotAutonomousActive', 'vindicationStrainIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.vindicationIntegrityScore >= 35 && s.vindicationIntegrityScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_dash_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Dash Low',
+    detailTemplate: 'Little governance dash remains for warn-only vindication oversight across turns',
+    evidenceFields: ['governanceDashScore', 'vindicationStrainIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governanceDashScore < 35,
+  },
+  {
+    id: 'governance_dash_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Dash While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance dash',
+    evidenceFields: ['governanceDashScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governanceDashScore >= 35 && s.governanceDashScore < 55,
+  },
+  {
+    id: 'vindication_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Vindication Envelope Pressured',
+    detailTemplate: 'Vindication strain and low vindication integrity align in the pressured envelope band',
+    evidenceFields: ['vindicationStrainIndex', 'vindicationIntegrityScore', 'governanceDashScore'],
+    evaluate: s => s.vindicationStrainIndex >= 55 && s.vindicationIntegrityScore < 50,
+  },
+  {
+    id: 'rival_vindication_strain',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Vindication Strain',
+    detailTemplate: 'Rival victory progress plus elevated vindication strain',
+    evidenceFields: ['rivalVictoryProgressPct', 'vindicationStrainIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.vindicationStrainIndex >= 50,
+  },
+  {
+    id: 'team_plan_vindication_strain',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Vindication Strain',
+    detailTemplate: 'Pending team plan while vindication strain is elevated',
+    evidenceFields: ['teamPlanPending', 'vindicationStrainIndex', 'governanceDashScore'],
+    evaluate: s => s.teamPlanPending && s.vindicationStrainIndex >= 55,
+  },
+  {
+    id: 'guardian_vindication_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Vindication Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance dash',
+    evidenceFields: ['guardianRiskBand', 'governanceDashScore', 'vindicationStrainIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governanceDashScore < 40,
+  },
+  {
+    id: 'copilot_vindication_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Vindication Strain',
+    detailTemplate: 'Autonomous Co-Pilot while vindication strain is high',
+    evidenceFields: ['copilotAutonomousActive', 'vindicationStrainIndex', 'vindicationIntegrityScore'],
+    evaluate: s => s.copilotAutonomousActive && s.vindicationStrainIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_dash',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Dash',
+    detailTemplate: 'Expiring contracts while governance dash is low',
+    evidenceFields: ['expiringContractCount', 'governanceDashScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governanceDashScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_40_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_40.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -10027,6 +10264,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_37,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_38,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_39,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_40,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -10460,6 +10698,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     exonerationStrainIndex: 0,
     exonerationIntegrityScore: 100,
     governanceSpunkScore: 100,
+    vindicationStrainIndex: 0,
+    vindicationIntegrityScore: 100,
+    governanceDashScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -13372,6 +13613,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['exoneration_envelope_pressured', 'guardian_exoneration_envelope_critical'],
     notes: 'Pressured exoneration envelope with critical Guardian band',
   },
+  {
+    id: 'sc_vindication_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2260,
+      maxSpendPerAction: 10580,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['vindication_strain_high', 'vindication_integrity_low'],
+    notes: 'High vindication strain with critical vindication integrity',
+  },
+  {
+    id: 'sc_governance_dash_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 4,
+      minCashReserve: 500,
+      debt: 1380,
+      maxSpendPerAction: 8080,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_dash_low', 'contracts_governance_dash'],
+    notes: 'Low governance dash with expiring contracts',
+  },
+  {
+    id: 'sc_vindication_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 1300,
+      maxSpendPerAction: 8280,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['vindication_envelope_pressured', 'guardian_vindication_envelope_critical'],
+    notes: 'Pressured vindication envelope with critical Guardian band',
+  },
 ];
 
 
@@ -13547,8 +13856,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 39 scale wave brings monitor catalog to 502+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 502;
+  check(results, 'a16_expansion_count', 'Round 40 scale wave brings monitor catalog to 514+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 514;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -15004,6 +15313,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthExonerationReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round40_metrics', 'Round 40 vindication envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.vindicationStrainIndex >= 40 &&
+      snap.vindicationIntegrityScore <= 100 &&
+      snap.governanceDashScore <= 100
+    );
+  });
+
+  check(results, 'a16_vindication_report', 'Guardian depth vindication report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthVindicationReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 
