@@ -48508,20 +48508,60 @@ export function scoreCandidate(
   };
 }
 
+/** O111 Agent 50 — live Classic AI decision-state metrics (aligned with balance `evaluateDecisionQuality`). */
+export interface ClassicAiDecisionQualitySnapshot {
+  legalActionCount: number;
+  viableActionCount: number;
+  clearlyDominantActionCount: number;
+  meaningfullyDifferentAlternatives: number;
+  actionTypeDiversity: number;
+  dominantActionGap: number;
+  fakeChoice: boolean;
+  bestActionType: string | null;
+}
+
+export function evaluateClassicAiDecisionQuality(
+  rankedIn: Array<AIAction & { score: number }>
+): ClassicAiDecisionQualitySnapshot {
+  const ranked = rankedIn.filter(c => Number.isFinite(Number(c.score)));
+  const sorted = [...ranked].sort((a, b) => (b.score || 0) - (a.score || 0));
+  const best = sorted[0]?.score ?? 0;
+  const second = sorted[1]?.score ?? 0;
+  const scale = Math.max(50, Math.abs(best));
+  const viable = sorted.filter(c => c.score > 0 && c.score >= best * 0.5);
+  const gap = best > 0 ? (best - Math.max(0, second)) / scale : 0;
+  const types = new Set(viable.map(c => String(c.type || 'unknown')));
+  const distinctTypes = viable.filter((c, k) => viable.findIndex(x => x.type === c.type) === k).length;
+  return {
+    legalActionCount: sorted.length,
+    viableActionCount: viable.length,
+    clearlyDominantActionCount: gap >= 0.6 && best > 100 ? 1 : 0,
+    meaningfullyDifferentAlternatives: Math.max(0, distinctTypes - 1),
+    actionTypeDiversity: types.size,
+    dominantActionGap: Math.round(gap * 100) / 100,
+    fakeChoice: sorted.length >= 6 && viable.length <= 1,
+    bestActionType: sorted[0]?.type ? String(sorted[0].type) : null
+  };
+}
+
 function pickClassicDecision(
   ranked: Array<AIAction & { score: number }>,
   rng: SeededRng,
   difficultyKey: string
 ): AIAction & { score: number } {
   const best = ranked[0];
-  const difficulty = String(difficultyKey || 'expert');
-  const randomPoolSize = difficulty === 'expert' ? 1 : difficulty === 'hard' ? 2 : difficulty === 'medium' ? 3 : 4;
-  const fallbackIndex = Math.floor(rng.next() * Math.min(randomPoolSize, ranked.length));
-  const alternateIndex = Math.min(ranked.length - 1, difficulty === 'easy' ? 2 : 1);
-  if (difficulty === 'expert') return rng.next() < 0.9 ? best : ranked[alternateIndex] || best;
-  if (difficulty === 'hard') return rng.next() < 0.74 ? best : ranked[alternateIndex] || best;
-  return ranked[fallbackIndex] || best;
+  if (!best || ranked.length <= 1) return best || ranked[0];
+  const profile = AI_DIFFICULTY_PROFILES[difficultyKey] || AI_DIFFICULTY_PROFILES.expert;
+  const quality = Math.max(0.05, Math.min(1, Number(profile.decisionQuality) || 0.95));
+  if (rng.next() < quality) return best;
+  const viableAlternates = ranked.filter((c, i) => i > 0 && c.score > 0 && c.score >= best.score * 0.45);
+  const pool = viableAlternates.length
+    ? viableAlternates
+    : ranked.slice(1, Math.min(ranked.length, 1 + Math.max(2, Math.ceil((1 - quality) * 4))));
+  if (!pool.length) return best;
+  return pool[Math.floor(rng.next() * pool.length)] || best;
 }
+
 
 export function chooseAction(
   state: CanonicalGameState,
@@ -133821,6 +133861,76 @@ export const GameFeelInspector: React.FC<{ theme: any; mode: UiMotionMode; focus
   );
 };
 
+// ---- O111 Agent 50: AI decision-quality self-tests ------------------------------------------------------
+
+function a50SimulateClassicPickBestRate(difficultyKey: string, seed: number, trials: number): number {
+  const ranked: Array<AIAction & { score: number }> = [
+    { type: 'challenge', description: 'best', data: null, score: 220, plan: AI_TUNING_LAB_DEFAULT_PLAN },
+    { type: 'travel', description: 'mid', data: { region: 'VIC' }, score: 160, plan: AI_TUNING_LAB_DEFAULT_PLAN },
+    { type: 'sell', description: 'ok', data: { resource: 'Iron' }, score: 110, plan: AI_TUNING_LAB_DEFAULT_PLAN },
+    { type: 'craft', description: 'weak', data: { recipeId: 'x' }, score: 70, plan: AI_TUNING_LAB_DEFAULT_PLAN }
+  ];
+  let best = 0;
+  for (let t = 0; t < trials; t++) {
+    const pick = pickClassicDecision(ranked, createSeededRng(seed + t * 17), difficultyKey);
+    if (pick?.type === ranked[0].type) best += 1;
+  }
+  return best / trials;
+}
+
+export function runO111Agent50AiDecisionQualitySelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  check('a50_evaluate_viable', 'Classic AI quality snapshot counts multiple viable, diverse action types', () => {
+    const snap = evaluateClassicAiDecisionQuality([
+      { type: 'challenge', description: 'a', data: null, score: 200, plan: AI_TUNING_LAB_DEFAULT_PLAN },
+      { type: 'travel', description: 'b', data: null, score: 140, plan: AI_TUNING_LAB_DEFAULT_PLAN },
+      { type: 'sell', description: 'c', data: null, score: 120, plan: AI_TUNING_LAB_DEFAULT_PLAN }
+    ]);
+    return (snap.viableActionCount >= 2 && snap.actionTypeDiversity >= 2 && !snap.fakeChoice) || JSON.stringify(snap);
+  });
+  check('a50_evaluate_fake', 'Classic AI quality snapshot flags crowded menus with one viable choice', () => {
+    const crowded = evaluateClassicAiDecisionQuality([
+      { type: 'challenge', description: 'only', data: null, score: 180, plan: AI_TUNING_LAB_DEFAULT_PLAN },
+      { type: 'travel', description: 'b', data: null, score: -5, plan: AI_TUNING_LAB_DEFAULT_PLAN },
+      { type: 'sell', description: 'c', data: null, score: -10, plan: AI_TUNING_LAB_DEFAULT_PLAN },
+      { type: 'craft', description: 'd', data: null, score: -12, plan: AI_TUNING_LAB_DEFAULT_PLAN },
+      { type: 'invest', description: 'e', data: null, score: -20, plan: AI_TUNING_LAB_DEFAULT_PLAN },
+      { type: 'buy_market', description: 'f', data: null, score: -25, plan: AI_TUNING_LAB_DEFAULT_PLAN }
+    ]);
+    return crowded.fakeChoice && crowded.viableActionCount === 1;
+  });
+  check('a50_quality_monotonic', 'Higher AI_DIFFICULTY decisionQuality picks the top action more often (calibrated selection)', () => {
+    const easy = a50SimulateClassicPickBestRate('easy', 50, 400);
+    const medium = a50SimulateClassicPickBestRate('medium', 50, 400);
+    const expert = a50SimulateClassicPickBestRate('expert', 50, 400);
+    return (easy < medium && medium < expert && expert >= 0.85) || JSON.stringify({ easy, medium, expert });
+  });
+  check('a50_profiles_track_quality', 'Every difficulty profile exposes decisionQuality in (0,1] for calibration', () => {
+    const keys = ['easy', 'medium', 'hard', 'expert'];
+    const ok = keys.every(k => {
+      const q = Number(AI_DIFFICULTY_PROFILES[k]?.decisionQuality);
+      return Number.isFinite(q) && q > 0 && q <= 1;
+    });
+    const ordered = keys.every((k, i) => i === 0 || AI_DIFFICULTY_PROFILES[keys[i - 1]].decisionQuality <= AI_DIFFICULTY_PROFILES[k].decisionQuality);
+    return (ok && ordered) || JSON.stringify(keys.map(k => AI_DIFFICULTY_PROFILES[k]?.decisionQuality));
+  });
+  check('a50_choose_action_live', 'chooseAction on a tuning fixture returns a scored legal action for expert AI', () => {
+    const state = createTuningMatchState(5050, false);
+    const weights = resolveLiveAiGenomeWeights(state.gameSettings || createDefaultGameSettings(), null, 'ai');
+    const pick = chooseAction(state, 'ai', weights, createSeededRng(5050), { difficultyKey: 'expert', settings: state.gameSettings as GameSettingsState });
+    return Boolean(pick && typeof pick.type === 'string' && Number.isFinite(pick.score)) || String(pick);
+  });
+  return results;
+}
+
 // ---- V9.4 self-tests -----------------------------------------------------------------------------------
 
 export function createFeelSnapshotFixture(o: Partial<FeelSnapshot> = {}): FeelSnapshot {
@@ -136512,6 +136622,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
+  { id: 'o111-a50', label: 'O111 Agent 50 AI Decision Quality', tier: 'quick', section: 'AI Turn Reliability', severity: 'MAJOR', run: () => runO111Agent50AiDecisionQualitySelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
@@ -231565,7 +231676,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
+            const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runO111Agent50AiDecisionQualitySelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
