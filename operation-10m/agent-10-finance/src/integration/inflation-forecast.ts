@@ -47,6 +47,14 @@ import {
   assessInsurancePremiumPassThrough,
   type InsurancePremiumPassThroughBand,
 } from '../inflation/insurance-premium-pass-through.js';
+import {
+  assessEducationTuitionInflation,
+  type EducationTuitionPressureBand,
+} from '../inflation/education-tuition-inflation.js';
+import {
+  assessCommunicationsServicesInflation,
+  type CommunicationsServicesPressureBand,
+} from '../inflation/communications-services-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -67,6 +75,8 @@ export interface InflationForecastPoint {
   transportLogisticsPressureBand: TransportLogisticsPressureBand;
   healthcareServicesPressureBand: HealthcareServicesPressureBand;
   insurancePremiumPassThroughBand: InsurancePremiumPassThroughBand;
+  educationTuitionPressureBand: EducationTuitionPressureBand;
+  communicationsServicesPressureBand: CommunicationsServicesPressureBand;
 }
 
 export interface InflationForecastPath {
@@ -180,6 +190,20 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const educationTuition = assessEducationTuitionInflation({
+      enrollmentPressureBand: inputs.highInflationScenario ? 'high' : 'moderate',
+      subsidyCutActive: inputs.fiscalPressure === 'critical' || inputs.fiscalPressure === 'strained',
+      wageIndexationBand: inputs.householdInflationScenarioActive ? 'strong' : 'normal',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const commsServices = assessCommunicationsServicesInflation({
+      bandwidthDemandBand: inputs.creditShockActive ? 'surge' : 'normal',
+      regulatedTariffShock: inputs.systemicLiquidityBand === 'critical',
+      platformFeePassThrough: inputs.highInflationScenario ? 'high' : 'medium',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -200,6 +224,8 @@ export function projectInflationForecastPath(
       transportLogisticsPressureBand: transportLog.pressureBand,
       healthcareServicesPressureBand: healthcare.pressureBand,
       insurancePremiumPassThroughBand: insurancePrem.passThroughBand,
+      educationTuitionPressureBand: educationTuition.pressureBand,
+      communicationsServicesPressureBand: commsServices.pressureBand,
     });
   }
 

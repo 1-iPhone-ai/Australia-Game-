@@ -308,6 +308,41 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'events', 'round10'],
   },
+  {
+    id: 'education_subsidy_cut_stack',
+    label: 'Education subsidy cut stack',
+    description: 'Fiscal strain with tuition indexation — education CPI pressure.',
+    patch: {
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.22,
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+    },
+    tags: ['inflation', 'education', 'round11'],
+  },
+  {
+    id: 'comms_tariff_platform_spike',
+    label: 'Comms tariff platform spike',
+    description: 'Regulated tariff shock with liquidity strain — digital services CPI.',
+    patch: {
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.2,
+      highInflationScenario: true,
+    },
+    tags: ['inflation', 'comms', 'round11'],
+  },
+  {
+    id: 'modes_extreme_inflation_sandbox',
+    label: 'Modes extreme inflation sandbox',
+    description: 'Scenario bias extreme with stability erosion — mode-driven inflation.',
+    patch: {
+      inflationSettingMultiplier: 1.32,
+      highInflationScenario: true,
+      publicStability: 38,
+      activeCrises: 1,
+    },
+    tags: ['inflation', 'modes', 'round11'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

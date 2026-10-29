@@ -47,6 +47,8 @@ const FILES = [
   'inflation/transport-logistics-inflation.ts',
   'inflation/healthcare-services-inflation.ts',
   'inflation/insurance-premium-pass-through.ts',
+  'inflation/education-tuition-inflation.ts',
+  'inflation/communications-services-inflation.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -67,6 +69,8 @@ const FILES = [
   'integration/agent12-transport-bridge.ts',
   'integration/agent03-research-bridge.ts',
   'integration/agent05-events-bridge.ts',
+  'integration/agent04-modes-bridge.ts',
+  'integration/agent16-guardian-bridge.ts',
   'integration/inflation-forecast.ts',
   'integration/inflation-regime-tracker.ts',
   'integration/agent21-forecast-bridge.ts',
@@ -81,6 +85,7 @@ const FILES = [
   'react/UrbanEnergyInflationPanel.tsx',
   'react/TransportFoodInflationPanel.tsx',
   'react/HealthcareInsuranceInflationPanel.tsx',
+  'react/EducationCommunicationsInflationPanel.tsx',
 ];
 
 function stripModulePreamble(source) {

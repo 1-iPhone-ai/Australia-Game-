@@ -133,6 +133,22 @@ import {
   mergeAgent05IntoMacroFinancialInputs,
   agent05EventsBridgeIntegrationNote,
 } from './integration/agent05-events-bridge.js';
+import {
+  assessEducationTuitionInflation,
+  educationTuitionInflationScoreAdjustment,
+} from './inflation/education-tuition-inflation.js';
+import {
+  assessCommunicationsServicesInflation,
+  communicationsServicesInflationScoreAdjustment,
+} from './inflation/communications-services-inflation.js';
+import {
+  mergeAgent04IntoMacroFinancialInputs,
+  agent04ModesBridgeIntegrationNote,
+} from './integration/agent04-modes-bridge.js';
+import {
+  mergeAgent16IntoMacroFinancialInputs,
+  agent16GuardianBridgeIntegrationNote,
+} from './integration/agent16-guardian-bridge.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -531,7 +547,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r10');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r11');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -678,7 +694,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r10' &&
+      bundle.schemaVersion === '10.14.agent10.r11' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -770,7 +786,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r10' &&
+      bundle.schemaVersion === '10.14.agent10.r11' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -869,7 +885,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r10' &&
+      bundle.schemaVersion === '10.14.agent10.r11' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -967,7 +983,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r10' &&
+      bundle.schemaVersion === '10.14.agent10.r11' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -994,6 +1010,104 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'research_offset_vs_event_shock');
       return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.25;
+    })(),
+  );
+
+  // --- Round 11 scale wave ---
+  {
+    const education = assessEducationTuitionInflation({
+      enrollmentPressureBand: 'high',
+      subsidyCutActive: true,
+      wageIndexationBand: 'strong',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r11_01',
+      'education sharp or crisis',
+      education.pressureBand === 'sharp' || education.pressureBand === 'crisis',
+    );
+    check('a10_r11_02', 'education score adj', educationTuitionInflationScoreAdjustment(education.pressureBand) >= 3);
+  }
+  {
+    const comms = assessCommunicationsServicesInflation({
+      bandwidthDemandBand: 'extreme',
+      regulatedTariffShock: true,
+      platformFeePassThrough: 'high',
+      inflationBand: 'elevated',
+      turn: 3,
+    });
+    check(
+      'a10_r11_03',
+      'comms elevated or spike',
+      comms.pressureBand === 'elevated' || comms.pressureBand === 'spike',
+    );
+    check('a10_r11_04', 'comms score adj', communicationsServicesInflationScoreAdjustment(comms.pressureBand) >= 3);
+  }
+  {
+    const merged04 = mergeAgent04IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      scenarioInflationBias: 'extreme',
+      sandboxStressModeActive: true,
+      difficultyCostMultiplier: 1.15,
+    });
+    check('a10_r11_05', 'agent04 modes merge', merged04.highInflationScenario === true);
+    check('a10_r11_06', 'agent04 bridge note', agent04ModesBridgeIntegrationNote().includes('Agent 04'));
+  }
+  {
+    const merged16 = mergeAgent16IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      inflationGuardrailTripped: true,
+      stabilityInterventionBand: 'urgent',
+      narrativeShockSeverity: 'high',
+    });
+    check('a10_r11_07', 'agent16 guardian merge', merged16.highInflationScenario === true);
+    check('a10_r11_08', 'agent16 bridge note', agent16GuardianBridgeIntegrationNote().includes('Agent 16'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r11_09',
+      'forecast education and comms fields',
+      path.points.every((p) => !!p.educationTuitionPressureBand && !!p.communicationsServicesPressureBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r11_10',
+      'agent21 r11 fields',
+      bundle.schemaVersion === '10.14.agent10.r11' &&
+        bundle.terminalEducationTuitionPressure !== undefined &&
+        bundle.terminalCommunicationsServicesPressure !== undefined,
+    );
+  }
+  check(
+    'a10_r11_11',
+    'round11 preset education subsidy',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'education_subsidy_cut_stack');
+      return inp?.fiscalPressure === 'critical' && inp.householdInflationScenarioActive === true;
+    })(),
+  );
+  check(
+    'a10_r11_12',
+    'round11 preset comms tariff',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'comms_tariff_platform_spike');
+      return inp?.systemicLiquidityBand === 'critical' && inp.highInflationScenario === true;
+    })(),
+  );
+  check(
+    'a10_r11_13',
+    'round11 preset modes extreme',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'modes_extreme_inflation_sandbox');
+      return (inp?.inflationSettingMultiplier ?? 1) > 1.3 && inp.publicStability === 38;
     })(),
   );
 

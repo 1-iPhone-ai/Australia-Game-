@@ -2222,6 +2222,138 @@ export function insurancePremiumPassThroughInflationScoreAdjustment(
 }
 
 
+// --- source: inflation/education-tuition-inflation.ts ---
+
+export type EducationTuitionPressureBand = 'stable' | 'rising' | 'sharp' | 'crisis';
+
+export interface EducationTuitionInflationAssessment {
+  pressureBand: EducationTuitionPressureBand;
+  tuitionIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Education and training fees in macro CPI metadata (not student loan ledger). */
+export function assessEducationTuitionInflation(input: {
+  enrollmentPressureBand: 'low' | 'moderate' | 'high';
+  subsidyCutActive: boolean;
+  wageIndexationBand: 'muted' | 'normal' | 'strong';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): EducationTuitionInflationAssessment {
+  let pressure = 0;
+  if (input.enrollmentPressureBand === 'high') pressure += 0.28;
+  else if (input.enrollmentPressureBand === 'moderate') pressure += 0.14;
+
+  if (input.subsidyCutActive) pressure += 0.24;
+  if (input.wageIndexationBand === 'strong') pressure += 0.22;
+  else if (input.wageIndexationBand === 'normal') pressure += 0.1;
+
+  if (input.inflationBand === 'elevated' || input.inflationBand === 'high') {
+    pressure += 0.07;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.004, 0, 1.05);
+  const tuitionIndex = finRound(100 + pressure * 15, 1);
+
+  let pressureBand: EducationTuitionPressureBand = 'stable';
+  if (pressure >= 0.62) pressureBand = 'crisis';
+  else if (pressure >= 0.4) pressureBand = 'sharp';
+  else if (pressure >= 0.2) pressureBand = 'rising';
+
+  const inflationScoreNudge =
+    pressureBand === 'crisis'
+      ? 0.08
+      : pressureBand === 'sharp'
+        ? 0.05
+        : pressureBand === 'rising'
+          ? 0.03
+          : 0;
+
+  const narrative =
+    pressureBand === 'crisis' || pressureBand === 'sharp'
+      ? 'Education fees are contributing to services CPI through indexation and subsidy pressure.'
+      : pressureBand === 'rising'
+        ? 'Tuition inflation rising — enrollment and wage indexation in play.'
+        : 'Education tuition inflation stable relative to headline basket.';
+
+  return { pressureBand, tuitionIndex, inflationScoreNudge, narrative };
+}
+
+export function educationTuitionInflationScoreAdjustment(band: EducationTuitionPressureBand): number {
+  if (band === 'crisis') return 4;
+  if (band === 'sharp') return 3;
+  if (band === 'rising') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/communications-services-inflation.ts ---
+
+export type CommunicationsServicesPressureBand = 'soft' | 'firming' | 'elevated' | 'spike';
+
+export interface CommunicationsServicesInflationAssessment {
+  pressureBand: CommunicationsServicesPressureBand;
+  commsIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Telecom and digital subscription services in macro CPI metadata. */
+export function assessCommunicationsServicesInflation(input: {
+  bandwidthDemandBand: 'normal' | 'surge' | 'extreme';
+  regulatedTariffShock: boolean;
+  platformFeePassThrough: 'low' | 'medium' | 'high';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): CommunicationsServicesInflationAssessment {
+  let pressure = 0;
+  if (input.bandwidthDemandBand === 'extreme') pressure += 0.36;
+  else if (input.bandwidthDemandBand === 'surge') pressure += 0.22;
+
+  if (input.regulatedTariffShock) pressure += 0.2;
+  if (input.platformFeePassThrough === 'high') pressure += 0.18;
+  else if (input.platformFeePassThrough === 'medium') pressure += 0.1;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.06;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.005, 0, 1.05);
+  const commsIndex = finRound(100 + pressure * 16, 1);
+
+  let pressureBand: CommunicationsServicesPressureBand = 'soft';
+  if (pressure >= 0.6) pressureBand = 'spike';
+  else if (pressure >= 0.38) pressureBand = 'elevated';
+  else if (pressure >= 0.18) pressureBand = 'firming';
+
+  const inflationScoreNudge =
+    pressureBand === 'spike'
+      ? 0.07
+      : pressureBand === 'elevated'
+        ? 0.05
+        : pressureBand === 'firming'
+          ? 0.03
+          : 0;
+
+  const narrative =
+    pressureBand === 'spike' || pressureBand === 'elevated'
+      ? 'Communications and digital services are lifting core services CPI.'
+      : pressureBand === 'firming'
+        ? 'Comms inflation firming — tariff and platform pass-through building.'
+        : 'Communications services inflation soft versus goods channels.';
+
+  return { pressureBand, commsIndex, inflationScoreNudge, narrative };
+}
+
+export function communicationsServicesInflationScoreAdjustment(band: CommunicationsServicesPressureBand): number {
+  if (band === 'spike') return 4;
+  if (band === 'elevated') return 3;
+  if (band === 'firming') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -2767,6 +2899,41 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       activeCrises: 1,
     },
     tags: ['inflation', 'events', 'round10'],
+  },
+  {
+    id: 'education_subsidy_cut_stack',
+    label: 'Education subsidy cut stack',
+    description: 'Fiscal strain with tuition indexation — education CPI pressure.',
+    patch: {
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.22,
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+    },
+    tags: ['inflation', 'education', 'round11'],
+  },
+  {
+    id: 'comms_tariff_platform_spike',
+    label: 'Comms tariff platform spike',
+    description: 'Regulated tariff shock with liquidity strain — digital services CPI.',
+    patch: {
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.2,
+      highInflationScenario: true,
+    },
+    tags: ['inflation', 'comms', 'round11'],
+  },
+  {
+    id: 'modes_extreme_inflation_sandbox',
+    label: 'Modes extreme inflation sandbox',
+    description: 'Scenario bias extreme with stability erosion — mode-driven inflation.',
+    patch: {
+      inflationSettingMultiplier: 1.32,
+      highInflationScenario: true,
+      publicStability: 38,
+      activeCrises: 1,
+    },
+    tags: ['inflation', 'modes', 'round11'],
   },
 ] as const;
 
@@ -4079,6 +4246,105 @@ export function agent05EventsBridgeIntegrationNote(): string {
 }
 
 
+// --- source: integration/agent04-modes-bridge.ts ---
+
+/** Read-only modes / scenarios snapshot from Agent 04 (contract only). */
+export interface Agent04ModesSnapshot {
+  turn: number;
+  scenarioInflationBias: 'disinflationary' | 'neutral' | 'inflationary' | 'extreme';
+  sandboxStressModeActive: boolean;
+  difficultyCostMultiplier: number;
+}
+
+export function mergeAgent04IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent04ModesSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.scenarioInflationBias === 'extreme' || snapshot.scenarioInflationBias === 'inflationary') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.1, 0.85, 1.45);
+  } else if (snapshot.scenarioInflationBias === 'disinflationary') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier - 0.05, 0.85, 1.45);
+  }
+
+  if (snapshot.sandboxStressModeActive) {
+    inflationSettingMultiplier = finClamp(
+      inflationSettingMultiplier * finClamp(snapshot.difficultyCostMultiplier, 1, 1.25),
+      0.85,
+      1.45,
+    );
+  }
+
+  let highInflationScenario = base.highInflationScenario;
+  if (snapshot.scenarioInflationBias === 'extreme') {
+    highInflationScenario = true;
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    highInflationScenario,
+  };
+}
+
+export function agent04ModesBridgeIntegrationNote(): string {
+  return 'Agent 04 modes snapshot adjusts scenario inflation bias; no mode save writes.';
+}
+
+
+// --- source: integration/agent16-guardian-bridge.ts ---
+
+/** Read-only guardian co-pilot snapshot from Agent 16 (contract only). */
+export interface Agent16GuardianSnapshot {
+  turn: number;
+  inflationGuardrailTripped: boolean;
+  stabilityInterventionBand: 'none' | 'advisory' | 'urgent';
+  narrativeShockSeverity: 'low' | 'medium' | 'high';
+}
+
+export function mergeAgent16IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent16GuardianSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.inflationGuardrailTripped) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.07, 0.85, 1.45);
+  }
+  if (snapshot.narrativeShockSeverity === 'high') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  }
+
+  let publicStability = base.publicStability;
+  if (snapshot.stabilityInterventionBand === 'urgent') {
+    publicStability = Math.max(0, publicStability - 8);
+  } else if (snapshot.stabilityInterventionBand === 'advisory') {
+    publicStability = Math.max(0, publicStability - 4);
+  }
+
+  let highInflationScenario = base.highInflationScenario;
+  if (snapshot.inflationGuardrailTripped && snapshot.stabilityInterventionBand === 'urgent') {
+    highInflationScenario = true;
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    publicStability,
+    highInflationScenario,
+  };
+}
+
+export function agent16GuardianBridgeIntegrationNote(): string {
+  return 'Agent 16 guardian snapshot reflects inflation guardrail state; no co-pilot action writes.';
+}
+
+
 // --- source: integration/inflation-forecast.ts ---
   stepInflationRegimeTracker,
   createInitialInflationRegimeTracker,
@@ -4112,6 +4378,12 @@ export function agent05EventsBridgeIntegrationNote(): string {
   assessInsurancePremiumPassThrough,
   type InsurancePremiumPassThroughBand,
 } from '../inflation/insurance-premium-pass-through.js';
+  assessEducationTuitionInflation,
+  type EducationTuitionPressureBand,
+} from '../inflation/education-tuition-inflation.js';
+  assessCommunicationsServicesInflation,
+  type CommunicationsServicesPressureBand,
+} from '../inflation/communications-services-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -4132,6 +4404,8 @@ export interface InflationForecastPoint {
   transportLogisticsPressureBand: TransportLogisticsPressureBand;
   healthcareServicesPressureBand: HealthcareServicesPressureBand;
   insurancePremiumPassThroughBand: InsurancePremiumPassThroughBand;
+  educationTuitionPressureBand: EducationTuitionPressureBand;
+  communicationsServicesPressureBand: CommunicationsServicesPressureBand;
 }
 
 export interface InflationForecastPath {
@@ -4245,6 +4519,20 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const educationTuition = assessEducationTuitionInflation({
+      enrollmentPressureBand: inputs.highInflationScenario ? 'high' : 'moderate',
+      subsidyCutActive: inputs.fiscalPressure === 'critical' || inputs.fiscalPressure === 'strained',
+      wageIndexationBand: inputs.householdInflationScenarioActive ? 'strong' : 'normal',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const commsServices = assessCommunicationsServicesInflation({
+      bandwidthDemandBand: inputs.creditShockActive ? 'surge' : 'normal',
+      regulatedTariffShock: inputs.systemicLiquidityBand === 'critical',
+      platformFeePassThrough: inputs.highInflationScenario ? 'high' : 'medium',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -4265,6 +4553,8 @@ export function projectInflationForecastPath(
       transportLogisticsPressureBand: transportLog.pressureBand,
       healthcareServicesPressureBand: healthcare.pressureBand,
       insurancePremiumPassThroughBand: insurancePrem.passThroughBand,
+      educationTuitionPressureBand: educationTuition.pressureBand,
+      communicationsServicesPressureBand: commsServices.pressureBand,
     });
   }
 
@@ -4370,7 +4660,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r10';
+  schemaVersion: '10.14.agent10.r11';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -4386,6 +4676,8 @@ export interface Agent21InflationForecastBundle {
   terminalTransportLogisticsPressure: TransportLogisticsPressureBand;
   terminalHealthcareServicesPressure: HealthcareServicesPressureBand;
   terminalInsurancePremiumPassThrough: InsurancePremiumPassThroughBand;
+  terminalEducationTuitionPressure: EducationTuitionPressureBand;
+  terminalCommunicationsServicesPressure: CommunicationsServicesPressureBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -4414,7 +4706,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r10',
+    schemaVersion: '10.14.agent10.r11',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -4430,6 +4722,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalTransportLogisticsPressure: lastPoint?.transportLogisticsPressureBand ?? 'smooth',
     terminalHealthcareServicesPressure: lastPoint?.healthcareServicesPressureBand ?? 'contained',
     terminalInsurancePremiumPassThrough: lastPoint?.insurancePremiumPassThroughBand ?? 'stable',
+    terminalEducationTuitionPressure: lastPoint?.educationTuitionPressureBand ?? 'stable',
+    terminalCommunicationsServicesPressure: lastPoint?.communicationsServicesPressureBand ?? 'soft',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -4563,6 +4857,18 @@ export function effectiveTierLoanRate(
   mergeAgent05IntoMacroFinancialInputs,
   agent05EventsBridgeIntegrationNote,
 } from './integration/agent05-events-bridge.js';
+  assessEducationTuitionInflation,
+  educationTuitionInflationScoreAdjustment,
+} from './inflation/education-tuition-inflation.js';
+  assessCommunicationsServicesInflation,
+  communicationsServicesInflationScoreAdjustment,
+} from './inflation/communications-services-inflation.js';
+  mergeAgent04IntoMacroFinancialInputs,
+  agent04ModesBridgeIntegrationNote,
+} from './integration/agent04-modes-bridge.js';
+  mergeAgent16IntoMacroFinancialInputs,
+  agent16GuardianBridgeIntegrationNote,
+} from './integration/agent16-guardian-bridge.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -4961,7 +5267,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r10');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r11');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -5108,7 +5414,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r10' &&
+      bundle.schemaVersion === '10.14.agent10.r11' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -5200,7 +5506,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r10' &&
+      bundle.schemaVersion === '10.14.agent10.r11' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -5299,7 +5605,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r10' &&
+      bundle.schemaVersion === '10.14.agent10.r11' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -5397,7 +5703,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r10' &&
+      bundle.schemaVersion === '10.14.agent10.r11' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -5424,6 +5730,104 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'research_offset_vs_event_shock');
       return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.25;
+    })(),
+  );
+
+  // --- Round 11 scale wave ---
+  {
+    const education = assessEducationTuitionInflation({
+      enrollmentPressureBand: 'high',
+      subsidyCutActive: true,
+      wageIndexationBand: 'strong',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r11_01',
+      'education sharp or crisis',
+      education.pressureBand === 'sharp' || education.pressureBand === 'crisis',
+    );
+    check('a10_r11_02', 'education score adj', educationTuitionInflationScoreAdjustment(education.pressureBand) >= 3);
+  }
+  {
+    const comms = assessCommunicationsServicesInflation({
+      bandwidthDemandBand: 'extreme',
+      regulatedTariffShock: true,
+      platformFeePassThrough: 'high',
+      inflationBand: 'elevated',
+      turn: 3,
+    });
+    check(
+      'a10_r11_03',
+      'comms elevated or spike',
+      comms.pressureBand === 'elevated' || comms.pressureBand === 'spike',
+    );
+    check('a10_r11_04', 'comms score adj', communicationsServicesInflationScoreAdjustment(comms.pressureBand) >= 3);
+  }
+  {
+    const merged04 = mergeAgent04IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      scenarioInflationBias: 'extreme',
+      sandboxStressModeActive: true,
+      difficultyCostMultiplier: 1.15,
+    });
+    check('a10_r11_05', 'agent04 modes merge', merged04.highInflationScenario === true);
+    check('a10_r11_06', 'agent04 bridge note', agent04ModesBridgeIntegrationNote().includes('Agent 04'));
+  }
+  {
+    const merged16 = mergeAgent16IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      inflationGuardrailTripped: true,
+      stabilityInterventionBand: 'urgent',
+      narrativeShockSeverity: 'high',
+    });
+    check('a10_r11_07', 'agent16 guardian merge', merged16.highInflationScenario === true);
+    check('a10_r11_08', 'agent16 bridge note', agent16GuardianBridgeIntegrationNote().includes('Agent 16'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r11_09',
+      'forecast education and comms fields',
+      path.points.every((p) => !!p.educationTuitionPressureBand && !!p.communicationsServicesPressureBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r11_10',
+      'agent21 r11 fields',
+      bundle.schemaVersion === '10.14.agent10.r11' &&
+        bundle.terminalEducationTuitionPressure !== undefined &&
+        bundle.terminalCommunicationsServicesPressure !== undefined,
+    );
+  }
+  check(
+    'a10_r11_11',
+    'round11 preset education subsidy',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'education_subsidy_cut_stack');
+      return inp?.fiscalPressure === 'critical' && inp.householdInflationScenarioActive === true;
+    })(),
+  );
+  check(
+    'a10_r11_12',
+    'round11 preset comms tariff',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'comms_tariff_platform_spike');
+      return inp?.systemicLiquidityBand === 'critical' && inp.highInflationScenario === true;
+    })(),
+  );
+  check(
+    'a10_r11_13',
+    'round11 preset modes extreme',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'modes_extreme_inflation_sandbox');
+      return (inp?.inflationSettingMultiplier ?? 1) > 1.3 && inp.publicStability === 38;
     })(),
   );
 
@@ -5910,6 +6314,70 @@ export function HealthcareInsuranceInflationPanel(props: HealthcareInsuranceInfl
       </p>
       <p data-testid="healthcare-insurance-care-note">{healthcare.narrative}</p>
       <p>{insurance.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/EducationCommunicationsInflationPanel.tsx ---
+  assessEducationTuitionInflation,
+  educationTuitionInflationScoreAdjustment,
+} from '../inflation/education-tuition-inflation.js';
+  assessCommunicationsServicesInflation,
+  communicationsServicesInflationScoreAdjustment,
+} from '../inflation/communications-services-inflation.js';
+
+export interface EducationCommunicationsInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent04?: Agent04ModesSnapshot | null;
+  agent16?: Agent16GuardianSnapshot | null;
+}
+
+export function EducationCommunicationsInflationPanel(props: EducationCommunicationsInflationPanelProps) {
+  const modes = props.agent04 ?? {
+    turn: props.inputs.turn,
+    scenarioInflationBias: props.inputs.highInflationScenario ? ('inflationary' as const) : ('neutral' as const),
+    sandboxStressModeActive: false,
+    difficultyCostMultiplier: 1.05,
+  };
+
+  const guardian = props.agent16 ?? {
+    turn: props.inputs.turn,
+    inflationGuardrailTripped: props.inputs.highInflationScenario,
+    stabilityInterventionBand: props.inputs.publicStability < 42 ? ('urgent' as const) : ('advisory' as const),
+    narrativeShockSeverity: props.inputs.fiscalPressure === 'critical' ? ('high' as const) : ('medium' as const),
+  };
+
+  const education = assessEducationTuitionInflation({
+    enrollmentPressureBand: modes.scenarioInflationBias === 'extreme' ? 'high' : 'moderate',
+    subsidyCutActive: props.inputs.fiscalPressure === 'critical',
+    wageIndexationBand: guardian.inflationGuardrailTripped ? 'strong' : 'normal',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const comms = assessCommunicationsServicesInflation({
+    bandwidthDemandBand: modes.sandboxStressModeActive ? 'surge' : 'normal',
+    regulatedTariffShock: guardian.stabilityInterventionBand === 'urgent',
+    platformFeePassThrough: modes.scenarioInflationBias === 'inflationary' ? 'high' : 'medium',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-education-comms-inflation" data-testid="education-comms-inflation-panel">
+      <h4>Education, comms & modes (round 11)</h4>
+      <p>
+        Education {education.pressureBand} · index {education.tuitionIndex.toFixed(0)} · score adj{' '}
+        {educationTuitionInflationScoreAdjustment(education.pressureBand)}
+      </p>
+      <p>
+        Comms {comms.pressureBand} · index {comms.commsIndex.toFixed(0)} · score adj{' '}
+        {communicationsServicesInflationScoreAdjustment(comms.pressureBand)}
+      </p>
+      <p data-testid="education-comms-edu-note">{education.narrative}</p>
+      <p>{comms.narrative}</p>
     </div>
   );
 }

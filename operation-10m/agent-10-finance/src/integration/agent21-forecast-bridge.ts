@@ -14,11 +14,13 @@ import type { FoodGroceryPassThroughBand } from '../inflation/food-grocery-pass-
 import type { TransportLogisticsPressureBand } from '../inflation/transport-logistics-inflation.js';
 import type { HealthcareServicesPressureBand } from '../inflation/healthcare-services-inflation.js';
 import type { InsurancePremiumPassThroughBand } from '../inflation/insurance-premium-pass-through.js';
+import type { EducationTuitionPressureBand } from '../inflation/education-tuition-inflation.js';
+import type { CommunicationsServicesPressureBand } from '../inflation/communications-services-inflation.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r10';
+  schemaVersion: '10.14.agent10.r11';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -34,6 +36,8 @@ export interface Agent21InflationForecastBundle {
   terminalTransportLogisticsPressure: TransportLogisticsPressureBand;
   terminalHealthcareServicesPressure: HealthcareServicesPressureBand;
   terminalInsurancePremiumPassThrough: InsurancePremiumPassThroughBand;
+  terminalEducationTuitionPressure: EducationTuitionPressureBand;
+  terminalCommunicationsServicesPressure: CommunicationsServicesPressureBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -62,7 +66,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r10',
+    schemaVersion: '10.14.agent10.r11',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -78,6 +82,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalTransportLogisticsPressure: lastPoint?.transportLogisticsPressureBand ?? 'smooth',
     terminalHealthcareServicesPressure: lastPoint?.healthcareServicesPressureBand ?? 'contained',
     terminalInsurancePremiumPassThrough: lastPoint?.insurancePremiumPassThroughBand ?? 'stable',
+    terminalEducationTuitionPressure: lastPoint?.educationTuitionPressureBand ?? 'stable',
+    terminalCommunicationsServicesPressure: lastPoint?.communicationsServicesPressureBand ?? 'soft',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
