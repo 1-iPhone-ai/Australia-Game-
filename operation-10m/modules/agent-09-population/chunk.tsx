@@ -357,6 +357,10 @@ export interface NationalLaborDemographicsState {
   careBalanceOutlook?: NationalCareBalanceOutlook;
   subjectCareReadinessBrief?: NationalSubjectCareReadinessBrief;
   nationalWorkforceCareIndex?: NationalWorkforceCareIndex;
+  careTenacityCouplingBrief?: NationalCareTenacityCouplingBrief;
+  tenacityResilienceOutlook?: NationalTenacityResilienceOutlook;
+  subjectTenacityReadinessBrief?: NationalSubjectTenacityReadinessBrief;
+  nationalWorkforceTenacityDepthIndex?: NationalWorkforceTenacityDepthIndex;
 }
 
 export type MigrationShockKind =
@@ -2277,6 +2281,54 @@ export interface NationalWorkforceCareIndex {
   stewardNote: string;
 }
 
+export type CareTenacityCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalCareTenacityCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: CareTenacityCouplingBand;
+  careDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type TenacityResilienceBand = 'ebbing' | 'patchy' | 'rising' | 'fortified';
+
+export interface NationalTenacityResilienceOutlook {
+  turn: number;
+  resilienceIndex: number;
+  band: TenacityResilienceBand;
+  careDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectTenacityReadinessBand =
+  | 'below_tenacity'
+  | 'approaching'
+  | 'tenacity_ready'
+  | 'care_locked';
+
+export interface NationalSubjectTenacityReadinessBrief {
+  turn: number;
+  tenacityIndex: number;
+  band: SubjectTenacityReadinessBand;
+  tenacityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceTenacityDepthBand = 'fragile' | 'thin' | 'elevated' | 'tenacity';
+
+export interface NationalWorkforceTenacityDepthIndex {
+  turn: number;
+  tenacityIndex: number;
+  band: WorkforceTenacityDepthBand;
+  tenacityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -3511,7 +3563,11 @@ export type LaborGiQueryTopic =
   | 'safety_care_coupling'
   | 'care_balance'
   | 'subject_care_readiness'
-  | 'workforce_care';
+  | 'workforce_care'
+  | 'care_tenacity_coupling'
+  | 'tenacity_resilience'
+  | 'subject_tenacity_readiness'
+  | 'workforce_tenacity_depth';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -3579,6 +3635,7 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(endurance flexibility|endurance-flexibility coupling)/.test(q)) return 'endurance_flexibility_coupling';
   if (/\b(inclusion resilience|inclusion labor resilience)/.test(q)) return 'inclusion_resilience';
   if (/\b(subject commit readiness|commit readiness subject)/.test(q)) return 'subject_commit_readiness';
+  if (/\b(workforce tenacity depth|tenacity depth index labor)/.test(q)) return 'workforce_tenacity_depth';
   if (/\b(workforce tenacity|tenacity index labor)/.test(q)) return 'workforce_tenacity';
   if (/\b(tenacity care|tenacity-care coupling)/.test(q)) return 'tenacity_care_coupling';
   if (/\b(safety cohesion|labor safety cohesion)/.test(q)) return 'safety_cohesion';
@@ -3708,6 +3765,9 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(care balance|care pipeline balance)/.test(q)) return 'care_balance';
   if (/\b(subject care readiness|care readiness subject)/.test(q)) return 'subject_care_readiness';
   if (/\b(workforce care|care index labor workforce)/.test(q)) return 'workforce_care';
+  if (/\b(care tenacity|care-tenacity coupling)/.test(q)) return 'care_tenacity_coupling';
+  if (/\b(tenacity resilience)/.test(q)) return 'tenacity_resilience';
+  if (/\b(subject tenacity readiness)/.test(q)) return 'subject_tenacity_readiness';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -5071,6 +5131,38 @@ export function answerLaborDemographicsQuestion(
         inference: state.nationalWorkforceCareIndex?.stewardNote || state.summary,
         projection: 'Workforce care synthesizes safety-care coupling, care balance, and subject care.'
       };
+    case 'care_tenacity_coupling':
+      return {
+        topic,
+        headline: state.careTenacityCouplingBrief?.summary || 'Care-tenacity coupling unavailable.',
+        fact: `Coupling band ${state.careTenacityCouplingBrief?.band ?? 'unknown'}; care drag ${Math.round(state.careTenacityCouplingBrief?.careDrag ?? 0)}.`,
+        inference: state.careTenacityCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce care with tenacity levers — bounded indices only.'
+      };
+    case 'tenacity_resilience':
+      return {
+        topic,
+        headline: state.tenacityResilienceOutlook?.summary || 'Tenacity resilience unavailable.',
+        fact: `Resilience band ${state.tenacityResilienceOutlook?.band ?? 'unknown'}; care drag ${Math.round(state.tenacityResilienceOutlook?.careDrag ?? 0)}.`,
+        inference: state.tenacityResilienceOutlook?.stewardNote || state.outlook,
+        projection: 'Resilience outlook tracks care balance against tenacity levers for wave 47 depth.'
+      };
+    case 'subject_tenacity_readiness':
+      return {
+        topic,
+        headline: state.subjectTenacityReadinessBrief?.summary || 'Subject tenacity readiness unavailable.',
+        fact: `Tenacity band ${state.subjectTenacityReadinessBrief?.band ?? 'unknown'}; tenacity drag ${Math.round(state.subjectTenacityReadinessBrief?.tenacityDrag ?? 0)}.`,
+        inference: state.subjectTenacityReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject tenacity readiness gates subject care against workforce care for O10-225 wave 47.'
+      };
+    case 'workforce_tenacity_depth':
+      return {
+        topic,
+        headline: state.nationalWorkforceTenacityDepthIndex?.summary || 'Workforce tenacity depth unavailable.',
+        fact: `Tenacity band ${state.nationalWorkforceTenacityDepthIndex?.band ?? 'unknown'}; tenacity drag ${Math.round(state.nationalWorkforceTenacityDepthIndex?.tenacityDrag ?? 0)}.`,
+        inference: state.nationalWorkforceTenacityDepthIndex?.stewardNote || state.summary,
+        projection: 'Tenacity depth synthesizes care-tenacity coupling, resilience, and subject tenacity.'
+      };
     default:
       return {
         topic: 'national_summary',
@@ -6323,6 +6415,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceCareIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceCareIndex.stewardNote);
+  }
+  if (
+    state.careTenacityCouplingBrief?.band === 'decoupled' ||
+    state.careTenacityCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.careTenacityCouplingBrief.stewardNote);
+  }
+  if (
+    state.tenacityResilienceOutlook?.band === 'ebbing' ||
+    state.tenacityResilienceOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.tenacityResilienceOutlook.stewardNote);
+  }
+  if (
+    state.subjectTenacityReadinessBrief?.band === 'below_tenacity' ||
+    state.subjectTenacityReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectTenacityReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceTenacityDepthIndex?.band === 'fragile' ||
+    state.nationalWorkforceTenacityDepthIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceTenacityDepthIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -18824,6 +18940,364 @@ export function computeNationalWorkforceCareIndex(
 }
 
 
+// --- source: care-tenacity-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type CareTenacityCouplingBand,
+  type NationalCareTenacityCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalWorkforceCareIndex
+} from './types';
+
+function couplingBand(index: number): CareTenacityCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-47 / wave-47 care-tenacity coupling — care × tenacity (O10-225). */
+export function computeNationalCareTenacityCouplingBrief(
+  state: NationalLaborDemographicsState,
+  care: NationalWorkforceCareIndex | null | undefined
+): NationalCareTenacityCouplingBrief {
+  if (!state.enabled || !care) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      careDrag: 0,
+      summary: 'Care-tenacity coupling idle — workforce care unavailable.',
+      stewardNote: 'Compute workforce care before tenacity coupling guidance.'
+    };
+  }
+
+  let tenacityLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    tenacityLift += tenacityEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  tenacityLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const careDrag = v1014laborClamp(
+    care.careDrag * 0.48 + (care.band === 'fragile' || care.band === 'thin' ? 11 : 3)
+  );
+  const careLift =
+    care.band === 'elevated' || care.band === 'care'
+      ? care.careIndex * 0.24
+      : care.careIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + tenacityLift * 21 + careLift - careDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained care-tenacity link — deploy tenacity levers before wave-47 tenacity commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard tenacity resilience spikes that drain care buffers.'
+        : 'Amplified coupling — pair tenacity packs with subject tenacity readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    careDrag,
+    summary: `Care-tenacity coupling ${band} (index ${Math.round(couplingIndex)}); care drag ${Math.round(careDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: tenacity-resilience-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalCareBalanceOutlook,
+  type NationalLaborDemographicsState,
+  type NationalTenacityResilienceOutlook,
+  type TenacityResilienceBand
+} from './types';
+
+function resilienceBand(index: number): TenacityResilienceBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'fortified';
+}
+
+export function computeNationalTenacityResilienceOutlook(
+  state: NationalLaborDemographicsState,
+  careBalance: NationalCareBalanceOutlook | null | undefined
+): NationalTenacityResilienceOutlook {
+  if (!state.enabled || !careBalance) {
+    return {
+      turn: state.turn,
+      resilienceIndex: 50,
+      band: 'patchy',
+      careDrag: 0,
+      summary: 'Tenacity resilience idle — care balance unavailable.',
+      stewardNote: 'Compute care balance before tenacity resilience guidance.'
+    };
+  }
+
+  let tenacityLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    tenacityLift += tenacityEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  tenacityLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const careDrag = v1014laborClamp(
+    careBalance.safetyDrag * 0.46 +
+      (careBalance.band === 'ebbing' || careBalance.band === 'patchy' ? 10 : 3)
+  );
+  const balanceLift =
+    careBalance.band === 'rising' || careBalance.band === 'balanced'
+      ? careBalance.balanceIndex * 0.2
+      : careBalance.balanceIndex * 0.1;
+
+  const resilienceIndex = v1014laborClamp(24 + tenacityLift * 22 + balanceLift - careDrag);
+  const band = resilienceBand(resilienceIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy tenacity resilience — deploy tenacity levers before subject tenacity assembly.'
+      : band === 'fortified'
+        ? 'Fortified band — verify care-tenacity coupling before auto workforce pushes.'
+        : 'Rising resilience — align with care balance outlook checks.';
+
+  return {
+    turn: state.turn,
+    resilienceIndex,
+    band,
+    careDrag,
+    summary: `National tenacity resilience ${band} (index ${Math.round(resilienceIndex)}); care drag ${Math.round(careDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-tenacity-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectCareReadinessBrief,
+  type NationalSubjectTenacityReadinessBrief,
+  type NationalWorkforceCareIndex,
+  type SubjectTenacityReadinessBand
+} from './types';
+
+function tenacityBand(index: number): SubjectTenacityReadinessBand {
+  if (index <= 34) return 'below_tenacity';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'tenacity_ready';
+  return 'care_locked';
+}
+
+/** Round-47 / wave-47 subject tenacity readiness — care × workforce care (O10-225). */
+export function computeNationalSubjectTenacityReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectCare: NationalSubjectCareReadinessBrief | null | undefined,
+  workforceCare: NationalWorkforceCareIndex | null | undefined
+): NationalSubjectTenacityReadinessBrief {
+  if (!state.enabled || !subjectCare || !workforceCare) {
+    return {
+      turn: state.turn,
+      tenacityIndex: 50,
+      band: 'approaching',
+      tenacityDrag: 0,
+      summary: 'Subject tenacity readiness idle — subject care or workforce care unavailable.',
+      stewardNote: 'Compute subject care and workforce care before tenacity guidance.'
+    };
+  }
+
+  const tenacityDrag = v1014laborClamp(
+    subjectCare.careDrag * 0.38 +
+      workforceCare.careDrag * 0.38 +
+      (subjectCare.band === 'below_care' || workforceCare.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectCare.band === 'care_ready' || subjectCare.band === 'safety_locked'
+      ? subjectCare.careIndex * 0.27
+      : subjectCare.careIndex * 0.14;
+  const workforceLift =
+    workforceCare.band === 'elevated' || workforceCare.band === 'care'
+      ? workforceCare.careIndex * 0.25
+      : workforceCare.careIndex * 0.12;
+
+  const tenacityIndex = v1014laborClamp(20 + subjectLift + workforceLift - tenacityDrag);
+  const band = tenacityBand(tenacityIndex);
+
+  const stewardNote =
+    band === 'below_tenacity' || band === 'approaching'
+      ? 'Approaching tenacity — hold O10-225 wave-47 scale until care-tenacity syncs.'
+      : band === 'care_locked'
+        ? 'Care-locked tenacity — still monitor tenacity resilience during corridor peaks.'
+        : 'Tenacity-ready — pair with workforce tenacity depth index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    tenacityIndex,
+    band,
+    tenacityDrag,
+    summary: `Subject tenacity readiness ${band} (index ${Math.round(tenacityIndex)}); tenacity drag ${Math.round(tenacityDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-tenacity-depth-index.ts ---
+  type NationalCareTenacityCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalSubjectTenacityReadinessBrief,
+  type NationalTenacityResilienceOutlook,
+  type NationalWorkforceTenacityDepthIndex,
+  type WorkforceTenacityDepthBand
+} from './types';
+
+function depthBand(index: number): WorkforceTenacityDepthBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'tenacity';
+}
+
+export function computeNationalWorkforceTenacityDepthIndex(
+  state: NationalLaborDemographicsState,
+  careTenacity: NationalCareTenacityCouplingBrief | null | undefined,
+  tenacityResilience: NationalTenacityResilienceOutlook | null | undefined,
+  subjectTenacity: NationalSubjectTenacityReadinessBrief | null | undefined
+): NationalWorkforceTenacityDepthIndex {
+  if (!state.enabled || !careTenacity || !tenacityResilience || !subjectTenacity) {
+    return {
+      turn: state.turn,
+      tenacityIndex: 50,
+      band: 'thin',
+      tenacityDrag: 0,
+      summary: 'Workforce tenacity depth idle — care-tenacity, resilience, or subject tenacity unavailable.',
+      stewardNote: 'Compute O10-225 wave-47 depth stack before tenacity guidance.'
+    };
+  }
+
+  const tenacityDrag = v1014laborClamp(
+    subjectTenacity.tenacityDrag * 0.35 +
+      careTenacity.careDrag * 0.3 +
+      tenacityResilience.careDrag * 0.25 +
+      (subjectTenacity.band === 'below_tenacity' || careTenacity.band === 'decoupled' ? 8 : 2)
+  );
+  const couplingLift =
+    careTenacity.band === 'amplified' || careTenacity.band === 'elevated'
+      ? careTenacity.couplingIndex * 0.2
+      : careTenacity.couplingIndex * 0.1;
+  const resilienceLift =
+    tenacityResilience.band === 'rising' || tenacityResilience.band === 'fortified'
+      ? tenacityResilience.resilienceIndex * 0.18
+      : tenacityResilience.resilienceIndex * 0.09;
+  const subjectLift =
+    subjectTenacity.band === 'tenacity_ready' || subjectTenacity.band === 'care_locked'
+      ? subjectTenacity.tenacityIndex * 0.22
+      : subjectTenacity.tenacityIndex * 0.11;
+
+  const tenacityIndex = v1014laborClamp(18 + couplingLift + resilienceLift + subjectLift - tenacityDrag);
+  const band = depthBand(tenacityIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce tenacity depth — sequence care-tenacity, resilience, and subject tenacity before post-456efb9 tranche.'
+      : band === 'tenacity'
+        ? 'Tenacity band — avoid corridor overload that breaks subject tenacity bands.'
+        : 'Elevated tenacity depth — refresh subject tenacity checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    tenacityIndex,
+    band,
+    tenacityDrag,
+    summary: `National workforce tenacity depth ${band} (index ${Math.round(tenacityIndex)}); tenacity drag ${Math.round(tenacityDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: catalog/workforce-tenacity-levers.ts ---
+
+export type WorkforceTenacityLeverKind =
+  | 'commitment_coaching_lane'
+  | 'shift_stamina_pack'
+  | 'resilience_forum_band'
+  | 'continuity_anchor_cell'
+  | 'peer_steadfast_circle';
+
+export interface WorkforceTenacityLever {
+  id: string;
+  kind: WorkforceTenacityLeverKind;
+  targetIndustry: StrategicIndustryKind;
+  hostRegions: readonly string[];
+  tenacityStrength: number;
+  label: string;
+  narrative: string;
+}
+
+export const WORKFORCE_TENACITY_LEVERS: WorkforceTenacityLever[] = [
+  {
+    id: 'tenacity_manufacturing_vic',
+    kind: 'shift_stamina_pack',
+    targetIndustry: 'manufacturing',
+    hostRegions: ['VIC', 'SA'],
+    tenacityStrength: 0.72,
+    label: 'Manufacturing stamina pack',
+    narrative: 'Stamina packs stabilize commitment without literal attrition counts.'
+  },
+  {
+    id: 'tenacity_health_nsw',
+    kind: 'commitment_coaching_lane',
+    targetIndustry: 'research',
+    hostRegions: ['NSW', 'ACT'],
+    tenacityStrength: 0.75,
+    label: 'Capital health coaching lane',
+    narrative: 'Coaching lanes reinforce care-tenacity coupling outlooks.'
+  },
+  {
+    id: 'tenacity_agri_tas',
+    kind: 'continuity_anchor_cell',
+    targetIndustry: 'agriculture',
+    hostRegions: ['TAS', 'VIC'],
+    tenacityStrength: 0.7,
+    label: 'Tasmanian continuity anchor',
+    narrative: 'Anchor cells ease seasonal care drag on tenacity indices.'
+  },
+  {
+    id: 'tenacity_tech_nsw_vic',
+    kind: 'peer_steadfast_circle',
+    targetIndustry: 'technology',
+    hostRegions: ['NSW', 'VIC'],
+    tenacityStrength: 0.78,
+    label: 'Tech steadfast circle',
+    narrative: 'Steadfast circles pair with subject tenacity readiness checks.'
+  },
+  {
+    id: 'tenacity_mining_wa',
+    kind: 'resilience_forum_band',
+    targetIndustry: 'mining',
+    hostRegions: ['WA', 'QLD'],
+    tenacityStrength: 0.73,
+    label: 'Frontier resilience forum',
+    narrative: 'Forums bound tenacity resilience outlook spikes.'
+  }
+];
+
+export function lookupWorkforceTenacityLever(id: string): WorkforceTenacityLever | undefined {
+  return WORKFORCE_TENACITY_LEVERS.find(lever => lever.id === id);
+}
+
+export function tenacityEaseForRegion(
+  regionId: string,
+  dominantIndustry: StrategicIndustryKind | null | undefined
+): number {
+  if (!dominantIndustry) return 0.08;
+  let best = 0;
+  for (const lever of WORKFORCE_TENACITY_LEVERS) {
+    if (!lever.hostRegions.includes(regionId)) continue;
+    if (lever.targetIndustry !== dominantIndustry) continue;
+    best = Math.max(best, lever.tenacityStrength);
+  }
+  return best > 0 ? best : 0.06;
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -20065,6 +20539,25 @@ export function computeNationalLaborDemographics(
     state.careBalanceOutlook,
     state.subjectCareReadinessBrief
   );
+  state.careTenacityCouplingBrief = computeNationalCareTenacityCouplingBrief(
+    state,
+    state.nationalWorkforceCareIndex
+  );
+  state.tenacityResilienceOutlook = computeNationalTenacityResilienceOutlook(
+    state,
+    state.careBalanceOutlook
+  );
+  state.subjectTenacityReadinessBrief = computeNationalSubjectTenacityReadinessBrief(
+    state,
+    state.subjectCareReadinessBrief,
+    state.nationalWorkforceCareIndex
+  );
+  state.nationalWorkforceTenacityDepthIndex = computeNationalWorkforceTenacityDepthIndex(
+    state,
+    state.careTenacityCouplingBrief,
+    state.tenacityResilienceOutlook,
+    state.subjectTenacityReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -21139,6 +21632,34 @@ export function computeNationalLaborDemographics(
   ) {
     state.evidence.push(state.nationalWorkforceCareIndex.summary.slice(0, 120));
   }
+  if (
+    (state.careTenacityCouplingBrief?.band === 'decoupled' ||
+      state.careTenacityCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.careTenacityCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.tenacityResilienceOutlook?.band === 'ebbing' ||
+      state.tenacityResilienceOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.tenacityResilienceOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectTenacityReadinessBrief?.band === 'below_tenacity' ||
+      state.subjectTenacityReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectTenacityReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceTenacityDepthIndex?.band === 'fragile' ||
+      state.nationalWorkforceTenacityDepthIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceTenacityDepthIndex.summary.slice(0, 120));
+  }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
   }
@@ -21217,6 +21738,10 @@ export function computeNationalLaborDemographics(
   schedulingEaseForRegion,
   schedulingLeversForIndustry
 } from './catalog/workforce-scheduling-levers';
+  WORKFORCE_TENACITY_LEVERS,
+  lookupWorkforceTenacityLever,
+  tenacityEaseForRegion
+} from './catalog/workforce-tenacity-levers';
   STRATEGIC_INDUSTRIES,
   V1014_LABOR_CORE_REGIONS,
   V1014_LABOR_INDUSTRY_LABOR_WEIGHT,
@@ -23918,6 +24443,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'care steward note'
   );
   check('R4616', careReliefForRegion('NSW', 'technology') > 0, 'care relief for region');
+
+  check('R4701', Boolean(r1.state.careTenacityCouplingBrief?.band), 'care tenacity on state');
+  check(
+    'R4702',
+    (r1.state.careTenacityCouplingBrief?.careDrag ?? 0) >= 0,
+    'care tenacity drag'
+  );
+  check('R4703', Boolean(r1.state.tenacityResilienceOutlook?.band), 'tenacity resilience on state');
+  check(
+    'R4704',
+    (r1.state.tenacityResilienceOutlook?.careDrag ?? 0) >= 0,
+    'tenacity resilience care drag'
+  );
+  check('R4705', Boolean(r1.state.subjectTenacityReadinessBrief?.band), 'subject tenacity on state');
+  check('R4706', Boolean(r1.state.nationalWorkforceTenacityDepthIndex?.band), 'workforce tenacity depth on state');
+  check(
+    'R4707',
+    detectLaborDemographicsQuery('care tenacity coupling') === 'care_tenacity_coupling',
+    'GI care tenacity detect'
+  );
+  check(
+    'R4708',
+    detectLaborDemographicsQuery('tenacity resilience') === 'tenacity_resilience',
+    'GI tenacity resilience detect'
+  );
+  check(
+    'R4709',
+    detectLaborDemographicsQuery('subject tenacity readiness') === 'subject_tenacity_readiness',
+    'GI subject tenacity detect'
+  );
+  check(
+    'R4710',
+    detectLaborDemographicsQuery('workforce tenacity depth') === 'workforce_tenacity_depth',
+    'GI workforce tenacity depth detect'
+  );
+  check(
+    'R4711',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_tenacity_depth').headline.length > 5,
+    'GI workforce tenacity depth answer'
+  );
+  const careTenacityOnly = computeNationalCareTenacityCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceCareIndex
+  );
+  check('R4712', careTenacityOnly.summary.length > 10, 'care tenacity standalone summary');
+  const tenacityResilienceOnly = computeNationalTenacityResilienceOutlook(
+    r1.state,
+    r1.state.careBalanceOutlook
+  );
+  check('R4713', tenacityResilienceOnly.band.length > 3, 'tenacity resilience band string');
+  const subjectTenacityOnly = computeNationalSubjectTenacityReadinessBrief(
+    r1.state,
+    r1.state.subjectCareReadinessBrief,
+    r1.state.nationalWorkforceCareIndex
+  );
+  check('R4714', subjectTenacityOnly.tenacityDrag >= 0, 'subject tenacity drag');
+  check(
+    'R4715',
+    computeNationalWorkforceTenacityDepthIndex(
+      rHhBad.state,
+      rHhBad.state.careTenacityCouplingBrief,
+      rHhBad.state.tenacityResilienceOutlook,
+      rHhBad.state.subjectTenacityReadinessBrief
+    ).stewardNote.length > 8,
+    'tenacity depth steward note'
+  );
+  check('R4716', tenacityEaseForRegion('NSW', 'technology') > 0, 'tenacity ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

@@ -238,6 +238,13 @@ import { computeNationalSafetyCareCouplingBrief } from './safety-care-coupling-b
 import { computeNationalCareBalanceOutlook } from './care-balance-outlook';
 import { computeNationalSubjectCareReadinessBrief } from './subject-care-readiness-brief';
 import { computeNationalWorkforceCareIndex } from './national-workforce-care-index';
+import { computeNationalCareTenacityCouplingBrief } from './care-tenacity-coupling-brief';
+import { computeNationalTenacityResilienceOutlook } from './tenacity-resilience-outlook';
+import { computeNationalSubjectTenacityReadinessBrief } from './subject-tenacity-readiness-brief';
+import { computeNationalWorkforceTenacityDepthIndex } from './national-workforce-tenacity-depth-index';
+import {
+  tenacityEaseForRegion
+} from './catalog/workforce-tenacity-levers';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -2949,6 +2956,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'care steward note'
   );
   check('R4616', careReliefForRegion('NSW', 'technology') > 0, 'care relief for region');
+
+  check('R4701', Boolean(r1.state.careTenacityCouplingBrief?.band), 'care tenacity on state');
+  check(
+    'R4702',
+    (r1.state.careTenacityCouplingBrief?.careDrag ?? 0) >= 0,
+    'care tenacity drag'
+  );
+  check('R4703', Boolean(r1.state.tenacityResilienceOutlook?.band), 'tenacity resilience on state');
+  check(
+    'R4704',
+    (r1.state.tenacityResilienceOutlook?.careDrag ?? 0) >= 0,
+    'tenacity resilience care drag'
+  );
+  check('R4705', Boolean(r1.state.subjectTenacityReadinessBrief?.band), 'subject tenacity on state');
+  check('R4706', Boolean(r1.state.nationalWorkforceTenacityDepthIndex?.band), 'workforce tenacity depth on state');
+  check(
+    'R4707',
+    detectLaborDemographicsQuery('care tenacity coupling') === 'care_tenacity_coupling',
+    'GI care tenacity detect'
+  );
+  check(
+    'R4708',
+    detectLaborDemographicsQuery('tenacity resilience') === 'tenacity_resilience',
+    'GI tenacity resilience detect'
+  );
+  check(
+    'R4709',
+    detectLaborDemographicsQuery('subject tenacity readiness') === 'subject_tenacity_readiness',
+    'GI subject tenacity detect'
+  );
+  check(
+    'R4710',
+    detectLaborDemographicsQuery('workforce tenacity depth') === 'workforce_tenacity_depth',
+    'GI workforce tenacity depth detect'
+  );
+  check(
+    'R4711',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_tenacity_depth').headline.length > 5,
+    'GI workforce tenacity depth answer'
+  );
+  const careTenacityOnly = computeNationalCareTenacityCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceCareIndex
+  );
+  check('R4712', careTenacityOnly.summary.length > 10, 'care tenacity standalone summary');
+  const tenacityResilienceOnly = computeNationalTenacityResilienceOutlook(
+    r1.state,
+    r1.state.careBalanceOutlook
+  );
+  check('R4713', tenacityResilienceOnly.band.length > 3, 'tenacity resilience band string');
+  const subjectTenacityOnly = computeNationalSubjectTenacityReadinessBrief(
+    r1.state,
+    r1.state.subjectCareReadinessBrief,
+    r1.state.nationalWorkforceCareIndex
+  );
+  check('R4714', subjectTenacityOnly.tenacityDrag >= 0, 'subject tenacity drag');
+  check(
+    'R4715',
+    computeNationalWorkforceTenacityDepthIndex(
+      rHhBad.state,
+      rHhBad.state.careTenacityCouplingBrief,
+      rHhBad.state.tenacityResilienceOutlook,
+      rHhBad.state.subjectTenacityReadinessBrief
+    ).stewardNote.length > 8,
+    'tenacity depth steward note'
+  );
+  check('R4716', tenacityEaseForRegion('NSW', 'technology') > 0, 'tenacity ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

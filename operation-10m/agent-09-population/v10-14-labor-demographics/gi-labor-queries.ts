@@ -171,7 +171,11 @@ export type LaborGiQueryTopic =
   | 'safety_care_coupling'
   | 'care_balance'
   | 'subject_care_readiness'
-  | 'workforce_care';
+  | 'workforce_care'
+  | 'care_tenacity_coupling'
+  | 'tenacity_resilience'
+  | 'subject_tenacity_readiness'
+  | 'workforce_tenacity_depth';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -239,6 +243,7 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(endurance flexibility|endurance-flexibility coupling)/.test(q)) return 'endurance_flexibility_coupling';
   if (/\b(inclusion resilience|inclusion labor resilience)/.test(q)) return 'inclusion_resilience';
   if (/\b(subject commit readiness|commit readiness subject)/.test(q)) return 'subject_commit_readiness';
+  if (/\b(workforce tenacity depth|tenacity depth index labor)/.test(q)) return 'workforce_tenacity_depth';
   if (/\b(workforce tenacity|tenacity index labor)/.test(q)) return 'workforce_tenacity';
   if (/\b(tenacity care|tenacity-care coupling)/.test(q)) return 'tenacity_care_coupling';
   if (/\b(safety cohesion|labor safety cohesion)/.test(q)) return 'safety_cohesion';
@@ -368,6 +373,9 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(care balance|care pipeline balance)/.test(q)) return 'care_balance';
   if (/\b(subject care readiness|care readiness subject)/.test(q)) return 'subject_care_readiness';
   if (/\b(workforce care|care index labor workforce)/.test(q)) return 'workforce_care';
+  if (/\b(care tenacity|care-tenacity coupling)/.test(q)) return 'care_tenacity_coupling';
+  if (/\b(tenacity resilience)/.test(q)) return 'tenacity_resilience';
+  if (/\b(subject tenacity readiness)/.test(q)) return 'subject_tenacity_readiness';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1730,6 +1738,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Care band ${state.nationalWorkforceCareIndex?.band ?? 'unknown'}; care drag ${Math.round(state.nationalWorkforceCareIndex?.careDrag ?? 0)}.`,
         inference: state.nationalWorkforceCareIndex?.stewardNote || state.summary,
         projection: 'Workforce care synthesizes safety-care coupling, care balance, and subject care.'
+      };
+    case 'care_tenacity_coupling':
+      return {
+        topic,
+        headline: state.careTenacityCouplingBrief?.summary || 'Care-tenacity coupling unavailable.',
+        fact: `Coupling band ${state.careTenacityCouplingBrief?.band ?? 'unknown'}; care drag ${Math.round(state.careTenacityCouplingBrief?.careDrag ?? 0)}.`,
+        inference: state.careTenacityCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce care with tenacity levers — bounded indices only.'
+      };
+    case 'tenacity_resilience':
+      return {
+        topic,
+        headline: state.tenacityResilienceOutlook?.summary || 'Tenacity resilience unavailable.',
+        fact: `Resilience band ${state.tenacityResilienceOutlook?.band ?? 'unknown'}; care drag ${Math.round(state.tenacityResilienceOutlook?.careDrag ?? 0)}.`,
+        inference: state.tenacityResilienceOutlook?.stewardNote || state.outlook,
+        projection: 'Resilience outlook tracks care balance against tenacity levers for wave 47 depth.'
+      };
+    case 'subject_tenacity_readiness':
+      return {
+        topic,
+        headline: state.subjectTenacityReadinessBrief?.summary || 'Subject tenacity readiness unavailable.',
+        fact: `Tenacity band ${state.subjectTenacityReadinessBrief?.band ?? 'unknown'}; tenacity drag ${Math.round(state.subjectTenacityReadinessBrief?.tenacityDrag ?? 0)}.`,
+        inference: state.subjectTenacityReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject tenacity readiness gates subject care against workforce care for O10-225 wave 47.'
+      };
+    case 'workforce_tenacity_depth':
+      return {
+        topic,
+        headline: state.nationalWorkforceTenacityDepthIndex?.summary || 'Workforce tenacity depth unavailable.',
+        fact: `Tenacity band ${state.nationalWorkforceTenacityDepthIndex?.band ?? 'unknown'}; tenacity drag ${Math.round(state.nationalWorkforceTenacityDepthIndex?.tenacityDrag ?? 0)}.`,
+        inference: state.nationalWorkforceTenacityDepthIndex?.stewardNote || state.summary,
+        projection: 'Tenacity depth synthesizes care-tenacity coupling, resilience, and subject tenacity.'
       };
     default:
       return {

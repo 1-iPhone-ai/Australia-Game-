@@ -353,6 +353,10 @@ export interface NationalLaborDemographicsState {
   careBalanceOutlook?: NationalCareBalanceOutlook;
   subjectCareReadinessBrief?: NationalSubjectCareReadinessBrief;
   nationalWorkforceCareIndex?: NationalWorkforceCareIndex;
+  careTenacityCouplingBrief?: NationalCareTenacityCouplingBrief;
+  tenacityResilienceOutlook?: NationalTenacityResilienceOutlook;
+  subjectTenacityReadinessBrief?: NationalSubjectTenacityReadinessBrief;
+  nationalWorkforceTenacityDepthIndex?: NationalWorkforceTenacityDepthIndex;
 }
 
 export type MigrationShockKind =
@@ -2269,6 +2273,54 @@ export interface NationalWorkforceCareIndex {
   careIndex: number;
   band: WorkforceCareBand;
   careDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CareTenacityCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalCareTenacityCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: CareTenacityCouplingBand;
+  careDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type TenacityResilienceBand = 'ebbing' | 'patchy' | 'rising' | 'fortified';
+
+export interface NationalTenacityResilienceOutlook {
+  turn: number;
+  resilienceIndex: number;
+  band: TenacityResilienceBand;
+  careDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectTenacityReadinessBand =
+  | 'below_tenacity'
+  | 'approaching'
+  | 'tenacity_ready'
+  | 'care_locked';
+
+export interface NationalSubjectTenacityReadinessBrief {
+  turn: number;
+  tenacityIndex: number;
+  band: SubjectTenacityReadinessBand;
+  tenacityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceTenacityDepthBand = 'fragile' | 'thin' | 'elevated' | 'tenacity';
+
+export interface NationalWorkforceTenacityDepthIndex {
+  turn: number;
+  tenacityIndex: number;
+  band: WorkforceTenacityDepthBand;
+  tenacityDrag: number;
   summary: string;
   stewardNote: string;
 }
