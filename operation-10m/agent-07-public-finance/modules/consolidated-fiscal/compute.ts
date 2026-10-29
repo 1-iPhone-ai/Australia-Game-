@@ -93,6 +93,8 @@ import { buildReconciliationOutlookBridgeReport } from '../reconciliation-outloo
 import { buildContingentLiabilityOutlookCoherenceReport } from '../contingent-liability-outlook-coherence/compute';
 import { buildGrantClawbackOutlookBridgeReport } from '../grant-clawback-outlook-bridge/compute';
 import { buildSovereignIssuanceOutlookCoherenceReport } from '../sovereign-issuance-outlook-coherence/compute';
+import { buildDebtFiscalCouplingOutlookBridgeReport } from '../debt-fiscal-coupling-outlook-bridge/compute';
+import { buildFiscalBufferOutlookCoherenceReport } from '../fiscal-buffer-outlook-coherence/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -653,6 +655,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     v1012,
     sovereignIssuanceCouplingBridge,
     sovereignCreditOutlookCoherence,
+    outlook
+  );
+  const debtFiscalCouplingOutlookBridge = buildDebtFiscalCouplingOutlookBridgeReport(
+    turn,
+    v1012,
+    debtFiscalCouplingRegister,
+    debtServiceForwardCoherence,
+    outlook
+  );
+  const fiscalBufferOutlookCoherence = buildFiscalBufferOutlookCoherenceReport(
+    turn,
+    v1012,
+    fiscalBufferCoherence,
+    fiscalRiskOutlookCoherence,
     outlook
   );
 
@@ -1932,12 +1948,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `coupling=${sovereignIssuanceCouplingBridge.bridgeCouplingGapPoints}, credit=${sovereignCreditOutlookCoherence.aggregateCoherenceGapPoints}`
   });
 
+  checks.push({
+    id: 'CF181',
+    label: 'Debt–fiscal coupling outlook bridge within band',
+    passed: debtFiscalCouplingOutlookBridge.withinCouplingOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${debtFiscalCouplingOutlookBridge.bridgeGapPoints}, checks=${debtFiscalCouplingOutlookBridge.checks.filter(c => c.passed).length}/${debtFiscalCouplingOutlookBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF182',
+    label: 'Fiscal buffer outlook coherence within band',
+    passed: fiscalBufferOutlookCoherence.withinBufferOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${fiscalBufferOutlookCoherence.aggregateCoherenceGapPoints}, checks=${fiscalBufferOutlookCoherence.checks.filter(c => c.passed).length}/${fiscalBufferOutlookCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF183',
+    label: 'Coupling outlook aligned with debt service forward',
+    passed: debtFiscalCouplingOutlookBridge.alignedWithDebtServiceForward,
+    detail: `coupling=${debtFiscalCouplingRegister.couplingStressPoints}, forward=${debtServiceForwardCoherence.aggregateCoherenceGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF184',
+    label: 'Fiscal buffer outlook aligned with risk outlook',
+    passed: fiscalBufferOutlookCoherence.alignedWithRiskOutlook,
+    detail: `buffer=${fiscalBufferCoherence.aggregateBufferPoints}, risk=${fiscalRiskOutlookCoherence.aggregateCoherenceGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 118
+    layerCount: 120
   };
 }

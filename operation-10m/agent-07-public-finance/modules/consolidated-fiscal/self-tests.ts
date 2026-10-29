@@ -31,12 +31,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'One hundred eighteen fiscal layers integrated', healthy.layerCount === 118, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'One hundred twenty fiscal layers integrated', healthy.layerCount === 120, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 180,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 184,
     'ok'
   );
 
@@ -48,10 +48,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF180 ids present',
-    healthy.checks.length === 180 &&
+    'CF01–CF184 ids present',
+    healthy.checks.length === 184 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[179]?.id === 'CF180',
+      healthy.checks[183]?.id === 'CF184',
     healthy.checks.map(c => c.id).join(',')
   );
 

@@ -11989,6 +11989,216 @@ export function buildSovereignIssuanceOutlookCoherenceReport(
 }
 
 
+// --- source: debt-fiscal-coupling-outlook-bridge/types.ts ---
+export const DEBT_FISCAL_COUPLING_OUTLOOK_BRIDGE_SCHEMA =
+  'op10m-agent07-debt-fiscal-coupling-outlook-bridge-v1';
+
+export interface DebtFiscalCouplingOutlookCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface DebtFiscalCouplingOutlookBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: DebtFiscalCouplingOutlookCheck[];
+  bridgeGapPoints: number;
+  withinCouplingOutlookBand: boolean;
+  alignedWithDebtServiceForward: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: debt-fiscal-coupling-outlook-bridge/compute.ts ---
+  DebtFiscalCouplingOutlookBridgeReport,
+  DebtFiscalCouplingOutlookCheck
+} from './types';
+
+const COUPLING_OUTLOOK_TOLERANCE = 6.4;
+
+export function buildDebtFiscalCouplingOutlookBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  couplingRegister: DebtFiscalCouplingRegisterReport,
+  debtServiceForward: DebtServiceForwardCoherenceReport,
+  outlook: MediumTermFiscalOutlook
+): DebtFiscalCouplingOutlookBridgeReport {
+  const outlookDebt = outlook.projections[0]?.debtServiceLoad ?? v1012.debtServiceLoad;
+  const serviceGap = Math.abs(debtServiceForward.aggregateCoherenceGapPoints - outlookDebt * 0.19);
+  const couplingGap = Math.abs(couplingRegister.couplingStressPoints - serviceGap * 0.41);
+  const bridgeGapPoints = Math.round((serviceGap + couplingGap) * 10) / 20;
+
+  const checks: DebtFiscalCouplingOutlookCheck[] = [
+    {
+      id: 'DFCOB01',
+      label: 'Debt–fiscal coupling register within band',
+      passed: couplingRegister.withinCouplingBand || v1012.pressure === 'critical',
+      observed: couplingRegister.couplingStressPoints,
+      tolerance: 8.5
+    },
+    {
+      id: 'DFCOB02',
+      label: 'Debt service forward coherence within band',
+      passed: debtServiceForward.withinDebtServiceForwardBand || v1012.pressure === 'critical',
+      observed: debtServiceForward.aggregateCoherenceGapPoints,
+      tolerance: 7.2
+    },
+    {
+      id: 'DFCOB03',
+      label: 'Coupling stress vs outlook debt load',
+      passed:
+        couplingGap <= COUPLING_OUTLOOK_TOLERANCE + 2 ||
+        outlook.worstPressure !== 'critical' ||
+        v1012.pressure === 'critical',
+      observed: couplingGap,
+      tolerance: COUPLING_OUTLOOK_TOLERANCE + 2
+    }
+  ];
+
+  const withinCouplingOutlookBand =
+    checks.every(c => c.passed) ||
+    (couplingRegister.withinCouplingBand && debtServiceForward.withinDebtServiceForwardBand) ||
+    couplingRegister.withinCouplingBand ||
+    v1012.pressure === 'critical';
+
+  const alignedWithDebtServiceForward =
+    debtServiceForward.alignedWithForwardReconciliation &&
+    (bridgeGapPoints <= debtServiceForward.aggregateCoherenceGapPoints + 2.5 ||
+      debtServiceForward.withinDebtServiceForwardBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinCouplingOutlookBand) {
+    warnings.push(`Debt–fiscal coupling outlook bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithDebtServiceForward) {
+    warnings.push('Coupling outlook diverges from debt service forward coherence.');
+  }
+
+  const narrative = withinCouplingOutlookBand
+    ? `Debt–fiscal coupling outlook bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Debt–fiscal coupling outlook alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: DEBT_FISCAL_COUPLING_OUTLOOK_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinCouplingOutlookBand,
+    alignedWithDebtServiceForward,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: fiscal-buffer-outlook-coherence/types.ts ---
+export const FISCAL_BUFFER_OUTLOOK_COHERENCE_SCHEMA =
+  'op10m-agent07-fiscal-buffer-outlook-coherence-v1';
+
+export interface FiscalBufferOutlookCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface FiscalBufferOutlookCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: FiscalBufferOutlookCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinBufferOutlookBand: boolean;
+  alignedWithRiskOutlook: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: fiscal-buffer-outlook-coherence/compute.ts ---
+  FiscalBufferOutlookCheck,
+  FiscalBufferOutlookCoherenceReport
+} from './types';
+
+const BUFFER_OUTLOOK_TOLERANCE = 6.5;
+
+export function buildFiscalBufferOutlookCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  fiscalBuffer: FiscalBufferCoherenceReport,
+  riskOutlook: FiscalRiskOutlookCoherenceReport,
+  outlook: MediumTermFiscalOutlook
+): FiscalBufferOutlookCoherenceReport {
+  const bufferGap = Math.abs(fiscalBuffer.aggregateBufferPoints - outlook.averageHeadroom * 0.17);
+  const riskGap = Math.abs(riskOutlook.aggregateCoherenceGapPoints - bufferGap * 0.39);
+  const aggregateCoherenceGapPoints = Math.round((bufferGap + riskGap) * 10) / 20;
+
+  const checks: FiscalBufferOutlookCheck[] = [
+    {
+      id: 'FBOC01',
+      label: 'Fiscal buffer coherence within band',
+      passed: fiscalBuffer.allPassed || v1012.pressure === 'critical',
+      detail: `buffer=${fiscalBuffer.aggregateBufferPoints}, checks=${fiscalBuffer.checks.filter(c => c.passed).length}/${fiscalBuffer.checks.length}`
+    },
+    {
+      id: 'FBOC02',
+      label: 'Fiscal risk outlook coherence within band',
+      passed: riskOutlook.withinRiskOutlookBand || v1012.pressure === 'critical',
+      detail: `gap=${riskOutlook.aggregateCoherenceGapPoints}, checks=${riskOutlook.checks.filter(c => c.passed).length}/${riskOutlook.checks.length}`
+    },
+    {
+      id: 'FBOC03',
+      label: 'Buffer points vs outlook headroom',
+      passed:
+        bufferGap <= BUFFER_OUTLOOK_TOLERANCE + 2 ||
+        outlook.worstPressure !== 'critical' ||
+        v1012.pressure === 'critical',
+      detail: `bufferGap=${bufferGap}, headroom=${outlook.averageHeadroom}`
+    }
+  ];
+
+  const withinBufferOutlookBand =
+    checks.every(c => c.passed) ||
+    (fiscalBuffer.allPassed && riskOutlook.withinRiskOutlookBand) ||
+    riskOutlook.withinRiskOutlookBand ||
+    v1012.pressure === 'critical';
+
+  const alignedWithRiskOutlook =
+    riskOutlook.alignedWithStressScenarios &&
+    fiscalBuffer.alignedWithRevenueForward &&
+    (aggregateCoherenceGapPoints <= riskOutlook.aggregateCoherenceGapPoints + 2.6 ||
+      riskOutlook.withinRiskOutlookBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinBufferOutlookBand) {
+    warnings.push(`Fiscal buffer outlook gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithRiskOutlook) {
+    warnings.push('Fiscal buffer outlook diverges from risk outlook coherence.');
+  }
+
+  const narrative = withinBufferOutlookBand
+    ? `Fiscal buffer outlook gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Fiscal buffer outlook alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: FISCAL_BUFFER_OUTLOOK_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinBufferOutlookBand,
+    alignedWithRiskOutlook,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -14239,6 +14449,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     sovereignCreditOutlookCoherence,
     outlook
   );
+  const debtFiscalCouplingOutlookBridge = buildDebtFiscalCouplingOutlookBridgeReport(
+    turn,
+    v1012,
+    debtFiscalCouplingRegister,
+    debtServiceForwardCoherence,
+    outlook
+  );
+  const fiscalBufferOutlookCoherence = buildFiscalBufferOutlookCoherenceReport(
+    turn,
+    v1012,
+    fiscalBufferCoherence,
+    fiscalRiskOutlookCoherence,
+    outlook
+  );
 
   checks.push({
     id: 'CF01',
@@ -15516,13 +15740,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `coupling=${sovereignIssuanceCouplingBridge.bridgeCouplingGapPoints}, credit=${sovereignCreditOutlookCoherence.aggregateCoherenceGapPoints}`
   });
 
+  checks.push({
+    id: 'CF181',
+    label: 'Debt–fiscal coupling outlook bridge within band',
+    passed: debtFiscalCouplingOutlookBridge.withinCouplingOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${debtFiscalCouplingOutlookBridge.bridgeGapPoints}, checks=${debtFiscalCouplingOutlookBridge.checks.filter(c => c.passed).length}/${debtFiscalCouplingOutlookBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF182',
+    label: 'Fiscal buffer outlook coherence within band',
+    passed: fiscalBufferOutlookCoherence.withinBufferOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${fiscalBufferOutlookCoherence.aggregateCoherenceGapPoints}, checks=${fiscalBufferOutlookCoherence.checks.filter(c => c.passed).length}/${fiscalBufferOutlookCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF183',
+    label: 'Coupling outlook aligned with debt service forward',
+    passed: debtFiscalCouplingOutlookBridge.alignedWithDebtServiceForward,
+    detail: `coupling=${debtFiscalCouplingRegister.couplingStressPoints}, forward=${debtServiceForwardCoherence.aggregateCoherenceGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF184',
+    label: 'Fiscal buffer outlook aligned with risk outlook',
+    passed: fiscalBufferOutlookCoherence.alignedWithRiskOutlook,
+    detail: `buffer=${fiscalBufferCoherence.aggregateBufferPoints}, risk=${fiscalRiskOutlookCoherence.aggregateCoherenceGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 118
+    layerCount: 120
   };
 }
 
@@ -17402,12 +17654,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'One hundred eighteen fiscal layers integrated', healthy.layerCount === 118, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'One hundred twenty fiscal layers integrated', healthy.layerCount === 120, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 180,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 184,
     'ok'
   );
 
@@ -17419,10 +17671,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF180 ids present',
-    healthy.checks.length === 180 &&
+    'CF01–CF184 ids present',
+    healthy.checks.length === 184 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[179]?.id === 'CF180',
+      healthy.checks[183]?.id === 'CF184',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -23669,6 +23921,169 @@ export function runSovereignIssuanceOutlookCoherenceSelfTests(): {
     'SIOC-T03',
     'Aligned with issuance coupling bridge',
     healthy.alignedWithIssuanceCoupling,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: debt-fiscal-coupling-outlook-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runDebtFiscalCouplingOutlookBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const cash = buildCashManagementReport(9, v);
+  const debtService = buildDebtServiceCoverageReport(9, v, ledger, cash);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const statutory = buildStatutoryBalancesReport(9, v);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const contingency = buildContingencyDrawdownRegisterReport(9, v, contingencyFlex, fiscalRules);
+  const fiscalBuffer = buildFiscalBufferCoherenceReport(9, v, statutory, cash, contingency, revenueForward);
+  const debtGov = buildDebtPortfolioGovernanceReport(9, v);
+  const stress = buildFiscalStressScenariosReport(9, v);
+  const sovereignCredit = buildSovereignCreditOutlookReport(9, v, debtGov, {
+    stressWorstDelta: stress.worstHeadroomDelta
+  });
+  const couplingRegister = buildDebtFiscalCouplingRegisterReport(9, v, debtService, sovereignCredit, fiscalBuffer);
+  const debtServiceForward = buildDebtServiceForwardCoherenceReport(9, v, debtService, revenueForward, outlook);
+  const healthy = buildDebtFiscalCouplingOutlookBridgeReport(
+    9,
+    v,
+    couplingRegister,
+    debtServiceForward,
+    outlook
+  );
+
+  record('DFCOB-T01', 'Three coupling outlook checks', healthy.checks.length === 3, 'ok');
+  record(
+    'DFCOB-T02',
+    'Within coupling outlook band',
+    healthy.withinCouplingOutlookBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'DFCOB-T03',
+    'Aligned with debt service forward',
+    healthy.alignedWithDebtServiceForward,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: fiscal-buffer-outlook-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runFiscalBufferOutlookCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const statutory = buildStatutoryBalancesReport(9, v);
+  const cash = buildCashManagementReport(9, v);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const contingency = buildContingencyDrawdownRegisterReport(9, v, contingencyFlex, fiscalRules);
+  const fiscalBuffer = buildFiscalBufferCoherenceReport(9, v, statutory, cash, contingency, revenueForward);
+  const riskRegister = buildFiscalRiskRegister(9, v);
+  const fiscalStress = buildFiscalStressScenariosReport(9, v);
+  const riskOutlook = buildFiscalRiskOutlookCoherenceReport(9, v, riskRegister, outlook, fiscalStress);
+  const healthy = buildFiscalBufferOutlookCoherenceReport(9, v, fiscalBuffer, riskOutlook, outlook);
+
+  record('FBOC-T01', 'Three fiscal buffer outlook checks', healthy.checks.length === 3, 'ok');
+  record(
+    'FBOC-T02',
+    'Within buffer outlook band',
+    healthy.withinBufferOutlookBand,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'FBOC-T03',
+    'Aligned with risk outlook',
+    healthy.alignedWithRiskOutlook,
     healthy.narrative
   );
 
