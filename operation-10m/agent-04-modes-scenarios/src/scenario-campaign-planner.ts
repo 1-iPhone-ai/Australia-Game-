@@ -97,6 +97,11 @@ import {
   sanitizeAmnestySession,
 } from './save-format-amnesty.js';
 import {
+  getAcquittalScenarioAtCursor,
+  acquittalSessionSummary,
+  sanitizeAcquittalSession,
+} from './save-format-acquittal.js';
+import {
   getCommutationScenarioAtCursor,
   commutationSessionSummary,
   sanitizeCommutationSession,
@@ -149,6 +154,7 @@ import type {
   O10mParolePhase,
   O10mProbationPhase,
   O10mCommutationPhase,
+  O10mAcquittalPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -251,9 +257,31 @@ const emptyQueuePlan = {
   commutationCursor: null as number | null,
   commutationPhase: null as O10mCommutationPhase | null,
   commutationLeniency: null as number | null,
+  acquittalId: null as string | null,
+  acquittalCursor: null as number | null,
+  acquittalPhase: null as O10mAcquittalPhase | null,
+  acquittalVerdict: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const acquittal = sanitizeAcquittalSession(state.acquittalSession);
+  const acquittalScenario = getAcquittalScenarioAtCursor(acquittal);
+  if (acquittal && acquittal.active && acquittalScenario) {
+    return {
+      kind: 'acquittal_step',
+      scenarioId: acquittalScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      acquittalId: acquittal.acquittalId,
+      acquittalCursor: acquittal.cursor,
+      acquittalPhase: acquittal.phaseTag,
+      acquittalVerdict: acquittal.verdictScore,
+      reason: `Acquittal "${acquittal.label}" ${acquittal.phaseTag} phase ${acquittal.cursor + 1}/${acquittal.scenarioIds.length} (verdict ${acquittal.verdictScore}).`,
+    };
+  }
+
   const commutation = sanitizeCommutationSession(state.commutationSession);
   const commutationScenario = getCommutationScenarioAtCursor(commutation);
   if (commutation && commutation.active && commutationScenario) {
@@ -794,6 +822,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   paroleActive: boolean;
   probationActive: boolean;
   commutationActive: boolean;
+  acquittalActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -826,6 +855,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const parole = paroleSessionSummary(state);
   const probation = probationSessionSummary(state);
   const commutation = commutationSessionSummary(state);
+  const acquittal = acquittalSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -856,6 +886,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     paroleActive: parole.active,
     probationActive: probation.active,
     commutationActive: commutation.active,
+    acquittalActive: acquittal.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

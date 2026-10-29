@@ -1028,6 +1028,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_acquittal_route',
+    title: 'Acquittal Route',
+    description:
+      'Three-phase acquittal arc with verdict accrual between legs — round-30 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_acquittal_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_acquittal_brief_docket',
+        title: 'Brief Docket',
+        narrativeBridge: 'File brief before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 400 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_acquittal_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 6, NSW: 5 },
+          forcedSettingsPatch: { o10mAcquittalMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_acquittal_verdict_finale',
+        title: 'Verdict Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainAcquittalRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

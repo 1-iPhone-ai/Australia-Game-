@@ -40,4 +40,5 @@ export * from './save-format-reprieve.js';
 export * from './save-format-parole.js';
 export * from './save-format-probation.js';
 export * from './save-format-commutation.js';
+export * from './save-format-acquittal.js';
 export * from './scenario-campaign-planner.js';

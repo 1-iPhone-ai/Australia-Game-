@@ -29,6 +29,7 @@ import { sanitizeReprieveSession } from './save-format-reprieve.js';
 import { sanitizeParoleSession } from './save-format-parole.js';
 import { sanitizeProbationSession } from './save-format-probation.js';
 import { sanitizeCommutationSession } from './save-format-commutation.js';
+import { sanitizeAcquittalSession } from './save-format-acquittal.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -47,7 +48,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 29;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 30;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -175,6 +176,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     paroleSession: null,
     probationSession: null,
     commutationSession: null,
+    acquittalSession: null,
   };
 }
 
@@ -223,6 +225,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       paroleSession: merged.paroleSession ?? null,
       probationSession: merged.probationSession ?? null,
       commutationSession: merged.commutationSession ?? null,
+      acquittalSession: merged.acquittalSession ?? null,
     };
     return upgraded;
   }
@@ -295,6 +298,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     paroleSession: sanitizeParoleSession(o.paroleSession),
     probationSession: sanitizeProbationSession(o.probationSession),
     commutationSession: sanitizeCommutationSession(o.commutationSession),
+    acquittalSession: sanitizeAcquittalSession(o.acquittalSession),
   };
 }
 
@@ -504,6 +508,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Commutation session failed sanitization; planner will ignore it.');
   } else if (commutation && commutation.cursor >= commutation.scenarioIds.length) {
     warnings.push('Commutation cursor out of range; clamp on next sanitize.');
+  }
+
+  const acquittal = sanitizeAcquittalSession(state.acquittalSession);
+  if (state.acquittalSession && !acquittal) {
+    warnings.push('Acquittal session failed sanitization; planner will ignore it.');
+  } else if (acquittal && acquittal.cursor >= acquittal.scenarioIds.length) {
+    warnings.push('Acquittal cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
