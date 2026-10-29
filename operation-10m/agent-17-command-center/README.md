@@ -12,8 +12,9 @@ Exit code `0` only when:
 
 1. ACC17 dev harness passes (6 checks).
 2. Recovery path harness passes (8 checks).
-3. All registered goals (`G17-001` … `G17-015`) pass measured checks.
-4. Goal registry coverage is complete.
+3. Planning, delegation, coordination, and execution depth harnesses pass.
+4. All registered goals (`G17-001` … `G17-027`) pass measured checks.
+5. Goal registry coverage is complete.
 
 ## Layout
 
@@ -22,6 +23,8 @@ Exit code `0` only when:
 | `goals/` | Measurable goal registry |
 | `planning/deep-templates.ts` | 4–6 step templates with prerequisite chains |
 | `planning/recovery-paths.ts` | Signal detection, lane selection, replan on blocked steps |
+| `planning/execution-pacing.ts` | Turn budget, verification-gated advance, delegate cooldown |
+| `planning/resilience-scorecard.ts` | Recovery pressure + verification stability composite |
 | `evaluation/` | Operations evaluator + deep context bundle |
 | `validation/` | Goal verification pipeline |
 | `rollback/` | Checkpoint stack + migration helper |

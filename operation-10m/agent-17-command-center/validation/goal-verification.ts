@@ -28,8 +28,8 @@ import { buildAgent17IntentQueue } from '../planning/intent-synthesis.ts';
 import { buildAgent17VerificationPolicy } from '../planning/verification-policy.ts';
 import { coordinationBriefReadyForGi } from '../planning/coordination-brief.ts';
 import { assessAgent17PlanHealth } from '../planning/plan-health.ts';
-import { acc17ComputeRelevantStateFingerprint } from '../planning/fingerprint.ts';
-import { evaluateAcc17CommandCenterOperations } from '../evaluation/operations-evaluator.ts';
+import { buildAgent17ExecutionPacing } from '../planning/execution-pacing.ts';
+import { buildAgent17ResilienceScorecard } from '../planning/resilience-scorecard.ts';
 import {
   Agent17RollbackController,
   createAgent17RollbackController,
@@ -349,6 +349,58 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const pacing = depthEval.snapshot.planningDepth?.executionPacing;
+  goalResults.push(
+    result(
+      'G17-025',
+      !!pacing &&
+        typeof pacing.turnBudgetRemaining === 'number' &&
+        (pacing.pacingBand === 'steady' ||
+          pacing.pacingBand === 'urgent' ||
+          pacing.pacingBand === 'throttled'),
+      pacing?.pacingBand || 'none'
+    )
+  );
+
+  const scorecard = depthEval.snapshot.planningDepth?.resilienceScorecard;
+  goalResults.push(
+    result(
+      'G17-026',
+      !!scorecard &&
+        scorecard.compositeIndex >= 0 &&
+        scorecard.compositeIndex <= 100 &&
+        scorecard.mitigationHints.length >= 1,
+      String(scorecard?.compositeIndex)
+    )
+  );
+
+  const fpHold = acc17ComputeRelevantStateFingerprint(baseState, 'player');
+  const pacingHeld = buildAgent17ExecutionPacing(
+    { ...depthEval.ops, lastContextFingerprint: fpHold },
+    baseState,
+    assessAgent17PlanHealth(depthEval.ops.activePlan, baseState, 'player'),
+    buildAgent17VerificationPolicy(
+      { ...depthEval.ops, lastContextFingerprint: fpHold },
+      baseState,
+      'player'
+    )
+  );
+  goalResults.push(
+    result(
+      'G17-027',
+      pacingHeld.pacingBand === 'throttled' || !pacingHeld.verificationGateOpen,
+      `${pacingHeld.pacingBand} gate=${pacingHeld.verificationGateOpen}`
+    )
+  );
+
+  void buildAgent17ResilienceScorecard(
+    depthEval.ops,
+    baseState,
+    'player',
+    assessAgent17PlanHealth(depthEval.ops.activePlan, baseState, 'player'),
+    buildAgent17VerificationPolicy(depthEval.ops, baseState, 'player')
+  );
+
   const passedCount = goalResults.filter(r => r.passed).length;
   const failedCount = goalResults.length - passedCount;
   return {
@@ -395,6 +447,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-022',
     'G17-023',
     'G17-024',
+    'G17-025',
+    'G17-026',
+    'G17-027',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

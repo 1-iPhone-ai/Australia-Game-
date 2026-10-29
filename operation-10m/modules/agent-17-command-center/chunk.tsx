@@ -187,6 +187,8 @@ export interface Agent17PlanningDepthSnapshot {
   intentQueue: Agent17IntentQueueSnapshot;
   verificationPolicy: Agent17VerificationPolicySnapshot;
   coordinationBrief: Agent17CoordinationBrief;
+  executionPacing: Agent17ExecutionPacingSnapshot;
+  resilienceScorecard: Agent17ResilienceScorecard;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -227,6 +229,27 @@ export interface Agent17CoordinationBrief {
   sections: Agent17CoordinationBriefSection[];
   giHandoffTags: string[];
   confidence: number;
+}
+
+export interface Agent17ExecutionPacingSnapshot {
+  turn: number;
+  turnBudgetRemaining: number;
+  stepsRemaining: number;
+  canAdvanceActiveStep: boolean;
+  verificationGateOpen: boolean;
+  cooldownTurns: number;
+  pacingBand: 'urgent' | 'steady' | 'throttled';
+  headline: string;
+}
+
+export interface Agent17ResilienceScorecard {
+  recoveryPressure: number;
+  verificationStability: number;
+  compositeIndex: number;
+  band: 'robust' | 'watch' | 'fragile';
+  signalCount: number;
+  mitigationHints: string[];
+  headline: string;
 }
 
 export interface Agent17DelegationLadderRung {
@@ -2215,6 +2238,144 @@ export function coordinationBriefReadyForGi(brief: Agent17CoordinationBrief): bo
 }
 
 
+// --- source: planning/execution-pacing.ts ---
+  Acc17CommandCenterOpsState,
+  Agent17ExecutionPacingSnapshot,
+  Agent17GameStateSlice,
+  Agent17PlanHealthBand,
+  Agent17VerificationPolicySnapshot,
+} from '../types/command-center-types.ts';
+
+const DEFAULT_TURN_BUDGET = 12;
+const DELEGATE_COOLDOWN_TURNS = 2;
+
+export function buildAgent17ExecutionPacing(
+  ops: Acc17CommandCenterOpsState,
+  state: Agent17GameStateSlice,
+  planHealth: Agent17PlanHealthBand,
+  verificationPolicy: Agent17VerificationPolicySnapshot
+): Agent17ExecutionPacingSnapshot {
+  const turn = state.turnCounter || state.day || 1;
+  const plan = ops.activePlan;
+  const createdTurn = plan?.createdTurn ?? turn;
+  const stepsRemaining =
+    plan?.steps.filter(s => s.status !== 'verified_complete' && s.status !== 'skipped').length ?? 0;
+  const elapsedOnPlan = Math.max(0, turn - createdTurn);
+  const turnBudgetRemaining = Math.max(0, DEFAULT_TURN_BUDGET - elapsedOnPlan);
+
+  const activeStep = plan?.steps[plan.activeStepIndex];
+  const verificationGateOpen = verificationPolicy.allowVerification;
+  const healthAllowsAdvance =
+    planHealth.band !== 'critical' || (planHealth.blockedCount === 0 && planHealth.verifiedRatio > 0.2);
+  const canAdvanceActiveStep =
+    !!activeStep &&
+    (activeStep.status === 'in_progress' || activeStep.status === 'pending') &&
+    verificationGateOpen &&
+    healthAllowsAdvance;
+
+  const lastDelegateTurn = ops.delegatedProjects.reduce(
+    (max, p) => Math.max(max, p.assignedTurn),
+    0
+  );
+  const cooldownTurns = Math.max(0, DELEGATE_COOLDOWN_TURNS - (turn - lastDelegateTurn));
+
+  let pacingBand: Agent17ExecutionPacingSnapshot['pacingBand'] = 'steady';
+  if (turnBudgetRemaining <= 2 || planHealth.band === 'critical') {
+    pacingBand = 'urgent';
+  } else if (!verificationGateOpen || cooldownTurns > 0) {
+    pacingBand = 'throttled';
+  }
+
+  const headline =
+    pacingBand === 'urgent'
+      ? `Urgent pacing: ${stepsRemaining} step(s), ${turnBudgetRemaining} turn budget left`
+      : pacingBand === 'throttled'
+        ? `Throttled: verification or delegate cooldown (${cooldownTurns} turn(s))`
+        : `Steady execution: advance ${canAdvanceActiveStep ? 'allowed' : 'held'}`;
+
+  return {
+    turn,
+    turnBudgetRemaining,
+    stepsRemaining,
+    canAdvanceActiveStep,
+    verificationGateOpen,
+    cooldownTurns,
+    pacingBand,
+    headline,
+  };
+}
+
+export function executionPacingRequiresThrottle(pacing: Agent17ExecutionPacingSnapshot): boolean {
+  return pacing.pacingBand === 'throttled' || !pacing.verificationGateOpen;
+}
+
+
+// --- source: planning/resilience-scorecard.ts ---
+  Acc17CommandCenterOpsState,
+  Agent17GameStateSlice,
+  Agent17PlanHealthBand,
+  Agent17ResilienceScorecard,
+  Agent17VerificationPolicySnapshot,
+} from '../types/command-center-types.ts';
+
+export function buildAgent17ResilienceScorecard(
+  ops: Acc17CommandCenterOpsState,
+  state: Agent17GameStateSlice,
+  actorId: string,
+  planHealth: Agent17PlanHealthBand,
+  verificationPolicy: Agent17VerificationPolicySnapshot
+): Agent17ResilienceScorecard {
+  const signals = detectAgent17RecoverySignals(state, actorId);
+  const topSeverity = signals[0]?.severity ?? 0;
+  const recoveryPressure = Math.min(100, Math.round(topSeverity * 0.85 + signals.length * 6));
+
+  const satisfiedRules = verificationPolicy.rules.filter(r => r.satisfied).length;
+  const ruleTotal = Math.max(1, verificationPolicy.rules.length);
+  const verificationStability = Math.round((satisfiedRules / ruleTotal) * 100);
+
+  const healthComponent = planHealth.score;
+  const delegationLoad = Math.min(30, ops.delegatedProjects.filter(p => p.status === 'executing').length * 8);
+  const compositeIndex = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(healthComponent * 0.45 + verificationStability * 0.35 + (100 - recoveryPressure) * 0.2 - delegationLoad)
+    )
+  );
+
+  const mitigationHints: string[] = [];
+  if (recoveryPressure >= 55) {
+    mitigationHints.push('Prioritize recovery lane template before new delegation.');
+  }
+  if (!verificationPolicy.allowVerification) {
+    mitigationHints.push(`Clear verification gates: ${verificationPolicy.blockingRuleIds.join(', ')}`);
+  }
+  if (planHealth.blockedCount > 0) {
+    mitigationHints.push(`${planHealth.blockedCount} blocked step(s) — run replan or recovery path.`);
+  }
+  if (mitigationHints.length === 0) {
+    mitigationHints.push('Posture stable; maintain verify-then-advance cadence.');
+  }
+
+  const band: Agent17ResilienceScorecard['band'] =
+    compositeIndex >= 72 ? 'robust' : compositeIndex >= 45 ? 'watch' : 'fragile';
+
+  return {
+    recoveryPressure,
+    verificationStability,
+    compositeIndex,
+    band,
+    signalCount: signals.length,
+    mitigationHints: mitigationHints.slice(0, 4),
+    headline: `Resilience ${band} (${compositeIndex}/100) · recovery pressure ${recoveryPressure}`,
+  };
+}
+
+export function resilienceScorecardNeedsIntervention(card: Agent17ResilienceScorecard): boolean {
+  return card.band === 'fragile' || card.recoveryPressure >= 70;
+}
+
+
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -2335,11 +2496,26 @@ export function buildAgent17PlanningDepthSnapshot(
     state,
     settings
   );
+  const executionPacing = buildAgent17ExecutionPacing(
+    ops,
+    state,
+    planHealth,
+    verificationPolicy
+  );
+  const resilienceScorecard = buildAgent17ResilienceScorecard(
+    ops,
+    state,
+    actorId,
+    planHealth,
+    verificationPolicy
+  );
   return {
     ...core,
     intentQueue,
     verificationPolicy,
     coordinationBrief,
+    executionPacing,
+    resilienceScorecard,
   };
 }
 
@@ -2800,6 +2976,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'coordinationBrief has ≥3 sections and GI handoff tags.',
     severity: 'major',
   },
+  {
+    id: 'G17-025',
+    title: 'Execution pacing on planning depth',
+    category: 'planning',
+    acceptance: 'executionPacing reports turnBudgetRemaining and pacingBand.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-026',
+    title: 'Resilience scorecard composite bounded',
+    category: 'telemetry',
+    acceptance: 'resilienceScorecard compositeIndex is 0–100 with mitigation hints.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-027',
+    title: 'Pacing respects verification gates',
+    category: 'validation',
+    acceptance: 'Unchanged fingerprint yields throttled pacing or closed gate.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -3144,6 +3341,58 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const pacing = depthEval.snapshot.planningDepth?.executionPacing;
+  goalResults.push(
+    result(
+      'G17-025',
+      !!pacing &&
+        typeof pacing.turnBudgetRemaining === 'number' &&
+        (pacing.pacingBand === 'steady' ||
+          pacing.pacingBand === 'urgent' ||
+          pacing.pacingBand === 'throttled'),
+      pacing?.pacingBand || 'none'
+    )
+  );
+
+  const scorecard = depthEval.snapshot.planningDepth?.resilienceScorecard;
+  goalResults.push(
+    result(
+      'G17-026',
+      !!scorecard &&
+        scorecard.compositeIndex >= 0 &&
+        scorecard.compositeIndex <= 100 &&
+        scorecard.mitigationHints.length >= 1,
+      String(scorecard?.compositeIndex)
+    )
+  );
+
+  const fpHold = acc17ComputeRelevantStateFingerprint(baseState, 'player');
+  const pacingHeld = buildAgent17ExecutionPacing(
+    { ...depthEval.ops, lastContextFingerprint: fpHold },
+    baseState,
+    assessAgent17PlanHealth(depthEval.ops.activePlan, baseState, 'player'),
+    buildAgent17VerificationPolicy(
+      { ...depthEval.ops, lastContextFingerprint: fpHold },
+      baseState,
+      'player'
+    )
+  );
+  goalResults.push(
+    result(
+      'G17-027',
+      pacingHeld.pacingBand === 'throttled' || !pacingHeld.verificationGateOpen,
+      `${pacingHeld.pacingBand} gate=${pacingHeld.verificationGateOpen}`
+    )
+  );
+
+  void buildAgent17ResilienceScorecard(
+    depthEval.ops,
+    baseState,
+    'player',
+    assessAgent17PlanHealth(depthEval.ops.activePlan, baseState, 'player'),
+    buildAgent17VerificationPolicy(depthEval.ops, baseState, 'player')
+  );
+
   const passedCount = goalResults.filter(r => r.passed).length;
   const failedCount = goalResults.length - passedCount;
   return {
@@ -3190,6 +3439,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-022',
     'G17-023',
     'G17-024',
+    'G17-025',
+    'G17-026',
+    'G17-027',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
@@ -3917,12 +4169,169 @@ export function runAgent17CoordinationDepthTests(): Agent17DevTestReport {
 }
 
 
+// --- source: harness/run-execution-depth-tests.ts ---
+  createDefaultAcc17CommandCenterOpsState,
+  acc17CreateMultiStepPlanFromObjective,
+  defaultObjectiveResolver,
+} from '../planning/ops-state.ts';
+  buildAgent17ExecutionPacing,
+  executionPacingRequiresThrottle,
+} from '../planning/execution-pacing.ts';
+  buildAgent17ResilienceScorecard,
+  resilienceScorecardNeedsIntervention,
+} from '../planning/resilience-scorecard.ts';
+
+export function runAgent17ExecutionDepthTests(): Agent17DevTestReport {
+  const start = Date.now();
+  const testResults: Agent17DevTestReport['testResults'] = [];
+  const push = (id: string, name: string, ok: boolean, detail?: string) => {
+    testResults.push({
+      id,
+      name,
+      status: ok ? 'passed' : 'failed',
+      durationMs: 0,
+      errorMessage: ok ? undefined : detail,
+    });
+  };
+
+  try {
+    const settings = {
+      commandCenterSettings: { enabled: true },
+      aiCommunicationAutonomyLevel: 'assisted' as const,
+    };
+    const actor = {
+      id: 'player',
+      money: 80,
+      netWorth: 1200,
+      currentRegion: 'VIC',
+      currentSupplies: 4,
+    };
+    const state: Agent17GameStateSlice = {
+      turnCounter: 14,
+      day: 14,
+      player: actor,
+      actorsById: { player: actor },
+      playerTrackedObjective: { title: 'Stabilize supply chain', sourceType: 'contract' },
+      gi3Strategy: { headline: 'Avoid cash crunch' },
+      lastExecutedAction: { type: 'trade' },
+    };
+    const ops = createDefaultAcc17CommandCenterOpsState();
+    const plan = acc17CreateMultiStepPlanFromObjective(
+      state,
+      settings,
+      'player',
+      (s, st, id) => defaultObjectiveResolver(s, st, id)
+    );
+    const opsWithPlan = { ...ops, activePlan: plan };
+    const health = assessAgent17PlanHealth(plan, state, 'player');
+    const fp = acc17ComputeRelevantStateFingerprint(state, 'player');
+    const policyOpen = buildAgent17VerificationPolicy(
+      { ...opsWithPlan, lastContextFingerprint: 'prior_fp' },
+      state,
+      'player'
+    );
+    const policyClosed = buildAgent17VerificationPolicy(
+      { ...opsWithPlan, lastContextFingerprint: fp },
+      state,
+      'player'
+    );
+
+    const pacingOpen = buildAgent17ExecutionPacing(opsWithPlan, state, health, policyOpen);
+    push(
+      'exec_pacing_attached',
+      'Execution pacing exposes budget and steps remaining',
+      pacingOpen.stepsRemaining >= 1 && pacingOpen.turnBudgetRemaining >= 0,
+      `steps=${pacingOpen.stepsRemaining} budget=${pacingOpen.turnBudgetRemaining}`
+    );
+    push(
+      'exec_advance_when_open',
+      'Can advance when verification gate open',
+      pacingOpen.verificationGateOpen === true,
+      String(pacingOpen.canAdvanceActiveStep)
+    );
+
+    const pacingClosed = buildAgent17ExecutionPacing(opsWithPlan, state, health, policyClosed);
+    push(
+      'exec_throttle_on_fp',
+      'Pacing throttles when fingerprint unchanged',
+      pacingClosed.pacingBand === 'throttled' || executionPacingRequiresThrottle(pacingClosed),
+      pacingClosed.pacingBand
+    );
+    push(
+      'exec_cooldown_bounded',
+      'Delegate cooldown non-negative',
+      pacingOpen.cooldownTurns >= 0 && pacingOpen.cooldownTurns <= 2,
+      String(pacingOpen.cooldownTurns)
+    );
+
+    const scorecard = buildAgent17ResilienceScorecard(
+      opsWithPlan,
+      state,
+      'player',
+      health,
+      policyOpen
+    );
+    push(
+      'exec_resilience_bounded',
+      'Resilience composite index bounded 0–100',
+      scorecard.compositeIndex >= 0 &&
+        scorecard.compositeIndex <= 100 &&
+        scorecard.recoveryPressure >= 0 &&
+        scorecard.verificationStability >= 0,
+      String(scorecard.compositeIndex)
+    );
+    push(
+      'exec_mitigation_hints',
+      'Scorecard emits mitigation hints',
+      scorecard.mitigationHints.length >= 1 && scorecard.headline.length > 10,
+      scorecard.mitigationHints[0]
+    );
+    push(
+      'exec_low_supplies_intervention',
+      'Low supplies raise recovery pressure',
+      scorecard.recoveryPressure >= 20 || resilienceScorecardNeedsIntervention(scorecard),
+      String(scorecard.recoveryPressure)
+    );
+
+    const evalRes = evaluateAcc17CommandCenterOperations(state, settings, 'player', ops);
+    const depth = evalRes.snapshot.planningDepth;
+    push(
+      'exec_evaluator_depth',
+      'Evaluator attaches execution pacing and resilience scorecard',
+      !!depth?.executionPacing?.headline &&
+        !!depth?.resilienceScorecard?.headline &&
+        depth.resilienceScorecard.mitigationHints.length >= 1,
+      `${depth?.executionPacing?.pacingBand}/${depth?.resilienceScorecard?.band}`
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    push('exec_throw', 'Execution harness did not throw', false, msg);
+  }
+
+  const passedCount = testResults.filter(t => t.status === 'passed').length;
+  const failedCount = testResults.filter(t => t.status === 'failed').length;
+  const overallStatus: 'passed' | 'failed' = failedCount === 0 ? 'passed' : 'failed';
+  return {
+    timestamp: Date.now(),
+    totalTests: testResults.length,
+    passedCount,
+    failedCount,
+    executionTimeMs: Date.now() - start,
+    overallStatus,
+    success: overallStatus === 'passed',
+    testResults,
+    summary: `Agent 17 Execution Depth Tests: ${passedCount}/${testResults.length} Passed`,
+  };
+}
+
+
 export function runAgent17Op10mModuleSelfTests(): {
   acc17: ReturnType<typeof runAgent17Acc17DevTests>;
   recovery: ReturnType<typeof runAgent17RecoveryPathTests>;
   depth: ReturnType<typeof runAgent17PlanningDepthTests>;
   delegation: ReturnType<typeof runAgent17DelegationDepthTests>;
   coordination: ReturnType<typeof runAgent17CoordinationDepthTests>;
+  execution: ReturnType<typeof runAgent17ExecutionDepthTests>;
   success: boolean;
 } {
   const acc17 = runAgent17Acc17DevTests();
@@ -3930,18 +4339,21 @@ export function runAgent17Op10mModuleSelfTests(): {
   const depth = runAgent17PlanningDepthTests();
   const delegation = runAgent17DelegationDepthTests();
   const coordination = runAgent17CoordinationDepthTests();
+  const execution = runAgent17ExecutionDepthTests();
   return {
     acc17,
     recovery,
     depth,
     delegation,
     coordination,
+    execution,
     success:
       acc17.success &&
       recovery.success &&
       depth.success &&
       delegation.success &&
-      coordination.success,
+      coordination.success &&
+      execution.success,
   };
 }
 

@@ -183,6 +183,8 @@ export interface Agent17PlanningDepthSnapshot {
   intentQueue: Agent17IntentQueueSnapshot;
   verificationPolicy: Agent17VerificationPolicySnapshot;
   coordinationBrief: Agent17CoordinationBrief;
+  executionPacing: Agent17ExecutionPacingSnapshot;
+  resilienceScorecard: Agent17ResilienceScorecard;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -223,6 +225,27 @@ export interface Agent17CoordinationBrief {
   sections: Agent17CoordinationBriefSection[];
   giHandoffTags: string[];
   confidence: number;
+}
+
+export interface Agent17ExecutionPacingSnapshot {
+  turn: number;
+  turnBudgetRemaining: number;
+  stepsRemaining: number;
+  canAdvanceActiveStep: boolean;
+  verificationGateOpen: boolean;
+  cooldownTurns: number;
+  pacingBand: 'urgent' | 'steady' | 'throttled';
+  headline: string;
+}
+
+export interface Agent17ResilienceScorecard {
+  recoveryPressure: number;
+  verificationStability: number;
+  compositeIndex: number;
+  band: 'robust' | 'watch' | 'fragile';
+  signalCount: number;
+  mitigationHints: string[];
+  headline: string;
 }
 
 export interface Agent17DelegationLadderRung {

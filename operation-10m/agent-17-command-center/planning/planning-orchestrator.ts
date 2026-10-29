@@ -23,6 +23,8 @@ import { refineAgent17DelegationSuggestion } from './delegation-depth.ts';
 import { buildAgent17IntentQueue } from './intent-synthesis.ts';
 import { buildAgent17VerificationPolicy } from './verification-policy.ts';
 import { buildAgent17CoordinationBrief } from './coordination-brief.ts';
+import { buildAgent17ExecutionPacing } from './execution-pacing.ts';
+import { buildAgent17ResilienceScorecard } from './resilience-scorecard.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -128,11 +130,26 @@ export function buildAgent17PlanningDepthSnapshot(
     state,
     settings
   );
+  const executionPacing = buildAgent17ExecutionPacing(
+    ops,
+    state,
+    planHealth,
+    verificationPolicy
+  );
+  const resilienceScorecard = buildAgent17ResilienceScorecard(
+    ops,
+    state,
+    actorId,
+    planHealth,
+    verificationPolicy
+  );
   return {
     ...core,
     intentQueue,
     verificationPolicy,
     coordinationBrief,
+    executionPacing,
+    resilienceScorecard,
   };
 }
 

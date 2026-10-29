@@ -170,6 +170,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'coordinationBrief has ≥3 sections and GI handoff tags.',
     severity: 'major',
   },
+  {
+    id: 'G17-025',
+    title: 'Execution pacing on planning depth',
+    category: 'planning',
+    acceptance: 'executionPacing reports turnBudgetRemaining and pacingBand.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-026',
+    title: 'Resilience scorecard composite bounded',
+    category: 'telemetry',
+    acceptance: 'resilienceScorecard compositeIndex is 0–100 with mitigation hints.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-027',
+    title: 'Pacing respects verification gates',
+    category: 'validation',
+    acceptance: 'Unchanged fingerprint yields throttled pacing or closed gate.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
