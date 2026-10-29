@@ -625,6 +625,23 @@ export type {
   TransitionRecognitionBand,
 } from './production-transition-recognition';
 
+export {
+  AGENT08_TRANSITION_PRECEDENCE_SCHEMA_VERSION,
+  buildFirmProductionTransitionPrecedence,
+  classifyNationalPrecedenceBand,
+  computeNationalPrecedencePressure,
+  computeNationalProductionTransitionPrecedence,
+  summarizeRegionalTransitionPrecedence,
+  runAgent08TransitionPrecedenceSelfTests,
+} from './production-transition-precedence';
+
+export type {
+  FirmProductionTransitionPrecedence,
+  NationalProductionTransitionPrecedence,
+  RegionalTransitionPrecedenceSummary,
+  TransitionPrecedenceBand,
+} from './production-transition-precedence';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -662,6 +679,7 @@ import { runAgent08TransitionAssuranceSelfTests } from './production-transition-
 import { runAgent08TransitionTrustSelfTests } from './production-transition-trust';
 import { runAgent08TransitionLegitimacySelfTests } from './production-transition-legitimacy';
 import { runAgent08TransitionRecognitionSelfTests } from './production-transition-recognition';
+import { runAgent08TransitionPrecedenceSelfTests } from './production-transition-precedence';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -851,6 +869,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionPrecedence = runAgent08TransitionPrecedenceSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -889,5 +912,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionTrust,
     ...transitionLegitimacy,
     ...transitionRecognition,
+    ...transitionPrecedence,
   ];
 }
