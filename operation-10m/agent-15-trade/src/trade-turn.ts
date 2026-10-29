@@ -715,6 +715,10 @@ import {
   wave53SovereignHandoffDepthExportScale,
 } from './o10-237-wave53-sovereign-handoff-depth.ts';
 import {
+  computeWave54SovereignHandoffLatticeSnapshot,
+  wave54SovereignHandoffLatticeExportScale,
+} from './o10-240-wave54-sovereign-handoff-lattice.ts';
+import {
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -2043,6 +2047,12 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   });
   persisted = wave53SovereignHandoffStep.persisted;
 
+  const wave54SovereignHandoffLatticeStep = computeWave54SovereignHandoffLatticeSnapshot({
+    wave53Depth: wave53SovereignHandoffStep.snapshot,
+    persisted,
+  });
+  persisted = wave54SovereignHandoffLatticeStep.persisted;
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -2143,6 +2153,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
           bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGate,
         ) *
         wave53SovereignHandoffDepthExportScale(wave53SovereignHandoffStep.snapshot) *
+        wave54SovereignHandoffLatticeExportScale(wave54SovereignHandoffLatticeStep.snapshot) *
         10,
     ) / 10;
 

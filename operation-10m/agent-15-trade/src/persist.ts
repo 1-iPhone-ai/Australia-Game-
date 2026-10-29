@@ -219,6 +219,7 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     settledLaunchedClearedForwardArcHandoffContinuitySmoothing: 0.52,
     bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing: 0.52,
     wave53SovereignHandoffDepthSmoothing: 0.52,
+    wave54SovereignHandoffLatticeSmoothing: 0.54,
   };
 }
 
@@ -614,6 +615,11 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
     sanitizeBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing(
       r.bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing,
     );
+  base.wave54SovereignHandoffLatticeSmoothing = gtelClamp(
+    gtelNum(r.wave54SovereignHandoffLatticeSmoothing, 0.54),
+    0.18,
+    0.94,
+  );
   base.wave53SovereignHandoffDepthSmoothing = gtelClamp(
     gtelNum(r.wave53SovereignHandoffDepthSmoothing, 0.52),
     0.16,

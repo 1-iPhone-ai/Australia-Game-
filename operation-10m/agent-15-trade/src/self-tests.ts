@@ -483,6 +483,10 @@ import {
   computeWave53SovereignHandoffDepthSnapshot,
   wave53SovereignHandoffDepthExportScale,
 } from './o10-237-wave53-sovereign-handoff-depth.ts';
+import {
+  computeWave54SovereignHandoffLatticeSnapshot,
+  wave54SovereignHandoffLatticeExportScale,
+} from './o10-240-wave54-sovereign-handoff-lattice.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -3252,6 +3256,22 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       wave53SovereignHandoffDepthExportScale(step.snapshot) >= 0.16,
       'expected wave53 export scale',
+    );
+  });
+
+  ok('wave54 sovereign handoff lattice improves export scale', () => {
+    const depth = computeWave53SovereignHandoffDepthSnapshot({
+      certifiedHandoffScore: 0.84,
+      persisted: createEmptyGTELPersisted(),
+    });
+    const lattice = computeWave54SovereignHandoffLatticeSnapshot({
+      wave53Depth: depth.snapshot,
+      persisted: depth.persisted,
+    });
+    gtelAssert(lattice.snapshot.band !== 'open', 'expected wave54 sovereign handoff lattice formed');
+    gtelAssert(
+      wave54SovereignHandoffLatticeExportScale(lattice.snapshot) >= 0.18,
+      'expected wave54 export scale',
     );
   });
 

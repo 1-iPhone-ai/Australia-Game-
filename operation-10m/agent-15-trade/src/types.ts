@@ -249,6 +249,7 @@ export interface GTELPersisted {
   settledLaunchedClearedForwardArcHandoffContinuitySmoothing?: number;
   bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing?: number;
   wave53SovereignHandoffDepthSmoothing?: number;
+  wave54SovereignHandoffLatticeSmoothing?: number;
 }
 
 export interface GTELState {
