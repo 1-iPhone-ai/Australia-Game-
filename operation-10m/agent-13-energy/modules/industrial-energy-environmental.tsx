@@ -114,6 +114,13 @@ import {
   type V1014RegionalWaterEnergyNexusLedger,
 } from './drought-desal-water-energy-ledger';
 import {
+  advanceRegionalBioenergyGridFlex,
+  computeRegionalSustainableFeedstockLedger,
+  scoreAgent13BioenergyFeedstockGIAlignment,
+  type V1014RegionalBioenergyGridFlexLedger,
+  type V1014RegionalSustainableFeedstockLedger,
+} from './bioenergy-sustainable-feedstock-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25626,6 +25633,10 @@ export interface V1014RegionalEnergyProfile {
   droughtDesalRelief: number;
   waterEnergyNexusBand: string;
   waterEnergyNexusRelief: number;
+  sustainableFeedstockBand: string;
+  sustainableFeedstockRelief: number;
+  bioenergyGridFlexBand: string;
+  bioenergyGridFlexRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25690,6 +25701,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalDistrictRenewableHeatLedgers: Record<string, V1014RegionalDistrictRenewableHeatLedger>;
   regionalDroughtDesalLedgers: Record<string, V1014RegionalDroughtDesalLedger>;
   regionalWaterEnergyNexusLedgers: Record<string, V1014RegionalWaterEnergyNexusLedger>;
+  regionalSustainableFeedstockLedgers: Record<string, V1014RegionalSustainableFeedstockLedger>;
+  regionalBioenergyGridFlexLedgers: Record<string, V1014RegionalBioenergyGridFlexLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25725,6 +25738,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalDistrictHeatMemory: Record<string, { thermalIndex: number }>;
   regionalDroughtDesalMemory: Record<string, { reserveBalance: number; waterSecurityIndex: number }>;
   regionalWaterNexusMemory: Record<string, { nexusIndex: number }>;
+  regionalFeedstockMemory: Record<string, { stewardshipBalance: number; feedstockIndex: number }>;
+  regionalBioFlexMemory: Record<string, { firmingIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25772,6 +25787,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalDistrictHeatMemory: {},
     regionalDroughtDesalMemory: {},
     regionalWaterNexusMemory: {},
+    regionalFeedstockMemory: {},
+    regionalBioFlexMemory: {},
     history: [],
   };
 }
@@ -25832,6 +25849,10 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalDroughtDesalMemory === 'object' && raw.regionalDroughtDesalMemory ? raw.regionalDroughtDesalMemory : {},
     regionalWaterNexusMemory:
       typeof raw.regionalWaterNexusMemory === 'object' && raw.regionalWaterNexusMemory ? raw.regionalWaterNexusMemory : {},
+    regionalFeedstockMemory:
+      typeof raw.regionalFeedstockMemory === 'object' && raw.regionalFeedstockMemory ? raw.regionalFeedstockMemory : {},
+    regionalBioFlexMemory:
+      typeof raw.regionalBioFlexMemory === 'object' && raw.regionalBioFlexMemory ? raw.regionalBioFlexMemory : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -25966,6 +25987,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalDistrictRenewableHeatLedgers: {},
       regionalDroughtDesalLedgers: {},
       regionalWaterEnergyNexusLedgers: {},
+      regionalSustainableFeedstockLedgers: {},
+      regionalBioenergyGridFlexLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26004,6 +26027,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const districtRenewableHeatLedgers: Record<string, V1014RegionalDistrictRenewableHeatLedger> = {};
   const droughtDesalLedgers: Record<string, V1014RegionalDroughtDesalLedger> = {};
   const waterEnergyNexusLedgers: Record<string, V1014RegionalWaterEnergyNexusLedger> = {};
+  const sustainableFeedstockLedgers: Record<string, V1014RegionalSustainableFeedstockLedger> = {};
+  const bioenergyGridFlexLedgers: Record<string, V1014RegionalBioenergyGridFlexLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26053,6 +26078,10 @@ export function computeIndustrialEnergyEnvironmentalState(
     ...persisted.regionalDroughtDesalMemory,
   };
   const nextWaterNexusMemory: Record<string, { nexusIndex: number }> = { ...persisted.regionalWaterNexusMemory };
+  const nextFeedstockMemory: Record<string, { stewardshipBalance: number; feedstockIndex: number }> = {
+    ...persisted.regionalFeedstockMemory,
+  };
+  const nextBioFlexMemory: Record<string, { firmingIndex: number }> = { ...persisted.regionalBioFlexMemory };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
 
@@ -26393,6 +26422,28 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextWaterNexusMemory[regionId] = waterNexusStep.next;
     waterEnergyNexusLedgers[regionId] = waterNexusStep.ledger;
 
+    const feedstockStep = computeRegionalSustainableFeedstockLedger({
+      regionId,
+      soilCarbonLandRelief: soilStep.ledger.soilCarbonLandRelief,
+      waterEnergyNexusRelief: waterNexusStep.ledger.waterEnergyNexusRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextFeedstockMemory[regionId] || null,
+    });
+    nextFeedstockMemory[regionId] = feedstockStep.next;
+    sustainableFeedstockLedgers[regionId] = feedstockStep.ledger;
+
+    const bioFlexStep = advanceRegionalBioenergyGridFlex({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      feedstockBand: feedstockStep.ledger.band,
+      droughtDesalRelief: desalStep.ledger.droughtDesalRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextBioFlexMemory[regionId] || null,
+    });
+    nextBioFlexMemory[regionId] = bioFlexStep.next;
+    bioenergyGridFlexLedgers[regionId] = bioFlexStep.ledger;
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -26426,6 +26477,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= districtHeatStep.ledger.districtHeatRelief;
     pressure -= desalStep.ledger.droughtDesalRelief;
     pressure -= waterNexusStep.ledger.waterEnergyNexusRelief;
+    pressure -= feedstockStep.ledger.sustainableFeedstockRelief;
+    pressure -= bioFlexStep.ledger.bioenergyGridFlexRelief;
     if (biodiversityStep.ledger.band === 'critical_loss') pressure += 5;
     pressure -= gridRecovery.pressureRelief;
     pressure -= storageFlex.gridStressRelief;
@@ -26484,6 +26537,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       districtHeatStep.ledger.summary,
       desalStep.ledger.summary,
       waterNexusStep.ledger.summary,
+      feedstockStep.ledger.summary,
+      bioFlexStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -26616,6 +26671,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       droughtDesalRelief: desalStep.ledger.droughtDesalRelief,
       waterEnergyNexusBand: waterNexusStep.ledger.band,
       waterEnergyNexusRelief: waterNexusStep.ledger.waterEnergyNexusRelief,
+      sustainableFeedstockBand: feedstockStep.ledger.band,
+      sustainableFeedstockRelief: feedstockStep.ledger.sustainableFeedstockRelief,
+      bioenergyGridFlexBand: bioFlexStep.ledger.band,
+      bioenergyGridFlexRelief: bioFlexStep.ledger.bioenergyGridFlexRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -26709,6 +26768,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalDistrictRenewableHeatLedgers: districtRenewableHeatLedgers,
     regionalDroughtDesalLedgers: droughtDesalLedgers,
     regionalWaterEnergyNexusLedgers: waterEnergyNexusLedgers,
+    regionalSustainableFeedstockLedgers: sustainableFeedstockLedgers,
+    regionalBioenergyGridFlexLedgers: bioenergyGridFlexLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -26744,6 +26805,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalDistrictHeatMemory: nextDistrictHeatMemory,
     regionalDroughtDesalMemory: nextDroughtDesalMemory,
     regionalWaterNexusMemory: nextWaterNexusMemory,
+    regionalFeedstockMemory: nextFeedstockMemory,
+    regionalBioFlexMemory: nextBioFlexMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -27235,6 +27298,38 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     nexusBand: rr15.state.regions.SA?.waterEnergyNexusBand,
   });
   check('DESAL NEXUS GI alignment', giDesal.relevanceDelta > 0.5, giDesal.reason || '');
+
+  const bioInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'certified_forest_residue_hub',
+      'agricultural_stubble_brushings',
+      'organic_waste_digester_feed',
+      'drought_tolerant_biomass_crop',
+      'biomass_dispatchable_peaker',
+      'agricultural_chp_orchestration',
+      'beccs_co_benefit_train',
+      'forest_thinning_biochar_loop',
+    ],
+  };
+  const rr16 = computeIndustrialEnergyEnvironmentalState(bioInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check('FEEDSTOCK ledger tracked', !!rr16.state.regionalSustainableFeedstockLedgers.TAS?.band, rr16.state.regionalSustainableFeedstockLedgers.TAS?.band || '');
+  check(
+    'BIO flex relief',
+    (rr16.state.regions.TAS?.bioenergyGridFlexRelief || 0) > 0,
+    String(rr16.state.regions.TAS?.bioenergyGridFlexRelief),
+  );
+  check(
+    'FEEDSTOCK memory persisted',
+    !!rr16.persisted.regionalFeedstockMemory.TAS,
+    String(rr16.persisted.regionalFeedstockMemory.TAS?.feedstockIndex),
+  );
+  const giBio = scoreAgent13BioenergyFeedstockGIAlignment({
+    actionText: 'Certified forest residue biomass peaker with agricultural CHP',
+    feedstockBand: rr16.state.regions.TAS?.sustainableFeedstockBand,
+    flexBand: rr16.state.regions.TAS?.bioenergyGridFlexBand,
+  });
+  check('BIOENERGY GI alignment', giBio.relevanceDelta > 0.5, giBio.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

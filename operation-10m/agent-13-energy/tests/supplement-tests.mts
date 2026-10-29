@@ -60,6 +60,11 @@ import {
   V1014_DESAL_NEXUS_TURN_SCENARIOS,
 } from '../modules/drought-desal-water-energy-ledger.ts';
 import {
+  runAgent13BioenergyFeedstockScaleSelfTests,
+  runAgent13BioenergyFeedstockTurnScenario,
+  V1014_BIOENERGY_FEEDSTOCK_TURN_SCENARIOS,
+} from '../modules/bioenergy-sustainable-feedstock-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -239,6 +244,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const desalTurn = runAgent13DesalNexusTurnScenario(V1014_DESAL_NEXUS_TURN_SCENARIOS[0]);
   ok(desalTurn.passed);
+
+  const bioFeedstock = runAgent13BioenergyFeedstockScaleSelfTests();
+  ok(bioFeedstock.failed === 0 && bioFeedstock.passed >= 7);
+
+  const bioTurn = runAgent13BioenergyFeedstockTurnScenario(V1014_BIOENERGY_FEEDSTOCK_TURN_SCENARIOS[0]);
+  ok(bioTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

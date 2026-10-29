@@ -16,6 +16,7 @@ export * from './modules/geothermal-industrial-heat-ledger';
 export * from './modules/coastal-blue-carbon-shore-energy-ledger';
 export * from './modules/landfill-waste-district-heat-ledger';
 export * from './modules/drought-desal-water-energy-ledger';
+export * from './modules/bioenergy-sustainable-feedstock-ledger';
 export * from './modules/turn-simulation-depth';
 export * from './modules/v94-type-stubs';
 export * from './modules/industrial-energy-environmental';

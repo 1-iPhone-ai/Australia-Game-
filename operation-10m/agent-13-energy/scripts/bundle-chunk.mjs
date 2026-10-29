@@ -35,6 +35,7 @@ const FILES = [
   'coastal-blue-carbon-shore-energy-ledger.ts',
   'landfill-waste-district-heat-ledger.ts',
   'drought-desal-water-energy-ledger.ts',
+  'bioenergy-sustainable-feedstock-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -65,6 +66,8 @@ const EXPORT_MANIFEST = [
   'V1014_DISTRICT_RENEWABLE_HEAT_CATALOG',
   'V1014_DROUGHT_DESAL_CATALOG',
   'V1014_WATER_ENERGY_NEXUS_CATALOG',
+  'V1014_SUSTAINABLE_FEEDSTOCK_CATALOG',
+  'V1014_BIOENERGY_GRID_FLEX_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -116,6 +119,9 @@ const EXPORT_MANIFEST = [
   'runAgent13DesalNexusScaleSelfTests',
   'runAgent13DesalNexusTurnScenario',
   'V1014_DESAL_NEXUS_TURN_SCENARIOS',
+  'runAgent13BioenergyFeedstockScaleSelfTests',
+  'runAgent13BioenergyFeedstockTurnScenario',
+  'V1014_BIOENERGY_FEEDSTOCK_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];
