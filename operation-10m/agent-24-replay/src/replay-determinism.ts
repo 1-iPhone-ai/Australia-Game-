@@ -461,6 +461,18 @@ import {
   buildAgent24ReplayScaleWaveWave43IntegrationHandoffReport,
   type Agent24ReplayScaleWaveWave43IntegrationHandoffReport,
 } from './replay-scale-wave-wave43-integration-handoff.ts';
+import {
+  buildAgent24ReplayScaleWaveWave43IntegrationVerificationReport,
+  type Agent24ReplayScaleWaveWave43IntegrationVerificationReport,
+} from './replay-scale-wave-wave43-integration-verification.ts';
+import {
+  buildAgent24ArchiveScaleWaveWave44ExportGateReport,
+  type Agent24ArchiveScaleWaveWave44ExportGateReport,
+} from './archive-scale-wave-wave44-export-gate.ts';
+import {
+  buildAgent24ReplayScaleWaveWave44IntegrationHandoffReport,
+  type Agent24ReplayScaleWaveWave44IntegrationHandoffReport,
+} from './replay-scale-wave-wave44-integration-handoff.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -594,6 +606,9 @@ export interface Agent24ReplayDeterminismBundle {
   replayScaleWaveWave42IntegrationVerification: Agent24ReplayScaleWaveWave42IntegrationVerificationReport;
   archiveScaleWaveWave43ExportGate: Agent24ArchiveScaleWaveWave43ExportGateReport;
   replayScaleWaveWave43IntegrationHandoff: Agent24ReplayScaleWaveWave43IntegrationHandoffReport;
+  replayScaleWaveWave43IntegrationVerification: Agent24ReplayScaleWaveWave43IntegrationVerificationReport;
+  archiveScaleWaveWave44ExportGate: Agent24ArchiveScaleWaveWave44ExportGateReport;
+  replayScaleWaveWave44IntegrationHandoff: Agent24ReplayScaleWaveWave44IntegrationHandoffReport;
   replayScaleWaveWave34IntegrationHandoff: Agent24ReplayScaleWaveWave34IntegrationHandoffReport;
   attestation: Agent24ReplayAttestation;
   compositeFingerprint: string;
@@ -1009,7 +1024,7 @@ export function buildAgent24ReplayDeterminismBundle(
   });
   const replayScaleWaveAcceptance = buildAgent24ReplayScaleWaveAcceptanceReport({
     matchId: input.matchId,
-    waveRound: 43,
+    waveRound: 44,
     archiveContinuityVerification,
     exportReadiness: exportReadinessFinal,
     analyticsDepth,
@@ -1481,6 +1496,23 @@ export function buildAgent24ReplayDeterminismBundle(
     archiveScaleWaveWave43ExportGate,
     replayScaleWaveWave42IntegrationVerification,
   });
+  const replayScaleWaveWave43IntegrationVerification = buildAgent24ReplayScaleWaveWave43IntegrationVerificationReport({
+    matchId: input.matchId,
+    replayScaleWaveWave43IntegrationHandoff,
+    archiveScaleWaveWave43ExportGate,
+    replayScaleWaveWave42IntegrationVerification,
+  });
+  const archiveScaleWaveWave44ExportGate = buildAgent24ArchiveScaleWaveWave44ExportGateReport({
+    matchId: input.matchId,
+    replayScaleWaveWave43IntegrationVerification,
+    snapshotSeal,
+    sealVerification,
+  });
+  const replayScaleWaveWave44IntegrationHandoff = buildAgent24ReplayScaleWaveWave44IntegrationHandoffReport({
+    matchId: input.matchId,
+    archiveScaleWaveWave44ExportGate,
+    replayScaleWaveWave43IntegrationVerification,
+  });
   const replayScaleWaveWave34IntegrationHandoff = buildAgent24ReplayScaleWaveWave34IntegrationHandoffReport({
     matchId: input.matchId,
     archiveScaleWaveWave34ExportGate,
@@ -1617,6 +1649,9 @@ export function buildAgent24ReplayDeterminismBundle(
     replayScaleWaveWave42IntegrationVerification: replayScaleWaveWave42IntegrationVerification.deterministicFingerprint,
     archiveScaleWaveWave43ExportGate: archiveScaleWaveWave43ExportGate.deterministicFingerprint,
     replayScaleWaveWave43IntegrationHandoff: replayScaleWaveWave43IntegrationHandoff.deterministicFingerprint,
+    replayScaleWaveWave43IntegrationVerification: replayScaleWaveWave43IntegrationVerification.deterministicFingerprint,
+    archiveScaleWaveWave44ExportGate: archiveScaleWaveWave44ExportGate.deterministicFingerprint,
+    replayScaleWaveWave44IntegrationHandoff: replayScaleWaveWave44IntegrationHandoff.deterministicFingerprint,
     replayScaleWaveWave34IntegrationHandoff: replayScaleWaveWave34IntegrationHandoff.deterministicFingerprint,
   });
 
@@ -1744,6 +1779,9 @@ export function buildAgent24ReplayDeterminismBundle(
     replayScaleWaveWave42IntegrationVerification,
     archiveScaleWaveWave43ExportGate,
     replayScaleWaveWave43IntegrationHandoff,
+    replayScaleWaveWave43IntegrationVerification,
+    archiveScaleWaveWave44ExportGate,
+    replayScaleWaveWave44IntegrationHandoff,
     replayScaleWaveWave34IntegrationHandoff,
     attestation: attestationFinal,
     compositeFingerprint,
@@ -2572,6 +2610,27 @@ export function verifyAgent24ReplayDeterminism(
         a.replayScaleWaveWave43IntegrationHandoff.deterministicFingerprint ===
         b.replayScaleWaveWave43IntegrationHandoff.deterministicFingerprint,
       detail: 'Twin replay scale wave wave43 integration handoff fingerprints',
+    },
+    {
+      name: 'replay_scale_wave_wave43_integration_verification_twin',
+      passed:
+        a.replayScaleWaveWave43IntegrationVerification.deterministicFingerprint ===
+        b.replayScaleWaveWave43IntegrationVerification.deterministicFingerprint,
+      detail: 'Twin replay scale wave wave43 integration verification fingerprints',
+    },
+    {
+      name: 'archive_scale_wave_wave44_export_gate_twin',
+      passed:
+        a.archiveScaleWaveWave44ExportGate.deterministicFingerprint ===
+        b.archiveScaleWaveWave44ExportGate.deterministicFingerprint,
+      detail: 'Twin archive scale wave wave44 export gate fingerprints',
+    },
+    {
+      name: 'replay_scale_wave_wave44_integration_handoff_twin',
+      passed:
+        a.replayScaleWaveWave44IntegrationHandoff.deterministicFingerprint ===
+        b.replayScaleWaveWave44IntegrationHandoff.deterministicFingerprint,
+      detail: 'Twin replay scale wave wave44 integration handoff fingerprints',
     },
     {
       name: 'composite_twin',

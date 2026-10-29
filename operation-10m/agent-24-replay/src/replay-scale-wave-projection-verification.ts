@@ -124,7 +124,7 @@ export function runAgent24ReplayScaleWaveProjectionVerificationSelfTests(): Arra
   const exportGate = {
     reportId: 'eg',
     matchId: 'self',
-    waveRound: 43,
+    waveRound: 44,
     exportAllowed: true,
     blockerCount: 0,
     blockers: [],
@@ -134,7 +134,7 @@ export function runAgent24ReplayScaleWaveProjectionVerificationSelfTests(): Arra
   const integrationVerification = {
     reportId: 'iv',
     matchId: 'self',
-    waveRound: 43,
+    waveRound: 44,
     integrationBaselineSha: '99f2e72b',
     verified: true,
     issueCount: 0,
@@ -146,7 +146,7 @@ export function runAgent24ReplayScaleWaveProjectionVerificationSelfTests(): Arra
   const projectionHandoff = {
     sealId: 'ph',
     matchId: 'self',
-    waveRound: 43,
+    waveRound: 44,
     projectionBaselineSha: '99f2e72b',
     handoffReady: true,
     linkCount: 3,
@@ -165,7 +165,7 @@ export function runAgent24ReplayScaleWaveProjectionVerificationSelfTests(): Arra
 
   return [
     { name: 'verified_when_projection_stack_ready', passed: report.verified && report.issueCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 43 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 44 },
     {
       name: 'deterministic_fingerprint',
       passed:
