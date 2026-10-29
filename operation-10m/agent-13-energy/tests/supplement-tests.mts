@@ -155,6 +155,11 @@ import {
   V1014_DISCLOSURE_PASSPORT_TURN_SCENARIOS,
 } from '../modules/climate-disclosure-green-product-passport-ledger.ts';
 import {
+  runAgent13RenewableCmiScaleSelfTests,
+  runAgent13RenewableCmiTurnScenario,
+  V1014_RENEWABLE_CMI_TURN_SCENARIOS,
+} from '../modules/renewable-attribute-carbon-market-integrity-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -448,6 +453,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const dpTurn = runAgent13DisclosurePassportTurnScenario(V1014_DISCLOSURE_PASSPORT_TURN_SCENARIOS[0]);
   ok(dpTurn.passed);
+
+  const renewableCmi = runAgent13RenewableCmiScaleSelfTests();
+  ok(renewableCmi.failed === 0 && renewableCmi.passed >= 7);
+
+  const rcTurn = runAgent13RenewableCmiTurnScenario(V1014_RENEWABLE_CMI_TURN_SCENARIOS[0]);
+  ok(rcTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

@@ -54,6 +54,7 @@ const FILES = [
   'net-zero-pathway-export-carbon-intensity-ledger.ts',
   'scope3-supply-chain-hard-to-abate-orchestration-ledger.ts',
   'climate-disclosure-green-product-passport-ledger.ts',
+  'renewable-attribute-carbon-market-integrity-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -122,6 +123,8 @@ const EXPORT_MANIFEST = [
   'V1014_HARD_TO_ABATE_SECTOR_CATALOG',
   'V1014_CLIMATE_DISCLOSURE_CATALOG',
   'V1014_GREEN_PRODUCT_PASSPORT_CATALOG',
+  'V1014_RENEWABLE_ATTRIBUTE_CATALOG',
+  'V1014_CARBON_MARKET_INTEGRITY_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -230,6 +233,9 @@ const EXPORT_MANIFEST = [
   'runAgent13DisclosurePassportScaleSelfTests',
   'runAgent13DisclosurePassportTurnScenario',
   'V1014_DISCLOSURE_PASSPORT_TURN_SCENARIOS',
+  'runAgent13RenewableCmiScaleSelfTests',
+  'runAgent13RenewableCmiTurnScenario',
+  'V1014_RENEWABLE_CMI_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

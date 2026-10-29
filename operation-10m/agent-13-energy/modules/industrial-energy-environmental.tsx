@@ -247,6 +247,13 @@ import {
   type V1014RegionalGreenProductPassportLedger,
 } from './climate-disclosure-green-product-passport-ledger';
 import {
+  advanceRegionalCarbonMarketIntegrityOrchestration,
+  computeRegionalRenewableAttributeLedger,
+  scoreAgent13RenewableCmiGIAlignment,
+  type V1014RegionalCarbonMarketIntegrityLedger,
+  type V1014RegionalRenewableAttributeLedger,
+} from './renewable-attribute-carbon-market-integrity-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25835,6 +25842,10 @@ export interface V1014RegionalEnergyProfile {
   climateDisclosureRelief: number;
   greenProductPassportBand: string;
   greenProductPassportRelief: number;
+  renewableAttributeBand: string;
+  renewableAttributeRelief: number;
+  carbonMarketIntegrityBand: string;
+  carbonMarketIntegrityRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25937,6 +25948,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalHardToAbateLedgers: Record<string, V1014RegionalHardToAbateLedger>;
   regionalClimateDisclosureLedgers: Record<string, V1014RegionalClimateDisclosureLedger>;
   regionalGreenProductPassportLedgers: Record<string, V1014RegionalGreenProductPassportLedger>;
+  regionalRenewableAttributeLedgers: Record<string, V1014RegionalRenewableAttributeLedger>;
+  regionalCarbonMarketIntegrityLedgers: Record<string, V1014RegionalCarbonMarketIntegrityLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -26010,6 +26023,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalHardToAbateMemory: Record<string, { abatementIndex: number }>;
   regionalClimateDisclosureMemory: Record<string, { assuranceBalance: number; disclosureIndex: number }>;
   regionalGreenProductPassportMemory: Record<string, { passportIndex: number }>;
+  regionalRenewableAttributeMemory: Record<string, { attributeBalance: number; attributeIndex: number }>;
+  regionalCarbonMarketIntegrityMemory: Record<string, { integrityIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -26095,6 +26110,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalHardToAbateMemory: {},
     regionalClimateDisclosureMemory: {},
     regionalGreenProductPassportMemory: {},
+    regionalRenewableAttributeMemory: {},
+    regionalCarbonMarketIntegrityMemory: {},
     history: [],
   };
 }
@@ -26284,6 +26301,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalGreenProductPassportMemory === 'object' && raw.regionalGreenProductPassportMemory
         ? raw.regionalGreenProductPassportMemory
         : {},
+    regionalRenewableAttributeMemory:
+      typeof raw.regionalRenewableAttributeMemory === 'object' && raw.regionalRenewableAttributeMemory
+        ? raw.regionalRenewableAttributeMemory
+        : {},
+    regionalCarbonMarketIntegrityMemory:
+      typeof raw.regionalCarbonMarketIntegrityMemory === 'object' && raw.regionalCarbonMarketIntegrityMemory
+        ? raw.regionalCarbonMarketIntegrityMemory
+        : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -26456,6 +26481,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalHardToAbateLedgers: {},
       regionalClimateDisclosureLedgers: {},
       regionalGreenProductPassportLedgers: {},
+      regionalRenewableAttributeLedgers: {},
+      regionalCarbonMarketIntegrityLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26532,6 +26559,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const hardToAbateLedgers: Record<string, V1014RegionalHardToAbateLedger> = {};
   const climateDisclosureLedgers: Record<string, V1014RegionalClimateDisclosureLedger> = {};
   const greenProductPassportLedgers: Record<string, V1014RegionalGreenProductPassportLedger> = {};
+  const renewableAttributeLedgers: Record<string, V1014RegionalRenewableAttributeLedger> = {};
+  const carbonMarketIntegrityLedgers: Record<string, V1014RegionalCarbonMarketIntegrityLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26684,6 +26713,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextGreenProductPassportMemory: Record<string, { passportIndex: number }> = {
     ...persisted.regionalGreenProductPassportMemory,
+  };
+  const nextRenewableAttributeMemory: Record<string, { attributeBalance: number; attributeIndex: number }> = {
+    ...persisted.regionalRenewableAttributeMemory,
+  };
+  const nextCarbonMarketIntegrityMemory: Record<string, { integrityIndex: number }> = {
+    ...persisted.regionalCarbonMarketIntegrityMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -27576,6 +27611,35 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextGreenProductPassportMemory[regionId] = greenProductPassportStep.next;
     greenProductPassportLedgers[regionId] = greenProductPassportStep.ledger;
     pressure -= greenProductPassportStep.ledger.greenProductPassportRelief;
+
+    const renewableAttributeStep = computeRegionalRenewableAttributeLedger({
+      regionId,
+      climateDisclosureRelief: climateDisclosureStep.ledger.climateDisclosureRelief,
+      greenProductPassportRelief: greenProductPassportStep.ledger.greenProductPassportRelief,
+      disclosureBand: climateDisclosureStep.ledger.band,
+      passportBand: greenProductPassportStep.ledger.band,
+      scope3SupplyChainRelief: scope3SupplyChainStep.ledger.scope3SupplyChainRelief,
+      netZeroPathwayRelief: netZeroPathwayStep.ledger.netZeroPathwayRelief,
+      exportCarbonIntensityRelief: exportCarbonIntensityStep.ledger.exportCarbonIntensityRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextRenewableAttributeMemory[regionId] || null,
+    });
+    nextRenewableAttributeMemory[regionId] = renewableAttributeStep.next;
+    renewableAttributeLedgers[regionId] = renewableAttributeStep.ledger;
+    pressure -= renewableAttributeStep.ledger.renewableAttributeRelief;
+
+    const carbonMarketIntegrityStep = advanceRegionalCarbonMarketIntegrityOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      attributeBand: renewableAttributeStep.ledger.band,
+      emissionsCreditRelief: emissionsStep.ledger.pressureRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextCarbonMarketIntegrityMemory[regionId] || null,
+    });
+    nextCarbonMarketIntegrityMemory[regionId] = carbonMarketIntegrityStep.next;
+    carbonMarketIntegrityLedgers[regionId] = carbonMarketIntegrityStep.ledger;
+    pressure -= carbonMarketIntegrityStep.ledger.carbonMarketIntegrityRelief;
     pressure = v1014Clamp(pressure, 0, 100);
 
     nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
@@ -27654,6 +27718,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       hardToAbateStep.ledger.summary,
       climateDisclosureStep.ledger.summary,
       greenProductPassportStep.ledger.summary,
+      renewableAttributeStep.ledger.summary,
+      carbonMarketIntegrityStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -27862,6 +27928,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       climateDisclosureRelief: climateDisclosureStep.ledger.climateDisclosureRelief,
       greenProductPassportBand: greenProductPassportStep.ledger.band,
       greenProductPassportRelief: greenProductPassportStep.ledger.greenProductPassportRelief,
+      renewableAttributeBand: renewableAttributeStep.ledger.band,
+      renewableAttributeRelief: renewableAttributeStep.ledger.renewableAttributeRelief,
+      carbonMarketIntegrityBand: carbonMarketIntegrityStep.ledger.band,
+      carbonMarketIntegrityRelief: carbonMarketIntegrityStep.ledger.carbonMarketIntegrityRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -27993,6 +28063,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalHardToAbateLedgers: hardToAbateLedgers,
     regionalClimateDisclosureLedgers: climateDisclosureLedgers,
     regionalGreenProductPassportLedgers: greenProductPassportLedgers,
+    regionalRenewableAttributeLedgers: renewableAttributeLedgers,
+    regionalCarbonMarketIntegrityLedgers: carbonMarketIntegrityLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -28066,6 +28138,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalHardToAbateMemory: nextHardToAbateMemory,
     regionalClimateDisclosureMemory: nextClimateDisclosureMemory,
     regionalGreenProductPassportMemory: nextGreenProductPassportMemory,
+    regionalRenewableAttributeMemory: nextRenewableAttributeMemory,
+    regionalCarbonMarketIntegrityMemory: nextCarbonMarketIntegrityMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -29316,6 +29390,50 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     passportBand: rr34.state.regions.VIC?.greenProductPassportBand,
   });
   check('DISCLOSURE PASSPORT GI alignment', giDisclosurePassport.relevanceDelta > 0.5, giDisclosurePassport.reason || '');
+
+  const renewableCmiInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'granular_renewable_certificate_hub',
+      'federation_renewable_attribute_tie',
+      'time_matched_renewable_attribute_corridor',
+      'safeguard_credit_integrity_hub',
+      'trade_exposed_carbon_credit_stack',
+      'ifrs_climate_disclosure_orchestration_hub',
+      'digital_product_passport_hub',
+      'upstream_scope3_emissions_accounting_hub',
+      'scope12_pathway_orchestration_hub',
+      'battery_grid',
+      'renewable_grid',
+      'industrial_ccs_cluster',
+    ],
+  };
+  const rr35 = computeIndustrialEnergyEnvironmentalState(
+    renewableCmiInp,
+    createInitialIndustrialEnergyEnvironmentalPersisted(),
+    null,
+  );
+  check(
+    'RENEWABLE attribute ledger tracked',
+    !!rr35.state.regionalRenewableAttributeLedgers.QLD?.band,
+    rr35.state.regionalRenewableAttributeLedgers.QLD?.band || '',
+  );
+  check(
+    'CARBON market integrity relief',
+    (rr35.state.regions.QLD?.carbonMarketIntegrityRelief || 0) > 0,
+    String(rr35.state.regions.QLD?.carbonMarketIntegrityRelief),
+  );
+  check(
+    'RENEWABLE attribute memory persisted',
+    !!rr35.persisted.regionalRenewableAttributeMemory.QLD,
+    String(rr35.persisted.regionalRenewableAttributeMemory.QLD?.attributeIndex),
+  );
+  const giRenewableCmi = scoreAgent13RenewableCmiGIAlignment({
+    actionText: 'Granular renewable certificate hub with safeguard credit integrity and trade-exposed carbon credit stack',
+    attributeBand: rr35.state.regions.QLD?.renewableAttributeBand,
+    integrityBand: rr35.state.regions.QLD?.carbonMarketIntegrityBand,
+  });
+  check('RENEWABLE CMI GI alignment', giRenewableCmi.relevanceDelta > 0.5, giRenewableCmi.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');
