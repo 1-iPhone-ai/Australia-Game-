@@ -313,6 +313,36 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
     },
     delayedTradeOffs: [],
   },
+  'sga_coalition_stabilization_pact': {
+    id: 'sga_coalition_stabilization_pact',
+    title: 'Coalition Stabilization Pact',
+    category: 'governance',
+    apCost: 2,
+    cashCost: 12_000,
+    treasuryCost: 60_000,
+    minApproval: 46,
+    alignedPriorities: ['economic_diversification', 'supply_chain_security'],
+    conflictingPriorities: [],
+    tags: ['national_priority', 'contingency'],
+    repeatable: false,
+    prerequisiteActionIds: ['sga_national_resilience_compact'],
+    synergyEligible: true,
+    immediateEffects: {
+      economy: { cashDelta: -12_000, treasuryDelta: -60_000 },
+      government: { approvalDelta: 4, regulatoryBurdenDelta: -2 },
+      population: { publicStabilityDelta: 5, affordabilityStressDelta: -2 },
+    },
+    delayedTradeOffs: [
+      {
+        label: 'Pact monitoring costs',
+        warning: 'Independent audits increase regulatory load next week.',
+        effects: {
+          government: { regulatoryBurdenDelta: 2 },
+          economy: { treasuryDelta: -25_000 },
+        },
+      },
+    ],
+  },
 };
 
 export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefinition> = {
@@ -549,6 +579,80 @@ export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefiniti
           },
           {
             optionId: 'resilience_sign_defer',
+            label: 'Defer',
+            description: 'Exit without signing.',
+            nextStageId: null,
+          },
+        ],
+      },
+    ],
+  },
+  'msc_coalition_stabilization': {
+    choiceId: 'msc_coalition_stabilization',
+    title: 'Coalition Stabilization Path',
+    linkedActionId: 'sga_coalition_stabilization_pact',
+    entryStageId: 'coalition_scope',
+    stages: [
+      {
+        stageId: 'coalition_scope',
+        prompt: 'Choose which coalitions to bind into the stabilization pact.',
+        options: [
+          {
+            optionId: 'scope_industry_regions',
+            label: 'Industry + regions compact',
+            description: 'Balances freight and diversification stakeholders.',
+            nextStageId: 'coalition_terms',
+            requirements: [{ kind: 'min_approval', rating: 46 }],
+          },
+          {
+            optionId: 'scope_public_households',
+            label: 'Public services + households',
+            description: 'Household-focused stabilization with higher approval bar.',
+            nextStageId: 'coalition_terms',
+            requirements: [
+              { kind: 'min_approval', rating: 48 },
+              { kind: 'max_affordability_stress', max: 80 },
+            ],
+          },
+        ],
+      },
+      {
+        stageId: 'coalition_terms',
+        prompt: 'Set enforcement cadence — stricter terms reduce stakeholder volatility.',
+        options: [
+          {
+            optionId: 'terms_balanced',
+            label: 'Balanced enforcement',
+            description: 'Standard monitoring with one delayed audit cost.',
+            nextStageId: 'coalition_sign',
+            requirements: [{ kind: 'min_treasury', amount: 40_000 }],
+          },
+          {
+            optionId: 'terms_strict',
+            label: 'Strict enforcement',
+            description: 'Higher treasury draw, stronger immediate stability.',
+            nextStageId: 'coalition_sign',
+            requirements: [
+              { kind: 'min_treasury', amount: 55_000 },
+              { kind: 'directive_slot_available' },
+            ],
+          },
+        ],
+      },
+      {
+        stageId: 'coalition_sign',
+        prompt: 'Sign pact — resilience compact must already be complete.',
+        options: [
+          {
+            optionId: 'coalition_sign_execute',
+            label: 'Sign stabilization pact',
+            description: 'Execute coalition stabilization.',
+            nextStageId: null,
+            resolvesActionId: 'sga_coalition_stabilization_pact',
+            requirements: [{ kind: 'max_pending_tradeoffs', max: 7 }],
+          },
+          {
+            optionId: 'coalition_sign_defer',
             label: 'Defer',
             description: 'Exit without signing.',
             nextStageId: null,

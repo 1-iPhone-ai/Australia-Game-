@@ -22,11 +22,16 @@ import {
   applyDomainEffects,
   scheduleDelayedTradeOffs,
 } from './delayed-effects.ts';
+import { advanceMandateOnAction } from './strategic-mandate.ts';
+import { applyStakeholderReaction } from './stakeholder-coalition.ts';
 import {
   scoreNationalPriorityAlignment,
   validateAction,
   validateChoiceOption,
 } from './validation.ts';
+
+import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
+import { createEmptyMandateProgress } from './strategic-mandate.ts';
 
 export function createInitialStrategicState(day = 1): StrategicGameplayState {
   return {
@@ -36,6 +41,8 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     journal: [],
     priorityMomentum: {},
     actionCooldowns: {},
+    mandateProgress: createEmptyMandateProgress(),
+    stakeholderSentiment: createDefaultStakeholderSentiment(),
     activeChoice: null,
   };
 }
@@ -166,6 +173,8 @@ export function executeStrategicAction(
     action.delayedTradeOffs.length,
   );
   nextState = applyPriorityMomentum(nextState, action);
+  nextState = advanceMandateOnAction(nextState, action);
+  nextState = applyStakeholderReaction(nextState, action);
   if (action.cooldownDays && action.cooldownDays > 0) {
     nextState = startActionCooldown(nextState, action.id, action.cooldownDays);
   }

@@ -3,6 +3,10 @@ import type { GovernancePatch } from '../contracts/government.ts';
 import type { PopulationPatch } from '../contracts/population.ts';
 import type { TechPatch } from '../contracts/tech.ts';
 import type {
+  MandateProgress,
+  StakeholderSentiment,
+} from './coalition-mandate.ts';
+import type {
   NationalPriorityAlignmentBand,
   NationalPriorityId,
 } from './national-priority.ts';
@@ -127,6 +131,8 @@ export interface StrategicGameplayState {
   journal: StrategicActionJournalEntry[];
   priorityMomentum: Partial<Record<NationalPriorityId, number>>;
   actionCooldowns: Record<string, { untilDay: number }>;
+  mandateProgress?: MandateProgress;
+  stakeholderSentiment?: StakeholderSentiment;
   activeChoice: {
     choiceId: string;
     stageId: string;

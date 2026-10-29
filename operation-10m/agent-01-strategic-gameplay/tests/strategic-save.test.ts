@@ -20,10 +20,28 @@ describe('strategic save v1', () => {
       null,
     ).state;
     const save = serializeStrategicGameplayState(state);
+    expect(save.version).toBe(2);
     const restored = deserializeStrategicGameplayState(save);
     expect(restored.completedActionIds).toEqual(state.completedActionIds);
     expect(restored.pendingDelayed.length).toBe(state.pendingDelayed.length);
     expect(restored.journal.length).toBe(1);
+    expect(restored.stakeholderSentiment).toBeDefined();
+  });
+
+  it('upgrades v1 saves with default coalition fields', () => {
+    const v1 = {
+      version: 1 as const,
+      day: 4,
+      completedActionIds: ['sga_supply_chain_buffer'],
+      pendingDelayed: [],
+      journal: [],
+      priorityMomentum: {},
+      actionCooldowns: {},
+      activeChoice: null,
+    };
+    const restored = deserializeStrategicGameplayState(v1);
+    expect(restored.mandateProgress).toEqual({});
+    expect(restored.stakeholderSentiment?.industry).toBe(55);
   });
 
   it('merge preserves newer day', () => {

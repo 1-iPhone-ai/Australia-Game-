@@ -19,6 +19,7 @@ import { validatePrerequisites } from './action-prerequisites.ts';
 import {
   canExecuteAfterCooldown,
 } from './strategic-synergies.ts';
+import { stakeholderOppositionIssues } from './stakeholder-coalition.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -188,6 +189,7 @@ export function validateAction(
   }
 
   if (state) {
+    issues.push(...stakeholderOppositionIssues(action, contracts, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

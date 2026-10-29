@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-01-strategic-gameplay
-// content-sha256-prefix: d2f7ccec451890f7
+// content-sha256-prefix: 45acdbeff4695bd0
 // Operation 10M — Agent 01 Strategic Gameplay
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -338,6 +338,8 @@ export interface StrategicGameplayState {
   journal: StrategicActionJournalEntry[];
   priorityMomentum: Partial<Record<NationalPriorityId, number>>;
   actionCooldowns: Record<string, { untilDay: number }>;
+  mandateProgress?: MandateProgress;
+  stakeholderSentiment?: StakeholderSentiment;
   activeChoice: {
     choiceId: string;
     stageId: string;
@@ -623,11 +625,19 @@ export interface StrategicGameplaySaveV1 {
   activeChoice: StrategicGameplayState['activeChoice'];
 }
 
+export interface StrategicGameplaySaveV2 extends Omit<StrategicGameplaySaveV1, 'version'> {
+  version: 2;
+  mandateProgress: MandateProgress;
+  stakeholderSentiment: StakeholderSentiment;
+}
+
+export type StrategicGameplaySaveBlob = StrategicGameplaySaveV1 | StrategicGameplaySaveV2;
+
 export function serializeStrategicGameplayState(
   state: StrategicGameplayState,
-): StrategicGameplaySaveV1 {
+): StrategicGameplaySaveV2 {
   return {
-    version: 1,
+    version: 2,
     day: state.day,
     completedActionIds: [...state.completedActionIds],
     pendingDelayed: state.pendingDelayed.map((p) => ({ ...p, effects: { ...p.effects } })),
@@ -635,14 +645,31 @@ export function serializeStrategicGameplayState(
     priorityMomentum: { ...state.priorityMomentum },
     actionCooldowns: { ...state.actionCooldowns },
     activeChoice: state.activeChoice ? { ...state.activeChoice } : null,
+    mandateProgress: { ...(state.mandateProgress ?? createEmptyMandateProgress()) },
+    stakeholderSentiment: {
+      ...(state.stakeholderSentiment ?? createDefaultStakeholderSentiment()),
+    },
   };
 }
 
 export function deserializeStrategicGameplayState(
-  save: StrategicGameplaySaveV1,
+  save: StrategicGameplaySaveBlob,
 ): StrategicGameplayState {
-  if (save.version !== 1) {
-    throw new Error(`Unsupported strategic save version: ${save.version}`);
+  if (save.version === 1) {
+    return {
+      day: save.day,
+      completedActionIds: [...save.completedActionIds],
+      pendingDelayed: save.pendingDelayed.slice(),
+      journal: save.journal.slice(),
+      priorityMomentum: { ...save.priorityMomentum },
+      actionCooldowns: { ...save.actionCooldowns },
+      activeChoice: save.activeChoice ? { ...save.activeChoice } : null,
+      mandateProgress: createEmptyMandateProgress(),
+      stakeholderSentiment: createDefaultStakeholderSentiment(),
+    };
+  }
+  if (save.version !== 2) {
+    throw new Error(`Unsupported strategic save version: ${(save as { version: number }).version}`);
   }
   return {
     day: save.day,
@@ -652,12 +679,14 @@ export function deserializeStrategicGameplayState(
     priorityMomentum: { ...save.priorityMomentum },
     actionCooldowns: { ...save.actionCooldowns },
     activeChoice: save.activeChoice ? { ...save.activeChoice } : null,
+    mandateProgress: { ...save.mandateProgress },
+    stakeholderSentiment: { ...save.stakeholderSentiment },
   };
 }
 
 export function mergeStrategicSaveIntoState(
   base: StrategicGameplayState,
-  save: StrategicGameplaySaveV1,
+  save: StrategicGameplaySaveBlob,
 ): StrategicGameplayState {
   const loaded = deserializeStrategicGameplayState(save);
   return {
@@ -915,6 +944,7 @@ export function validateAction(
   }
 
   if (state) {
+    issues.push(...stakeholderOppositionIssues(action, contracts, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({
@@ -1021,7 +1051,8 @@ export function rankStrategicActions(
       alignmentScore:
         (alignment?.score ?? 0) +
         priorityMomentumBonus(state, action) +
-        synergyScoreBonus(synergies),
+        synergyScoreBonus(synergies) +
+        mandateRankingBonus(state, action),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });
@@ -1124,6 +1155,8 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     journal: [],
     priorityMomentum: {},
     actionCooldowns: {},
+    mandateProgress: createEmptyMandateProgress(),
+    stakeholderSentiment: createDefaultStakeholderSentiment(),
     activeChoice: null,
   };
 }
@@ -1254,6 +1287,8 @@ export function executeStrategicAction(
     action.delayedTradeOffs.length,
   );
   nextState = applyPriorityMomentum(nextState, action);
+  nextState = advanceMandateOnAction(nextState, action);
+  nextState = applyStakeholderReaction(nextState, action);
   if (action.cooldownDays && action.cooldownDays > 0) {
     nextState = startActionCooldown(nextState, action.id, action.cooldownDays);
   }
@@ -1634,6 +1669,36 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
     },
     delayedTradeOffs: [],
   },
+  'sga_coalition_stabilization_pact': {
+    id: 'sga_coalition_stabilization_pact',
+    title: 'Coalition Stabilization Pact',
+    category: 'governance',
+    apCost: 2,
+    cashCost: 12_000,
+    treasuryCost: 60_000,
+    minApproval: 46,
+    alignedPriorities: ['economic_diversification', 'supply_chain_security'],
+    conflictingPriorities: [],
+    tags: ['national_priority', 'contingency'],
+    repeatable: false,
+    prerequisiteActionIds: ['sga_national_resilience_compact'],
+    synergyEligible: true,
+    immediateEffects: {
+      economy: { cashDelta: -12_000, treasuryDelta: -60_000 },
+      government: { approvalDelta: 4, regulatoryBurdenDelta: -2 },
+      population: { publicStabilityDelta: 5, affordabilityStressDelta: -2 },
+    },
+    delayedTradeOffs: [
+      {
+        label: 'Pact monitoring costs',
+        warning: 'Independent audits increase regulatory load next week.',
+        effects: {
+          government: { regulatoryBurdenDelta: 2 },
+          economy: { treasuryDelta: -25_000 },
+        },
+      },
+    ],
+  },
 };
 
 export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefinition> = {
@@ -1870,6 +1935,80 @@ export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefiniti
           },
           {
             optionId: 'resilience_sign_defer',
+            label: 'Defer',
+            description: 'Exit without signing.',
+            nextStageId: null,
+          },
+        ],
+      },
+    ],
+  },
+  'msc_coalition_stabilization': {
+    choiceId: 'msc_coalition_stabilization',
+    title: 'Coalition Stabilization Path',
+    linkedActionId: 'sga_coalition_stabilization_pact',
+    entryStageId: 'coalition_scope',
+    stages: [
+      {
+        stageId: 'coalition_scope',
+        prompt: 'Choose which coalitions to bind into the stabilization pact.',
+        options: [
+          {
+            optionId: 'scope_industry_regions',
+            label: 'Industry + regions compact',
+            description: 'Balances freight and diversification stakeholders.',
+            nextStageId: 'coalition_terms',
+            requirements: [{ kind: 'min_approval', rating: 46 }],
+          },
+          {
+            optionId: 'scope_public_households',
+            label: 'Public services + households',
+            description: 'Household-focused stabilization with higher approval bar.',
+            nextStageId: 'coalition_terms',
+            requirements: [
+              { kind: 'min_approval', rating: 48 },
+              { kind: 'max_affordability_stress', max: 80 },
+            ],
+          },
+        ],
+      },
+      {
+        stageId: 'coalition_terms',
+        prompt: 'Set enforcement cadence — stricter terms reduce stakeholder volatility.',
+        options: [
+          {
+            optionId: 'terms_balanced',
+            label: 'Balanced enforcement',
+            description: 'Standard monitoring with one delayed audit cost.',
+            nextStageId: 'coalition_sign',
+            requirements: [{ kind: 'min_treasury', amount: 40_000 }],
+          },
+          {
+            optionId: 'terms_strict',
+            label: 'Strict enforcement',
+            description: 'Higher treasury draw, stronger immediate stability.',
+            nextStageId: 'coalition_sign',
+            requirements: [
+              { kind: 'min_treasury', amount: 55_000 },
+              { kind: 'directive_slot_available' },
+            ],
+          },
+        ],
+      },
+      {
+        stageId: 'coalition_sign',
+        prompt: 'Sign pact — resilience compact must already be complete.',
+        options: [
+          {
+            optionId: 'coalition_sign_execute',
+            label: 'Sign stabilization pact',
+            description: 'Execute coalition stabilization.',
+            nextStageId: null,
+            resolvesActionId: 'sga_coalition_stabilization_pact',
+            requirements: [{ kind: 'max_pending_tradeoffs', max: 7 }],
+          },
+          {
+            optionId: 'coalition_sign_defer',
             label: 'Defer',
             description: 'Exit without signing.',
             nextStageId: null,

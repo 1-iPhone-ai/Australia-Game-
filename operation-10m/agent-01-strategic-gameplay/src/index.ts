@@ -73,4 +73,21 @@ export {
   summarizePendingTradeOffLoad,
 } from './engine/tradeoff-mitigation.ts';
 
-export const AGENT_01_MODULE_VERSION = '1.3.0';
+export {
+  advanceMandateOnAction,
+  createEmptyMandateProgress,
+  mandateRankingBonus,
+  summarizeMandateProgress,
+} from './engine/strategic-mandate.ts';
+
+export {
+  applyStakeholderReaction,
+  createDefaultStakeholderSentiment,
+  listStakeholderWarnings,
+  stakeholderApprovalPenalty,
+  stakeholderOppositionIssues,
+} from './engine/stakeholder-coalition.ts';
+
+export { buildTurnStrategicBriefing } from './engine/turn-briefing.ts';
+
+export const AGENT_01_MODULE_VERSION = '1.4.0';
