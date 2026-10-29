@@ -209,6 +209,8 @@ export interface Agent17PlanningDepthSnapshot {
   sovereigntyLock: Agent17SovereigntyLockSnapshot;
   authorityCharter: Agent17AuthorityCharterSnapshot;
   dispatchAccord: Agent17DispatchAccordSnapshot;
+  mobilizationIndex: Agent17MobilizationIndexSnapshot;
+  executionSummons: Agent17ExecutionSummonsSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -644,6 +646,40 @@ export interface Agent17DispatchAccordSnapshot {
   provisions: Agent17DispatchAccordProvision[];
   charterBand: Agent17AuthorityCharterSnapshot['band'];
   dispatchAllowed: boolean;
+  headline: string;
+}
+
+export interface Agent17MobilizationVector {
+  id: string;
+  label: string;
+  engaged: boolean;
+  weight: number;
+}
+
+export interface Agent17MobilizationIndexSnapshot {
+  mobilizationScore: number;
+  band: 'mobilized' | 'forming' | 'stalled';
+  vectors: Agent17MobilizationVector[];
+  accordBand: Agent17DispatchAccordSnapshot['band'];
+  pacingBand: Agent17ExecutionPacingSnapshot['pacingBand'];
+  fieldReady: boolean;
+  headline: string;
+}
+
+export interface Agent17ExecutionSummonsClause {
+  id: string;
+  label: string;
+  satisfied: boolean;
+  weight: number;
+}
+
+export interface Agent17ExecutionSummonsSnapshot {
+  summonsScore: number;
+  band: 'issued' | 'pending' | 'revoked';
+  clauses: Agent17ExecutionSummonsClause[];
+  mobilizationBand: Agent17MobilizationIndexSnapshot['band'];
+  directiveBand: Agent17MissionDirectiveSnapshot['band'];
+  executionAuthorized: boolean;
   headline: string;
 }
 

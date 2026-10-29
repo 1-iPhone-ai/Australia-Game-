@@ -213,6 +213,8 @@ export interface Agent17PlanningDepthSnapshot {
   sovereigntyLock: Agent17SovereigntyLockSnapshot;
   authorityCharter: Agent17AuthorityCharterSnapshot;
   dispatchAccord: Agent17DispatchAccordSnapshot;
+  mobilizationIndex: Agent17MobilizationIndexSnapshot;
+  executionSummons: Agent17ExecutionSummonsSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -648,6 +650,40 @@ export interface Agent17DispatchAccordSnapshot {
   provisions: Agent17DispatchAccordProvision[];
   charterBand: Agent17AuthorityCharterSnapshot['band'];
   dispatchAllowed: boolean;
+  headline: string;
+}
+
+export interface Agent17MobilizationVector {
+  id: string;
+  label: string;
+  engaged: boolean;
+  weight: number;
+}
+
+export interface Agent17MobilizationIndexSnapshot {
+  mobilizationScore: number;
+  band: 'mobilized' | 'forming' | 'stalled';
+  vectors: Agent17MobilizationVector[];
+  accordBand: Agent17DispatchAccordSnapshot['band'];
+  pacingBand: Agent17ExecutionPacingSnapshot['pacingBand'];
+  fieldReady: boolean;
+  headline: string;
+}
+
+export interface Agent17ExecutionSummonsClause {
+  id: string;
+  label: string;
+  satisfied: boolean;
+  weight: number;
+}
+
+export interface Agent17ExecutionSummonsSnapshot {
+  summonsScore: number;
+  band: 'issued' | 'pending' | 'revoked';
+  clauses: Agent17ExecutionSummonsClause[];
+  mobilizationBand: Agent17MobilizationIndexSnapshot['band'];
+  directiveBand: Agent17MissionDirectiveSnapshot['band'];
+  executionAuthorized: boolean;
   headline: string;
 }
 
@@ -5045,6 +5081,207 @@ export function dispatchAccordBlocksDispatch(snapshot: Agent17DispatchAccordSnap
 }
 
 
+// --- source: planning/mobilization-index.ts ---
+  Agent17CoordinationBrief,
+  Agent17DispatchAccordSnapshot,
+  Agent17ExecutionPacingSnapshot,
+  Agent17MobilizationIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17MobilizationIndexInputs {
+  dispatchAccord: Agent17DispatchAccordSnapshot;
+  coordinationBrief: Agent17CoordinationBrief;
+  executionPacing: Agent17ExecutionPacingSnapshot;
+}
+
+export function buildAgent17MobilizationIndex(
+  inputs: Agent17MobilizationIndexInputs
+): Agent17MobilizationIndexSnapshot {
+  const vectors: Agent17MobilizationIndexSnapshot['vectors'] = [];
+
+  vectors.push({
+    id: 'dispatch_ratified',
+    label: 'Dispatch accord ratified or provisional',
+    engaged:
+      inputs.dispatchAccord.band === 'ratified' ||
+      inputs.dispatchAccord.band === 'provisional',
+    weight: 30,
+  });
+
+  vectors.push({
+    id: 'dispatch_allowed',
+    label: 'Dispatch lane open',
+    engaged: inputs.dispatchAccord.dispatchAllowed && !dispatchAccordBlocksDispatch(inputs.dispatchAccord),
+    weight: 25,
+  });
+
+  vectors.push({
+    id: 'coordination_ready',
+    label: 'Coordination brief GI-ready',
+    engaged: coordinationBriefReadyForGi(inputs.coordinationBrief),
+    weight: 20,
+  });
+
+  vectors.push({
+    id: 'pacing_steady',
+    label: 'Execution pacing not throttled',
+    engaged:
+      inputs.executionPacing.pacingBand !== 'throttled' &&
+      inputs.executionPacing.canAdvanceActiveStep,
+    weight: 15,
+  });
+
+  vectors.push({
+    id: 'verify_gate',
+    label: 'Verification gate open',
+    engaged: inputs.executionPacing.verificationGateOpen,
+    weight: 10,
+  });
+
+  const weighted = vectors.reduce(
+    (n, v) => n + (v.engaged ? 100 : 14) * (v.weight / 100),
+    0
+  );
+  const totalWeight = vectors.reduce((n, v) => n + v.weight, 0);
+  const mobilizationScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const stalledSignals =
+    dispatchAccordBlocksDispatch(inputs.dispatchAccord) ||
+    inputs.dispatchAccord.band === 'void' ||
+    inputs.executionPacing.pacingBand === 'throttled';
+
+  const band: Agent17MobilizationIndexSnapshot['band'] = stalledSignals
+    ? 'stalled'
+    : mobilizationScore >= 72 &&
+        inputs.dispatchAccord.band === 'ratified' &&
+        coordinationBriefReadyForGi(inputs.coordinationBrief)
+      ? 'mobilized'
+      : 'forming';
+
+  const fieldReady =
+    band === 'mobilized' &&
+    inputs.dispatchAccord.dispatchAllowed &&
+    !dispatchAccordBlocksDispatch(inputs.dispatchAccord);
+
+  return {
+    mobilizationScore,
+    band,
+    vectors,
+    accordBand: inputs.dispatchAccord.band,
+    pacingBand: inputs.executionPacing.pacingBand,
+    fieldReady,
+    headline: `Mobilization ${band} (${mobilizationScore}/100) · ${vectors.filter(v => v.engaged).length}/${vectors.length} vectors`,
+  };
+}
+
+export function mobilizationIndexBlocksSummons(snapshot: Agent17MobilizationIndexSnapshot): boolean {
+  return snapshot.band === 'stalled' || !snapshot.fieldReady;
+}
+
+
+// --- source: planning/execution-summons.ts ---
+  Agent17DispatchAccordSnapshot,
+  Agent17ExecutionSummonsSnapshot,
+  Agent17MissionDirectiveSnapshot,
+  Agent17MobilizationIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17ExecutionSummonsInputs {
+  mobilizationIndex: Agent17MobilizationIndexSnapshot;
+  dispatchAccord: Agent17DispatchAccordSnapshot;
+  missionDirective: Agent17MissionDirectiveSnapshot;
+}
+
+export function buildAgent17ExecutionSummons(
+  inputs: Agent17ExecutionSummonsInputs
+): Agent17ExecutionSummonsSnapshot {
+  const clauses: Agent17ExecutionSummonsSnapshot['clauses'] = [];
+
+  clauses.push({
+    id: 'mobilization_ready',
+    label: 'Mobilization field-ready',
+    satisfied: inputs.mobilizationIndex.fieldReady && !mobilizationIndexBlocksSummons(inputs.mobilizationIndex),
+    weight: 30,
+  });
+
+  clauses.push({
+    id: 'mobilization_band',
+    label: 'Mobilization mobilized or forming',
+    satisfied:
+      inputs.mobilizationIndex.band === 'mobilized' ||
+      inputs.mobilizationIndex.band === 'forming',
+    weight: 25,
+  });
+
+  clauses.push({
+    id: 'directive_active',
+    label: 'Mission directive not held',
+    satisfied: inputs.missionDirective.band !== 'held',
+    weight: 20,
+  });
+
+  clauses.push({
+    id: 'accord_dispatch',
+    label: 'Dispatch accord allows dispatch',
+    satisfied:
+      inputs.dispatchAccord.dispatchAllowed && !dispatchAccordBlocksDispatch(inputs.dispatchAccord),
+    weight: 15,
+  });
+
+  clauses.push({
+    id: 'directive_priority',
+    label: 'Mission directive clearance headroom',
+    satisfied: inputs.missionDirective.clearanceScore >= 40,
+    weight: 10,
+  });
+
+  const weighted = clauses.reduce(
+    (n, c) => n + (c.satisfied ? 100 : 12) * (c.weight / 100),
+    0
+  );
+  const totalWeight = clauses.reduce((n, c) => n + c.weight, 0);
+  const summonsScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const revokedSignals =
+    mobilizationIndexBlocksSummons(inputs.mobilizationIndex) ||
+    dispatchAccordBlocksDispatch(inputs.dispatchAccord) ||
+    inputs.missionDirective.band === 'held';
+
+  const band: Agent17ExecutionSummonsSnapshot['band'] = revokedSignals
+    ? 'revoked'
+    : summonsScore >= 70 &&
+        inputs.mobilizationIndex.band === 'mobilized' &&
+        !mobilizationIndexBlocksSummons(inputs.mobilizationIndex)
+      ? 'issued'
+      : 'pending';
+
+  const executionAuthorized =
+    band === 'issued' &&
+    inputs.mobilizationIndex.fieldReady &&
+    inputs.dispatchAccord.dispatchAllowed;
+
+  return {
+    summonsScore,
+    band,
+    clauses,
+    mobilizationBand: inputs.mobilizationIndex.band,
+    directiveBand: inputs.missionDirective.band,
+    executionAuthorized,
+    headline: `Summons ${band} (${summonsScore}/100) · ${clauses.filter(c => c.satisfied).length}/${clauses.length} clauses`,
+  };
+}
+
+export function executionSummonsBlocksField(snapshot: Agent17ExecutionSummonsSnapshot): boolean {
+  return snapshot.band === 'revoked' || !snapshot.executionAuthorized;
+}
+
+
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -5294,6 +5531,16 @@ export function buildAgent17PlanningDepthSnapshot(
     sovereigntyLock,
     delegationLadder,
   });
+  const mobilizationIndex = buildAgent17MobilizationIndex({
+    dispatchAccord,
+    coordinationBrief,
+    executionPacing,
+  });
+  const executionSummons = buildAgent17ExecutionSummons({
+    mobilizationIndex,
+    dispatchAccord,
+    missionDirective,
+  });
   return {
     ...core,
     intentQueue,
@@ -5325,6 +5572,8 @@ export function buildAgent17PlanningDepthSnapshot(
     sovereigntyLock,
     authorityCharter,
     dispatchAccord,
+    mobilizationIndex,
+    executionSummons,
   };
 }
 
@@ -6058,6 +6307,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Released lock or revoked charter yields dispatchAccordBlocksDispatch.',
     severity: 'major',
   },
+  {
+    id: 'G17-064',
+    title: 'Mobilization index on planning depth',
+    category: 'telemetry',
+    acceptance: 'mobilizationIndex reports mobilizationScore 0–100 with mobilized/forming/stalled band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-065',
+    title: 'Execution summons clauses complete',
+    category: 'telemetry',
+    acceptance: 'executionSummons exposes ≥5 clauses and summonsScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-066',
+    title: 'Void dispatch stalls mobilization summons',
+    category: 'integration',
+    acceptance: 'Void accord or stalled mobilization yields executionSummonsBlocksField.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -6141,6 +6411,12 @@ export function listAgent17GoalIds(): string[] {
   buildAgent17DispatchAccord,
   dispatchAccordBlocksDispatch,
 } from '../planning/dispatch-accord.ts';
+  buildAgent17MobilizationIndex,
+  mobilizationIndexBlocksSummons,
+} from '../planning/mobilization-index.ts';
+  buildAgent17ExecutionSummons,
+  executionSummonsBlocksField,
+} from '../planning/execution-summons.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -7075,6 +7351,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const mobilizationIndex = depthEval.snapshot.planningDepth?.mobilizationIndex;
+  goalResults.push(
+    result(
+      'G17-064',
+      !!mobilizationIndex &&
+        mobilizationIndex.vectors.length >= 5 &&
+        mobilizationIndex.mobilizationScore >= 0 &&
+        mobilizationIndex.mobilizationScore <= 100 &&
+        (mobilizationIndex.band === 'mobilized' ||
+          mobilizationIndex.band === 'forming' ||
+          mobilizationIndex.band === 'stalled'),
+      `vectors=${mobilizationIndex?.vectors.length} score=${mobilizationIndex?.mobilizationScore}`
+    )
+  );
+
+  const executionSummons = depthEval.snapshot.planningDepth?.executionSummons;
+  goalResults.push(
+    result(
+      'G17-065',
+      !!executionSummons &&
+        executionSummons.clauses.length >= 5 &&
+        executionSummons.summonsScore >= 0 &&
+        executionSummons.summonsScore <= 100,
+      `clauses=${executionSummons?.clauses.length} score=${executionSummons?.summonsScore}`
+    )
+  );
+
+  const stalledMobilization = buildAgent17MobilizationIndex({
+    dispatchAccord: voidAccord,
+    coordinationBrief: depthEval.snapshot.planningDepth!.coordinationBrief,
+    executionPacing: depthEval.snapshot.planningDepth!.executionPacing,
+  });
+  const revokedSummons = buildAgent17ExecutionSummons({
+    mobilizationIndex: stalledMobilization,
+    dispatchAccord: voidAccord,
+    missionDirective: depthEval.snapshot.planningDepth!.missionDirective,
+  });
+  goalResults.push(
+    result(
+      'G17-066',
+      dispatchAccordBlocksDispatch(voidAccord) ||
+        mobilizationIndexBlocksSummons(stalledMobilization) ||
+        executionSummonsBlocksField(revokedSummons),
+      `${stalledMobilization.band}/${revokedSummons.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -7168,6 +7491,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-061',
     'G17-062',
     'G17-063',
+    'G17-064',
+    'G17-065',
+    'G17-066',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
@@ -12425,6 +12751,636 @@ export function runAgent17AuthorityDepthTests(): Agent17DevTestReport {
     success: overallStatus === 'passed',
     testResults,
     summary: `Agent 17 Authority Depth Tests: ${passedCount}/${testResults.length} Passed`,
+  };
+}
+
+
+// --- source: harness/run-operations-depth-tests.ts ---
+  createDefaultAcc17CommandCenterOpsState,
+  acc17CreateMultiStepPlanFromObjective,
+  defaultObjectiveResolver,
+} from '../planning/ops-state.ts';
+  buildAgent17GovernanceAudit,
+  governanceAuditBlocksAutomation,
+} from '../planning/governance-audit.ts';
+  buildAgent17EscalationMatrix,
+  escalationMatrixBlocksAutomation,
+} from '../planning/escalation-matrix.ts';
+  buildAgent17RollbackAssurance,
+  rollbackAssuranceNeedsRestore,
+} from '../planning/rollback-assurance.ts';
+  buildAgent17StabilizationIndex,
+  stabilizationIndexBlocksAutomation,
+} from '../planning/stabilization-index.ts';
+  buildAgent17CommandEnvelope,
+  commandEnvelopeNeedsThrottle,
+} from '../planning/command-envelope.ts';
+  buildAgent17ConvergenceIndex,
+  convergenceIndexBlocksDirective,
+} from '../planning/convergence-index.ts';
+  buildAgent17DirectiveSynthesis,
+  directiveSynthesisBlocksAdvance,
+} from '../planning/directive-synthesis.ts';
+  buildAgent17MandateWeave,
+  mandateWeaveBlocksSovereignty,
+} from '../planning/mandate-weave.ts';
+  buildAgent17SovereigntyLock,
+  sovereigntyLockBlocksCommand,
+} from '../planning/sovereignty-lock.ts';
+  buildAgent17AuthorityCharter,
+  authorityCharterBlocksAccord,
+} from '../planning/authority-charter.ts';
+  buildAgent17DispatchAccord,
+  dispatchAccordBlocksDispatch,
+} from '../planning/dispatch-accord.ts';
+  buildAgent17MobilizationIndex,
+  mobilizationIndexBlocksSummons,
+} from '../planning/mobilization-index.ts';
+  buildAgent17ExecutionSummons,
+  executionSummonsBlocksField,
+} from '../planning/execution-summons.ts';
+  rankAgent17TemplateCandidates,
+  summarizeAgent17CatalogDepth,
+} from '../planning/template-selector.ts';
+
+export function runAgent17OperationsDepthTests(): Agent17DevTestReport {
+  const start = Date.now();
+  const testResults: Agent17DevTestReport['testResults'] = [];
+  const push = (id: string, name: string, ok: boolean, detail?: string) => {
+    testResults.push({
+      id,
+      name,
+      status: ok ? 'passed' : 'failed',
+      durationMs: 0,
+      errorMessage: ok ? undefined : detail,
+    });
+  };
+
+  try {
+    const settings = {
+      commandCenterSettings: { enabled: true },
+      aiCommunicationAutonomyLevel: 'assisted' as const,
+    };
+    const actor = {
+      id: 'player',
+      money: 120,
+      netWorth: 2400,
+      currentRegion: 'QLD',
+      currentSupplies: 6,
+    };
+    const state: Agent17GameStateSlice = {
+      turnCounter: 33,
+      day: 33,
+      player: actor,
+      actorsById: { player: actor },
+      playerTrackedObjective: {
+        title: 'Expand trade network supply chain',
+        sourceType: 'contract',
+      },
+      gi3Strategy: { headline: 'Expand trade network resilience' },
+      strategyPlannerState: { activePlan: { title: 'Trade network supply expansion' } },
+      lastExecutedAction: { type: 'trade' },
+    };
+    const ops = createDefaultAcc17CommandCenterOpsState();
+    const plan = acc17CreateMultiStepPlanFromObjective(
+      state,
+      settings,
+      'player',
+      (s, st, id) => defaultObjectiveResolver(s, st, id)
+    );
+    const opsWithPlan = {
+      ...ops,
+      activePlan: plan ? { ...plan, title: plan.title || 'Trade supply chain plan' } : plan,
+    };
+    const health = assessAgent17PlanHealth(opsWithPlan.activePlan, state, 'player');
+    const intentQueue = buildAgent17IntentQueue(opsWithPlan, state, settings, 'player', health);
+    const alignment = buildAgent17StrategicAlignment(
+      opsWithPlan,
+      state,
+      settings,
+      'player',
+      intentQueue
+    );
+    const policy = buildAgent17VerificationPolicy(
+      { ...opsWithPlan, lastContextFingerprint: 'adt_fp' },
+      state,
+      'player'
+    );
+    const pacing = buildAgent17ExecutionPacing(opsWithPlan, state, health, policy);
+    const scorecard = buildAgent17ResilienceScorecard(
+      opsWithPlan,
+      state,
+      'player',
+      health,
+      policy
+    );
+    const routing = rankAgent17TemplateCandidates(state, settings, 'player');
+    const delegationAnalytics = buildAgent17DelegationAnalytics(opsWithPlan, settings);
+    const core = {
+      turn: state.turnCounter || 1,
+      actorId: 'player',
+      planHealth: health,
+      suggestion: buildAgent17PlanningSuggestion(
+        opsWithPlan,
+        state,
+        settings,
+        'player',
+        'copilot'
+      ),
+      templateRouting: routing,
+      delegationAnalytics,
+      delegationLadder: buildAgent17DelegationLadder(delegationAnalytics, settings, 'copilot'),
+      planLedger: summarizeAgent17PlanLedger(opsWithPlan, state),
+      catalogDepth: summarizeAgent17CatalogDepth(),
+    };
+    const brief = buildAgent17CoordinationBrief(
+      core,
+      intentQueue,
+      policy,
+      opsWithPlan,
+      state,
+      settings
+    );
+    const handoff = buildAgent17HandoffReadiness({
+      coordinationBrief: brief,
+      verificationPolicy: policy,
+      executionPacing: pacing,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const posture = buildAgent17CommandPosture({
+      planHealth: health,
+      handoffReadiness: handoff,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const audit = buildAgent17GovernanceAudit(opsWithPlan, settings, policy);
+    const matrix = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: audit,
+      handoffReadiness: handoff,
+    });
+    const assurance = buildAgent17RollbackAssurance(opsWithPlan, health, audit);
+    const stabilization = buildAgent17StabilizationIndex({
+      escalationMatrix: matrix,
+      rollbackAssurance: assurance,
+    });
+    const envelope = buildAgent17CommandEnvelope({
+      ops: opsWithPlan,
+      executionPacing: pacing,
+      stabilizationIndex: stabilization,
+    });
+    const convergence = buildAgent17ConvergenceIndex({
+      commandEnvelope: envelope,
+      stabilizationIndex: stabilization,
+      strategicAlignment: alignment,
+    });
+    const directive = buildAgent17MissionDirective({
+      intentQueue,
+      commandEnvelope: envelope,
+      convergenceIndex: convergence,
+    });
+    const synthesis = buildAgent17DirectiveSynthesis({
+      missionDirective: directive,
+      convergenceIndex: convergence,
+      intentQueue,
+    });
+    const closure = buildAgent17ExecutionClosure({
+      directiveSynthesis: synthesis,
+      executionPacing: pacing,
+      missionDirective: directive,
+    });
+    const cadence = buildAgent17CadenceLattice({
+      executionClosure: closure,
+      directiveSynthesis: synthesis,
+      executionPacing: pacing,
+    });
+    const readiness = buildAgent17ReadinessGate({
+      cadenceLattice: cadence,
+      handoffReadiness: handoff,
+      coordinationBrief: brief,
+    });
+    const pulse = buildAgent17PulseIndex({
+      readinessGate: readiness,
+      cadenceLattice: cadence,
+      commandPosture: posture,
+    });
+    const bridge = buildAgent17ContinuityBridge({
+      pulseIndex: pulse,
+      resilienceScorecard: scorecard,
+      verificationPolicy: policy,
+    });
+    const flux = buildAgent17FluxIndex({
+      continuityBridge: bridge,
+      pulseIndex: pulse,
+      governanceAudit: audit,
+    });
+    const seal = buildAgent17IntegritySeal({
+      fluxIndex: flux,
+      rollbackAssurance: assurance,
+      verificationPolicy: policy,
+    });
+    const lattice = buildAgent17CommitLattice({
+      integritySeal: seal,
+      fluxIndex: flux,
+      escalationMatrix: matrix,
+    });
+    const covenant = buildAgent17CovenantGate({
+      commitLattice: lattice,
+      planHealth: health,
+      rollbackAssurance: assurance,
+    });
+
+    const weaveClean = buildAgent17MandateWeave({
+      covenantGate: covenant,
+      commitLattice: lattice,
+      strategicAlignment: alignment,
+    });
+    push(
+      'adt_weave_bounded',
+      'Mandate weave bounded with band',
+      weaveClean.weaveScore >= 0 &&
+        weaveClean.weaveScore <= 100 &&
+        (weaveClean.band === 'aligned' ||
+          weaveClean.band === 'tensioned' ||
+          weaveClean.band === 'frayed'),
+      `${weaveClean.weaveScore}/${weaveClean.band}`
+    );
+
+    push(
+      'adt_weave_threads',
+      'Mandate weave exposes weighted threads',
+      weaveClean.threads.length >= 4 && weaveClean.threads.every(t => t.weight > 0),
+      `threads=${weaveClean.threads.length}`
+    );
+
+    const lockClean = buildAgent17SovereigntyLock({
+      mandateWeave: weaveClean,
+      governanceAudit: audit,
+      stabilizationIndex: stabilization,
+    });
+    push(
+      'adt_lock_pins',
+      'Sovereignty lock exposes pins',
+      lockClean.pins.length >= 5 &&
+        lockClean.lockScore >= 0 &&
+        lockClean.lockScore <= 100,
+      `pins=${lockClean.pins.length} score=${lockClean.lockScore}`
+    );
+
+    push(
+      'adt_weave_aligned',
+      'Healthy ops yields aligned or tensioned weave',
+      weaveClean.band === 'aligned' || weaveClean.band === 'tensioned',
+      weaveClean.band
+    );
+
+    push(
+      'adt_lock_conditional',
+      'Healthy ops yields secured or conditional lock',
+      lockClean.band === 'secured' || lockClean.band === 'conditional',
+      lockClean.band
+    );
+
+    const charterClean = buildAgent17AuthorityCharter({
+      sovereigntyLock: lockClean,
+      mandateWeave: weaveClean,
+      commandPosture: posture,
+    });
+    push(
+      'adt_charter_bounded',
+      'Authority charter bounded with band',
+      charterClean.charterScore >= 0 &&
+        charterClean.charterScore <= 100 &&
+        (charterClean.band === 'chartered' ||
+          charterClean.band === 'provisional' ||
+          charterClean.band === 'revoked'),
+      `${charterClean.charterScore}/${charterClean.band}`
+    );
+
+    push(
+      'adt_charter_articles',
+      'Authority charter exposes articles',
+      charterClean.articles.length >= 5 &&
+        charterClean.articles.every(a => a.weight > 0),
+      `articles=${charterClean.articles.length}`
+    );
+
+    const accordClean = buildAgent17DispatchAccord({
+      authorityCharter: charterClean,
+      sovereigntyLock: lockClean,
+      delegationLadder: core.delegationLadder,
+    });
+    push(
+      'adt_accord_provisions',
+      'Dispatch accord exposes provisions',
+      accordClean.provisions.length >= 5 &&
+        accordClean.accordScore >= 0 &&
+        accordClean.accordScore <= 100,
+      `provisions=${accordClean.provisions.length} score=${accordClean.accordScore}`
+    );
+
+    push(
+      'adt_accord_ratified',
+      'Healthy ops yields ratified or provisional accord',
+      accordClean.band === 'ratified' || accordClean.band === 'provisional',
+      accordClean.band
+    );
+
+    const mobilizationClean = buildAgent17MobilizationIndex({
+      dispatchAccord: accordClean,
+      coordinationBrief: brief,
+      executionPacing: pacing,
+    });
+    push(
+      'odt_mobilization_bounded',
+      'Mobilization index bounded with band',
+      mobilizationClean.mobilizationScore >= 0 &&
+        mobilizationClean.mobilizationScore <= 100 &&
+        (mobilizationClean.band === 'mobilized' ||
+          mobilizationClean.band === 'forming' ||
+          mobilizationClean.band === 'stalled'),
+      `${mobilizationClean.mobilizationScore}/${mobilizationClean.band}`
+    );
+
+    push(
+      'odt_mobilization_vectors',
+      'Mobilization index exposes vectors',
+      mobilizationClean.vectors.length >= 5 &&
+        mobilizationClean.vectors.every(v => v.weight > 0),
+      `vectors=${mobilizationClean.vectors.length}`
+    );
+
+    const summonsClean = buildAgent17ExecutionSummons({
+      mobilizationIndex: mobilizationClean,
+      dispatchAccord: accordClean,
+      missionDirective: directive,
+    });
+    push(
+      'odt_summons_clauses',
+      'Execution summons exposes clauses',
+      summonsClean.clauses.length >= 5 &&
+        summonsClean.summonsScore >= 0 &&
+        summonsClean.summonsScore <= 100,
+      `clauses=${summonsClean.clauses.length} score=${summonsClean.summonsScore}`
+    );
+
+    push(
+      'odt_summons_issued',
+      'Healthy ops yields issued or pending summons',
+      summonsClean.band === 'issued' || summonsClean.band === 'pending',
+      summonsClean.band
+    );
+
+    const breachOps = {
+      ...opsWithPlan,
+      delegatedProjects: [
+        {
+          id: 'dp1',
+          planId: 'p1',
+          title: 'Breach project',
+          delegateKind: 'team_os' as const,
+          delegateTargetId: 'team',
+          status: 'active' as const,
+          authorityCeiling: 'delegated' as const,
+          assignedTurn: 1,
+          assignedDay: 1,
+          lastVerifiedFingerprint: '',
+          notes: '',
+        },
+      ],
+    };
+    const advisorySettings = {
+      ...settings,
+      aiCommunicationAutonomyLevel: 'advisory' as const,
+    };
+    const auditBreach = buildAgent17GovernanceAudit(breachOps, advisorySettings, policy);
+    const matrixUrgent = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: auditBreach,
+      handoffReadiness: handoff,
+    });
+    const assuranceBreach = buildAgent17RollbackAssurance(
+      breachOps,
+      assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+      auditBreach
+    );
+    const stabilizationVolatile = buildAgent17StabilizationIndex({
+      escalationMatrix: matrixUrgent,
+      rollbackAssurance: assuranceBreach,
+    });
+    const envelopeSaturated = buildAgent17CommandEnvelope({
+      ops: breachOps,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      stabilizationIndex: stabilizationVolatile,
+    });
+    const convergenceDiverging = buildAgent17ConvergenceIndex({
+      commandEnvelope: envelopeSaturated,
+      stabilizationIndex: stabilizationVolatile,
+      strategicAlignment: alignment,
+    });
+    const directiveHeld = buildAgent17MissionDirective({
+      intentQueue,
+      commandEnvelope: envelopeSaturated,
+      convergenceIndex: convergenceDiverging,
+    });
+    const synthesisLocked = buildAgent17DirectiveSynthesis({
+      missionDirective: directiveHeld,
+      convergenceIndex: convergenceDiverging,
+      intentQueue,
+    });
+    const closureSealed = buildAgent17ExecutionClosure({
+      directiveSynthesis: synthesisLocked,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      missionDirective: directiveHeld,
+    });
+    const cadenceStalled = buildAgent17CadenceLattice({
+      executionClosure: closureSealed,
+      directiveSynthesis: synthesisLocked,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+    });
+    const readinessStop = buildAgent17ReadinessGate({
+      cadenceLattice: cadenceStalled,
+      handoffReadiness: handoff,
+      coordinationBrief: brief,
+    });
+    const pulseFlat = buildAgent17PulseIndex({
+      readinessGate: readinessStop,
+      cadenceLattice: cadenceStalled,
+      commandPosture: posture,
+    });
+    const bridgeBroken = buildAgent17ContinuityBridge({
+      pulseIndex: pulseFlat,
+      resilienceScorecard: buildAgent17ResilienceScorecard(
+        breachOps,
+        state,
+        'player',
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      verificationPolicy: policy,
+    });
+    const fluxDisrupted = buildAgent17FluxIndex({
+      continuityBridge: bridgeBroken,
+      pulseIndex: pulseFlat,
+      governanceAudit: auditBreach,
+    });
+    const sealBreached = buildAgent17IntegritySeal({
+      fluxIndex: fluxDisrupted,
+      rollbackAssurance: assuranceBreach,
+      verificationPolicy: policy,
+    });
+    const latticeFragmented = buildAgent17CommitLattice({
+      integritySeal: sealBreached,
+      fluxIndex: fluxDisrupted,
+      escalationMatrix: matrixUrgent,
+    });
+    const covenantVoid = buildAgent17CovenantGate({
+      commitLattice: latticeFragmented,
+      planHealth: assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+      rollbackAssurance: assuranceBreach,
+    });
+    const weaveFrayed = buildAgent17MandateWeave({
+      covenantGate: covenantVoid,
+      commitLattice: latticeFragmented,
+      strategicAlignment: alignment,
+    });
+    push(
+      'adt_frayed_blocks',
+      'Governance breach yields frayed weave or blocks sovereignty',
+      weaveFrayed.band === 'frayed' || mandateWeaveBlocksSovereignty(weaveFrayed),
+      `${weaveFrayed.band} idx=${weaveFrayed.weaveScore}`
+    );
+
+    const lockReleased = buildAgent17SovereigntyLock({
+      mandateWeave: weaveFrayed,
+      governanceAudit: auditBreach,
+      stabilizationIndex: stabilizationVolatile,
+    });
+    push(
+      'adt_released_command',
+      'Released lock blocks command sovereignty',
+      lockReleased.band === 'released' ||
+        sovereigntyLockBlocksCommand(lockReleased) ||
+        !lockReleased.commandSovereignty,
+      `${lockReleased.band} sov=${lockReleased.commandSovereignty}`
+    );
+
+    push(
+      'adt_escalation_link',
+      'Urgent escalation propagates to weave threads',
+      escalationMatrixBlocksAutomation(matrixUrgent) ||
+        governanceAuditBlocksAutomation(auditBreach) ||
+        rollbackAssuranceNeedsRestore(assuranceBreach) ||
+        stabilizationIndexBlocksAutomation(stabilizationVolatile) ||
+        commandEnvelopeNeedsThrottle(envelopeSaturated) ||
+        convergenceIndexBlocksDirective(convergenceDiverging),
+      matrixUrgent.band
+    );
+
+    const charterRevoked = buildAgent17AuthorityCharter({
+      sovereigntyLock: lockReleased,
+      mandateWeave: weaveFrayed,
+      commandPosture: posture,
+    });
+    push(
+      'adt_revoked_blocks',
+      'Released sovereignty yields revoked charter or blocks accord',
+      charterRevoked.band === 'revoked' || authorityCharterBlocksAccord(charterRevoked),
+      `${charterRevoked.band} auth=${charterRevoked.commandAuthority}`
+    );
+
+    const accordVoid = buildAgent17DispatchAccord({
+      authorityCharter: charterRevoked,
+      sovereigntyLock: lockReleased,
+      delegationLadder: core.delegationLadder,
+    });
+    push(
+      'adt_void_dispatch',
+      'Void accord blocks dispatch',
+      accordVoid.band === 'void' ||
+        dispatchAccordBlocksDispatch(accordVoid) ||
+        !accordVoid.dispatchAllowed,
+      `${accordVoid.band} dispatch=${accordVoid.dispatchAllowed}`
+    );
+
+    const mobilizationStalled = buildAgent17MobilizationIndex({
+      dispatchAccord: accordVoid,
+      coordinationBrief: brief,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+    });
+    push(
+      'odt_stalled_blocks',
+      'Void accord yields stalled mobilization or blocks summons',
+      mobilizationStalled.band === 'stalled' ||
+        mobilizationIndexBlocksSummons(mobilizationStalled) ||
+        !mobilizationStalled.fieldReady,
+      `${mobilizationStalled.band} ready=${mobilizationStalled.fieldReady}`
+    );
+
+    const summonsRevoked = buildAgent17ExecutionSummons({
+      mobilizationIndex: mobilizationStalled,
+      dispatchAccord: accordVoid,
+      missionDirective: directiveHeld,
+    });
+    push(
+      'odt_revoked_field',
+      'Stalled mobilization yields revoked summons or blocks field',
+      summonsRevoked.band === 'revoked' ||
+        executionSummonsBlocksField(summonsRevoked) ||
+        !summonsRevoked.executionAuthorized,
+      `${summonsRevoked.band} auth=${summonsRevoked.executionAuthorized}`
+    );
+
+    const evalRes = evaluateAcc17CommandCenterOperations(state, settings, 'player', ops);
+    const depth = evalRes.snapshot.planningDepth;
+    push(
+      'odt_evaluator_depth',
+      'Evaluator attaches mobilization index and execution summons',
+      !!depth?.mobilizationIndex?.headline &&
+        !!depth?.executionSummons?.headline &&
+        (depth.mobilizationIndex.vectors?.length ?? 0) >= 5 &&
+        (depth.executionSummons.clauses?.length ?? 0) >= 5,
+      `${depth?.mobilizationIndex?.band}/${depth?.executionSummons?.band}`
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    push('odt_throw', 'Operations harness did not throw', false, msg);
+  }
+
+  const passedCount = testResults.filter(t => t.status === 'passed').length;
+  const failedCount = testResults.filter(t => t.status === 'failed').length;
+  const overallStatus: 'passed' | 'failed' = failedCount === 0 ? 'passed' : 'failed';
+  return {
+    timestamp: Date.now(),
+    totalTests: testResults.length,
+    passedCount,
+    failedCount,
+    executionTimeMs: Date.now() - start,
+    overallStatus,
+    success: overallStatus === 'passed',
+    testResults,
+    summary: `Agent 17 Operations Depth Tests: ${passedCount}/${testResults.length} Passed`,
   };
 }
 

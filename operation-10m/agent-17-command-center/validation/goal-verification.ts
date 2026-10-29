@@ -110,6 +110,14 @@ import {
   dispatchAccordBlocksDispatch,
 } from '../planning/dispatch-accord.ts';
 import {
+  buildAgent17MobilizationIndex,
+  mobilizationIndexBlocksSummons,
+} from '../planning/mobilization-index.ts';
+import {
+  buildAgent17ExecutionSummons,
+  executionSummonsBlocksField,
+} from '../planning/execution-summons.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -1044,6 +1052,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const mobilizationIndex = depthEval.snapshot.planningDepth?.mobilizationIndex;
+  goalResults.push(
+    result(
+      'G17-064',
+      !!mobilizationIndex &&
+        mobilizationIndex.vectors.length >= 5 &&
+        mobilizationIndex.mobilizationScore >= 0 &&
+        mobilizationIndex.mobilizationScore <= 100 &&
+        (mobilizationIndex.band === 'mobilized' ||
+          mobilizationIndex.band === 'forming' ||
+          mobilizationIndex.band === 'stalled'),
+      `vectors=${mobilizationIndex?.vectors.length} score=${mobilizationIndex?.mobilizationScore}`
+    )
+  );
+
+  const executionSummons = depthEval.snapshot.planningDepth?.executionSummons;
+  goalResults.push(
+    result(
+      'G17-065',
+      !!executionSummons &&
+        executionSummons.clauses.length >= 5 &&
+        executionSummons.summonsScore >= 0 &&
+        executionSummons.summonsScore <= 100,
+      `clauses=${executionSummons?.clauses.length} score=${executionSummons?.summonsScore}`
+    )
+  );
+
+  const stalledMobilization = buildAgent17MobilizationIndex({
+    dispatchAccord: voidAccord,
+    coordinationBrief: depthEval.snapshot.planningDepth!.coordinationBrief,
+    executionPacing: depthEval.snapshot.planningDepth!.executionPacing,
+  });
+  const revokedSummons = buildAgent17ExecutionSummons({
+    mobilizationIndex: stalledMobilization,
+    dispatchAccord: voidAccord,
+    missionDirective: depthEval.snapshot.planningDepth!.missionDirective,
+  });
+  goalResults.push(
+    result(
+      'G17-066',
+      dispatchAccordBlocksDispatch(voidAccord) ||
+        mobilizationIndexBlocksSummons(stalledMobilization) ||
+        executionSummonsBlocksField(revokedSummons),
+      `${stalledMobilization.band}/${revokedSummons.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -1137,6 +1192,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-061',
     'G17-062',
     'G17-063',
+    'G17-064',
+    'G17-065',
+    'G17-066',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

@@ -443,6 +443,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Released lock or revoked charter yields dispatchAccordBlocksDispatch.',
     severity: 'major',
   },
+  {
+    id: 'G17-064',
+    title: 'Mobilization index on planning depth',
+    category: 'telemetry',
+    acceptance: 'mobilizationIndex reports mobilizationScore 0–100 with mobilized/forming/stalled band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-065',
+    title: 'Execution summons clauses complete',
+    category: 'telemetry',
+    acceptance: 'executionSummons exposes ≥5 clauses and summonsScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-066',
+    title: 'Void dispatch stalls mobilization summons',
+    category: 'integration',
+    acceptance: 'Void accord or stalled mobilization yields executionSummonsBlocksField.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

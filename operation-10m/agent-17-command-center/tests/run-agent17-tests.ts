@@ -17,6 +17,7 @@ import { runAgent17FluxDepthTests } from '../harness/run-flux-depth-tests.ts';
 import { runAgent17CovenantDepthTests } from '../harness/run-covenant-depth-tests.ts';
 import { runAgent17MandateDepthTests } from '../harness/run-mandate-depth-tests.ts';
 import { runAgent17AuthorityDepthTests } from '../harness/run-authority-depth-tests.ts';
+import { runAgent17OperationsDepthTests } from '../harness/run-operations-depth-tests.ts';
 import { verifyAgent17Goals, validateGoalRegistryCoverage } from '../validation/goal-verification.ts';
 import { createAgent17RollbackController } from '../rollback/rollback-controller.ts';
 
@@ -39,6 +40,7 @@ const reports = [
   runAgent17CovenantDepthTests(),
   runAgent17MandateDepthTests(),
   runAgent17AuthorityDepthTests(),
+  runAgent17OperationsDepthTests(),
 ];
 
 const combinedSuccess = reports.every(r => r.success);
@@ -80,6 +82,7 @@ const payload = {
   covenantReport: reports[15],
   mandateReport: reports[16],
   authorityReport: reports[17],
+  operationsReport: reports[18],
   validationReport,
   goalRegistryCoverage: coverage,
   exitCode,

@@ -49,6 +49,8 @@ import { buildAgent17MandateWeave } from './mandate-weave.ts';
 import { buildAgent17SovereigntyLock } from './sovereignty-lock.ts';
 import { buildAgent17AuthorityCharter } from './authority-charter.ts';
 import { buildAgent17DispatchAccord } from './dispatch-accord.ts';
+import { buildAgent17MobilizationIndex } from './mobilization-index.ts';
+import { buildAgent17ExecutionSummons } from './execution-summons.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -283,6 +285,16 @@ export function buildAgent17PlanningDepthSnapshot(
     sovereigntyLock,
     delegationLadder,
   });
+  const mobilizationIndex = buildAgent17MobilizationIndex({
+    dispatchAccord,
+    coordinationBrief,
+    executionPacing,
+  });
+  const executionSummons = buildAgent17ExecutionSummons({
+    mobilizationIndex,
+    dispatchAccord,
+    missionDirective,
+  });
   return {
     ...core,
     intentQueue,
@@ -314,6 +326,8 @@ export function buildAgent17PlanningDepthSnapshot(
     sovereigntyLock,
     authorityCharter,
     dispatchAccord,
+    mobilizationIndex,
+    executionSummons,
   };
 }
 
