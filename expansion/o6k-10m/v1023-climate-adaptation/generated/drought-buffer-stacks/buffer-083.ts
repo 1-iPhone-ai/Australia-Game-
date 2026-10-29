@@ -1,0 +1,31 @@
+import type { V1023CladDroughtBufferEdge } from '../../types/core.ts';
+
+/** Drought buffer graph shard 083 (heat/flood/drought corridor coupling). */
+export const V1023_CLAD_DROUGHT_BUFFER_SHARD_083: readonly V1023CladDroughtBufferEdge[] = [
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.668, lagTurns: 4, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.674, lagTurns: 5, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.68, lagTurns: 6, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.686, lagTurns: 7, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.692, lagTurns: 4, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.698, lagTurns: 5, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.704, lagTurns: 6, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.71, lagTurns: 7, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.716, lagTurns: 4, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.62, lagTurns: 5, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.626, lagTurns: 6, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.632, lagTurns: 7, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.638, lagTurns: 4, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.644, lagTurns: 5, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.65, lagTurns: 6, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.656, lagTurns: 7, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.662, lagTurns: 4, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.668, lagTurns: 5, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.674, lagTurns: 6, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.68, lagTurns: 7, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.686, lagTurns: 4, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.692, lagTurns: 5, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.698, lagTurns: 6, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.704, lagTurns: 7, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.71, lagTurns: 4, nodeId: 'flood_node_11' },
+  { fromChannel: 'fire_interface', toChannel: 'water_stress', weight: 0.716, lagTurns: 5, nodeId: 'flood_node_11' },
+];

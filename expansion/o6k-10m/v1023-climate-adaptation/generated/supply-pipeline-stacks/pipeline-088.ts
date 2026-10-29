@@ -1,0 +1,31 @@
+import type { V1023CladDroughtBufferEdge } from '../../types/core.ts';
+
+/** Drought buffer graph shard 088 (heat/flood/drought corridor coupling). */
+export const V1023_CLAD_DROUGHT_BUFFER_SHARD_088: readonly V1023CladDroughtBufferEdge[] = [
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.266, lagTurns: 9, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.272, lagTurns: 10, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.278, lagTurns: 11, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.284, lagTurns: 12, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.29, lagTurns: 9, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.296, lagTurns: 10, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.302, lagTurns: 11, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.308, lagTurns: 12, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.314, lagTurns: 9, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.32, lagTurns: 10, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.326, lagTurns: 11, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.332, lagTurns: 12, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.236, lagTurns: 9, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.242, lagTurns: 10, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.248, lagTurns: 11, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.254, lagTurns: 12, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.26, lagTurns: 9, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.266, lagTurns: 10, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.272, lagTurns: 11, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.278, lagTurns: 12, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.284, lagTurns: 9, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.29, lagTurns: 10, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.296, lagTurns: 11, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.302, lagTurns: 12, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.308, lagTurns: 9, nodeId: 'flood_node_16' },
+  { fromChannel: 'investor', toChannel: 'mortgage', weight: 0.314, lagTurns: 10, nodeId: 'flood_node_16' },
+];

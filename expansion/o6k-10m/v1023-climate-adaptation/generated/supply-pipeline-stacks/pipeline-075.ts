@@ -1,0 +1,31 @@
+import type { V1023CladDroughtBufferEdge } from '../../types/core.ts';
+
+/** Drought buffer graph shard 075 (heat/flood/drought corridor coupling). */
+export const V1023_CLAD_DROUGHT_BUFFER_SHARD_075: readonly V1023CladDroughtBufferEdge[] = [
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.4, lagTurns: 5, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.406, lagTurns: 6, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.412, lagTurns: 7, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.418, lagTurns: 8, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.424, lagTurns: 5, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.43, lagTurns: 6, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.436, lagTurns: 7, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.442, lagTurns: 8, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.448, lagTurns: 5, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.454, lagTurns: 6, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.46, lagTurns: 7, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.364, lagTurns: 8, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.37, lagTurns: 5, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.376, lagTurns: 6, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.382, lagTurns: 7, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.388, lagTurns: 8, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.394, lagTurns: 5, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.4, lagTurns: 6, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.406, lagTurns: 7, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.412, lagTurns: 8, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.418, lagTurns: 5, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.424, lagTurns: 6, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.43, lagTurns: 7, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.436, lagTurns: 8, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.442, lagTurns: 5, nodeId: 'flood_node_03' },
+  { fromChannel: 'senior', toChannel: 'investor', weight: 0.448, lagTurns: 6, nodeId: 'flood_node_03' },
+];
