@@ -78,6 +78,12 @@ import { nrDashBuildChokepointScoreSpread } from '../core/chokepoint-score-sprea
 import { nrDashBuildOwnedOpenNeedsShare } from '../core/owned-open-needs-share.ts';
 import { nrDashBuildNationalStrainedBarCount } from '../core/national-strained-bar-count.ts';
 import { nrDashBuildHistorySnippetLoad } from '../core/history-snippet-load.ts';
+import { nrDashBuildNetworkStressConcentration } from '../core/network-stress-concentration.ts';
+import { nrDashBuildNetworkCouplingSpread } from '../core/network-coupling-spread.ts';
+import { nrDashBuildResilienceBandDiversity } from '../core/resilience-band-diversity.ts';
+import { nrDashBuildBottleneckSeverityLoad } from '../core/bottleneck-severity-load.ts';
+import { nrDashBuildRivalRiskExposureShare } from '../core/rival-risk-exposure-share.ts';
+import { nrDashBuildHeatRowStrainConcentration } from '../core/heat-row-strain-concentration.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -193,6 +199,14 @@ export const NrDashOverviewTab: React.FC<{
       return needsShare ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-owned-open-needs-share">
           Owned open-needs share {needsShare.ownedShare} · {needsShare.ownedOpenNeeds}/{needsShare.totalOpenNeeds}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const rivalShare = nrDashBuildRivalRiskExposureShare(snap);
+      return rivalShare ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-rival-risk-share">
+          Rival risk exposure share {rivalShare.rivalShare} · {rivalShare.rivalExposure}/{rivalShare.totalExposure} index
         </div>
       ) : null;
     })()}
@@ -340,6 +354,15 @@ export const NrDashRegionsTab: React.FC<{
         </div>
       ) : null;
     })()}
+    {(() => {
+      const resBands = nrDashBuildResilienceBandDiversity(snap);
+      return resBands ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-resilience-band-diversity">
+          Resilience band diversity {resBands.diversityIndex} · {resBands.distinctBands} bands · dominant{' '}
+          {resBands.dominantBand ?? '—'}
+        </div>
+      ) : null;
+    })()}
     {nrDashTopTensionOutliers(snap, 3).length > 0 && (
       <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-tension-outliers">
         <div className="font-semibold mb-1">Momentum ↔ resilience tension</div>
@@ -432,6 +455,10 @@ export const NrDashNetworksTab: React.FC<{
   const strainedBars = nrDashBuildNationalStrainedBarCount(
     nrDashBuildAuthSnapshot(ns.turn ?? 0, null, ns, null)
   );
+  const stressConc = nrDashBuildNetworkStressConcentration(ns);
+  const couplingSpread = nrDashBuildNetworkCouplingSpread(ns);
+  const bottleneckLoad = nrDashBuildBottleneckSeverityLoad(ns);
+  const heatStrainConc = nrDashBuildHeatRowStrainConcentration(ns);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
       <NrDashUtilAlignmentStrip drift={utilDrift} />
@@ -492,6 +519,29 @@ export const NrDashNetworksTab: React.FC<{
       {strainedBars && (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-strained-bars">
           National strained+ bars {strainedBars.strainedPlusCount}/{strainedBars.networkCount}
+        </div>
+      )}
+      {stressConc && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-network-stress-concentration">
+          Peak util concentration {stressConc.concentrationIndex} · top {stressConc.topNetwork ?? '—'} (
+          {Math.round(stressConc.topNetworkShare * 100)}%)
+        </div>
+      )}
+      {couplingSpread && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-network-coupling-spread">
+          Network coupling spread σ {couplingSpread.stdDev} · μ {couplingSpread.meanCoupling}
+          {couplingSpread.maxCouplingRegionId ? ` · max ${couplingSpread.maxCouplingRegionId}` : ''}
+        </div>
+      )}
+      {bottleneckLoad && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-bottleneck-severity-load">
+          Bottleneck severity load {bottleneckLoad.weightedLoad} · {bottleneckLoad.activeCount} active
+          {bottleneckLoad.topRegionId ? ` · top ${bottleneckLoad.topRegionId}` : ''}
+        </div>
+      )}
+      {heatStrainConc && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-heat-row-strain-concentration">
+          Heat row strain concentration {heatStrainConc.concentrationIndex} · top {heatStrainConc.topRegionId ?? '—'}
         </div>
       )}
       {bottleneckConc && (
