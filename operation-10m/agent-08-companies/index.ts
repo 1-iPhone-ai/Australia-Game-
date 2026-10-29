@@ -157,6 +157,25 @@ export type {
   RegionalMandateComplianceSummary,
 } from './production-mandate-compliance';
 
+export {
+  AGENT08_REMEDIATION_SCHEMA_VERSION,
+  buildClusterComplianceRemediationPlans,
+  buildFirmComplianceRemediation,
+  computeNationalProductionComplianceRemediation,
+  computeRemediationPressure,
+  summarizeRegionalComplianceRemediation,
+  runAgent08RemediationSelfTests,
+} from './production-compliance-remediation';
+
+export type {
+  ClusterComplianceRemediationPlan,
+  FirmComplianceRemediationAction,
+  NationalProductionComplianceRemediation,
+  RegionalComplianceRemediationSummary,
+  RemediationActionKind,
+  RemediationUrgencyBand,
+} from './production-compliance-remediation';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -167,6 +186,7 @@ import { runAgent08RecoverySelfTests } from './production-recovery-playbook';
 import { runAgent08StabilizationSelfTests } from './production-stabilization-outlook';
 import { runAgent08MandateSelfTests } from './production-coordination-mandate';
 import { runAgent08ComplianceSelfTests } from './production-mandate-compliance';
+import { runAgent08RemediationSelfTests } from './production-compliance-remediation';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -221,6 +241,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const remediation = runAgent08RemediationSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -232,5 +257,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...stabilization,
     ...mandate,
     ...compliance,
+    ...remediation,
   ];
 }

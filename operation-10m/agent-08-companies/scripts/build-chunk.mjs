@@ -24,6 +24,7 @@ const FILES = [
   'production-stabilization-outlook.ts',
   'production-coordination-mandate.ts',
   'production-mandate-compliance.ts',
+  'production-compliance-remediation.ts',
   'chunk-exports.ts',
 ];
 
