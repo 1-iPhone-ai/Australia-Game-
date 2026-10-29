@@ -87,6 +87,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   advisoryDepletionIndex: number;
   operatorBandwidthScore: number;
   continuityMarginScore: number;
+  stewardshipLoadIndex: number;
+  oversightCommitmentScore: number;
+  sustainabilityMarginScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {

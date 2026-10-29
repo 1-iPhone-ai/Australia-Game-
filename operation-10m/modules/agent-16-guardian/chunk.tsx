@@ -91,6 +91,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   advisoryDepletionIndex: number;
   operatorBandwidthScore: number;
   continuityMarginScore: number;
+  stewardshipLoadIndex: number;
+  oversightCommitmentScore: number;
+  sustainabilityMarginScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -782,6 +785,61 @@ export function buildGuardianDepthContinuityReport(snapshot: GuardianCoPilotMoni
   return lines.slice(0, 3);
 }
 
+export function computeStewardshipLoadIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.continuityMarginScore < 50) load += Math.min(25, 50 - snapshot.continuityMarginScore);
+  if (snapshot.continuityMarginScore < 35) load += 10;
+  if (snapshot.advisoryDepletionIndex >= 45) load += 20;
+  if (snapshot.advisoryDepletionIndex >= 65) load += 10;
+  if (snapshot.operatorBandwidthScore < 45) load += 20;
+  if (snapshot.governanceCoherenceScore < 45) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.humanRelayPressure >= 50) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeOversightCommitmentScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.stewardshipLoadIndex >= 45) score -= Math.min(30, Math.round(snapshot.stewardshipLoadIndex * 0.35));
+  if (snapshot.continuityMarginScore < 40) score -= 15;
+  if (!snapshot.guardianEnabled && snapshot.copilotEnabled) score -= 20;
+  if (snapshot.guardianConfirmationLikelyRequired && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.humanRelayPressure >= 50) score -= 10;
+  if (snapshot.governanceCoherenceScore < 40) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeSustainabilityMarginScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.stewardshipLoadIndex >= 40) score -= Math.min(30, Math.round(snapshot.stewardshipLoadIndex * 0.32));
+  if (snapshot.oversightCommitmentScore < 50) score -= Math.min(25, 50 - snapshot.oversightCommitmentScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  if (snapshot.continuityMarginScore < 35) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthStewardshipReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.stewardshipLoadIndex >= 55) {
+    lines.push(
+      `Stewardship load ${snapshot.stewardshipLoadIndex} — operator stewardship may not scale with advisory volume`
+    );
+  }
+  if (snapshot.oversightCommitmentScore < 45) {
+    lines.push(
+      `Oversight commitment ${snapshot.oversightCommitmentScore} — align Guardian oversight with Co-Pilot autonomy`
+    );
+  }
+  if (snapshot.sustainabilityMarginScore < 40) {
+    lines.push(
+      `Sustainability margin ${snapshot.sustainabilityMarginScore} — little margin to sustain warn-only governance across turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -844,9 +902,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withDepletion: GuardianCoPilotMonitorSnapshot = { ...withRecovery, advisoryDepletionIndex };
   const operatorBandwidthScore = computeOperatorBandwidthScore(withDepletion);
   const withBandwidth: GuardianCoPilotMonitorSnapshot = { ...withDepletion, operatorBandwidthScore };
-  return {
+  const withContinuity: GuardianCoPilotMonitorSnapshot = {
     ...withBandwidth,
     continuityMarginScore: computeContinuityMarginScore(withBandwidth),
+    stewardshipLoadIndex: 0,
+    oversightCommitmentScore: 100,
+    sustainabilityMarginScore: 100,
+  };
+  const stewardshipLoadIndex = computeStewardshipLoadIndex(withContinuity);
+  const withLoad: GuardianCoPilotMonitorSnapshot = { ...withContinuity, stewardshipLoadIndex };
+  const oversightCommitmentScore = computeOversightCommitmentScore(withLoad);
+  const withOversight: GuardianCoPilotMonitorSnapshot = { ...withLoad, oversightCommitmentScore };
+  return {
+    ...withOversight,
+    sustainabilityMarginScore: computeSustainabilityMarginScore(withOversight),
   };
 }
 
@@ -1063,6 +1132,41 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 60,
     } as GuardianCoPilotMonitorSnapshot;
     return computeContinuityMarginScore(snap) < 35;
+  });
+  ok('gd_stewardship_load', () => {
+    const snap = {
+      continuityMarginScore: 30,
+      advisoryDepletionIndex: 68,
+      operatorBandwidthScore: 38,
+      governanceCoherenceScore: 35,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      humanRelayPressure: 55,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeStewardshipLoadIndex(snap) >= 70;
+  });
+  ok('gd_oversight_commitment', () => {
+    const snap = {
+      stewardshipLoadIndex: 72,
+      continuityMarginScore: 32,
+      guardianEnabled: false,
+      copilotEnabled: true,
+      guardianConfirmationLikelyRequired: true,
+      copilotAutonomousActive: true,
+      humanRelayPressure: 55,
+      governanceCoherenceScore: 35,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeOversightCommitmentScore(snap) < 40;
+  });
+  ok('gd_sustainability_margin', () => {
+    const snap = {
+      stewardshipLoadIndex: 78,
+      oversightCommitmentScore: 32,
+      recoveryHeadroomScore: 28,
+      liquidityStressIndex: 62,
+      continuityMarginScore: 28,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeSustainabilityMarginScore(snap) < 35;
   });
   return out;
 }
@@ -2173,6 +2277,138 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_7: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_7_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_7.length;
 
 
+// --- source: monitor-rules-scale-wave-8.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_8: AdvisoryMonitorRule[] = [
+  {
+    id: 'stewardship_load_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Stewardship Load High',
+    detailTemplate: 'Stewardship load is in the high band — reduce overlapping warn-only governance demands',
+    evidenceFields: ['stewardshipLoadIndex', 'continuityMarginScore', 'oversightCommitmentScore'],
+    evaluate: s => s.stewardshipLoadIndex >= 70,
+  },
+  {
+    id: 'stewardship_load_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Stewardship Load Elevated',
+    detailTemplate: 'Stewardship load is elevated — expect slower oversight cycles across turns',
+    evidenceFields: ['stewardshipLoadIndex', 'advisoryDepletionIndex'],
+    evaluate: s => s.stewardshipLoadIndex >= 45 && s.stewardshipLoadIndex < 70,
+  },
+  {
+    id: 'oversight_commitment_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Oversight Commitment Low',
+    detailTemplate: 'Oversight commitment is critically low — defer stacked autonomous actions',
+    evidenceFields: ['oversightCommitmentScore', 'stewardshipLoadIndex', 'governanceCoherenceScore'],
+    evaluate: s => s.oversightCommitmentScore < 35,
+  },
+  {
+    id: 'oversight_commitment_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Oversight While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate oversight commitment',
+    evidenceFields: ['oversightCommitmentScore', 'copilotAutonomousActive', 'stewardshipLoadIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.oversightCommitmentScore >= 35 && s.oversightCommitmentScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'sustainability_margin_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Sustainability Margin Low',
+    detailTemplate: 'Little sustainability margin remains for warn-only governance across turns',
+    evidenceFields: ['sustainabilityMarginScore', 'stewardshipLoadIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.sustainabilityMarginScore < 35,
+  },
+  {
+    id: 'sustainability_margin_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Sustainability While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate sustainability margin',
+    evidenceFields: ['sustainabilityMarginScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.sustainabilityMarginScore >= 35 && s.sustainabilityMarginScore < 55,
+  },
+  {
+    id: 'stewardship_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Stewardship Envelope Pressured',
+    detailTemplate: 'Stewardship load and low oversight commitment align in the pressured envelope band',
+    evidenceFields: ['stewardshipLoadIndex', 'oversightCommitmentScore', 'sustainabilityMarginScore'],
+    evaluate: s => s.stewardshipLoadIndex >= 55 && s.oversightCommitmentScore < 50,
+  },
+  {
+    id: 'rival_stewardship_load',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Stewardship Load',
+    detailTemplate: 'Rival victory progress plus elevated stewardship load',
+    evidenceFields: ['rivalVictoryProgressPct', 'stewardshipLoadIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.7 &&
+      s.stewardshipLoadIndex >= 50,
+  },
+  {
+    id: 'team_plan_stewardship_load',
+    category: 'team',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Team Plan Stewardship Load',
+    detailTemplate: 'Pending team plan while stewardship load is elevated',
+    evidenceFields: ['teamPlanPending', 'stewardshipLoadIndex', 'sustainabilityMarginScore'],
+    evaluate: s => s.teamPlanPending && s.stewardshipLoadIndex >= 55,
+  },
+  {
+    id: 'guardian_stewardship_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Stewardship Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low sustainability margin',
+    evidenceFields: ['guardianRiskBand', 'sustainabilityMarginScore', 'stewardshipLoadIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.sustainabilityMarginScore < 40,
+  },
+  {
+    id: 'copilot_stewardship_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Stewardship Load',
+    detailTemplate: 'Autonomous Co-Pilot while stewardship load is high',
+    evidenceFields: ['copilotAutonomousActive', 'stewardshipLoadIndex', 'oversightCommitmentScore'],
+    evaluate: s => s.copilotAutonomousActive && s.stewardshipLoadIndex >= 55,
+  },
+  {
+    id: 'contracts_sustainability_margin',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Sustainability Margin',
+    detailTemplate: 'Expiring contracts while sustainability margin is low',
+    evidenceFields: ['expiringContractCount', 'sustainabilityMarginScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.sustainabilityMarginScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_8_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_8.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -2409,6 +2645,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_5,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_6,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_7,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_8,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -2746,6 +2983,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     advisoryDepletionIndex: 0,
     operatorBandwidthScore: 100,
     continuityMarginScore: 100,
+    stewardshipLoadIndex: 0,
+    oversightCommitmentScore: 100,
+    sustainabilityMarginScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -2823,6 +3063,9 @@ export function createAdvisoryOpsFixtureSnapshot(
     advisoryDepletionIndex: 0,
     operatorBandwidthScore: 100,
     continuityMarginScore: 100,
+    stewardshipLoadIndex: 0,
+    oversightCommitmentScore: 100,
+    sustainabilityMarginScore: 100,
     ...overrides,
   };
   if (snap.objectiveTargetRegion && !snap.objectiveRegion) {
@@ -3454,6 +3697,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['continuity_envelope_pressured', 'guardian_continuity_envelope_critical'],
     notes: 'Pressured continuity envelope with critical Guardian band',
   },
+  {
+    id: 'sc_stewardship_load_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      maxSpendPerAction: 8800,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['stewardship_load_high', 'oversight_commitment_low'],
+    notes: 'High stewardship load with critical oversight commitment',
+  },
+  {
+    id: 'sc_sustainability_margin_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 28,
+      minCashReserve: 500,
+      debt: 980,
+      maxSpendPerAction: 7100,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['sustainability_margin_low', 'contracts_sustainability_margin'],
+    notes: 'Low sustainability margin with expiring contracts',
+  },
+  {
+    id: 'sc_stewardship_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 20,
+      minCashReserve: 500,
+      debt: 1150,
+      maxSpendPerAction: 7900,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['stewardship_envelope_pressured', 'guardian_stewardship_envelope_critical'],
+    notes: 'Pressured stewardship envelope with critical Guardian band',
+  },
 ];
 
 
@@ -3629,8 +3940,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 7 scale wave brings monitor catalog to 118+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 118;
+  check(results, 'a16_expansion_count', 'Round 8 scale wave brings monitor catalog to 130+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 130;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -3774,6 +4085,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthContinuityReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round8_metrics', 'Round 8 stewardship envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.stewardshipLoadIndex >= 40 &&
+      snap.oversightCommitmentScore <= 100 &&
+      snap.sustainabilityMarginScore <= 100
+    );
+  });
+
+  check(results, 'a16_stewardship_report', 'Guardian depth stewardship report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthStewardshipReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 

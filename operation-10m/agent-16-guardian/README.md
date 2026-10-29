@@ -65,3 +65,9 @@ Anchor: canonical V9.4 `SECTION 20PA` (Guardian & Human Co-Pilot Advisory Ops).
 - **Continuity envelope metrics:** `advisoryDepletionIndex`, `operatorBandwidthScore`, `continuityMarginScore`; `buildGuardianDepthContinuityReport()`
 - **`monitor-rules-scale-wave-7.ts`** — 12 rules (**118** monitor rules total)
 - Regenerate chunk with `npm run build:agent16-chunk`
+
+## Scale wave round 8
+
+- **Stewardship envelope metrics:** `stewardshipLoadIndex`, `oversightCommitmentScore`, `sustainabilityMarginScore`; `buildGuardianDepthStewardshipReport()`
+- **`monitor-rules-scale-wave-8.ts`** — 12 rules (**130** monitor rules total)
+- Regenerate chunk with `npm run build:agent16-chunk`

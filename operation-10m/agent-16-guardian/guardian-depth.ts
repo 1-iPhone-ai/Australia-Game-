@@ -408,6 +408,61 @@ export function buildGuardianDepthContinuityReport(snapshot: GuardianCoPilotMoni
   return lines.slice(0, 3);
 }
 
+export function computeStewardshipLoadIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.continuityMarginScore < 50) load += Math.min(25, 50 - snapshot.continuityMarginScore);
+  if (snapshot.continuityMarginScore < 35) load += 10;
+  if (snapshot.advisoryDepletionIndex >= 45) load += 20;
+  if (snapshot.advisoryDepletionIndex >= 65) load += 10;
+  if (snapshot.operatorBandwidthScore < 45) load += 20;
+  if (snapshot.governanceCoherenceScore < 45) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.humanRelayPressure >= 50) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeOversightCommitmentScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.stewardshipLoadIndex >= 45) score -= Math.min(30, Math.round(snapshot.stewardshipLoadIndex * 0.35));
+  if (snapshot.continuityMarginScore < 40) score -= 15;
+  if (!snapshot.guardianEnabled && snapshot.copilotEnabled) score -= 20;
+  if (snapshot.guardianConfirmationLikelyRequired && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.humanRelayPressure >= 50) score -= 10;
+  if (snapshot.governanceCoherenceScore < 40) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeSustainabilityMarginScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.stewardshipLoadIndex >= 40) score -= Math.min(30, Math.round(snapshot.stewardshipLoadIndex * 0.32));
+  if (snapshot.oversightCommitmentScore < 50) score -= Math.min(25, 50 - snapshot.oversightCommitmentScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  if (snapshot.continuityMarginScore < 35) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthStewardshipReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.stewardshipLoadIndex >= 55) {
+    lines.push(
+      `Stewardship load ${snapshot.stewardshipLoadIndex} — operator stewardship may not scale with advisory volume`
+    );
+  }
+  if (snapshot.oversightCommitmentScore < 45) {
+    lines.push(
+      `Oversight commitment ${snapshot.oversightCommitmentScore} — align Guardian oversight with Co-Pilot autonomy`
+    );
+  }
+  if (snapshot.sustainabilityMarginScore < 40) {
+    lines.push(
+      `Sustainability margin ${snapshot.sustainabilityMarginScore} — little margin to sustain warn-only governance across turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -470,9 +525,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withDepletion: GuardianCoPilotMonitorSnapshot = { ...withRecovery, advisoryDepletionIndex };
   const operatorBandwidthScore = computeOperatorBandwidthScore(withDepletion);
   const withBandwidth: GuardianCoPilotMonitorSnapshot = { ...withDepletion, operatorBandwidthScore };
-  return {
+  const withContinuity: GuardianCoPilotMonitorSnapshot = {
     ...withBandwidth,
     continuityMarginScore: computeContinuityMarginScore(withBandwidth),
+    stewardshipLoadIndex: 0,
+    oversightCommitmentScore: 100,
+    sustainabilityMarginScore: 100,
+  };
+  const stewardshipLoadIndex = computeStewardshipLoadIndex(withContinuity);
+  const withLoad: GuardianCoPilotMonitorSnapshot = { ...withContinuity, stewardshipLoadIndex };
+  const oversightCommitmentScore = computeOversightCommitmentScore(withLoad);
+  const withOversight: GuardianCoPilotMonitorSnapshot = { ...withLoad, oversightCommitmentScore };
+  return {
+    ...withOversight,
+    sustainabilityMarginScore: computeSustainabilityMarginScore(withOversight),
   };
 }
 
@@ -689,6 +755,41 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 60,
     } as GuardianCoPilotMonitorSnapshot;
     return computeContinuityMarginScore(snap) < 35;
+  });
+  ok('gd_stewardship_load', () => {
+    const snap = {
+      continuityMarginScore: 30,
+      advisoryDepletionIndex: 68,
+      operatorBandwidthScore: 38,
+      governanceCoherenceScore: 35,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      humanRelayPressure: 55,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeStewardshipLoadIndex(snap) >= 70;
+  });
+  ok('gd_oversight_commitment', () => {
+    const snap = {
+      stewardshipLoadIndex: 72,
+      continuityMarginScore: 32,
+      guardianEnabled: false,
+      copilotEnabled: true,
+      guardianConfirmationLikelyRequired: true,
+      copilotAutonomousActive: true,
+      humanRelayPressure: 55,
+      governanceCoherenceScore: 35,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeOversightCommitmentScore(snap) < 40;
+  });
+  ok('gd_sustainability_margin', () => {
+    const snap = {
+      stewardshipLoadIndex: 78,
+      oversightCommitmentScore: 32,
+      recoveryHeadroomScore: 28,
+      liquidityStressIndex: 62,
+      continuityMarginScore: 28,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeSustainabilityMarginScore(snap) < 35;
   });
   return out;
 }
