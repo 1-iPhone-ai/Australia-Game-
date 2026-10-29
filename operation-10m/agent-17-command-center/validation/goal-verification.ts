@@ -54,6 +54,14 @@ import {
   missionDirectiveBlocksExecution,
 } from '../planning/mission-directive.ts';
 import {
+  buildAgent17DirectiveSynthesis,
+  directiveSynthesisBlocksAdvance,
+} from '../planning/directive-synthesis.ts';
+import {
+  buildAgent17ExecutionClosure,
+  executionClosureBlocksAdvance,
+} from '../planning/execution-closure.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -652,6 +660,56 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const directiveSynthesis = depthEval.snapshot.planningDepth?.directiveSynthesis;
+  goalResults.push(
+    result(
+      'G17-043',
+      !!directiveSynthesis &&
+        directiveSynthesis.synthesisIndex >= 0 &&
+        directiveSynthesis.synthesisIndex <= 100 &&
+        (directiveSynthesis.band === 'ready' ||
+          directiveSynthesis.band === 'pending' ||
+          directiveSynthesis.band === 'locked'),
+      `${directiveSynthesis?.synthesisIndex}/${directiveSynthesis?.band}`
+    )
+  );
+
+  const executionClosure = depthEval.snapshot.planningDepth?.executionClosure;
+  goalResults.push(
+    result(
+      'G17-044',
+      !!executionClosure &&
+        executionClosure.checkpoints.length >= 5 &&
+        executionClosure.closureScore >= 0 &&
+        executionClosure.closureScore <= 100,
+      `checks=${executionClosure?.checkpoints.length} score=${executionClosure?.closureScore}`
+    )
+  );
+
+  const lockedSynthesis = buildAgent17DirectiveSynthesis({
+    missionDirective: heldDirective,
+    convergenceIndex: divergingConvergence,
+    intentQueue: depthEval.snapshot.planningDepth!.intentQueue,
+  });
+  const sealedClosure = buildAgent17ExecutionClosure({
+    directiveSynthesis: lockedSynthesis,
+    executionPacing: buildAgent17ExecutionPacing(
+      breachOps,
+      baseState,
+      assessAgent17PlanHealth(breachOps.activePlan, baseState, 'player'),
+      buildAgent17VerificationPolicy(breachOps, baseState, 'player')
+    ),
+    missionDirective: heldDirective,
+  });
+  goalResults.push(
+    result(
+      'G17-045',
+      directiveSynthesisBlocksAdvance(lockedSynthesis) ||
+        executionClosureBlocksAdvance(sealedClosure),
+      `${lockedSynthesis.band}/${sealedClosure.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -724,6 +782,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-040',
     'G17-041',
     'G17-042',
+    'G17-043',
+    'G17-044',
+    'G17-045',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

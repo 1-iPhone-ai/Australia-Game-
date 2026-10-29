@@ -35,6 +35,8 @@ import { buildAgent17StabilizationIndex } from './stabilization-index.ts';
 import { buildAgent17CommandEnvelope } from './command-envelope.ts';
 import { buildAgent17ConvergenceIndex } from './convergence-index.ts';
 import { buildAgent17MissionDirective } from './mission-directive.ts';
+import { buildAgent17DirectiveSynthesis } from './directive-synthesis.ts';
+import { buildAgent17ExecutionClosure } from './execution-closure.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -199,6 +201,16 @@ export function buildAgent17PlanningDepthSnapshot(
     commandEnvelope,
     convergenceIndex,
   });
+  const directiveSynthesis = buildAgent17DirectiveSynthesis({
+    missionDirective,
+    convergenceIndex,
+    intentQueue,
+  });
+  const executionClosure = buildAgent17ExecutionClosure({
+    directiveSynthesis,
+    executionPacing,
+    missionDirective,
+  });
   return {
     ...core,
     intentQueue,
@@ -216,6 +228,8 @@ export function buildAgent17PlanningDepthSnapshot(
     commandEnvelope,
     convergenceIndex,
     missionDirective,
+    directiveSynthesis,
+    executionClosure,
   };
 }
 

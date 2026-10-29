@@ -296,6 +296,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Diverging band or held directive yields missionDirectiveBlocksExecution.',
     severity: 'major',
   },
+  {
+    id: 'G17-043',
+    title: 'Directive synthesis on planning depth',
+    category: 'telemetry',
+    acceptance: 'directiveSynthesis reports synthesisIndex 0–100 with ready/pending/locked band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-044',
+    title: 'Execution closure checkpoints complete',
+    category: 'telemetry',
+    acceptance: 'executionClosure exposes ≥5 closure checkpoints and closureScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-045',
+    title: 'Locked synthesis seals closure',
+    category: 'integration',
+    acceptance: 'Locked synthesis or sealed closure yields executionClosureBlocksAdvance.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

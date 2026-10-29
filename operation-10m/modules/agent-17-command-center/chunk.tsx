@@ -199,6 +199,8 @@ export interface Agent17PlanningDepthSnapshot {
   commandEnvelope: Agent17CommandEnvelopeSnapshot;
   convergenceIndex: Agent17ConvergenceIndexSnapshot;
   missionDirective: Agent17MissionDirectiveSnapshot;
+  directiveSynthesis: Agent17DirectiveSynthesisSnapshot;
+  executionClosure: Agent17ExecutionClosureSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -409,6 +411,38 @@ export interface Agent17MissionDirectiveSnapshot {
   lanes: Agent17MissionDirectiveLane[];
   primaryLaneId: string | null;
   executionAllowed: boolean;
+  headline: string;
+}
+
+export interface Agent17DirectiveSynthesisFactor {
+  id: string;
+  label: string;
+  score: number;
+  weight: number;
+}
+
+export interface Agent17DirectiveSynthesisSnapshot {
+  synthesisIndex: number;
+  band: 'ready' | 'pending' | 'locked';
+  factors: Agent17DirectiveSynthesisFactor[];
+  directiveBand: Agent17MissionDirectiveSnapshot['band'];
+  convergenceBand: Agent17ConvergenceIndexSnapshot['band'];
+  headline: string;
+}
+
+export interface Agent17ExecutionClosureCheckpoint {
+  id: string;
+  label: string;
+  satisfied: boolean;
+  weight: number;
+}
+
+export interface Agent17ExecutionClosureSnapshot {
+  closureScore: number;
+  band: 'open' | 'narrow' | 'sealed';
+  checkpoints: Agent17ExecutionClosureCheckpoint[];
+  stepsReadyToClose: number;
+  automationClearance: boolean;
   headline: string;
 }
 
@@ -3468,6 +3502,209 @@ export function missionDirectiveBlocksExecution(
 }
 
 
+// --- source: planning/directive-synthesis.ts ---
+  Agent17ConvergenceIndexSnapshot,
+  Agent17DirectiveSynthesisSnapshot,
+  Agent17IntentQueueSnapshot,
+  Agent17MissionDirectiveSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17DirectiveSynthesisInputs {
+  missionDirective: Agent17MissionDirectiveSnapshot;
+  convergenceIndex: Agent17ConvergenceIndexSnapshot;
+  intentQueue: Agent17IntentQueueSnapshot;
+}
+
+export function buildAgent17DirectiveSynthesis(
+  inputs: Agent17DirectiveSynthesisInputs
+): Agent17DirectiveSynthesisSnapshot {
+  const factors: Agent17DirectiveSynthesisSnapshot['factors'] = [];
+
+  factors.push({
+    id: 'directive_clearance',
+    label: 'Mission directive clearance',
+    score: inputs.missionDirective.clearanceScore,
+    weight: 35,
+  });
+
+  factors.push({
+    id: 'convergence',
+    label: 'Ops convergence',
+    score: inputs.convergenceIndex.convergenceIndex,
+    weight: 30,
+  });
+
+  const intentCoverage =
+    inputs.intentQueue.queueDepth >= 3
+      ? 92
+      : inputs.intentQueue.queueDepth >= 1
+        ? 72
+        : 40;
+  factors.push({
+    id: 'intent_coverage',
+    label: 'Intent queue coverage',
+    score: intentCoverage,
+    weight: 20,
+  });
+
+  const laneOpenRatio = Math.round(
+    (inputs.missionDirective.lanes.filter(l => l.clearance === 'open').length /
+      Math.max(1, inputs.missionDirective.lanes.length)) *
+      100
+  );
+  factors.push({
+    id: 'lane_open_ratio',
+    label: 'Open directive lanes',
+    score: laneOpenRatio,
+    weight: 15,
+  });
+
+  const weighted = factors.reduce((n, f) => n + f.score * (f.weight / 100), 0);
+  const totalWeight = factors.reduce((n, f) => n + f.weight, 0);
+  const synthesisIndex = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const lockedSignals =
+    inputs.missionDirective.band === 'held' ||
+    inputs.convergenceIndex.band === 'diverging' ||
+    convergenceIndexBlocksDirective(inputs.convergenceIndex);
+
+  const band: Agent17DirectiveSynthesisSnapshot['band'] = lockedSignals
+    ? 'locked'
+    : synthesisIndex >= 62 &&
+        (inputs.missionDirective.band === 'cleared' ||
+          inputs.missionDirective.band === 'conditional')
+      ? 'ready'
+      : 'pending';
+
+  return {
+    synthesisIndex,
+    band,
+    factors,
+    directiveBand: inputs.missionDirective.band,
+    convergenceBand: inputs.convergenceIndex.band,
+    headline: `Synthesis ${band} (${synthesisIndex}/100) · dir ${inputs.missionDirective.band}`,
+  };
+}
+
+export function directiveSynthesisBlocksAdvance(
+  snapshot: Agent17DirectiveSynthesisSnapshot
+): boolean {
+  return snapshot.band === 'locked' || snapshot.synthesisIndex < 36;
+}
+
+
+// --- source: planning/execution-closure.ts ---
+  Agent17DirectiveSynthesisSnapshot,
+  Agent17ExecutionClosureSnapshot,
+  Agent17ExecutionPacingSnapshot,
+  Agent17MissionDirectiveSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17ExecutionClosureInputs {
+  directiveSynthesis: Agent17DirectiveSynthesisSnapshot;
+  executionPacing: Agent17ExecutionPacingSnapshot;
+  missionDirective: Agent17MissionDirectiveSnapshot;
+}
+
+export function buildAgent17ExecutionClosure(
+  inputs: Agent17ExecutionClosureInputs
+): Agent17ExecutionClosureSnapshot {
+  const checkpoints: Agent17ExecutionClosureSnapshot['checkpoints'] = [];
+
+  checkpoints.push({
+    id: 'synthesis_ready',
+    label: 'Directive synthesis ready',
+    satisfied: inputs.directiveSynthesis.band === 'ready',
+    weight: 30,
+  });
+
+  checkpoints.push({
+    id: 'pacing_gate',
+    label: 'Execution pacing gate open',
+    satisfied:
+      inputs.executionPacing.canAdvanceActiveStep &&
+      inputs.executionPacing.pacingBand !== 'throttled',
+    weight: 25,
+  });
+
+  checkpoints.push({
+    id: 'directive_exec',
+    label: 'Mission directive allows execution',
+    satisfied: inputs.missionDirective.executionAllowed,
+    weight: 25,
+  });
+
+  checkpoints.push({
+    id: 'turn_budget',
+    label: 'Turn budget available',
+    satisfied: inputs.executionPacing.turnBudgetRemaining >= 1,
+    weight: 10,
+  });
+
+  checkpoints.push({
+    id: 'verify_gate',
+    label: 'Verification gate open',
+    satisfied: inputs.executionPacing.verificationGateOpen,
+    weight: 10,
+  });
+
+  const weighted = checkpoints.reduce(
+    (n, c) => n + (c.satisfied ? 100 : 15) * (c.weight / 100),
+    0
+  );
+  const totalWeight = checkpoints.reduce((n, c) => n + c.weight, 0);
+  const closureScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const stepsReadyToClose = Math.max(
+    0,
+    inputs.executionPacing.stepsRemaining -
+      (inputs.executionPacing.pacingBand === 'throttled' ? 2 : 0)
+  );
+
+  const sealedSignals =
+    directiveSynthesisBlocksAdvance(inputs.directiveSynthesis) ||
+    inputs.missionDirective.band === 'held';
+
+  const narrowSignals =
+    !sealedSignals &&
+    (closureScore < 62 ||
+      !inputs.executionPacing.canAdvanceActiveStep ||
+      inputs.directiveSynthesis.band === 'pending');
+
+  const band: Agent17ExecutionClosureSnapshot['band'] = sealedSignals
+    ? 'sealed'
+    : narrowSignals
+      ? 'narrow'
+      : 'open';
+
+  const automationClearance =
+    band === 'open' &&
+    inputs.missionDirective.executionAllowed &&
+    !directiveSynthesisBlocksAdvance(inputs.directiveSynthesis);
+
+  return {
+    closureScore,
+    band,
+    checkpoints,
+    stepsReadyToClose,
+    automationClearance,
+    headline: `Closure ${band} (${closureScore}/100) · ${checkpoints.filter(c => c.satisfied).length}/${checkpoints.length} checks`,
+  };
+}
+
+export function executionClosureBlocksAdvance(
+  snapshot: Agent17ExecutionClosureSnapshot
+): boolean {
+  return snapshot.band === 'sealed' || !snapshot.automationClearance;
+}
+
+
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -3647,6 +3884,16 @@ export function buildAgent17PlanningDepthSnapshot(
     commandEnvelope,
     convergenceIndex,
   });
+  const directiveSynthesis = buildAgent17DirectiveSynthesis({
+    missionDirective,
+    convergenceIndex,
+    intentQueue,
+  });
+  const executionClosure = buildAgent17ExecutionClosure({
+    directiveSynthesis,
+    executionPacing,
+    missionDirective,
+  });
   return {
     ...core,
     intentQueue,
@@ -3664,6 +3911,8 @@ export function buildAgent17PlanningDepthSnapshot(
     commandEnvelope,
     convergenceIndex,
     missionDirective,
+    directiveSynthesis,
+    executionClosure,
   };
 }
 
@@ -4250,6 +4499,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Diverging band or held directive yields missionDirectiveBlocksExecution.',
     severity: 'major',
   },
+  {
+    id: 'G17-043',
+    title: 'Directive synthesis on planning depth',
+    category: 'telemetry',
+    acceptance: 'directiveSynthesis reports synthesisIndex 0–100 with ready/pending/locked band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-044',
+    title: 'Execution closure checkpoints complete',
+    category: 'telemetry',
+    acceptance: 'executionClosure exposes ≥5 closure checkpoints and closureScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-045',
+    title: 'Locked synthesis seals closure',
+    category: 'integration',
+    acceptance: 'Locked synthesis or sealed closure yields executionClosureBlocksAdvance.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -4291,6 +4561,12 @@ export function listAgent17GoalIds(): string[] {
   buildAgent17MissionDirective,
   missionDirectiveBlocksExecution,
 } from '../planning/mission-directive.ts';
+  buildAgent17DirectiveSynthesis,
+  directiveSynthesisBlocksAdvance,
+} from '../planning/directive-synthesis.ts';
+  buildAgent17ExecutionClosure,
+  executionClosureBlocksAdvance,
+} from '../planning/execution-closure.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -4889,6 +5165,56 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const directiveSynthesis = depthEval.snapshot.planningDepth?.directiveSynthesis;
+  goalResults.push(
+    result(
+      'G17-043',
+      !!directiveSynthesis &&
+        directiveSynthesis.synthesisIndex >= 0 &&
+        directiveSynthesis.synthesisIndex <= 100 &&
+        (directiveSynthesis.band === 'ready' ||
+          directiveSynthesis.band === 'pending' ||
+          directiveSynthesis.band === 'locked'),
+      `${directiveSynthesis?.synthesisIndex}/${directiveSynthesis?.band}`
+    )
+  );
+
+  const executionClosure = depthEval.snapshot.planningDepth?.executionClosure;
+  goalResults.push(
+    result(
+      'G17-044',
+      !!executionClosure &&
+        executionClosure.checkpoints.length >= 5 &&
+        executionClosure.closureScore >= 0 &&
+        executionClosure.closureScore <= 100,
+      `checks=${executionClosure?.checkpoints.length} score=${executionClosure?.closureScore}`
+    )
+  );
+
+  const lockedSynthesis = buildAgent17DirectiveSynthesis({
+    missionDirective: heldDirective,
+    convergenceIndex: divergingConvergence,
+    intentQueue: depthEval.snapshot.planningDepth!.intentQueue,
+  });
+  const sealedClosure = buildAgent17ExecutionClosure({
+    directiveSynthesis: lockedSynthesis,
+    executionPacing: buildAgent17ExecutionPacing(
+      breachOps,
+      baseState,
+      assessAgent17PlanHealth(breachOps.activePlan, baseState, 'player'),
+      buildAgent17VerificationPolicy(breachOps, baseState, 'player')
+    ),
+    missionDirective: heldDirective,
+  });
+  goalResults.push(
+    result(
+      'G17-045',
+      directiveSynthesisBlocksAdvance(lockedSynthesis) ||
+        executionClosureBlocksAdvance(sealedClosure),
+      `${lockedSynthesis.band}/${sealedClosure.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -4961,6 +5287,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-040',
     'G17-041',
     'G17-042',
+    'G17-043',
+    'G17-044',
+    'G17-045',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
@@ -6873,6 +7202,675 @@ export function runAgent17StabilizationDepthTests(): Agent17DevTestReport {
     success: overallStatus === 'passed',
     testResults,
     summary: `Agent 17 Stabilization Depth Tests: ${passedCount}/${testResults.length} Passed`,
+  };
+}
+
+
+// --- source: harness/run-convergence-depth-tests.ts ---
+  createDefaultAcc17CommandCenterOpsState,
+  acc17CreateMultiStepPlanFromObjective,
+  defaultObjectiveResolver,
+} from '../planning/ops-state.ts';
+  buildAgent17GovernanceAudit,
+  governanceAuditBlocksAutomation,
+} from '../planning/governance-audit.ts';
+  buildAgent17EscalationMatrix,
+  escalationMatrixBlocksAutomation,
+} from '../planning/escalation-matrix.ts';
+  buildAgent17RollbackAssurance,
+  rollbackAssuranceNeedsRestore,
+} from '../planning/rollback-assurance.ts';
+  buildAgent17StabilizationIndex,
+  stabilizationIndexBlocksAutomation,
+} from '../planning/stabilization-index.ts';
+  buildAgent17CommandEnvelope,
+  commandEnvelopeNeedsThrottle,
+} from '../planning/command-envelope.ts';
+  buildAgent17ConvergenceIndex,
+  convergenceIndexBlocksDirective,
+} from '../planning/convergence-index.ts';
+  buildAgent17MissionDirective,
+  missionDirectiveBlocksExecution,
+} from '../planning/mission-directive.ts';
+  rankAgent17TemplateCandidates,
+  summarizeAgent17CatalogDepth,
+} from '../planning/template-selector.ts';
+
+export function runAgent17ConvergenceDepthTests(): Agent17DevTestReport {
+  const start = Date.now();
+  const testResults: Agent17DevTestReport['testResults'] = [];
+  const push = (id: string, name: string, ok: boolean, detail?: string) => {
+    testResults.push({
+      id,
+      name,
+      status: ok ? 'passed' : 'failed',
+      durationMs: 0,
+      errorMessage: ok ? undefined : detail,
+    });
+  };
+
+  try {
+    const settings = {
+      commandCenterSettings: { enabled: true },
+      aiCommunicationAutonomyLevel: 'assisted' as const,
+    };
+    const actor = {
+      id: 'player',
+      money: 120,
+      netWorth: 2400,
+      currentRegion: 'QLD',
+      currentSupplies: 6,
+    };
+    const state: Agent17GameStateSlice = {
+      turnCounter: 27,
+      day: 27,
+      player: actor,
+      actorsById: { player: actor },
+      playerTrackedObjective: {
+        title: 'Expand trade network supply chain',
+        sourceType: 'contract',
+      },
+      gi3Strategy: { headline: 'Expand trade network resilience' },
+      strategyPlannerState: { activePlan: { title: 'Trade network supply expansion' } },
+      lastExecutedAction: { type: 'trade' },
+    };
+    const ops = createDefaultAcc17CommandCenterOpsState();
+    const plan = acc17CreateMultiStepPlanFromObjective(
+      state,
+      settings,
+      'player',
+      (s, st, id) => defaultObjectiveResolver(s, st, id)
+    );
+    const opsWithPlan = {
+      ...ops,
+      activePlan: plan ? { ...plan, title: plan.title || 'Trade supply chain plan' } : plan,
+    };
+    const health = assessAgent17PlanHealth(opsWithPlan.activePlan, state, 'player');
+    const intentQueue = buildAgent17IntentQueue(opsWithPlan, state, settings, 'player', health);
+    const alignment = buildAgent17StrategicAlignment(
+      opsWithPlan,
+      state,
+      settings,
+      'player',
+      intentQueue
+    );
+    const policy = buildAgent17VerificationPolicy(
+      { ...opsWithPlan, lastContextFingerprint: 'conv_fp' },
+      state,
+      'player'
+    );
+    const pacing = buildAgent17ExecutionPacing(opsWithPlan, state, health, policy);
+    const scorecard = buildAgent17ResilienceScorecard(
+      opsWithPlan,
+      state,
+      'player',
+      health,
+      policy
+    );
+    const routing = rankAgent17TemplateCandidates(state, settings, 'player');
+    const delegationAnalytics = buildAgent17DelegationAnalytics(opsWithPlan, settings);
+    const core = {
+      turn: state.turnCounter || 1,
+      actorId: 'player',
+      planHealth: health,
+      suggestion: buildAgent17PlanningSuggestion(
+        opsWithPlan,
+        state,
+        settings,
+        'player',
+        'copilot'
+      ),
+      templateRouting: routing,
+      delegationAnalytics,
+      delegationLadder: buildAgent17DelegationLadder(delegationAnalytics, settings, 'copilot'),
+      planLedger: summarizeAgent17PlanLedger(opsWithPlan, state),
+      catalogDepth: summarizeAgent17CatalogDepth(),
+    };
+    const brief = buildAgent17CoordinationBrief(
+      core,
+      intentQueue,
+      policy,
+      opsWithPlan,
+      state,
+      settings
+    );
+    const handoff = buildAgent17HandoffReadiness({
+      coordinationBrief: brief,
+      verificationPolicy: policy,
+      executionPacing: pacing,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const posture = buildAgent17CommandPosture({
+      planHealth: health,
+      handoffReadiness: handoff,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const audit = buildAgent17GovernanceAudit(opsWithPlan, settings, policy);
+    const matrix = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: audit,
+      handoffReadiness: handoff,
+    });
+    const assurance = buildAgent17RollbackAssurance(opsWithPlan, health, audit);
+    const stabilization = buildAgent17StabilizationIndex({
+      escalationMatrix: matrix,
+      rollbackAssurance: assurance,
+    });
+    const envelope = buildAgent17CommandEnvelope({
+      ops: opsWithPlan,
+      executionPacing: pacing,
+      stabilizationIndex: stabilization,
+    });
+
+    const convergenceClean = buildAgent17ConvergenceIndex({
+      commandEnvelope: envelope,
+      stabilizationIndex: stabilization,
+      strategicAlignment: alignment,
+    });
+    push(
+      'conv_index_bounded',
+      'Convergence index bounded with band',
+      convergenceClean.convergenceIndex >= 0 &&
+        convergenceClean.convergenceIndex <= 100 &&
+        (convergenceClean.band === 'aligned' ||
+          convergenceClean.band === 'adjusting' ||
+          convergenceClean.band === 'diverging'),
+      `${convergenceClean.convergenceIndex}/${convergenceClean.band}`
+    );
+
+    push(
+      'conv_factors',
+      'Convergence index exposes weighted factors',
+      convergenceClean.factors.length >= 4 &&
+        convergenceClean.factors.every(f => f.weight > 0),
+      `factors=${convergenceClean.factors.length}`
+    );
+
+    const directiveClean = buildAgent17MissionDirective({
+      intentQueue,
+      commandEnvelope: envelope,
+      convergenceIndex: convergenceClean,
+    });
+    push(
+      'conv_directive_lanes',
+      'Mission directive exposes directive lanes',
+      directiveClean.lanes.length >= 5 &&
+        directiveClean.clearanceScore >= 0 &&
+        directiveClean.clearanceScore <= 100,
+      `lanes=${directiveClean.lanes.length} score=${directiveClean.clearanceScore}`
+    );
+
+    push(
+      'conv_directive_cleared',
+      'Healthy ops yields cleared or conditional directive',
+      directiveClean.band === 'cleared' || directiveClean.band === 'conditional',
+      directiveClean.band
+    );
+
+    const breachOps = {
+      ...opsWithPlan,
+      delegatedProjects: [
+        {
+          id: 'dp1',
+          planId: 'p1',
+          title: 'Breach project',
+          delegateKind: 'team_os' as const,
+          delegateTargetId: 'team',
+          status: 'active' as const,
+          authorityCeiling: 'delegated' as const,
+          assignedTurn: 1,
+          assignedDay: 1,
+          lastVerifiedFingerprint: '',
+          notes: '',
+        },
+      ],
+    };
+    const advisorySettings = {
+      ...settings,
+      aiCommunicationAutonomyLevel: 'advisory' as const,
+    };
+    const auditBreach = buildAgent17GovernanceAudit(breachOps, advisorySettings, policy);
+    const matrixUrgent = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: auditBreach,
+      handoffReadiness: handoff,
+    });
+    const assuranceBreach = buildAgent17RollbackAssurance(
+      breachOps,
+      assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+      auditBreach
+    );
+    const stabilizationVolatile = buildAgent17StabilizationIndex({
+      escalationMatrix: matrixUrgent,
+      rollbackAssurance: assuranceBreach,
+    });
+    const envelopeSaturated = buildAgent17CommandEnvelope({
+      ops: breachOps,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      stabilizationIndex: stabilizationVolatile,
+    });
+    const convergenceDiverging = buildAgent17ConvergenceIndex({
+      commandEnvelope: envelopeSaturated,
+      stabilizationIndex: stabilizationVolatile,
+      strategicAlignment: alignment,
+    });
+    push(
+      'conv_diverging_blocks',
+      'Governance breach yields diverging convergence or blocks directive',
+      convergenceDiverging.band === 'diverging' ||
+        convergenceIndexBlocksDirective(convergenceDiverging),
+      `${convergenceDiverging.band} idx=${convergenceDiverging.convergenceIndex}`
+    );
+
+    const directiveHeld = buildAgent17MissionDirective({
+      intentQueue,
+      commandEnvelope: envelopeSaturated,
+      convergenceIndex: convergenceDiverging,
+    });
+    push(
+      'conv_held_execution',
+      'Held directive blocks execution clearance',
+      directiveHeld.band === 'held' ||
+        missionDirectiveBlocksExecution(directiveHeld) ||
+        !directiveHeld.executionAllowed,
+      `${directiveHeld.band} exec=${directiveHeld.executionAllowed}`
+    );
+
+    push(
+      'conv_escalation_link',
+      'Urgent escalation propagates to convergence factors',
+      escalationMatrixBlocksAutomation(matrixUrgent) ||
+        governanceAuditBlocksAutomation(auditBreach) ||
+        rollbackAssuranceNeedsRestore(assuranceBreach) ||
+        stabilizationIndexBlocksAutomation(stabilizationVolatile) ||
+        commandEnvelopeNeedsThrottle(envelopeSaturated),
+      matrixUrgent.band
+    );
+
+    const evalRes = evaluateAcc17CommandCenterOperations(state, settings, 'player', ops);
+    const depth = evalRes.snapshot.planningDepth;
+    push(
+      'conv_evaluator_depth',
+      'Evaluator attaches convergence index and mission directive',
+      !!depth?.convergenceIndex?.headline &&
+        !!depth?.missionDirective?.headline &&
+        (depth.missionDirective.lanes?.length ?? 0) >= 5,
+      `${depth?.convergenceIndex?.band}/${depth?.missionDirective?.band}`
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    push('conv_throw', 'Convergence harness did not throw', false, msg);
+  }
+
+  const passedCount = testResults.filter(t => t.status === 'passed').length;
+  const failedCount = testResults.filter(t => t.status === 'failed').length;
+  const overallStatus: 'passed' | 'failed' = failedCount === 0 ? 'passed' : 'failed';
+  return {
+    timestamp: Date.now(),
+    totalTests: testResults.length,
+    passedCount,
+    failedCount,
+    executionTimeMs: Date.now() - start,
+    overallStatus,
+    success: overallStatus === 'passed',
+    testResults,
+    summary: `Agent 17 Convergence Depth Tests: ${passedCount}/${testResults.length} Passed`,
+  };
+}
+
+
+// --- source: harness/run-synthesis-depth-tests.ts ---
+  createDefaultAcc17CommandCenterOpsState,
+  acc17CreateMultiStepPlanFromObjective,
+  defaultObjectiveResolver,
+} from '../planning/ops-state.ts';
+  buildAgent17GovernanceAudit,
+  governanceAuditBlocksAutomation,
+} from '../planning/governance-audit.ts';
+  buildAgent17EscalationMatrix,
+  escalationMatrixBlocksAutomation,
+} from '../planning/escalation-matrix.ts';
+  buildAgent17RollbackAssurance,
+  rollbackAssuranceNeedsRestore,
+} from '../planning/rollback-assurance.ts';
+  buildAgent17StabilizationIndex,
+  stabilizationIndexBlocksAutomation,
+} from '../planning/stabilization-index.ts';
+  buildAgent17CommandEnvelope,
+  commandEnvelopeNeedsThrottle,
+} from '../planning/command-envelope.ts';
+  buildAgent17ConvergenceIndex,
+  convergenceIndexBlocksDirective,
+} from '../planning/convergence-index.ts';
+  buildAgent17DirectiveSynthesis,
+  directiveSynthesisBlocksAdvance,
+} from '../planning/directive-synthesis.ts';
+  buildAgent17ExecutionClosure,
+  executionClosureBlocksAdvance,
+} from '../planning/execution-closure.ts';
+  rankAgent17TemplateCandidates,
+  summarizeAgent17CatalogDepth,
+} from '../planning/template-selector.ts';
+
+export function runAgent17SynthesisDepthTests(): Agent17DevTestReport {
+  const start = Date.now();
+  const testResults: Agent17DevTestReport['testResults'] = [];
+  const push = (id: string, name: string, ok: boolean, detail?: string) => {
+    testResults.push({
+      id,
+      name,
+      status: ok ? 'passed' : 'failed',
+      durationMs: 0,
+      errorMessage: ok ? undefined : detail,
+    });
+  };
+
+  try {
+    const settings = {
+      commandCenterSettings: { enabled: true },
+      aiCommunicationAutonomyLevel: 'assisted' as const,
+    };
+    const actor = {
+      id: 'player',
+      money: 120,
+      netWorth: 2400,
+      currentRegion: 'QLD',
+      currentSupplies: 6,
+    };
+    const state: Agent17GameStateSlice = {
+      turnCounter: 28,
+      day: 28,
+      player: actor,
+      actorsById: { player: actor },
+      playerTrackedObjective: {
+        title: 'Expand trade network supply chain',
+        sourceType: 'contract',
+      },
+      gi3Strategy: { headline: 'Expand trade network resilience' },
+      strategyPlannerState: { activePlan: { title: 'Trade network supply expansion' } },
+      lastExecutedAction: { type: 'trade' },
+    };
+    const ops = createDefaultAcc17CommandCenterOpsState();
+    const plan = acc17CreateMultiStepPlanFromObjective(
+      state,
+      settings,
+      'player',
+      (s, st, id) => defaultObjectiveResolver(s, st, id)
+    );
+    const opsWithPlan = {
+      ...ops,
+      activePlan: plan ? { ...plan, title: plan.title || 'Trade supply chain plan' } : plan,
+    };
+    const health = assessAgent17PlanHealth(opsWithPlan.activePlan, state, 'player');
+    const intentQueue = buildAgent17IntentQueue(opsWithPlan, state, settings, 'player', health);
+    const alignment = buildAgent17StrategicAlignment(
+      opsWithPlan,
+      state,
+      settings,
+      'player',
+      intentQueue
+    );
+    const policy = buildAgent17VerificationPolicy(
+      { ...opsWithPlan, lastContextFingerprint: 'syn_fp' },
+      state,
+      'player'
+    );
+    const pacing = buildAgent17ExecutionPacing(opsWithPlan, state, health, policy);
+    const scorecard = buildAgent17ResilienceScorecard(
+      opsWithPlan,
+      state,
+      'player',
+      health,
+      policy
+    );
+    const routing = rankAgent17TemplateCandidates(state, settings, 'player');
+    const delegationAnalytics = buildAgent17DelegationAnalytics(opsWithPlan, settings);
+    const core = {
+      turn: state.turnCounter || 1,
+      actorId: 'player',
+      planHealth: health,
+      suggestion: buildAgent17PlanningSuggestion(
+        opsWithPlan,
+        state,
+        settings,
+        'player',
+        'copilot'
+      ),
+      templateRouting: routing,
+      delegationAnalytics,
+      delegationLadder: buildAgent17DelegationLadder(delegationAnalytics, settings, 'copilot'),
+      planLedger: summarizeAgent17PlanLedger(opsWithPlan, state),
+      catalogDepth: summarizeAgent17CatalogDepth(),
+    };
+    const brief = buildAgent17CoordinationBrief(
+      core,
+      intentQueue,
+      policy,
+      opsWithPlan,
+      state,
+      settings
+    );
+    const handoff = buildAgent17HandoffReadiness({
+      coordinationBrief: brief,
+      verificationPolicy: policy,
+      executionPacing: pacing,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const posture = buildAgent17CommandPosture({
+      planHealth: health,
+      handoffReadiness: handoff,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const audit = buildAgent17GovernanceAudit(opsWithPlan, settings, policy);
+    const matrix = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: audit,
+      handoffReadiness: handoff,
+    });
+    const assurance = buildAgent17RollbackAssurance(opsWithPlan, health, audit);
+    const stabilization = buildAgent17StabilizationIndex({
+      escalationMatrix: matrix,
+      rollbackAssurance: assurance,
+    });
+    const envelope = buildAgent17CommandEnvelope({
+      ops: opsWithPlan,
+      executionPacing: pacing,
+      stabilizationIndex: stabilization,
+    });
+    const convergence = buildAgent17ConvergenceIndex({
+      commandEnvelope: envelope,
+      stabilizationIndex: stabilization,
+      strategicAlignment: alignment,
+    });
+    const directive = buildAgent17MissionDirective({
+      intentQueue,
+      commandEnvelope: envelope,
+      convergenceIndex: convergence,
+    });
+
+    const synthesisClean = buildAgent17DirectiveSynthesis({
+      missionDirective: directive,
+      convergenceIndex: convergence,
+      intentQueue,
+    });
+    push(
+      'syn_index_bounded',
+      'Directive synthesis bounded with band',
+      synthesisClean.synthesisIndex >= 0 &&
+        synthesisClean.synthesisIndex <= 100 &&
+        (synthesisClean.band === 'ready' ||
+          synthesisClean.band === 'pending' ||
+          synthesisClean.band === 'locked'),
+      `${synthesisClean.synthesisIndex}/${synthesisClean.band}`
+    );
+
+    push(
+      'syn_factors',
+      'Directive synthesis exposes weighted factors',
+      synthesisClean.factors.length >= 4 &&
+        synthesisClean.factors.every(f => f.weight > 0),
+      `factors=${synthesisClean.factors.length}`
+    );
+
+    const closureClean = buildAgent17ExecutionClosure({
+      directiveSynthesis: synthesisClean,
+      executionPacing: pacing,
+      missionDirective: directive,
+    });
+    push(
+      'syn_closure_checks',
+      'Execution closure exposes checkpoints',
+      closureClean.checkpoints.length >= 5 &&
+        closureClean.closureScore >= 0 &&
+        closureClean.closureScore <= 100,
+      `checks=${closureClean.checkpoints.length} score=${closureClean.closureScore}`
+    );
+
+    push(
+      'syn_closure_open',
+      'Healthy ops yields open or narrow closure',
+      closureClean.band === 'open' || closureClean.band === 'narrow',
+      closureClean.band
+    );
+
+    const breachOps = {
+      ...opsWithPlan,
+      delegatedProjects: [
+        {
+          id: 'dp1',
+          planId: 'p1',
+          title: 'Breach project',
+          delegateKind: 'team_os' as const,
+          delegateTargetId: 'team',
+          status: 'active' as const,
+          authorityCeiling: 'delegated' as const,
+          assignedTurn: 1,
+          assignedDay: 1,
+          lastVerifiedFingerprint: '',
+          notes: '',
+        },
+      ],
+    };
+    const advisorySettings = {
+      ...settings,
+      aiCommunicationAutonomyLevel: 'advisory' as const,
+    };
+    const auditBreach = buildAgent17GovernanceAudit(breachOps, advisorySettings, policy);
+    const matrixUrgent = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: auditBreach,
+      handoffReadiness: handoff,
+    });
+    const assuranceBreach = buildAgent17RollbackAssurance(
+      breachOps,
+      assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+      auditBreach
+    );
+    const stabilizationVolatile = buildAgent17StabilizationIndex({
+      escalationMatrix: matrixUrgent,
+      rollbackAssurance: assuranceBreach,
+    });
+    const envelopeSaturated = buildAgent17CommandEnvelope({
+      ops: breachOps,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      stabilizationIndex: stabilizationVolatile,
+    });
+    const convergenceDiverging = buildAgent17ConvergenceIndex({
+      commandEnvelope: envelopeSaturated,
+      stabilizationIndex: stabilizationVolatile,
+      strategicAlignment: alignment,
+    });
+    const directiveHeld = buildAgent17MissionDirective({
+      intentQueue,
+      commandEnvelope: envelopeSaturated,
+      convergenceIndex: convergenceDiverging,
+    });
+    const synthesisLocked = buildAgent17DirectiveSynthesis({
+      missionDirective: directiveHeld,
+      convergenceIndex: convergenceDiverging,
+      intentQueue,
+    });
+    push(
+      'syn_locked_blocks',
+      'Governance breach yields locked synthesis or blocks advance',
+      synthesisLocked.band === 'locked' ||
+        directiveSynthesisBlocksAdvance(synthesisLocked),
+      `${synthesisLocked.band} idx=${synthesisLocked.synthesisIndex}`
+    );
+
+    const closureSealed = buildAgent17ExecutionClosure({
+      directiveSynthesis: synthesisLocked,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      missionDirective: directiveHeld,
+    });
+    push(
+      'syn_sealed_advance',
+      'Sealed closure blocks automation clearance',
+      closureSealed.band === 'sealed' ||
+        executionClosureBlocksAdvance(closureSealed) ||
+        !closureSealed.automationClearance,
+      `${closureSealed.band} auto=${closureSealed.automationClearance}`
+    );
+
+    push(
+      'syn_escalation_link',
+      'Urgent escalation propagates to synthesis factors',
+      escalationMatrixBlocksAutomation(matrixUrgent) ||
+        governanceAuditBlocksAutomation(auditBreach) ||
+        rollbackAssuranceNeedsRestore(assuranceBreach) ||
+        stabilizationIndexBlocksAutomation(stabilizationVolatile) ||
+        commandEnvelopeNeedsThrottle(envelopeSaturated) ||
+        convergenceIndexBlocksDirective(convergenceDiverging),
+      matrixUrgent.band
+    );
+
+    const evalRes = evaluateAcc17CommandCenterOperations(state, settings, 'player', ops);
+    const depth = evalRes.snapshot.planningDepth;
+    push(
+      'syn_evaluator_depth',
+      'Evaluator attaches directive synthesis and execution closure',
+      !!depth?.directiveSynthesis?.headline &&
+        !!depth?.executionClosure?.headline &&
+        (depth.executionClosure.checkpoints?.length ?? 0) >= 5,
+      `${depth?.directiveSynthesis?.band}/${depth?.executionClosure?.band}`
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    push('syn_throw', 'Synthesis harness did not throw', false, msg);
+  }
+
+  const passedCount = testResults.filter(t => t.status === 'passed').length;
+  const failedCount = testResults.filter(t => t.status === 'failed').length;
+  const overallStatus: 'passed' | 'failed' = failedCount === 0 ? 'passed' : 'failed';
+  return {
+    timestamp: Date.now(),
+    totalTests: testResults.length,
+    passedCount,
+    failedCount,
+    executionTimeMs: Date.now() - start,
+    overallStatus,
+    success: overallStatus === 'passed',
+    testResults,
+    summary: `Agent 17 Synthesis Depth Tests: ${passedCount}/${testResults.length} Passed`,
   };
 }
 
