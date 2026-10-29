@@ -22,6 +22,7 @@ import {
   O6K_AGENT24_WAVE38_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE39_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE40_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE41_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
 /** @deprecated use integration-closeout WAVE21 constant */
@@ -60,7 +61,9 @@ export function buildAgent24ReplayScaleWaveDryrunHandoffReport(
   const waveRound = input.replayScaleWaveProjectionVerification.waveRound;
   const dryrunBaselineSha =
     input.dryrunBaselineSha ??
-    (waveRound >= 40
+    (waveRound >= 41
+      ? O6K_AGENT24_WAVE41_INTEGRATION_BASELINE_SHA
+      : waveRound >= 40
       ? O6K_AGENT24_WAVE40_INTEGRATION_BASELINE_SHA
       : waveRound >= 39
       ? O6K_AGENT24_WAVE39_INTEGRATION_BASELINE_SHA
@@ -168,8 +171,8 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
   const projectionVerification = {
     reportId: 'pv',
     matchId: 'self',
-    waveRound: 40,
-    projectionBaselineSha: O6K_AGENT24_WAVE40_INTEGRATION_BASELINE_SHA,
+    waveRound: 41,
+    projectionBaselineSha: O6K_AGENT24_WAVE41_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -180,7 +183,7 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
   const postProjectionGate = {
     reportId: 'ppg',
     matchId: 'self',
-    waveRound: 40,
+    waveRound: 41,
     gateOpen: true,
     blockerCount: 0,
     blockers: [],
@@ -199,9 +202,9 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
       name: 'dryrun_handoff_complete_at_wave32_baseline',
       passed:
         report.handoffComplete &&
-        report.dryrunBaselineSha === O6K_AGENT24_WAVE40_INTEGRATION_BASELINE_SHA,
+        report.dryrunBaselineSha === O6K_AGENT24_WAVE41_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: report.waveRound === 40 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 41 },
     {
       name: 'deterministic_fingerprint',
       passed:
