@@ -218,6 +218,9 @@ export interface NationalLaborDemographicsState {
   automationParticipationResilienceOutlook?: NationalAutomationParticipationResilienceOutlook;
   wageParticipationSpilloverBrief?: NationalWageParticipationSpilloverBrief;
   migrationShockParticipationBufferOutlook?: NationalMigrationShockParticipationBufferOutlook;
+  laborMarketStabilityOutlook?: NationalLaborMarketStabilityOutlook;
+  intergenerationalWorkforceBalanceOutlook?: NationalIntergenerationalWorkforceBalanceOutlook;
+  capacityParticipationAlignmentBrief?: NationalCapacityParticipationAlignmentBrief;
 }
 
 export type MigrationShockKind =
@@ -593,6 +596,39 @@ export interface NationalMigrationShockParticipationBufferOutlook {
   bufferIndex: number;
   band: MigrationParticipationBufferBand;
   activeShockDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type LaborMarketStabilityBand = 'volatile' | 'fragile' | 'steady' | 'anchored';
+
+export interface NationalLaborMarketStabilityOutlook {
+  turn: number;
+  stabilityIndex: number;
+  band: LaborMarketStabilityBand;
+  stressDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type IntergenerationalBalanceBand = 'skewed_aged' | 'narrow_youth' | 'balanced' | 'renewal';
+
+export interface NationalIntergenerationalWorkforceBalanceOutlook {
+  turn: number;
+  balanceIndex: number;
+  band: IntergenerationalBalanceBand;
+  pipelineGap: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CapacityParticipationAlignmentBand = 'misaligned' | 'strained' | 'aligned' | 'reinforcing';
+
+export interface NationalCapacityParticipationAlignmentBrief {
+  turn: number;
+  alignmentIndex: number;
+  band: CapacityParticipationAlignmentBand;
+  capacityGapDrag: number;
   summary: string;
   stewardNote: string;
 }

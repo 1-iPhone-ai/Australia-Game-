@@ -36,7 +36,10 @@ export type LaborGiQueryTopic =
   | 'rebalancing_stress'
   | 'automation_participation_resilience'
   | 'wage_participation_spillover'
-  | 'migration_participation_buffer';
+  | 'migration_participation_buffer'
+  | 'labor_market_stability'
+  | 'intergenerational_balance'
+  | 'capacity_participation_alignment';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -61,6 +64,13 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(wage participation spillover|wage spillover participation)/.test(q)) return 'wage_participation_spillover';
   if (/\b(migration shock buffer|migration participation buffer|shock buffer)/.test(q)) {
     return 'migration_participation_buffer';
+  }
+  if (/\b(labor market stability|market stability outlook)/.test(q)) return 'labor_market_stability';
+  if (/\b(intergenerational balance|youth senior balance|generational workforce)/.test(q)) {
+    return 'intergenerational_balance';
+  }
+  if (/\b(capacity participation alignment|capacity alignment participation)/.test(q)) {
+    return 'capacity_participation_alignment';
   }
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
@@ -343,6 +353,31 @@ export function answerLaborDemographicsQuestion(
         fact: `Buffer band ${state.migrationShockParticipationBufferOutlook?.band ?? 'unknown'}; shock drag ${Math.round(state.migrationShockParticipationBufferOutlook?.activeShockDrag ?? 0)}.`,
         inference: state.migrationShockParticipationBufferOutlook?.stewardNote || state.outlook,
         projection: 'Buffer blends shocks, absorption, onboarding, and participation — not literal migrant counts.'
+      };
+    case 'labor_market_stability':
+      return {
+        topic,
+        headline: state.laborMarketStabilityOutlook?.summary || 'Labor market stability unavailable.',
+        fact: `Stability band ${state.laborMarketStabilityOutlook?.band ?? 'unknown'}; stress drag ${Math.round(state.laborMarketStabilityOutlook?.stressDrag ?? 0)}.`,
+        inference: state.laborMarketStabilityOutlook?.stewardNote || state.summary,
+        projection: 'Stability blends pressure, rebalancing stress, automation resilience, and coordination — bounded indices only.'
+      };
+    case 'intergenerational_balance':
+      return {
+        topic,
+        headline:
+          state.intergenerationalWorkforceBalanceOutlook?.summary || 'Intergenerational balance unavailable.',
+        fact: `Balance band ${state.intergenerationalWorkforceBalanceOutlook?.band ?? 'unknown'}; pipeline gap ${Math.round(state.intergenerationalWorkforceBalanceOutlook?.pipelineGap ?? 0)}.`,
+        inference: state.intergenerationalWorkforceBalanceOutlook?.stewardNote || state.outlook,
+        projection: 'Balance blends youth pipeline and senior retention — not literal age cohort counts.'
+      };
+    case 'capacity_participation_alignment':
+      return {
+        topic,
+        headline: state.capacityParticipationAlignmentBrief?.summary || 'Capacity-participation alignment unavailable.',
+        fact: `Alignment band ${state.capacityParticipationAlignmentBrief?.band ?? 'unknown'}; capacity drag ${Math.round(state.capacityParticipationAlignmentBrief?.capacityGapDrag ?? 0)}.`,
+        inference: state.capacityParticipationAlignmentBrief?.stewardNote || state.outlook,
+        projection: 'Alignment blends capacity gaps, equity, absorption, and linkage — not literal headcount targets.'
       };
     default:
       return {

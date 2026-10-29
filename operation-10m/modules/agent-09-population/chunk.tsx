@@ -222,6 +222,9 @@ export interface NationalLaborDemographicsState {
   automationParticipationResilienceOutlook?: NationalAutomationParticipationResilienceOutlook;
   wageParticipationSpilloverBrief?: NationalWageParticipationSpilloverBrief;
   migrationShockParticipationBufferOutlook?: NationalMigrationShockParticipationBufferOutlook;
+  laborMarketStabilityOutlook?: NationalLaborMarketStabilityOutlook;
+  intergenerationalWorkforceBalanceOutlook?: NationalIntergenerationalWorkforceBalanceOutlook;
+  capacityParticipationAlignmentBrief?: NationalCapacityParticipationAlignmentBrief;
 }
 
 export type MigrationShockKind =
@@ -597,6 +600,39 @@ export interface NationalMigrationShockParticipationBufferOutlook {
   bufferIndex: number;
   band: MigrationParticipationBufferBand;
   activeShockDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type LaborMarketStabilityBand = 'volatile' | 'fragile' | 'steady' | 'anchored';
+
+export interface NationalLaborMarketStabilityOutlook {
+  turn: number;
+  stabilityIndex: number;
+  band: LaborMarketStabilityBand;
+  stressDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type IntergenerationalBalanceBand = 'skewed_aged' | 'narrow_youth' | 'balanced' | 'renewal';
+
+export interface NationalIntergenerationalWorkforceBalanceOutlook {
+  turn: number;
+  balanceIndex: number;
+  band: IntergenerationalBalanceBand;
+  pipelineGap: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CapacityParticipationAlignmentBand = 'misaligned' | 'strained' | 'aligned' | 'reinforcing';
+
+export interface NationalCapacityParticipationAlignmentBrief {
+  turn: number;
+  alignmentIndex: number;
+  band: CapacityParticipationAlignmentBand;
+  capacityGapDrag: number;
   summary: string;
   stewardNote: string;
 }
@@ -1700,7 +1736,10 @@ export type LaborGiQueryTopic =
   | 'rebalancing_stress'
   | 'automation_participation_resilience'
   | 'wage_participation_spillover'
-  | 'migration_participation_buffer';
+  | 'migration_participation_buffer'
+  | 'labor_market_stability'
+  | 'intergenerational_balance'
+  | 'capacity_participation_alignment';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -1725,6 +1764,13 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(wage participation spillover|wage spillover participation)/.test(q)) return 'wage_participation_spillover';
   if (/\b(migration shock buffer|migration participation buffer|shock buffer)/.test(q)) {
     return 'migration_participation_buffer';
+  }
+  if (/\b(labor market stability|market stability outlook)/.test(q)) return 'labor_market_stability';
+  if (/\b(intergenerational balance|youth senior balance|generational workforce)/.test(q)) {
+    return 'intergenerational_balance';
+  }
+  if (/\b(capacity participation alignment|capacity alignment participation)/.test(q)) {
+    return 'capacity_participation_alignment';
   }
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
@@ -2007,6 +2053,31 @@ export function answerLaborDemographicsQuestion(
         fact: `Buffer band ${state.migrationShockParticipationBufferOutlook?.band ?? 'unknown'}; shock drag ${Math.round(state.migrationShockParticipationBufferOutlook?.activeShockDrag ?? 0)}.`,
         inference: state.migrationShockParticipationBufferOutlook?.stewardNote || state.outlook,
         projection: 'Buffer blends shocks, absorption, onboarding, and participation — not literal migrant counts.'
+      };
+    case 'labor_market_stability':
+      return {
+        topic,
+        headline: state.laborMarketStabilityOutlook?.summary || 'Labor market stability unavailable.',
+        fact: `Stability band ${state.laborMarketStabilityOutlook?.band ?? 'unknown'}; stress drag ${Math.round(state.laborMarketStabilityOutlook?.stressDrag ?? 0)}.`,
+        inference: state.laborMarketStabilityOutlook?.stewardNote || state.summary,
+        projection: 'Stability blends pressure, rebalancing stress, automation resilience, and coordination — bounded indices only.'
+      };
+    case 'intergenerational_balance':
+      return {
+        topic,
+        headline:
+          state.intergenerationalWorkforceBalanceOutlook?.summary || 'Intergenerational balance unavailable.',
+        fact: `Balance band ${state.intergenerationalWorkforceBalanceOutlook?.band ?? 'unknown'}; pipeline gap ${Math.round(state.intergenerationalWorkforceBalanceOutlook?.pipelineGap ?? 0)}.`,
+        inference: state.intergenerationalWorkforceBalanceOutlook?.stewardNote || state.outlook,
+        projection: 'Balance blends youth pipeline and senior retention — not literal age cohort counts.'
+      };
+    case 'capacity_participation_alignment':
+      return {
+        topic,
+        headline: state.capacityParticipationAlignmentBrief?.summary || 'Capacity-participation alignment unavailable.',
+        fact: `Alignment band ${state.capacityParticipationAlignmentBrief?.band ?? 'unknown'}; capacity drag ${Math.round(state.capacityParticipationAlignmentBrief?.capacityGapDrag ?? 0)}.`,
+        inference: state.capacityParticipationAlignmentBrief?.stewardNote || state.outlook,
+        projection: 'Alignment blends capacity gaps, equity, absorption, and linkage — not literal headcount targets.'
       };
     default:
       return {
@@ -2450,6 +2521,24 @@ export function buildStewardLaborBrief(
     state.migrationShockParticipationBufferOutlook?.band === 'thin'
   ) {
     hints.push(state.migrationShockParticipationBufferOutlook.stewardNote);
+  }
+  if (
+    state.laborMarketStabilityOutlook?.band === 'volatile' ||
+    state.laborMarketStabilityOutlook?.band === 'fragile'
+  ) {
+    hints.push(state.laborMarketStabilityOutlook.stewardNote);
+  }
+  if (
+    state.intergenerationalWorkforceBalanceOutlook?.band === 'skewed_aged' ||
+    state.intergenerationalWorkforceBalanceOutlook?.band === 'narrow_youth'
+  ) {
+    hints.push(state.intergenerationalWorkforceBalanceOutlook.stewardNote);
+  }
+  if (
+    state.capacityParticipationAlignmentBrief?.band === 'misaligned' ||
+    state.capacityParticipationAlignmentBrief?.band === 'strained'
+  ) {
+    hints.push(state.capacityParticipationAlignmentBrief.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -3674,6 +3763,121 @@ export function onboardingEaseForRegion(
   );
   if (!matches.length) return 0;
   return matches.reduce((a, l) => a + l.onboardingStrength, 0) / matches.length;
+}
+
+
+// --- source: catalog/workforce-coordination-levers.ts ---
+
+export type WorkforceCoordinationLeverKind =
+  | 'sector_roundtable'
+  | 'corridor_taskforce'
+  | 'skills_council'
+  | 'regional_compact'
+  | 'automation_pact';
+
+export interface WorkforceCoordinationLever {
+  id: string;
+  kind: WorkforceCoordinationLeverKind;
+  targetIndustry: StrategicIndustryKind;
+  hostRegions: readonly string[];
+  coordinationStrength: number;
+  label: string;
+  narrative: string;
+}
+
+export const WORKFORCE_COORDINATION_LEVERS: WorkforceCoordinationLever[] = [
+  {
+    id: 'coord_manufacturing_vic',
+    kind: 'sector_roundtable',
+    targetIndustry: 'manufacturing',
+    hostRegions: ['VIC', 'SA'],
+    coordinationStrength: 0.71,
+    label: 'Manufacturing sector roundtable',
+    narrative: 'Roundtables align upskilling with participation equity without micro policy sim.'
+  },
+  {
+    id: 'coord_health_nsw',
+    kind: 'skills_council',
+    targetIndustry: 'research',
+    hostRegions: ['NSW', 'ACT'],
+    coordinationStrength: 0.74,
+    label: 'Capital health skills council',
+    narrative: 'Skills councils stabilize credential mobility across capital corridors.'
+  },
+  {
+    id: 'coord_agri_tas',
+    kind: 'regional_compact',
+    targetIndustry: 'agriculture',
+    hostRegions: ['TAS', 'SA', 'VIC'],
+    coordinationStrength: 0.63,
+    label: 'Regional agri workforce compact',
+    narrative: 'Compacts smooth seasonal participation buffers in regional agri hubs.'
+  },
+  {
+    id: 'coord_tourism_qld',
+    kind: 'corridor_taskforce',
+    targetIndustry: 'tourism',
+    hostRegions: ['QLD', 'NSW'],
+    coordinationStrength: 0.66,
+    label: 'Coastal tourism corridor taskforce',
+    narrative: 'Taskforces coordinate absorption with migration-shock buffers.'
+  },
+  {
+    id: 'coord_tech_nsw_vic',
+    kind: 'automation_pact',
+    targetIndustry: 'technology',
+    hostRegions: ['NSW', 'VIC'],
+    coordinationStrength: 0.77,
+    label: 'Tech automation coordination pact',
+    narrative: 'Automation pacts align resilience outlooks with onboarding levers.'
+  },
+  {
+    id: 'coord_mining_wa',
+    kind: 'corridor_taskforce',
+    targetIndustry: 'mining',
+    hostRegions: ['WA', 'QLD', 'NT'],
+    coordinationStrength: 0.7,
+    label: 'Frontier mining corridor taskforce',
+    narrative: 'Taskforces sequence rebalancing stress before wage spillover surges.'
+  },
+  {
+    id: 'coord_energy_nt',
+    kind: 'sector_roundtable',
+    targetIndustry: 'energy',
+    hostRegions: ['NT', 'QLD'],
+    coordinationStrength: 0.65,
+    label: 'Energy sector roundtable',
+    narrative: 'Roundtables align capacity-participation alignment in energy corridors.'
+  },
+  {
+    id: 'coord_trade_sa',
+    kind: 'regional_compact',
+    targetIndustry: 'trade',
+    hostRegions: ['SA', 'WA'],
+    coordinationStrength: 0.61,
+    label: 'Trade logistics regional compact',
+    narrative: 'Compacts reinforce labor-market stability across logistics hubs.'
+  }
+];
+
+export function lookupWorkforceCoordinationLever(id: string): WorkforceCoordinationLever | undefined {
+  return WORKFORCE_COORDINATION_LEVERS.find(l => l.id === id);
+}
+
+export function coordinationLeversForIndustry(industry: StrategicIndustryKind): WorkforceCoordinationLever[] {
+  return WORKFORCE_COORDINATION_LEVERS.filter(l => l.targetIndustry === industry);
+}
+
+export function coordinationEaseForRegion(
+  regionId: string,
+  dominantIndustry: StrategicIndustryKind | null | undefined
+): number {
+  if (!dominantIndustry) return 0;
+  const matches = WORKFORCE_COORDINATION_LEVERS.filter(
+    l => l.targetIndustry === dominantIndustry && l.hostRegions.includes(regionId)
+  );
+  if (!matches.length) return 0;
+  return matches.reduce((a, l) => a + l.coordinationStrength, 0) / matches.length;
 }
 
 
@@ -5172,6 +5376,210 @@ export function computeNationalMigrationShockParticipationBufferOutlook(
 }
 
 
+// --- source: labor-market-stability-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type IntegratedLaborMarketBrief,
+  type LaborMarketStabilityBand,
+  type NationalAutomationParticipationResilienceOutlook,
+  type NationalLaborDemographicsState,
+  type NationalLaborMarketStabilityOutlook,
+  type NationalLaborRebalancingStressBrief
+} from './types';
+
+function stabilityBand(index: number): LaborMarketStabilityBand {
+  if (index <= 34) return 'volatile';
+  if (index <= 48) return 'fragile';
+  if (index <= 62) return 'steady';
+  return 'anchored';
+}
+
+export function computeNationalLaborMarketStabilityOutlook(
+  state: NationalLaborDemographicsState,
+  brief: IntegratedLaborMarketBrief | null | undefined,
+  rebalancingStress: NationalLaborRebalancingStressBrief | null | undefined,
+  automationResilience: NationalAutomationParticipationResilienceOutlook | null | undefined
+): NationalLaborMarketStabilityOutlook {
+  if (!state.enabled || !brief || !rebalancingStress || !automationResilience) {
+    return {
+      turn: state.turn,
+      stabilityIndex: 50,
+      band: 'fragile',
+      stressDrag: 0,
+      summary: 'Labor market stability idle — brief, stress, or automation resilience unavailable.',
+      stewardNote: 'Compute integrated brief, rebalancing stress, and automation resilience before stability guidance.'
+    };
+  }
+
+  let coordinationLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    coordinationLift += coordinationEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  coordinationLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const pressureDrag =
+    brief.pressureBand === 'critical' ? 18 : brief.pressureBand === 'elevated' ? 12 : brief.compositePressureIndex * 0.2;
+  const stressDrag =
+    rebalancingStress.band === 'critical'
+      ? 16
+      : rebalancingStress.band === 'acute'
+        ? 11
+        : rebalancingStress.stressIndex * 0.12;
+  const resilienceLift =
+    automationResilience.band === 'adaptive' || automationResilience.band === 'stable'
+      ? automationResilience.resilienceIndex * 0.28
+      : automationResilience.resilienceIndex * 0.15;
+
+  const stabilityIndex = v1014laborClamp(
+    32 + resilienceLift + coordinationLift * 22 - pressureDrag - stressDrag
+  );
+  const band = stabilityBand(stabilityIndex);
+
+  const stewardNote =
+    band === 'volatile' || band === 'fragile'
+      ? 'Fragile labor stability — deploy coordination levers before stacked corridor commits.'
+      : band === 'anchored'
+        ? 'Anchored stability — avoid hyper-mobility that erodes shock buffers.'
+        : 'Steady stability — monitor rebalancing stress in tight absorption hubs.';
+
+  return {
+    turn: state.turn,
+    stabilityIndex,
+    band,
+    stressDrag,
+    summary: `Labor market stability ${band} (index ${Math.round(stabilityIndex)}); stress drag ${Math.round(stressDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: intergenerational-workforce-balance-outlook.ts ---
+  IntergenerationalBalanceBand,
+  NationalIntergenerationalWorkforceBalanceOutlook,
+  NationalLaborDemographicsState,
+  NationalSeniorWorkforceRetentionOutlook,
+  NationalYouthEntryPipelineOutlook
+} from './types';
+
+function balanceBand(index: number): IntergenerationalBalanceBand {
+  if (index <= 34) return 'skewed_aged';
+  if (index <= 48) return 'narrow_youth';
+  if (index <= 62) return 'balanced';
+  return 'renewal';
+}
+
+export function computeNationalIntergenerationalWorkforceBalanceOutlook(
+  state: NationalLaborDemographicsState,
+  youth: NationalYouthEntryPipelineOutlook | null | undefined,
+  senior: NationalSeniorWorkforceRetentionOutlook | null | undefined
+): NationalIntergenerationalWorkforceBalanceOutlook {
+  if (!state.enabled || !youth || !senior) {
+    return {
+      turn: state.turn,
+      balanceIndex: 50,
+      band: 'narrow_youth',
+      pipelineGap: 0,
+      summary: 'Intergenerational balance idle — youth or senior outlook unavailable.',
+      stewardNote: 'Compute youth pipeline and senior retention before intergenerational guidance.'
+    };
+  }
+
+  const pipelineGap = v1014laborClamp(Math.abs(youth.pipelineIndex - senior.retentionIndex));
+  const youthLift = youth.pipelineIndex * 0.35;
+  const seniorLift = senior.retentionIndex * 0.3;
+  const headwindDrag = youth.dependencyHeadwind * 0.4 + senior.agedPressureDrag * 0.35;
+  const bandPenalty =
+    (youth.band === 'constricted' || youth.band === 'narrow' ? 8 : 0) +
+    (senior.band === 'fragile' || senior.band === 'strained' ? 8 : 0);
+
+  const balanceIndex = v1014laborClamp(28 + youthLift + seniorLift - headwindDrag - bandPenalty - pipelineGap * 0.15);
+  const band = balanceBand(balanceIndex);
+
+  const stewardNote =
+    band === 'skewed_aged' || band === 'narrow_youth'
+      ? 'Imbalanced intergenerational pipeline — pair youth upskilling with senior retention levers.'
+      : band === 'renewal'
+        ? 'Renewal balance — avoid wage surges that compress youth entry bands.'
+        : 'Balanced intergenerational mix — monitor dependency headwinds in aging regions.';
+
+  return {
+    turn: state.turn,
+    balanceIndex,
+    band,
+    pipelineGap,
+    summary: `Intergenerational workforce balance ${band.replace('_', ' ')} (index ${Math.round(balanceIndex)}); pipeline gap ${Math.round(pipelineGap)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: capacity-participation-alignment-brief.ts ---
+  CapacityParticipationAlignmentBand,
+  NationalCapacityParticipationAlignmentBrief,
+  NationalLaborDemographicsState,
+  NationalParticipationEquityGapBrief,
+  NationalRegionalLaborAbsorptionBrief,
+  NationalWorkforceCapacityBridge
+} from './types';
+
+function alignmentBand(index: number): CapacityParticipationAlignmentBand {
+  if (index <= 34) return 'misaligned';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'aligned';
+  return 'reinforcing';
+}
+
+export function computeNationalCapacityParticipationAlignmentBrief(
+  state: NationalLaborDemographicsState,
+  capacity: NationalWorkforceCapacityBridge | null | undefined,
+  equity: NationalParticipationEquityGapBrief | null | undefined,
+  absorption: NationalRegionalLaborAbsorptionBrief | null | undefined
+): NationalCapacityParticipationAlignmentBrief {
+  if (!state.enabled || !capacity || !equity || !absorption) {
+    return {
+      turn: state.turn,
+      alignmentIndex: 50,
+      band: 'strained',
+      capacityGapDrag: 0,
+      summary: 'Capacity-participation alignment idle — capacity, equity, or absorption unavailable.',
+      stewardNote: 'Compute capacity bridge, equity, and absorption before alignment guidance.'
+    };
+  }
+
+  const capacityGapDrag =
+    capacity.nationalBand === 'critical_gap'
+      ? 20
+      : capacity.nationalBand === 'tight'
+        ? 13
+        : capacity.nationalBand === 'balanced'
+          ? 5
+          : 0;
+  const equityLift =
+    equity.band === 'inclusive' || equity.band === 'narrowing' ? equity.equityIndex * 0.26 : equity.equityIndex * 0.14;
+  const absorptionLift =
+    absorption.band === 'headroom' || absorption.band === 'absorbing' ? absorption.absorptionIndex * 0.22 : 0;
+  const linkageLift = state.employmentLinkageScore * 0.18;
+
+  const alignmentIndex = v1014laborClamp(30 + equityLift + absorptionLift + linkageLift - capacityGapDrag);
+  const band = alignmentBand(alignmentIndex);
+
+  const stewardNote =
+    band === 'misaligned' || band === 'strained'
+      ? 'Strained capacity-participation alignment — ease equity gaps before forcing corridor absorption.'
+      : band === 'reinforcing'
+        ? 'Reinforcing alignment — maintain coordination levers while scaling participation.'
+        : 'Aligned capacity-participation — watch critical capacity gaps in inbound hubs.';
+
+  return {
+    turn: state.turn,
+    alignmentIndex,
+    band,
+    capacityGapDrag,
+    summary: `Capacity-participation alignment ${band} (index ${Math.round(alignmentIndex)}); capacity drag ${Math.round(capacityGapDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -5766,6 +6174,23 @@ export function computeNationalLaborDemographics(
     state.participationPressureBrief,
     state.regionalLaborAbsorptionBrief
   );
+  state.laborMarketStabilityOutlook = computeNationalLaborMarketStabilityOutlook(
+    state,
+    integratedBrief,
+    state.laborRebalancingStressBrief,
+    state.automationParticipationResilienceOutlook
+  );
+  state.intergenerationalWorkforceBalanceOutlook = computeNationalIntergenerationalWorkforceBalanceOutlook(
+    state,
+    state.youthEntryPipelineOutlook,
+    state.seniorWorkforceRetentionOutlook
+  );
+  state.capacityParticipationAlignmentBrief = computeNationalCapacityParticipationAlignmentBrief(
+    state,
+    capacityBridge,
+    state.participationEquityGapBrief,
+    state.regionalLaborAbsorptionBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -5896,6 +6321,27 @@ export function computeNationalLaborDemographics(
   ) {
     state.evidence.push(state.migrationShockParticipationBufferOutlook.summary.slice(0, 120));
   }
+  if (
+    (state.laborMarketStabilityOutlook?.band === 'volatile' ||
+      state.laborMarketStabilityOutlook?.band === 'fragile') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.laborMarketStabilityOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.intergenerationalWorkforceBalanceOutlook?.band === 'skewed_aged' ||
+      state.intergenerationalWorkforceBalanceOutlook?.band === 'narrow_youth') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.intergenerationalWorkforceBalanceOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.capacityParticipationAlignmentBrief?.band === 'misaligned' ||
+      state.capacityParticipationAlignmentBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.capacityParticipationAlignmentBrief.summary.slice(0, 120));
+  }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
   }
@@ -5949,6 +6395,11 @@ export function computeNationalLaborDemographics(
   onboardingEaseForRegion,
   onboardingLeversForIndustry
 } from './catalog/workforce-onboarding-levers';
+  WORKFORCE_COORDINATION_LEVERS,
+  coordinationEaseForRegion,
+  coordinationLeversForIndustry,
+  lookupWorkforceCoordinationLever
+} from './catalog/workforce-coordination-levers';
   STRATEGIC_INDUSTRIES,
   V1014_LABOR_CORE_REGIONS,
   V1014_LABOR_INDUSTRY_LABOR_WEIGHT,
@@ -6542,6 +6993,65 @@ export function runV1014LaborDemographicsSelfTests(): {
       rHhBad.state.householdParticipationCouplingBrief
     ).stewardNote.length > 8,
     'wage spillover steward note'
+  );
+
+  check('R1201', WORKFORCE_COORDINATION_LEVERS.length >= 8, 'coordination lever catalog');
+  check('R1202', Boolean(lookupWorkforceCoordinationLever('coord_tech_nsw_vic')?.narrative), 'coordination lever lookup');
+  check('R1203', coordinationLeversForIndustry('technology').length >= 1, 'technology coordination levers');
+  check('R1204', coordinationEaseForRegion('NSW', 'technology') > 0, 'regional coordination ease');
+  check('R1205', Boolean(r1.state.laborMarketStabilityOutlook?.band), 'labor stability on state');
+  check('R1206', (r1.state.laborMarketStabilityOutlook?.stressDrag ?? 0) >= 0, 'stability stress drag');
+  check('R1207', Boolean(r1.state.intergenerationalWorkforceBalanceOutlook?.band), 'intergenerational balance on state');
+  check('R1208', Boolean(r1.state.capacityParticipationAlignmentBrief?.band), 'capacity alignment on state');
+  check(
+    'R1209',
+    detectLaborDemographicsQuery('labor market stability outlook') === 'labor_market_stability',
+    'GI stability detect'
+  );
+  check(
+    'R1210',
+    detectLaborDemographicsQuery('intergenerational balance youth senior') === 'intergenerational_balance',
+    'GI intergenerational detect'
+  );
+  check(
+    'R1211',
+    detectLaborDemographicsQuery('capacity participation alignment') === 'capacity_participation_alignment',
+    'GI alignment detect'
+  );
+  check(
+    'R1212',
+    answerLaborDemographicsQuestion(r1.state, 'labor_market_stability').headline.length > 5,
+    'GI stability answer'
+  );
+  const stabilityOnly = computeNationalLaborMarketStabilityOutlook(
+    r1.state,
+    r1.state.integratedLaborBrief!,
+    r1.state.laborRebalancingStressBrief,
+    r1.state.automationParticipationResilienceOutlook
+  );
+  check('R1213', stabilityOnly.summary.length > 10, 'stability standalone summary');
+  const intergenOnly = computeNationalIntergenerationalWorkforceBalanceOutlook(
+    r1.state,
+    r1.state.youthEntryPipelineOutlook,
+    r1.state.seniorWorkforceRetentionOutlook
+  );
+  check('R1214', intergenOnly.pipelineGap >= 0, 'intergenerational pipeline gap');
+  const alignmentOnly = computeNationalCapacityParticipationAlignmentBrief(
+    r1.state,
+    r1.state.workforceCapacityBridge,
+    r1.state.participationEquityGapBrief,
+    r1.state.regionalLaborAbsorptionBrief
+  );
+  check('R1215', alignmentOnly.band.length > 3, 'alignment band string');
+  check(
+    'R1216',
+    computeNationalCapacityParticipationAlignmentBrief(
+      rHhBad.state,
+      rHhBad.state.workforceCapacityBridge,
+      rHhBad.state.participationEquityGapBrief,
+      rHhBad.state.regionalLaborAbsorptionBrief
+    ).stewardNote.length > 8,
+    'alignment steward note'
   );
 
   for (let i = 19; i <= 50; i++) {

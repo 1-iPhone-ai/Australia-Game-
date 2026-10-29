@@ -73,6 +73,15 @@ import {
 import { computeNationalAutomationParticipationResilienceOutlook } from './automation-participation-resilience-outlook';
 import { computeNationalWageParticipationSpilloverBrief } from './wage-participation-spillover-brief';
 import { computeNationalMigrationShockParticipationBufferOutlook } from './migration-shock-participation-buffer-outlook';
+import {
+  WORKFORCE_COORDINATION_LEVERS,
+  coordinationEaseForRegion,
+  coordinationLeversForIndustry,
+  lookupWorkforceCoordinationLever
+} from './catalog/workforce-coordination-levers';
+import { computeNationalLaborMarketStabilityOutlook } from './labor-market-stability-outlook';
+import { computeNationalIntergenerationalWorkforceBalanceOutlook } from './intergenerational-workforce-balance-outlook';
+import { computeNationalCapacityParticipationAlignmentBrief } from './capacity-participation-alignment-brief';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -676,6 +685,65 @@ export function runV1014LaborDemographicsSelfTests(): {
       rHhBad.state.householdParticipationCouplingBrief
     ).stewardNote.length > 8,
     'wage spillover steward note'
+  );
+
+  check('R1201', WORKFORCE_COORDINATION_LEVERS.length >= 8, 'coordination lever catalog');
+  check('R1202', Boolean(lookupWorkforceCoordinationLever('coord_tech_nsw_vic')?.narrative), 'coordination lever lookup');
+  check('R1203', coordinationLeversForIndustry('technology').length >= 1, 'technology coordination levers');
+  check('R1204', coordinationEaseForRegion('NSW', 'technology') > 0, 'regional coordination ease');
+  check('R1205', Boolean(r1.state.laborMarketStabilityOutlook?.band), 'labor stability on state');
+  check('R1206', (r1.state.laborMarketStabilityOutlook?.stressDrag ?? 0) >= 0, 'stability stress drag');
+  check('R1207', Boolean(r1.state.intergenerationalWorkforceBalanceOutlook?.band), 'intergenerational balance on state');
+  check('R1208', Boolean(r1.state.capacityParticipationAlignmentBrief?.band), 'capacity alignment on state');
+  check(
+    'R1209',
+    detectLaborDemographicsQuery('labor market stability outlook') === 'labor_market_stability',
+    'GI stability detect'
+  );
+  check(
+    'R1210',
+    detectLaborDemographicsQuery('intergenerational balance youth senior') === 'intergenerational_balance',
+    'GI intergenerational detect'
+  );
+  check(
+    'R1211',
+    detectLaborDemographicsQuery('capacity participation alignment') === 'capacity_participation_alignment',
+    'GI alignment detect'
+  );
+  check(
+    'R1212',
+    answerLaborDemographicsQuestion(r1.state, 'labor_market_stability').headline.length > 5,
+    'GI stability answer'
+  );
+  const stabilityOnly = computeNationalLaborMarketStabilityOutlook(
+    r1.state,
+    r1.state.integratedLaborBrief!,
+    r1.state.laborRebalancingStressBrief,
+    r1.state.automationParticipationResilienceOutlook
+  );
+  check('R1213', stabilityOnly.summary.length > 10, 'stability standalone summary');
+  const intergenOnly = computeNationalIntergenerationalWorkforceBalanceOutlook(
+    r1.state,
+    r1.state.youthEntryPipelineOutlook,
+    r1.state.seniorWorkforceRetentionOutlook
+  );
+  check('R1214', intergenOnly.pipelineGap >= 0, 'intergenerational pipeline gap');
+  const alignmentOnly = computeNationalCapacityParticipationAlignmentBrief(
+    r1.state,
+    r1.state.workforceCapacityBridge,
+    r1.state.participationEquityGapBrief,
+    r1.state.regionalLaborAbsorptionBrief
+  );
+  check('R1215', alignmentOnly.band.length > 3, 'alignment band string');
+  check(
+    'R1216',
+    computeNationalCapacityParticipationAlignmentBrief(
+      rHhBad.state,
+      rHhBad.state.workforceCapacityBridge,
+      rHhBad.state.participationEquityGapBrief,
+      rHhBad.state.regionalLaborAbsorptionBrief
+    ).stewardNote.length > 8,
+    'alignment steward note'
   );
 
   for (let i = 19; i <= 50; i++) {

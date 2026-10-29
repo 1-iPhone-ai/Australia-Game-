@@ -59,6 +59,9 @@ import { computeNationalLaborRebalancingStressBrief } from './labor-rebalancing-
 import { computeNationalAutomationParticipationResilienceOutlook } from './automation-participation-resilience-outlook';
 import { computeNationalWageParticipationSpilloverBrief } from './wage-participation-spillover-brief';
 import { computeNationalMigrationShockParticipationBufferOutlook } from './migration-shock-participation-buffer-outlook';
+import { computeNationalLaborMarketStabilityOutlook } from './labor-market-stability-outlook';
+import { computeNationalIntergenerationalWorkforceBalanceOutlook } from './intergenerational-workforce-balance-outlook';
+import { computeNationalCapacityParticipationAlignmentBrief } from './capacity-participation-alignment-brief';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -482,6 +485,23 @@ export function computeNationalLaborDemographics(
     state.participationPressureBrief,
     state.regionalLaborAbsorptionBrief
   );
+  state.laborMarketStabilityOutlook = computeNationalLaborMarketStabilityOutlook(
+    state,
+    integratedBrief,
+    state.laborRebalancingStressBrief,
+    state.automationParticipationResilienceOutlook
+  );
+  state.intergenerationalWorkforceBalanceOutlook = computeNationalIntergenerationalWorkforceBalanceOutlook(
+    state,
+    state.youthEntryPipelineOutlook,
+    state.seniorWorkforceRetentionOutlook
+  );
+  state.capacityParticipationAlignmentBrief = computeNationalCapacityParticipationAlignmentBrief(
+    state,
+    capacityBridge,
+    state.participationEquityGapBrief,
+    state.regionalLaborAbsorptionBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -611,6 +631,27 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.migrationShockParticipationBufferOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.laborMarketStabilityOutlook?.band === 'volatile' ||
+      state.laborMarketStabilityOutlook?.band === 'fragile') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.laborMarketStabilityOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.intergenerationalWorkforceBalanceOutlook?.band === 'skewed_aged' ||
+      state.intergenerationalWorkforceBalanceOutlook?.band === 'narrow_youth') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.intergenerationalWorkforceBalanceOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.capacityParticipationAlignmentBrief?.band === 'misaligned' ||
+      state.capacityParticipationAlignmentBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.capacityParticipationAlignmentBrief.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
