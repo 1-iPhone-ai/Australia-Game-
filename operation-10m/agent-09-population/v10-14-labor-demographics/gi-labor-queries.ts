@@ -18,7 +18,10 @@ export type LaborGiQueryTopic =
   | 'labor_resilience'
   | 'participation_outlook'
   | 'dependency_ratio'
-  | 'labor_velocity';
+  | 'labor_velocity'
+  | 'skill_mismatch'
+  | 'supply_elasticity'
+  | 'talent_mobility';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -41,6 +44,9 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(labor resilience|resilience score)/.test(q)) return 'labor_resilience';
   if (/\b(participation|labor force participation)/.test(q)) return 'participation_outlook';
   if (/\b(labor velocity|market churn|turnover pressure)/.test(q)) return 'labor_velocity';
+  if (/\b(skill mismatch|skills gap|misaligned skills)/.test(q)) return 'skill_mismatch';
+  if (/\b(supply elasticity|inelastic labor|labor supply response)/.test(q)) return 'supply_elasticity';
+  if (/\b(talent mobility|mobile talent|talent flow)/.test(q)) return 'talent_mobility';
   if (/\b(labor demo|workforce structure|v10\.14)/.test(q)) return 'national_summary';
   return null;
 }
@@ -155,6 +161,30 @@ export function answerLaborDemographicsQuestion(
         fact: `National velocity ${state.laborMarketVelocityIndex?.nationalBand ?? 'unknown'}; hottest region ${state.laborMarketVelocityIndex?.hottestRegion ?? 'n/a'}.`,
         inference: state.laborMarketVelocityIndex?.regions.NSW?.narrative || state.outlook,
         projection: 'Velocity blends migration and wage churn — not literal turnover counts.'
+      };
+    case 'skill_mismatch':
+      return {
+        topic,
+        headline: state.skillMismatchIndex?.summary || 'Skill mismatch index unavailable.',
+        fact: `National mismatch band ${state.skillMismatchIndex?.nationalBand ?? 'unknown'}; worst region ${state.skillMismatchIndex?.worstRegion ?? 'n/a'}.`,
+        inference: state.skillMismatchIndex?.stewardNote || state.summary,
+        projection: 'Mismatch indices proxy capacity vs upskilling — not credential surveys.'
+      };
+    case 'supply_elasticity':
+      return {
+        topic,
+        headline: state.laborSupplyElasticityBrief?.summary || 'Supply elasticity unavailable.',
+        fact: `Elasticity band ${state.laborSupplyElasticityBrief?.band ?? 'unknown'}; index ${Math.round(state.laborSupplyElasticityBrief?.elasticityIndex ?? 50)}.`,
+        inference: state.laborSupplyElasticityBrief?.stewardNote || state.outlook,
+        projection: 'Elasticity blends wage and participation sensitivity — bounded indices only.'
+      };
+    case 'talent_mobility':
+      return {
+        topic,
+        headline: state.talentMobilityOutlook?.summary || 'Talent mobility outlook unavailable.',
+        fact: `Mobility band ${state.talentMobilityOutlook?.band ?? 'unknown'}; corridor ${state.talentMobilityOutlook?.corridorHighlight ?? 'n/a'}.`,
+        inference: state.talentMobilityOutlook?.stewardNote || state.outlook,
+        projection: 'Mobility blends velocity, retention, and pathways — not literal relocation counts.'
       };
     default:
       return {

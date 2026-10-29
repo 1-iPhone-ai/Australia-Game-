@@ -38,6 +38,18 @@ export function buildStewardLaborBrief(
   if (state.laborMarketVelocityIndex?.nationalBand === 'volatile') {
     hints.push('Volatile labor market velocity — avoid stacked auto commits until migration bands stabilize.');
   }
+  if (
+    state.skillMismatchIndex?.nationalBand === 'critical_mismatch' ||
+    state.skillMismatchIndex?.nationalBand === 'elevated_gap'
+  ) {
+    hints.push(state.skillMismatchIndex.stewardNote);
+  }
+  if (state.laborSupplyElasticityBrief?.band === 'rigid' || state.laborSupplyElasticityBrief?.band === 'inelastic') {
+    hints.push(state.laborSupplyElasticityBrief.stewardNote);
+  }
+  if (state.talentMobilityOutlook?.band === 'hyper_mobile') {
+    hints.push(state.talentMobilityOutlook.stewardNote);
+  }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
   }

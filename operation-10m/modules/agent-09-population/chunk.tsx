@@ -204,6 +204,9 @@ export interface NationalLaborDemographicsState {
   dependencyRatioSnapshot?: NationalDependencyRatioSnapshot;
   participationPressureBrief?: NationalParticipationPressureBrief;
   laborMarketVelocityIndex?: NationalLaborMarketVelocityIndex;
+  skillMismatchIndex?: NationalSkillMismatchIndex;
+  laborSupplyElasticityBrief?: NationalLaborSupplyElasticityBrief;
+  talentMobilityOutlook?: NationalTalentMobilityOutlook;
 }
 
 export type MigrationShockKind =
@@ -373,6 +376,49 @@ export interface NationalLaborMarketVelocityIndex {
   regions: Record<string, RegionalLaborMarketVelocity>;
   hottestRegion: string | null;
   summary: string;
+}
+
+export type SkillMismatchBand = 'aligned' | 'moderate_gap' | 'elevated_gap' | 'critical_mismatch';
+
+export interface RegionalSkillMismatch {
+  regionId: string;
+  mismatchIndex: number;
+  band: SkillMismatchBand;
+  narrative: string;
+}
+
+export interface NationalSkillMismatchIndex {
+  turn: number;
+  nationalMismatchIndex: number;
+  nationalBand: SkillMismatchBand;
+  regions: Record<string, RegionalSkillMismatch>;
+  worstRegion: string | null;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SupplyElasticityBand = 'rigid' | 'inelastic' | 'moderate' | 'responsive';
+
+export interface NationalLaborSupplyElasticityBrief {
+  turn: number;
+  elasticityIndex: number;
+  band: SupplyElasticityBand;
+  wageSensitivity: number;
+  participationSensitivity: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type TalentMobilityBand = 'anchored' | 'balanced' | 'fluid' | 'hyper_mobile';
+
+export interface NationalTalentMobilityOutlook {
+  turn: number;
+  mobilityIndex: number;
+  band: TalentMobilityBand;
+  anchorRegion: string | null;
+  corridorHighlight: string | null;
+  summary: string;
+  stewardNote: string;
 }
 
 export interface LaborDemographicsPersisted {
@@ -1456,7 +1502,10 @@ export type LaborGiQueryTopic =
   | 'labor_resilience'
   | 'participation_outlook'
   | 'dependency_ratio'
-  | 'labor_velocity';
+  | 'labor_velocity'
+  | 'skill_mismatch'
+  | 'supply_elasticity'
+  | 'talent_mobility';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -1479,6 +1528,9 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(labor resilience|resilience score)/.test(q)) return 'labor_resilience';
   if (/\b(participation|labor force participation)/.test(q)) return 'participation_outlook';
   if (/\b(labor velocity|market churn|turnover pressure)/.test(q)) return 'labor_velocity';
+  if (/\b(skill mismatch|skills gap|misaligned skills)/.test(q)) return 'skill_mismatch';
+  if (/\b(supply elasticity|inelastic labor|labor supply response)/.test(q)) return 'supply_elasticity';
+  if (/\b(talent mobility|mobile talent|talent flow)/.test(q)) return 'talent_mobility';
   if (/\b(labor demo|workforce structure|v10\.14)/.test(q)) return 'national_summary';
   return null;
 }
@@ -1593,6 +1645,30 @@ export function answerLaborDemographicsQuestion(
         fact: `National velocity ${state.laborMarketVelocityIndex?.nationalBand ?? 'unknown'}; hottest region ${state.laborMarketVelocityIndex?.hottestRegion ?? 'n/a'}.`,
         inference: state.laborMarketVelocityIndex?.regions.NSW?.narrative || state.outlook,
         projection: 'Velocity blends migration and wage churn — not literal turnover counts.'
+      };
+    case 'skill_mismatch':
+      return {
+        topic,
+        headline: state.skillMismatchIndex?.summary || 'Skill mismatch index unavailable.',
+        fact: `National mismatch band ${state.skillMismatchIndex?.nationalBand ?? 'unknown'}; worst region ${state.skillMismatchIndex?.worstRegion ?? 'n/a'}.`,
+        inference: state.skillMismatchIndex?.stewardNote || state.summary,
+        projection: 'Mismatch indices proxy capacity vs upskilling — not credential surveys.'
+      };
+    case 'supply_elasticity':
+      return {
+        topic,
+        headline: state.laborSupplyElasticityBrief?.summary || 'Supply elasticity unavailable.',
+        fact: `Elasticity band ${state.laborSupplyElasticityBrief?.band ?? 'unknown'}; index ${Math.round(state.laborSupplyElasticityBrief?.elasticityIndex ?? 50)}.`,
+        inference: state.laborSupplyElasticityBrief?.stewardNote || state.outlook,
+        projection: 'Elasticity blends wage and participation sensitivity — bounded indices only.'
+      };
+    case 'talent_mobility':
+      return {
+        topic,
+        headline: state.talentMobilityOutlook?.summary || 'Talent mobility outlook unavailable.',
+        fact: `Mobility band ${state.talentMobilityOutlook?.band ?? 'unknown'}; corridor ${state.talentMobilityOutlook?.corridorHighlight ?? 'n/a'}.`,
+        inference: state.talentMobilityOutlook?.stewardNote || state.outlook,
+        projection: 'Mobility blends velocity, retention, and pathways — not literal relocation counts.'
       };
     default:
       return {
@@ -1943,6 +2019,18 @@ export function buildStewardLaborBrief(
   }
   if (state.laborMarketVelocityIndex?.nationalBand === 'volatile') {
     hints.push('Volatile labor market velocity — avoid stacked auto commits until migration bands stabilize.');
+  }
+  if (
+    state.skillMismatchIndex?.nationalBand === 'critical_mismatch' ||
+    state.skillMismatchIndex?.nationalBand === 'elevated_gap'
+  ) {
+    hints.push(state.skillMismatchIndex.stewardNote);
+  }
+  if (state.laborSupplyElasticityBrief?.band === 'rigid' || state.laborSupplyElasticityBrief?.band === 'inelastic') {
+    hints.push(state.laborSupplyElasticityBrief.stewardNote);
+  }
+  if (state.talentMobilityOutlook?.band === 'hyper_mobile') {
+    hints.push(state.talentMobilityOutlook.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -3198,6 +3286,17 @@ export function computeNationalLaborDemographics(
     dependencySnapshot
   );
   state.laborMarketVelocityIndex = computeNationalLaborMarketVelocityIndex(turn, regions);
+  state.skillMismatchIndex = computeNationalSkillMismatchIndex(turn, capacityBridge);
+  state.laborSupplyElasticityBrief = computeNationalLaborSupplyElasticityBrief(
+    state,
+    integratedBrief,
+    state.participationPressureBrief
+  );
+  state.talentMobilityOutlook = computeNationalTalentMobilityOutlook(
+    state,
+    state.laborMarketVelocityIndex,
+    capacityBridge
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -3209,6 +3308,19 @@ export function computeNationalLaborDemographics(
   }
   if (state.laborMarketVelocityIndex.nationalBand === 'volatile' && state.evidence.length < V1014_LABOR_LIMITS.maxEvidence) {
     state.evidence.push(state.laborMarketVelocityIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.skillMismatchIndex?.nationalBand === 'critical_mismatch' ||
+      state.skillMismatchIndex?.nationalBand === 'elevated_gap') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.skillMismatchIndex.summary.slice(0, 120));
+  }
+  if (
+    state.talentMobilityOutlook?.band === 'hyper_mobile' &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.talentMobilityOutlook.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -3233,6 +3345,11 @@ export function computeNationalLaborDemographics(
   retentionLeversForIndustry,
   retentionPullForRegion
 } from './catalog/workforce-retention-levers';
+  WORKFORCE_UPSKILLING_PROGRAMS,
+  lookupWorkforceUpskillingProgram,
+  upskillingProgramsForIndustry,
+  upskillingUpliftForRegion
+} from './catalog/workforce-upskilling-programs';
   STRATEGIC_INDUSTRIES,
   V1014_LABOR_CORE_REGIONS,
   V1014_LABOR_INDUSTRY_LABOR_WEIGHT,
@@ -3573,6 +3690,42 @@ export function runV1014LaborDemographicsSelfTests(): {
     'R516',
     computeNationalParticipationPressureBrief(r1.state, r1.state.integratedLaborBrief!, depOnly).stewardNote.length > 8,
     'participation steward note'
+  );
+
+  check('R601', WORKFORCE_UPSKILLING_PROGRAMS.length >= 8, 'upskilling program catalog');
+  check('R602', Boolean(lookupWorkforceUpskillingProgram('upskill_tech_nsw_vic')?.narrative), 'upskilling lookup');
+  check('R603', upskillingProgramsForIndustry('mining').length >= 1, 'mining upskilling programs');
+  check('R604', upskillingUpliftForRegion('WA', 'mining') > 0, 'regional upskilling uplift');
+  check('R605', Boolean(r1.state.skillMismatchIndex?.nationalBand), 'skill mismatch on state');
+  check('R606', Object.keys(r1.state.skillMismatchIndex?.regions ?? {}).length === 8, 'regional mismatch rows');
+  check('R607', Boolean(r1.state.laborSupplyElasticityBrief?.band), 'supply elasticity on state');
+  check(
+    'R608',
+    (rHhBad.state.laborSupplyElasticityBrief?.elasticityIndex ?? 100) <=
+      (rHh.state.laborSupplyElasticityBrief?.elasticityIndex ?? 0) + 10,
+    'household strain lowers elasticity'
+  );
+  check('R609', Boolean(r1.state.talentMobilityOutlook?.band), 'talent mobility on state');
+  check('R610', detectLaborDemographicsQuery('skill mismatch gap') === 'skill_mismatch', 'GI mismatch detect');
+  check('R611', detectLaborDemographicsQuery('supply elasticity inelastic') === 'supply_elasticity', 'GI elasticity detect');
+  check('R612', detectLaborDemographicsQuery('talent mobility flow') === 'talent_mobility', 'GI mobility detect');
+  check('R613', answerLaborDemographicsQuestion(r1.state, 'skill_mismatch').headline.length > 5, 'GI mismatch answer');
+  const mismatchOnly = computeNationalSkillMismatchIndex(r1.state.turn, r1.state.workforceCapacityBridge);
+  check('R614', mismatchOnly.summary.length > 10, 'mismatch standalone summary');
+  const mobilityOnly = computeNationalTalentMobilityOutlook(
+    r1.state,
+    r1.state.laborMarketVelocityIndex,
+    r1.state.workforceCapacityBridge
+  );
+  check('R615', mobilityOnly.corridorHighlight != null || mobilityOnly.anchorRegion != null, 'mobility corridor or anchor');
+  check(
+    'R616',
+    computeNationalLaborSupplyElasticityBrief(
+      r1.state,
+      r1.state.integratedLaborBrief!,
+      r1.state.participationPressureBrief
+    ).stewardNote.length > 8,
+    'elasticity steward note'
   );
 
   for (let i = 19; i <= 50; i++) {

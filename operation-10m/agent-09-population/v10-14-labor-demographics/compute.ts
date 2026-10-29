@@ -41,6 +41,9 @@ import { computeInterregionalLaborRebalancingPlan } from './interregional-labor-
 import { computeNationalDependencyRatioSnapshot } from './dependency-ratio-snapshot';
 import { computeNationalParticipationPressureBrief } from './participation-pressure-brief';
 import { computeNationalLaborMarketVelocityIndex } from './labor-market-velocity-index';
+import { computeNationalSkillMismatchIndex } from './skill-mismatch-index';
+import { computeNationalLaborSupplyElasticityBrief } from './labor-supply-elasticity-brief';
+import { computeNationalTalentMobilityOutlook } from './talent-mobility-outlook';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -377,6 +380,17 @@ export function computeNationalLaborDemographics(
     dependencySnapshot
   );
   state.laborMarketVelocityIndex = computeNationalLaborMarketVelocityIndex(turn, regions);
+  state.skillMismatchIndex = computeNationalSkillMismatchIndex(turn, capacityBridge);
+  state.laborSupplyElasticityBrief = computeNationalLaborSupplyElasticityBrief(
+    state,
+    integratedBrief,
+    state.participationPressureBrief
+  );
+  state.talentMobilityOutlook = computeNationalTalentMobilityOutlook(
+    state,
+    state.laborMarketVelocityIndex,
+    capacityBridge
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -388,6 +402,19 @@ export function computeNationalLaborDemographics(
   }
   if (state.laborMarketVelocityIndex.nationalBand === 'volatile' && state.evidence.length < V1014_LABOR_LIMITS.maxEvidence) {
     state.evidence.push(state.laborMarketVelocityIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.skillMismatchIndex?.nationalBand === 'critical_mismatch' ||
+      state.skillMismatchIndex?.nationalBand === 'elevated_gap') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.skillMismatchIndex.summary.slice(0, 120));
+  }
+  if (
+    state.talentMobilityOutlook?.band === 'hyper_mobile' &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.talentMobilityOutlook.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);

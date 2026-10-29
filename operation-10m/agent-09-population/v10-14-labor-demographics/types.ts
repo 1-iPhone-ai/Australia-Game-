@@ -200,6 +200,9 @@ export interface NationalLaborDemographicsState {
   dependencyRatioSnapshot?: NationalDependencyRatioSnapshot;
   participationPressureBrief?: NationalParticipationPressureBrief;
   laborMarketVelocityIndex?: NationalLaborMarketVelocityIndex;
+  skillMismatchIndex?: NationalSkillMismatchIndex;
+  laborSupplyElasticityBrief?: NationalLaborSupplyElasticityBrief;
+  talentMobilityOutlook?: NationalTalentMobilityOutlook;
 }
 
 export type MigrationShockKind =
@@ -369,6 +372,49 @@ export interface NationalLaborMarketVelocityIndex {
   regions: Record<string, RegionalLaborMarketVelocity>;
   hottestRegion: string | null;
   summary: string;
+}
+
+export type SkillMismatchBand = 'aligned' | 'moderate_gap' | 'elevated_gap' | 'critical_mismatch';
+
+export interface RegionalSkillMismatch {
+  regionId: string;
+  mismatchIndex: number;
+  band: SkillMismatchBand;
+  narrative: string;
+}
+
+export interface NationalSkillMismatchIndex {
+  turn: number;
+  nationalMismatchIndex: number;
+  nationalBand: SkillMismatchBand;
+  regions: Record<string, RegionalSkillMismatch>;
+  worstRegion: string | null;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SupplyElasticityBand = 'rigid' | 'inelastic' | 'moderate' | 'responsive';
+
+export interface NationalLaborSupplyElasticityBrief {
+  turn: number;
+  elasticityIndex: number;
+  band: SupplyElasticityBand;
+  wageSensitivity: number;
+  participationSensitivity: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type TalentMobilityBand = 'anchored' | 'balanced' | 'fluid' | 'hyper_mobile';
+
+export interface NationalTalentMobilityOutlook {
+  turn: number;
+  mobilityIndex: number;
+  band: TalentMobilityBand;
+  anchorRegion: string | null;
+  corridorHighlight: string | null;
+  summary: string;
+  stewardNote: string;
 }
 
 export interface LaborDemographicsPersisted {
