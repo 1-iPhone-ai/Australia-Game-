@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
 // @ts-nocheck
-// content-sha256-prefix: 7194356e13b84d39
+// content-sha256-prefix: 1d833ca102d9373e
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -2007,6 +2007,47 @@ export class TurnTimeEngine {
     return queueDepthFromSnapshot(this.snapshot());
   }
 
+  stepTurnsWithBudgetStabilizationCapture(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+  ): ReturnType<typeof stepTurnsWithBudgetStabilizationCapture> {
+    return stepTurnsWithBudgetStabilizationCapture(this, maxSteps, budget);
+  }
+
+  gateExternalStabilizationWindow(
+    fromTurn: number,
+    toTurn: number,
+    stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+  ): ExternalStabilizationWindowGateResult {
+    return gateExternalStabilizationWindow(this.snapshot(), fromTurn, toTurn, stabilizationByTurn);
+  }
+
+  mergeExternalStabilizationWindow(
+    fromTurn: number,
+    toTurn: number,
+    stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+  ): ExternalStabilizationWindowMergeResult {
+    return mergeExternalStabilizationWindow(fromTurn, toTurn, stabilizationByTurn);
+  }
+
+  gateStabilizationLatticeSequence(
+    stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+  ): StabilizationLatticeSequenceGateResult {
+    return gateStabilizationLatticeSequence(stabilizationByTurn);
+  }
+
+  stepTurnsWithBudgetInstrumentedCompositeGate(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+    composite?: Parameters<typeof stepTurnsWithBudgetInstrumentedCompositeGate>[3],
+  ): BatchAdvanceWithInstrumentedCompositeGate {
+    return stepTurnsWithBudgetInstrumentedCompositeGate(this, maxSteps, budget, composite);
+  }
+
+  computeBatchCompositeReadinessDigest(readiness: BatchAdvanceReadinessGateResult): string {
+    return computeBatchCompositeReadinessDigest(readiness);
+  }
+
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {
     return buildAgent02TurnPipelineReport(this.snapshot(), before);
   }
@@ -2840,6 +2881,264 @@ export function computeBatchStabilizationDigest(report: BatchStabilizationReconc
   return fnv1a64Hex(payload);
 }
 
+// --- src/stabilization-lattice-sequence-gate.ts ---
+
+export interface StabilizationLatticeSequenceViolation {
+  turnIndex: number;
+  code: 'wave_without_calm' | 'double_wave_without_backlog';
+}
+
+export interface StabilizationLatticeSequenceGateResult {
+  orderedTurns: number[];
+  violations: StabilizationLatticeSequenceViolation[];
+  ok: boolean;
+}
+
+function orderedTurnKeys(
+  stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+): number[] {
+  return Object.keys(stabilizationByTurn)
+    .map((k) => Number(k))
+    .filter((n) => Number.isFinite(n))
+    .sort((a, b) => a - b);
+}
+
+/**
+ * Agent 05 tranche9 lattice: stabilization waves must co-occur with post-queue calm on the same turn.
+ */
+export function gateStabilizationLatticeSequence(
+  stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+): StabilizationLatticeSequenceGateResult {
+  const orderedTurns = orderedTurnKeys(stabilizationByTurn);
+  const violations: StabilizationLatticeSequenceViolation[] = [];
+
+  for (const turn of orderedTurns) {
+    const signals = normalizeExternalStabilizationSignals(stabilizationByTurn[turn]);
+    if (signals.pendingStabilizationWave && !signals.postQueueCalm) {
+      violations.push({ turnIndex: turn, code: 'wave_without_calm' });
+    }
+  }
+
+  for (let i = 1; i < orderedTurns.length; i += 1) {
+    const prev = normalizeExternalStabilizationSignals(stabilizationByTurn[orderedTurns[i - 1]!]!);
+    const curr = normalizeExternalStabilizationSignals(stabilizationByTurn[orderedTurns[i]!]!);
+    if (prev.pendingStabilizationWave && curr.pendingStabilizationWave) {
+      violations.push({ turnIndex: orderedTurns[i]!, code: 'double_wave_without_backlog' });
+    }
+  }
+
+  return { orderedTurns, violations, ok: violations.length === 0 };
+}
+
+// --- src/external-stabilization-window.ts ---
+
+export interface ExternalStabilizationWindowTurnRow {
+  turnIndex: number;
+  signals: ExternalStabilizationTurnSignals;
+}
+
+export interface ExternalStabilizationWindowMergeResult {
+  fromTurn: number;
+  toTurn: number;
+  rows: ExternalStabilizationWindowTurnRow[];
+  missingTurns: number[];
+  lattice: StabilizationLatticeSequenceGateResult;
+  ok: boolean;
+}
+
+function turnsInWindow(fromTurn: number, toTurn: number): number[] {
+  const from = Math.max(1, Math.floor(fromTurn));
+  const to = Math.max(from, Math.floor(toTurn));
+  const turns: number[] = [];
+  for (let t = from; t <= to; t += 1) turns.push(t);
+  return turns;
+}
+
+/**
+ * Validates Agent 05 stabilization export across a turn window (pre-batch plan check).
+ */
+export function mergeExternalStabilizationWindow(
+  fromTurn: number,
+  toTurn: number,
+  stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+): ExternalStabilizationWindowMergeResult {
+  const windowTurns = turnsInWindow(fromTurn, toTurn);
+  const rows: ExternalStabilizationWindowTurnRow[] = [];
+  const missingTurns: number[] = [];
+  const slice: Record<number, ExternalStabilizationTurnSignals> = {};
+
+  for (const turn of windowTurns) {
+    if (stabilizationByTurn[turn] === undefined) {
+      missingTurns.push(turn);
+      continue;
+    }
+    const signals = normalizeExternalStabilizationSignals(stabilizationByTurn[turn]);
+    rows.push({ turnIndex: turn, signals });
+    slice[turn] = signals;
+  }
+
+  const lattice = gateStabilizationLatticeSequence(slice);
+  return {
+    fromTurn: windowTurns[0] ?? fromTurn,
+    toTurn: windowTurns[windowTurns.length - 1] ?? toTurn,
+    rows,
+    missingTurns,
+    lattice,
+    ok: missingTurns.length === 0 && lattice.ok,
+  };
+}
+
+// --- src/external-stabilization-window-gate.ts ---
+
+export interface ExternalStabilizationWindowGateResult {
+  merge: ExternalStabilizationWindowMergeResult;
+  incompletePipelineTurns: number[];
+  turnsWithIncompletePipeline: number[];
+  pipelineReady: boolean;
+  ok: boolean;
+}
+
+function turnsInWindow(fromTurn: number, toTurn: number): number[] {
+  const from = Math.max(1, Math.floor(fromTurn));
+  const to = Math.max(from, Math.floor(toTurn));
+  const turns: number[] = [];
+  for (let t = from; t <= to; t += 1) turns.push(t);
+  return turns;
+}
+
+/**
+ * Pre-advance gate: stabilization window lattice + pipeline completeness for completed turns in range.
+ */
+export function gateExternalStabilizationWindow(
+  snapshot: TurnTimeSnapshot,
+  fromTurn: number,
+  toTurn: number,
+  stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+): ExternalStabilizationWindowGateResult {
+  const merge = mergeExternalStabilizationWindow(fromTurn, toTurn, stabilizationByTurn);
+  const incomplete = incompletePipelineTurns(snapshot.trace, snapshot.clock.turnIndex);
+  const windowTurns = turnsInWindow(fromTurn, toTurn).filter((t) => t < snapshot.clock.turnIndex);
+  const turnsWithIncompletePipeline = windowTurns.filter((t) => incomplete.includes(t));
+  const pipelineReady = turnsWithIncompletePipeline.length === 0;
+  return {
+    merge,
+    incompletePipelineTurns: incomplete,
+    turnsWithIncompletePipeline,
+    pipelineReady,
+    ok: merge.ok && pipelineReady,
+  };
+}
+
+// --- src/batch-stabilization-queue-capture.ts ---
+
+export interface BatchStabilizationQueueCapture {
+  queueBeforeByTurn: Record<number, Agent02QueueDepthSnapshot>;
+  queueAfterByTurn: Record<number, Agent02QueueDepthSnapshot>;
+}
+
+export interface BatchAdvanceWithStabilizationCapture {
+  batch: BatchAdvanceResult;
+  capture: BatchStabilizationQueueCapture;
+}
+
+export function batchStabilizationGateOptionsFromCapture(
+  capture: BatchStabilizationQueueCapture,
+): ExternalStabilizationBatchGateOptions {
+  return {
+    queueBeforeByTurn: capture.queueBeforeByTurn,
+    queueAfterByTurn: capture.queueAfterByTurn,
+  };
+}
+
+/**
+ * Steps a batch while recording per-turn queue depth for Agent 05 stabilization inference.
+ */
+export function stepTurnsWithBudgetStabilizationCapture(
+  engine: TurnTimeEngine,
+  maxSteps: number,
+  budget: TurnAdvanceBudgetState,
+): BatchAdvanceWithStabilizationCapture {
+  const cap = Math.max(0, Math.floor(maxSteps));
+  const steps: BatchAdvanceResult['steps'] = [];
+  const horizonReconcileOk: boolean[] = [];
+  const queueBeforeByTurn: Record<number, Agent02QueueDepthSnapshot> = {};
+  const queueAfterByTurn: Record<number, Agent02QueueDepthSnapshot> = {};
+  let currentBudget = budget;
+  let completed = 0;
+
+  for (let i = 0; i < cap; i += 1) {
+    const consume = tryConsumeTurnAdvanceBudget(currentBudget, 1);
+    if (!consume.allowed) {
+      return {
+        batch: {
+          steps,
+          budget: currentBudget,
+          completed,
+          stoppedReason: consume.detail,
+          horizonReconcileOk,
+        },
+        capture: { queueBeforeByTurn, queueAfterByTurn },
+      };
+    }
+    const snapBefore = engine.snapshot();
+    const turn = snapBefore.clock.turnIndex;
+    queueBeforeByTurn[turn] = queueDepthFromSnapshot(snapBefore);
+    const step = engine.stepFullTurn();
+    steps.push(step);
+    currentBudget = consume.state;
+    completed += 1;
+    if (!step.blockedByPause) {
+      horizonReconcileOk.push(reconcileLastStepHorizon(snapBefore, engine.snapshot()).ok);
+      queueAfterByTurn[turn] = queueDepthFromSnapshot(engine.snapshot());
+    }
+    if (step.blockedByPause) {
+      return {
+        batch: {
+          steps,
+          budget: currentBudget,
+          completed,
+          stoppedReason: 'paused',
+          horizonReconcileOk,
+        },
+        capture: { queueBeforeByTurn, queueAfterByTurn },
+      };
+    }
+  }
+
+  return {
+    batch: { steps, budget: currentBudget, completed, horizonReconcileOk },
+    capture: { queueBeforeByTurn, queueAfterByTurn },
+  };
+}
+
+/** Convenience: capture options from an already-run batch (single before/after only — prefer stepped capture). */
+export function approximateQueueCaptureFromEndpoints(
+  beforeTurn: number,
+  afterSnapshot: TurnTimeSnapshot,
+  beforeSnapshot: TurnTimeSnapshot,
+): BatchStabilizationQueueCapture {
+  return {
+    queueBeforeByTurn: { [beforeTurn]: queueDepthFromSnapshot(beforeSnapshot) },
+    queueAfterByTurn: { [beforeTurn]: queueDepthFromSnapshot(afterSnapshot) },
+  };
+}
+
+// --- src/batch-composite-readiness-digest.ts ---
+
+export function computeBatchCompositeReadinessDigest(
+  readiness: BatchAdvanceReadinessGateResult,
+): string {
+  const payload = JSON.stringify({
+    ok: readiness.ok,
+    observability: readiness.digest,
+    stabilization: readiness.stabilizationDigest ?? null,
+    externalBatchOk: readiness.externalBatchOk,
+    stabilizationBatchOk: readiness.stabilizationBatchOk,
+    latticeOk: readiness.latticeSequenceOk,
+  });
+  return fnv1a64Hex(payload);
+}
+
 // --- src/advance-budget-batch-report.ts ---
 
 export interface AdvanceBudgetBatchReport {
@@ -2868,15 +3167,18 @@ export interface BatchAdvanceReadinessGateResult {
   observabilityOk: boolean;
   externalBatchOk: boolean;
   stabilizationBatchOk: boolean;
+  latticeSequenceOk: boolean;
   pipelineTurnsOk: boolean;
   budgetOk: boolean;
   coverageGap: PipelineCoverageGapReport;
   externalBatch?: ExternalDayPlanBatchGateResult;
   stabilizationBatch?: ExternalStabilizationBatchGateResult;
   stabilizationReconcile?: BatchStabilizationReconcileReport;
+  latticeSequence?: StabilizationLatticeSequenceGateResult;
   budget: AdvanceBudgetBatchReport;
   digest: string;
   stabilizationDigest?: string;
+  compositeDigest?: string;
   ok: boolean;
 }
 
@@ -2899,6 +3201,9 @@ export function gateBatchAdvanceReadiness(
     ? buildBatchStabilizationReconcileReport(rollup.batch, stabilizationByTurn, options?.stabilization)
     : undefined;
   const stabilizationBatch = stabilizationReconcile?.gate;
+  const latticeSequence = stabilizationByTurn
+    ? gateStabilizationLatticeSequence(stabilizationByTurn)
+    : undefined;
   const budget = buildAdvanceBudgetBatchReport(rollup.batch);
   const digest = computeBatchObservabilityDigest(rollup);
   const stabilizationDigest = stabilizationReconcile
@@ -2908,23 +3213,37 @@ export function gateBatchAdvanceReadiness(
   const observabilityOk = rollup.ok;
   const externalBatchOk = externalBatch?.ok ?? true;
   const stabilizationBatchOk = stabilizationBatch?.ok ?? true;
+  const latticeSequenceOk = latticeSequence?.ok ?? true;
   const pipelineTurnsOk = rollup.pipeline.incompleteTurns.length === 0;
   const budgetOk = !budget.stoppedForBudget || rollup.batch.completed > 0;
 
-  return {
+  const partial: BatchAdvanceReadinessGateResult = {
     observabilityOk,
     externalBatchOk,
     stabilizationBatchOk,
+    latticeSequenceOk,
     pipelineTurnsOk,
     budgetOk,
     coverageGap,
     externalBatch,
     stabilizationBatch,
     stabilizationReconcile,
+    latticeSequence,
     budget,
     digest,
     stabilizationDigest,
-    ok: observabilityOk && externalBatchOk && stabilizationBatchOk && pipelineTurnsOk && budgetOk,
+    ok:
+      observabilityOk &&
+      externalBatchOk &&
+      stabilizationBatchOk &&
+      latticeSequenceOk &&
+      pipelineTurnsOk &&
+      budgetOk,
+  };
+
+  return {
+    ...partial,
+    compositeDigest: computeBatchCompositeReadinessDigest(partial),
   };
 }
 
@@ -2989,6 +3308,42 @@ export function stepTurnsWithBudgetCompositeReadinessGate(
   );
   return { batch, rollup, readiness };
 }
+
+// --- src/batch-advance-instrumented-composite-step.ts ---
+
+export interface BatchAdvanceWithInstrumentedCompositeGate {
+  batch: BatchAdvanceResult;
+  rollup: BatchAdvanceObservabilityRollup;
+  readiness: BatchAdvanceReadinessGateResult;
+}
+
+/**
+ * Round 10: stepped batch with auto queue capture + composite readiness (XS-02 + Agent 05 lattice).
+ */
+export function stepTurnsWithBudgetInstrumentedCompositeGate(
+  engine: TurnTimeEngine,
+  maxSteps: number,
+  budget: TurnAdvanceBudgetState,
+  composite?: BatchAdvanceCompositeReadinessInput,
+): BatchAdvanceWithInstrumentedCompositeGate {
+  const before = engine.snapshot();
+  const { batch, capture } = stepTurnsWithBudgetStabilizationCapture(engine, maxSteps, budget);
+  const after = engine.snapshot();
+  const rollup = buildBatchAdvanceObservabilityRollup(before, after, batch);
+  const stabilizationOptions = composite?.stabilization ?? batchStabilizationGateOptionsFromCapture(capture);
+  const readiness = gateBatchAdvanceReadiness(
+    after,
+    rollup,
+    composite?.externalByTurn,
+    composite?.stabilizationByTurn,
+    { stabilization: stabilizationOptions },
+  );
+  return { batch, rollup, readiness };
+}
+
+export type InstrumentedCompositeInput = Omit<BatchAdvanceCompositeReadinessInput, 'stabilization'> & {
+  stabilizationByTurn?: Readonly<Record<number, ExternalStabilizationTurnSignals>>;
+};
 
 // --- src/fast-forward.ts ---
 
@@ -3140,7 +3495,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '1.9.0';
+export const AGENT_02_MODULE_VERSION = '2.0.0';
 
 
 
@@ -3437,6 +3792,50 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
       compositeRun.readiness.ok &&
 
       compositeRun.readiness.stabilizationBatchOk === true,
+
+  });
+
+  const lattice = new TurnTimeEngine();
+
+  results.push({
+
+    id: 'agent02_stabilization_lattice',
+
+    name: 'stabilization lattice rejects wave without calm',
+
+    passed:
+
+      !lattice.gateStabilizationLatticeSequence({
+
+        1: { postQueueCalm: false, pendingStabilizationWave: true },
+
+      }).ok,
+
+  });
+
+  const instrumented = new TurnTimeEngine();
+
+  instrumented.scheduleEvent({ id: 'inst', dueTurn: 1, kind: 'n' });
+
+  const instRun = stepTurnsWithBudgetInstrumentedCompositeGate(instrumented, 1, createTurnAdvanceBudget(2), {
+
+    externalByTurn: { 1: ['inst'] },
+
+    stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: true } },
+
+  });
+
+  results.push({
+
+    id: 'agent02_instrumented_composite',
+
+    name: 'instrumented composite gate with auto queue capture',
+
+    passed:
+
+      instRun.readiness.ok &&
+
+      (instRun.readiness.compositeDigest?.length ?? 0) === 16,
 
   });
 

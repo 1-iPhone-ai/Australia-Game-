@@ -120,6 +120,27 @@ import {
 import { queueDepthFromSnapshot } from './agent02-stabilization-inference.js';
 import type { ExternalStabilizationTurnSignals } from './external-stabilization-signals.js';
 import {
+  stepTurnsWithBudgetStabilizationCapture,
+  type BatchStabilizationQueueCapture,
+} from './batch-stabilization-queue-capture.js';
+import {
+  gateExternalStabilizationWindow,
+  type ExternalStabilizationWindowGateResult,
+} from './external-stabilization-window-gate.js';
+import {
+  mergeExternalStabilizationWindow,
+  type ExternalStabilizationWindowMergeResult,
+} from './external-stabilization-window.js';
+import {
+  gateStabilizationLatticeSequence,
+  type StabilizationLatticeSequenceGateResult,
+} from './stabilization-lattice-sequence-gate.js';
+import { computeBatchCompositeReadinessDigest } from './batch-composite-readiness-digest.js';
+import {
+  stepTurnsWithBudgetInstrumentedCompositeGate,
+  type BatchAdvanceWithInstrumentedCompositeGate,
+} from './batch-advance-instrumented-composite-step.js';
+import {
   buildBatchHorizonReconcileReport,
   type BatchHorizonReconcileReport,
 } from './batch-horizon-reconcile-report.js';
@@ -399,6 +420,47 @@ export class TurnTimeEngine {
 
   getQueueDepthSnapshot(): ReturnType<typeof queueDepthFromSnapshot> {
     return queueDepthFromSnapshot(this.snapshot());
+  }
+
+  stepTurnsWithBudgetStabilizationCapture(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+  ): ReturnType<typeof stepTurnsWithBudgetStabilizationCapture> {
+    return stepTurnsWithBudgetStabilizationCapture(this, maxSteps, budget);
+  }
+
+  gateExternalStabilizationWindow(
+    fromTurn: number,
+    toTurn: number,
+    stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+  ): ExternalStabilizationWindowGateResult {
+    return gateExternalStabilizationWindow(this.snapshot(), fromTurn, toTurn, stabilizationByTurn);
+  }
+
+  mergeExternalStabilizationWindow(
+    fromTurn: number,
+    toTurn: number,
+    stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+  ): ExternalStabilizationWindowMergeResult {
+    return mergeExternalStabilizationWindow(fromTurn, toTurn, stabilizationByTurn);
+  }
+
+  gateStabilizationLatticeSequence(
+    stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+  ): StabilizationLatticeSequenceGateResult {
+    return gateStabilizationLatticeSequence(stabilizationByTurn);
+  }
+
+  stepTurnsWithBudgetInstrumentedCompositeGate(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+    composite?: Parameters<typeof stepTurnsWithBudgetInstrumentedCompositeGate>[3],
+  ): BatchAdvanceWithInstrumentedCompositeGate {
+    return stepTurnsWithBudgetInstrumentedCompositeGate(this, maxSteps, budget, composite);
+  }
+
+  computeBatchCompositeReadinessDigest(readiness: BatchAdvanceReadinessGateResult): string {
+    return computeBatchCompositeReadinessDigest(readiness);
   }
 
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {

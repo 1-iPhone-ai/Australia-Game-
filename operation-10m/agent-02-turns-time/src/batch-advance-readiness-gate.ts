@@ -18,20 +18,28 @@ import { computeBatchStabilizationDigest } from './batch-stabilization-digest.js
 import type { ExternalStabilizationBatchGateResult } from './external-stabilization-batch-gate.js';
 import type { ExternalStabilizationBatchGateOptions } from './external-stabilization-batch-gate.js';
 import type { ExternalStabilizationTurnSignals } from './external-stabilization-signals.js';
+import {
+  gateStabilizationLatticeSequence,
+  type StabilizationLatticeSequenceGateResult,
+} from './stabilization-lattice-sequence-gate.js';
+import { computeBatchCompositeReadinessDigest } from './batch-composite-readiness-digest.js';
 
 export interface BatchAdvanceReadinessGateResult {
   observabilityOk: boolean;
   externalBatchOk: boolean;
   stabilizationBatchOk: boolean;
+  latticeSequenceOk: boolean;
   pipelineTurnsOk: boolean;
   budgetOk: boolean;
   coverageGap: PipelineCoverageGapReport;
   externalBatch?: ExternalDayPlanBatchGateResult;
   stabilizationBatch?: ExternalStabilizationBatchGateResult;
   stabilizationReconcile?: BatchStabilizationReconcileReport;
+  latticeSequence?: StabilizationLatticeSequenceGateResult;
   budget: AdvanceBudgetBatchReport;
   digest: string;
   stabilizationDigest?: string;
+  compositeDigest?: string;
   ok: boolean;
 }
 
@@ -54,6 +62,9 @@ export function gateBatchAdvanceReadiness(
     ? buildBatchStabilizationReconcileReport(rollup.batch, stabilizationByTurn, options?.stabilization)
     : undefined;
   const stabilizationBatch = stabilizationReconcile?.gate;
+  const latticeSequence = stabilizationByTurn
+    ? gateStabilizationLatticeSequence(stabilizationByTurn)
+    : undefined;
   const budget = buildAdvanceBudgetBatchReport(rollup.batch);
   const digest = computeBatchObservabilityDigest(rollup);
   const stabilizationDigest = stabilizationReconcile
@@ -63,22 +74,36 @@ export function gateBatchAdvanceReadiness(
   const observabilityOk = rollup.ok;
   const externalBatchOk = externalBatch?.ok ?? true;
   const stabilizationBatchOk = stabilizationBatch?.ok ?? true;
+  const latticeSequenceOk = latticeSequence?.ok ?? true;
   const pipelineTurnsOk = rollup.pipeline.incompleteTurns.length === 0;
   const budgetOk = !budget.stoppedForBudget || rollup.batch.completed > 0;
 
-  return {
+  const partial: BatchAdvanceReadinessGateResult = {
     observabilityOk,
     externalBatchOk,
     stabilizationBatchOk,
+    latticeSequenceOk,
     pipelineTurnsOk,
     budgetOk,
     coverageGap,
     externalBatch,
     stabilizationBatch,
     stabilizationReconcile,
+    latticeSequence,
     budget,
     digest,
     stabilizationDigest,
-    ok: observabilityOk && externalBatchOk && stabilizationBatchOk && pipelineTurnsOk && budgetOk,
+    ok:
+      observabilityOk &&
+      externalBatchOk &&
+      stabilizationBatchOk &&
+      latticeSequenceOk &&
+      pipelineTurnsOk &&
+      budgetOk,
+  };
+
+  return {
+    ...partial,
+    compositeDigest: computeBatchCompositeReadinessDigest(partial),
   };
 }
