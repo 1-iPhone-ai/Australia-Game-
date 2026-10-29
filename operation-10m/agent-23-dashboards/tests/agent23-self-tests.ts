@@ -224,6 +224,12 @@ import { nrDashBuildChokepointLinkSaturationShare } from '../core/chokepoint-lin
 import { nrDashBuildNsMajorSnippetSourceGap } from '../core/ns-major-snippet-source-gap.ts';
 import { nrDashBuildHubBorderPulseAsymmetry } from '../core/hub-border-pulse-asymmetry.ts';
 import { nrDashBuildCriticalDerivedHistoryOverlapGap } from '../core/critical-derived-history-overlap-gap.ts';
+import { nrDashBuildNeutralOpenNeedsPeakSpread } from '../core/neutral-open-needs-peak-spread.ts';
+import { nrDashBuildNationalOpenNeedsSeverityConcentration } from '../core/national-open-needs-severity-concentration.ts';
+import { nrDashBuildMergedBorderLinkSaturationShare } from '../core/merged-border-link-saturation-share.ts';
+import { nrDashBuildCombinedMajorSnippetSourceGap } from '../core/combined-major-snippet-source-gap.ts';
+import { nrDashBuildPeripheralBorderPulseAsymmetry } from '../core/peripheral-border-pulse-asymmetry.ts';
+import { nrDashBuildMajorMeaningfulHistoryOverlapGap } from '../core/major-meaningful-history-overlap-gap.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -1781,6 +1787,50 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     ns.bottlenecks.push({ id: 'bn2', regionId: 'NSW', network: 'energy', severity: 'critical' });
     const gap = nrDashBuildCriticalDerivedHistoryOverlapGap(lr, ns)!;
     return gap.criticalDerivedCount === 2 && gap.sharedTurnCount === 1 && gap.overlapGap === 1;
+  });
+
+  check('a23_neutral_open_needs_peak_spread', 'Neutral open-needs peak spread splits two neutral regions', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.regions.VIC!.needs.push({ category: 'health', status: 'open', severity: 'moderate' });
+    const snap = nrDashBuildAuthSnapshot(5, lr, null, { VIC: 'neutral', QLD: 'neutral' })!;
+    const spread = nrDashBuildNeutralOpenNeedsPeakSpread(snap)!;
+    return spread.neutralRegionCount === 2 && spread.peakSpread === 1 && spread.maxOpenNeeds === 2;
+  });
+
+  check('a23_national_open_needs_severity_concentration', 'National open-needs severity concentration splits critical NSW', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.regions.NSW!.needs[0]!.severity = 'critical';
+    const snap = nrDashBuildAuthSnapshot(5, lr, null, null)!;
+    const conc = nrDashBuildNationalOpenNeedsSeverityConcentration(lr, snap)!;
+    return conc.concentrationIndex > 0.1 && conc.weightedSeverityTotal > 8;
+  });
+
+  check('a23_merged_border_link_saturation_share', 'Merged border link saturation share is below one on fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const sat = nrDashBuildMergedBorderLinkSaturationShare(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
+    return sat.mergedLinkCount > 0 && sat.saturationShare > 0 && sat.saturationShare <= 1;
+  });
+
+  check('a23_combined_major_snippet_source_gap', 'Combined major snippet source gap counts critical bottleneck lane', () => {
+    const lr = createAgent23LrFixture();
+    const ns = createAgent23NsFixture();
+    ns.bottlenecks.push({ id: 'bn2', regionId: 'NSW', network: 'energy', severity: 'critical' });
+    const snap = nrDashBuildAuthSnapshot(5, lr, ns, null)!;
+    const gap = nrDashBuildCombinedMajorSnippetSourceGap(lr, ns, snap)!;
+    return gap.combinedMajorSourceCount === 3 && gap.matchedSnippetCount === 2 && gap.sourceGap === 1;
+  });
+
+  check('a23_peripheral_border_pulse_asymmetry', 'Peripheral border pulse asymmetry is positive on NSW rim links', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const asym = nrDashBuildPeripheralBorderPulseAsymmetry(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
+    return asym.peripheralBorderLinkCount > 0 && asym.maxEndpointDelta > 0.01;
+  });
+
+  check('a23_major_meaningful_history_overlap_gap', 'Major-meaningful history overlap gap counts duplicate NS turn', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.derived.push({ turn: 5, text: 'Echo', significance: 'meaningful' });
+    const gap = nrDashBuildMajorMeaningfulHistoryOverlapGap(lr, createAgent23NsFixture())!;
+    return gap.majorMeaningfulCount === 2 && gap.sharedTurnCount === 1 && gap.overlapGap === 1;
   });
 
   return results;
