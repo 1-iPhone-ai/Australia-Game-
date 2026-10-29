@@ -145,6 +145,7 @@ export function attachAppealSessionToState(
     supersedeSession: null,
     certiorariSession: null,
     mandamusSession: null,
+    prohibitionSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,

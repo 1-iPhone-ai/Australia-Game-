@@ -42,6 +42,7 @@ import { sanitizeQuashSession } from './save-format-quash.js';
 import { sanitizeSupersedeSession } from './save-format-supersede.js';
 import { sanitizeCertiorariSession } from './save-format-certiorari.js';
 import { sanitizeMandamusSession } from './save-format-mandamus.js';
+import { sanitizeProhibitionSession } from './save-format-prohibition.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -60,7 +61,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 42;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 43;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -201,6 +202,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     supersedeSession: null,
     certiorariSession: null,
     mandamusSession: null,
+    prohibitionSession: null,
   };
 }
 
@@ -262,6 +264,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       supersedeSession: merged.supersedeSession ?? null,
       certiorariSession: merged.certiorariSession ?? null,
       mandamusSession: merged.mandamusSession ?? null,
+      prohibitionSession: merged.prohibitionSession ?? null,
     };
     return upgraded;
   }
@@ -347,6 +350,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     supersedeSession: sanitizeSupersedeSession(o.supersedeSession),
     certiorariSession: sanitizeCertiorariSession(o.certiorariSession),
     mandamusSession: sanitizeMandamusSession(o.mandamusSession),
+    prohibitionSession: sanitizeProhibitionSession(o.prohibitionSession),
   };
 }
 
@@ -647,6 +651,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Mandamus session failed sanitization; planner will ignore it.');
   } else if (mandamus && mandamus.cursor >= mandamus.scenarioIds.length) {
     warnings.push('Mandamus cursor out of range; clamp on next sanitize.');
+  }
+
+  const prohibition = sanitizeProhibitionSession(state.prohibitionSession);
+  if (state.prohibitionSession && !prohibition) {
+    warnings.push('Prohibition session failed sanitization; planner will ignore it.');
+  } else if (prohibition && prohibition.cursor >= prohibition.scenarioIds.length) {
+    warnings.push('Prohibition cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

@@ -128,6 +128,7 @@ export function attachQuashSessionToState(
     supersedeSession: null,
     certiorariSession: null,
     mandamusSession: null,
+    prohibitionSession: null,
     setAsideSession: null,
     reinstatementSession: null,
     annulmentSession: null,

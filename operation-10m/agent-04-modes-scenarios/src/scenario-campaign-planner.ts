@@ -117,6 +117,11 @@ import {
   sanitizeReversalSession,
 } from './save-format-reversal.js';
 import {
+  getProhibitionScenarioAtCursor,
+  prohibitionSessionSummary,
+  sanitizeProhibitionSession,
+} from './save-format-prohibition.js';
+import {
   getMandamusScenarioAtCursor,
   mandamusSessionSummary,
   sanitizeMandamusSession,
@@ -227,6 +232,7 @@ import type {
   O10mSupersedePhase,
   O10mCertiorariPhase,
   O10mMandamusPhase,
+  O10mProhibitionPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -381,9 +387,31 @@ const emptyQueuePlan = {
   mandamusCursor: null as number | null,
   mandamusPhase: null as O10mMandamusPhase | null,
   mandamusScore: null as number | null,
+  prohibitionId: null as string | null,
+  prohibitionCursor: null as number | null,
+  prohibitionPhase: null as O10mProhibitionPhase | null,
+  prohibitionScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const prohibition = sanitizeProhibitionSession(state.prohibitionSession);
+  const prohibitionScenario = getProhibitionScenarioAtCursor(prohibition);
+  if (prohibition && prohibition.active && prohibitionScenario) {
+    return {
+      kind: 'prohibition_step',
+      scenarioId: prohibitionScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      prohibitionId: prohibition.prohibitionId,
+      prohibitionCursor: prohibition.cursor,
+      prohibitionPhase: prohibition.phaseTag,
+      prohibitionScore: prohibition.prohibitionScore,
+      reason: `Prohibition "${prohibition.label}" ${prohibition.phaseTag} phase ${prohibition.cursor + 1}/${prohibition.scenarioIds.length} (score ${prohibition.prohibitionScore}).`,
+    };
+  }
+
   const mandamus = sanitizeMandamusSession(state.mandamusSession);
   const mandamusScenario = getMandamusScenarioAtCursor(mandamus);
   if (mandamus && mandamus.active && mandamusScenario) {
@@ -1171,6 +1199,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   supersedeActive: boolean;
   certiorariActive: boolean;
   mandamusActive: boolean;
+  prohibitionActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -1216,6 +1245,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const supersede = supersedeSessionSummary(state);
   const certiorari = certiorariSessionSummary(state);
   const mandamus = mandamusSessionSummary(state);
+  const prohibition = prohibitionSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -1259,6 +1289,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     supersedeActive: supersede.active,
     certiorariActive: certiorari.active,
     mandamusActive: mandamus.active,
+    prohibitionActive: prohibition.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

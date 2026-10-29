@@ -148,6 +148,7 @@ export function attachCaravanSessionToState(
     supersedeSession: null,
     certiorariSession: null,
     mandamusSession: null,
+    prohibitionSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,

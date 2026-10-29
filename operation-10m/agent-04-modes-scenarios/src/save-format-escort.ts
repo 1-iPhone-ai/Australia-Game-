@@ -144,6 +144,7 @@ export function attachEscortSessionToState(
     supersedeSession: null,
     certiorariSession: null,
     mandamusSession: null,
+    prohibitionSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,

@@ -131,6 +131,7 @@ export function attachSetAsideSessionToState(
     supersedeSession: null,
     certiorariSession: null,
     mandamusSession: null,
+    prohibitionSession: null,
     reinstatementSession: null,
     annulmentSession: null,
     reversalSession: null,
