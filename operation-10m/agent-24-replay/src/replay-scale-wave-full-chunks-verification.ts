@@ -1,5 +1,5 @@
 import { o6kAgent24Fingerprint } from './fingerprint.ts';
-import { O6K_AGENT24_WAVE32_INTEGRATION_BASELINE_SHA, O6K_AGENT24_WAVE33_INTEGRATION_BASELINE_SHA, O6K_AGENT24_WAVE34_INTEGRATION_BASELINE_SHA } from './replay-scale-wave-integration-closeout.ts';
+import { O6K_AGENT24_WAVE32_INTEGRATION_BASELINE_SHA, O6K_AGENT24_WAVE33_INTEGRATION_BASELINE_SHA, O6K_AGENT24_WAVE34_INTEGRATION_BASELINE_SHA, O6K_AGENT24_WAVE35_INTEGRATION_BASELINE_SHA } from './replay-scale-wave-integration-closeout.ts';
 import type { Agent24ArchiveScaleWaveFullChunksGateReport } from './archive-scale-wave-full-chunks-gate.ts';
 import type { Agent24ReplayScaleWaveDryrunVerificationReport } from './replay-scale-wave-dryrun-verification.ts';
 import type { Agent24ReplayScaleWaveFullChunksHandoffSeal } from './replay-scale-wave-full-chunks-handoff.ts';
@@ -111,8 +111,8 @@ export function runAgent24ReplayScaleWaveFullChunksVerificationSelfTests(): Arra
   const dryrunVerification = {
     reportId: 'dv',
     matchId: 'self',
-    waveRound: 34,
-    dryrunBaselineSha: O6K_AGENT24_WAVE34_INTEGRATION_BASELINE_SHA,
+    waveRound: 35,
+    dryrunBaselineSha: O6K_AGENT24_WAVE35_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -123,7 +123,7 @@ export function runAgent24ReplayScaleWaveFullChunksVerificationSelfTests(): Arra
   const fullChunksGate = {
     reportId: 'fcg',
     matchId: 'self',
-    waveRound: 34,
+    waveRound: 35,
     chunksGateOpen: true,
     blockerCount: 0,
     blockers: [],
@@ -133,8 +133,8 @@ export function runAgent24ReplayScaleWaveFullChunksVerificationSelfTests(): Arra
   const handoffSeal = {
     sealId: 'fch',
     matchId: 'self',
-    waveRound: 34,
-    fullChunksBaselineSha: O6K_AGENT24_WAVE34_INTEGRATION_BASELINE_SHA,
+    waveRound: 35,
+    fullChunksBaselineSha: O6K_AGENT24_WAVE35_INTEGRATION_BASELINE_SHA,
     handoffReady: true,
     linkCount: 3,
     readyLinkCount: 3,
@@ -152,7 +152,7 @@ export function runAgent24ReplayScaleWaveFullChunksVerificationSelfTests(): Arra
 
   return [
     { name: 'verified_when_full_chunks_stack_ready', passed: report.verified && report.issueCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 34 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 35 },
     {
       name: 'deterministic_fingerprint',
       passed:
