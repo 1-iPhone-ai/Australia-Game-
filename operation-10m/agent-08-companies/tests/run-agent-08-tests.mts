@@ -1,4 +1,4 @@
-import { runAgent08ModuleSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
+import { runAgent08ModuleSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
 
 function main() {
   const tax = runAgent08TaxLaborSelfTests();
@@ -16,6 +16,14 @@ function main() {
     process.exit(1);
   }
   console.log(`Agent 08 supply chain: ${supply.length} passed`);
+
+  const sector = runAgent08SectorDepthSelfTests();
+  const failedSector = sector.filter(t => !t.passed);
+  if (failedSector.length) {
+    console.error('Agent 08 sector depth tests failed:', failedSector);
+    process.exit(1);
+  }
+  console.log(`Agent 08 sector depth: ${sector.length} passed`);
 
   const moduleTests = runAgent08ModuleSelfTests();
   const failed = moduleTests.filter(t => !t.passed);

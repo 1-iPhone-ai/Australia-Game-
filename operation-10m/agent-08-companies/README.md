@@ -9,6 +9,7 @@ Operation 10M module root for **V10.14 private sector simulation**: regional fir
 | `v1014-private-sector-core.tsx` | Firms, catalogs, supply chains, `computeNationalPrivateSector`, self-tests |
 | `tax-labor-capacity-linkage.ts` | Read-only fiscal + workforce → capacity interpretation |
 | `supply-chain-firm-depth.ts` | Firm supply profiles, regional depth, single-source hotspots |
+| `sector-production-depth.ts` | Sector mix alignment (LR vs firms) + V10.1 capacity overload detection |
 | `upstream-stubs.ts` | Standalone types until Agent 25 inline merge |
 | `scripts/extract-from-v94.py` | Re-sync core slice from `(V9.4) australia-game-with-ai.tsx` SECTION 20AI |
 | `tests/run-agent-08-tests.mts` | Node test runner |

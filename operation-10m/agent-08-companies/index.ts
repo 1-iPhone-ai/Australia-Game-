@@ -36,9 +36,26 @@ export type {
   RegionalSupplyDepthSummary,
 } from './supply-chain-firm-depth';
 
+export {
+  AGENT08_SECTOR_DEPTH_SCHEMA_VERSION,
+  archetypeToIndustry,
+  computeNationalSectorProductionDepth,
+  computeRegionalSectorProductionDepth,
+  scoreFirmSectorIndustryAlignment,
+  runAgent08SectorDepthSelfTests,
+} from './sector-production-depth';
+
+export type {
+  FirmSectorProductionRow,
+  NationalSectorProductionDepth,
+  RegionalSectorProductionDepth,
+  RegionalSectorDiversificationBand,
+} from './sector-production-depth';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
+import { runAgent08SectorDepthSelfTests } from './sector-production-depth';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -58,5 +75,10 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
-  return [...core.slice(0, 5), ...taxLabor, ...supply];
+  const sector = runAgent08SectorDepthSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
+  return [...core.slice(0, 5), ...taxLabor, ...supply, ...sector];
 }

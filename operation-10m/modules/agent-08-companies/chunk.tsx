@@ -5780,263 +5780,250 @@ export function runAgent08TaxLaborSelfTests(): Array<{ id: string; passed: boole
 }
 
 
-// --- source: supply-chain-firm-depth.ts ---
+// --- source: sector-production-depth.ts ---
 /**
- * Agent 08 extension — firm-level supply chain depth & capacity stress (interpretation only).
- * Reads V10.14 private ecosystems + V10.1 link metadata already materialized on regional states.
+ * Agent 08 — regional sector mix vs Living Regions + V10.1 industry capacity (interpretation).
  */
 
   NationalPrivateSectorState,
+  PrivateCompanyArchetype,
   PrivateCompanyState,
-  PrivateProductionBand,
-  RegionalEcosystemLink,
   RegionalPrivateEcosystemState,
 } from './v1014-private-sector-core';
+  IndustriesSupplyChainsState,
+  LivingRegionsState,
+  LRSector,
+  StrategicIndustryKind,
+} from './upstream-stubs';
 
-export const AGENT08_SUPPLY_DEPTH_SCHEMA_VERSION = '1.1.0';
+export const AGENT08_SECTOR_DEPTH_SCHEMA_VERSION = '1.0.0';
 
-export type FirmSupplyDepthBand = 'shallow' | 'moderate' | 'deep' | 'entangled';
+export type RegionalSectorDiversificationBand = 'specialized' | 'mixed' | 'diversified';
 
-export interface FirmSupplyChainProfile {
+export interface FirmSectorProductionRow {
   companyId: string;
   regionId: string;
-  archetype: PrivateCompanyState['archetype'];
-  upstreamRegions: string[];
-  inboundLinkCount: number;
-  fragileInbound: number;
-  outboundDependentRegions: number;
-  concentrationScore: number;
-  capacityStress: number;
-  utilization: number;
-  productionBand: PrivateProductionBand;
-  primarySupply: StrategicSupplyKind | null;
-  depthBand: FirmSupplyDepthBand;
-  evidence: string[];
+  archetype: PrivateCompanyArchetype;
+  productionMass: number;
+  linkedIndustry: StrategicIndustryKind | null;
+  industryUtilization: number | null;
+  industryStrength: number | null;
+  alignmentGap: number;
+  overloaded: boolean;
 }
 
-export interface RegionalSupplyDepthSummary {
+export interface RegionalSectorProductionDepth {
   regionId: string;
   firmCount: number;
-  avgCapacityStress: number;
-  entangledFirms: number;
-  fragileLinks: number;
-  hubScore: number;
+  productionMass: number;
+  archetypeShares: Partial<Record<PrivateCompanyArchetype, number>>;
+  sectorMass: Partial<Record<LRSector, number>>;
+  livingRegionSectorMass: Partial<Record<LRSector, number>>;
+  alignmentScore: number;
+  diversificationBand: RegionalSectorDiversificationBand;
+  industryOutputTotal: number;
+  capacityGap: number;
+  overloadedFirmCount: number;
+  dominantArchetype: PrivateCompanyArchetype | null;
 }
 
-export interface NationalSupplyDepthSummary {
-  schemaVersion: typeof AGENT08_SUPPLY_DEPTH_SCHEMA_VERSION;
+export interface NationalSectorProductionDepth {
+  schemaVersion: typeof AGENT08_SECTOR_DEPTH_SCHEMA_VERSION;
   turn: number;
-  firmProfiles: FirmSupplyChainProfile[];
-  regions: RegionalSupplyDepthSummary[];
-  entangledFirmCount: number;
-  singleSourceHotspots: Array<{ regionId: string; supply: StrategicSupplyKind; providerRegionId: string; firmCount: number }>;
-  maxCapacityStress: number;
+  regions: RegionalSectorProductionDepth[];
+  firmRows: FirmSectorProductionRow[];
+  lowestAlignmentRegion: string | null;
+  nationalAlignmentAvg: number;
 }
 
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, Number.isFinite(x) ? x : a));
 
-function productionStress(band: PrivateProductionBand): number {
-  switch (band) {
-    case 'idle':
-      return 0.9;
-    case 'constrained':
-      return 0.65;
-    case 'steady':
-      return 0.35;
-    case 'surging':
-      return 0.15;
-    default:
-      return 0.4;
+const ARCHETYPE_SECTORS: Record<PrivateCompanyArchetype, LRSector[]> = {
+  mining: ['mining'],
+  agriculture: ['agriculture'],
+  energy: ['energy', 'renewables'],
+  manufacturing: ['manufacturing'],
+  technology: ['technology'],
+  research: ['research'],
+  tourism: ['tourism'],
+  trade: ['trade', 'logistics'],
+  logistics: ['logistics', 'trade'],
+  finance_services: ['finance', 'technology'],
+};
+
+export function archetypeToIndustry(archetype: PrivateCompanyArchetype): StrategicIndustryKind | null {
+  if (archetype === 'logistics') return 'trade';
+  if (archetype === 'finance_services') return 'technology';
+  return archetype as StrategicIndustryKind;
+}
+
+function firmProductionMass(company: PrivateCompanyState): number {
+  return clamp(company.scale, 0, 999) * clamp(company.utilization, 0, 1);
+}
+
+function normalizeMassMap<T extends string>(map: Partial<Record<T, number>>): Partial<Record<T, number>> {
+  const total = Object.values(map).reduce((a, v) => a + (v || 0), 0);
+  if (total <= 0) return map;
+  const out: Partial<Record<T, number>> = {};
+  for (const [k, v] of Object.entries(map) as [T, number][]) {
+    out[k] = (v || 0) / total;
   }
+  return out;
 }
 
-function concentrationFromShares(shares: number[]): number {
-  if (!shares.length) return 0;
-  const total = shares.reduce((a, b) => a + b, 0) || 1;
-  const normalized = shares.map(s => s / total);
-  return clamp(normalized.reduce((a, s) => a + s * s, 0), 0, 1);
-}
-
-function depthBandFromSignals(
-  inbound: number,
-  fragile: number,
-  concentration: number,
-  outboundDeps: number,
-): FirmSupplyDepthBand {
-  const score = inbound * 1.2 + fragile * 2.5 + concentration * 4 + outboundDeps * 0.8;
-  if (score < 2) return 'shallow';
-  if (score < 5) return 'moderate';
-  if (score < 9) return 'deep';
-  return 'entangled';
-}
-
-function inboundLinksForRegion(region: RegionalPrivateEcosystemState): RegionalEcosystemLink[] {
-  return region.links.filter(l => l.toRegionId === region.regionId);
-}
-
-function outboundDependentCount(
-  regionId: string,
-  allRegions: Record<string, RegionalPrivateEcosystemState>,
-): number {
-  let n = 0;
-  for (const r of Object.values(allRegions)) {
-    if (r.links.some(l => l.fromRegionId === regionId && l.toRegionId !== regionId)) n += 1;
+function cosineSimilarity(a: Partial<Record<LRSector, number>>, b: Partial<Record<LRSector, number>>): number {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<LRSector>;
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (const k of keys) {
+    const x = a[k] || 0;
+    const y = b[k] || 0;
+    dot += x * y;
+    na += x * x;
+    nb += y * y;
   }
-  return n;
+  if (na <= 0 || nb <= 0) return 0;
+  return clamp(dot / (Math.sqrt(na) * Math.sqrt(nb)), 0, 1);
 }
 
-export function deriveFirmSupplyChainProfile(
+function diversificationBand(shares: Partial<Record<PrivateCompanyArchetype, number>>): RegionalSectorDiversificationBand {
+  const vals = Object.values(shares);
+  if (vals.length <= 1) return 'specialized';
+  const hhi = vals.reduce((a, s) => a + s * s, 0);
+  if (hhi > 0.45) return 'specialized';
+  if (hhi > 0.22) return 'mixed';
+  return 'diversified';
+}
+
+export function scoreFirmSectorIndustryAlignment(
   company: PrivateCompanyState,
-  region: RegionalPrivateEcosystemState,
-  allRegions: Record<string, RegionalPrivateEcosystemState>,
-): FirmSupplyChainProfile {
-  const inbound = inboundLinksForRegion(region);
-  const upstreamRegions = [...new Set(inbound.map(l => l.fromRegionId))];
-  const fragileInbound = inbound.filter(l => l.fragile).length;
-  const shares = inbound.map(l => l.strength);
-  const concentrationScore = concentrationFromShares(shares);
-  const outboundDeps = outboundDependentCount(region.regionId, allRegions);
-  const utilization = clamp(company.utilization, 0, 1);
-  const capacityStress = clamp(productionStress(company.production) * 0.55 + (1 - utilization) * 0.45, 0, 1);
-  const depthBand = depthBandFromSignals(inbound.length, fragileInbound, concentrationScore, outboundDeps);
-  const evidence: string[] = [
-    `inbound_links:${inbound.length}`,
-    `fragile_inbound:${fragileInbound}`,
-    `concentration:${concentrationScore.toFixed(2)}`,
-    `capacity_stress:${capacityStress.toFixed(2)}`,
-  ];
-  if (company.primarySupply) evidence.push(`primary_supply:${company.primarySupply}`);
+  indRegion: IndustriesSupplyChainsState['regions'][string] | undefined,
+): FirmSectorProductionRow {
+  const productionMass = firmProductionMass(company);
+  const linked = company.linkedIndustry ?? archetypeToIndustry(company.archetype);
+  const ind = linked && indRegion?.industries?.[linked];
+  const industryUtilization = ind ? clamp(ind.utilization, 0, 1) : null;
+  const industryStrength = ind ? ind.strength : null;
+  const firmUtil = clamp(company.utilization, 0, 1);
+  const alignmentGap =
+    industryUtilization == null ? 0 : clamp(Math.abs(firmUtil - industryUtilization) * company.scale * 0.05, 0, 15);
+  const overloaded =
+    industryStrength != null &&
+    industryUtilization != null &&
+    firmUtil > 0.72 &&
+    industryUtilization < 0.45 &&
+    industryStrength < 35;
   return {
     companyId: company.id,
     regionId: company.regionId,
     archetype: company.archetype,
-    upstreamRegions,
-    inboundLinkCount: inbound.length,
-    fragileInbound,
-    outboundDependentRegions: outboundDeps,
-    concentrationScore,
-    capacityStress,
-    utilization,
-    productionBand: company.production,
-    primarySupply: company.primarySupply,
-    depthBand,
-    evidence,
+    productionMass,
+    linkedIndustry: linked,
+    industryUtilization,
+    industryStrength,
+    alignmentGap,
+    overloaded,
   };
 }
 
-export function deriveFirmSupplyChainProfiles(
-  state: NationalPrivateSectorState,
-): FirmSupplyChainProfile[] {
-  const profiles: FirmSupplyChainProfile[] = [];
-  for (const region of Object.values(state.regions)) {
-    for (const company of region.companies) {
-      profiles.push(deriveFirmSupplyChainProfile(company, region, state.regions));
+export function computeRegionalSectorProductionDepth(
+  region: RegionalPrivateEcosystemState,
+  livingRegions: LivingRegionsState | null,
+  industries: IndustriesSupplyChainsState | null,
+  firmRows: FirmSectorProductionRow[],
+): RegionalSectorProductionDepth {
+  const regionalRows = firmRows.filter(r => r.regionId === region.regionId);
+  const productionMass = regionalRows.reduce((a, r) => a + r.productionMass, 0);
+  const archetypeMass: Partial<Record<PrivateCompanyArchetype, number>> = {};
+  const sectorMass: Partial<Record<LRSector, number>> = {};
+
+  for (const company of region.companies) {
+    const mass = firmProductionMass(company);
+    archetypeMass[company.archetype] = (archetypeMass[company.archetype] || 0) + mass;
+    const sectors = ARCHETYPE_SECTORS[company.archetype] || [];
+    const share = mass / Math.max(1, sectors.length);
+    for (const s of sectors) {
+      sectorMass[s] = (sectorMass[s] || 0) + share;
     }
   }
-  return profiles;
-}
 
-export function summarizeRegionalSupplyDepth(
-  region: RegionalPrivateEcosystemState,
-  profiles: FirmSupplyChainProfile[],
-  allRegions: Record<string, RegionalPrivateEcosystemState>,
-): RegionalSupplyDepthSummary {
-  const regional = profiles.filter(p => p.regionId === region.regionId);
-  const avgCapacityStress = regional.length
-    ? regional.reduce((a, p) => a + p.capacityStress, 0) / regional.length
-    : 0;
-  const entangledFirms = regional.filter(p => p.depthBand === 'entangled').length;
-  const fragileLinks = region.links.filter(l => l.fragile).length;
-  const hubScore = clamp(
-    outboundDependentCount(region.regionId, allRegions) + region.links.length * 0.5 + entangledFirms * 2,
-    0,
-    100,
+  const archetypeShares = normalizeMassMap(archetypeMass);
+  const firmSectorNorm = normalizeMassMap(sectorMass);
+  const lrSectors = livingRegions?.regions?.[region.regionId]?.sectors || {};
+  const livingRegionSectorMass = normalizeMassMap(
+    Object.fromEntries(
+      Object.entries(lrSectors).map(([k, v]) => [k, Number(v) || 0]),
+    ) as Partial<Record<LRSector, number>>,
   );
+
+  const alignmentScore = cosineSimilarity(firmSectorNorm, livingRegionSectorMass);
+  const indReg = industries?.regions?.[region.regionId];
+  let industryOutputTotal = 0;
+  if (indReg?.industries) {
+    for (const ind of Object.values(indReg.industries)) {
+      if (ind) industryOutputTotal += ind.effectiveOutput || 0;
+    }
+  }
+  const capacityGap = clamp(region.activeProduction - productionMass, -999, 999);
+  const overloadedFirmCount = regionalRows.filter(r => r.overloaded).length;
+  const dominantArchetype =
+    (Object.entries(archetypeShares).sort((a, b) => (b[1] || 0) - (a[1] || 0))[0]?.[0] as
+      | PrivateCompanyArchetype
+      | undefined) ?? null;
+
   return {
     regionId: region.regionId,
-    firmCount: regional.length,
-    avgCapacityStress: Math.round(avgCapacityStress * 100) / 100,
-    entangledFirms,
-    fragileLinks,
-    hubScore: Math.round(hubScore * 10) / 10,
+    firmCount: region.companies.length,
+    productionMass: Math.round(productionMass * 100) / 100,
+    archetypeShares,
+    sectorMass: firmSectorNorm,
+    livingRegionSectorMass,
+    alignmentScore: Math.round(alignmentScore * 1000) / 1000,
+    diversificationBand: diversificationBand(archetypeShares),
+    industryOutputTotal: Math.round(industryOutputTotal * 100) / 100,
+    capacityGap: Math.round(capacityGap * 100) / 100,
+    overloadedFirmCount,
+    dominantArchetype,
   };
 }
 
-export function computeSingleSourceHotspots(
-  profiles: FirmSupplyChainProfile[],
-  regions: Record<string, RegionalPrivateEcosystemState>,
-): NationalSupplyDepthSummary['singleSourceHotspots'] {
-  const buckets = new Map<string, { regionId: string; supply: StrategicSupplyKind; providerRegionId: string; firmCount: number }>();
-  for (const region of Object.values(regions)) {
-    const inbound = inboundLinksForRegion(region);
-    if (inbound.length !== 1) continue;
-    const link = inbound[0];
+export function computeNationalSectorProductionDepth(params: {
+  turn: number;
+  privateState: NationalPrivateSectorState;
+  livingRegions: LivingRegionsState | null;
+  industries: IndustriesSupplyChainsState | null;
+}): NationalSectorProductionDepth {
+  const firmRows: FirmSectorProductionRow[] = [];
+  for (const region of Object.values(params.privateState.regions)) {
+    const indReg = params.industries?.regions?.[region.regionId];
     for (const company of region.companies) {
-      if (!company.primarySupply || company.primarySupply !== link.supply) continue;
-      const key = `${region.regionId}:${link.supply}:${link.fromRegionId}`;
-      const cur = buckets.get(key) || {
-        regionId: region.regionId,
-        supply: link.supply,
-        providerRegionId: link.fromRegionId,
-        firmCount: 0,
-      };
-      cur.firmCount += 1;
-      buckets.set(key, cur);
+      firmRows.push(scoreFirmSectorIndustryAlignment(company, indReg));
     }
   }
-  return [...buckets.values()]
-    .filter(b => b.firmCount >= 1)
-    .sort((a, b) => b.firmCount - a.firmCount)
-    .slice(0, 12);
-}
 
-export function computeNationalSupplyDepthSummary(
-  state: NationalPrivateSectorState,
-): NationalSupplyDepthSummary {
-  const firmProfiles = deriveFirmSupplyChainProfiles(state);
-  const regions = Object.values(state.regions).map(r =>
-    summarizeRegionalSupplyDepth(r, firmProfiles, state.regions),
+  const regions = Object.values(params.privateState.regions).map(r =>
+    computeRegionalSectorProductionDepth(r, params.livingRegions, params.industries, firmRows),
   );
-  const entangledFirmCount = firmProfiles.filter(p => p.depthBand === 'entangled').length;
-  const maxCapacityStress = firmProfiles.reduce((m, p) => Math.max(m, p.capacityStress), 0);
+
+  const nationalAlignmentAvg = regions.length
+    ? regions.reduce((a, r) => a + r.alignmentScore, 0) / regions.length
+    : 0;
+  const lowest = regions.length
+    ? regions.reduce((min, r) => (r.alignmentScore < min.alignmentScore ? r : min), regions[0])
+    : null;
+
   return {
-    schemaVersion: AGENT08_SUPPLY_DEPTH_SCHEMA_VERSION,
-    turn: state.lastUpdatedTurn,
-    firmProfiles,
+    schemaVersion: AGENT08_SECTOR_DEPTH_SCHEMA_VERSION,
+    turn: params.turn,
     regions,
-    entangledFirmCount,
-    singleSourceHotspots: computeSingleSourceHotspots(firmProfiles, state.regions),
-    maxCapacityStress: Math.round(maxCapacityStress * 100) / 100,
+    firmRows,
+    lowestAlignmentRegion: lowest?.regionId ?? null,
+    nationalAlignmentAvg: Math.round(nationalAlignmentAvg * 1000) / 1000,
   };
 }
 
-/** Attach supply-depth evidence onto company rows (bounded). */
-export function applySupplyChainDepthEvidence(
-  state: NationalPrivateSectorState,
-  profiles: FirmSupplyChainProfile[],
-): NationalPrivateSectorState {
-  const byId = Object.fromEntries(profiles.map(p => [p.companyId, p]));
-  const regions: Record<string, RegionalPrivateEcosystemState> = {};
-  for (const [code, region] of Object.entries(state.regions)) {
-    regions[code] = {
-      ...region,
-      companies: region.companies.map(c => {
-        const profile = byId[c.id];
-        if (!profile) return c;
-        const extra = {
-          label: 'Supply depth',
-          value: profile.concentrationScore * 100,
-          source: `agent08.depth.${profile.depthBand}`,
-        };
-        const evidence = [...c.evidence, extra].slice(-8);
-        return { ...c, evidence };
-      }),
-    };
-  }
-  return { ...state, regions, revision: state.revision + 1 };
-}
-
-export function runAgent08SupplyChainSelfTests(): Array<{ id: string; passed: boolean; detail: string }> {
+export function runAgent08SectorDepthSelfTests(): Array<{ id: string; passed: boolean; detail: string }> {
   const results: Array<{ id: string; passed: boolean; detail: string }> = [];
   const check = (id: string, fn: () => boolean | string) => {
     try {
@@ -6047,134 +6034,129 @@ export function runAgent08SupplyChainSelfTests(): Array<{ id: string; passed: bo
     }
   };
 
-  const fixtureRegion: RegionalPrivateEcosystemState = {
+  const company: PrivateCompanyState = {
+    id: 'co_x',
     regionId: 'NSW',
-    name: 'New South Wales',
-    maturity: 'connected',
-    anchorArchetype: 'mining',
-    companyCount: 2,
-    activeProduction: 40,
-    supplyChainRole: 'linked',
-    resilience: 'moderate',
-    primaryConstraint: null,
-    revision: 3,
-    links: [
-      {
-        id: 'l1',
-        fromRegionId: 'QLD',
-        toRegionId: 'NSW',
-        supply: 'energy',
-        strength: 80,
-        fragile: true,
-        reason: 'test',
-      },
-      {
-        id: 'l2',
-        fromRegionId: 'WA',
-        toRegionId: 'NSW',
-        supply: 'minerals',
-        strength: 20,
-        fragile: false,
-        reason: 'test',
-      },
-    ],
-    companies: [
-      {
-        id: 'co_a',
-        regionId: 'NSW',
-        archetype: 'manufacturing',
-        name: 'A',
-        vitality: 'stable',
-        production: 'constrained',
-        exposure: 'integrated',
-        scale: 12,
-        utilization: 0.4,
-        primarySupply: 'energy',
-        linkedIndustry: 'manufacturing',
-        ecosystemId: 'eco_NSW',
-        summary: 'x',
-        evidence: [],
-        revision: 3,
-      },
-      {
-        id: 'co_b',
-        regionId: 'NSW',
-        archetype: 'mining',
-        name: 'B',
-        vitality: 'dynamic',
-        production: 'steady',
-        exposure: 'balanced',
-        scale: 20,
-        utilization: 0.7,
-        primarySupply: 'minerals',
-        linkedIndustry: 'mining',
-        ecosystemId: 'eco_NSW',
-        summary: 'y',
-        evidence: [],
-        revision: 3,
-      },
-    ],
-  };
-
-  const fixtureState: NationalPrivateSectorState = {
-    schemaVersion: '10.14.0',
+    archetype: 'manufacturing',
+    name: 'Mfg Co',
+    vitality: 'stable',
+    production: 'surging',
+    exposure: 'balanced',
+    scale: 30,
+    utilization: 0.85,
+    primarySupply: 'manufactured_goods',
+    linkedIndustry: 'manufacturing',
+    ecosystemId: 'eco',
+    summary: 't',
+    evidence: [],
     revision: 1,
-    regions: {
-      NSW: fixtureRegion,
-      QLD: {
-        ...fixtureRegion,
-        regionId: 'QLD',
-        name: 'Queensland',
-        companies: [],
-        companyCount: 0,
-        links: [{ id: 'l3', fromRegionId: 'NSW', toRegionId: 'QLD', supply: 'manufactured_goods', strength: 50, fragile: false, reason: 'backlink' }],
-      },
-    },
-    national: {
-      leadingRegions: [],
-      constrainedRegions: [],
-      dominantArchetypes: ['mining'],
-      criticalDependencies: [],
-      ecosystemOpportunity: null,
-      ecosystemRisk: null,
-      totalCompanies: 2,
-      avgVitality: 2,
-    },
-    history: [],
-    lastUpdatedTurn: 3,
-    inputHash: 'fixture',
-    computeMs: 0,
   };
 
-  check('a08_sc_01', () => {
-    const profiles = deriveFirmSupplyChainProfiles(fixtureState);
-    return profiles.length === 2 && profiles.every(p => p.inboundLinkCount === 2);
+  check('a08_sd_01', () => {
+    const row = scoreFirmSectorIndustryAlignment(company, {
+      regionId: 'NSW',
+      industries: {
+        manufacturing: {
+          industry: 'manufacturing',
+          strength: 20,
+          effectiveOutput: 10,
+          utilization: 0.35,
+          constraint: null,
+          outputs: [],
+        },
+      },
+      suppliedBy: [],
+      primaryIndustrialConstraint: null,
+      resilience: 'moderate',
+    });
+    return row.overloaded === true && row.alignmentGap > 0;
   });
 
-  check('a08_sc_02', () => {
-    const p = deriveFirmSupplyChainProfile(fixtureRegion.companies[0], fixtureRegion, fixtureState.regions);
-    return p.fragileInbound === 1 && p.capacityStress > 0.5 && p.depthBand !== 'shallow';
+  check('a08_sd_02', () => {
+    const state: NationalPrivateSectorState = {
+      schemaVersion: '10.14.0',
+      revision: 1,
+      regions: {
+        NSW: {
+          regionId: 'NSW',
+          name: 'NSW',
+          maturity: 'forming',
+          anchorArchetype: 'mining',
+          companyCount: 1,
+          activeProduction: 50,
+          supplyChainRole: 'x',
+          resilience: 'moderate',
+          companies: [company],
+          links: [],
+          primaryConstraint: null,
+          revision: 1,
+        },
+      },
+      national: {
+        leadingRegions: [],
+        constrainedRegions: [],
+        dominantArchetypes: [],
+        criticalDependencies: [],
+        ecosystemOpportunity: null,
+        ecosystemRisk: null,
+        totalCompanies: 1,
+        avgVitality: 2,
+      },
+      history: [],
+      lastUpdatedTurn: 1,
+      inputHash: 't',
+      computeMs: 0,
+    };
+    const depth = computeNationalSectorProductionDepth({
+      turn: 1,
+      privateState: state,
+      livingRegions: {
+        revision: 1,
+        regions: {
+          NSW: {
+            momentum: { band: 'stable' },
+            sectors: { manufacturing: 80, mining: 20 },
+          },
+        },
+      },
+      industries: {
+        revision: 1,
+        regions: {
+          NSW: {
+            regionId: 'NSW',
+            industries: {
+              manufacturing: {
+                industry: 'manufacturing',
+                strength: 20,
+                effectiveOutput: 40,
+                utilization: 0.35,
+                constraint: null,
+                outputs: [],
+              },
+            },
+            suppliedBy: [],
+            primaryIndustrialConstraint: null,
+            resilience: 'moderate',
+          },
+        },
+        dependencies: [],
+      },
+    });
+    return depth.firmRows.length === 1 && depth.regions[0].dominantArchetype === 'manufacturing';
   });
 
-  check('a08_sc_03', () => {
-    const summary = computeNationalSupplyDepthSummary(fixtureState);
-    return summary.firmProfiles.length === 2 && summary.regions.length === 2 && summary.schemaVersion === AGENT08_SUPPLY_DEPTH_SCHEMA_VERSION;
+  check('a08_sd_03', () => {
+    const sim = cosineSimilarity({ mining: 1 }, { mining: 1 });
+    return sim === 1;
   });
 
-  check('a08_sc_04', () => {
-    const summary = computeNationalSupplyDepthSummary(fixtureState);
-    const enriched = applySupplyChainDepthEvidence(fixtureState, summary.firmProfiles);
-    return enriched.regions.NSW.companies[0].evidence.some(e => e.source.startsWith('agent08.depth.'));
+  check('a08_sd_04', () => {
+    const sim = cosineSimilarity({ mining: 1 }, { agriculture: 1 });
+    return sim === 0;
   });
 
-  check('a08_sc_05', () => {
-    const shares = concentrationFromShares([100]);
-    return shares === 1;
-  });
-
-  check('a08_sc_06', () => {
-    const hotspots = computeSingleSourceHotspots([], {});
-    return Array.isArray(hotspots);
+  check('a08_sd_05', () => {
+    return diversificationBand({ mining: 0.9, agriculture: 0.1 }) === 'specialized';
   });
 
   return results;
@@ -6200,7 +6182,12 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
-  return [...core.slice(0, 5), ...taxLabor, ...supply];
+  const sector = runAgent08SectorDepthSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
+  return [...core.slice(0, 5), ...taxLabor, ...supply, ...sector];
 }
 
 

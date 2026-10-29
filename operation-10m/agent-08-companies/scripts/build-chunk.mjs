@@ -17,7 +17,7 @@ const FILES = [
   'upstream-stubs.ts',
   'v1014-private-sector-core.tsx',
   'tax-labor-capacity-linkage.ts',
-  'supply-chain-firm-depth.ts',
+  'sector-production-depth.ts',
   'chunk-exports.ts',
 ];
 
