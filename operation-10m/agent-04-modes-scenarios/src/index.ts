@@ -32,4 +32,5 @@ export * from './save-format-subject.js';
 export * from './save-format-witness.js';
 export * from './save-format-tribunal.js';
 export * from './save-format-indictment.js';
+export * from './save-format-appeal.js';
 export * from './scenario-campaign-planner.js';

@@ -147,6 +147,7 @@ export function attachRelaySessionToState(
     witnessSession: null,
     tribunalSession: null,
     indictmentSession: null,
+    appealSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };

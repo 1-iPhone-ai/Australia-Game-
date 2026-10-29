@@ -77,6 +77,11 @@ import {
   sanitizeIndictmentSession,
 } from './save-format-indictment.js';
 import {
+  getAppealScenarioAtCursor,
+  appealSessionSummary,
+  sanitizeAppealSession,
+} from './save-format-appeal.js';
+import {
   getSiegeScenarioAtCursor,
   siegeSessionSummary,
   sanitizeSiegeSession,
@@ -101,6 +106,7 @@ import type {
   O10mWitnessPhase,
   O10mTribunalPhase,
   O10mIndictmentPhase,
+  O10mAppealPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -171,9 +177,31 @@ const emptyQueuePlan = {
   indictmentCursor: null as number | null,
   indictmentPhase: null as O10mIndictmentPhase | null,
   indictmentCaseWeight: null as number | null,
+  appealId: null as string | null,
+  appealCursor: null as number | null,
+  appealPhase: null as O10mAppealPhase | null,
+  appealMerit: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const appeal = sanitizeAppealSession(state.appealSession);
+  const appealScenario = getAppealScenarioAtCursor(appeal);
+  if (appeal && appeal.active && appealScenario) {
+    return {
+      kind: 'appeal_step',
+      scenarioId: appealScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      appealId: appeal.appealId,
+      appealCursor: appeal.cursor,
+      appealPhase: appeal.phaseTag,
+      appealMerit: appeal.meritScore,
+      reason: `Appeal "${appeal.label}" ${appeal.phaseTag} phase ${appeal.cursor + 1}/${appeal.scenarioIds.length} (merit ${appeal.meritScore}).`,
+    };
+  }
+
   const indictment = sanitizeIndictmentSession(state.indictmentSession);
   const indictmentScenario = getIndictmentScenarioAtCursor(indictment);
   if (indictment && indictment.active && indictmentScenario) {
@@ -562,6 +590,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   witnessActive: boolean;
   tribunalActive: boolean;
   indictmentActive: boolean;
+  appealActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -586,6 +615,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const witness = witnessSessionSummary(state);
   const tribunal = tribunalSessionSummary(state);
   const indictment = indictmentSessionSummary(state);
+  const appeal = appealSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -608,6 +638,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     witnessActive: witness.active,
     tribunalActive: tribunal.active,
     indictmentActive: indictment.active,
+    appealActive: appeal.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

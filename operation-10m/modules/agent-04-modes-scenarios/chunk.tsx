@@ -377,6 +377,7 @@ export type O10mSubjectPhase = 'intake' | 'probe' | 'verdict';
 export type O10mWitnessPhase = 'brief' | 'testimony' | 'affirm';
 export type O10mTribunalPhase = 'docket' | 'hearing' | 'seal';
 export type O10mIndictmentPhase = 'charge' | 'arraign' | 'bind';
+export type O10mAppealPhase = 'petition' | 'review' | 'grant';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -532,6 +533,17 @@ export interface O10mIndictmentSession {
   phaseTag: O10mIndictmentPhase;
 }
 
+/** Schema v22 — appeal arc with merit accrual between phases. */
+export interface O10mAppealSession {
+  appealId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  meritScore: number;
+  phaseTag: O10mAppealPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -556,6 +568,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'appeal_step'
     | 'indictment_step'
     | 'tribunal_step'
     | 'witness_step'
@@ -644,6 +657,10 @@ export interface O10mCampaignPlan {
   indictmentCursor: number | null;
   indictmentPhase: O10mIndictmentPhase | null;
   indictmentCaseWeight: number | null;
+  appealId: string | null;
+  appealCursor: number | null;
+  appealPhase: O10mAppealPhase | null;
+  appealMerit: number | null;
   reason: string;
 }
 
@@ -709,6 +726,8 @@ export interface O10mModesPersistedState {
   tribunalSession?: O10mTribunalSession | null;
   /** Schema v21 — active indictment arc (mutually exclusive with tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   indictmentSession?: O10mIndictmentSession | null;
+  /** Schema v22 — active appeal arc (mutually exclusive with indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  appealSession?: O10mAppealSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -3293,6 +3312,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Indictment finales', 'Case-weight ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_appeal_petition_filing',
+    title: 'Appeal Petition Filing',
+    description: 'Open an appeal arc with low-pressure merit pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100475,
+    startingMoney: 2900,
+    startingRegions: ['ACT', 'TAS'],
+    badgeId: 'badge_o10m_appeal_petition_filing',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100475),
+      o10mAppealPetitionFiling: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_apf_obj_day',
+        label: 'Petition Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Appeal arcs', 'Merit pacing', 'Petition phase'],
+  },
+  {
+    id: 'o10m_appeal_review_chamber',
+    title: 'Appeal Review Chamber',
+    description: 'Mid-appeal review with accrued merit bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100476,
+    startingMoney: 3450,
+    startingRegions: ['NSW', 'QLD'],
+    startingStanding: { NSW: 55, QLD: 53 },
+    badgeId: 'badge_o10m_appeal_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100476),
+      regionalStandingEnabled: true,
+      o10mAppealReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_arc_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 61',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 61,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Merit carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_appeal_grant_finale',
+    title: 'Appeal Grant Finale',
+    description: 'Finale grant stage — net worth gate with full merit bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100477,
+    startingMoney: 3900,
+    startingRegions: ['WA', 'NT', 'SA'],
+    badgeId: 'badge_o10m_appeal_grant_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100477),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mAppealGrantFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_agf_obj_net',
+        label: 'Grant Net Worth',
+        description: 'Reach $17,600 net worth',
+        targetType: 'netWorth',
+        targetValue: 17600,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Appeal finales', 'Merit ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -4489,6 +4605,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_appeal_route',
+    title: 'Appeal Route',
+    description:
+      'Three-phase appeal arc with merit accrual between legs — round-22 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_appeal_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_appeal_petition_filing',
+        title: 'Petition Filing',
+        narrativeBridge: 'File petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 320 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_appeal_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { TAS: 6, NSW: 5 },
+          forcedSettingsPatch: { o10mAppealMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_appeal_grant_finale',
+        title: 'Grant Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainAppealRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -5315,7 +5465,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 21;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 22;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -5435,6 +5585,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     witnessSession: null,
     tribunalSession: null,
     indictmentSession: null,
+    appealSession: null,
   };
 }
 
@@ -5475,6 +5626,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       witnessSession: merged.witnessSession ?? null,
       tribunalSession: merged.tribunalSession ?? null,
       indictmentSession: merged.indictmentSession ?? null,
+      appealSession: merged.appealSession ?? null,
     };
     return upgraded;
   }
@@ -5539,6 +5691,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     witnessSession: sanitizeWitnessSession(o.witnessSession),
     tribunalSession: sanitizeTribunalSession(o.tribunalSession),
     indictmentSession: sanitizeIndictmentSession(o.indictmentSession),
+    appealSession: sanitizeAppealSession(o.appealSession),
   };
 }
 
@@ -5694,6 +5847,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Indictment cursor out of range; clamp on next sanitize.');
   }
 
+  const appeal = sanitizeAppealSession(state.appealSession);
+  if (state.appealSession && !appeal) {
+    warnings.push('Appeal session failed sanitization; planner will ignore it.');
+  } else if (appeal && appeal.cursor >= appeal.scenarioIds.length) {
+    warnings.push('Appeal cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -5818,6 +5978,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'witnessSession',
   'tribunalSession',
   'indictmentSession',
+  'appealSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -6337,6 +6498,7 @@ export function attachMarathonQueueToState(
     witnessSession: null,
     tribunalSession: null,
     indictmentSession: null,
+    appealSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -6454,6 +6616,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceAppealSessionAfterRun(next, run);
   next = advanceIndictmentSessionAfterRun(next, run);
   next = advanceTribunalSessionAfterRun(next, run);
   next = advanceWitnessSessionAfterRun(next, run);
@@ -6612,6 +6775,7 @@ export function attachGauntletSessionToState(
     witnessSession: null,
     tribunalSession: null,
     indictmentSession: null,
+    appealSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -6855,6 +7019,7 @@ export function attachRelaySessionToState(
     witnessSession: null,
     tribunalSession: null,
     indictmentSession: null,
+    appealSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -7058,6 +7223,7 @@ export function attachCircuitSessionToState(
     witnessSession: null,
     tribunalSession: null,
     indictmentSession: null,
+    appealSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -7279,6 +7445,7 @@ export function attachExpeditionSessionToState(
     witnessSession: null,
     tribunalSession: null,
     indictmentSession: null,
+    appealSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -7498,6 +7665,7 @@ export function attachOdysseySessionToState(
     witnessSession: null,
     tribunalSession: null,
     indictmentSession: null,
+    appealSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -7716,6 +7884,7 @@ export function attachPilgrimageSessionToState(
     witnessSession: null,
     tribunalSession: null,
     indictmentSession: null,
+    appealSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -7935,6 +8104,7 @@ export function attachCaravanSessionToState(
     witnessSession: null,
     tribunalSession: null,
     indictmentSession: null,
+    appealSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -8148,6 +8318,7 @@ export function attachVoyageSessionToState(
     witnessSession: null,
     tribunalSession: null,
     indictmentSession: null,
+    appealSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -8361,6 +8532,7 @@ export function attachSiegeSessionToState(
     witnessSession: null,
     tribunalSession: null,
     indictmentSession: null,
+    appealSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -8574,6 +8746,7 @@ export function attachConvoySessionToState(
     witnessSession: null,
     tribunalSession: null,
     indictmentSession: null,
+    appealSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -8787,6 +8960,7 @@ export function attachEscortSessionToState(
     witnessSession: null,
     tribunalSession: null,
     indictmentSession: null,
+    appealSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -9009,6 +9183,7 @@ export function attachExtractionSessionToState(
     witnessSession: null,
     tribunalSession: null,
     indictmentSession: null,
+    appealSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -9239,6 +9414,7 @@ export function attachSubjectSessionToState(
     witnessSession: null,
     tribunalSession: null,
     indictmentSession: null,
+    appealSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -9469,6 +9645,7 @@ export function attachWitnessSessionToState(
     witnessSession: sanitized,
     tribunalSession: null,
     indictmentSession: null,
+    appealSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -9699,6 +9876,7 @@ export function attachTribunalSessionToState(
     ...state,
     tribunalSession: sanitized,
     indictmentSession: null,
+    appealSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -9929,6 +10107,7 @@ export function attachIndictmentSessionToState(
   return {
     ...state,
     indictmentSession: sanitized,
+    appealSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -10041,6 +10220,238 @@ export function indictmentSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-appeal.ts ---
+export const O10M_APPEAL_SCENARIO_CAP = 6;
+export const O10M_APPEAL_MERIT_SCORE_CAP = 780;
+export const O10M_APPEAL_MERIT_SCORE_MONEY_CAP = 860;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mAppealPhase>(['petition', 'review', 'grant']);
+
+export function unlockTokenForAppealId(appealId: string): string | null {
+  if (!appealId.startsWith('o10m_appeal_')) return null;
+  return `o10m_unlock_${appealId.slice('o10m_appeal_'.length)}`;
+}
+
+export function appealPhaseForCursor(cursor: number, scenarioCount: number): O10mAppealPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'grant';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'petition';
+}
+
+export function appealMeritScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(106, Math.max(16, Math.floor(run.playerNetWorth / 176) + standingSlice));
+}
+
+export function sanitizeAppealSession(raw: unknown): O10mAppealSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const appealId =
+    typeof o.appealId === 'string' && o.appealId.startsWith('o10m_appeal_') ? o.appealId : null;
+  if (!appealId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : appealId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_APPEAL_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const meritScore = Math.min(
+    O10M_APPEAL_MERIT_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.meritScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mAppealPhase)
+      ? (phaseRaw as O10mAppealPhase)
+      : appealPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    appealId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    meritScore,
+    phaseTag,
+  };
+}
+
+export function createAppealSession(params: {
+  appealId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mAppealSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.appealId.startsWith('o10m_appeal_')) {
+    return { session: null, warnings: ['Appeal ids must start with o10m_appeal_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_APPEAL_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Appeal arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      appealId: params.appealId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      meritScore: 0,
+      phaseTag: appealPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachAppealSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mAppealSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeAppealSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    appealSession: sanitized,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearAppealSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, appealSession: null };
+}
+
+export function getAppealScenarioAtCursor(
+  session: O10mAppealSession | null | undefined,
+): string | null {
+  const appeal = sanitizeAppealSession(session);
+  if (!appeal || !appeal.active) return null;
+  return appeal.scenarioIds[appeal.cursor] ?? null;
+}
+
+export function buildAppealScenarioStartOverrides(
+  session: O10mAppealSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const appeal = sanitizeAppealSession(session);
+  if (!appeal) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_APPEAL_MERIT_SCORE_MONEY_CAP,
+    Math.floor(appeal.meritScore * 0.87),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveAppealId: appeal.appealId,
+      o10mActiveAppealStep: appeal.cursor,
+      o10mActiveAppealPhase: appeal.phaseTag,
+      o10mAppealMeritScore: appeal.meritScore,
+    },
+  };
+}
+
+export function advanceAppealSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeAppealSession(state.appealSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const meritScore = Math.min(
+    O10M_APPEAL_MERIT_SCORE_CAP,
+    session.meritScore + appealMeritScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      appealSession: {
+        ...session,
+        cursor,
+        meritScore,
+        phaseTag: appealPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForAppealId(session.appealId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    appealSession: { ...session, active: false, meritScore, phaseTag: 'grant' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function appealSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  meritScore: number;
+  phase: O10mAppealPhase | null;
+} {
+  const session = sanitizeAppealSession(state.appealSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    meritScore: session?.meritScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -10107,9 +10518,31 @@ const emptyQueuePlan = {
   indictmentCursor: null as number | null,
   indictmentPhase: null as O10mIndictmentPhase | null,
   indictmentCaseWeight: null as number | null,
+  appealId: null as string | null,
+  appealCursor: null as number | null,
+  appealPhase: null as O10mAppealPhase | null,
+  appealMerit: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const appeal = sanitizeAppealSession(state.appealSession);
+  const appealScenario = getAppealScenarioAtCursor(appeal);
+  if (appeal && appeal.active && appealScenario) {
+    return {
+      kind: 'appeal_step',
+      scenarioId: appealScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      appealId: appeal.appealId,
+      appealCursor: appeal.cursor,
+      appealPhase: appeal.phaseTag,
+      appealMerit: appeal.meritScore,
+      reason: `Appeal "${appeal.label}" ${appeal.phaseTag} phase ${appeal.cursor + 1}/${appeal.scenarioIds.length} (merit ${appeal.meritScore}).`,
+    };
+  }
+
   const indictment = sanitizeIndictmentSession(state.indictmentSession);
   const indictmentScenario = getIndictmentScenarioAtCursor(indictment);
   if (indictment && indictment.active && indictmentScenario) {
@@ -10498,6 +10931,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   witnessActive: boolean;
   tribunalActive: boolean;
   indictmentActive: boolean;
+  appealActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -10522,6 +10956,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const witness = witnessSessionSummary(state);
   const tribunal = tribunalSessionSummary(state);
   const indictment = indictmentSessionSummary(state);
+  const appeal = appealSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -10544,6 +10979,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     witnessActive: witness.active,
     tribunalActive: tribunal.active,
     indictmentActive: indictment.active,
+    appealActive: appeal.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -10562,7 +10998,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 22, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 23, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -10726,16 +11162,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const indictmentState = indictment ? attachIndictmentSessionToState(createEmptyO10mModesPersistedState(), indictment) : null;
   push('agent04_chunk_29', indictmentState !== null && planNextCampaignAction(indictmentState!).kind === 'indictment_step');
 
+  const appeal = createAppealSession({
+    appealId: 'o10m_appeal_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_appeal_petition_filing'],
+  }).session;
+  const appealState = appeal ? attachAppealSessionToState(createEmptyO10mModesPersistedState(), appeal) : null;
+  push('agent04_chunk_30', appealState !== null && planNextCampaignAction(appealState!).kind === 'appeal_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v22',
+  schemaVersion: 'op10m-agent04-v23',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 21,
+  saveSchemaVersion: 22,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

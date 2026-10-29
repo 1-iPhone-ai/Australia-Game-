@@ -126,6 +126,7 @@ export function attachTribunalSessionToState(
     ...state,
     tribunalSession: sanitized,
     indictmentSession: null,
+    appealSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,

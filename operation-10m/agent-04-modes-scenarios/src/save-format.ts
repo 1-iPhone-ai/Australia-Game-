@@ -21,6 +21,7 @@ import { sanitizeSubjectSession } from './save-format-subject.js';
 import { sanitizeWitnessSession } from './save-format-witness.js';
 import { sanitizeTribunalSession } from './save-format-tribunal.js';
 import { sanitizeIndictmentSession } from './save-format-indictment.js';
+import { sanitizeAppealSession } from './save-format-appeal.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -39,7 +40,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 21;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 22;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -159,6 +160,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     witnessSession: null,
     tribunalSession: null,
     indictmentSession: null,
+    appealSession: null,
   };
 }
 
@@ -199,6 +201,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       witnessSession: merged.witnessSession ?? null,
       tribunalSession: merged.tribunalSession ?? null,
       indictmentSession: merged.indictmentSession ?? null,
+      appealSession: merged.appealSession ?? null,
     };
     return upgraded;
   }
@@ -263,6 +266,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     witnessSession: sanitizeWitnessSession(o.witnessSession),
     tribunalSession: sanitizeTribunalSession(o.tribunalSession),
     indictmentSession: sanitizeIndictmentSession(o.indictmentSession),
+    appealSession: sanitizeAppealSession(o.appealSession),
   };
 }
 
@@ -416,6 +420,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Indictment session failed sanitization; planner will ignore it.');
   } else if (indictment && indictment.cursor >= indictment.scenarioIds.length) {
     warnings.push('Indictment cursor out of range; clamp on next sanitize.');
+  }
+
+  const appeal = sanitizeAppealSession(state.appealSession);
+  if (state.appealSession && !appeal) {
+    warnings.push('Appeal session failed sanitization; planner will ignore it.');
+  } else if (appeal && appeal.cursor >= appeal.scenarioIds.length) {
+    warnings.push('Appeal cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
