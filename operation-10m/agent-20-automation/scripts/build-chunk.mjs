@@ -14,7 +14,7 @@ const outDir = path.join(repoRoot, 'operation-10m/modules/agent-20-automation');
 const outFile = path.join(outDir, 'chunk.tsx');
 const manifestFile = path.join(outDir, 'module.manifest.json');
 
-const MODULE_VERSION = '10m.1.17.0-agent20';
+const MODULE_VERSION = '10m.1.18.0-agent20';
 
 const FILES = [
   'types.ts',
@@ -73,6 +73,9 @@ const FILES = [
   'automation-idle-governance-program-subject-pass.ts',
   'automation-idle-governance-program-scale-wave-rollup.ts',
   'automation-idle-governance-program-wave-closeout.ts',
+  'automation-idle-governance-program-wave-scorecard.ts',
+  'automation-idle-governance-program-wave-closeout-compare.ts',
+  'automation-idle-governance-program-wave-assembly-gate.ts',
   'index.ts',
 ];
 

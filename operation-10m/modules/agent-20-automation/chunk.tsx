@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: 0bb5be5c4f27586ba0608dd82fe6d2b6093b6622b8e809dc2bad3da91eb33087
-// OP10M_MODULE_VERSION: 10m.1.17.0-agent20
+// OP10M_MANIFEST_SHA256: 55885baff77fce2e83af8bc95325a0b14c31f76443af79b6dc748599bd8932c5
+// OP10M_MODULE_VERSION: 10m.1.18.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
@@ -8634,6 +8634,435 @@ export function runO10Agent20IdleGovernanceProgramWaveCloseoutSelfTests(): O10Se
 }
 
 
+// --- source: automation-idle-governance-program-wave-scorecard.ts ---
+
+export type O10IdleGovernanceProgramWaveScorecardBand = 'green' | 'amber' | 'red';
+
+export interface O10IdleGovernanceProgramWaveScorecardResult {
+  schema: '10m.agent20.idle-governance-program-wave-scorecard.v1';
+  waveRound: number;
+  clearance: O10IdleGovernanceProgramWaveCloseoutResult['subject']['clearance'];
+  waveRecommendation: string;
+  meanComplianceScore: number;
+  scorecardBand: O10IdleGovernanceProgramWaveScorecardBand;
+  assemblyReady: boolean;
+  scorecardMarkdown: string;
+  summaryLine: string;
+}
+
+function bandFromCloseout(closeout: O10IdleGovernanceProgramWaveCloseoutResult): O10IdleGovernanceProgramWaveScorecardBand {
+  const rec = closeout.scaleWaveRollup.waveRecommendation;
+  if (rec === 'halt_scale_wave_escalate') return 'red';
+  if (rec === 'slow_scale_wave_remediate' || closeout.subject.clearance === 'conditional') return 'amber';
+  if (closeout.subject.clearance === 'blocked') return 'red';
+  return 'green';
+}
+
+export function buildIdleGovernanceProgramWaveScorecardMarkdown(
+  closeout: O10IdleGovernanceProgramWaveCloseoutResult,
+  band: O10IdleGovernanceProgramWaveScorecardBand,
+  assemblyReady: boolean
+): string {
+  return [
+    '# Agent 20 idle governance wave scorecard',
+    '',
+    `- wave_round=${closeout.waveRound}`,
+    `- band=${band}`,
+    `- assembly_ready=${assemblyReady}`,
+    `- ${closeout.scaleWaveRollup.summaryLine}`,
+    '',
+    closeout.closeoutMarkdown,
+  ].join('\n');
+}
+
+/** Round-18 scorecard digest from a wave closeout for assembly gating. */
+export function exportIdleGovernanceProgramWaveScorecard(
+  closeout: O10IdleGovernanceProgramWaveCloseoutResult
+): O10IdleGovernanceProgramWaveScorecardResult {
+  const waveRound = closeout.waveRound;
+  const clearance = closeout.subject.clearance;
+  const waveRecommendation = closeout.scaleWaveRollup.waveRecommendation;
+  const meanComplianceScore = closeout.scaleWaveRollup.meanComplianceScore;
+  const scorecardBand = bandFromCloseout(closeout);
+
+  const assemblyReady =
+    scorecardBand !== 'red' &&
+    waveRecommendation !== 'halt_scale_wave_escalate' &&
+    waveRecommendation !== 'run_subject_pass';
+
+  const scorecardMarkdown = buildIdleGovernanceProgramWaveScorecardMarkdown(closeout, scorecardBand, assemblyReady);
+
+  const summaryLine = [
+    'gov_program_wave_scorecard',
+    `round=${waveRound}`,
+    `band=${scorecardBand}`,
+    `ready=${assemblyReady}`,
+    `rec=${waveRecommendation}`,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-scorecard.v1',
+    waveRound,
+    clearance,
+    waveRecommendation,
+    meanComplianceScore,
+    scorecardBand,
+    assemblyReady,
+    scorecardMarkdown,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveScorecardSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const mockCloseout = (
+    clearance: 'cleared' | 'conditional' | 'blocked',
+    rec: string,
+    score: number
+  ): O10IdleGovernanceProgramWaveCloseoutResult =>
+    ({
+      schema: '10m.agent20.idle-governance-program-wave-closeout.v1',
+      waveRound: 18,
+      closeoutMarkdown: 'closeout',
+      summaryLine: 'closeout',
+      subject: {
+        clearance,
+        summaryLine: 'subj',
+        subjectMarkdown: 'subj',
+        schema: '10m.agent20.idle-governance-program-subject-pass.v1',
+        executive: {} as O10IdleGovernanceProgramWaveCloseoutResult['subject']['executive'],
+      },
+      scaleWaveRollup: {
+        schema: '10m.agent20.idle-governance-program-scale-wave-rollup.v1',
+        waveRound: 18,
+        subjectPassCount: 1,
+        clearedCount: clearance === 'cleared' ? 1 : 0,
+        conditionalCount: clearance === 'conditional' ? 1 : 0,
+        blockedCount: clearance === 'blocked' ? 1 : 0,
+        meanComplianceScore: score,
+        waveRecommendation: rec,
+        summaryLine: 'rollup',
+      },
+    }) satisfies O10IdleGovernanceProgramWaveCloseoutResult;
+
+  const green = exportIdleGovernanceProgramWaveScorecard(
+    mockCloseout('cleared', 'advance_scale_wave', 90)
+  );
+  push(
+    'gov_prog_wave_score_green',
+    'advance closeout yields green scorecard ready for assembly',
+    green.scorecardBand === 'green' && green.assemblyReady === true
+  );
+
+  const red = exportIdleGovernanceProgramWaveScorecard(
+    mockCloseout('blocked', 'halt_scale_wave_escalate', 12)
+  );
+  push(
+    'gov_prog_wave_score_red',
+    'halt recommendation yields red scorecard not assembly ready',
+    red.scorecardBand === 'red' && red.assemblyReady === false
+  );
+
+  push(
+    'gov_prog_wave_score_md',
+    'scorecard markdown includes wave scorecard header',
+    green.scorecardMarkdown.includes('wave scorecard') && green.scorecardMarkdown.includes('band=green')
+  );
+
+  push(
+    'gov_prog_wave_score_schema',
+    'wave scorecard schema marker',
+    green.schema === '10m.agent20.idle-governance-program-wave-scorecard.v1'
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-wave-closeout-compare.ts ---
+
+export interface O10IdleGovernanceProgramWaveCloseoutCompareResult {
+  schema: '10m.agent20.idle-governance-program-wave-closeout-compare.v1';
+  waveRound: number;
+  parityOk: boolean;
+  mismatches: string[];
+  summaryLine: string;
+}
+
+function compareCloseoutFields(
+  baseline: O10IdleGovernanceProgramWaveCloseoutResult,
+  candidate: O10IdleGovernanceProgramWaveCloseoutResult
+): string[] {
+  const mismatches: string[] = [];
+  if (baseline.waveRound !== candidate.waveRound) {
+    mismatches.push(`wave_round ${baseline.waveRound} vs ${candidate.waveRound}`);
+  }
+  if (baseline.subject.clearance !== candidate.subject.clearance) {
+    mismatches.push(
+      `clearance ${baseline.subject.clearance} vs ${candidate.subject.clearance}`
+    );
+  }
+  if (baseline.scaleWaveRollup.waveRecommendation !== candidate.scaleWaveRollup.waveRecommendation) {
+    mismatches.push(
+      `rec ${baseline.scaleWaveRollup.waveRecommendation} vs ${candidate.scaleWaveRollup.waveRecommendation}`
+    );
+  }
+  const scoreDelta = Math.abs(
+    baseline.scaleWaveRollup.meanComplianceScore - candidate.scaleWaveRollup.meanComplianceScore
+  );
+  if (scoreDelta > 0.001) {
+    mismatches.push(`mean_score_delta ${scoreDelta.toFixed(4)}`);
+  }
+  if (baseline.scaleWaveRollup.subjectPassCount !== candidate.scaleWaveRollup.subjectPassCount) {
+    mismatches.push('subject_pass_count');
+  }
+  return mismatches;
+}
+
+/** Round-18 twin closeout regression compare for deterministic wave exports. */
+export function compareIdleGovernanceProgramWaveCloseouts(
+  baseline: O10IdleGovernanceProgramWaveCloseoutResult,
+  candidate: O10IdleGovernanceProgramWaveCloseoutResult
+): O10IdleGovernanceProgramWaveCloseoutCompareResult {
+  const mismatches = compareCloseoutFields(baseline, candidate);
+  const waveRound = baseline.waveRound;
+  const parityOk = mismatches.length === 0;
+
+  const summaryLine = [
+    'gov_program_wave_closeout_compare',
+    `round=${waveRound}`,
+    `parity=${parityOk}`,
+    `mismatches=${mismatches.length}`,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-closeout-compare.v1',
+    waveRound,
+    parityOk,
+    mismatches,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveCloseoutCompareSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const twin = (): O10IdleGovernanceProgramWaveCloseoutResult => ({
+    schema: '10m.agent20.idle-governance-program-wave-closeout.v1',
+    waveRound: 18,
+    closeoutMarkdown: 'md',
+    summaryLine: 'sum',
+    subject: {
+      schema: '10m.agent20.idle-governance-program-subject-pass.v1',
+      clearance: 'cleared',
+      subjectMarkdown: 's',
+      summaryLine: 's',
+      executive: {} as O10IdleGovernanceProgramWaveCloseoutResult['subject']['executive'],
+    },
+    scaleWaveRollup: {
+      schema: '10m.agent20.idle-governance-program-scale-wave-rollup.v1',
+      waveRound: 18,
+      subjectPassCount: 1,
+      clearedCount: 1,
+      conditionalCount: 0,
+      blockedCount: 0,
+      meanComplianceScore: 84.5,
+      waveRecommendation: 'advance_scale_wave',
+      summaryLine: 'r',
+    },
+  });
+
+  const a = twin();
+  const b = twin();
+  const ok = compareIdleGovernanceProgramWaveCloseouts(a, b);
+  push('gov_prog_closeout_cmp_parity', 'identical closeouts report parity', ok.parityOk === true);
+
+  const c = { ...twin(), subject: { ...twin().subject, clearance: 'blocked' as const } };
+  const bad = compareIdleGovernanceProgramWaveCloseouts(a, c);
+  push(
+    'gov_prog_closeout_cmp_mismatch',
+    'clearance drift surfaces mismatches',
+    bad.parityOk === false && bad.mismatches.some(m => m.startsWith('clearance'))
+  );
+
+  push(
+    'gov_prog_closeout_cmp_schema',
+    'closeout compare schema marker',
+    ok.schema === '10m.agent20.idle-governance-program-wave-closeout-compare.v1'
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-wave-assembly-gate.ts ---
+  createEmptyIdleGovernanceProgramRegistry,
+  type O10IdleGovernanceProgramRegistry,
+} from './automation-idle-governance-program-registry.js';
+
+export interface O10IdleGovernanceProgramWaveAssemblyGateResult {
+  schema: '10m.agent20.idle-governance-program-wave-assembly-gate.v1';
+  waveRound: number;
+  gateOpen: boolean;
+  primaryCloseout: ReturnType<typeof runIdleGovernanceProgramWaveCloseout>;
+  twinCloseout: ReturnType<typeof runIdleGovernanceProgramWaveCloseout>;
+  compare: ReturnType<typeof compareIdleGovernanceProgramWaveCloseouts>;
+  scorecard: ReturnType<typeof exportIdleGovernanceProgramWaveScorecard>;
+  gateMarkdown: string;
+  summaryLine: string;
+}
+
+export function buildIdleGovernanceProgramWaveAssemblyGateMarkdown(
+  gateOpen: boolean,
+  scorecard: ReturnType<typeof exportIdleGovernanceProgramWaveScorecard>,
+  compare: ReturnType<typeof compareIdleGovernanceProgramWaveCloseouts>
+): string {
+  return [
+    '# Agent 20 idle governance wave assembly gate',
+    '',
+    `- gate_open=${gateOpen}`,
+    `- ${compare.summaryLine}`,
+    '',
+    scorecard.scorecardMarkdown,
+  ].join('\n');
+}
+
+/** Round-18 assembly gate: twin closeout parity + scorecard readiness for the wave round. */
+export function gateIdleGovernanceProgramWaveAssembly(
+  spec: O10IdleOpsWindowSpec,
+  rule: PortableHumanAutomationRule,
+  startTurn: number,
+  requestedCycles: number,
+  waveRound: number,
+  priorRegistry: O10IdleGovernanceProgramRegistry = createEmptyIdleGovernanceProgramRegistry()
+): O10IdleGovernanceProgramWaveAssemblyGateResult {
+  const primaryCloseout = runIdleGovernanceProgramWaveCloseout(
+    spec,
+    rule,
+    startTurn,
+    requestedCycles,
+    waveRound,
+    priorRegistry
+  );
+  const twinCloseout = runIdleGovernanceProgramWaveCloseout(
+    spec,
+    rule,
+    startTurn,
+    requestedCycles,
+    waveRound,
+    priorRegistry
+  );
+  const compare = compareIdleGovernanceProgramWaveCloseouts(primaryCloseout, twinCloseout);
+  const scorecard = exportIdleGovernanceProgramWaveScorecard(primaryCloseout);
+
+  const gateOpen = compare.parityOk && scorecard.assemblyReady;
+  const gateMarkdown = buildIdleGovernanceProgramWaveAssemblyGateMarkdown(gateOpen, scorecard, compare);
+
+  const summaryLine = [
+    'gov_program_wave_assembly_gate',
+    `round=${waveRound}`,
+    `open=${gateOpen}`,
+    compare.summaryLine,
+    scorecard.summaryLine,
+  ].join(' | ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-assembly-gate.v1',
+    waveRound,
+    gateOpen,
+    primaryCloseout,
+    twinCloseout,
+    compare,
+    scorecard,
+    gateMarkdown,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveAssemblyGateSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const sampleRule: PortableHumanAutomationRule = {
+    id: 'gate1',
+    name: 'Wave assembly gate',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 5,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 10, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+  };
+
+  const calmSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 2,
+    humanCommittedEvery: 1,
+    idleMsStart: 0,
+    idleMsStep: 0,
+    consecutiveIdleStart: 0,
+  };
+
+  const gate = gateIdleGovernanceProgramWaveAssembly(calmSpec, sampleRule, 1, 3, 18);
+  push(
+    'gov_prog_asm_gate_calm',
+    'calm spec opens assembly gate with twin parity',
+    gate.gateOpen === true &&
+      gate.compare.parityOk === true &&
+      gate.waveRound === 18 &&
+      gate.gateMarkdown.includes('assembly gate')
+  );
+
+  const gate2 = gateIdleGovernanceProgramWaveAssembly(
+    calmSpec,
+    sampleRule,
+    3,
+    2,
+    18,
+    gate.primaryCloseout.subject.executive.director.operations.registry
+  );
+  push(
+    'gov_prog_asm_gate_chain',
+    'chained gate accumulates registry on primary closeout',
+    gate2.primaryCloseout.subject.executive.director.registryRollup.entryCount === 2 &&
+      gate2.summaryLine.includes('gov_program_wave_assembly_gate')
+  );
+
+  push(
+    'gov_prog_asm_gate_schema',
+    'wave assembly gate schema marker',
+    gate.schema === '10m.agent20.idle-governance-program-wave-assembly-gate.v1'
+  );
+
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -8720,6 +9149,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceProgramSubjectPassSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramScaleWaveRollupSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveCloseoutSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveScorecardSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveCloseoutCompareSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveAssemblyGateSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }
