@@ -79,16 +79,11 @@ export function reconcileHorizonThroughTurns(
   fromTurn: number,
   toTurn: number,
 ): HorizonReconcileReport {
+  const from = Math.max(1, Math.floor(fromTurn));
+  const to = Math.max(from, Math.floor(toTurn));
   const rows: HorizonReconcileRow[] = [];
-  for (let t = fromTurn; t <= toTurn; t += 1) {
-    rows.push({
-      turnIndex: t,
-      plannedEffectIds: plannedIdsForTurn(planEffectsThroughTurn(initial, t), t),
-      actualEffectIds: [],
-      missing: [],
-      extra: [],
-      ok: true,
-    });
+  for (let t = from; t <= to; t += 1) {
+    rows.push(reconcileHorizonForTurn(initial, final, t));
   }
   const ok = rows.every((r) => r.ok);
   return { ok, rows };

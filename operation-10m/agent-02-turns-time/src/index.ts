@@ -19,4 +19,7 @@ export * from './advance-budget.js';
 export * from './external-day-plan.js';
 export * from './turn-pipeline-report.js';
 export * from './batch-advance.js';
+export * from './external-day-plan-window.js';
+export * from './pipeline-stage-coverage.js';
+export * from './batch-pipeline-report.js';
 export * from './engine.js';

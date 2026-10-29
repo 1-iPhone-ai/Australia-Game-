@@ -25,8 +25,11 @@ npm run bundle:chunk
 | `src/pause-resume.ts` | Pause/resume state and blocked-advance diagnostics |
 | `src/pipeline-stages.ts` | OP10M stage registry (XS-01) |
 | `src/external-day-plan.ts` | Agent 05 narrative plan merge (XS-02) |
+| `src/external-day-plan-window.ts` | Multi-turn XS-02 day plan window merge |
 | `src/turn-pipeline-report.ts` | Pipeline digest + report for Agent 25 |
+| `src/pipeline-stage-coverage.ts` | Registered vs observed pipeline stage hits |
 | `src/batch-advance.ts` | Multi-step advance with budget cap |
+| `src/batch-pipeline-report.ts` | Batch advance + pipeline digest rollup |
 | `src/engine.ts` | Composed `TurnTimeEngine` API |
 | `tests/` | Proves no duplicate or skipped scheduled effects |
 

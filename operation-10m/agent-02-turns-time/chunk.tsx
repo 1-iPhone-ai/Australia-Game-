@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
 // @ts-nocheck
-// content-sha256-prefix: af1857f624bf79a2
+// content-sha256-prefix: 4681aa137f6bb18c
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -1094,16 +1094,11 @@ export function reconcileHorizonThroughTurns(
   fromTurn: number,
   toTurn: number,
 ): HorizonReconcileReport {
+  const from = Math.max(1, Math.floor(fromTurn));
+  const to = Math.max(from, Math.floor(toTurn));
   const rows: HorizonReconcileRow[] = [];
-  for (let t = fromTurn; t <= toTurn; t += 1) {
-    rows.push({
-      turnIndex: t,
-      plannedEffectIds: plannedIdsForTurn(planEffectsThroughTurn(initial, t), t),
-      actualEffectIds: [],
-      missing: [],
-      extra: [],
-      ok: true,
-    });
+  for (let t = from; t <= to; t += 1) {
+    rows.push(reconcileHorizonForTurn(initial, final, t));
   }
   const ok = rows.every((r) => r.ok);
   return { ok, rows };
@@ -1209,6 +1204,82 @@ export function mergeExternalDayPlan(
     externalOnly,
     scheduledOnly,
     ok,
+  };
+}
+
+// --- src/external-day-plan-window.ts ---
+
+export interface ExternalDayPlanWindowMergeResult {
+  fromTurn: number;
+  toTurn: number;
+  turnResults: ExternalDayPlanMergeResult[];
+  ok: boolean;
+  failingTurns: number[];
+}
+
+function normalizeTurnWindow(fromTurn: number, toTurn: number): { from: number; to: number } {
+  const from = Math.max(1, Math.floor(fromTurn));
+  const to = Math.max(from, Math.floor(toTurn));
+  return { from, to };
+}
+
+/**
+ * XS-02 extension: reconcile Agent 05 narrative ids across a turn window.
+ */
+export function mergeExternalDayPlanWindow(
+  snapshot: TurnTimeSnapshot,
+  fromTurn: number,
+  toTurn: number,
+  externalByTurn: Readonly<Record<number, readonly string[]>>,
+  strict = true,
+): ExternalDayPlanWindowMergeResult {
+  const { from, to } = normalizeTurnWindow(fromTurn, toTurn);
+  const turnResults: ExternalDayPlanMergeResult[] = [];
+  const failingTurns: number[] = [];
+
+  for (let turn = from; turn <= to; turn += 1) {
+    const externalEventIds = externalByTurn[turn] ?? [];
+    const row = mergeExternalDayPlan(snapshot, turn, [...externalEventIds], strict);
+    turnResults.push(row);
+    if (!row.ok) failingTurns.push(turn);
+  }
+
+  return {
+    fromTurn: from,
+    toTurn: to,
+    turnResults,
+    ok: failingTurns.length === 0,
+    failingTurns,
+  };
+}
+
+// --- src/pipeline-stage-coverage.ts ---
+
+export interface PipelineStageCoverageReport {
+  registeredStageCount: number;
+  observedStageIds: Op10mAgent02PipelineStageId[];
+  missingStageIds: Op10mAgent02PipelineStageId[];
+  hitCounts: Record<Op10mAgent02PipelineStageId, number>;
+}
+
+export function computePipelineStageCoverage(snapshot: TurnTimeSnapshot): PipelineStageCoverageReport {
+  const registered = listRegisteredPipelineStageIds();
+  const hitCounts = Object.fromEntries(
+    registered.map((id) => [id, 0]),
+  ) as Record<Op10mAgent02PipelineStageId, number>;
+
+  for (const hit of derivePipelineStageHits(snapshot.trace)) {
+    hitCounts[hit.stageId] = (hitCounts[hit.stageId] ?? 0) + 1;
+  }
+
+  const observedStageIds = registered.filter((id) => (hitCounts[id] ?? 0) > 0);
+  const missingStageIds = registered.filter((id) => (hitCounts[id] ?? 0) === 0);
+
+  return {
+    registeredStageCount: registered.length,
+    observedStageIds,
+    missingStageIds,
+    hitCounts,
   };
 }
 
@@ -1718,6 +1789,37 @@ export class TurnTimeEngine {
     return mergeExternalDayPlan(this.snapshot(), turnIndex, externalEventIds, strict);
   }
 
+  mergeExternalDayPlanWindow(
+    fromTurn: number,
+    toTurn: number,
+    externalByTurn: Readonly<Record<number, readonly string[]>>,
+    strict = true,
+  ): ExternalDayPlanWindowMergeResult {
+    return mergeExternalDayPlanWindow(this.snapshot(), fromTurn, toTurn, externalByTurn, strict);
+  }
+
+  getPipelineStageCoverage(): PipelineStageCoverageReport {
+    return computePipelineStageCoverage(this.snapshot());
+  }
+
+  buildBatchAdvancePipelineReport(
+    before: TurnTimeSnapshot,
+    batch: BatchAdvanceResult,
+  ): BatchAdvancePipelineReport {
+    return buildBatchAdvancePipelineReport(before, this.snapshot(), batch);
+  }
+
+  stepTurnsWithBudgetPipelineReport(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+  ): BatchAdvanceWithPipelineReport {
+    return stepTurnsWithBudgetPipelineReport(this, maxSteps, budget);
+  }
+
+  stepTurnsWithBudget(maxSteps: number, budget: TurnAdvanceBudgetState): BatchAdvanceResult {
+    return stepTurnsWithBudget(this, maxSteps, budget);
+  }
+
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {
     return buildAgent02TurnPipelineReport(this.snapshot(), before);
   }
@@ -1999,6 +2101,8 @@ export interface BatchAdvanceResult {
   budget: TurnAdvanceBudgetState;
   completed: number;
   stoppedReason?: string;
+  /** Per successful stepFullTurn, horizon plan vs actual for that turn. */
+  horizonReconcileOk: boolean[];
 }
 
 /**
@@ -2012,24 +2116,97 @@ export function stepTurnsWithBudget(
 ): BatchAdvanceResult {
   const cap = Math.max(0, Math.floor(maxSteps));
   const steps: StepTurnResult[] = [];
+  const horizonReconcileOk: boolean[] = [];
   let currentBudget = budget;
   let completed = 0;
 
   for (let i = 0; i < cap; i += 1) {
     const consume = tryConsumeTurnAdvanceBudget(currentBudget, 1);
     if (!consume.allowed) {
-      return { steps, budget: currentBudget, completed, stoppedReason: consume.detail };
+      return {
+        steps,
+        budget: currentBudget,
+        completed,
+        stoppedReason: consume.detail,
+        horizonReconcileOk,
+      };
     }
+    const snapBefore = engine.snapshot();
     const step = engine.stepFullTurn();
     steps.push(step);
     currentBudget = consume.state;
     completed += 1;
+    if (!step.blockedByPause) {
+      horizonReconcileOk.push(reconcileLastStepHorizon(snapBefore, engine.snapshot()).ok);
+    }
     if (step.blockedByPause) {
-      return { steps, budget: currentBudget, completed, stoppedReason: 'paused' };
+      return {
+        steps,
+        budget: currentBudget,
+        completed,
+        stoppedReason: 'paused',
+        horizonReconcileOk,
+      };
     }
   }
 
-  return { steps, budget: currentBudget, completed };
+  return { steps, budget: currentBudget, completed, horizonReconcileOk };
+}
+
+// --- src/batch-pipeline-report.ts ---
+
+export interface BatchAdvancePipelineReport {
+  startedTurnIndex: number;
+  endedTurnIndex: number;
+  stepsCompleted: number;
+  stoppedReason?: string;
+  finalPipelineDigest: string;
+  incompleteTurns: number[];
+  horizonReconcileOk: boolean[];
+  newStageIdsByStep: Op10mAgent02PipelineStageId[][];
+  allHorizonReconcileOk: boolean;
+}
+
+export function buildBatchAdvancePipelineReport(
+  before: TurnTimeSnapshot,
+  after: TurnTimeSnapshot,
+  batch: BatchAdvanceResult,
+): BatchAdvancePipelineReport {
+  const finalReport = buildAgent02TurnPipelineReport(after, before);
+  const newStageIdsByStep = batch.steps.map((step) => {
+    const hits = derivePipelineStageHits(step.traceEntries);
+    const unique = [...new Set(hits.map((h) => h.stageId))];
+    return unique.sort((a, b) => a.localeCompare(b));
+  });
+
+  return {
+    startedTurnIndex: before.clock.turnIndex,
+    endedTurnIndex: after.clock.turnIndex,
+    stepsCompleted: batch.completed,
+    stoppedReason: batch.stoppedReason,
+    finalPipelineDigest: finalReport.pipelineDigest,
+    incompleteTurns: finalReport.incompleteTurns,
+    horizonReconcileOk: batch.horizonReconcileOk ?? [],
+    newStageIdsByStep,
+    allHorizonReconcileOk: (batch.horizonReconcileOk ?? []).every(Boolean),
+  };
+}
+
+export interface BatchAdvanceWithPipelineReport {
+  batch: BatchAdvanceResult;
+  report: BatchAdvancePipelineReport;
+}
+
+export function stepTurnsWithBudgetPipelineReport(
+  engine: TurnTimeEngine,
+  maxSteps: number,
+  budget: TurnAdvanceBudgetState,
+): BatchAdvanceWithPipelineReport {
+  const before = engine.snapshot();
+  const batch = stepTurnsWithBudget(engine, maxSteps, budget);
+  const after = engine.snapshot();
+  const report = buildBatchAdvancePipelineReport(before, after, batch);
+  return { batch, report };
 }
 
 // --- src/fast-forward.ts ---
@@ -2182,7 +2359,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '1.5.0';
+export const AGENT_02_MODULE_VERSION = '1.6.0';
 
 
 
@@ -2341,6 +2518,22 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
     name: 'external day plan merge ok when aligned',
 
     passed: dayPlan.mergeExternalDayPlan(1, ['xs_ev']).ok,
+
+  });
+
+  const windowPlan = new TurnTimeEngine();
+
+  windowPlan.scheduleEvent({ id: 'w1', dueTurn: 1, kind: 'w' });
+
+  windowPlan.scheduleEvent({ id: 'w2', dueTurn: 2, kind: 'w' });
+
+  results.push({
+
+    id: 'agent02_day_plan_window',
+
+    name: 'external day plan window merge ok when aligned',
+
+    passed: windowPlan.mergeExternalDayPlanWindow(1, 2, { 1: ['w1'], 2: ['w2'] }).ok,
 
   });
 

@@ -53,10 +53,28 @@ import {
 import { reconcileLastStepHorizon, type HorizonReconcileRow } from './plan-actual-reconcile.js';
 import { mergeExternalDayPlan, type ExternalDayPlanMergeResult } from './external-day-plan.js';
 import {
+  mergeExternalDayPlanWindow,
+  type ExternalDayPlanWindowMergeResult,
+} from './external-day-plan-window.js';
+import {
   buildAgent02TurnPipelineReport,
   computeTurnPipelineDigest,
   type Agent02TurnPipelineReport,
 } from './turn-pipeline-report.js';
+import {
+  buildBatchAdvancePipelineReport,
+  stepTurnsWithBudgetPipelineReport,
+  type BatchAdvancePipelineReport,
+  type BatchAdvanceWithPipelineReport,
+} from './batch-pipeline-report.js';
+import {
+  computePipelineStageCoverage,
+  type PipelineStageCoverageReport,
+} from './pipeline-stage-coverage.js';
+import {
+  stepTurnsWithBudget,
+  type BatchAdvanceResult,
+} from './batch-advance.js';
 import {
   createInitialPauseState,
   clonePauseState,
@@ -65,6 +83,7 @@ import {
   recordBlockedAdvance,
   isTimePaused,
 } from './pause-resume.js';
+import { type TurnAdvanceBudgetState } from './advance-budget.js';
 import type {
   ConstructionProject,
   FollowUpRule,
@@ -180,6 +199,37 @@ export class TurnTimeEngine {
     strict = true,
   ): ExternalDayPlanMergeResult {
     return mergeExternalDayPlan(this.snapshot(), turnIndex, externalEventIds, strict);
+  }
+
+  mergeExternalDayPlanWindow(
+    fromTurn: number,
+    toTurn: number,
+    externalByTurn: Readonly<Record<number, readonly string[]>>,
+    strict = true,
+  ): ExternalDayPlanWindowMergeResult {
+    return mergeExternalDayPlanWindow(this.snapshot(), fromTurn, toTurn, externalByTurn, strict);
+  }
+
+  getPipelineStageCoverage(): PipelineStageCoverageReport {
+    return computePipelineStageCoverage(this.snapshot());
+  }
+
+  buildBatchAdvancePipelineReport(
+    before: TurnTimeSnapshot,
+    batch: BatchAdvanceResult,
+  ): BatchAdvancePipelineReport {
+    return buildBatchAdvancePipelineReport(before, this.snapshot(), batch);
+  }
+
+  stepTurnsWithBudgetPipelineReport(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+  ): BatchAdvanceWithPipelineReport {
+    return stepTurnsWithBudgetPipelineReport(this, maxSteps, budget);
+  }
+
+  stepTurnsWithBudget(maxSteps: number, budget: TurnAdvanceBudgetState): BatchAdvanceResult {
+    return stepTurnsWithBudget(this, maxSteps, budget);
   }
 
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {
