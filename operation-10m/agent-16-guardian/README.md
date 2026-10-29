@@ -173,3 +173,9 @@ Anchor: canonical V9.4 `SECTION 20PA` (Guardian & Human Co-Pilot Advisory Ops).
 - **Affirmation envelope metrics:** `affirmationStrainIndex`, `affirmationIntegrityScore`, `governanceResolutenessScore`; `buildGuardianDepthAffirmationReport()`
 - **`monitor-rules-scale-wave-25.ts`** — 12 rules (**334** monitor rules total)
 - Regenerate chunk with `npm run build:agent16-chunk`
+
+## Scale wave round 26
+
+- **Sanction envelope metrics:** `sanctionStrainIndex`, `sanctionIntegrityScore`, `governanceFirmnessScore`; `buildGuardianDepthSanctionReport()`
+- **`monitor-rules-scale-wave-26.ts`** — 12 rules (**346** monitor rules total)
+- Regenerate chunk with `npm run build:agent16-chunk`
