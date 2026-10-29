@@ -4,38 +4,31 @@ import {
   CoordinationPlan,
   HandoffRequest,
   ParallelWorkstream,
+  PriorityArbitrationRecord,
   RoleAssignment,
   TeamTaskSnapshot,
 } from './types.ts';
+import { buildMutexMapWithPriorityArbitration } from './priority-arbitration.ts';
 
 function leaseId(kind: string, regionId: string | null, taskId: string | null, holder: string): string {
   return `lease_${kind}_${regionId || 'none'}_${taskId || 'none'}_${holder}`;
 }
 
-/** Build region mutex map: one lead actor per contested region for deposit-class tasks. */
+/** Build region mutex map: one lead actor per contested region (priority arbitration). */
 export function buildRegionMutexMap(
   tasks: TeamTaskSnapshot[],
   roles: RoleAssignment[],
+  lockedActorIds: string[] = [],
 ): Record<string, string> {
-  const mutex: Record<string, string> = {};
-  const depositTasks = tasks
-    .filter(
-      t =>
-        t.regionId &&
-        (t.type === 'defend_region' || t.type === 'take_region') &&
-        !['cancelled', 'superseded', 'completed'].includes(t.status),
-    )
-    .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
-  depositTasks.forEach(t => {
-    const region = t.regionId!;
-    if (mutex[region]) return;
-    const lead =
-      t.assignedActorIds[0] ||
-      roles.find(r => r.taskIds.includes(t.id))?.actorId ||
-      t.assignedActorIds[0];
-    if (lead) mutex[region] = lead;
-  });
-  return mutex;
+  return buildMutexMapWithPriorityArbitration(tasks, roles, lockedActorIds).mutexRegions;
+}
+
+export function buildRegionMutexWithLog(
+  tasks: TeamTaskSnapshot[],
+  roles: RoleAssignment[],
+  lockedActorIds: string[] = [],
+): { mutexRegions: Record<string, string>; arbitrationLog: PriorityArbitrationRecord[] } {
+  return buildMutexMapWithPriorityArbitration(tasks, roles, lockedActorIds);
 }
 
 export function buildCoordinationLeases(
@@ -143,9 +136,10 @@ export function orchestrateTeamCoordination(
   turn: number,
   tasks: TeamTaskSnapshot[],
   roles: RoleAssignment[],
+  lockedActorIds: string[] = [],
 ): CoordinationPlan {
   const warnings: string[] = [];
-  const mutexRegions = buildRegionMutexMap(tasks, roles);
+  const { mutexRegions, arbitrationLog } = buildRegionMutexWithLog(tasks, roles, lockedActorIds);
   const leases = buildCoordinationLeases(turn, tasks, roles, mutexRegions);
   const handoffs = detectHandoffCandidates(turn, tasks, roles, mutexRegions);
   const workstreams = buildParallelWorkstreams(tasks, roles);
@@ -156,7 +150,7 @@ export function orchestrateTeamCoordination(
       warnings.push(`Task ${t.id} shares actors but region ${t.regionId} mutex held by ${lead}`);
     }
   });
-  return { leases, handoffs, workstreams, mutexRegions, warnings };
+  return { leases, handoffs, workstreams, mutexRegions, warnings, arbitrationLog };
 }
 
 export function acceptHandoff(plan: CoordinationPlan, handoffId: string): CoordinationPlan {
@@ -204,5 +198,6 @@ export function serializeCoordinationPlan(plan: CoordinationPlan): string {
     mutex: plan.mutexRegions,
     handoffs: plan.handoffs.map(h => [h.id, h.status]),
     ws: plan.workstreams.map(w => [w.id, w.phase]),
+    arb: plan.arbitrationLog.map(a => [a.regionId, a.winnerActorId]),
   });
 }

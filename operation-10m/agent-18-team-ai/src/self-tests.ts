@@ -1,5 +1,11 @@
 import { acceptHandoff, coordinationHealthScore, orchestrateTeamCoordination } from './coordination-orchestrator.ts';
 import {
+  arbitrateRegionLead,
+  buildMutexMapWithPriorityArbitration,
+  compareArbitrationCandidates,
+  missionTierForTask,
+} from './priority-arbitration.ts';
+import {
   DuplicateActionGuard,
   buildActionFingerprint,
   detectDuplicateIntents,
@@ -240,13 +246,14 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
   });
 
   check(results, 'a18_coord_health', 'Coordination: health score penalizes warnings', () => {
-    const good = coordinationHealthScore({ leases: [], handoffs: [], workstreams: [], mutexRegions: {}, warnings: [] });
+    const good = coordinationHealthScore({ leases: [], handoffs: [], workstreams: [], mutexRegions: {}, warnings: [], arbitrationLog: [] });
     const bad = coordinationHealthScore({
       leases: [],
       handoffs: [],
       workstreams: [],
       mutexRegions: {},
       warnings: ['a', 'b', 'c', 'd', 'e'],
+      arbitrationLog: [],
     });
     return good > bad || `${good} vs ${bad}`;
   });
@@ -323,6 +330,259 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
     const prev = evaluateTeamMultiAgentLayer(baseInputs({ turn: 5 }), null);
     const next = evaluateTeamMultiAgentLayer(baseInputs({ turn: 8 }), prev.state);
     return next.state.duplicateGuard.turn === 8 || `turn ${next.state.duplicateGuard.turn}`;
+  });
+
+  check(results, 'a18_arb_defend_beats_take', 'Priority: defend_region beats take_region on same region even with worse task priority', () => {
+    const tasks: TeamTaskSnapshot[] = [
+      {
+        id: 'def',
+        type: 'defend_region',
+        label: 'Defend NSW',
+        status: 'ready',
+        priority: 3,
+        assignedActorIds: ['player'],
+        regionId: 'NSW',
+        resourceRequirement: 1000,
+        dependencies: [],
+      },
+      {
+        id: 'take',
+        type: 'take_region',
+        label: 'Take NSW',
+        status: 'ready',
+        priority: 1,
+        assignedActorIds: ['mate'],
+        regionId: 'NSW',
+        resourceRequirement: 1000,
+        dependencies: [],
+      },
+    ];
+    const roles = assignTeamRolesWithSlots(baseInputs({ tasks, command: null })).roles;
+    const { mutexRegions } = buildMutexMapWithPriorityArbitration(tasks, roles);
+    return mutexRegions.NSW === 'player' || JSON.stringify(mutexRegions);
+  });
+
+  check(results, 'a18_arb_tiebreak_actor', 'Priority: identical tier/priority tie-breaks by actorId lexicographic order', () => {
+    const tasks: TeamTaskSnapshot[] = [
+      {
+        id: 'd1',
+        type: 'defend_region',
+        label: 'Defend QLD',
+        status: 'ready',
+        priority: 1,
+        assignedActorIds: ['zeta'],
+        regionId: 'QLD',
+        resourceRequirement: 500,
+        dependencies: [],
+      },
+      {
+        id: 'd2',
+        type: 'defend_region',
+        label: 'Defend QLD too',
+        status: 'ready',
+        priority: 1,
+        assignedActorIds: ['alpha'],
+        regionId: 'QLD',
+        resourceRequirement: 500,
+        dependencies: [],
+      },
+    ];
+    const roles = assignTeamRolesWithSlots(
+      baseInputs({
+        tasks,
+        command: null,
+        actors: [
+          { id: 'alpha', name: 'A', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+          { id: 'zeta', name: 'Z', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+        ],
+      }),
+    ).roles;
+    const { holderActorId } = arbitrateRegionLead('QLD', tasks, roles);
+    return holderActorId === 'alpha' || `holder ${holderActorId}`;
+  });
+
+  check(results, 'a18_arb_explicit_boost', 'Priority: explicit assignment wins among equal mission tiers', () => {
+    const tasks: TeamTaskSnapshot[] = [
+      {
+        id: 't1',
+        type: 'take_region',
+        label: 'Take SA',
+        status: 'ready',
+        priority: 2,
+        assignedActorIds: ['player'],
+        regionId: 'SA',
+        resourceRequirement: 800,
+        dependencies: [],
+      },
+      {
+        id: 't2',
+        type: 'take_region',
+        label: 'Take SA too',
+        status: 'ready',
+        priority: 2,
+        assignedActorIds: ['mate'],
+        regionId: 'SA',
+        resourceRequirement: 800,
+        dependencies: [],
+      },
+    ];
+    const roles = assignTeamRolesWithSlots(
+      baseInputs({
+        tasks,
+        command: {
+          responsibilities: [{ actorId: 'mate', focus: 'expansion', regionId: 'SA' }],
+          lockedActorIds: [],
+          reserveFloor: null,
+        },
+      }),
+    ).roles;
+    const { mutexRegions } = buildMutexMapWithPriorityArbitration(tasks, roles);
+    return mutexRegions.SA === 'mate' || JSON.stringify({ mutexRegions, roles });
+  });
+
+  check(results, 'a18_arb_locked_retains', 'Priority: locked actor keeps lead when scores are close', () => {
+    const tasks: TeamTaskSnapshot[] = [
+      {
+        id: 'd1',
+        type: 'defend_region',
+        label: 'Defend WA',
+        status: 'ready',
+        priority: 1,
+        assignedActorIds: ['locked'],
+        regionId: 'WA',
+        resourceRequirement: 500,
+        dependencies: [],
+      },
+      {
+        id: 'd2',
+        type: 'defend_region',
+        label: 'Defend WA',
+        status: 'ready',
+        priority: 1,
+        assignedActorIds: ['other'],
+        regionId: 'WA',
+        resourceRequirement: 500,
+        dependencies: [],
+      },
+    ];
+    const roles = assignTeamRolesWithSlots(
+      baseInputs({
+        tasks,
+        command: null,
+        lockedRoles: ['locked'],
+        actors: [
+          { id: 'locked', name: 'L', isHuman: false, inRecovery: false, location: 'WA', apRemaining: null, brainRole: null },
+          { id: 'other', name: 'O', isHuman: false, inRecovery: false, location: 'WA', apRemaining: null, brainRole: null },
+        ],
+      }),
+    ).roles;
+    const { mutexRegions } = buildMutexMapWithPriorityArbitration(tasks, roles, ['locked']);
+    return mutexRegions.WA === 'locked' || JSON.stringify(mutexRegions);
+  });
+
+  check(results, 'a18_arb_recovery_loses', 'Priority: recovery-weighted actor loses region lead to healthy defender', () => {
+    const tasks: TeamTaskSnapshot[] = [
+      {
+        id: 'rec',
+        type: 'defend_region',
+        label: 'Defend NT',
+        status: 'ready',
+        priority: 1,
+        assignedActorIds: ['sick'],
+        regionId: 'NT',
+        resourceRequirement: 500,
+        dependencies: [],
+      },
+      {
+        id: 'ok',
+        type: 'defend_region',
+        label: 'Defend NT',
+        status: 'ready',
+        priority: 2,
+        assignedActorIds: ['healthy'],
+        regionId: 'NT',
+        resourceRequirement: 500,
+        dependencies: [],
+      },
+    ];
+    const roles: RoleAssignment[] = [
+      {
+        actorId: 'sick',
+        primaryRole: 'recovery',
+        secondaryRole: null,
+        responsibility: 'Recover',
+        reason: 'test',
+        taskIds: ['rec'],
+        startTurn: 1,
+        reviewCondition: 'x',
+        temporary: true,
+        confidence: 0.5,
+        explicit: false,
+        exclusiveSlotId: null,
+      },
+      {
+        actorId: 'healthy',
+        primaryRole: 'controller',
+        secondaryRole: null,
+        responsibility: 'Defend NT',
+        reason: 'test',
+        taskIds: ['ok'],
+        startTurn: 1,
+        reviewCondition: 'x',
+        temporary: false,
+        confidence: 0.8,
+        explicit: false,
+        exclusiveSlotId: null,
+      },
+    ];
+    const { holderActorId } = arbitrateRegionLead('NT', tasks, roles);
+    return holderActorId === 'healthy' || `holder ${holderActorId}`;
+  });
+
+  check(results, 'a18_arb_log_wired', 'Priority: arbitration log attached to coordination plan', () => {
+    const tasks = baseInputs().tasks.concat({
+      id: 'task_take_VIC',
+      type: 'take_region',
+      label: 'Take VIC',
+      status: 'ready',
+      priority: 1,
+      assignedActorIds: ['mate'],
+      regionId: 'VIC',
+      resourceRequirement: 500,
+      dependencies: [],
+    });
+    const ev = evaluateTeamMultiAgentLayer(baseInputs({ tasks }), null);
+    return (
+      ev.state.coordination.arbitrationLog.length >= 2 &&
+      ev.state.diagnostics.some(d => d.includes('Priority arbitration'))
+    ) || JSON.stringify({ log: ev.state.coordination.arbitrationLog, diag: ev.state.diagnostics.slice(0, 5) });
+  });
+
+  check(results, 'a18_arb_compare_stable', 'Priority: compareArbitrationCandidates is antisymmetric and deterministic', () => {
+    const tasks: TeamTaskSnapshot[] = [
+      {
+        id: 'x',
+        type: 'take_region',
+        label: 'X',
+        status: 'ready',
+        priority: 1,
+        assignedActorIds: ['a'],
+        regionId: 'TAS',
+        resourceRequirement: 1,
+        dependencies: [],
+      },
+    ];
+    const ca = {
+      actorId: 'a',
+      task: tasks[0],
+      role: null,
+      explicit: false,
+      locked: false,
+    };
+    const cb = { ...ca, actorId: 'b' };
+    const ab = compareArbitrationCandidates(ca, cb, 'TAS');
+    const ba = compareArbitrationCandidates(cb, ca, 'TAS');
+    return ab < 0 && ba > 0 && missionTierForTask(tasks[0]) === 8;
   });
 
   return results;

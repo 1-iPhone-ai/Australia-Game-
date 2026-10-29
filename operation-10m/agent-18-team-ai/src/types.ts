@@ -120,12 +120,21 @@ export interface ParallelWorkstream {
   barrierTaskIds: string[];
 }
 
+export interface PriorityArbitrationRecord {
+  regionId: string | null;
+  winnerActorId: string;
+  winnerTaskId: string;
+  reason: string;
+  demoted: Array<{ actorId: string; taskId: string; reason: string }>;
+}
+
 export interface CoordinationPlan {
   leases: CoordinationLease[];
   handoffs: HandoffRequest[];
   workstreams: ParallelWorkstream[];
   mutexRegions: Record<string, string>;
   warnings: string[];
+  arbitrationLog: PriorityArbitrationRecord[];
 }
 
 export interface ActionFingerprint {

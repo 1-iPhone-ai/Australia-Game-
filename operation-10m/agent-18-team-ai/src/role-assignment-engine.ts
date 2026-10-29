@@ -1,3 +1,4 @@
+import { pickSlotCollisionWinner } from './priority-arbitration.ts';
 import {
   AGENT18_LIMITS,
   ExplicitResponsibility,
@@ -77,11 +78,8 @@ export function resolveExclusiveSlotCollisions(
   let next = roles.map(r => ({ ...r }));
   slotToActors.forEach((actorIds, slot) => {
     if (actorIds.length <= 1) return;
-    const ranked = actorIds
-      .map(id => ({ id, task: pickTopTask(tasks, id) }))
-      .filter(x => x.task)
-      .sort((a, b) => (a.task!.priority - b.task!.priority) || a.id.localeCompare(b.id));
-    const winner = ranked[0]?.id;
+    const slotRegion = slot.startsWith('region:') ? slot.split(':')[1] : null;
+    const winner = pickSlotCollisionWinner(actorIds, tasks, roles, slotRegion);
     if (!winner) return;
     next = next.map(r => {
       if (!actorIds.includes(r.actorId) || r.actorId === winner) return r;

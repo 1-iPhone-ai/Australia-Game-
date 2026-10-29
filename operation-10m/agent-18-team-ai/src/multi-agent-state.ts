@@ -27,7 +27,7 @@ export function sanitizeTeamMultiAgentCoordinationState(
     teamId,
     turn,
     roles: [],
-    coordination: { leases: [], handoffs: [], workstreams: [], mutexRegions: {}, warnings: [] },
+    coordination: { leases: [], handoffs: [], workstreams: [], mutexRegions: {}, warnings: [], arbitrationLog: [] },
     duplicateGuard: emptyDuplicateGuardState(turn),
     diagnostics: [],
   };
@@ -54,6 +54,9 @@ export function sanitizeTeamMultiAgentCoordinationState(
           ? (coordination.mutexRegions as Record<string, string>)
           : {},
       warnings: Array.isArray(coordination.warnings) ? coordination.warnings.map(String).slice(0, 12) : [],
+      arbitrationLog: Array.isArray(coordination.arbitrationLog)
+        ? coordination.arbitrationLog.slice(0, 12)
+        : [],
     },
     duplicateGuard: sanitizeDuplicateGuardState(r.duplicateGuard, turn),
     diagnostics: Array.isArray(r.diagnostics) ? r.diagnostics.map(String).slice(0, 20) : [],
@@ -77,8 +80,14 @@ export function evaluateTeamMultiAgentLayer(
   const { roles, notes } = assignTeamRolesWithSlots({ ...inputs, roleMinTurns });
   diagnostics.push(...notes);
   const sharedIssues = detectIllegalSharedExclusiveTasks(inputs.tasks);
-  const coordination = orchestrateTeamCoordination(inputs.turn, inputs.tasks, roles);
+  const coordination = orchestrateTeamCoordination(
+    inputs.turn,
+    inputs.tasks,
+    roles,
+    [...inputs.lockedRoles, ...(inputs.command?.lockedActorIds || [])],
+  );
   diagnostics.push(...coordination.warnings);
+  coordination.arbitrationLog.forEach(a => diagnostics.push(a.reason));
   let duplicateGuard = previous
     ? advanceDuplicateGuardTurn(previous.duplicateGuard, inputs.turn)
     : emptyDuplicateGuardState(inputs.turn);
