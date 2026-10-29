@@ -1,0 +1,121 @@
+import type { NationalPriorityId } from './national-priority.ts';
+
+export type StakeholderGroupId =
+  | 'industry'
+  | 'households'
+  | 'regions'
+  | 'public_services';
+
+export type MandateMilestoneId =
+  | 'mandate_priority_engaged'
+  | 'mandate_priority_momentum'
+  | 'mandate_priority_leadership';
+
+export interface PriorityMandateTrack {
+  priorityId: NationalPriorityId;
+  points: number;
+  milestonesUnlocked: MandateMilestoneId[];
+}
+
+export type MandateProgress = Partial<Record<NationalPriorityId, PriorityMandateTrack>>;
+
+export type StakeholderSentiment = Record<StakeholderGroupId, number>;
+
+export type CoalitionCrisisLevel = 'stable' | 'strained' | 'acute';
+
+export interface TurnStrategicBriefing {
+  day: number;
+  commitmentPressure: number;
+  pendingTradeOffCount: number;
+  mandateHeadline: string;
+  stakeholderWarnings: string[];
+  completedActionCount: number;
+  activeChoiceId: string | null;
+  coalitionBalanceIndex: number;
+  coalitionCrisisLevel: CoalitionCrisisLevel;
+  coalitionCrisisStreakDays: number;
+  coalitionRecoveryStreakDays: number;
+  prolongedCoalitionCrisis: boolean;
+  sustainedCoalitionRecovery: boolean;
+  coalitionVolatilityEvents: number;
+  elevatedCoalitionVolatility: boolean;
+  coalitionStabilizationStreakDays: number;
+  postStabilizationLockIn: boolean;
+  coalitionLockInStreakDays: number;
+  crossModuleSyncStreakDays: number;
+  integratedCoalitionMaturity: boolean;
+  integratedCoalitionMaturityStreakDays: number;
+  sustainedIntegratedCoalitionStewardship: boolean;
+  coalitionStewardshipStreakDays: number;
+  anchoredCoalitionGovernance: boolean;
+  coalitionAnchoredGovernanceStreakDays: number;
+  institutionalCoalitionPermanence: boolean;
+  coalitionInstitutionalPermanenceStreakDays: number;
+  generationalCoalitionContinuity: boolean;
+  coalitionGenerationalContinuityStreakDays: number;
+  civilizationalCoalitionEndurance: boolean;
+  coalitionCivilizationalEnduranceStreakDays: number;
+  transcendentCoalitionLegacy: boolean;
+  coalitionTranscendentLegacyStreakDays: number;
+  sovereignCoalitionContinuum: boolean;
+  coalitionSovereignContinuumStreakDays: number;
+  eternalCoalitionAscendance: boolean;
+  coalitionEternalAscendanceStreakDays: number;
+  infiniteCoalitionPersistence: boolean;
+  coalitionInfinitePersistenceStreakDays: number;
+  primordialCoalitionContinuity: boolean;
+  coalitionPrimordialContinuityStreakDays: number;
+  absoluteCoalitionSanctity: boolean;
+  coalitionAbsoluteSanctityStreakDays: number;
+  universalCoalitionImmortality: boolean;
+  coalitionUniversalImmortalityStreakDays: number;
+  cosmicCoalitionPerpetuity: boolean;
+  coalitionCosmicPerpetuityStreakDays: number;
+  galacticCoalitionInfinity: boolean;
+  coalitionGalacticInfinityStreakDays: number;
+  stellarCoalitionTranscendence: boolean;
+  coalitionStellarTranscendenceStreakDays: number;
+  quantumCoalitionOmnipresence: boolean;
+  coalitionQuantumOmnipresenceStreakDays: number;
+  multiversalCoalitionPersistence: boolean;
+  coalitionMultiversalPersistenceStreakDays: number;
+  metaversalCoalitionContinuity: boolean;
+  coalitionMetaversalContinuityStreakDays: number;
+  omniversalCoalitionSynthesis: boolean;
+  coalitionOmniversalSynthesisStreakDays: number;
+  hyperversalCoalitionHarmonization: boolean;
+  coalitionHyperversalHarmonizationStreakDays: number;
+  transcendentCoalitionOmnium: boolean;
+  coalitionTranscendentOmniumStreakDays: number;
+  supremeCoalitionConvergence: boolean;
+  coalitionSupremeConvergenceStreakDays: number;
+  apexCoalitionTranscendence: boolean;
+  coalitionApexTranscendenceStreakDays: number;
+  zenithCoalitionPerpetuity: boolean;
+  coalitionZenithPerpetuityStreakDays: number;
+  paragonCoalitionInfinity: boolean;
+  coalitionParagonInfinityStreakDays: number;
+  paramountCoalitionAscendancy: boolean;
+  coalitionParamountAscendancyStreakDays: number;
+  imperialCoalitionPerpetuity: boolean;
+  coalitionImperialPerpetuityStreakDays: number;
+  custodialCoalitionEternity: boolean;
+  coalitionCustodialEternityStreakDays: number;
+  vanguardCoalitionSynthesis: boolean;
+  coalitionVanguardSynthesisStreakDays: number;
+  sentinelCoalitionAscendancy: boolean;
+  coalitionSentinelAscendancyStreakDays: number;
+  oracleCoalitionPerpetuity: boolean;
+  coalitionOraclePerpetuityStreakDays: number;
+  archonCoalitionEternity: boolean;
+  coalitionArchonEternityStreakDays: number;
+  exarchCoalitionAscendancy: boolean;
+  coalitionExarchAscendancyStreakDays: number;
+  primarchCoalitionPerpetuity: boolean;
+  coalitionPrimarchPerpetuityStreakDays: number;
+  patriarchCoalitionEternity: boolean;
+  coalitionPatriarchEternityStreakDays: number;
+  mandateDriftRisk: 'low' | 'elevated' | 'critical';
+  topRecommendationActionId?: string;
+  topRecommendationTitle?: string;
+}
