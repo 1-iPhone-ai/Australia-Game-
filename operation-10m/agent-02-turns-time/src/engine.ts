@@ -213,6 +213,21 @@ import {
 } from './batch-national-tick-ledger.js';
 import { computeBatchNationalTickLedgerDigest } from './batch-national-tick-ledger-digest.js';
 import { exportBatchNationalTickScorecard } from './batch-national-tick-scorecard-export.js';
+import {
+  exportBatchNationalTickSessionLedger,
+  type BatchNationalTickSessionLedgerExport,
+} from './batch-national-tick-session-ledger-export.js';
+import {
+  runNationalTickOrchestratedUnifiedSession,
+  computeBatchNationalTickUnifiedSessionDigest,
+  type BatchNationalTickUnifiedSessionResult,
+} from './batch-national-tick-unified-session.js';
+import {
+  runNationalTickOrchestratedSessionWave,
+  computeBatchNationalTickSessionWaveDigest,
+  type BatchNationalTickSessionWaveResult,
+  type NationalTickSessionWaveTickSpec,
+} from './batch-national-tick-session-wave.js';
 import { computeBatchStabilizationAlignmentScore } from './batch-stabilization-alignment-score.js';
 import {
   gateBatchAdvancePostStabilization,
@@ -719,6 +734,39 @@ export class TurnTimeEngine {
 
   exportBatchNationalTickScorecard(result: BatchNationalTickOrchestratedResult) {
     return exportBatchNationalTickScorecard(result);
+  }
+
+  runNationalTickOrchestratedUnifiedSession(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+    input?: Parameters<typeof runNationalTickOrchestratedUnifiedSession>[3],
+    ledger?: BatchNationalTickLedger,
+    tickIndex?: number,
+  ): BatchNationalTickUnifiedSessionResult {
+    return runNationalTickOrchestratedUnifiedSession(this, maxSteps, budget, input, ledger, tickIndex);
+  }
+
+  computeBatchNationalTickUnifiedSessionDigest(session: BatchNationalTickUnifiedSessionResult): string {
+    return computeBatchNationalTickUnifiedSessionDigest(session);
+  }
+
+  exportBatchNationalTickSessionLedger(ledger: BatchNationalTickLedger): BatchNationalTickSessionLedgerExport {
+    return exportBatchNationalTickSessionLedger(ledger);
+  }
+
+  runNationalTickOrchestratedSessionWave(
+    budget: TurnAdvanceBudgetState,
+    ticks: readonly NationalTickSessionWaveTickSpec[],
+    ledger?: BatchNationalTickLedger,
+  ): BatchNationalTickSessionWaveResult {
+    return runNationalTickOrchestratedSessionWave(this, budget, ticks, ledger);
+  }
+
+  computeBatchNationalTickSessionWaveDigest(
+    sessions: readonly BatchNationalTickUnifiedSessionResult[],
+    ledgerDigest: string,
+  ): string {
+    return computeBatchNationalTickSessionWaveDigest(sessions, ledgerDigest);
   }
 
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {

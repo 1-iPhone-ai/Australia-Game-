@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
 // @ts-nocheck
-// content-sha256-prefix: 681367a7e0277b19
+// content-sha256-prefix: 3df9e569945ddf97
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -2224,6 +2224,39 @@ export class TurnTimeEngine {
     return exportBatchNationalTickScorecard(result);
   }
 
+  runNationalTickOrchestratedUnifiedSession(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+    input?: Parameters<typeof runNationalTickOrchestratedUnifiedSession>[3],
+    ledger?: BatchNationalTickLedger,
+    tickIndex?: number,
+  ): BatchNationalTickUnifiedSessionResult {
+    return runNationalTickOrchestratedUnifiedSession(this, maxSteps, budget, input, ledger, tickIndex);
+  }
+
+  computeBatchNationalTickUnifiedSessionDigest(session: BatchNationalTickUnifiedSessionResult): string {
+    return computeBatchNationalTickUnifiedSessionDigest(session);
+  }
+
+  exportBatchNationalTickSessionLedger(ledger: BatchNationalTickLedger): BatchNationalTickSessionLedgerExport {
+    return exportBatchNationalTickSessionLedger(ledger);
+  }
+
+  runNationalTickOrchestratedSessionWave(
+    budget: TurnAdvanceBudgetState,
+    ticks: readonly NationalTickSessionWaveTickSpec[],
+    ledger?: BatchNationalTickLedger,
+  ): BatchNationalTickSessionWaveResult {
+    return runNationalTickOrchestratedSessionWave(this, budget, ticks, ledger);
+  }
+
+  computeBatchNationalTickSessionWaveDigest(
+    sessions: readonly BatchNationalTickUnifiedSessionResult[],
+    ledgerDigest: string,
+  ): string {
+    return computeBatchNationalTickSessionWaveDigest(sessions, ledgerDigest);
+  }
+
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {
     return buildAgent02TurnPipelineReport(this.snapshot(), before);
   }
@@ -4369,6 +4402,179 @@ export function runNationalTickOrchestratedSession(
   };
 }
 
+// --- src/batch-national-tick-session-ledger-export.ts ---
+
+export interface BatchNationalTickSessionLedgerExportRow {
+  tickIndex: number;
+  startTurn: number;
+  endTurn: number;
+  nationalTickDigest: string;
+  ok: boolean;
+}
+
+export interface BatchNationalTickSessionLedgerExport {
+  rows: BatchNationalTickSessionLedgerExportRow[];
+  entryCount: number;
+  allOk: boolean;
+  ledgerDigest: string;
+}
+
+/**
+ * Round 16: flatten append-only national tick ledger for Agent 25 assembly hooks.
+ */
+export function exportBatchNationalTickSessionLedger(
+  ledger: BatchNationalTickLedger,
+): BatchNationalTickSessionLedgerExport {
+  const rows = ledger.entries.map((e) => ({
+    tickIndex: e.tickIndex,
+    startTurn: e.startTurn,
+    endTurn: e.endTurn,
+    nationalTickDigest: e.nationalTickDigest,
+    ok: e.ok,
+  }));
+  return {
+    rows,
+    entryCount: rows.length,
+    allOk: rows.every((r) => r.ok),
+    ledgerDigest: computeBatchNationalTickLedgerDigest(ledger),
+  };
+}
+
+// --- src/batch-national-tick-unified-session.ts ---
+
+export interface BatchNationalTickUnifiedSessionResult extends BatchNationalTickSessionResult {
+  unifiedGate?: BatchExternalStabilizationUnifiedBatchGateResult;
+}
+
+export function computeBatchNationalTickUnifiedSessionDigest(
+  session: BatchNationalTickUnifiedSessionResult,
+): string {
+  return fnv1a64Hex(
+    JSON.stringify({
+      session: session.sessionDigest,
+      unifiedOk: session.unifiedGate?.ok ?? null,
+    }),
+  );
+}
+
+/**
+ * Round 16: national tick session with XS-02 + Agent 05 unified batch gate on the stepped batch.
+ */
+export function runNationalTickOrchestratedUnifiedSession(
+  engine: TurnTimeEngine,
+  maxSteps: number,
+  budget: TurnAdvanceBudgetState,
+  input?: BatchAdvanceOrchestratedInput,
+  ledger: BatchNationalTickLedger = createBatchNationalTickLedger(),
+  tickIndex = ledger.entries.length + 1,
+): BatchNationalTickUnifiedSessionResult {
+  const before = engine.snapshot();
+  const startTurn = before.clock.turnIndex;
+  const tick = stepNationalTickOrchestratedBatch(engine, maxSteps, budget, input);
+  const endTurn = engine.snapshot().clock.turnIndex;
+
+  const unifiedGate =
+    input?.externalByTurn !== undefined || input?.stabilizationByTurn !== undefined
+      ? gateBatchExternalStabilizationUnified(
+          tick.report.batch,
+          input?.externalByTurn ?? {},
+          input?.stabilizationByTurn ?? {},
+          batchStabilizationGateOptionsFromCapture(tick.report.capture),
+        )
+      : undefined;
+  const unifiedOk = unifiedGate?.ok ?? true;
+
+  const replayEngine = TurnTimeEngine.fromSnapshot(before);
+  const replayTick = stepNationalTickOrchestratedBatch(replayEngine, maxSteps, budget, input);
+  const parityOk =
+    tick.nationalTickDigest === replayTick.nationalTickDigest &&
+    tick.scorecard.ok === replayTick.scorecard.ok;
+
+  const entry: BatchNationalTickLedgerEntry = {
+    tickIndex,
+    startTurn,
+    endTurn,
+    nationalTickDigest: tick.nationalTickDigest,
+    ok: tick.scorecard.ok && parityOk && unifiedOk,
+  };
+  const nextLedger = appendBatchNationalTickLedgerEntry(ledger, entry);
+  const ledgerDigest = computeBatchNationalTickLedgerDigest(nextLedger);
+  const sessionDigest = computeBatchNationalTickSessionDigest(tick, parityOk, ledgerDigest);
+
+  return {
+    tick,
+    parityOk,
+    ledger: nextLedger,
+    sessionDigest,
+    export: exportBatchNationalTickScorecard(tick),
+    unifiedGate,
+  };
+}
+
+// --- src/batch-national-tick-session-wave.ts ---
+
+export interface NationalTickSessionWaveTickSpec {
+  maxSteps: number;
+  input?: BatchAdvanceOrchestratedInput;
+}
+
+export interface BatchNationalTickSessionWaveResult {
+  sessions: BatchNationalTickUnifiedSessionResult[];
+  ledger: BatchNationalTickLedger;
+  ledgerExport: ReturnType<typeof exportBatchNationalTickSessionLedger>;
+  waveDigest: string;
+}
+
+export function computeBatchNationalTickSessionWaveDigest(
+  sessions: readonly BatchNationalTickUnifiedSessionResult[],
+  ledgerDigest: string,
+): string {
+  return fnv1a64Hex(
+    JSON.stringify({
+      ledger: ledgerDigest,
+      sessions: sessions.map((s) => computeBatchNationalTickUnifiedSessionDigest(s)),
+    }),
+  );
+}
+
+/**
+ * Round 16: chain unified national tick sessions on one engine with a shared append-only ledger.
+ */
+export function runNationalTickOrchestratedSessionWave(
+  engine: TurnTimeEngine,
+  budget: TurnAdvanceBudgetState,
+  ticks: readonly NationalTickSessionWaveTickSpec[],
+  ledger: BatchNationalTickLedger = createBatchNationalTickLedger(),
+): BatchNationalTickSessionWaveResult {
+  const sessions: BatchNationalTickUnifiedSessionResult[] = [];
+  let currentLedger = ledger;
+
+  for (const spec of ticks) {
+    const session = runNationalTickOrchestratedUnifiedSession(
+      engine,
+      spec.maxSteps,
+      budget,
+      spec.input,
+      currentLedger,
+    );
+    sessions.push(session);
+    currentLedger = session.ledger;
+  }
+
+  const ledgerExport = exportBatchNationalTickSessionLedger(currentLedger);
+  const waveDigest = computeBatchNationalTickSessionWaveDigest(
+    sessions,
+    ledgerExport.ledgerDigest,
+  );
+
+  return {
+    sessions,
+    ledger: currentLedger,
+    ledgerExport,
+    waveDigest,
+  };
+}
+
 // --- src/fast-forward.ts ---
 
 export interface FastForwardResult {
@@ -4519,7 +4725,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '2.5.0';
+export const AGENT_02_MODULE_VERSION = '2.6.0';
 
 
 
@@ -5069,11 +5275,11 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
 
   });
 
-  const unified = new TurnTimeEngine();
+  const ubGateEngine = new TurnTimeEngine();
 
-  unified.scheduleEvent({ id: 'ub', dueTurn: 1, kind: 'n' });
+  ubGateEngine.scheduleEvent({ id: 'ub', dueTurn: 1, kind: 'n' });
 
-  const ubBatch = unified.stepTurnsWithBudgetStabilizationCapture(1, createTurnAdvanceBudget(2));
+  const ubBatch = ubGateEngine.stepTurnsWithBudgetStabilizationCapture(1, createTurnAdvanceBudget(2));
 
   results.push({
 
@@ -5092,6 +5298,48 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
       batchStabilizationGateOptionsFromCapture(ubBatch.capture),
 
     ).ok,
+
+  });
+
+  const unifiedSession = runNationalTickOrchestratedUnifiedSession(new TurnTimeEngine(), 1, createTurnAdvanceBudget(2), {
+
+    stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } },
+
+  });
+
+  results.push({
+
+    id: 'agent02_national_tick_unified_session',
+
+    name: 'unified national tick session with ledger export',
+
+    passed:
+
+      unifiedSession.parityOk &&
+
+      unifiedSession.ledger.entries.length === 1 &&
+
+      exportBatchNationalTickSessionLedger(unifiedSession.ledger).allOk,
+
+  });
+
+  const waveEngine = new TurnTimeEngine();
+
+  waveEngine.registerObligation({ id: 'wv', dueTurn: 1, kind: 'k' });
+
+  const waveRun = runNationalTickOrchestratedSessionWave(waveEngine, createTurnAdvanceBudget(2), [
+
+    { maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } },
+
+  ]);
+
+  results.push({
+
+    id: 'agent02_national_tick_session_wave',
+
+    name: 'national tick session wave digest ok',
+
+    passed: waveRun.waveDigest.length === 16 && waveRun.ledgerExport.entryCount === 1,
 
   });
 
