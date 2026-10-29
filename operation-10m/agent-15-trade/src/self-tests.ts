@@ -320,6 +320,16 @@ import {
   bilateralPreparedArcOpeningHandoffExportScale,
 } from './bilateral-prepared-arc-opening-handoff.ts';
 import {
+  computePreparedArcHandoffContinuitySnapshot,
+  createEmptyPreparedArcHandoffContinuitySnapshot,
+  preparedArcHandoffContinuityExportScale,
+} from './prepared-arc-handoff-continuity.ts';
+import {
+  computeBilateralScaleLoopSealGateSnapshot,
+  createEmptyBilateralScaleLoopSealGateSnapshot,
+  bilateralScaleLoopSealGateExportScale,
+} from './bilateral-scale-loop-seal-gate.ts';
+import {
   computeBilateralTradeWindowContinuitySnapshot,
   createEmptyBilateralTradeWindowContinuitySnapshot,
 } from './bilateral-trade-window-continuity.ts';
@@ -2169,6 +2179,59 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       bilateralNextArcOpenPrepGateExportScale(prepped) >= bilateralNextArcOpenPrepGateExportScale(blocked),
       'expected arc prep scale lift',
+    );
+  });
+
+  ok('next arc open prep continuity improves when prep gate is prepped', () => {
+    const prep = {
+      ...createEmptyBilateralNextArcOpenPrepGateSnapshot(),
+      score: 0.95,
+      band: 'prepped' as const,
+    };
+    const priming = {
+      ...createEmptyRenewalArcPrimingContinuitySnapshot(),
+      score: 0.93,
+      band: 'settled' as const,
+    };
+    const ready = computeNextArcOpenPrepContinuitySnapshot({
+      bilateralNextArcOpenPrepGate: prep,
+      renewalArcPrimingContinuity: priming,
+      persisted: { ...createEmptyGTELPersisted(), nextArcOpenPrepContinuitySmoothing: 0.95 },
+    }).snapshot;
+    const cleared = computeNextArcOpenPrepContinuitySnapshot({
+      bilateralNextArcOpenPrepGate: { ...prep, score: 0.1, band: 'blocked' },
+      renewalArcPrimingContinuity: { ...priming, score: 0.08, band: 'void' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(ready.score > cleared.score, 'expected ready prep continuity');
+    gtelAssert(
+      nextArcOpenPrepContinuityExportScale(ready) >= nextArcOpenPrepContinuityExportScale(cleared),
+      'expected prep continuity scale lift',
+    );
+  });
+
+  ok('bilateral prepared arc opening handoff improves when prep continuity is ready', () => {
+    const prepCont = {
+      ...createEmptyNextArcOpenPrepContinuitySnapshot(),
+      score: 0.96,
+      band: 'ready' as const,
+    };
+    const arc = { ...createEmptyBilateralCommitmentArcOpeningSnapshot(), score: 0.92, band: 'opened' as const };
+    const handed = computeBilateralPreparedArcOpeningHandoffSnapshot({
+      nextArcOpenPrepContinuity: prepCont,
+      bilateralCommitmentArcOpening: arc,
+      persisted: { ...createEmptyGTELPersisted(), bilateralPreparedArcOpeningHandoffSmoothing: 0.97 },
+    }).snapshot;
+    const withheld = computeBilateralPreparedArcOpeningHandoffSnapshot({
+      nextArcOpenPrepContinuity: { ...prepCont, score: 0.11, band: 'cleared' },
+      bilateralCommitmentArcOpening: { ...arc, score: 0.08, band: 'sealed' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(handed.score > withheld.score, 'expected prepared handoff when ready');
+    gtelAssert(
+      bilateralPreparedArcOpeningHandoffExportScale(handed) >=
+        bilateralPreparedArcOpeningHandoffExportScale(withheld),
+      'expected prepared handoff scale lift',
     );
   });
 

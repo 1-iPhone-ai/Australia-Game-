@@ -216,6 +216,8 @@ export interface GTELPersisted {
   bilateralNextArcOpenPrepGateSmoothing?: number;
   nextArcOpenPrepContinuitySmoothing?: number;
   bilateralPreparedArcOpeningHandoffSmoothing?: number;
+  preparedArcHandoffContinuitySmoothing?: number;
+  bilateralScaleLoopSealGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -301,6 +303,8 @@ export interface GTELState {
   bilateralNextArcOpenPrepGate: GTELBilateralNextArcOpenPrepGateSnapshot;
   nextArcOpenPrepContinuity: GTELNextArcOpenPrepContinuitySnapshot;
   bilateralPreparedArcOpeningHandoff: GTELBilateralPreparedArcOpeningHandoffSnapshot;
+  preparedArcHandoffContinuity: GTELPreparedArcHandoffContinuitySnapshot;
+  bilateralScaleLoopSealGate: GTELBilateralScaleLoopSealGateSnapshot;
   inputHash: string;
 }
 
@@ -1145,6 +1149,26 @@ export interface GTELBilateralPreparedArcOpeningHandoffSnapshot {
   band: GTELBilateralPreparedArcOpeningHandoffBand;
   prepContinuityFeed: number;
   arcOpeningLift: number;
+  summary: string;
+}
+
+export type GTELPreparedArcHandoffContinuityBand = 'locked' | 'tracking' | 'slack' | 'broken';
+
+export interface GTELPreparedArcHandoffContinuitySnapshot {
+  score: number;
+  band: GTELPreparedArcHandoffContinuityBand;
+  handoffSupport: number;
+  prepAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralScaleLoopSealGateBand = 'sealed' | 'tightening' | 'pending' | 'open';
+
+export interface GTELBilateralScaleLoopSealGateSnapshot {
+  score: number;
+  band: GTELBilateralScaleLoopSealGateBand;
+  handoffContinuityFeed: number;
+  cycleSealLift: number;
   summary: string;
 }
 
