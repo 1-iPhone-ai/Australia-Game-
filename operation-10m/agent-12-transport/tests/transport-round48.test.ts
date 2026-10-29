@@ -37,13 +37,13 @@ describe('Agent 12 round 48 catalog', () => {
 });
 
 describe('Agent 12 round 48 systems', () => {
-  it('returns agent12/53 with green H2, organ transplant, shore power', () => {
+  it('returns agent12/54 with green H2, organ transplant, shore power', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(720), {
       greenHydrogenElectrolyzerExportPolicy: 'accelerate',
       remoteOrganTransplantSupplyStagingPolicy: 'surge',
       portShorePowerColdIroningLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/53');
+    assert.equal(state.schemaVersion, 'agent12/54');
     assert.ok(state.nationalGreenHydrogenElectrolyzerExportIndex >= 5);
     assert.ok(state.nationalRemoteOrganTransplantSupplyStagingIndex >= 6);
     assert.ok(state.portShorePowerColdIroningLogisticsShare >= 0.03);

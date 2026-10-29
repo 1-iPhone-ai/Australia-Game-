@@ -29,7 +29,7 @@ Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chun
 
 ## Scale wave round 52
 
-- Schema **`agent12/53`**: fusion tritium breeding export throughput, remote pediatric oncology supply staging readiness, port bio-LNG bunkering logistics share (`fusionTritiumBreedingExportPolicy`, `remotePediatricOncologySupplyStagingPolicy`, `portBioLngBunkeringLogisticsPolicy`)
+- Schema **`agent12/54`**: fusion tritium breeding export throughput, remote pediatric oncology supply staging readiness, port bio-LNG bunkering logistics share (`fusionTritiumBreedingExportPolicy`, `remotePediatricOncologySupplyStagingPolicy`, `portBioLngBunkeringLogisticsPolicy`)
 - Catalog: **718** assets, **170** corridors, **278** scenarios
 - Systems: `network/fusion-tritium-breeding-export-index.ts`, `operations/remote-pediatric-oncology-supply-staging-index.ts`, `productivity/port-bio-lng-bunkering-logistics-index.ts`
 - Verify: `npm run test:agent12`, `npm run build:agent12-chunk`

@@ -35,13 +35,13 @@ describe('Agent 12 round 15 catalog', () => {
 });
 
 describe('Agent 12 round 15 systems', () => {
-  it('returns agent12/53 with Pacific feeder, medical supply, data-centre logistics', () => {
+  it('returns agent12/54 with Pacific feeder, medical supply, data-centre logistics', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(120), {
       pacificFeederPolicy: 'expand',
       medicalSupplyPolicy: 'surge',
       dataCentreLogisticsPolicy: 'accelerate',
     });
-    assert.equal(state.schemaVersion, 'agent12/53');
+    assert.equal(state.schemaVersion, 'agent12/54');
     assert.ok(state.nationalPacificFeederThroughputIndex >= 7);
     assert.ok(state.nationalMedicalSupplyChainIndex >= 36);
     assert.ok(state.dataCentreLogisticsShare >= 0.06);

@@ -2,7 +2,7 @@ import type { LogisticsNodeAsset, PortAsset, RailCorridorAsset, RoadSegmentAsset
 
 export const ROUND52_ROADS: RoadSegmentAsset[] = [
   {
-    id: 'road_nsw_sydney_fusion_tritium_breeding_haul',
+    id: 'road_nsw_sydney_superconducting_hvdc_haul',
     category: 'road',
     name: 'Sydney Fusion Tritium Breeding Haul',
     description: 'NSW superconducting export staging road.',
@@ -18,7 +18,7 @@ export const ROUND52_ROADS: RoadSegmentAsset[] = [
     tollRoad: false,
   },
   {
-    id: 'road_vic_dandenong_fusion_tritium_breeding_feed',
+    id: 'road_vic_dandenong_superconducting_hvdc_feed',
     category: 'road',
     name: 'Dandenong Fusion Tritium Breeding Feed',
     description: 'VIC hvdc freight connector.',
@@ -101,7 +101,7 @@ export const ROUND52_ROADS: RoadSegmentAsset[] = [
 
 export const ROUND52_RAIL: RailCorridorAsset[] = [
   {
-    id: 'rail_nsw_sydney_fusion_tritium_breeding_rail',
+    id: 'rail_nsw_sydney_superconducting_hvdc_rail',
     category: 'rail',
     name: 'Sydney Fusion Tritium Breeding Rail',
     description: 'NSW superconducting export feed.',
@@ -203,7 +203,7 @@ export const ROUND52_PORTS: PortAsset[] = [
 
 export const ROUND52_LOGISTICS: LogisticsNodeAsset[] = [
   {
-    id: 'log_vic_dandenong_fusion_tritium_breeding_stores',
+    id: 'log_vic_dandenong_superconducting_hvdc_stores',
     category: 'logistics',
     name: 'Dandenong Fusion Tritium Breeding Stores',
     description: 'VIC superconducting consolidation yard.',

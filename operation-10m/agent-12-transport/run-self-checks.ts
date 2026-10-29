@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/53' &&
+      infra.schemaVersion === 'agent12/54' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&

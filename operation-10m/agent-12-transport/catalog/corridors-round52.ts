@@ -2,7 +2,7 @@ import type { TransportCorridorDefinition } from '../types.ts';
 
 export const TRANSPORT_CORRIDORS_ROUND52: TransportCorridorDefinition[] = [
   {
-    id: 'corr_nsw_vic_fusion_tritium_breeding',
+    id: 'corr_nsw_vic_superconducting_hvdc',
     name: 'NSW–VIC Fusion Tritium Breeding',
     networkKind: 'trade',
     regionSequence: ['NSW', 'VIC'],

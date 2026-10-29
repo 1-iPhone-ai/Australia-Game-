@@ -41,7 +41,7 @@ describe('Agent 12 round 3 systems', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(11), {
       fundedPipelineStageIds: new Set(['pipe_vic_inland_port_shuttle']),
     });
-    assert.equal(state.schemaVersion, 'agent12/53');
+    assert.equal(state.schemaVersion, 'agent12/54');
     assert.ok(state.fleetCapacity.nationalComposite > 5);
     assert.ok(state.spilloverBonusByRegion.NSW > 0);
     assert.ok(state.pipelineUnlockPoints > 0);
