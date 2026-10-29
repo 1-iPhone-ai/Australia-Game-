@@ -186,3 +186,7 @@ export * from './forecast-wave54-projection-sync';
 export * from './forecast-integration-wave54-origin-handoff';
 export * from './forecast-round54-console';
 export * from './scale-wave-round54-gate-latch.ts';
+export * from './forecast-wave55-projection-sync';
+export * from './forecast-integration-wave55-origin-handoff';
+export * from './forecast-round55-console';
+export * from './scale-wave-round55-gate-latch.ts';
