@@ -1,0 +1,31 @@
+import type { V1023CladDroughtBufferEdge } from '../../types/core.ts';
+
+/** Drought buffer graph shard 017 (heat/flood/drought corridor coupling). */
+export const V1023_CLAD_DROUGHT_BUFFER_SHARD_017: readonly V1023CladDroughtBufferEdge[] = [
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.14, lagTurns: 10, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.146, lagTurns: 11, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.152, lagTurns: 12, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.158, lagTurns: 13, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.164, lagTurns: 10, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.17, lagTurns: 11, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.176, lagTurns: 12, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.182, lagTurns: 13, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.188, lagTurns: 10, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.194, lagTurns: 11, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.2, lagTurns: 12, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.206, lagTurns: 13, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.212, lagTurns: 10, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.218, lagTurns: 11, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.224, lagTurns: 12, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.23, lagTurns: 13, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.236, lagTurns: 10, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.14, lagTurns: 11, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.146, lagTurns: 12, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.152, lagTurns: 13, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.158, lagTurns: 10, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.164, lagTurns: 11, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.17, lagTurns: 12, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.176, lagTurns: 13, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.182, lagTurns: 10, nodeId: 'flood_node_17' },
+  { fromChannel: 'coastal_erosion', toChannel: 'heat_urban', weight: 0.188, lagTurns: 11, nodeId: 'flood_node_17' },
+];

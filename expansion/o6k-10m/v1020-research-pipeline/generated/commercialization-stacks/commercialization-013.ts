@@ -1,0 +1,31 @@
+import type { V1020RpipeGrantStackEdge } from '../../types/core.ts';
+
+/** Commercialization stack graph shard 013 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_013: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.631, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.638, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.645, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.652, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.659, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.666, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.673, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.575, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.582, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.589, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.596, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.603, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.61, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.617, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.624, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.631, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.638, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.645, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.652, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.659, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.666, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.673, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.575, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.582, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.589, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.596, lagTurns: 9, nodeId: 'lab_transfer_13' },
+];

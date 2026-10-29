@@ -1,0 +1,31 @@
+import type { V1019MtrdLaneGraphEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 046 (shipping lane cross-system coupling). */
+export const V1019_MTRD_LANE_GRAPH_SHARD_046: readonly V1019MtrdLaneGraphEdge[] = [
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.477, lagTurns: 9, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.484, lagTurns: 10, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.491, lagTurns: 11, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.498, lagTurns: 9, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.4, lagTurns: 10, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.407, lagTurns: 11, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.414, lagTurns: 9, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.421, lagTurns: 10, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.428, lagTurns: 11, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.435, lagTurns: 9, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.442, lagTurns: 10, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.449, lagTurns: 11, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.456, lagTurns: 9, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.463, lagTurns: 10, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.47, lagTurns: 11, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.477, lagTurns: 9, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.484, lagTurns: 10, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.491, lagTurns: 11, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.498, lagTurns: 9, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.4, lagTurns: 10, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.407, lagTurns: 11, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.414, lagTurns: 9, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.421, lagTurns: 10, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.428, lagTurns: 11, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.435, lagTurns: 9, nodeId: 'port_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.442, lagTurns: 10, nodeId: 'port_22' },
+];

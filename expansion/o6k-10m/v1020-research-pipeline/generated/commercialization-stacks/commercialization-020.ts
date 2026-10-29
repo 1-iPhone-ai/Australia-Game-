@@ -1,0 +1,31 @@
+import type { V1020RpipeGrantStackEdge } from '../../types/core.ts';
+
+/** Commercialization stack graph shard 020 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_020: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.225, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.232, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.239, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.246, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.253, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.155, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.162, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.169, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.176, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.183, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.19, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.197, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.204, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.211, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.218, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.225, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.232, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.239, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.246, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.253, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.155, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.162, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.169, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.176, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.183, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.19, lagTurns: 8, nodeId: 'lab_transfer_20' },
+];

@@ -1,0 +1,31 @@
+import type { V1017IclogCorridorEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 034 (freight route cross-system coupling). */
+export const V1017_ICLOG_CORRIDOR_SHARD_034: readonly V1017IclogCorridorEdge[] = [
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.743, lagTurns: 5, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.645, lagTurns: 6, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.652, lagTurns: 7, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.659, lagTurns: 5, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.666, lagTurns: 6, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.673, lagTurns: 7, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.68, lagTurns: 5, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.687, lagTurns: 6, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.694, lagTurns: 7, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.701, lagTurns: 5, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.708, lagTurns: 6, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.715, lagTurns: 7, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.722, lagTurns: 5, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.729, lagTurns: 6, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.736, lagTurns: 7, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.743, lagTurns: 5, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.645, lagTurns: 6, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.652, lagTurns: 7, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.659, lagTurns: 5, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.666, lagTurns: 6, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.673, lagTurns: 7, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.68, lagTurns: 5, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.687, lagTurns: 6, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.694, lagTurns: 7, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.701, lagTurns: 5, nodeId: 'hub_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.708, lagTurns: 6, nodeId: 'hub_10' },
+];

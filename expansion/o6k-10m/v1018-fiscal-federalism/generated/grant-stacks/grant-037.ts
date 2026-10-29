@@ -1,0 +1,31 @@
+import type { V1018FfedGrantStackEdge } from '../../types/core.ts';
+
+/** Grant stack graph shard 037 (state–federal transfer cross-system coupling). */
+export const V1018_FFED_GRANT_STACK_SHARD_037: readonly V1018FfedGrantStackEdge[] = [
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.764, lagTurns: 8, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.771, lagTurns: 9, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.778, lagTurns: 10, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.785, lagTurns: 8, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.792, lagTurns: 9, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.799, lagTurns: 10, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.806, lagTurns: 8, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.813, lagTurns: 9, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.82, lagTurns: 10, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.827, lagTurns: 8, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.834, lagTurns: 9, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.841, lagTurns: 10, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.848, lagTurns: 8, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.75, lagTurns: 9, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.757, lagTurns: 10, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.764, lagTurns: 8, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.771, lagTurns: 9, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.778, lagTurns: 10, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.785, lagTurns: 8, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.792, lagTurns: 9, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.799, lagTurns: 10, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.806, lagTurns: 8, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.813, lagTurns: 9, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.82, lagTurns: 10, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.827, lagTurns: 8, nodeId: 'audit_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.834, lagTurns: 9, nodeId: 'audit_13' },
+];

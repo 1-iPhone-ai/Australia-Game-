@@ -1,0 +1,31 @@
+import type { V1027WsecAquiferReserveEdge } from '../../types/core.ts';
+
+/** Aquifer reserve graph shard 019 (surface/ground/aquifer corridor coupling). */
+export const V1027_WSEC_AQUIFER_RESERVE_SHARD_019: readonly V1027WsecAquiferReserveEdge[] = [
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.258, lagTurns: 3, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.264, lagTurns: 4, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.27, lagTurns: 5, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.276, lagTurns: 6, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.282, lagTurns: 3, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.288, lagTurns: 4, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.294, lagTurns: 5, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.3, lagTurns: 6, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.204, lagTurns: 3, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.21, lagTurns: 4, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.216, lagTurns: 5, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.222, lagTurns: 6, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.228, lagTurns: 3, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.234, lagTurns: 4, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.24, lagTurns: 5, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.246, lagTurns: 6, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.252, lagTurns: 3, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.258, lagTurns: 4, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.264, lagTurns: 5, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.27, lagTurns: 6, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.276, lagTurns: 3, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.282, lagTurns: 4, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.288, lagTurns: 5, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.294, lagTurns: 6, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.3, lagTurns: 3, nodeId: 'distribution_network_19' },
+  { fromChannel: 'remote', toChannel: 'distribution_network', weight: 0.204, lagTurns: 4, nodeId: 'distribution_network_19' },
+];

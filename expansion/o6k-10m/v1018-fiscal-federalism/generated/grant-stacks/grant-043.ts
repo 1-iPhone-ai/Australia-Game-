@@ -1,0 +1,31 @@
+import type { V1018FfedGrantStackEdge } from '../../types/core.ts';
+
+/** Grant stack graph shard 043 (state–federal transfer cross-system coupling). */
+export const V1018_FFED_GRANT_STACK_SHARD_043: readonly V1018FfedGrantStackEdge[] = [
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.351, lagTurns: 6, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.358, lagTurns: 7, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.365, lagTurns: 8, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.372, lagTurns: 6, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.379, lagTurns: 7, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.386, lagTurns: 8, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.393, lagTurns: 6, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.295, lagTurns: 7, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.302, lagTurns: 8, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.309, lagTurns: 6, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.316, lagTurns: 7, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.323, lagTurns: 8, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.33, lagTurns: 6, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.337, lagTurns: 7, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.344, lagTurns: 8, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.351, lagTurns: 6, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.358, lagTurns: 7, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.365, lagTurns: 8, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.372, lagTurns: 6, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.379, lagTurns: 7, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.386, lagTurns: 8, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.393, lagTurns: 6, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.295, lagTurns: 7, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.302, lagTurns: 8, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.309, lagTurns: 6, nodeId: 'audit_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.316, lagTurns: 7, nodeId: 'audit_19' },
+];

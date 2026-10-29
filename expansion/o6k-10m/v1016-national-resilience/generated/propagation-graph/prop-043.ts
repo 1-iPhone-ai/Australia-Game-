@@ -1,0 +1,31 @@
+import type { V1016NresPropagationEdge } from '../../types/core.ts';
+
+/** Propagation graph shard 043 (supply shock cross-system coupling). */
+export const V1016_NRES_PROPAGATION_SHARD_043: readonly V1016NresPropagationEdge[] = [
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.351, lagTurns: 6, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.358, lagTurns: 7, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.365, lagTurns: 8, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.372, lagTurns: 6, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.379, lagTurns: 7, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.386, lagTurns: 8, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.393, lagTurns: 6, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.295, lagTurns: 7, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.302, lagTurns: 8, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.309, lagTurns: 6, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.316, lagTurns: 7, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.323, lagTurns: 8, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.33, lagTurns: 6, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.337, lagTurns: 7, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.344, lagTurns: 8, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.351, lagTurns: 6, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.358, lagTurns: 7, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.365, lagTurns: 8, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.372, lagTurns: 6, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.379, lagTurns: 7, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.386, lagTurns: 8, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.393, lagTurns: 6, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.295, lagTurns: 7, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.302, lagTurns: 8, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.309, lagTurns: 6, nodeId: 'node_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.316, lagTurns: 7, nodeId: 'node_19' },
+];

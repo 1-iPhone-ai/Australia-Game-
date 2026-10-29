@@ -1,0 +1,31 @@
+import type { V1027WsecAquiferReserveEdge } from '../../types/core.ts';
+
+/** Aquifer reserve graph shard 038 (surface/ground/aquifer corridor coupling). */
+export const V1027_WSEC_AQUIFER_RESERVE_SHARD_038: readonly V1027WsecAquiferReserveEdge[] = [
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.274, lagTurns: 4, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.28, lagTurns: 5, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.286, lagTurns: 6, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.292, lagTurns: 7, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.298, lagTurns: 4, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.304, lagTurns: 5, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.31, lagTurns: 6, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.316, lagTurns: 7, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.322, lagTurns: 4, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.328, lagTurns: 5, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.334, lagTurns: 6, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.34, lagTurns: 7, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.346, lagTurns: 4, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.352, lagTurns: 5, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.358, lagTurns: 6, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.364, lagTurns: 7, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.268, lagTurns: 4, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.274, lagTurns: 5, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.28, lagTurns: 6, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.286, lagTurns: 7, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.292, lagTurns: 4, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.298, lagTurns: 5, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.304, lagTurns: 6, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.31, lagTurns: 7, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.316, lagTurns: 4, nodeId: 'distribution_network_14' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.322, lagTurns: 5, nodeId: 'distribution_network_14' },
+];

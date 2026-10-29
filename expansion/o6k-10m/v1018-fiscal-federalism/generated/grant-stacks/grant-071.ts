@@ -1,0 +1,31 @@
+import type { V1018FfedGrantStackEdge } from '../../types/core.ts';
+
+/** Grant stack graph shard 071 (state–federal transfer cross-system coupling). */
+export const V1018_FFED_GRANT_STACK_SHARD_071: readonly V1018FfedGrantStackEdge[] = [
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.617, lagTurns: 10, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.624, lagTurns: 11, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.631, lagTurns: 12, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.638, lagTurns: 10, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.645, lagTurns: 11, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.652, lagTurns: 12, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.659, lagTurns: 10, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.666, lagTurns: 11, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.673, lagTurns: 12, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.68, lagTurns: 10, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.687, lagTurns: 11, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.694, lagTurns: 12, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.701, lagTurns: 10, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.708, lagTurns: 11, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.61, lagTurns: 12, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.617, lagTurns: 10, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.624, lagTurns: 11, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.631, lagTurns: 12, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.638, lagTurns: 10, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.645, lagTurns: 11, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.652, lagTurns: 12, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.659, lagTurns: 10, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.666, lagTurns: 11, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.673, lagTurns: 12, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.68, lagTurns: 10, nodeId: 'audit_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.687, lagTurns: 11, nodeId: 'audit_23' },
+];

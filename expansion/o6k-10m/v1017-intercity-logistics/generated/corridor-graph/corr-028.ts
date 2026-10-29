@@ -1,0 +1,31 @@
+import type { V1017IclogCorridorEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 028 (freight route cross-system coupling). */
+export const V1017_ICLOG_CORRIDOR_SHARD_028: readonly V1017IclogCorridorEdge[] = [
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.491, lagTurns: 7, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.498, lagTurns: 8, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.505, lagTurns: 9, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.512, lagTurns: 7, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.519, lagTurns: 8, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.526, lagTurns: 9, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.533, lagTurns: 7, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.435, lagTurns: 8, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.442, lagTurns: 9, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.449, lagTurns: 7, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.456, lagTurns: 8, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.463, lagTurns: 9, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.47, lagTurns: 7, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.477, lagTurns: 8, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.484, lagTurns: 9, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.491, lagTurns: 7, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.498, lagTurns: 8, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.505, lagTurns: 9, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.512, lagTurns: 7, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.519, lagTurns: 8, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.526, lagTurns: 9, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.533, lagTurns: 7, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.435, lagTurns: 8, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.442, lagTurns: 9, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.449, lagTurns: 7, nodeId: 'hub_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.456, lagTurns: 8, nodeId: 'hub_04' },
+];

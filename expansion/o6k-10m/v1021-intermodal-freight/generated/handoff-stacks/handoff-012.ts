@@ -1,0 +1,31 @@
+import type { V1021ImfdHandoffStackEdge } from '../../types/core.ts';
+
+/** Handoff stack graph shard 012 (rail/port/air corridor coupling). */
+export const V1021_IMFD_HANDOFF_STACK_SHARD_012: readonly V1021ImfdHandoffStackEdge[] = [
+  { fromMode: 'port', toMode: 'bulk', weight: 0.542, lagTurns: 5, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.548, lagTurns: 6, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.554, lagTurns: 7, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.56, lagTurns: 8, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.566, lagTurns: 5, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.572, lagTurns: 6, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.578, lagTurns: 7, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.584, lagTurns: 8, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.59, lagTurns: 5, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.596, lagTurns: 6, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.602, lagTurns: 7, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.608, lagTurns: 8, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.614, lagTurns: 5, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.62, lagTurns: 6, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.524, lagTurns: 7, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.53, lagTurns: 8, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.536, lagTurns: 5, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.542, lagTurns: 6, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.548, lagTurns: 7, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.554, lagTurns: 8, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.56, lagTurns: 5, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.566, lagTurns: 6, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.572, lagTurns: 7, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.578, lagTurns: 8, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.584, lagTurns: 5, hubId: 'dwell_hub_12' },
+  { fromMode: 'port', toMode: 'bulk', weight: 0.59, lagTurns: 6, hubId: 'dwell_hub_12' },
+];

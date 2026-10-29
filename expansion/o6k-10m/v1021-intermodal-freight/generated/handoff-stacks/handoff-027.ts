@@ -1,0 +1,31 @@
+import type { V1021ImfdHandoffStackEdge } from '../../types/core.ts';
+
+/** Handoff stack graph shard 027 (rail/port/air corridor coupling). */
+export const V1021_IMFD_HANDOFF_STACK_SHARD_027: readonly V1021ImfdHandoffStackEdge[] = [
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.526, lagTurns: 2, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.532, lagTurns: 3, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.538, lagTurns: 4, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.544, lagTurns: 5, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.55, lagTurns: 2, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.556, lagTurns: 3, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.46, lagTurns: 4, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.466, lagTurns: 5, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.472, lagTurns: 2, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.478, lagTurns: 3, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.484, lagTurns: 4, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.49, lagTurns: 5, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.496, lagTurns: 2, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.502, lagTurns: 3, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.508, lagTurns: 4, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.514, lagTurns: 5, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.52, lagTurns: 2, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.526, lagTurns: 3, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.532, lagTurns: 4, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.538, lagTurns: 5, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.544, lagTurns: 2, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.55, lagTurns: 3, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.556, lagTurns: 4, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.46, lagTurns: 5, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.466, lagTurns: 2, hubId: 'dwell_hub_03' },
+  { fromMode: 'refrigerated', toMode: 'rail', weight: 0.472, lagTurns: 3, hubId: 'dwell_hub_03' },
+];

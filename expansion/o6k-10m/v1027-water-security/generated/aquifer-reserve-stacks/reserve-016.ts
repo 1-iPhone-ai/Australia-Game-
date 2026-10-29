@@ -1,0 +1,31 @@
+import type { V1027WsecAquiferReserveEdge } from '../../types/core.ts';
+
+/** Aquifer reserve graph shard 016 (surface/ground/aquifer corridor coupling). */
+export const V1027_WSEC_AQUIFER_RESERVE_SHARD_016: readonly V1027WsecAquiferReserveEdge[] = [
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.676, lagTurns: 9, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.682, lagTurns: 10, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.688, lagTurns: 11, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.694, lagTurns: 12, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.7, lagTurns: 9, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.706, lagTurns: 10, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.712, lagTurns: 11, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.718, lagTurns: 12, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.724, lagTurns: 9, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.73, lagTurns: 10, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.736, lagTurns: 11, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.742, lagTurns: 12, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.748, lagTurns: 9, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.652, lagTurns: 10, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.658, lagTurns: 11, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.664, lagTurns: 12, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.67, lagTurns: 9, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.676, lagTurns: 10, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.682, lagTurns: 11, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.688, lagTurns: 12, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.694, lagTurns: 9, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.7, lagTurns: 10, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.706, lagTurns: 11, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.712, lagTurns: 12, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.718, lagTurns: 9, nodeId: 'distribution_network_16' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.724, lagTurns: 10, nodeId: 'distribution_network_16' },
+];

@@ -1,0 +1,31 @@
+import type { V1019MtrdLaneGraphEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 001 (shipping lane cross-system coupling). */
+export const V1019_MTRD_LANE_GRAPH_SHARD_001: readonly V1019MtrdLaneGraphEdge[] = [
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.232, lagTurns: 4, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.239, lagTurns: 5, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.246, lagTurns: 6, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.253, lagTurns: 4, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.155, lagTurns: 5, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.162, lagTurns: 6, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.169, lagTurns: 4, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.176, lagTurns: 5, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.183, lagTurns: 6, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.19, lagTurns: 4, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.197, lagTurns: 5, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.204, lagTurns: 6, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.211, lagTurns: 4, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.218, lagTurns: 5, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.225, lagTurns: 6, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.232, lagTurns: 4, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.239, lagTurns: 5, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.246, lagTurns: 6, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.253, lagTurns: 4, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.155, lagTurns: 5, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.162, lagTurns: 6, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.169, lagTurns: 4, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.176, lagTurns: 5, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.183, lagTurns: 6, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.19, lagTurns: 4, nodeId: 'port_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.197, lagTurns: 5, nodeId: 'port_01' },
+];

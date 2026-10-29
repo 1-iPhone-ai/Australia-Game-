@@ -1,0 +1,31 @@
+import type { V1027WsecAquiferReserveEdge } from '../../types/core.ts';
+
+/** Aquifer reserve graph shard 032 (surface/ground/aquifer corridor coupling). */
+export const V1027_WSEC_AQUIFER_RESERVE_SHARD_032: readonly V1027WsecAquiferReserveEdge[] = [
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.668, lagTurns: 7, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.674, lagTurns: 8, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.68, lagTurns: 9, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.686, lagTurns: 10, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.692, lagTurns: 7, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.698, lagTurns: 8, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.704, lagTurns: 9, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.71, lagTurns: 10, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.716, lagTurns: 7, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.62, lagTurns: 8, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.626, lagTurns: 9, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.632, lagTurns: 10, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.638, lagTurns: 7, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.644, lagTurns: 8, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.65, lagTurns: 9, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.656, lagTurns: 10, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.662, lagTurns: 7, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.668, lagTurns: 8, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.674, lagTurns: 9, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.68, lagTurns: 10, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.686, lagTurns: 7, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.692, lagTurns: 8, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.698, lagTurns: 9, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.704, lagTurns: 10, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.71, lagTurns: 7, nodeId: 'distribution_network_08' },
+  { fromChannel: 'distribution_network', toChannel: 'specialist_referral', weight: 0.716, lagTurns: 8, nodeId: 'distribution_network_08' },
+];

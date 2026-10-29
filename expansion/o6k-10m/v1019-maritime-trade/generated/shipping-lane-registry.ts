@@ -1,0 +1,572 @@
+/** Generated registry — regenerate via scripts/generate.py */
+import type { V1019MtrdRegionId, V1019MtrdShippingLaneSnapshot } from '../types/core.ts';
+import { V1019_MTRD_LANE_SCENARIO_000_snapshot, V1019_MTRD_LANE_SCENARIO_000_META, V1019_MTRD_LANE_SCENARIO_000_regressionAssert } from './shipping-lane-scenarios/lane-000.ts';
+import { V1019_MTRD_LANE_SCENARIO_001_snapshot, V1019_MTRD_LANE_SCENARIO_001_META, V1019_MTRD_LANE_SCENARIO_001_regressionAssert } from './shipping-lane-scenarios/lane-001.ts';
+import { V1019_MTRD_LANE_SCENARIO_002_snapshot, V1019_MTRD_LANE_SCENARIO_002_META, V1019_MTRD_LANE_SCENARIO_002_regressionAssert } from './shipping-lane-scenarios/lane-002.ts';
+import { V1019_MTRD_LANE_SCENARIO_003_snapshot, V1019_MTRD_LANE_SCENARIO_003_META, V1019_MTRD_LANE_SCENARIO_003_regressionAssert } from './shipping-lane-scenarios/lane-003.ts';
+import { V1019_MTRD_LANE_SCENARIO_004_snapshot, V1019_MTRD_LANE_SCENARIO_004_META, V1019_MTRD_LANE_SCENARIO_004_regressionAssert } from './shipping-lane-scenarios/lane-004.ts';
+import { V1019_MTRD_LANE_SCENARIO_005_snapshot, V1019_MTRD_LANE_SCENARIO_005_META, V1019_MTRD_LANE_SCENARIO_005_regressionAssert } from './shipping-lane-scenarios/lane-005.ts';
+import { V1019_MTRD_LANE_SCENARIO_006_snapshot, V1019_MTRD_LANE_SCENARIO_006_META, V1019_MTRD_LANE_SCENARIO_006_regressionAssert } from './shipping-lane-scenarios/lane-006.ts';
+import { V1019_MTRD_LANE_SCENARIO_007_snapshot, V1019_MTRD_LANE_SCENARIO_007_META, V1019_MTRD_LANE_SCENARIO_007_regressionAssert } from './shipping-lane-scenarios/lane-007.ts';
+import { V1019_MTRD_LANE_SCENARIO_008_snapshot, V1019_MTRD_LANE_SCENARIO_008_META, V1019_MTRD_LANE_SCENARIO_008_regressionAssert } from './shipping-lane-scenarios/lane-008.ts';
+import { V1019_MTRD_LANE_SCENARIO_009_snapshot, V1019_MTRD_LANE_SCENARIO_009_META, V1019_MTRD_LANE_SCENARIO_009_regressionAssert } from './shipping-lane-scenarios/lane-009.ts';
+import { V1019_MTRD_LANE_SCENARIO_010_snapshot, V1019_MTRD_LANE_SCENARIO_010_META, V1019_MTRD_LANE_SCENARIO_010_regressionAssert } from './shipping-lane-scenarios/lane-010.ts';
+import { V1019_MTRD_LANE_SCENARIO_011_snapshot, V1019_MTRD_LANE_SCENARIO_011_META, V1019_MTRD_LANE_SCENARIO_011_regressionAssert } from './shipping-lane-scenarios/lane-011.ts';
+import { V1019_MTRD_LANE_SCENARIO_012_snapshot, V1019_MTRD_LANE_SCENARIO_012_META, V1019_MTRD_LANE_SCENARIO_012_regressionAssert } from './shipping-lane-scenarios/lane-012.ts';
+import { V1019_MTRD_LANE_SCENARIO_013_snapshot, V1019_MTRD_LANE_SCENARIO_013_META, V1019_MTRD_LANE_SCENARIO_013_regressionAssert } from './shipping-lane-scenarios/lane-013.ts';
+import { V1019_MTRD_LANE_SCENARIO_014_snapshot, V1019_MTRD_LANE_SCENARIO_014_META, V1019_MTRD_LANE_SCENARIO_014_regressionAssert } from './shipping-lane-scenarios/lane-014.ts';
+import { V1019_MTRD_LANE_SCENARIO_015_snapshot, V1019_MTRD_LANE_SCENARIO_015_META, V1019_MTRD_LANE_SCENARIO_015_regressionAssert } from './shipping-lane-scenarios/lane-015.ts';
+import { V1019_MTRD_LANE_SCENARIO_016_snapshot, V1019_MTRD_LANE_SCENARIO_016_META, V1019_MTRD_LANE_SCENARIO_016_regressionAssert } from './shipping-lane-scenarios/lane-016.ts';
+import { V1019_MTRD_LANE_SCENARIO_017_snapshot, V1019_MTRD_LANE_SCENARIO_017_META, V1019_MTRD_LANE_SCENARIO_017_regressionAssert } from './shipping-lane-scenarios/lane-017.ts';
+import { V1019_MTRD_LANE_SCENARIO_018_snapshot, V1019_MTRD_LANE_SCENARIO_018_META, V1019_MTRD_LANE_SCENARIO_018_regressionAssert } from './shipping-lane-scenarios/lane-018.ts';
+import { V1019_MTRD_LANE_SCENARIO_019_snapshot, V1019_MTRD_LANE_SCENARIO_019_META, V1019_MTRD_LANE_SCENARIO_019_regressionAssert } from './shipping-lane-scenarios/lane-019.ts';
+import { V1019_MTRD_LANE_SCENARIO_020_snapshot, V1019_MTRD_LANE_SCENARIO_020_META, V1019_MTRD_LANE_SCENARIO_020_regressionAssert } from './shipping-lane-scenarios/lane-020.ts';
+import { V1019_MTRD_LANE_SCENARIO_021_snapshot, V1019_MTRD_LANE_SCENARIO_021_META, V1019_MTRD_LANE_SCENARIO_021_regressionAssert } from './shipping-lane-scenarios/lane-021.ts';
+import { V1019_MTRD_LANE_SCENARIO_022_snapshot, V1019_MTRD_LANE_SCENARIO_022_META, V1019_MTRD_LANE_SCENARIO_022_regressionAssert } from './shipping-lane-scenarios/lane-022.ts';
+import { V1019_MTRD_LANE_SCENARIO_023_snapshot, V1019_MTRD_LANE_SCENARIO_023_META, V1019_MTRD_LANE_SCENARIO_023_regressionAssert } from './shipping-lane-scenarios/lane-023.ts';
+import { V1019_MTRD_LANE_SCENARIO_024_snapshot, V1019_MTRD_LANE_SCENARIO_024_META, V1019_MTRD_LANE_SCENARIO_024_regressionAssert } from './shipping-lane-scenarios/lane-024.ts';
+import { V1019_MTRD_LANE_SCENARIO_025_snapshot, V1019_MTRD_LANE_SCENARIO_025_META, V1019_MTRD_LANE_SCENARIO_025_regressionAssert } from './shipping-lane-scenarios/lane-025.ts';
+import { V1019_MTRD_LANE_SCENARIO_026_snapshot, V1019_MTRD_LANE_SCENARIO_026_META, V1019_MTRD_LANE_SCENARIO_026_regressionAssert } from './shipping-lane-scenarios/lane-026.ts';
+import { V1019_MTRD_LANE_SCENARIO_027_snapshot, V1019_MTRD_LANE_SCENARIO_027_META, V1019_MTRD_LANE_SCENARIO_027_regressionAssert } from './shipping-lane-scenarios/lane-027.ts';
+import { V1019_MTRD_LANE_SCENARIO_028_snapshot, V1019_MTRD_LANE_SCENARIO_028_META, V1019_MTRD_LANE_SCENARIO_028_regressionAssert } from './shipping-lane-scenarios/lane-028.ts';
+import { V1019_MTRD_LANE_SCENARIO_029_snapshot, V1019_MTRD_LANE_SCENARIO_029_META, V1019_MTRD_LANE_SCENARIO_029_regressionAssert } from './shipping-lane-scenarios/lane-029.ts';
+import { V1019_MTRD_LANE_SCENARIO_030_snapshot, V1019_MTRD_LANE_SCENARIO_030_META, V1019_MTRD_LANE_SCENARIO_030_regressionAssert } from './shipping-lane-scenarios/lane-030.ts';
+import { V1019_MTRD_LANE_SCENARIO_031_snapshot, V1019_MTRD_LANE_SCENARIO_031_META, V1019_MTRD_LANE_SCENARIO_031_regressionAssert } from './shipping-lane-scenarios/lane-031.ts';
+import { V1019_MTRD_LANE_SCENARIO_032_snapshot, V1019_MTRD_LANE_SCENARIO_032_META, V1019_MTRD_LANE_SCENARIO_032_regressionAssert } from './shipping-lane-scenarios/lane-032.ts';
+import { V1019_MTRD_LANE_SCENARIO_033_snapshot, V1019_MTRD_LANE_SCENARIO_033_META, V1019_MTRD_LANE_SCENARIO_033_regressionAssert } from './shipping-lane-scenarios/lane-033.ts';
+import { V1019_MTRD_LANE_SCENARIO_034_snapshot, V1019_MTRD_LANE_SCENARIO_034_META, V1019_MTRD_LANE_SCENARIO_034_regressionAssert } from './shipping-lane-scenarios/lane-034.ts';
+import { V1019_MTRD_LANE_SCENARIO_035_snapshot, V1019_MTRD_LANE_SCENARIO_035_META, V1019_MTRD_LANE_SCENARIO_035_regressionAssert } from './shipping-lane-scenarios/lane-035.ts';
+import { V1019_MTRD_LANE_SCENARIO_036_snapshot, V1019_MTRD_LANE_SCENARIO_036_META, V1019_MTRD_LANE_SCENARIO_036_regressionAssert } from './shipping-lane-scenarios/lane-036.ts';
+import { V1019_MTRD_LANE_SCENARIO_037_snapshot, V1019_MTRD_LANE_SCENARIO_037_META, V1019_MTRD_LANE_SCENARIO_037_regressionAssert } from './shipping-lane-scenarios/lane-037.ts';
+import { V1019_MTRD_LANE_SCENARIO_038_snapshot, V1019_MTRD_LANE_SCENARIO_038_META, V1019_MTRD_LANE_SCENARIO_038_regressionAssert } from './shipping-lane-scenarios/lane-038.ts';
+import { V1019_MTRD_LANE_SCENARIO_039_snapshot, V1019_MTRD_LANE_SCENARIO_039_META, V1019_MTRD_LANE_SCENARIO_039_regressionAssert } from './shipping-lane-scenarios/lane-039.ts';
+import { V1019_MTRD_LANE_SCENARIO_040_snapshot, V1019_MTRD_LANE_SCENARIO_040_META, V1019_MTRD_LANE_SCENARIO_040_regressionAssert } from './shipping-lane-scenarios/lane-040.ts';
+import { V1019_MTRD_LANE_SCENARIO_041_snapshot, V1019_MTRD_LANE_SCENARIO_041_META, V1019_MTRD_LANE_SCENARIO_041_regressionAssert } from './shipping-lane-scenarios/lane-041.ts';
+import { V1019_MTRD_LANE_SCENARIO_042_snapshot, V1019_MTRD_LANE_SCENARIO_042_META, V1019_MTRD_LANE_SCENARIO_042_regressionAssert } from './shipping-lane-scenarios/lane-042.ts';
+import { V1019_MTRD_LANE_SCENARIO_043_snapshot, V1019_MTRD_LANE_SCENARIO_043_META, V1019_MTRD_LANE_SCENARIO_043_regressionAssert } from './shipping-lane-scenarios/lane-043.ts';
+import { V1019_MTRD_LANE_SCENARIO_044_snapshot, V1019_MTRD_LANE_SCENARIO_044_META, V1019_MTRD_LANE_SCENARIO_044_regressionAssert } from './shipping-lane-scenarios/lane-044.ts';
+import { V1019_MTRD_LANE_SCENARIO_045_snapshot, V1019_MTRD_LANE_SCENARIO_045_META, V1019_MTRD_LANE_SCENARIO_045_regressionAssert } from './shipping-lane-scenarios/lane-045.ts';
+import { V1019_MTRD_LANE_SCENARIO_046_snapshot, V1019_MTRD_LANE_SCENARIO_046_META, V1019_MTRD_LANE_SCENARIO_046_regressionAssert } from './shipping-lane-scenarios/lane-046.ts';
+import { V1019_MTRD_LANE_SCENARIO_047_snapshot, V1019_MTRD_LANE_SCENARIO_047_META, V1019_MTRD_LANE_SCENARIO_047_regressionAssert } from './shipping-lane-scenarios/lane-047.ts';
+import { V1019_MTRD_LANE_SCENARIO_048_snapshot, V1019_MTRD_LANE_SCENARIO_048_META, V1019_MTRD_LANE_SCENARIO_048_regressionAssert } from './shipping-lane-scenarios/lane-048.ts';
+import { V1019_MTRD_LANE_SCENARIO_049_snapshot, V1019_MTRD_LANE_SCENARIO_049_META, V1019_MTRD_LANE_SCENARIO_049_regressionAssert } from './shipping-lane-scenarios/lane-049.ts';
+import { V1019_MTRD_LANE_SCENARIO_050_snapshot, V1019_MTRD_LANE_SCENARIO_050_META, V1019_MTRD_LANE_SCENARIO_050_regressionAssert } from './shipping-lane-scenarios/lane-050.ts';
+import { V1019_MTRD_LANE_SCENARIO_051_snapshot, V1019_MTRD_LANE_SCENARIO_051_META, V1019_MTRD_LANE_SCENARIO_051_regressionAssert } from './shipping-lane-scenarios/lane-051.ts';
+import { V1019_MTRD_LANE_SCENARIO_052_snapshot, V1019_MTRD_LANE_SCENARIO_052_META, V1019_MTRD_LANE_SCENARIO_052_regressionAssert } from './shipping-lane-scenarios/lane-052.ts';
+import { V1019_MTRD_LANE_SCENARIO_053_snapshot, V1019_MTRD_LANE_SCENARIO_053_META, V1019_MTRD_LANE_SCENARIO_053_regressionAssert } from './shipping-lane-scenarios/lane-053.ts';
+import { V1019_MTRD_LANE_SCENARIO_054_snapshot, V1019_MTRD_LANE_SCENARIO_054_META, V1019_MTRD_LANE_SCENARIO_054_regressionAssert } from './shipping-lane-scenarios/lane-054.ts';
+import { V1019_MTRD_LANE_SCENARIO_055_snapshot, V1019_MTRD_LANE_SCENARIO_055_META, V1019_MTRD_LANE_SCENARIO_055_regressionAssert } from './shipping-lane-scenarios/lane-055.ts';
+import { V1019_MTRD_LANE_SCENARIO_056_snapshot, V1019_MTRD_LANE_SCENARIO_056_META, V1019_MTRD_LANE_SCENARIO_056_regressionAssert } from './shipping-lane-scenarios/lane-056.ts';
+import { V1019_MTRD_LANE_SCENARIO_057_snapshot, V1019_MTRD_LANE_SCENARIO_057_META, V1019_MTRD_LANE_SCENARIO_057_regressionAssert } from './shipping-lane-scenarios/lane-057.ts';
+import { V1019_MTRD_LANE_SCENARIO_058_snapshot, V1019_MTRD_LANE_SCENARIO_058_META, V1019_MTRD_LANE_SCENARIO_058_regressionAssert } from './shipping-lane-scenarios/lane-058.ts';
+import { V1019_MTRD_LANE_SCENARIO_059_snapshot, V1019_MTRD_LANE_SCENARIO_059_META, V1019_MTRD_LANE_SCENARIO_059_regressionAssert } from './shipping-lane-scenarios/lane-059.ts';
+import { V1019_MTRD_LANE_SCENARIO_060_snapshot, V1019_MTRD_LANE_SCENARIO_060_META, V1019_MTRD_LANE_SCENARIO_060_regressionAssert } from './shipping-lane-scenarios/lane-060.ts';
+import { V1019_MTRD_LANE_SCENARIO_061_snapshot, V1019_MTRD_LANE_SCENARIO_061_META, V1019_MTRD_LANE_SCENARIO_061_regressionAssert } from './shipping-lane-scenarios/lane-061.ts';
+import { V1019_MTRD_LANE_SCENARIO_062_snapshot, V1019_MTRD_LANE_SCENARIO_062_META, V1019_MTRD_LANE_SCENARIO_062_regressionAssert } from './shipping-lane-scenarios/lane-062.ts';
+import { V1019_MTRD_LANE_SCENARIO_063_snapshot, V1019_MTRD_LANE_SCENARIO_063_META, V1019_MTRD_LANE_SCENARIO_063_regressionAssert } from './shipping-lane-scenarios/lane-063.ts';
+import { V1019_MTRD_LANE_SCENARIO_064_snapshot, V1019_MTRD_LANE_SCENARIO_064_META, V1019_MTRD_LANE_SCENARIO_064_regressionAssert } from './shipping-lane-scenarios/lane-064.ts';
+import { V1019_MTRD_LANE_SCENARIO_065_snapshot, V1019_MTRD_LANE_SCENARIO_065_META, V1019_MTRD_LANE_SCENARIO_065_regressionAssert } from './shipping-lane-scenarios/lane-065.ts';
+import { V1019_MTRD_LANE_SCENARIO_066_snapshot, V1019_MTRD_LANE_SCENARIO_066_META, V1019_MTRD_LANE_SCENARIO_066_regressionAssert } from './shipping-lane-scenarios/lane-066.ts';
+import { V1019_MTRD_LANE_SCENARIO_067_snapshot, V1019_MTRD_LANE_SCENARIO_067_META, V1019_MTRD_LANE_SCENARIO_067_regressionAssert } from './shipping-lane-scenarios/lane-067.ts';
+import { V1019_MTRD_LANE_SCENARIO_068_snapshot, V1019_MTRD_LANE_SCENARIO_068_META, V1019_MTRD_LANE_SCENARIO_068_regressionAssert } from './shipping-lane-scenarios/lane-068.ts';
+import { V1019_MTRD_LANE_SCENARIO_069_snapshot, V1019_MTRD_LANE_SCENARIO_069_META, V1019_MTRD_LANE_SCENARIO_069_regressionAssert } from './shipping-lane-scenarios/lane-069.ts';
+import { V1019_MTRD_LANE_SCENARIO_070_snapshot, V1019_MTRD_LANE_SCENARIO_070_META, V1019_MTRD_LANE_SCENARIO_070_regressionAssert } from './shipping-lane-scenarios/lane-070.ts';
+import { V1019_MTRD_LANE_SCENARIO_071_snapshot, V1019_MTRD_LANE_SCENARIO_071_META, V1019_MTRD_LANE_SCENARIO_071_regressionAssert } from './shipping-lane-scenarios/lane-071.ts';
+import { V1019_MTRD_LANE_SCENARIO_072_snapshot, V1019_MTRD_LANE_SCENARIO_072_META, V1019_MTRD_LANE_SCENARIO_072_regressionAssert } from './shipping-lane-scenarios/lane-072.ts';
+import { V1019_MTRD_LANE_SCENARIO_073_snapshot, V1019_MTRD_LANE_SCENARIO_073_META, V1019_MTRD_LANE_SCENARIO_073_regressionAssert } from './shipping-lane-scenarios/lane-073.ts';
+import { V1019_MTRD_LANE_SCENARIO_074_snapshot, V1019_MTRD_LANE_SCENARIO_074_META, V1019_MTRD_LANE_SCENARIO_074_regressionAssert } from './shipping-lane-scenarios/lane-074.ts';
+import { V1019_MTRD_LANE_SCENARIO_075_snapshot, V1019_MTRD_LANE_SCENARIO_075_META, V1019_MTRD_LANE_SCENARIO_075_regressionAssert } from './shipping-lane-scenarios/lane-075.ts';
+import { V1019_MTRD_LANE_SCENARIO_076_snapshot, V1019_MTRD_LANE_SCENARIO_076_META, V1019_MTRD_LANE_SCENARIO_076_regressionAssert } from './shipping-lane-scenarios/lane-076.ts';
+import { V1019_MTRD_LANE_SCENARIO_077_snapshot, V1019_MTRD_LANE_SCENARIO_077_META, V1019_MTRD_LANE_SCENARIO_077_regressionAssert } from './shipping-lane-scenarios/lane-077.ts';
+import { V1019_MTRD_LANE_SCENARIO_078_snapshot, V1019_MTRD_LANE_SCENARIO_078_META, V1019_MTRD_LANE_SCENARIO_078_regressionAssert } from './shipping-lane-scenarios/lane-078.ts';
+import { V1019_MTRD_LANE_SCENARIO_079_snapshot, V1019_MTRD_LANE_SCENARIO_079_META, V1019_MTRD_LANE_SCENARIO_079_regressionAssert } from './shipping-lane-scenarios/lane-079.ts';
+import { V1019_MTRD_LANE_SCENARIO_080_snapshot, V1019_MTRD_LANE_SCENARIO_080_META, V1019_MTRD_LANE_SCENARIO_080_regressionAssert } from './shipping-lane-scenarios/lane-080.ts';
+import { V1019_MTRD_LANE_SCENARIO_081_snapshot, V1019_MTRD_LANE_SCENARIO_081_META, V1019_MTRD_LANE_SCENARIO_081_regressionAssert } from './shipping-lane-scenarios/lane-081.ts';
+import { V1019_MTRD_LANE_SCENARIO_082_snapshot, V1019_MTRD_LANE_SCENARIO_082_META, V1019_MTRD_LANE_SCENARIO_082_regressionAssert } from './shipping-lane-scenarios/lane-082.ts';
+import { V1019_MTRD_LANE_SCENARIO_083_snapshot, V1019_MTRD_LANE_SCENARIO_083_META, V1019_MTRD_LANE_SCENARIO_083_regressionAssert } from './shipping-lane-scenarios/lane-083.ts';
+import { V1019_MTRD_LANE_SCENARIO_084_snapshot, V1019_MTRD_LANE_SCENARIO_084_META, V1019_MTRD_LANE_SCENARIO_084_regressionAssert } from './shipping-lane-scenarios/lane-084.ts';
+import { V1019_MTRD_LANE_SCENARIO_085_snapshot, V1019_MTRD_LANE_SCENARIO_085_META, V1019_MTRD_LANE_SCENARIO_085_regressionAssert } from './shipping-lane-scenarios/lane-085.ts';
+import { V1019_MTRD_LANE_SCENARIO_086_snapshot, V1019_MTRD_LANE_SCENARIO_086_META, V1019_MTRD_LANE_SCENARIO_086_regressionAssert } from './shipping-lane-scenarios/lane-086.ts';
+import { V1019_MTRD_LANE_SCENARIO_087_snapshot, V1019_MTRD_LANE_SCENARIO_087_META, V1019_MTRD_LANE_SCENARIO_087_regressionAssert } from './shipping-lane-scenarios/lane-087.ts';
+import { V1019_MTRD_LANE_SCENARIO_088_snapshot, V1019_MTRD_LANE_SCENARIO_088_META, V1019_MTRD_LANE_SCENARIO_088_regressionAssert } from './shipping-lane-scenarios/lane-088.ts';
+import { V1019_MTRD_LANE_SCENARIO_089_snapshot, V1019_MTRD_LANE_SCENARIO_089_META, V1019_MTRD_LANE_SCENARIO_089_regressionAssert } from './shipping-lane-scenarios/lane-089.ts';
+import { V1019_MTRD_LANE_SCENARIO_090_snapshot, V1019_MTRD_LANE_SCENARIO_090_META, V1019_MTRD_LANE_SCENARIO_090_regressionAssert } from './shipping-lane-scenarios/lane-090.ts';
+import { V1019_MTRD_LANE_SCENARIO_091_snapshot, V1019_MTRD_LANE_SCENARIO_091_META, V1019_MTRD_LANE_SCENARIO_091_regressionAssert } from './shipping-lane-scenarios/lane-091.ts';
+import { V1019_MTRD_LANE_SCENARIO_092_snapshot, V1019_MTRD_LANE_SCENARIO_092_META, V1019_MTRD_LANE_SCENARIO_092_regressionAssert } from './shipping-lane-scenarios/lane-092.ts';
+import { V1019_MTRD_LANE_SCENARIO_093_snapshot, V1019_MTRD_LANE_SCENARIO_093_META, V1019_MTRD_LANE_SCENARIO_093_regressionAssert } from './shipping-lane-scenarios/lane-093.ts';
+import { V1019_MTRD_LANE_SCENARIO_094_snapshot, V1019_MTRD_LANE_SCENARIO_094_META, V1019_MTRD_LANE_SCENARIO_094_regressionAssert } from './shipping-lane-scenarios/lane-094.ts';
+import { V1019_MTRD_LANE_SCENARIO_095_snapshot, V1019_MTRD_LANE_SCENARIO_095_META, V1019_MTRD_LANE_SCENARIO_095_regressionAssert } from './shipping-lane-scenarios/lane-095.ts';
+import { V1019_MTRD_LANE_SCENARIO_096_snapshot, V1019_MTRD_LANE_SCENARIO_096_META, V1019_MTRD_LANE_SCENARIO_096_regressionAssert } from './shipping-lane-scenarios/lane-096.ts';
+import { V1019_MTRD_LANE_SCENARIO_097_snapshot, V1019_MTRD_LANE_SCENARIO_097_META, V1019_MTRD_LANE_SCENARIO_097_regressionAssert } from './shipping-lane-scenarios/lane-097.ts';
+import { V1019_MTRD_LANE_SCENARIO_098_snapshot, V1019_MTRD_LANE_SCENARIO_098_META, V1019_MTRD_LANE_SCENARIO_098_regressionAssert } from './shipping-lane-scenarios/lane-098.ts';
+import { V1019_MTRD_LANE_SCENARIO_099_snapshot, V1019_MTRD_LANE_SCENARIO_099_META, V1019_MTRD_LANE_SCENARIO_099_regressionAssert } from './shipping-lane-scenarios/lane-099.ts';
+import { V1019_MTRD_LANE_SCENARIO_100_snapshot, V1019_MTRD_LANE_SCENARIO_100_META, V1019_MTRD_LANE_SCENARIO_100_regressionAssert } from './shipping-lane-scenarios/lane-100.ts';
+import { V1019_MTRD_LANE_SCENARIO_101_snapshot, V1019_MTRD_LANE_SCENARIO_101_META, V1019_MTRD_LANE_SCENARIO_101_regressionAssert } from './shipping-lane-scenarios/lane-101.ts';
+import { V1019_MTRD_LANE_SCENARIO_102_snapshot, V1019_MTRD_LANE_SCENARIO_102_META, V1019_MTRD_LANE_SCENARIO_102_regressionAssert } from './shipping-lane-scenarios/lane-102.ts';
+import { V1019_MTRD_LANE_SCENARIO_103_snapshot, V1019_MTRD_LANE_SCENARIO_103_META, V1019_MTRD_LANE_SCENARIO_103_regressionAssert } from './shipping-lane-scenarios/lane-103.ts';
+import { V1019_MTRD_LANE_SCENARIO_104_snapshot, V1019_MTRD_LANE_SCENARIO_104_META, V1019_MTRD_LANE_SCENARIO_104_regressionAssert } from './shipping-lane-scenarios/lane-104.ts';
+import { V1019_MTRD_LANE_SCENARIO_105_snapshot, V1019_MTRD_LANE_SCENARIO_105_META, V1019_MTRD_LANE_SCENARIO_105_regressionAssert } from './shipping-lane-scenarios/lane-105.ts';
+import { V1019_MTRD_LANE_SCENARIO_106_snapshot, V1019_MTRD_LANE_SCENARIO_106_META, V1019_MTRD_LANE_SCENARIO_106_regressionAssert } from './shipping-lane-scenarios/lane-106.ts';
+import { V1019_MTRD_LANE_SCENARIO_107_snapshot, V1019_MTRD_LANE_SCENARIO_107_META, V1019_MTRD_LANE_SCENARIO_107_regressionAssert } from './shipping-lane-scenarios/lane-107.ts';
+import { V1019_MTRD_LANE_SCENARIO_108_snapshot, V1019_MTRD_LANE_SCENARIO_108_META, V1019_MTRD_LANE_SCENARIO_108_regressionAssert } from './shipping-lane-scenarios/lane-108.ts';
+import { V1019_MTRD_LANE_SCENARIO_109_snapshot, V1019_MTRD_LANE_SCENARIO_109_META, V1019_MTRD_LANE_SCENARIO_109_regressionAssert } from './shipping-lane-scenarios/lane-109.ts';
+import { V1019_MTRD_LANE_SCENARIO_110_snapshot, V1019_MTRD_LANE_SCENARIO_110_META, V1019_MTRD_LANE_SCENARIO_110_regressionAssert } from './shipping-lane-scenarios/lane-110.ts';
+import { V1019_MTRD_LANE_SCENARIO_111_snapshot, V1019_MTRD_LANE_SCENARIO_111_META, V1019_MTRD_LANE_SCENARIO_111_regressionAssert } from './shipping-lane-scenarios/lane-111.ts';
+import { V1019_MTRD_LANE_SCENARIO_112_snapshot, V1019_MTRD_LANE_SCENARIO_112_META, V1019_MTRD_LANE_SCENARIO_112_regressionAssert } from './shipping-lane-scenarios/lane-112.ts';
+import { V1019_MTRD_LANE_SCENARIO_113_snapshot, V1019_MTRD_LANE_SCENARIO_113_META, V1019_MTRD_LANE_SCENARIO_113_regressionAssert } from './shipping-lane-scenarios/lane-113.ts';
+import { V1019_MTRD_LANE_SCENARIO_114_snapshot, V1019_MTRD_LANE_SCENARIO_114_META, V1019_MTRD_LANE_SCENARIO_114_regressionAssert } from './shipping-lane-scenarios/lane-114.ts';
+import { V1019_MTRD_LANE_SCENARIO_115_snapshot, V1019_MTRD_LANE_SCENARIO_115_META, V1019_MTRD_LANE_SCENARIO_115_regressionAssert } from './shipping-lane-scenarios/lane-115.ts';
+import { V1019_MTRD_LANE_SCENARIO_116_snapshot, V1019_MTRD_LANE_SCENARIO_116_META, V1019_MTRD_LANE_SCENARIO_116_regressionAssert } from './shipping-lane-scenarios/lane-116.ts';
+import { V1019_MTRD_LANE_SCENARIO_117_snapshot, V1019_MTRD_LANE_SCENARIO_117_META, V1019_MTRD_LANE_SCENARIO_117_regressionAssert } from './shipping-lane-scenarios/lane-117.ts';
+import { V1019_MTRD_LANE_SCENARIO_118_snapshot, V1019_MTRD_LANE_SCENARIO_118_META, V1019_MTRD_LANE_SCENARIO_118_regressionAssert } from './shipping-lane-scenarios/lane-118.ts';
+import { V1019_MTRD_LANE_SCENARIO_119_snapshot, V1019_MTRD_LANE_SCENARIO_119_META, V1019_MTRD_LANE_SCENARIO_119_regressionAssert } from './shipping-lane-scenarios/lane-119.ts';
+import { V1019_MTRD_LANE_SCENARIO_120_snapshot, V1019_MTRD_LANE_SCENARIO_120_META, V1019_MTRD_LANE_SCENARIO_120_regressionAssert } from './shipping-lane-scenarios/lane-120.ts';
+import { V1019_MTRD_LANE_SCENARIO_121_snapshot, V1019_MTRD_LANE_SCENARIO_121_META, V1019_MTRD_LANE_SCENARIO_121_regressionAssert } from './shipping-lane-scenarios/lane-121.ts';
+import { V1019_MTRD_LANE_SCENARIO_122_snapshot, V1019_MTRD_LANE_SCENARIO_122_META, V1019_MTRD_LANE_SCENARIO_122_regressionAssert } from './shipping-lane-scenarios/lane-122.ts';
+import { V1019_MTRD_LANE_SCENARIO_123_snapshot, V1019_MTRD_LANE_SCENARIO_123_META, V1019_MTRD_LANE_SCENARIO_123_regressionAssert } from './shipping-lane-scenarios/lane-123.ts';
+import { V1019_MTRD_LANE_SCENARIO_124_snapshot, V1019_MTRD_LANE_SCENARIO_124_META, V1019_MTRD_LANE_SCENARIO_124_regressionAssert } from './shipping-lane-scenarios/lane-124.ts';
+import { V1019_MTRD_LANE_SCENARIO_125_snapshot, V1019_MTRD_LANE_SCENARIO_125_META, V1019_MTRD_LANE_SCENARIO_125_regressionAssert } from './shipping-lane-scenarios/lane-125.ts';
+import { V1019_MTRD_LANE_SCENARIO_126_snapshot, V1019_MTRD_LANE_SCENARIO_126_META, V1019_MTRD_LANE_SCENARIO_126_regressionAssert } from './shipping-lane-scenarios/lane-126.ts';
+import { V1019_MTRD_LANE_SCENARIO_127_snapshot, V1019_MTRD_LANE_SCENARIO_127_META, V1019_MTRD_LANE_SCENARIO_127_regressionAssert } from './shipping-lane-scenarios/lane-127.ts';
+import { V1019_MTRD_LANE_SCENARIO_128_snapshot, V1019_MTRD_LANE_SCENARIO_128_META, V1019_MTRD_LANE_SCENARIO_128_regressionAssert } from './shipping-lane-scenarios/lane-128.ts';
+import { V1019_MTRD_LANE_SCENARIO_129_snapshot, V1019_MTRD_LANE_SCENARIO_129_META, V1019_MTRD_LANE_SCENARIO_129_regressionAssert } from './shipping-lane-scenarios/lane-129.ts';
+import { V1019_MTRD_LANE_SCENARIO_130_snapshot, V1019_MTRD_LANE_SCENARIO_130_META, V1019_MTRD_LANE_SCENARIO_130_regressionAssert } from './shipping-lane-scenarios/lane-130.ts';
+import { V1019_MTRD_LANE_SCENARIO_131_snapshot, V1019_MTRD_LANE_SCENARIO_131_META, V1019_MTRD_LANE_SCENARIO_131_regressionAssert } from './shipping-lane-scenarios/lane-131.ts';
+import { V1019_MTRD_LANE_SCENARIO_132_snapshot, V1019_MTRD_LANE_SCENARIO_132_META, V1019_MTRD_LANE_SCENARIO_132_regressionAssert } from './shipping-lane-scenarios/lane-132.ts';
+import { V1019_MTRD_LANE_SCENARIO_133_snapshot, V1019_MTRD_LANE_SCENARIO_133_META, V1019_MTRD_LANE_SCENARIO_133_regressionAssert } from './shipping-lane-scenarios/lane-133.ts';
+import { V1019_MTRD_LANE_SCENARIO_134_snapshot, V1019_MTRD_LANE_SCENARIO_134_META, V1019_MTRD_LANE_SCENARIO_134_regressionAssert } from './shipping-lane-scenarios/lane-134.ts';
+import { V1019_MTRD_LANE_SCENARIO_135_snapshot, V1019_MTRD_LANE_SCENARIO_135_META, V1019_MTRD_LANE_SCENARIO_135_regressionAssert } from './shipping-lane-scenarios/lane-135.ts';
+import { V1019_MTRD_LANE_SCENARIO_136_snapshot, V1019_MTRD_LANE_SCENARIO_136_META, V1019_MTRD_LANE_SCENARIO_136_regressionAssert } from './shipping-lane-scenarios/lane-136.ts';
+import { V1019_MTRD_LANE_SCENARIO_137_snapshot, V1019_MTRD_LANE_SCENARIO_137_META, V1019_MTRD_LANE_SCENARIO_137_regressionAssert } from './shipping-lane-scenarios/lane-137.ts';
+import { V1019_MTRD_LANE_SCENARIO_138_snapshot, V1019_MTRD_LANE_SCENARIO_138_META, V1019_MTRD_LANE_SCENARIO_138_regressionAssert } from './shipping-lane-scenarios/lane-138.ts';
+import { V1019_MTRD_LANE_SCENARIO_139_snapshot, V1019_MTRD_LANE_SCENARIO_139_META, V1019_MTRD_LANE_SCENARIO_139_regressionAssert } from './shipping-lane-scenarios/lane-139.ts';
+import { V1019_MTRD_LANE_SCENARIO_140_snapshot, V1019_MTRD_LANE_SCENARIO_140_META, V1019_MTRD_LANE_SCENARIO_140_regressionAssert } from './shipping-lane-scenarios/lane-140.ts';
+import { V1019_MTRD_LANE_SCENARIO_141_snapshot, V1019_MTRD_LANE_SCENARIO_141_META, V1019_MTRD_LANE_SCENARIO_141_regressionAssert } from './shipping-lane-scenarios/lane-141.ts';
+import { V1019_MTRD_LANE_SCENARIO_142_snapshot, V1019_MTRD_LANE_SCENARIO_142_META, V1019_MTRD_LANE_SCENARIO_142_regressionAssert } from './shipping-lane-scenarios/lane-142.ts';
+import { V1019_MTRD_LANE_SCENARIO_143_snapshot, V1019_MTRD_LANE_SCENARIO_143_META, V1019_MTRD_LANE_SCENARIO_143_regressionAssert } from './shipping-lane-scenarios/lane-143.ts';
+import { V1019_MTRD_LANE_SCENARIO_144_snapshot, V1019_MTRD_LANE_SCENARIO_144_META, V1019_MTRD_LANE_SCENARIO_144_regressionAssert } from './shipping-lane-scenarios/lane-144.ts';
+import { V1019_MTRD_LANE_SCENARIO_145_snapshot, V1019_MTRD_LANE_SCENARIO_145_META, V1019_MTRD_LANE_SCENARIO_145_regressionAssert } from './shipping-lane-scenarios/lane-145.ts';
+import { V1019_MTRD_LANE_SCENARIO_146_snapshot, V1019_MTRD_LANE_SCENARIO_146_META, V1019_MTRD_LANE_SCENARIO_146_regressionAssert } from './shipping-lane-scenarios/lane-146.ts';
+import { V1019_MTRD_LANE_SCENARIO_147_snapshot, V1019_MTRD_LANE_SCENARIO_147_META, V1019_MTRD_LANE_SCENARIO_147_regressionAssert } from './shipping-lane-scenarios/lane-147.ts';
+import { V1019_MTRD_LANE_SCENARIO_148_snapshot, V1019_MTRD_LANE_SCENARIO_148_META, V1019_MTRD_LANE_SCENARIO_148_regressionAssert } from './shipping-lane-scenarios/lane-148.ts';
+import { V1019_MTRD_LANE_SCENARIO_149_snapshot, V1019_MTRD_LANE_SCENARIO_149_META, V1019_MTRD_LANE_SCENARIO_149_regressionAssert } from './shipping-lane-scenarios/lane-149.ts';
+import { V1019_MTRD_LANE_SCENARIO_150_snapshot, V1019_MTRD_LANE_SCENARIO_150_META, V1019_MTRD_LANE_SCENARIO_150_regressionAssert } from './shipping-lane-scenarios/lane-150.ts';
+import { V1019_MTRD_LANE_SCENARIO_151_snapshot, V1019_MTRD_LANE_SCENARIO_151_META, V1019_MTRD_LANE_SCENARIO_151_regressionAssert } from './shipping-lane-scenarios/lane-151.ts';
+import { V1019_MTRD_LANE_SCENARIO_152_snapshot, V1019_MTRD_LANE_SCENARIO_152_META, V1019_MTRD_LANE_SCENARIO_152_regressionAssert } from './shipping-lane-scenarios/lane-152.ts';
+import { V1019_MTRD_LANE_SCENARIO_153_snapshot, V1019_MTRD_LANE_SCENARIO_153_META, V1019_MTRD_LANE_SCENARIO_153_regressionAssert } from './shipping-lane-scenarios/lane-153.ts';
+import { V1019_MTRD_LANE_SCENARIO_154_snapshot, V1019_MTRD_LANE_SCENARIO_154_META, V1019_MTRD_LANE_SCENARIO_154_regressionAssert } from './shipping-lane-scenarios/lane-154.ts';
+import { V1019_MTRD_LANE_SCENARIO_155_snapshot, V1019_MTRD_LANE_SCENARIO_155_META, V1019_MTRD_LANE_SCENARIO_155_regressionAssert } from './shipping-lane-scenarios/lane-155.ts';
+import { V1019_MTRD_LANE_SCENARIO_156_snapshot, V1019_MTRD_LANE_SCENARIO_156_META, V1019_MTRD_LANE_SCENARIO_156_regressionAssert } from './shipping-lane-scenarios/lane-156.ts';
+import { V1019_MTRD_LANE_SCENARIO_157_snapshot, V1019_MTRD_LANE_SCENARIO_157_META, V1019_MTRD_LANE_SCENARIO_157_regressionAssert } from './shipping-lane-scenarios/lane-157.ts';
+import { V1019_MTRD_LANE_SCENARIO_158_snapshot, V1019_MTRD_LANE_SCENARIO_158_META, V1019_MTRD_LANE_SCENARIO_158_regressionAssert } from './shipping-lane-scenarios/lane-158.ts';
+import { V1019_MTRD_LANE_SCENARIO_159_snapshot, V1019_MTRD_LANE_SCENARIO_159_META, V1019_MTRD_LANE_SCENARIO_159_regressionAssert } from './shipping-lane-scenarios/lane-159.ts';
+import { V1019_MTRD_LANE_SCENARIO_160_snapshot, V1019_MTRD_LANE_SCENARIO_160_META, V1019_MTRD_LANE_SCENARIO_160_regressionAssert } from './shipping-lane-scenarios/lane-160.ts';
+import { V1019_MTRD_LANE_SCENARIO_161_snapshot, V1019_MTRD_LANE_SCENARIO_161_META, V1019_MTRD_LANE_SCENARIO_161_regressionAssert } from './shipping-lane-scenarios/lane-161.ts';
+import { V1019_MTRD_LANE_SCENARIO_162_snapshot, V1019_MTRD_LANE_SCENARIO_162_META, V1019_MTRD_LANE_SCENARIO_162_regressionAssert } from './shipping-lane-scenarios/lane-162.ts';
+import { V1019_MTRD_LANE_SCENARIO_163_snapshot, V1019_MTRD_LANE_SCENARIO_163_META, V1019_MTRD_LANE_SCENARIO_163_regressionAssert } from './shipping-lane-scenarios/lane-163.ts';
+import { V1019_MTRD_LANE_SCENARIO_164_snapshot, V1019_MTRD_LANE_SCENARIO_164_META, V1019_MTRD_LANE_SCENARIO_164_regressionAssert } from './shipping-lane-scenarios/lane-164.ts';
+import { V1019_MTRD_LANE_SCENARIO_165_snapshot, V1019_MTRD_LANE_SCENARIO_165_META, V1019_MTRD_LANE_SCENARIO_165_regressionAssert } from './shipping-lane-scenarios/lane-165.ts';
+import { V1019_MTRD_LANE_SCENARIO_166_snapshot, V1019_MTRD_LANE_SCENARIO_166_META, V1019_MTRD_LANE_SCENARIO_166_regressionAssert } from './shipping-lane-scenarios/lane-166.ts';
+import { V1019_MTRD_LANE_SCENARIO_167_snapshot, V1019_MTRD_LANE_SCENARIO_167_META, V1019_MTRD_LANE_SCENARIO_167_regressionAssert } from './shipping-lane-scenarios/lane-167.ts';
+import { V1019_MTRD_LANE_SCENARIO_168_snapshot, V1019_MTRD_LANE_SCENARIO_168_META, V1019_MTRD_LANE_SCENARIO_168_regressionAssert } from './shipping-lane-scenarios/lane-168.ts';
+import { V1019_MTRD_LANE_SCENARIO_169_snapshot, V1019_MTRD_LANE_SCENARIO_169_META, V1019_MTRD_LANE_SCENARIO_169_regressionAssert } from './shipping-lane-scenarios/lane-169.ts';
+import { V1019_MTRD_LANE_SCENARIO_170_snapshot, V1019_MTRD_LANE_SCENARIO_170_META, V1019_MTRD_LANE_SCENARIO_170_regressionAssert } from './shipping-lane-scenarios/lane-170.ts';
+import { V1019_MTRD_LANE_SCENARIO_171_snapshot, V1019_MTRD_LANE_SCENARIO_171_META, V1019_MTRD_LANE_SCENARIO_171_regressionAssert } from './shipping-lane-scenarios/lane-171.ts';
+
+export const V1019_MTRD_ALL_LANE_SCENARIO_IDS: readonly string[] = [
+  V1019_MTRD_LANE_SCENARIO_000_META.id,
+  V1019_MTRD_LANE_SCENARIO_001_META.id,
+  V1019_MTRD_LANE_SCENARIO_002_META.id,
+  V1019_MTRD_LANE_SCENARIO_003_META.id,
+  V1019_MTRD_LANE_SCENARIO_004_META.id,
+  V1019_MTRD_LANE_SCENARIO_005_META.id,
+  V1019_MTRD_LANE_SCENARIO_006_META.id,
+  V1019_MTRD_LANE_SCENARIO_007_META.id,
+  V1019_MTRD_LANE_SCENARIO_008_META.id,
+  V1019_MTRD_LANE_SCENARIO_009_META.id,
+  V1019_MTRD_LANE_SCENARIO_010_META.id,
+  V1019_MTRD_LANE_SCENARIO_011_META.id,
+  V1019_MTRD_LANE_SCENARIO_012_META.id,
+  V1019_MTRD_LANE_SCENARIO_013_META.id,
+  V1019_MTRD_LANE_SCENARIO_014_META.id,
+  V1019_MTRD_LANE_SCENARIO_015_META.id,
+  V1019_MTRD_LANE_SCENARIO_016_META.id,
+  V1019_MTRD_LANE_SCENARIO_017_META.id,
+  V1019_MTRD_LANE_SCENARIO_018_META.id,
+  V1019_MTRD_LANE_SCENARIO_019_META.id,
+  V1019_MTRD_LANE_SCENARIO_020_META.id,
+  V1019_MTRD_LANE_SCENARIO_021_META.id,
+  V1019_MTRD_LANE_SCENARIO_022_META.id,
+  V1019_MTRD_LANE_SCENARIO_023_META.id,
+  V1019_MTRD_LANE_SCENARIO_024_META.id,
+  V1019_MTRD_LANE_SCENARIO_025_META.id,
+  V1019_MTRD_LANE_SCENARIO_026_META.id,
+  V1019_MTRD_LANE_SCENARIO_027_META.id,
+  V1019_MTRD_LANE_SCENARIO_028_META.id,
+  V1019_MTRD_LANE_SCENARIO_029_META.id,
+  V1019_MTRD_LANE_SCENARIO_030_META.id,
+  V1019_MTRD_LANE_SCENARIO_031_META.id,
+  V1019_MTRD_LANE_SCENARIO_032_META.id,
+  V1019_MTRD_LANE_SCENARIO_033_META.id,
+  V1019_MTRD_LANE_SCENARIO_034_META.id,
+  V1019_MTRD_LANE_SCENARIO_035_META.id,
+  V1019_MTRD_LANE_SCENARIO_036_META.id,
+  V1019_MTRD_LANE_SCENARIO_037_META.id,
+  V1019_MTRD_LANE_SCENARIO_038_META.id,
+  V1019_MTRD_LANE_SCENARIO_039_META.id,
+  V1019_MTRD_LANE_SCENARIO_040_META.id,
+  V1019_MTRD_LANE_SCENARIO_041_META.id,
+  V1019_MTRD_LANE_SCENARIO_042_META.id,
+  V1019_MTRD_LANE_SCENARIO_043_META.id,
+  V1019_MTRD_LANE_SCENARIO_044_META.id,
+  V1019_MTRD_LANE_SCENARIO_045_META.id,
+  V1019_MTRD_LANE_SCENARIO_046_META.id,
+  V1019_MTRD_LANE_SCENARIO_047_META.id,
+  V1019_MTRD_LANE_SCENARIO_048_META.id,
+  V1019_MTRD_LANE_SCENARIO_049_META.id,
+  V1019_MTRD_LANE_SCENARIO_050_META.id,
+  V1019_MTRD_LANE_SCENARIO_051_META.id,
+  V1019_MTRD_LANE_SCENARIO_052_META.id,
+  V1019_MTRD_LANE_SCENARIO_053_META.id,
+  V1019_MTRD_LANE_SCENARIO_054_META.id,
+  V1019_MTRD_LANE_SCENARIO_055_META.id,
+  V1019_MTRD_LANE_SCENARIO_056_META.id,
+  V1019_MTRD_LANE_SCENARIO_057_META.id,
+  V1019_MTRD_LANE_SCENARIO_058_META.id,
+  V1019_MTRD_LANE_SCENARIO_059_META.id,
+  V1019_MTRD_LANE_SCENARIO_060_META.id,
+  V1019_MTRD_LANE_SCENARIO_061_META.id,
+  V1019_MTRD_LANE_SCENARIO_062_META.id,
+  V1019_MTRD_LANE_SCENARIO_063_META.id,
+  V1019_MTRD_LANE_SCENARIO_064_META.id,
+  V1019_MTRD_LANE_SCENARIO_065_META.id,
+  V1019_MTRD_LANE_SCENARIO_066_META.id,
+  V1019_MTRD_LANE_SCENARIO_067_META.id,
+  V1019_MTRD_LANE_SCENARIO_068_META.id,
+  V1019_MTRD_LANE_SCENARIO_069_META.id,
+  V1019_MTRD_LANE_SCENARIO_070_META.id,
+  V1019_MTRD_LANE_SCENARIO_071_META.id,
+  V1019_MTRD_LANE_SCENARIO_072_META.id,
+  V1019_MTRD_LANE_SCENARIO_073_META.id,
+  V1019_MTRD_LANE_SCENARIO_074_META.id,
+  V1019_MTRD_LANE_SCENARIO_075_META.id,
+  V1019_MTRD_LANE_SCENARIO_076_META.id,
+  V1019_MTRD_LANE_SCENARIO_077_META.id,
+  V1019_MTRD_LANE_SCENARIO_078_META.id,
+  V1019_MTRD_LANE_SCENARIO_079_META.id,
+  V1019_MTRD_LANE_SCENARIO_080_META.id,
+  V1019_MTRD_LANE_SCENARIO_081_META.id,
+  V1019_MTRD_LANE_SCENARIO_082_META.id,
+  V1019_MTRD_LANE_SCENARIO_083_META.id,
+  V1019_MTRD_LANE_SCENARIO_084_META.id,
+  V1019_MTRD_LANE_SCENARIO_085_META.id,
+  V1019_MTRD_LANE_SCENARIO_086_META.id,
+  V1019_MTRD_LANE_SCENARIO_087_META.id,
+  V1019_MTRD_LANE_SCENARIO_088_META.id,
+  V1019_MTRD_LANE_SCENARIO_089_META.id,
+  V1019_MTRD_LANE_SCENARIO_090_META.id,
+  V1019_MTRD_LANE_SCENARIO_091_META.id,
+  V1019_MTRD_LANE_SCENARIO_092_META.id,
+  V1019_MTRD_LANE_SCENARIO_093_META.id,
+  V1019_MTRD_LANE_SCENARIO_094_META.id,
+  V1019_MTRD_LANE_SCENARIO_095_META.id,
+  V1019_MTRD_LANE_SCENARIO_096_META.id,
+  V1019_MTRD_LANE_SCENARIO_097_META.id,
+  V1019_MTRD_LANE_SCENARIO_098_META.id,
+  V1019_MTRD_LANE_SCENARIO_099_META.id,
+  V1019_MTRD_LANE_SCENARIO_100_META.id,
+  V1019_MTRD_LANE_SCENARIO_101_META.id,
+  V1019_MTRD_LANE_SCENARIO_102_META.id,
+  V1019_MTRD_LANE_SCENARIO_103_META.id,
+  V1019_MTRD_LANE_SCENARIO_104_META.id,
+  V1019_MTRD_LANE_SCENARIO_105_META.id,
+  V1019_MTRD_LANE_SCENARIO_106_META.id,
+  V1019_MTRD_LANE_SCENARIO_107_META.id,
+  V1019_MTRD_LANE_SCENARIO_108_META.id,
+  V1019_MTRD_LANE_SCENARIO_109_META.id,
+  V1019_MTRD_LANE_SCENARIO_110_META.id,
+  V1019_MTRD_LANE_SCENARIO_111_META.id,
+  V1019_MTRD_LANE_SCENARIO_112_META.id,
+  V1019_MTRD_LANE_SCENARIO_113_META.id,
+  V1019_MTRD_LANE_SCENARIO_114_META.id,
+  V1019_MTRD_LANE_SCENARIO_115_META.id,
+  V1019_MTRD_LANE_SCENARIO_116_META.id,
+  V1019_MTRD_LANE_SCENARIO_117_META.id,
+  V1019_MTRD_LANE_SCENARIO_118_META.id,
+  V1019_MTRD_LANE_SCENARIO_119_META.id,
+  V1019_MTRD_LANE_SCENARIO_120_META.id,
+  V1019_MTRD_LANE_SCENARIO_121_META.id,
+  V1019_MTRD_LANE_SCENARIO_122_META.id,
+  V1019_MTRD_LANE_SCENARIO_123_META.id,
+  V1019_MTRD_LANE_SCENARIO_124_META.id,
+  V1019_MTRD_LANE_SCENARIO_125_META.id,
+  V1019_MTRD_LANE_SCENARIO_126_META.id,
+  V1019_MTRD_LANE_SCENARIO_127_META.id,
+  V1019_MTRD_LANE_SCENARIO_128_META.id,
+  V1019_MTRD_LANE_SCENARIO_129_META.id,
+  V1019_MTRD_LANE_SCENARIO_130_META.id,
+  V1019_MTRD_LANE_SCENARIO_131_META.id,
+  V1019_MTRD_LANE_SCENARIO_132_META.id,
+  V1019_MTRD_LANE_SCENARIO_133_META.id,
+  V1019_MTRD_LANE_SCENARIO_134_META.id,
+  V1019_MTRD_LANE_SCENARIO_135_META.id,
+  V1019_MTRD_LANE_SCENARIO_136_META.id,
+  V1019_MTRD_LANE_SCENARIO_137_META.id,
+  V1019_MTRD_LANE_SCENARIO_138_META.id,
+  V1019_MTRD_LANE_SCENARIO_139_META.id,
+  V1019_MTRD_LANE_SCENARIO_140_META.id,
+  V1019_MTRD_LANE_SCENARIO_141_META.id,
+  V1019_MTRD_LANE_SCENARIO_142_META.id,
+  V1019_MTRD_LANE_SCENARIO_143_META.id,
+  V1019_MTRD_LANE_SCENARIO_144_META.id,
+  V1019_MTRD_LANE_SCENARIO_145_META.id,
+  V1019_MTRD_LANE_SCENARIO_146_META.id,
+  V1019_MTRD_LANE_SCENARIO_147_META.id,
+  V1019_MTRD_LANE_SCENARIO_148_META.id,
+  V1019_MTRD_LANE_SCENARIO_149_META.id,
+  V1019_MTRD_LANE_SCENARIO_150_META.id,
+  V1019_MTRD_LANE_SCENARIO_151_META.id,
+  V1019_MTRD_LANE_SCENARIO_152_META.id,
+  V1019_MTRD_LANE_SCENARIO_153_META.id,
+  V1019_MTRD_LANE_SCENARIO_154_META.id,
+  V1019_MTRD_LANE_SCENARIO_155_META.id,
+  V1019_MTRD_LANE_SCENARIO_156_META.id,
+  V1019_MTRD_LANE_SCENARIO_157_META.id,
+  V1019_MTRD_LANE_SCENARIO_158_META.id,
+  V1019_MTRD_LANE_SCENARIO_159_META.id,
+  V1019_MTRD_LANE_SCENARIO_160_META.id,
+  V1019_MTRD_LANE_SCENARIO_161_META.id,
+  V1019_MTRD_LANE_SCENARIO_162_META.id,
+  V1019_MTRD_LANE_SCENARIO_163_META.id,
+  V1019_MTRD_LANE_SCENARIO_164_META.id,
+  V1019_MTRD_LANE_SCENARIO_165_META.id,
+  V1019_MTRD_LANE_SCENARIO_166_META.id,
+  V1019_MTRD_LANE_SCENARIO_167_META.id,
+  V1019_MTRD_LANE_SCENARIO_168_META.id,
+  V1019_MTRD_LANE_SCENARIO_169_META.id,
+  V1019_MTRD_LANE_SCENARIO_170_META.id,
+  V1019_MTRD_LANE_SCENARIO_171_META.id,
+];
+
+const V1019_MTRD_SNAPSHOT_BY_ID: Record<
+  string,
+  (turn: number) => V1019MtrdShippingLaneSnapshot
+> = {
+  [V1019_MTRD_LANE_SCENARIO_000_META.id]: V1019_MTRD_LANE_SCENARIO_000_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_001_META.id]: V1019_MTRD_LANE_SCENARIO_001_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_002_META.id]: V1019_MTRD_LANE_SCENARIO_002_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_003_META.id]: V1019_MTRD_LANE_SCENARIO_003_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_004_META.id]: V1019_MTRD_LANE_SCENARIO_004_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_005_META.id]: V1019_MTRD_LANE_SCENARIO_005_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_006_META.id]: V1019_MTRD_LANE_SCENARIO_006_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_007_META.id]: V1019_MTRD_LANE_SCENARIO_007_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_008_META.id]: V1019_MTRD_LANE_SCENARIO_008_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_009_META.id]: V1019_MTRD_LANE_SCENARIO_009_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_010_META.id]: V1019_MTRD_LANE_SCENARIO_010_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_011_META.id]: V1019_MTRD_LANE_SCENARIO_011_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_012_META.id]: V1019_MTRD_LANE_SCENARIO_012_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_013_META.id]: V1019_MTRD_LANE_SCENARIO_013_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_014_META.id]: V1019_MTRD_LANE_SCENARIO_014_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_015_META.id]: V1019_MTRD_LANE_SCENARIO_015_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_016_META.id]: V1019_MTRD_LANE_SCENARIO_016_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_017_META.id]: V1019_MTRD_LANE_SCENARIO_017_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_018_META.id]: V1019_MTRD_LANE_SCENARIO_018_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_019_META.id]: V1019_MTRD_LANE_SCENARIO_019_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_020_META.id]: V1019_MTRD_LANE_SCENARIO_020_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_021_META.id]: V1019_MTRD_LANE_SCENARIO_021_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_022_META.id]: V1019_MTRD_LANE_SCENARIO_022_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_023_META.id]: V1019_MTRD_LANE_SCENARIO_023_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_024_META.id]: V1019_MTRD_LANE_SCENARIO_024_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_025_META.id]: V1019_MTRD_LANE_SCENARIO_025_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_026_META.id]: V1019_MTRD_LANE_SCENARIO_026_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_027_META.id]: V1019_MTRD_LANE_SCENARIO_027_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_028_META.id]: V1019_MTRD_LANE_SCENARIO_028_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_029_META.id]: V1019_MTRD_LANE_SCENARIO_029_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_030_META.id]: V1019_MTRD_LANE_SCENARIO_030_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_031_META.id]: V1019_MTRD_LANE_SCENARIO_031_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_032_META.id]: V1019_MTRD_LANE_SCENARIO_032_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_033_META.id]: V1019_MTRD_LANE_SCENARIO_033_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_034_META.id]: V1019_MTRD_LANE_SCENARIO_034_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_035_META.id]: V1019_MTRD_LANE_SCENARIO_035_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_036_META.id]: V1019_MTRD_LANE_SCENARIO_036_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_037_META.id]: V1019_MTRD_LANE_SCENARIO_037_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_038_META.id]: V1019_MTRD_LANE_SCENARIO_038_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_039_META.id]: V1019_MTRD_LANE_SCENARIO_039_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_040_META.id]: V1019_MTRD_LANE_SCENARIO_040_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_041_META.id]: V1019_MTRD_LANE_SCENARIO_041_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_042_META.id]: V1019_MTRD_LANE_SCENARIO_042_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_043_META.id]: V1019_MTRD_LANE_SCENARIO_043_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_044_META.id]: V1019_MTRD_LANE_SCENARIO_044_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_045_META.id]: V1019_MTRD_LANE_SCENARIO_045_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_046_META.id]: V1019_MTRD_LANE_SCENARIO_046_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_047_META.id]: V1019_MTRD_LANE_SCENARIO_047_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_048_META.id]: V1019_MTRD_LANE_SCENARIO_048_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_049_META.id]: V1019_MTRD_LANE_SCENARIO_049_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_050_META.id]: V1019_MTRD_LANE_SCENARIO_050_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_051_META.id]: V1019_MTRD_LANE_SCENARIO_051_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_052_META.id]: V1019_MTRD_LANE_SCENARIO_052_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_053_META.id]: V1019_MTRD_LANE_SCENARIO_053_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_054_META.id]: V1019_MTRD_LANE_SCENARIO_054_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_055_META.id]: V1019_MTRD_LANE_SCENARIO_055_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_056_META.id]: V1019_MTRD_LANE_SCENARIO_056_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_057_META.id]: V1019_MTRD_LANE_SCENARIO_057_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_058_META.id]: V1019_MTRD_LANE_SCENARIO_058_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_059_META.id]: V1019_MTRD_LANE_SCENARIO_059_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_060_META.id]: V1019_MTRD_LANE_SCENARIO_060_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_061_META.id]: V1019_MTRD_LANE_SCENARIO_061_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_062_META.id]: V1019_MTRD_LANE_SCENARIO_062_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_063_META.id]: V1019_MTRD_LANE_SCENARIO_063_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_064_META.id]: V1019_MTRD_LANE_SCENARIO_064_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_065_META.id]: V1019_MTRD_LANE_SCENARIO_065_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_066_META.id]: V1019_MTRD_LANE_SCENARIO_066_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_067_META.id]: V1019_MTRD_LANE_SCENARIO_067_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_068_META.id]: V1019_MTRD_LANE_SCENARIO_068_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_069_META.id]: V1019_MTRD_LANE_SCENARIO_069_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_070_META.id]: V1019_MTRD_LANE_SCENARIO_070_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_071_META.id]: V1019_MTRD_LANE_SCENARIO_071_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_072_META.id]: V1019_MTRD_LANE_SCENARIO_072_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_073_META.id]: V1019_MTRD_LANE_SCENARIO_073_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_074_META.id]: V1019_MTRD_LANE_SCENARIO_074_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_075_META.id]: V1019_MTRD_LANE_SCENARIO_075_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_076_META.id]: V1019_MTRD_LANE_SCENARIO_076_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_077_META.id]: V1019_MTRD_LANE_SCENARIO_077_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_078_META.id]: V1019_MTRD_LANE_SCENARIO_078_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_079_META.id]: V1019_MTRD_LANE_SCENARIO_079_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_080_META.id]: V1019_MTRD_LANE_SCENARIO_080_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_081_META.id]: V1019_MTRD_LANE_SCENARIO_081_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_082_META.id]: V1019_MTRD_LANE_SCENARIO_082_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_083_META.id]: V1019_MTRD_LANE_SCENARIO_083_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_084_META.id]: V1019_MTRD_LANE_SCENARIO_084_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_085_META.id]: V1019_MTRD_LANE_SCENARIO_085_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_086_META.id]: V1019_MTRD_LANE_SCENARIO_086_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_087_META.id]: V1019_MTRD_LANE_SCENARIO_087_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_088_META.id]: V1019_MTRD_LANE_SCENARIO_088_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_089_META.id]: V1019_MTRD_LANE_SCENARIO_089_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_090_META.id]: V1019_MTRD_LANE_SCENARIO_090_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_091_META.id]: V1019_MTRD_LANE_SCENARIO_091_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_092_META.id]: V1019_MTRD_LANE_SCENARIO_092_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_093_META.id]: V1019_MTRD_LANE_SCENARIO_093_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_094_META.id]: V1019_MTRD_LANE_SCENARIO_094_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_095_META.id]: V1019_MTRD_LANE_SCENARIO_095_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_096_META.id]: V1019_MTRD_LANE_SCENARIO_096_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_097_META.id]: V1019_MTRD_LANE_SCENARIO_097_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_098_META.id]: V1019_MTRD_LANE_SCENARIO_098_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_099_META.id]: V1019_MTRD_LANE_SCENARIO_099_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_100_META.id]: V1019_MTRD_LANE_SCENARIO_100_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_101_META.id]: V1019_MTRD_LANE_SCENARIO_101_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_102_META.id]: V1019_MTRD_LANE_SCENARIO_102_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_103_META.id]: V1019_MTRD_LANE_SCENARIO_103_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_104_META.id]: V1019_MTRD_LANE_SCENARIO_104_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_105_META.id]: V1019_MTRD_LANE_SCENARIO_105_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_106_META.id]: V1019_MTRD_LANE_SCENARIO_106_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_107_META.id]: V1019_MTRD_LANE_SCENARIO_107_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_108_META.id]: V1019_MTRD_LANE_SCENARIO_108_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_109_META.id]: V1019_MTRD_LANE_SCENARIO_109_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_110_META.id]: V1019_MTRD_LANE_SCENARIO_110_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_111_META.id]: V1019_MTRD_LANE_SCENARIO_111_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_112_META.id]: V1019_MTRD_LANE_SCENARIO_112_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_113_META.id]: V1019_MTRD_LANE_SCENARIO_113_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_114_META.id]: V1019_MTRD_LANE_SCENARIO_114_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_115_META.id]: V1019_MTRD_LANE_SCENARIO_115_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_116_META.id]: V1019_MTRD_LANE_SCENARIO_116_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_117_META.id]: V1019_MTRD_LANE_SCENARIO_117_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_118_META.id]: V1019_MTRD_LANE_SCENARIO_118_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_119_META.id]: V1019_MTRD_LANE_SCENARIO_119_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_120_META.id]: V1019_MTRD_LANE_SCENARIO_120_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_121_META.id]: V1019_MTRD_LANE_SCENARIO_121_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_122_META.id]: V1019_MTRD_LANE_SCENARIO_122_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_123_META.id]: V1019_MTRD_LANE_SCENARIO_123_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_124_META.id]: V1019_MTRD_LANE_SCENARIO_124_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_125_META.id]: V1019_MTRD_LANE_SCENARIO_125_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_126_META.id]: V1019_MTRD_LANE_SCENARIO_126_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_127_META.id]: V1019_MTRD_LANE_SCENARIO_127_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_128_META.id]: V1019_MTRD_LANE_SCENARIO_128_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_129_META.id]: V1019_MTRD_LANE_SCENARIO_129_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_130_META.id]: V1019_MTRD_LANE_SCENARIO_130_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_131_META.id]: V1019_MTRD_LANE_SCENARIO_131_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_132_META.id]: V1019_MTRD_LANE_SCENARIO_132_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_133_META.id]: V1019_MTRD_LANE_SCENARIO_133_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_134_META.id]: V1019_MTRD_LANE_SCENARIO_134_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_135_META.id]: V1019_MTRD_LANE_SCENARIO_135_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_136_META.id]: V1019_MTRD_LANE_SCENARIO_136_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_137_META.id]: V1019_MTRD_LANE_SCENARIO_137_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_138_META.id]: V1019_MTRD_LANE_SCENARIO_138_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_139_META.id]: V1019_MTRD_LANE_SCENARIO_139_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_140_META.id]: V1019_MTRD_LANE_SCENARIO_140_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_141_META.id]: V1019_MTRD_LANE_SCENARIO_141_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_142_META.id]: V1019_MTRD_LANE_SCENARIO_142_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_143_META.id]: V1019_MTRD_LANE_SCENARIO_143_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_144_META.id]: V1019_MTRD_LANE_SCENARIO_144_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_145_META.id]: V1019_MTRD_LANE_SCENARIO_145_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_146_META.id]: V1019_MTRD_LANE_SCENARIO_146_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_147_META.id]: V1019_MTRD_LANE_SCENARIO_147_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_148_META.id]: V1019_MTRD_LANE_SCENARIO_148_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_149_META.id]: V1019_MTRD_LANE_SCENARIO_149_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_150_META.id]: V1019_MTRD_LANE_SCENARIO_150_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_151_META.id]: V1019_MTRD_LANE_SCENARIO_151_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_152_META.id]: V1019_MTRD_LANE_SCENARIO_152_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_153_META.id]: V1019_MTRD_LANE_SCENARIO_153_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_154_META.id]: V1019_MTRD_LANE_SCENARIO_154_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_155_META.id]: V1019_MTRD_LANE_SCENARIO_155_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_156_META.id]: V1019_MTRD_LANE_SCENARIO_156_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_157_META.id]: V1019_MTRD_LANE_SCENARIO_157_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_158_META.id]: V1019_MTRD_LANE_SCENARIO_158_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_159_META.id]: V1019_MTRD_LANE_SCENARIO_159_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_160_META.id]: V1019_MTRD_LANE_SCENARIO_160_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_161_META.id]: V1019_MTRD_LANE_SCENARIO_161_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_162_META.id]: V1019_MTRD_LANE_SCENARIO_162_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_163_META.id]: V1019_MTRD_LANE_SCENARIO_163_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_164_META.id]: V1019_MTRD_LANE_SCENARIO_164_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_165_META.id]: V1019_MTRD_LANE_SCENARIO_165_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_166_META.id]: V1019_MTRD_LANE_SCENARIO_166_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_167_META.id]: V1019_MTRD_LANE_SCENARIO_167_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_168_META.id]: V1019_MTRD_LANE_SCENARIO_168_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_169_META.id]: V1019_MTRD_LANE_SCENARIO_169_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_170_META.id]: V1019_MTRD_LANE_SCENARIO_170_snapshot,
+  [V1019_MTRD_LANE_SCENARIO_171_META.id]: V1019_MTRD_LANE_SCENARIO_171_snapshot,
+};
+
+export function V1019_MTRD_listActiveLaneScenarioIds(_turn: number): string[] {
+  const stride = 26;
+  const start = (_turn * 5) % Math.max(1, V1019_MTRD_ALL_LANE_SCENARIO_IDS.length - stride);
+  return V1019_MTRD_ALL_LANE_SCENARIO_IDS.slice(start, start + stride);
+}
+
+export function V1019_MTRD_evaluateShippingLaneBatch(
+  turn: number,
+  scenarioIds: string[],
+): {
+  snapshots: V1019MtrdShippingLaneSnapshot[];
+  meanSeverity: number;
+  meanPort: number;
+  byRegion: Partial<Record<V1019MtrdRegionId, V1019MtrdShippingLaneSnapshot>>;
+} {
+  const ids = scenarioIds.length ? scenarioIds : V1019_MTRD_listActiveLaneScenarioIds(turn);
+  const snaps: V1019MtrdShippingLaneSnapshot[] = [];
+  for (const id of ids) {
+    const fn = V1019_MTRD_SNAPSHOT_BY_ID[id];
+    if (fn) snaps.push(fn(turn));
+  }
+  const meanSeverity = snaps.reduce((a, s) => a + s.severityIndex, 0) / Math.max(1, snaps.length);
+  const meanPort = snaps.reduce((a, s) => a + s.portScore, 0) / Math.max(1, snaps.length);
+  const byRegion: Partial<Record<V1019MtrdRegionId, V1019MtrdShippingLaneSnapshot>> = {
+    NSW: snaps.find((s) => s.regionId === 'NSW'),
+    VIC: snaps.find((s) => s.regionId === 'VIC'),
+    QLD: snaps.find((s) => s.regionId === 'QLD'),
+    WA: snaps.find((s) => s.regionId === 'WA'),
+    SA: snaps.find((s) => s.regionId === 'SA'),
+    TAS: snaps.find((s) => s.regionId === 'TAS'),
+    NT: snaps.find((s) => s.regionId === 'NT'),
+    ACT: snaps.find((s) => s.regionId === 'ACT'),
+  };
+  return { snapshots: snaps, meanSeverity, meanPort, byRegion };
+}
+
+export function V1019_MTRD_runLaneScenarioRegressionSweep(turn: number): number {
+  let ok = 0;
+  for (const id of V1019_MTRD_ALL_LANE_SCENARIO_IDS) {
+    const fn = V1019_MTRD_SNAPSHOT_BY_ID[id];
+    if (fn && fn(turn).portScore >= 0) ok += 1;
+  }
+  return ok;
+}

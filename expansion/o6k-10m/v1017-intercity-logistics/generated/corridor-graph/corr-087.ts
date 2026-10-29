@@ -1,0 +1,31 @@
+import type { V1017IclogCorridorEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 087 (freight route cross-system coupling). */
+export const V1017_ICLOG_CORRIDOR_SHARD_087: readonly V1017IclogCorridorEdge[] = [
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.589, lagTurns: 10, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.596, lagTurns: 11, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.603, lagTurns: 12, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.505, lagTurns: 10, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.512, lagTurns: 11, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.519, lagTurns: 12, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.526, lagTurns: 10, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.533, lagTurns: 11, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.54, lagTurns: 12, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.547, lagTurns: 10, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.554, lagTurns: 11, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.561, lagTurns: 12, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.568, lagTurns: 10, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.575, lagTurns: 11, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.582, lagTurns: 12, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.589, lagTurns: 10, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.596, lagTurns: 11, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.603, lagTurns: 12, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.505, lagTurns: 10, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.512, lagTurns: 11, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.519, lagTurns: 12, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.526, lagTurns: 10, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.533, lagTurns: 11, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.54, lagTurns: 12, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.547, lagTurns: 10, nodeId: 'hub_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.554, lagTurns: 11, nodeId: 'hub_15' },
+];

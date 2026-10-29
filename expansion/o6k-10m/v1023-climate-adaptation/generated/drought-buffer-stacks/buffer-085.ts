@@ -1,0 +1,31 @@
+import type { V1023CladDroughtBufferEdge } from '../../types/core.ts';
+
+/** Drought buffer graph shard 085 (heat/flood/drought corridor coupling). */
+export const V1023_CLAD_DROUGHT_BUFFER_SHARD_085: readonly V1023CladDroughtBufferEdge[] = [
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.14, lagTurns: 6, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.146, lagTurns: 7, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.152, lagTurns: 8, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.158, lagTurns: 9, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.164, lagTurns: 6, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.17, lagTurns: 7, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.176, lagTurns: 8, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.182, lagTurns: 9, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.188, lagTurns: 6, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.194, lagTurns: 7, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.2, lagTurns: 8, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.206, lagTurns: 9, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.212, lagTurns: 6, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.218, lagTurns: 7, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.224, lagTurns: 8, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.23, lagTurns: 9, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.236, lagTurns: 6, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.14, lagTurns: 7, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.146, lagTurns: 8, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.152, lagTurns: 9, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.158, lagTurns: 6, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.164, lagTurns: 7, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.17, lagTurns: 8, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.176, lagTurns: 9, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.182, lagTurns: 6, nodeId: 'flood_node_13' },
+  { fromChannel: 'heat_rural', toChannel: 'regional', weight: 0.188, lagTurns: 7, nodeId: 'flood_node_13' },
+];

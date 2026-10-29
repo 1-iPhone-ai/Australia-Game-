@@ -1,0 +1,31 @@
+import type { V1019MtrdLaneGraphEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 018 (shipping lane cross-system coupling). */
+export const V1019_MTRD_LANE_GRAPH_SHARD_018: readonly V1019MtrdLaneGraphEdge[] = [
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.771, lagTurns: 5, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.778, lagTurns: 6, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.785, lagTurns: 7, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.792, lagTurns: 5, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.799, lagTurns: 6, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.806, lagTurns: 7, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.813, lagTurns: 5, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.82, lagTurns: 6, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.827, lagTurns: 7, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.834, lagTurns: 5, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.841, lagTurns: 6, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.848, lagTurns: 7, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.75, lagTurns: 5, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.757, lagTurns: 6, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.764, lagTurns: 7, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.771, lagTurns: 5, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.778, lagTurns: 6, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.785, lagTurns: 7, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.792, lagTurns: 5, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.799, lagTurns: 6, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.806, lagTurns: 7, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.813, lagTurns: 5, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.82, lagTurns: 6, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.827, lagTurns: 7, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.834, lagTurns: 5, nodeId: 'port_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.841, lagTurns: 6, nodeId: 'port_18' },
+];

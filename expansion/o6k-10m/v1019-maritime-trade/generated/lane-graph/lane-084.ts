@@ -1,0 +1,31 @@
+import type { V1019MtrdLaneGraphEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 084 (shipping lane cross-system coupling). */
+export const V1019_MTRD_LANE_GRAPH_SHARD_084: readonly V1019MtrdLaneGraphEdge[] = [
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.463, lagTurns: 7, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.47, lagTurns: 8, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.477, lagTurns: 9, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.484, lagTurns: 7, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.491, lagTurns: 8, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.498, lagTurns: 9, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.4, lagTurns: 7, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.407, lagTurns: 8, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.414, lagTurns: 9, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.421, lagTurns: 7, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.428, lagTurns: 8, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.435, lagTurns: 9, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.442, lagTurns: 7, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.449, lagTurns: 8, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.456, lagTurns: 9, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.463, lagTurns: 7, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.47, lagTurns: 8, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.477, lagTurns: 9, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.484, lagTurns: 7, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.491, lagTurns: 8, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.498, lagTurns: 9, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.4, lagTurns: 7, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.407, lagTurns: 8, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.414, lagTurns: 9, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.421, lagTurns: 7, nodeId: 'port_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.428, lagTurns: 8, nodeId: 'port_12' },
+];

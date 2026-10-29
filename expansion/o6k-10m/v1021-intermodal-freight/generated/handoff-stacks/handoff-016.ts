@@ -1,0 +1,31 @@
+import type { V1021ImfdHandoffStackEdge } from '../../types/core.ts';
+
+/** Handoff stack graph shard 016 (rail/port/air corridor coupling). */
+export const V1021_IMFD_HANDOFF_STACK_SHARD_016: readonly V1021ImfdHandoffStackEdge[] = [
+  { fromMode: 'container', toMode: 'regional', weight: 0.676, lagTurns: 9, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.682, lagTurns: 10, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.688, lagTurns: 11, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.694, lagTurns: 12, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.7, lagTurns: 9, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.706, lagTurns: 10, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.712, lagTurns: 11, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.718, lagTurns: 12, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.724, lagTurns: 9, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.73, lagTurns: 10, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.736, lagTurns: 11, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.742, lagTurns: 12, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.748, lagTurns: 9, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.652, lagTurns: 10, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.658, lagTurns: 11, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.664, lagTurns: 12, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.67, lagTurns: 9, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.676, lagTurns: 10, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.682, lagTurns: 11, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.688, lagTurns: 12, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.694, lagTurns: 9, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.7, lagTurns: 10, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.706, lagTurns: 11, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.712, lagTurns: 12, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.718, lagTurns: 9, hubId: 'dwell_hub_16' },
+  { fromMode: 'container', toMode: 'regional', weight: 0.724, lagTurns: 10, hubId: 'dwell_hub_16' },
+];

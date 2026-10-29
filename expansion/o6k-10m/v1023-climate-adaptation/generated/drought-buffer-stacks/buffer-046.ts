@@ -1,0 +1,31 @@
+import type { V1023CladDroughtBufferEdge } from '../../types/core.ts';
+
+/** Drought buffer graph shard 046 (heat/flood/drought corridor coupling). */
+export const V1023_CLAD_DROUGHT_BUFFER_SHARD_046: readonly V1023CladDroughtBufferEdge[] = [
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.542, lagTurns: 3, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.548, lagTurns: 4, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.554, lagTurns: 5, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.56, lagTurns: 6, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.566, lagTurns: 3, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.572, lagTurns: 4, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.578, lagTurns: 5, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.584, lagTurns: 6, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.59, lagTurns: 3, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.596, lagTurns: 4, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.602, lagTurns: 5, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.608, lagTurns: 6, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.614, lagTurns: 3, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.62, lagTurns: 4, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.524, lagTurns: 5, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.53, lagTurns: 6, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.536, lagTurns: 3, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.542, lagTurns: 4, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.548, lagTurns: 5, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.554, lagTurns: 6, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.56, lagTurns: 3, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.566, lagTurns: 4, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.572, lagTurns: 5, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.578, lagTurns: 6, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.584, lagTurns: 3, nodeId: 'flood_node_22' },
+  { fromChannel: 'water_stress', toChannel: 'remote', weight: 0.59, lagTurns: 4, nodeId: 'flood_node_22' },
+];

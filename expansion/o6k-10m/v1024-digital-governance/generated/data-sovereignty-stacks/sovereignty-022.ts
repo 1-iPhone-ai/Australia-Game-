@@ -1,0 +1,31 @@
+import type { V1024DgovDataSovereigntyEdge } from '../../types/core.ts';
+
+/** Data sovereignty graph shard 022 (residency/liability/audit corridor coupling). */
+export const V1024_DGOV_DATA_SOVEREIGNTY_SHARD_022: readonly V1024DgovDataSovereigntyEdge[] = [
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.384, lagTurns: 6, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.39, lagTurns: 7, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.396, lagTurns: 8, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.3, lagTurns: 9, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.306, lagTurns: 6, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.312, lagTurns: 7, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.318, lagTurns: 8, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.324, lagTurns: 9, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.33, lagTurns: 6, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.336, lagTurns: 7, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.342, lagTurns: 8, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.348, lagTurns: 9, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.354, lagTurns: 6, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.36, lagTurns: 7, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.366, lagTurns: 8, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.372, lagTurns: 9, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.378, lagTurns: 6, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.384, lagTurns: 7, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.39, lagTurns: 8, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.396, lagTurns: 9, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.3, lagTurns: 6, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.306, lagTurns: 7, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.312, lagTurns: 8, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.318, lagTurns: 9, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.324, lagTurns: 6, nodeId: 'platform_node_22' },
+  { fromChannel: 'algo_audit', toChannel: 'open_banking', weight: 0.33, lagTurns: 7, nodeId: 'platform_node_22' },
+];

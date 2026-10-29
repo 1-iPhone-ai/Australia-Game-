@@ -1,0 +1,31 @@
+import type { V1018FfedGrantStackEdge } from '../../types/core.ts';
+
+/** Grant stack graph shard 079 (state–federal transfer cross-system coupling). */
+export const V1018_FFED_GRANT_STACK_SHARD_079: readonly V1018FfedGrantStackEdge[] = [
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.323, lagTurns: 10, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.225, lagTurns: 11, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.232, lagTurns: 12, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.239, lagTurns: 10, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.246, lagTurns: 11, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.253, lagTurns: 12, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.26, lagTurns: 10, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.267, lagTurns: 11, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.274, lagTurns: 12, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.281, lagTurns: 10, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.288, lagTurns: 11, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.295, lagTurns: 12, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.302, lagTurns: 10, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.309, lagTurns: 11, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.316, lagTurns: 12, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.323, lagTurns: 10, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.225, lagTurns: 11, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.232, lagTurns: 12, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.239, lagTurns: 10, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.246, lagTurns: 11, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.253, lagTurns: 12, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.26, lagTurns: 10, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.267, lagTurns: 11, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.274, lagTurns: 12, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.281, lagTurns: 10, nodeId: 'audit_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.288, lagTurns: 11, nodeId: 'audit_07' },
+];
