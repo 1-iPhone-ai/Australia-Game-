@@ -136503,6 +136503,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
   { id: 'v105', label: 'V10.5 Innovation & Emerging Capabilities', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV105InnovationCapabilitiesSelfTests() },
   { id: 'v106', label: 'V10.6 Resilience & Systemic Risk', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV106ResilienceSystemicRiskSelfTests() },
+  { id: 'o111_a107', label: 'O111 Agent 107 National Resilience', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runO111NationalResilienceSelfTests() },
   { id: 'v107', label: 'V10.7 Dynamic National Priorities', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV107DynamicNationalPrioritiesSelfTests() },
   { id: 'v108', label: 'V10.8 Regional Competition & Economic Geography', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV108RegionalCompetitionSelfTests() },
   { id: 'v109', label: 'V10.9 Strategic Capital Allocation & Investment Climate', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV109StrategicCapitalSelfTests() },
@@ -147325,6 +147326,107 @@ export function runV106ResilienceSystemicRiskSelfTests(): V9SelfTestResult[] {
   });
   return results;
 }
+
+
+/** Operation 111 · Agent 107 — cross-layer national resilience integration contracts (V10.0 ↔ V10.6). */
+export function runO111NationalResilienceSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const J = (x: any) => JSON.stringify(x);
+  const resBands: NationalResilienceBand[] = ['fragile', 'exposed', 'stable', 'resilient', 'highly_resilient'];
+  const sysBands: SystemicRiskBand[] = ['critical', 'fragile', 'exposed', 'stable', 'resilient', 'robust'];
+
+  check('a107_1', 'V10.0 and V10.6 resilience band vocabularies stay distinct', () => {
+    const overlap = resBands.filter(b => (sysBands as string[]).includes(b));
+    const nsOnly = resBands.includes('highly_resilient') && !sysBands.includes('highly_resilient');
+    const srOnly = sysBands.includes('robust') && !resBands.includes('robust');
+    return (overlap.length === 4 && overlap.every(b => ['fragile', 'exposed', 'stable', 'resilient'].includes(b)) && nsOnly && srOnly) || J({ overlap, nsOnly, srOnly });
+  });
+
+  check('a107_2', 'Persisted schemas: National Systems 10.0 vs Systemic Risk 10.6', () => {
+    const ns = createEmptyNationalSystemsPersisted();
+    const sr = createEmptySystemicRiskPersisted();
+    return (ns.schemaVersion === '10.0' && sr.schemaVersion === '10.6' && ns.nationalBand === null && sr.base.chains.length === 0) || J({ ns: ns.schemaVersion, sr: sr.schemaVersion });
+  });
+
+  check('a107_3', 'Systemic liquidity inputs use canonical actor debt accessors', () => {
+    const viewer = { id: 'player', money: 50000, loans: [{ amount: 40000, principal: 10000 }], maintenanceCost: 120 };
+    const inputs = buildSystemicRiskInputs({ turn: 3, national: null, industries: null, networks: null, megaprojects: null, innovation: null, projects: [], viewer });
+    const debt = calculateActorOutstandingDebt(viewer);
+    const daily = extractActorDebt(viewer as any).dailyLoanInterest + 120;
+    return (inputs.viewer && inputs.viewer.debt === debt && inputs.viewer.dailyObligations === daily) || J({ viewer: inputs.viewer, debt, daily });
+  });
+
+  check('a107_4', 'National resilience score stays finite under extreme demand (V10.0)', () => {
+    const hot = { devScore: 100, econScore: 100, momentum: 1, sectors: { mining: 100, manufacturing: 100, technology: 100, trade: 100, agriculture: 100 } as any };
+    const i = createSystemicRiskFixture({ nsModifiers: Object.fromEntries(Object.keys(REGIONS).map(c => [c, { energy: -9999 }])) as any, sectors: Object.fromEntries(Object.keys(REGIONS).map(c => [c, hot.sectors])) as any }).ctx.nsInputs;
+    const s = computeNationalSystems(i).state;
+    return (Number.isFinite(s.national.resilienceScore) && resBands.includes(s.national.resilienceBand) && validateNationalSystemsState(s).length === 0) || J({ score: s.national.resilienceScore, band: s.national.resilienceBand, v: validateNationalSystemsState(s) });
+  });
+
+  check('a107_5', 'V10.6 compute does not mutate V10.0 national snapshot inputs', () => {
+    const f = createSystemicRiskFixture({});
+    const before = J(f.inputs.national);
+    computeSystemicRisk(f.inputs, null);
+    return J(f.inputs.national) === before || 'national snapshot mutated';
+  });
+
+  check('a107_6', 'V10.6 graph requires V10.0 dependencies (null national → no supply edges)', () => {
+    const i = createSystemicRiskFixture({}).inputs;
+    i.national = null;
+    i.industries = null;
+    const p = propagateSystemicShock(i, [{ subjectId: 'net:SA:energy', impact: 80, mechanism: 'test' }]);
+    return (p.nodes.length <= 1 && p.nodes.every(n => n.depth === 0)) || J(p.nodes.map(n => n.subjectId));
+  });
+
+  check('a107_7', 'National band hysteresis: one-step score flicker can hold prior band', () => {
+    let p: NationalSystemsPersisted | null = null;
+    const base = createSystemicRiskFixture({ turn: 10 }).ctx.nsInputs;
+    const r1 = computeNationalSystems(base, p); p = r1.persisted;
+    const bumped = { ...base, turn: 11, modifiers: { ...(base.modifiers || {}), NSW: { ...(base.modifiers?.NSW || {}), energy: -1 } } };
+    const r2 = computeNationalSystems(bumped, p);
+    const flickerOk = !p.nationalBand || r2.state.national.resilienceBand === p.nationalBand || NS_RES_RANK[r2.state.national.resilienceBand] === NS_RES_RANK[p.nationalBand];
+    return (r1.state.national.resilienceScore >= 0 && flickerOk) || J({ prev: p.nationalBand, now: r2.state.national.resilienceBand, scores: [r1.state.national.resilienceScore, r2.state.national.resilienceScore] });
+  });
+
+  check('a107_8', 'Match-scoped flags: nationalSystemsEnabled and systemicRiskEnabled registered', () => {
+    const keys = V95_MATCH_SCOPED_SETTING_KEYS as readonly string[];
+    return (keys.includes('nationalSystemsEnabled') && keys.includes('systemicRiskEnabled') && (DEFAULT_GAME_SETTINGS as any).systemicRiskEnabled !== false) || J(keys.filter(k => k.includes('systemic') || k.includes('nationalSystems')));
+  });
+
+  check('a107_9', 'Consumers inert without national snapshot (outlook + query)', () => {
+    return (nationalRegionOutlook(null, 'QLD').factor === 0 && detectNationalSystemsQuery('national resilience', { national: null } as any) === null && detectSystemicQuery('What is my biggest systemic risk?', { national: { systemic: null } } as any) === null) || 'consumers active without snapshot';
+  });
+
+  check('a107_10', 'V10.6 network domains align with V10.0 network kinds', () => {
+    const netDomains = (['freight', 'energy', 'water', 'trade', 'digital'] as const).every(n => SYSTEMIC_DOMAINS.includes(n));
+    const mapOk = NATIONAL_NETWORKS.every(n => SYSTEMIC_DOMAINS.includes(n));
+    return (netDomains && mapOk && SYSTEMIC_DOMAINS.includes('liquidity') && SYSTEMIC_DOMAINS.includes('stability')) || J({ national: NATIONAL_NETWORKS, systemic: SYSTEMIC_DOMAINS.slice(0, 6) });
+  });
+
+  check('a107_11', 'Stress test is What-If: live project list unchanged after runSystemicStressTest', () => {
+    const f = createSystemicRiskFixture({});
+    const before = J(f.inputs.projects);
+    runSystemicStressTest(f.inputs, [{ kind: 'project_damage', projectId: 'infra_snowy_nsw' }], f.ctx);
+    return J(f.inputs.projects) === before || 'projects mutated';
+  });
+
+  check('a107_12', 'National resilience improved/deteriorated events only from band rank change', () => {
+    const f = createSystemicRiskFixture({ turn: 20 });
+    let p: NationalSystemsPersisted | null = null;
+    const r = computeNationalSystems(f.ctx.nsInputs, p);
+    p = r.persisted;
+    const ev = r.derived.filter(d => d.kind === 'national_resilience_improved' || d.kind === 'national_resilience_deteriorated');
+    const ok = ev.every(e => /National network resilience (improved|deteriorated)/.test(e.text));
+    return ((ev.length === 0 && !p.nationalBand) || ok) || J(ev);
+  });
+
+  return results;
+}
+
 
 // ---- V10.6 Game Intelligence ------------------------------------------------------------------------------------------
 export interface SystemicRiskWorldView { state: NationalSystemicRiskState; persisted: SystemicRiskPersisted | null; inputs: SystemicRiskInputs; ctx: { nsInputs: NationalSystemsInputs | null; scInputs: IndustriesInputs | null }; strategy: { label: string; regions: string[] } | null }
