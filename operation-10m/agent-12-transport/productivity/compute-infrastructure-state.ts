@@ -229,6 +229,22 @@ import {
   cruiseTurnaroundProductivityMultiplier,
   nationalCruiseTurnaroundThroughputIndex,
 } from './cruise-turnaround-index.ts';
+import {
+  computeSubseaCableLandingByRegion,
+  nationalSubseaCableLandingIndex,
+  subseaCableLandingProductivityMultiplier,
+} from '../network/subsea-cable-landing-index.ts';
+import {
+  computeGreenAmmoniaExportByRegion,
+  greenAmmoniaExportProductivityMultiplier,
+  nationalGreenAmmoniaExportIndex,
+} from '../operations/green-ammonia-export-index.ts';
+import {
+  airportExpressRailProductivityMultiplier,
+  computeAirportExpressRailShare,
+  computeAirportExpressRailThroughputByRegion,
+  nationalAirportExpressRailThroughputIndex,
+} from './airport-express-rail-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -886,16 +902,50 @@ export function computeTransportInfrastructureState(
     cruiseTurnaroundShare,
     options?.cruiseTurnaroundPolicy ?? 'baseline',
   );
+  const subseaCableLandingByRegion = computeSubseaCableLandingByRegion(ops);
+  const nationalSubseaCable = nationalSubseaCableLandingIndex(subseaCableLandingByRegion);
+  const subseaMult = subseaCableLandingProductivityMultiplier(
+    nationalSubseaCable,
+    options?.subseaCableLandingPolicy ?? 'baseline',
+  );
+  const greenAmmoniaExportByRegion = computeGreenAmmoniaExportByRegion(ops, networkStress);
+  const nationalGreenAmmonia = nationalGreenAmmoniaExportIndex(greenAmmoniaExportByRegion);
+  const ammoniaMult = greenAmmoniaExportProductivityMultiplier(
+    nationalGreenAmmonia,
+    options?.greenAmmoniaExportPolicy ?? 'baseline',
+  );
+  const airportExpressRailThroughputByRegion = computeAirportExpressRailThroughputByRegion(ops);
+  const nationalAirportExpress = nationalAirportExpressRailThroughputIndex(airportExpressRailThroughputByRegion);
+  const airportExpressRailShare = computeAirportExpressRailShare(
+    ops,
+    options?.airportExpressRailPolicy ?? 'baseline',
+  );
+  const airportExpressMult = airportExpressRailProductivityMultiplier(
+    airportExpressRailShare,
+    options?.airportExpressRailPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
     const batteryBoost = (batterySupplyChainByRegion[code] - 16) * 0.0046;
     const cruiseBoost = (cruiseTurnaroundThroughputByRegion[code] - 2) * 0.0051;
+    const subseaBoost = (subseaCableLandingByRegion[code] - 4) * 0.005;
+    const ammoniaBoost = (greenAmmoniaExportByRegion[code] - 12) * 0.0045;
+    const airportBoost = (airportExpressRailThroughputByRegion[code] - 2) * 0.0049;
     productivity.byRegion[code].productivityIndexBonus =
-      (productivity.byRegion[code].productivityIndexBonus + offshoreBoost + batteryBoost + cruiseBoost) *
+      (productivity.byRegion[code].productivityIndexBonus +
+        offshoreBoost +
+        batteryBoost +
+        cruiseBoost +
+        subseaBoost +
+        ammoniaBoost +
+        airportBoost) *
       offshoreMult *
       batteryMult *
-      cruiseMult;
+      cruiseMult *
+      subseaMult *
+      ammoniaMult *
+      airportExpressMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -921,7 +971,10 @@ export function computeTransportInfrastructureState(
     nationalDataCentreLogistics * 0.018 +
     nationalOffshoreWind * 0.017 +
     nationalBatterySupply * 0.016 +
-    nationalCruiseTurnaround * 0.015;
+    nationalCruiseTurnaround * 0.015 +
+    nationalSubseaCable * 0.014 +
+    nationalGreenAmmonia * 0.014 +
+    nationalAirportExpress * 0.013;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -936,7 +989,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/17',
+    schemaVersion: 'agent12/18',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -1040,6 +1093,13 @@ export function computeTransportInfrastructureState(
     cruiseTurnaroundShare,
     nationalCruiseTurnaroundThroughputIndex: nationalCruiseTurnaround,
     cruiseTurnaroundThroughputByRegion,
+    nationalSubseaCableLandingIndex: nationalSubseaCable,
+    subseaCableLandingByRegion,
+    nationalGreenAmmoniaExportIndex: nationalGreenAmmonia,
+    greenAmmoniaExportByRegion,
+    airportExpressRailShare,
+    nationalAirportExpressRailThroughputIndex: nationalAirportExpress,
+    airportExpressRailThroughputByRegion,
     computeMs,
   };
 }

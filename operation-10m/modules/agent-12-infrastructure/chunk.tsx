@@ -253,8 +253,14 @@ export type BatterySupplyChainPolicy = 'baseline' | 'accelerate';
 
 export type CruiseTurnaroundPolicy = 'baseline' | 'expand';
 
+export type SubseaCableLandingPolicy = 'baseline' | 'expand';
+
+export type GreenAmmoniaExportPolicy = 'baseline' | 'accelerate';
+
+export type AirportExpressRailPolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/17';
+  schemaVersion: 'agent12/18';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -358,6 +364,13 @@ export interface TransportInfrastructureState {
   cruiseTurnaroundShare: number;
   nationalCruiseTurnaroundThroughputIndex: number;
   cruiseTurnaroundThroughputByRegion: Record<AuRegionCode, number>;
+  nationalSubseaCableLandingIndex: number;
+  subseaCableLandingByRegion: Record<AuRegionCode, number>;
+  nationalGreenAmmoniaExportIndex: number;
+  greenAmmoniaExportByRegion: Record<AuRegionCode, number>;
+  airportExpressRailShare: number;
+  nationalAirportExpressRailThroughputIndex: number;
+  airportExpressRailThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -399,6 +412,9 @@ export interface TransportInfrastructureOptions {
   offshoreWindLogisticsPolicy?: OffshoreWindLogisticsPolicy;
   batterySupplyChainPolicy?: BatterySupplyChainPolicy;
   cruiseTurnaroundPolicy?: CruiseTurnaroundPolicy;
+  subseaCableLandingPolicy?: SubseaCableLandingPolicy;
+  greenAmmoniaExportPolicy?: GreenAmmoniaExportPolicy;
+  airportExpressRailPolicy?: AirportExpressRailPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -1131,6 +1147,48 @@ export const TRANSPORT_CORRIDORS_ROUND16: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round17.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND17: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_nsw_qld_subsea_cable_chain',
+    name: 'NSW–QLD Subsea Cable Chain',
+    networkKind: 'trade',
+    regionSequence: ['NSW', 'QLD'],
+    requiredTagsByRegion: {
+      NSW: ['subsea_cable', 'cable_landing', 'digital_trade'],
+      QLD: ['subsea_cable', 'telecom_landing', 'digital_trade'],
+    },
+    productivitySynergyPoints: 6.1,
+    logisticsRelief: 0.035,
+  },
+  {
+    id: 'corr_wa_sa_green_ammonia_export',
+    name: 'WA–SA Green Ammonia Export Spine',
+    networkKind: 'freight',
+    regionSequence: ['WA', 'SA'],
+    requiredTagsByRegion: {
+      WA: ['green_ammonia', 'ammonia_export', 'hydrogen_derivative'],
+      SA: ['green_ammonia', 'renewable_export', 'ammonia_export'],
+    },
+    productivitySynergyPoints: 6.4,
+    logisticsRelief: 0.037,
+  },
+  {
+    id: 'corr_nsw_vic_airport_express_spine',
+    name: 'NSW–VIC Airport Express Spine',
+    networkKind: 'mobility',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['airport_express', 'air_rail', 'passenger_freight'],
+      VIC: ['airport_express', 'air_rail'],
+    },
+    productivitySynergyPoints: 5.8,
+    logisticsRelief: 0.032,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -1294,6 +1352,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND14,
   ...TRANSPORT_CORRIDORS_ROUND15,
   ...TRANSPORT_CORRIDORS_ROUND16,
+  ...TRANSPORT_CORRIDORS_ROUND17,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -2222,6 +2281,62 @@ export const TRANSPORT_SCENARIOS_ROUND16: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round17.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND17: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_subsea_cable_lay_surge',
+    label: 'WA Subsea Cable Lay Surge',
+    description: 'Cable lay season overloads Perth landing berths and staging yards.',
+    targetRegions: ['WA', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_qld_ammonia_export_rush',
+    label: 'Queensland Ammonia Export Rush',
+    description: 'Green ammonia export peaks Gladstone bulk and rail slots.',
+    targetRegions: ['QLD', 'WA'],
+    networkKind: 'freight',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_nsw_airport_express_peak',
+    label: 'NSW Airport Express Peak',
+    description: 'Holiday peak strains Sydney airport rail and road feed.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['rail', 'road'],
+  },
+  {
+    id: 'scn_sa_cable_landing_delay',
+    label: 'SA Cable Landing Delay',
+    description: 'Weather delay backs up Adelaide telecom landing inventory.',
+    targetRegions: ['SA', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.19,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_vic_air_rail_integration_stress',
+    label: 'Victoria Air-Rail Integration Stress',
+    description: 'Melbourne air-rail transfer surge overloads Tullamarine feed.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.21,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['rail', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -2399,6 +2514,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND14,
   ...TRANSPORT_SCENARIOS_ROUND15,
   ...TRANSPORT_SCENARIOS_ROUND16,
+  ...TRANSPORT_SCENARIOS_ROUND17,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -6742,6 +6858,233 @@ export const SCALE_WAVE_ROUND16_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round17-assets.ts ---
+
+export const ROUND17_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_nsw_sydney_cable_landing_feed',
+    category: 'road',
+    name: 'Sydney Cable Landing Feed',
+    description: 'Subsea cable shore-end drayage to landing stations.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['subsea_cable', 'cable_landing', 'digital_trade'],
+    laneKilometres: 32,
+    designSpeedKmh: 90,
+    freightShare: 0.31,
+    urbanShare: 0.28,
+    tollRoad: true,
+  },
+  {
+    id: 'road_qld_brisbane_telecom_landing',
+    category: 'road',
+    name: 'Brisbane Telecom Landing Link',
+    description: 'Pacific cable landing access to port staging.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 3.9,
+    strategicNetworks: ['trade'],
+    tags: ['subsea_cable', 'telecom_landing', 'digital_trade', 'port_access'],
+    laneKilometres: 28,
+    designSpeedKmh: 85,
+    freightShare: 0.29,
+    urbanShare: 0.22,
+    tollRoad: false,
+  },
+  {
+    id: 'road_wa_kwinana_ammonia_spine',
+    category: 'road',
+    name: 'Kwinana Green Ammonia Spine',
+    description: 'Renewable ammonia feed to export berths.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['green_ammonia', 'ammonia_export', 'hydrogen_derivative', 'motorway'],
+    laneKilometres: 46,
+    designSpeedKmh: 100,
+    freightShare: 0.41,
+    urbanShare: 0.14,
+    tollRoad: true,
+  },
+  {
+    id: 'road_vic_tullamarine_air_rail',
+    category: 'road',
+    name: 'Tullamarine Air-Rail Connector',
+    description: 'Melbourne airport express road-rail interface.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['mobility'],
+    tags: ['airport_express', 'air_rail', 'passenger_freight', 'port_access'],
+    laneKilometres: 14,
+    designSpeedKmh: 80,
+    freightShare: 0.16,
+    urbanShare: 0.48,
+    tollRoad: true,
+  },
+];
+
+export const ROUND17_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_nsw_sydney_airport_express',
+    category: 'rail',
+    name: 'Sydney Airport Express Rail',
+    description: 'Dedicated airport passenger and air-freight rail.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['airport_express', 'air_rail', 'passenger_freight', 'intercapital'],
+    trackKilometres: 22,
+    dualTrackShare: 0.72,
+    electrifiedShare: 0.95,
+    designFreightTonnesPerYear: 3_800_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_vic_skybus_rail_feed',
+    category: 'rail',
+    name: 'Melbourne SkyRail Airport Feed',
+    description: 'Air-rail integration for Tullamarine cargo and passengers.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['mobility'],
+    tags: ['airport_express', 'air_rail', 'passenger_freight'],
+    trackKilometres: 18,
+    dualTrackShare: 0.68,
+    electrifiedShare: 0.88,
+    designFreightTonnesPerYear: 2_600_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_sa_spencer_ammonia_export',
+    category: 'rail',
+    name: 'Spencer Gulf Ammonia Export Rail',
+    description: 'Green ammonia precursor rail to Whyalla export berths.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['green_ammonia', 'ammonia_export', 'renewable_export', 'bulk'],
+    trackKilometres: 142,
+    dualTrackShare: 0.46,
+    electrifiedShare: 0.41,
+    designFreightTonnesPerYear: 7_200_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND17_PORTS: PortAsset[] = [
+  {
+    id: 'port_nsw_bondi_cable_landing',
+    category: 'port',
+    name: 'Bondi Subsea Cable Landing',
+    description: 'Pacific subsea cable shore-end and digital trade berths.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['trade'],
+    tags: ['subsea_cable', 'cable_landing', 'digital_trade', 'telecom_landing'],
+    berthCount: 3,
+    maxDraftMetres: 11.8,
+    teuCapacityPerYear: 120_000,
+    automationLevel: 2,
+    bulkShare: 0.12,
+  },
+  {
+    id: 'port_wa_geraldton_ammonia',
+    category: 'port',
+    name: 'Geraldton Green Ammonia Terminal',
+    description: 'Renewable ammonia export and hydrogen derivative berths.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.8,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['green_ammonia', 'ammonia_export', 'hydrogen_derivative', 'renewable_export'],
+    berthCount: 4,
+    maxDraftMetres: 13.5,
+    teuCapacityPerYear: 210_000,
+    automationLevel: 1,
+    bulkShare: 0.52,
+  },
+  {
+    id: 'port_qld_gladstone_ammonia',
+    category: 'port',
+    name: 'Gladstone Ammonia Export Berths',
+    description: 'East coast green ammonia bulk export.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['trade'],
+    tags: ['green_ammonia', 'ammonia_export', 'renewable_export', 'bulk'],
+    berthCount: 3,
+    maxDraftMetres: 14.0,
+    teuCapacityPerYear: 165_000,
+    automationLevel: 1,
+    bulkShare: 0.58,
+  },
+];
+
+export const ROUND17_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_nsw_sydney_cable_dc',
+    category: 'logistics',
+    name: 'Sydney Cable Landing DC',
+    description: 'Subsea cable shore-end equipment consolidation.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['trade'],
+    tags: ['subsea_cable', 'cable_landing', 'digital_trade'],
+    warehouseSqm: 96_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 62,
+  },
+  {
+    id: 'log_wa_kwinana_ammonia_yard',
+    category: 'logistics',
+    name: 'Kwinana Ammonia Staging Yard',
+    description: 'Green ammonia tank and module staging.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['green_ammonia', 'ammonia_export', 'hydrogen_derivative'],
+    warehouseSqm: 128_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 54,
+  },
+  {
+    id: 'log_vic_melbourne_air_rail_hub',
+    category: 'logistics',
+    name: 'Melbourne Air-Rail Logistics Hub',
+    description: 'Airport express cargo and passenger freight stores.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['mobility'],
+    tags: ['airport_express', 'air_rail', 'passenger_freight'],
+    warehouseSqm: 74_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 78,
+  },
+];
+
+export const SCALE_WAVE_ROUND17_ASSETS = [
+  ...ROUND17_ROADS,
+  ...ROUND17_RAIL,
+  ...ROUND17_PORTS,
+  ...ROUND17_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -6766,6 +7109,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND14_ASSETS,
     ...SCALE_WAVE_ROUND15_ASSETS,
     ...SCALE_WAVE_ROUND16_ASSETS,
+    ...SCALE_WAVE_ROUND17_ASSETS,
   ];
 }
 
@@ -7661,6 +8005,59 @@ export function offshoreWindLogisticsProductivityMultiplier(
   const policyBoost = policy === 'deploy' ? 0.044 : 0;
   const normalized = (index - 6) / 100;
   return clamp(1 + normalized * 0.049 + policyBoost, 0.93, 1.12);
+}
+
+
+// --- source: network/subsea-cable-landing-index.ts ---
+
+/** 0–100 subsea cable landing and digital trade throughput by region. */
+export function computeSubseaCableLandingByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const cableTagged =
+      asset.tags.some(
+        (t) => t === 'subsea_cable' || t === 'cable_landing' || t === 'digital_trade',
+      ) || (asset.category === 'port' && asset.tags.includes('telecom_landing'));
+
+    if (!cableTagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.6 + asset.teuCapacityPerYear / 220_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 118_000 + (asset.intermodalLinks.includes('port') ? 2.1 : 0.8);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 940;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 14_500_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalSubseaCableLandingIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.42 + max * 0.58, 4, 72) * 10) / 10;
+}
+
+export function subseaCableLandingProductivityMultiplier(
+  index: number,
+  policy: SubseaCableLandingPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'expand' ? 0.041 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.048 + policyBoost, 0.93, 1.11);
 }
 
 
@@ -8583,6 +8980,71 @@ export function batterySupplyProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.046 : 0;
   const normalized = (supplyIndex - 18) / 100;
   return clamp(1 + normalized * 0.051 + policyBoost, 0.92, 1.11);
+}
+
+
+// --- source: operations/green-ammonia-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type GreenAmmoniaExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 green ammonia export logistics readiness by region. */
+export function computeGreenAmmoniaExportByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 10])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'green_ammonia' ||
+          t === 'ammonia_export' ||
+          t === 'hydrogen_derivative' ||
+          t === 'renewable_export',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 82_000 + asset.intermodalLinks.length * 0.85;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 520;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 9_200_000;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.2 + asset.bulkShare * 5.5;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.04 - stress * 0.032), 6, 92) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalGreenAmmoniaExportIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.47 + max * 0.53, 8, 86) * 10) / 10;
+}
+
+export function greenAmmoniaExportProductivityMultiplier(
+  exportIndex: number,
+  policy: GreenAmmoniaExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.045 : 0;
+  const normalized = (exportIndex - 12) / 100;
+  return clamp(1 + normalized * 0.05 + policyBoost, 0.92, 1.12);
 }
 
 
@@ -9704,6 +10166,95 @@ export function nationalCruiseTurnaroundThroughputIndex(
 }
 
 
+// --- source: productivity/airport-express-rail-index.ts ---
+  AU_REGION_CODES,
+  type AirportExpressRailPolicy,
+  type AuRegionCode,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of mobility logistics tied to airport express rail links. */
+export function computeAirportExpressRailShare(
+  operationalAssets: TransportAsset[],
+  policy: AirportExpressRailPolicy = 'baseline',
+): number {
+  let expressUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'rail' && asset.tags.includes('airport_express')) {
+      const units =
+        ('designFreightTonnesPerYear' in asset ? asset.designFreightTonnesPerYear / 4_200_000 : 0) +
+        ('trackKilometres' in asset ? asset.trackKilometres / 180 : 0);
+      totalUnits += units + 2;
+      expressUnits += (units + 2) * 0.88;
+    }
+    if (asset.category === 'road' && asset.tags.includes('air_rail')) {
+      totalUnits += asset.laneKilometres / 240;
+      expressUnits += asset.laneKilometres / 240 * 0.62;
+    }
+    if (asset.category === 'logistics' && asset.tags.includes('air_rail')) {
+      totalUnits += asset.warehouseSqm / 68_000;
+      expressUnits += asset.warehouseSqm / 68_000 * 0.58;
+    }
+  }
+
+  if (totalUnits <= 0) return 0.045;
+  const policyBoost = policy === 'deploy' ? 0.036 : 0;
+  return Math.round(clamp(expressUnits / totalUnits + policyBoost, 0.04, 0.38) * 1000) / 1000;
+}
+
+export function airportExpressRailProductivityMultiplier(
+  share: number,
+  policy: AirportExpressRailPolicy,
+): number {
+  const bias = policy === 'deploy' ? 1.024 : 1;
+  return (1 + (share - 0.07) * 0.033) * bias;
+}
+
+export function computeAirportExpressRailThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'airport_express' || t === 'air_rail' || t === 'passenger_freight',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      const railBoost = asset.tags.includes('airport_express') ? 2.4 : 1;
+      byRegion[asset.hostRegion] +=
+        (asset.designFreightTonnesPerYear / 2_400_000 + asset.trackKilometres / 95) * railBoost;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 320;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 98_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalAirportExpressRailThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.52 + max * 0.48, 2, 58) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -10055,6 +10606,19 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   cruiseTurnaroundProductivityMultiplier,
   nationalCruiseTurnaroundThroughputIndex,
 } from './cruise-turnaround-index.ts';
+  computeSubseaCableLandingByRegion,
+  nationalSubseaCableLandingIndex,
+  subseaCableLandingProductivityMultiplier,
+} from '../network/subsea-cable-landing-index.ts';
+  computeGreenAmmoniaExportByRegion,
+  greenAmmoniaExportProductivityMultiplier,
+  nationalGreenAmmoniaExportIndex,
+} from '../operations/green-ammonia-export-index.ts';
+  airportExpressRailProductivityMultiplier,
+  computeAirportExpressRailShare,
+  computeAirportExpressRailThroughputByRegion,
+  nationalAirportExpressRailThroughputIndex,
+} from './airport-express-rail-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -10711,16 +11275,50 @@ export function computeTransportInfrastructureState(
     cruiseTurnaroundShare,
     options?.cruiseTurnaroundPolicy ?? 'baseline',
   );
+  const subseaCableLandingByRegion = computeSubseaCableLandingByRegion(ops);
+  const nationalSubseaCable = nationalSubseaCableLandingIndex(subseaCableLandingByRegion);
+  const subseaMult = subseaCableLandingProductivityMultiplier(
+    nationalSubseaCable,
+    options?.subseaCableLandingPolicy ?? 'baseline',
+  );
+  const greenAmmoniaExportByRegion = computeGreenAmmoniaExportByRegion(ops, networkStress);
+  const nationalGreenAmmonia = nationalGreenAmmoniaExportIndex(greenAmmoniaExportByRegion);
+  const ammoniaMult = greenAmmoniaExportProductivityMultiplier(
+    nationalGreenAmmonia,
+    options?.greenAmmoniaExportPolicy ?? 'baseline',
+  );
+  const airportExpressRailThroughputByRegion = computeAirportExpressRailThroughputByRegion(ops);
+  const nationalAirportExpress = nationalAirportExpressRailThroughputIndex(airportExpressRailThroughputByRegion);
+  const airportExpressRailShare = computeAirportExpressRailShare(
+    ops,
+    options?.airportExpressRailPolicy ?? 'baseline',
+  );
+  const airportExpressMult = airportExpressRailProductivityMultiplier(
+    airportExpressRailShare,
+    options?.airportExpressRailPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
     const batteryBoost = (batterySupplyChainByRegion[code] - 16) * 0.0046;
     const cruiseBoost = (cruiseTurnaroundThroughputByRegion[code] - 2) * 0.0051;
+    const subseaBoost = (subseaCableLandingByRegion[code] - 4) * 0.005;
+    const ammoniaBoost = (greenAmmoniaExportByRegion[code] - 12) * 0.0045;
+    const airportBoost = (airportExpressRailThroughputByRegion[code] - 2) * 0.0049;
     productivity.byRegion[code].productivityIndexBonus =
-      (productivity.byRegion[code].productivityIndexBonus + offshoreBoost + batteryBoost + cruiseBoost) *
+      (productivity.byRegion[code].productivityIndexBonus +
+        offshoreBoost +
+        batteryBoost +
+        cruiseBoost +
+        subseaBoost +
+        ammoniaBoost +
+        airportBoost) *
       offshoreMult *
       batteryMult *
-      cruiseMult;
+      cruiseMult *
+      subseaMult *
+      ammoniaMult *
+      airportExpressMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -10746,7 +11344,10 @@ export function computeTransportInfrastructureState(
     nationalDataCentreLogistics * 0.018 +
     nationalOffshoreWind * 0.017 +
     nationalBatterySupply * 0.016 +
-    nationalCruiseTurnaround * 0.015;
+    nationalCruiseTurnaround * 0.015 +
+    nationalSubseaCable * 0.014 +
+    nationalGreenAmmonia * 0.014 +
+    nationalAirportExpress * 0.013;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -10761,7 +11362,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/17',
+    schemaVersion: 'agent12/18',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -10865,6 +11466,13 @@ export function computeTransportInfrastructureState(
     cruiseTurnaroundShare,
     nationalCruiseTurnaroundThroughputIndex: nationalCruiseTurnaround,
     cruiseTurnaroundThroughputByRegion,
+    nationalSubseaCableLandingIndex: nationalSubseaCable,
+    subseaCableLandingByRegion,
+    nationalGreenAmmoniaExportIndex: nationalGreenAmmonia,
+    greenAmmoniaExportByRegion,
+    airportExpressRailShare,
+    nationalAirportExpressRailThroughputIndex: nationalAirportExpress,
+    airportExpressRailThroughputByRegion,
     computeMs,
   };
 }
@@ -10947,7 +11555,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/17' &&
+      infra.schemaVersion === 'agent12/18' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -10997,8 +11605,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalOffshoreWindLogisticsIndex >= 6 &&
       infra.nationalBatterySupplyChainIndex >= 18 &&
       infra.cruiseTurnaroundShare >= 0.04 &&
-      infra.nationalCruiseTurnaroundThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} offshore=${infra.nationalOffshoreWindLogisticsIndex.toFixed(1)} battery=${infra.nationalBatterySupplyChainIndex.toFixed(1)} cruise=${infra.nationalCruiseTurnaroundThroughputIndex.toFixed(1)}`,
+      infra.nationalCruiseTurnaroundThroughputIndex >= 2 &&
+      infra.nationalSubseaCableLandingIndex >= 5 &&
+      infra.nationalGreenAmmoniaExportIndex >= 12 &&
+      infra.airportExpressRailShare >= 0.04 &&
+      infra.nationalAirportExpressRailThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} subsea=${infra.nationalSubseaCableLandingIndex.toFixed(1)} ammonia=${infra.nationalGreenAmmoniaExportIndex.toFixed(1)} airport=${infra.nationalAirportExpressRailThroughputIndex.toFixed(1)}`,
   });
 
   return results;

@@ -249,8 +249,14 @@ export type BatterySupplyChainPolicy = 'baseline' | 'accelerate';
 
 export type CruiseTurnaroundPolicy = 'baseline' | 'expand';
 
+export type SubseaCableLandingPolicy = 'baseline' | 'expand';
+
+export type GreenAmmoniaExportPolicy = 'baseline' | 'accelerate';
+
+export type AirportExpressRailPolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/17';
+  schemaVersion: 'agent12/18';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -354,6 +360,13 @@ export interface TransportInfrastructureState {
   cruiseTurnaroundShare: number;
   nationalCruiseTurnaroundThroughputIndex: number;
   cruiseTurnaroundThroughputByRegion: Record<AuRegionCode, number>;
+  nationalSubseaCableLandingIndex: number;
+  subseaCableLandingByRegion: Record<AuRegionCode, number>;
+  nationalGreenAmmoniaExportIndex: number;
+  greenAmmoniaExportByRegion: Record<AuRegionCode, number>;
+  airportExpressRailShare: number;
+  nationalAirportExpressRailThroughputIndex: number;
+  airportExpressRailThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -395,6 +408,9 @@ export interface TransportInfrastructureOptions {
   offshoreWindLogisticsPolicy?: OffshoreWindLogisticsPolicy;
   batterySupplyChainPolicy?: BatterySupplyChainPolicy;
   cruiseTurnaroundPolicy?: CruiseTurnaroundPolicy;
+  subseaCableLandingPolicy?: SubseaCableLandingPolicy;
+  greenAmmoniaExportPolicy?: GreenAmmoniaExportPolicy;
+  airportExpressRailPolicy?: AirportExpressRailPolicy;
 }
 
 export interface V94ProjectSnapshot {

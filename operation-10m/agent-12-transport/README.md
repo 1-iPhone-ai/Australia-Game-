@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 17
+
+- Schema **`agent12/18`**: subsea cable landing throughput, green ammonia export readiness, airport express rail share (`subseaCableLandingPolicy`, `greenAmmoniaExportPolicy`, `airportExpressRailPolicy`)
+- Catalog: **247** assets, **65** corridors, **103** scenarios
+- Systems: `network/subsea-cable-landing-index.ts`, `operations/green-ammonia-export-index.ts`, `productivity/airport-express-rail-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 16
 
 - Schema **`agent12/17`**: offshore wind logistics throughput, battery supply chain readiness, cruise turnaround share (`offshoreWindLogisticsPolicy`, `batterySupplyChainPolicy`, `cruiseTurnaroundPolicy`)
