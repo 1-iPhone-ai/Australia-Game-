@@ -32,6 +32,7 @@ const FILES = [
   'distributed-rooftop-ev-v2g-ledger.ts',
   'agrivoltaics-soil-carbon-land-ledger.ts',
   'geothermal-industrial-heat-ledger.ts',
+  'coastal-blue-carbon-shore-energy-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -56,6 +57,8 @@ const EXPORT_MANIFEST = [
   'V1014_SOIL_CARBON_LAND_CATALOG',
   'V1014_GEOTHERMAL_CATALOG',
   'V1014_INDUSTRIAL_HEAT_DECARB_CATALOG',
+  'V1014_BLUE_CARBON_COASTAL_CATALOG',
+  'V1014_SHORE_MARINE_ENERGY_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -98,6 +101,9 @@ const EXPORT_MANIFEST = [
   'runAgent13GeoHeatScaleSelfTests',
   'runAgent13GeoHeatTurnScenario',
   'V1014_GEO_HEAT_TURN_SCENARIOS',
+  'runAgent13BlueShoreScaleSelfTests',
+  'runAgent13BlueShoreTurnScenario',
+  'V1014_BLUE_SHORE_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

@@ -93,6 +93,13 @@ import {
   type V1014RegionalIndustrialHeatDecarbLedger,
 } from './geothermal-industrial-heat-ledger';
 import {
+  advanceRegionalShoreMarineEnergy,
+  computeRegionalBlueCarbonCoastalLedger,
+  scoreAgent13BlueShoreGIAlignment,
+  type V1014RegionalBlueCarbonCoastalLedger,
+  type V1014RegionalShoreMarineEnergyLedger,
+} from './coastal-blue-carbon-shore-energy-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25593,6 +25600,10 @@ export interface V1014RegionalEnergyProfile {
   geothermalHeatRelief: number;
   industrialHeatDecarbBand: string;
   industrialHeatRelief: number;
+  blueCarbonCoastalBand: string;
+  blueCarbonCoastalRelief: number;
+  shoreMarineEnergyBand: string;
+  shoreMarineEnergyRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25651,6 +25662,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalSoilCarbonLandLedgers: Record<string, V1014RegionalSoilCarbonLandLedger>;
   regionalGeothermalLedgers: Record<string, V1014RegionalGeothermalLedger>;
   regionalIndustrialHeatDecarbLedgers: Record<string, V1014RegionalIndustrialHeatDecarbLedger>;
+  regionalBlueCarbonCoastalLedgers: Record<string, V1014RegionalBlueCarbonCoastalLedger>;
+  regionalShoreMarineEnergyLedgers: Record<string, V1014RegionalShoreMarineEnergyLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25680,6 +25693,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalSoilCarbonLandMemory: Record<string, { stewardshipIndex: number }>;
   regionalGeothermalMemory: Record<string, { reservoirBalance: number; thermalIndex: number }>;
   regionalIndustrialHeatMemory: Record<string, { decarbIndex: number }>;
+  regionalBlueCarbonMemory: Record<string, { wetlandBalance: number; sinkIndex: number }>;
+  regionalShoreMarineMemory: Record<string, { shoreIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25721,6 +25736,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalSoilCarbonLandMemory: {},
     regionalGeothermalMemory: {},
     regionalIndustrialHeatMemory: {},
+    regionalBlueCarbonMemory: {},
+    regionalShoreMarineMemory: {},
     history: [],
   };
 }
@@ -25769,6 +25786,10 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalIndustrialHeatMemory === 'object' && raw.regionalIndustrialHeatMemory
         ? raw.regionalIndustrialHeatMemory
         : {},
+    regionalBlueCarbonMemory:
+      typeof raw.regionalBlueCarbonMemory === 'object' && raw.regionalBlueCarbonMemory ? raw.regionalBlueCarbonMemory : {},
+    regionalShoreMarineMemory:
+      typeof raw.regionalShoreMarineMemory === 'object' && raw.regionalShoreMarineMemory ? raw.regionalShoreMarineMemory : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -25897,6 +25918,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalSoilCarbonLandLedgers: {},
       regionalGeothermalLedgers: {},
       regionalIndustrialHeatDecarbLedgers: {},
+      regionalBlueCarbonCoastalLedgers: {},
+      regionalShoreMarineEnergyLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -25929,6 +25952,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const soilCarbonLandLedgers: Record<string, V1014RegionalSoilCarbonLandLedger> = {};
   const geothermalLedgers: Record<string, V1014RegionalGeothermalLedger> = {};
   const industrialHeatDecarbLedgers: Record<string, V1014RegionalIndustrialHeatDecarbLedger> = {};
+  const blueCarbonCoastalLedgers: Record<string, V1014RegionalBlueCarbonCoastalLedger> = {};
+  const shoreMarineEnergyLedgers: Record<string, V1014RegionalShoreMarineEnergyLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -25966,6 +25991,10 @@ export function computeIndustrialEnergyEnvironmentalState(
     ...persisted.regionalGeothermalMemory,
   };
   const nextIndustrialHeatMemory: Record<string, { decarbIndex: number }> = { ...persisted.regionalIndustrialHeatMemory };
+  const nextBlueCarbonMemory: Record<string, { wetlandBalance: number; sinkIndex: number }> = {
+    ...persisted.regionalBlueCarbonMemory,
+  };
+  const nextShoreMarineMemory: Record<string, { shoreIndex: number }> = { ...persisted.regionalShoreMarineMemory };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
 
@@ -26240,6 +26269,28 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextIndustrialHeatMemory[regionId] = heatDecarbStep.next;
     industrialHeatDecarbLedgers[regionId] = heatDecarbStep.ledger;
 
+    const blueCarbonStep = computeRegionalBlueCarbonCoastalLedger({
+      regionId,
+      climateHazardPressure: climatePressure,
+      offshoreRenewableRelief: offshoreStep.ledger.offshoreRenewableRelief,
+      soilCarbonLandRelief: soilStep.ledger.soilCarbonLandRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextBlueCarbonMemory[regionId] || null,
+    });
+    nextBlueCarbonMemory[regionId] = blueCarbonStep.next;
+    blueCarbonCoastalLedgers[regionId] = blueCarbonStep.ledger;
+
+    const shoreMarineStep = advanceRegionalShoreMarineEnergy({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      blueCarbonBand: blueCarbonStep.ledger.band,
+      industrialHeatRelief: heatDecarbStep.ledger.industrialHeatRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextShoreMarineMemory[regionId] || null,
+    });
+    nextShoreMarineMemory[regionId] = shoreMarineStep.next;
+    shoreMarineEnergyLedgers[regionId] = shoreMarineStep.ledger;
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -26267,6 +26318,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= soilStep.ledger.soilCarbonLandRelief;
     pressure -= geoStep.ledger.geothermalHeatRelief;
     pressure -= heatDecarbStep.ledger.industrialHeatRelief;
+    pressure -= blueCarbonStep.ledger.blueCarbonCoastalRelief;
+    pressure -= shoreMarineStep.ledger.shoreMarineEnergyRelief;
     if (biodiversityStep.ledger.band === 'critical_loss') pressure += 5;
     pressure -= gridRecovery.pressureRelief;
     pressure -= storageFlex.gridStressRelief;
@@ -26319,6 +26372,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       soilStep.ledger.summary,
       geoStep.ledger.summary,
       heatDecarbStep.ledger.summary,
+      blueCarbonStep.ledger.summary,
+      shoreMarineStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -26439,6 +26494,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       geothermalHeatRelief: geoStep.ledger.geothermalHeatRelief,
       industrialHeatDecarbBand: heatDecarbStep.ledger.band,
       industrialHeatRelief: heatDecarbStep.ledger.industrialHeatRelief,
+      blueCarbonCoastalBand: blueCarbonStep.ledger.band,
+      blueCarbonCoastalRelief: blueCarbonStep.ledger.blueCarbonCoastalRelief,
+      shoreMarineEnergyBand: shoreMarineStep.ledger.band,
+      shoreMarineEnergyRelief: shoreMarineStep.ledger.shoreMarineEnergyRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -26526,6 +26585,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalSoilCarbonLandLedgers: soilCarbonLandLedgers,
     regionalGeothermalLedgers: geothermalLedgers,
     regionalIndustrialHeatDecarbLedgers: industrialHeatDecarbLedgers,
+    regionalBlueCarbonCoastalLedgers: blueCarbonCoastalLedgers,
+    regionalShoreMarineEnergyLedgers: shoreMarineEnergyLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -26555,6 +26616,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalSoilCarbonLandMemory: nextSoilCarbonLandMemory,
     regionalGeothermalMemory: nextGeothermalMemory,
     regionalIndustrialHeatMemory: nextIndustrialHeatMemory,
+    regionalBlueCarbonMemory: nextBlueCarbonMemory,
+    regionalShoreMarineMemory: nextShoreMarineMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -26950,6 +27013,38 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     heatBand: rr12.state.regions.SA?.industrialHeatDecarbBand,
   });
   check('GEO HEAT GI alignment', giGeo.relevanceDelta > 0.5, giGeo.reason || '');
+
+  const blueInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'mangrove_blue_carbon_restoration',
+      'seagrass_carbon_meadow',
+      'coastal_wetland_stewardship',
+      'saltmarsh_coastal_buffer',
+      'tidal_lagoon_shore_power',
+      'nearshore_wave_array',
+      'coastal_battery_shore_hub',
+      'coastal_microgrid_transmission',
+    ],
+  };
+  const rr13 = computeIndustrialEnergyEnvironmentalState(blueInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check('BLUE CARBON ledger tracked', !!rr13.state.regionalBlueCarbonCoastalLedgers.QLD?.band, rr13.state.regionalBlueCarbonCoastalLedgers.QLD?.band || '');
+  check(
+    'SHORE marine relief',
+    (rr13.state.regions.QLD?.shoreMarineEnergyRelief || 0) > 0,
+    String(rr13.state.regions.QLD?.shoreMarineEnergyRelief),
+  );
+  check(
+    'BLUE CARBON memory persisted',
+    !!rr13.persisted.regionalBlueCarbonMemory.QLD,
+    String(rr13.persisted.regionalBlueCarbonMemory.QLD?.sinkIndex),
+  );
+  const giBlue = scoreAgent13BlueShoreGIAlignment({
+    actionText: 'Mangrove blue carbon with tidal lagoon shore power corridor',
+    blueBand: rr13.state.regions.QLD?.blueCarbonCoastalBand,
+    shoreBand: rr13.state.regions.QLD?.shoreMarineEnergyBand,
+  });
+  check('BLUE SHORE GI alignment', giBlue.relevanceDelta > 0.5, giBlue.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

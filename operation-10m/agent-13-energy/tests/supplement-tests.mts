@@ -45,6 +45,11 @@ import {
   V1014_GEO_HEAT_TURN_SCENARIOS,
 } from '../modules/geothermal-industrial-heat-ledger.ts';
 import {
+  runAgent13BlueShoreScaleSelfTests,
+  runAgent13BlueShoreTurnScenario,
+  V1014_BLUE_SHORE_TURN_SCENARIOS,
+} from '../modules/coastal-blue-carbon-shore-energy-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -206,6 +211,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const geoTurn = runAgent13GeoHeatTurnScenario(V1014_GEO_HEAT_TURN_SCENARIOS[0]);
   ok(geoTurn.passed);
+
+  const blueShore = runAgent13BlueShoreScaleSelfTests();
+  ok(blueShore.failed === 0 && blueShore.passed >= 7);
+
+  const blueTurn = runAgent13BlueShoreTurnScenario(V1014_BLUE_SHORE_TURN_SCENARIOS[0]);
+  ok(blueTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
