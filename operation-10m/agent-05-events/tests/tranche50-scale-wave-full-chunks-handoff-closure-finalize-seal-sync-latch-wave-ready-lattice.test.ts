@@ -3,9 +3,9 @@ import { describe, it } from 'node:test';
 
 import {
   OP10M_AGENT05_CATALOG_STATS,
-  OP10M_AGENT05_CATALOG_TRANCHE48_STATS,
+  OP10M_AGENT05_CATALOG_TRANCHE50_STATS,
   OP10M_AGENT05_CHAIN_CATALOG,
-  OP10M_AGENT05_CHAIN_CATALOG_TRANCHE48,
+  OP10M_AGENT05_CHAIN_CATALOG_TRANCHE50,
   OP10M_AGENT25_FULL_CHUNKS_HANDOFF_CLOSURE_FINALIZE_SEAL_SYNC_LATCH_WAVE_READY_FLAG,
   OP10M_SCALE_WAVE_FULL_CHUNKS_HANDOFF_CLOSURE_FINALIZE_SEAL_SYNC_LATCH_WAVE_READY_FLAG,
   OP10M_TURN_COMPUTE_DIGEST_FLAG,
@@ -15,8 +15,8 @@ import {
 } from '../src/index.ts';
 
 describe('Tranche 50 handoff-closure-finalize-seal-sync-latch-wave-ready lattice catalog', () => {
-  it('adds 320 closure-finalize-seal-sync-latch chains at 16200 total', () => {
-    assert.equal(OP10M_AGENT05_CATALOG_TRANCHE48_STATS.chainCount, 320);
+  it('adds 320 closure-finalize-seal-sync-latch-wave-ready chains at 16200 total', () => {
+    assert.equal(OP10M_AGENT05_CATALOG_TRANCHE50_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche50Chains, 320);
     assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 16200);
   });
@@ -24,13 +24,13 @@ describe('Tranche 50 handoff-closure-finalize-seal-sync-latch-wave-ready lattice
   it('uses op10m_t50 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
     assert.equal(ids.size, 16200);
-    for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE48) {
+    for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE50) {
       assert.match(c.chainId, /^op10m_t50_/);
     }
   });
 
   it('closure-finalize-seal-sync-latch requires scale_wave_full_chunks_handoff_closure_finalize_seal_sync_latch_wave_ready flag', () => {
-    const chain = OP10M_AGENT05_CHAIN_CATALOG_TRANCHE48.find((c) =>
+    const chain = OP10M_AGENT05_CHAIN_CATALOG_TRANCHE50.find((c) =>
       c.chainId.includes('latch_after_seal')
     )!;
     const signal = chain.phases.find((p) => p.phase === 'signal')!;
@@ -55,7 +55,7 @@ describe('Tranche 50 handoff-closure-finalize-seal-sync-latch-wave-ready lattice
   });
 
   it('closure-finalize-seal-sync-ready requires agent25_full_chunks_handoff_closure_finalize_seal_sync_wave_ready flag', () => {
-    const chain = OP10M_AGENT05_CHAIN_CATALOG_TRANCHE48.find((c) =>
+    const chain = OP10M_AGENT05_CHAIN_CATALOG_TRANCHE50.find((c) =>
       c.chainId.includes('assembly_wave_ready')
     )!;
     const signal = chain.phases.find((p) => p.phase === 'signal')!;
