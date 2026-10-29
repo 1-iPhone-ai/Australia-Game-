@@ -51,6 +51,8 @@ import { buildAgent17AuthorityCharter } from './authority-charter.ts';
 import { buildAgent17DispatchAccord } from './dispatch-accord.ts';
 import { buildAgent17MobilizationIndex } from './mobilization-index.ts';
 import { buildAgent17ExecutionSummons } from './execution-summons.ts';
+import { buildAgent17FieldIndex } from './field-index.ts';
+import { buildAgent17TheaterCommitment } from './theater-commitment.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -295,6 +297,16 @@ export function buildAgent17PlanningDepthSnapshot(
     dispatchAccord,
     missionDirective,
   });
+  const fieldIndex = buildAgent17FieldIndex({
+    executionSummons,
+    coordinationBrief,
+    executionClosure,
+  });
+  const theaterCommitment = buildAgent17TheaterCommitment({
+    fieldIndex,
+    executionSummons,
+    readinessGate,
+  });
   return {
     ...core,
     intentQueue,
@@ -328,6 +340,8 @@ export function buildAgent17PlanningDepthSnapshot(
     dispatchAccord,
     mobilizationIndex,
     executionSummons,
+    fieldIndex,
+    theaterCommitment,
   };
 }
 

@@ -464,6 +464,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Void accord or stalled mobilization yields executionSummonsBlocksField.',
     severity: 'major',
   },
+  {
+    id: 'G17-067',
+    title: 'Field index on planning depth',
+    category: 'telemetry',
+    acceptance: 'fieldIndex reports fieldScore 0–100 with engaged/staging/contested band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-068',
+    title: 'Theater commitment pledges complete',
+    category: 'telemetry',
+    acceptance: 'theaterCommitment exposes ≥5 pledges and commitmentScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-069',
+    title: 'Revoked summons contests theater commitment',
+    category: 'integration',
+    acceptance: 'Revoked summons or contested field yields theaterCommitmentBlocksTheater.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
