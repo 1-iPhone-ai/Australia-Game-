@@ -15,15 +15,15 @@ import {
 } from '../src/index.ts';
 
 describe('Tranche 33 scale-wave-full-chunks-handoff-sync-commit lattice catalog', () => {
-  it('adds 320 sync-commit chains at 18800 total', () => {
+  it('adds 320 sync-commit chains at 19020 total', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE33_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche33Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 18800);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 19020);
   });
 
   it('uses op10m_t33 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 18800);
+    assert.equal(ids.size, 19020);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE33) {
       assert.match(c.chainId, /^op10m_t33_/);
     }
