@@ -7,6 +7,7 @@ export * from './modules/storage-permit-lifecycle';
 export * from './modules/emissions-water-credit-ledger';
 export * from './modules/biodiversity-circular-recovery-ledger';
 export * from './modules/hydrogen-critical-minerals-ledger';
+export * from './modules/offshore-marine-demand-response-ledger';
 export * from './modules/turn-simulation-depth';
 export * from './modules/v94-type-stubs';
 export * from './modules/industrial-energy-environmental';

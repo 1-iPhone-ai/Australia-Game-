@@ -26,6 +26,7 @@ const FILES = [
   'emissions-water-credit-ledger.ts',
   'biodiversity-circular-recovery-ledger.ts',
   'hydrogen-critical-minerals-ledger.ts',
+  'offshore-marine-demand-response-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -38,6 +39,8 @@ const EXPORT_MANIFEST = [
   'V1014_CIRCULAR_RECOVERY_CATALOG',
   'V1014_HYDROGEN_PATHWAY_CATALOG',
   'V1014_CRITICAL_MINERALS_CATALOG',
+  'V1014_OFFSHORE_MARINE_CATALOG',
+  'V1014_DEMAND_RESPONSE_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -59,9 +62,12 @@ const EXPORT_MANIFEST = [
   'runAgent13StoragePermitScaleSelfTests',
   'runAgent13EmissionsWaterScaleSelfTests',
   'runAgent13BiodiversityCircularScaleSelfTests',
-  '  runAgent13HydrogenMineralsScaleSelfTests',
+  'runAgent13HydrogenMineralsScaleSelfTests',
   'runAgent13HydrogenMineralsTurnScenario',
   'V1014_HYDROGEN_MINERALS_TURN_SCENARIOS',
+  'runAgent13OffshoreDemandScaleSelfTests',
+  'runAgent13OffshoreDemandTurnScenario',
+  'V1014_OFFSHORE_DEMAND_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

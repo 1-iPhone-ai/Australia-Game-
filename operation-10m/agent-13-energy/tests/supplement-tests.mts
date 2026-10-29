@@ -15,6 +15,11 @@ import { runAgent13EmissionsWaterScaleSelfTests } from '../modules/emissions-wat
 import { runAgent13BiodiversityCircularScaleSelfTests } from '../modules/biodiversity-circular-recovery-ledger.ts';
 import { runAgent13HydrogenMineralsScaleSelfTests, runAgent13HydrogenMineralsTurnScenario, V1014_HYDROGEN_MINERALS_TURN_SCENARIOS } from '../modules/hydrogen-critical-minerals-ledger.ts';
 import {
+  runAgent13OffshoreDemandScaleSelfTests,
+  runAgent13OffshoreDemandTurnScenario,
+  V1014_OFFSHORE_DEMAND_TURN_SCENARIOS,
+} from '../modules/offshore-marine-demand-response-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -140,6 +145,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const h2Turn = runAgent13HydrogenMineralsTurnScenario(V1014_HYDROGEN_MINERALS_TURN_SCENARIOS[0]);
   ok(h2Turn.passed);
+
+  const offshoreDemand = runAgent13OffshoreDemandScaleSelfTests();
+  ok(offshoreDemand.failed === 0 && offshoreDemand.passed >= 7);
+
+  const offTurn = runAgent13OffshoreDemandTurnScenario(V1014_OFFSHORE_DEMAND_TURN_SCENARIOS[0]);
+  ok(offTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
