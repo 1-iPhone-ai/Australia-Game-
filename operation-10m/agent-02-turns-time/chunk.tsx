@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
 // @ts-nocheck
-// content-sha256-prefix: b84881b3b87c9c1a
+// content-sha256-prefix: 73daf38bd9f316ca
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -2155,6 +2155,43 @@ export class TurnTimeEngine {
     return computeBatchOrchestratedAuditDigest(report, summary);
   }
 
+  gateBatchStabilizationPlanCoverage(
+    batch: BatchAdvanceResult,
+    stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+  ): BatchStabilizationPlanCoverageGateResult {
+    return gateBatchStabilizationPlanCoverage(batch, stabilizationByTurn);
+  }
+
+  buildBatchOrchestratedScorecard(
+    report: BatchOrchestratedAuditedReport,
+    planCoverage?: BatchStabilizationPlanCoverageGateResult,
+  ): BatchOrchestratedScorecard {
+    return buildBatchOrchestratedScorecard(report, planCoverage);
+  }
+
+  verifyBatchOrchestratedReplayParity(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+    input?: Parameters<typeof verifyBatchOrchestratedReplayParity>[3],
+  ): BatchOrchestratedReplayParityResult {
+    return verifyBatchOrchestratedReplayParity(this, maxSteps, budget, input);
+  }
+
+  stepNationalTickOrchestratedBatch(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+    input?: Parameters<typeof stepNationalTickOrchestratedBatch>[3],
+  ): BatchNationalTickOrchestratedResult {
+    return stepNationalTickOrchestratedBatch(this, maxSteps, budget, input);
+  }
+
+  computeBatchNationalTickOrchestratedDigest(
+    audit: BatchAdvanceWithOrchestratedAudit,
+    scorecard: BatchOrchestratedScorecard,
+  ): string {
+    return computeBatchNationalTickOrchestratedDigest(audit, scorecard);
+  }
+
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {
     return buildAgent02TurnPipelineReport(this.snapshot(), before);
   }
@@ -3980,6 +4017,162 @@ export function stepTurnsWithBudgetOrchestratedAuditedAdvance(
   };
 }
 
+// --- src/batch-stabilization-plan-coverage-gate.ts ---
+
+export interface BatchStabilizationPlanCoverageGateResult {
+  steppedTurns: number[];
+  missingTurns: number[];
+  ok: boolean;
+}
+
+/**
+ * Round 14: every stepped turn must appear in the Agent 05 stabilization export when batch gating is enabled.
+ */
+export function gateBatchStabilizationPlanCoverage(
+  batch: BatchAdvanceResult,
+  stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+): BatchStabilizationPlanCoverageGateResult {
+  const steppedTurns: number[] = [];
+  const missingTurns: number[] = [];
+
+  for (const step of batch.steps) {
+    if (step.blockedByPause) continue;
+    const turn = step.clockBefore.turnIndex;
+    steppedTurns.push(turn);
+    if (stabilizationByTurn[turn] === undefined) missingTurns.push(turn);
+  }
+
+  return { steppedTurns, missingTurns, ok: missingTurns.length === 0 };
+}
+
+// --- src/batch-orchestrated-scorecard.ts ---
+
+export interface BatchOrchestratedScorecard {
+  preGateOk: boolean | null;
+  readinessOk: boolean;
+  reboundOk: boolean;
+  postStabilizationOk: boolean;
+  calmStreakOk: boolean;
+  planCoverageOk: boolean;
+  alignmentRatio: number;
+  ok: boolean;
+}
+
+export function buildBatchOrchestratedScorecard(
+  report: BatchOrchestratedAuditedReport,
+  planCoverage?: BatchStabilizationPlanCoverageGateResult,
+): BatchOrchestratedScorecard {
+  const planCoverageOk = planCoverage?.ok ?? true;
+  const scorecard: BatchOrchestratedScorecard = {
+    preGateOk: report.preGate?.ok ?? null,
+    readinessOk: report.readiness.ok,
+    reboundOk: report.rebound?.ok ?? true,
+    postStabilizationOk: report.postStabilization?.ok ?? true,
+    calmStreakOk: report.calmStreak?.ok ?? true,
+    planCoverageOk,
+    alignmentRatio: report.alignment.ratio,
+    ok:
+      (report.preGate?.ok ?? true) &&
+      report.readiness.ok &&
+      (report.rebound?.ok ?? true) &&
+      (report.postStabilization?.ok ?? true) &&
+      (report.calmStreak?.ok ?? true) &&
+      planCoverageOk,
+  };
+  return scorecard;
+}
+
+// --- src/batch-orchestrated-replay-parity.ts ---
+
+export interface BatchOrchestratedReplayParityResult {
+  parityOk: boolean;
+  baseline: BatchAdvanceWithOrchestratedAudit;
+  replay: BatchAdvanceWithOrchestratedAudit;
+}
+
+/**
+ * Round 14: deterministic replay — two audited orchestrated runs from the same starting snapshot.
+ */
+export function verifyBatchOrchestratedReplayParity(
+  engine: TurnTimeEngine,
+  maxSteps: number,
+  budget: TurnAdvanceBudgetState,
+  input?: BatchAdvanceOrchestratedInput,
+): BatchOrchestratedReplayParityResult {
+  const snapshot = engine.snapshot();
+  const baseline = stepTurnsWithBudgetOrchestratedAuditedAdvance(engine, maxSteps, budget, input);
+  const replayEngine = TurnTimeEngine.fromSnapshot(snapshot);
+  const replay = stepTurnsWithBudgetOrchestratedAuditedAdvance(replayEngine, maxSteps, budget, input);
+  const compare = compareBatchOrchestratedReports(baseline.report, replay.report);
+  const parityOk =
+    compare.ok &&
+    baseline.auditDigest === replay.auditDigest &&
+    baseline.summary.orchestratedDigest === replay.summary.orchestratedDigest;
+  return { parityOk, baseline, replay };
+}
+
+// --- src/batch-national-tick-orchestrator-digest.ts ---
+
+export interface BatchNationalTickOrchestratedResult extends BatchAdvanceWithOrchestratedAudit {
+  planCoverage?: BatchStabilizationPlanCoverageGateResult;
+  scorecard: BatchOrchestratedScorecard;
+  nationalTickDigest: string;
+}
+
+export function computeBatchNationalTickOrchestratedDigest(
+  audit: BatchAdvanceWithOrchestratedAudit,
+  scorecard: BatchOrchestratedScorecard,
+): string {
+  return fnv1a64Hex(
+    JSON.stringify({
+      ok: scorecard.ok,
+      audit: audit.auditDigest,
+      orchestrated: audit.orchestratedDigest,
+      alignment: scorecard.alignmentRatio,
+      planCoverage: scorecard.planCoverageOk,
+    }),
+  );
+}
+
+// --- src/batch-advance-national-tick-orchestrator.ts ---
+
+export type { BatchNationalTickOrchestratedResult };
+
+/**
+ * Round 14 national-tick orchestrator hook (Agent 02 / 25): audited orchestrated batch + plan coverage + scorecard.
+ */
+export function stepNationalTickOrchestratedBatch(
+  engine: TurnTimeEngine,
+  maxSteps: number,
+  budget: TurnAdvanceBudgetState,
+  input?: BatchAdvanceOrchestratedInput,
+): BatchNationalTickOrchestratedResult {
+  const run = stepTurnsWithBudgetOrchestratedAuditedAdvance(engine, maxSteps, budget, input);
+  const planCoverage =
+    input?.stabilizationByTurn !== undefined
+      ? gateBatchStabilizationPlanCoverage(run.report.batch, input.stabilizationByTurn)
+      : undefined;
+
+  const report: BatchOrchestratedAuditedReport = {
+    ...run.report,
+    ok: run.report.ok && (planCoverage?.ok ?? true),
+  };
+  const scorecard = buildBatchOrchestratedScorecard(report, planCoverage);
+  const nationalTickDigest = computeBatchNationalTickOrchestratedDigest(
+    { ...run, report, summary: { ...run.summary, ok: scorecard.ok } },
+    scorecard,
+  );
+
+  return {
+    ...run,
+    report,
+    summary: { ...run.summary, ok: scorecard.ok },
+    planCoverage,
+    scorecard,
+    nationalTickDigest,
+  };
+}
+
 // --- src/fast-forward.ts ---
 
 export interface FastForwardResult {
@@ -4130,7 +4323,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '2.3.0';
+export const AGENT_02_MODULE_VERSION = '2.4.0';
 
 
 
@@ -4568,8 +4761,6 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
 
   const audited = new TurnTimeEngine();
 
-  audited.registerObligation({ id: 'aud', dueTurn: 2, kind: 'k' });
-
   const auditedRun = stepTurnsWithBudgetOrchestratedAuditedAdvance(audited, 1, createTurnAdvanceBudget(2), {
 
     stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } },
@@ -4627,6 +4818,42 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
         },
 
       ).ok,
+
+  });
+
+  const nt = new TurnTimeEngine();
+
+  nt.scheduleEvent({ id: 'nt14', dueTurn: 1, kind: 'n' });
+
+  const ntRun = stepNationalTickOrchestratedBatch(nt, 1, createTurnAdvanceBudget(2), {
+
+    externalByTurn: { 1: ['nt14'] },
+
+    stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: true } },
+
+  });
+
+  results.push({
+
+    id: 'agent02_national_tick_orchestrator',
+
+    name: 'national tick orchestrated batch ok with scorecard',
+
+    passed: ntRun.scorecard.ok && ntRun.nationalTickDigest.length === 16,
+
+  });
+
+  results.push({
+
+    id: 'agent02_orchestrated_replay_parity',
+
+    name: 'orchestrated replay parity from snapshot',
+
+    passed: verifyBatchOrchestratedReplayParity(new TurnTimeEngine(), 1, createTurnAdvanceBudget(2), {
+
+      stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } },
+
+    }).parityOk,
 
   });
 

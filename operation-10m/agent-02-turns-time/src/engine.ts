@@ -180,6 +180,23 @@ import {
   type BatchAdvanceWithOrchestratedAudit,
   type BatchOrchestratedAuditedReport,
 } from './batch-advance-orchestrated-audited-step.js';
+import {
+  gateBatchStabilizationPlanCoverage,
+  type BatchStabilizationPlanCoverageGateResult,
+} from './batch-stabilization-plan-coverage-gate.js';
+import {
+  buildBatchOrchestratedScorecard,
+  type BatchOrchestratedScorecard,
+} from './batch-orchestrated-scorecard.js';
+import {
+  verifyBatchOrchestratedReplayParity,
+  type BatchOrchestratedReplayParityResult,
+} from './batch-orchestrated-replay-parity.js';
+import {
+  stepNationalTickOrchestratedBatch,
+  type BatchNationalTickOrchestratedResult,
+} from './batch-advance-national-tick-orchestrator.js';
+import { computeBatchNationalTickOrchestratedDigest } from './batch-national-tick-orchestrator-digest.js';
 import { computeBatchStabilizationAlignmentScore } from './batch-stabilization-alignment-score.js';
 import {
   gateBatchAdvancePostStabilization,
@@ -617,6 +634,43 @@ export class TurnTimeEngine {
     summary: BatchOrchestratedAdvanceSummary,
   ): string {
     return computeBatchOrchestratedAuditDigest(report, summary);
+  }
+
+  gateBatchStabilizationPlanCoverage(
+    batch: BatchAdvanceResult,
+    stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+  ): BatchStabilizationPlanCoverageGateResult {
+    return gateBatchStabilizationPlanCoverage(batch, stabilizationByTurn);
+  }
+
+  buildBatchOrchestratedScorecard(
+    report: BatchOrchestratedAuditedReport,
+    planCoverage?: BatchStabilizationPlanCoverageGateResult,
+  ): BatchOrchestratedScorecard {
+    return buildBatchOrchestratedScorecard(report, planCoverage);
+  }
+
+  verifyBatchOrchestratedReplayParity(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+    input?: Parameters<typeof verifyBatchOrchestratedReplayParity>[3],
+  ): BatchOrchestratedReplayParityResult {
+    return verifyBatchOrchestratedReplayParity(this, maxSteps, budget, input);
+  }
+
+  stepNationalTickOrchestratedBatch(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+    input?: Parameters<typeof stepNationalTickOrchestratedBatch>[3],
+  ): BatchNationalTickOrchestratedResult {
+    return stepNationalTickOrchestratedBatch(this, maxSteps, budget, input);
+  }
+
+  computeBatchNationalTickOrchestratedDigest(
+    audit: BatchAdvanceWithOrchestratedAudit,
+    scorecard: BatchOrchestratedScorecard,
+  ): string {
+    return computeBatchNationalTickOrchestratedDigest(audit, scorecard);
   }
 
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {
