@@ -349,6 +349,10 @@ export interface NationalLaborDemographicsState {
   safetyCalibrationOutlook?: NationalSafetyCalibrationOutlook;
   subjectSafetyReadinessBrief?: NationalSubjectSafetyReadinessBrief;
   nationalWorkforceSafetyIndex?: NationalWorkforceSafetyIndex;
+  safetyCareCouplingBrief?: NationalSafetyCareCouplingBrief;
+  careBalanceOutlook?: NationalCareBalanceOutlook;
+  subjectCareReadinessBrief?: NationalSubjectCareReadinessBrief;
+  nationalWorkforceCareIndex?: NationalWorkforceCareIndex;
 }
 
 export type MigrationShockKind =
@@ -2217,6 +2221,54 @@ export interface NationalWorkforceSafetyIndex {
   safetyIndex: number;
   band: WorkforceSafetyBand;
   safetyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SafetyCareCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalSafetyCareCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: SafetyCareCouplingBand;
+  safetyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CareBalanceBand = 'ebbing' | 'patchy' | 'rising' | 'balanced';
+
+export interface NationalCareBalanceOutlook {
+  turn: number;
+  balanceIndex: number;
+  band: CareBalanceBand;
+  safetyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectCareReadinessBand =
+  | 'below_care'
+  | 'approaching'
+  | 'care_ready'
+  | 'safety_locked';
+
+export interface NationalSubjectCareReadinessBrief {
+  turn: number;
+  careIndex: number;
+  band: SubjectCareReadinessBand;
+  careDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceCareBand = 'fragile' | 'thin' | 'elevated' | 'care';
+
+export interface NationalWorkforceCareIndex {
+  turn: number;
+  careIndex: number;
+  band: WorkforceCareBand;
+  careDrag: number;
   summary: string;
   stewardNote: string;
 }

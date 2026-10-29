@@ -234,6 +234,10 @@ import { computeNationalSchedulingSafetyCouplingBrief } from './scheduling-safet
 import { computeNationalSafetyCalibrationOutlook } from './safety-calibration-outlook';
 import { computeNationalSubjectSafetyReadinessBrief } from './subject-safety-readiness-brief';
 import { computeNationalWorkforceSafetyIndex } from './national-workforce-safety-index';
+import { computeNationalSafetyCareCouplingBrief } from './safety-care-coupling-brief';
+import { computeNationalCareBalanceOutlook } from './care-balance-outlook';
+import { computeNationalSubjectCareReadinessBrief } from './subject-care-readiness-brief';
+import { computeNationalWorkforceCareIndex } from './national-workforce-care-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -2878,6 +2882,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'safety steward note'
   );
   check('R4516', safetyEaseForRegion('NSW', 'technology') > 0, 'safety ease for region');
+
+  check('R4601', Boolean(r1.state.safetyCareCouplingBrief?.band), 'safety care on state');
+  check(
+    'R4602',
+    (r1.state.safetyCareCouplingBrief?.safetyDrag ?? 0) >= 0,
+    'safety care drag'
+  );
+  check('R4603', Boolean(r1.state.careBalanceOutlook?.band), 'care balance on state');
+  check(
+    'R4604',
+    (r1.state.careBalanceOutlook?.safetyDrag ?? 0) >= 0,
+    'care balance safety drag'
+  );
+  check('R4605', Boolean(r1.state.subjectCareReadinessBrief?.band), 'subject care on state');
+  check('R4606', Boolean(r1.state.nationalWorkforceCareIndex?.band), 'workforce care on state');
+  check(
+    'R4607',
+    detectLaborDemographicsQuery('safety care coupling') === 'safety_care_coupling',
+    'GI safety care detect'
+  );
+  check(
+    'R4608',
+    detectLaborDemographicsQuery('care balance') === 'care_balance',
+    'GI care balance detect'
+  );
+  check(
+    'R4609',
+    detectLaborDemographicsQuery('subject care readiness') === 'subject_care_readiness',
+    'GI subject care detect'
+  );
+  check(
+    'R4610',
+    detectLaborDemographicsQuery('workforce care') === 'workforce_care',
+    'GI workforce care detect'
+  );
+  check(
+    'R4611',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_care').headline.length > 5,
+    'GI workforce care answer'
+  );
+  const safetyCareOnly = computeNationalSafetyCareCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceSafetyIndex
+  );
+  check('R4612', safetyCareOnly.summary.length > 10, 'safety care standalone summary');
+  const careBalanceOnly = computeNationalCareBalanceOutlook(
+    r1.state,
+    r1.state.safetyCalibrationOutlook
+  );
+  check('R4613', careBalanceOnly.band.length > 3, 'care balance band string');
+  const subjectCareOnly = computeNationalSubjectCareReadinessBrief(
+    r1.state,
+    r1.state.subjectSafetyReadinessBrief,
+    r1.state.nationalWorkforceSafetyIndex
+  );
+  check('R4614', subjectCareOnly.careDrag >= 0, 'subject care drag');
+  check(
+    'R4615',
+    computeNationalWorkforceCareIndex(
+      rHhBad.state,
+      rHhBad.state.safetyCareCouplingBrief,
+      rHhBad.state.careBalanceOutlook,
+      rHhBad.state.subjectCareReadinessBrief
+    ).stewardNote.length > 8,
+    'care steward note'
+  );
+  check('R4616', careReliefForRegion('NSW', 'technology') > 0, 'care relief for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

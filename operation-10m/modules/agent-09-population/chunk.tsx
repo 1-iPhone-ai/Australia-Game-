@@ -353,6 +353,10 @@ export interface NationalLaborDemographicsState {
   safetyCalibrationOutlook?: NationalSafetyCalibrationOutlook;
   subjectSafetyReadinessBrief?: NationalSubjectSafetyReadinessBrief;
   nationalWorkforceSafetyIndex?: NationalWorkforceSafetyIndex;
+  safetyCareCouplingBrief?: NationalSafetyCareCouplingBrief;
+  careBalanceOutlook?: NationalCareBalanceOutlook;
+  subjectCareReadinessBrief?: NationalSubjectCareReadinessBrief;
+  nationalWorkforceCareIndex?: NationalWorkforceCareIndex;
 }
 
 export type MigrationShockKind =
@@ -2225,6 +2229,54 @@ export interface NationalWorkforceSafetyIndex {
   stewardNote: string;
 }
 
+export type SafetyCareCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalSafetyCareCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: SafetyCareCouplingBand;
+  safetyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CareBalanceBand = 'ebbing' | 'patchy' | 'rising' | 'balanced';
+
+export interface NationalCareBalanceOutlook {
+  turn: number;
+  balanceIndex: number;
+  band: CareBalanceBand;
+  safetyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectCareReadinessBand =
+  | 'below_care'
+  | 'approaching'
+  | 'care_ready'
+  | 'safety_locked';
+
+export interface NationalSubjectCareReadinessBrief {
+  turn: number;
+  careIndex: number;
+  band: SubjectCareReadinessBand;
+  careDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceCareBand = 'fragile' | 'thin' | 'elevated' | 'care';
+
+export interface NationalWorkforceCareIndex {
+  turn: number;
+  careIndex: number;
+  band: WorkforceCareBand;
+  careDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -3455,7 +3507,11 @@ export type LaborGiQueryTopic =
   | 'scheduling_safety_coupling'
   | 'safety_calibration'
   | 'subject_safety_readiness'
-  | 'workforce_safety';
+  | 'workforce_safety'
+  | 'safety_care_coupling'
+  | 'care_balance'
+  | 'subject_care_readiness'
+  | 'workforce_care';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -3648,6 +3704,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_safety_readiness';
   }
   if (/\b(workforce safety|safety index labor workforce)/.test(q)) return 'workforce_safety';
+  if (/\b(safety care|safety-care coupling)/.test(q)) return 'safety_care_coupling';
+  if (/\b(care balance|care pipeline balance)/.test(q)) return 'care_balance';
+  if (/\b(subject care readiness|care readiness subject)/.test(q)) return 'subject_care_readiness';
+  if (/\b(workforce care|care index labor workforce)/.test(q)) return 'workforce_care';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -4979,6 +5039,38 @@ export function answerLaborDemographicsQuestion(
         inference: state.nationalWorkforceSafetyIndex?.stewardNote || state.summary,
         projection: 'Workforce safety synthesizes scheduling-safety coupling, safety calibration, and subject safety.'
       };
+    case 'safety_care_coupling':
+      return {
+        topic,
+        headline: state.safetyCareCouplingBrief?.summary || 'Safety-care coupling unavailable.',
+        fact: `Coupling band ${state.safetyCareCouplingBrief?.band ?? 'unknown'}; safety drag ${Math.round(state.safetyCareCouplingBrief?.safetyDrag ?? 0)}.`,
+        inference: state.safetyCareCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce safety with care levers — wave 46 / O10-223 depth.'
+      };
+    case 'care_balance':
+      return {
+        topic,
+        headline: state.careBalanceOutlook?.summary || 'Care balance unavailable.',
+        fact: `Balance band ${state.careBalanceOutlook?.band ?? 'unknown'}; safety drag ${Math.round(state.careBalanceOutlook?.safetyDrag ?? 0)}.`,
+        inference: state.careBalanceOutlook?.stewardNote || state.outlook,
+        projection: 'Care balance blends care levers with safety calibration — bounded indices only.'
+      };
+    case 'subject_care_readiness':
+      return {
+        topic,
+        headline: state.subjectCareReadinessBrief?.summary || 'Subject care readiness unavailable.',
+        fact: `Care band ${state.subjectCareReadinessBrief?.band ?? 'unknown'}; care drag ${Math.round(state.subjectCareReadinessBrief?.careDrag ?? 0)}.`,
+        inference: state.subjectCareReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject care readiness gates subject safety against workforce safety for O10-223 wave 46.'
+      };
+    case 'workforce_care':
+      return {
+        topic,
+        headline: state.nationalWorkforceCareIndex?.summary || 'Workforce care unavailable.',
+        fact: `Care band ${state.nationalWorkforceCareIndex?.band ?? 'unknown'}; care drag ${Math.round(state.nationalWorkforceCareIndex?.careDrag ?? 0)}.`,
+        inference: state.nationalWorkforceCareIndex?.stewardNote || state.summary,
+        projection: 'Workforce care synthesizes safety-care coupling, care balance, and subject care.'
+      };
     default:
       return {
         topic: 'national_summary',
@@ -6207,6 +6299,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceSafetyIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceSafetyIndex.stewardNote);
+  }
+  if (
+    state.safetyCareCouplingBrief?.band === 'decoupled' ||
+    state.safetyCareCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.safetyCareCouplingBrief.stewardNote);
+  }
+  if (
+    state.careBalanceOutlook?.band === 'ebbing' ||
+    state.careBalanceOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.careBalanceOutlook.stewardNote);
+  }
+  if (
+    state.subjectCareReadinessBrief?.band === 'below_care' ||
+    state.subjectCareReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectCareReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceCareIndex?.band === 'fragile' ||
+    state.nationalWorkforceCareIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceCareIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -18436,6 +18552,278 @@ export function computeNationalWorkforceSafetyIndex(
 }
 
 
+// --- source: safety-care-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalSafetyCareCouplingBrief,
+  type NationalWorkforceSafetyIndex,
+  type SafetyCareCouplingBand
+} from './types';
+
+function couplingBand(index: number): SafetyCareCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-46 / wave-46 safety-care coupling — safety × care (O10-223). */
+export function computeNationalSafetyCareCouplingBrief(
+  state: NationalLaborDemographicsState,
+  safety: NationalWorkforceSafetyIndex | null | undefined
+): NationalSafetyCareCouplingBrief {
+  if (!state.enabled || !safety) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      safetyDrag: 0,
+      summary: 'Safety-care coupling idle — workforce safety unavailable.',
+      stewardNote: 'Compute workforce safety before care coupling guidance.'
+    };
+  }
+
+  let careLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    careLift += careReliefForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  careLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const safetyDrag = v1014laborClamp(
+    safety.safetyDrag * 0.48 + (safety.band === 'fragile' || safety.band === 'thin' ? 11 : 3)
+  );
+  const safetyLift =
+    safety.band === 'elevated' || safety.band === 'safety'
+      ? safety.safetyIndex * 0.24
+      : safety.safetyIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + careLift * 21 + safetyLift - safetyDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained safety-care link — deploy care levers before wave-46 care commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard care balance spikes that drain safety buffers.'
+        : 'Amplified coupling — pair care packs with subject care readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    safetyDrag,
+    summary: `Safety-care coupling ${band} (index ${Math.round(couplingIndex)}); safety drag ${Math.round(safetyDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: care-balance-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type CareBalanceBand,
+  type NationalCareBalanceOutlook,
+  type NationalLaborDemographicsState,
+  type NationalSafetyCalibrationOutlook
+} from './types';
+
+function balanceBand(index: number): CareBalanceBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'balanced';
+}
+
+export function computeNationalCareBalanceOutlook(
+  state: NationalLaborDemographicsState,
+  safetyCalibration: NationalSafetyCalibrationOutlook | null | undefined
+): NationalCareBalanceOutlook {
+  if (!state.enabled || !safetyCalibration) {
+    return {
+      turn: state.turn,
+      balanceIndex: 50,
+      band: 'patchy',
+      safetyDrag: 0,
+      summary: 'Care balance idle — safety calibration unavailable.',
+      stewardNote: 'Compute safety calibration before care balance guidance.'
+    };
+  }
+
+  let careLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    careLift += careReliefForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  careLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const safetyDrag = v1014laborClamp(
+    safetyCalibration.schedulingDrag * 0.46 +
+      (safetyCalibration.band === 'ebbing' || safetyCalibration.band === 'patchy' ? 10 : 3)
+  );
+  const calibrationLift =
+    safetyCalibration.band === 'rising' || safetyCalibration.band === 'calibrated'
+      ? safetyCalibration.calibrationIndex * 0.2
+      : safetyCalibration.calibrationIndex * 0.1;
+
+  const balanceIndex = v1014laborClamp(24 + careLift * 22 + calibrationLift - safetyDrag);
+  const band = balanceBand(balanceIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy care balance — deploy care levers before subject care assembly.'
+      : band === 'balanced'
+        ? 'Balanced band — verify safety-care coupling before auto workforce pushes.'
+        : 'Rising balance — align with safety calibration outlook checks.';
+
+  return {
+    turn: state.turn,
+    balanceIndex,
+    band,
+    safetyDrag,
+    summary: `National care balance ${band} (index ${Math.round(balanceIndex)}); safety drag ${Math.round(safetyDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-care-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectCareReadinessBrief,
+  type NationalSubjectSafetyReadinessBrief,
+  type NationalWorkforceSafetyIndex,
+  type SubjectCareReadinessBand
+} from './types';
+
+function careBand(index: number): SubjectCareReadinessBand {
+  if (index <= 34) return 'below_care';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'care_ready';
+  return 'safety_locked';
+}
+
+/** Round-46 / wave-46 subject care readiness — safety × workforce safety (O10-223). */
+export function computeNationalSubjectCareReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectSafety: NationalSubjectSafetyReadinessBrief | null | undefined,
+  workforceSafety: NationalWorkforceSafetyIndex | null | undefined
+): NationalSubjectCareReadinessBrief {
+  if (!state.enabled || !subjectSafety || !workforceSafety) {
+    return {
+      turn: state.turn,
+      careIndex: 50,
+      band: 'approaching',
+      careDrag: 0,
+      summary: 'Subject care readiness idle — subject safety or workforce safety unavailable.',
+      stewardNote: 'Compute subject safety and workforce safety before care guidance.'
+    };
+  }
+
+  const careDrag = v1014laborClamp(
+    subjectSafety.safetyDrag * 0.38 +
+      workforceSafety.safetyDrag * 0.38 +
+      (subjectSafety.band === 'below_safety' || workforceSafety.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectSafety.band === 'safety_ready' || subjectSafety.band === 'scheduling_locked'
+      ? subjectSafety.safetyIndex * 0.27
+      : subjectSafety.safetyIndex * 0.14;
+  const workforceLift =
+    workforceSafety.band === 'elevated' || workforceSafety.band === 'safety'
+      ? workforceSafety.safetyIndex * 0.25
+      : workforceSafety.safetyIndex * 0.12;
+
+  const careIndex = v1014laborClamp(20 + subjectLift + workforceLift - careDrag);
+  const band = careBand(careIndex);
+
+  const stewardNote =
+    band === 'below_care' || band === 'approaching'
+      ? 'Approaching care — hold O10-223 wave-46 scale until safety-care syncs.'
+      : band === 'safety_locked'
+        ? 'Safety-locked care — still monitor care balance during corridor peaks.'
+        : 'Care-ready — pair with workforce care index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    careIndex,
+    band,
+    careDrag,
+    summary: `Subject care readiness ${band} (index ${Math.round(careIndex)}); care drag ${Math.round(careDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-care-index.ts ---
+  type NationalCareBalanceOutlook,
+  type NationalLaborDemographicsState,
+  type NationalSafetyCareCouplingBrief,
+  type NationalSubjectCareReadinessBrief,
+  type NationalWorkforceCareIndex,
+  type WorkforceCareBand
+} from './types';
+
+function careBand(index: number): WorkforceCareBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'care';
+}
+
+export function computeNationalWorkforceCareIndex(
+  state: NationalLaborDemographicsState,
+  careCoupling: NationalSafetyCareCouplingBrief | null | undefined,
+  careBalance: NationalCareBalanceOutlook | null | undefined,
+  subjectCare: NationalSubjectCareReadinessBrief | null | undefined
+): NationalWorkforceCareIndex {
+  if (!state.enabled || !careCoupling || !careBalance || !subjectCare) {
+    return {
+      turn: state.turn,
+      careIndex: 50,
+      band: 'thin',
+      careDrag: 0,
+      summary: 'Workforce care idle — care coupling, balance, or subject care unavailable.',
+      stewardNote: 'Compute O10-223 wave-46 depth stack before care guidance.'
+    };
+  }
+
+  const careDrag = v1014laborClamp(
+    subjectCare.careDrag * 0.35 +
+      careCoupling.safetyDrag * 0.3 +
+      careBalance.safetyDrag * 0.25 +
+      (subjectCare.band === 'below_care' || careCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const couplingLift =
+    careCoupling.band === 'amplified' || careCoupling.band === 'elevated'
+      ? careCoupling.couplingIndex * 0.2
+      : careCoupling.couplingIndex * 0.1;
+  const balanceLift =
+    careBalance.band === 'rising' || careBalance.band === 'balanced'
+      ? careBalance.balanceIndex * 0.18
+      : careBalance.balanceIndex * 0.09;
+  const subjectLift =
+    subjectCare.band === 'care_ready' || subjectCare.band === 'safety_locked'
+      ? subjectCare.careIndex * 0.22
+      : subjectCare.careIndex * 0.11;
+
+  const careIndex = v1014laborClamp(18 + couplingLift + balanceLift + subjectLift - careDrag);
+  const band = careBand(careIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce care — sequence safety-care, care balance, and subject care before post-a9bb07e5 tranche.'
+      : band === 'care'
+        ? 'Care band — avoid corridor overload that breaks subject care bands.'
+        : 'Elevated care — refresh subject care checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    careIndex,
+    band,
+    careDrag,
+    summary: `National workforce care ${band} (index ${Math.round(careIndex)}); care drag ${Math.round(careDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -19658,6 +20046,25 @@ export function computeNationalLaborDemographics(
     state.safetyCalibrationOutlook,
     state.subjectSafetyReadinessBrief
   );
+  state.safetyCareCouplingBrief = computeNationalSafetyCareCouplingBrief(
+    state,
+    state.nationalWorkforceSafetyIndex
+  );
+  state.careBalanceOutlook = computeNationalCareBalanceOutlook(
+    state,
+    state.safetyCalibrationOutlook
+  );
+  state.subjectCareReadinessBrief = computeNationalSubjectCareReadinessBrief(
+    state,
+    state.subjectSafetyReadinessBrief,
+    state.nationalWorkforceSafetyIndex
+  );
+  state.nationalWorkforceCareIndex = computeNationalWorkforceCareIndex(
+    state,
+    state.safetyCareCouplingBrief,
+    state.careBalanceOutlook,
+    state.subjectCareReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -20704,6 +21111,33 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceSafetyIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.safetyCareCouplingBrief?.band === 'decoupled' ||
+      state.safetyCareCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.safetyCareCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.careBalanceOutlook?.band === 'ebbing' || state.careBalanceOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.careBalanceOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectCareReadinessBrief?.band === 'below_care' ||
+      state.subjectCareReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectCareReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceCareIndex?.band === 'fragile' ||
+      state.nationalWorkforceCareIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceCareIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -23417,6 +23851,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'safety steward note'
   );
   check('R4516', safetyEaseForRegion('NSW', 'technology') > 0, 'safety ease for region');
+
+  check('R4601', Boolean(r1.state.safetyCareCouplingBrief?.band), 'safety care on state');
+  check(
+    'R4602',
+    (r1.state.safetyCareCouplingBrief?.safetyDrag ?? 0) >= 0,
+    'safety care drag'
+  );
+  check('R4603', Boolean(r1.state.careBalanceOutlook?.band), 'care balance on state');
+  check(
+    'R4604',
+    (r1.state.careBalanceOutlook?.safetyDrag ?? 0) >= 0,
+    'care balance safety drag'
+  );
+  check('R4605', Boolean(r1.state.subjectCareReadinessBrief?.band), 'subject care on state');
+  check('R4606', Boolean(r1.state.nationalWorkforceCareIndex?.band), 'workforce care on state');
+  check(
+    'R4607',
+    detectLaborDemographicsQuery('safety care coupling') === 'safety_care_coupling',
+    'GI safety care detect'
+  );
+  check(
+    'R4608',
+    detectLaborDemographicsQuery('care balance') === 'care_balance',
+    'GI care balance detect'
+  );
+  check(
+    'R4609',
+    detectLaborDemographicsQuery('subject care readiness') === 'subject_care_readiness',
+    'GI subject care detect'
+  );
+  check(
+    'R4610',
+    detectLaborDemographicsQuery('workforce care') === 'workforce_care',
+    'GI workforce care detect'
+  );
+  check(
+    'R4611',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_care').headline.length > 5,
+    'GI workforce care answer'
+  );
+  const safetyCareOnly = computeNationalSafetyCareCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceSafetyIndex
+  );
+  check('R4612', safetyCareOnly.summary.length > 10, 'safety care standalone summary');
+  const careBalanceOnly = computeNationalCareBalanceOutlook(
+    r1.state,
+    r1.state.safetyCalibrationOutlook
+  );
+  check('R4613', careBalanceOnly.band.length > 3, 'care balance band string');
+  const subjectCareOnly = computeNationalSubjectCareReadinessBrief(
+    r1.state,
+    r1.state.subjectSafetyReadinessBrief,
+    r1.state.nationalWorkforceSafetyIndex
+  );
+  check('R4614', subjectCareOnly.careDrag >= 0, 'subject care drag');
+  check(
+    'R4615',
+    computeNationalWorkforceCareIndex(
+      rHhBad.state,
+      rHhBad.state.safetyCareCouplingBrief,
+      rHhBad.state.careBalanceOutlook,
+      rHhBad.state.subjectCareReadinessBrief
+    ).stewardNote.length > 8,
+    'care steward note'
+  );
+  check('R4616', careReliefForRegion('NSW', 'technology') > 0, 'care relief for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

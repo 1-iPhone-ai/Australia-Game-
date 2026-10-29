@@ -167,7 +167,11 @@ export type LaborGiQueryTopic =
   | 'scheduling_safety_coupling'
   | 'safety_calibration'
   | 'subject_safety_readiness'
-  | 'workforce_safety';
+  | 'workforce_safety'
+  | 'safety_care_coupling'
+  | 'care_balance'
+  | 'subject_care_readiness'
+  | 'workforce_care';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -360,6 +364,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_safety_readiness';
   }
   if (/\b(workforce safety|safety index labor workforce)/.test(q)) return 'workforce_safety';
+  if (/\b(safety care|safety-care coupling)/.test(q)) return 'safety_care_coupling';
+  if (/\b(care balance|care pipeline balance)/.test(q)) return 'care_balance';
+  if (/\b(subject care readiness|care readiness subject)/.test(q)) return 'subject_care_readiness';
+  if (/\b(workforce care|care index labor workforce)/.test(q)) return 'workforce_care';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1690,6 +1698,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Safety band ${state.nationalWorkforceSafetyIndex?.band ?? 'unknown'}; safety drag ${Math.round(state.nationalWorkforceSafetyIndex?.safetyDrag ?? 0)}.`,
         inference: state.nationalWorkforceSafetyIndex?.stewardNote || state.summary,
         projection: 'Workforce safety synthesizes scheduling-safety coupling, safety calibration, and subject safety.'
+      };
+    case 'safety_care_coupling':
+      return {
+        topic,
+        headline: state.safetyCareCouplingBrief?.summary || 'Safety-care coupling unavailable.',
+        fact: `Coupling band ${state.safetyCareCouplingBrief?.band ?? 'unknown'}; safety drag ${Math.round(state.safetyCareCouplingBrief?.safetyDrag ?? 0)}.`,
+        inference: state.safetyCareCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce safety with care levers — wave 46 / O10-223 depth.'
+      };
+    case 'care_balance':
+      return {
+        topic,
+        headline: state.careBalanceOutlook?.summary || 'Care balance unavailable.',
+        fact: `Balance band ${state.careBalanceOutlook?.band ?? 'unknown'}; safety drag ${Math.round(state.careBalanceOutlook?.safetyDrag ?? 0)}.`,
+        inference: state.careBalanceOutlook?.stewardNote || state.outlook,
+        projection: 'Care balance blends care levers with safety calibration — bounded indices only.'
+      };
+    case 'subject_care_readiness':
+      return {
+        topic,
+        headline: state.subjectCareReadinessBrief?.summary || 'Subject care readiness unavailable.',
+        fact: `Care band ${state.subjectCareReadinessBrief?.band ?? 'unknown'}; care drag ${Math.round(state.subjectCareReadinessBrief?.careDrag ?? 0)}.`,
+        inference: state.subjectCareReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject care readiness gates subject safety against workforce safety for O10-223 wave 46.'
+      };
+    case 'workforce_care':
+      return {
+        topic,
+        headline: state.nationalWorkforceCareIndex?.summary || 'Workforce care unavailable.',
+        fact: `Care band ${state.nationalWorkforceCareIndex?.band ?? 'unknown'}; care drag ${Math.round(state.nationalWorkforceCareIndex?.careDrag ?? 0)}.`,
+        inference: state.nationalWorkforceCareIndex?.stewardNote || state.summary,
+        projection: 'Workforce care synthesizes safety-care coupling, care balance, and subject care.'
       };
     default:
       return {

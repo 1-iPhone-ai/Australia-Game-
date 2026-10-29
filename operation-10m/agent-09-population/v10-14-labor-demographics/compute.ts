@@ -190,6 +190,10 @@ import { computeNationalSchedulingSafetyCouplingBrief } from './scheduling-safet
 import { computeNationalSafetyCalibrationOutlook } from './safety-calibration-outlook';
 import { computeNationalSubjectSafetyReadinessBrief } from './subject-safety-readiness-brief';
 import { computeNationalWorkforceSafetyIndex } from './national-workforce-safety-index';
+import { computeNationalSafetyCareCouplingBrief } from './safety-care-coupling-brief';
+import { computeNationalCareBalanceOutlook } from './care-balance-outlook';
+import { computeNationalSubjectCareReadinessBrief } from './subject-care-readiness-brief';
+import { computeNationalWorkforceCareIndex } from './national-workforce-care-index';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -1241,6 +1245,25 @@ export function computeNationalLaborDemographics(
     state.safetyCalibrationOutlook,
     state.subjectSafetyReadinessBrief
   );
+  state.safetyCareCouplingBrief = computeNationalSafetyCareCouplingBrief(
+    state,
+    state.nationalWorkforceSafetyIndex
+  );
+  state.careBalanceOutlook = computeNationalCareBalanceOutlook(
+    state,
+    state.safetyCalibrationOutlook
+  );
+  state.subjectCareReadinessBrief = computeNationalSubjectCareReadinessBrief(
+    state,
+    state.subjectSafetyReadinessBrief,
+    state.nationalWorkforceSafetyIndex
+  );
+  state.nationalWorkforceCareIndex = computeNationalWorkforceCareIndex(
+    state,
+    state.safetyCareCouplingBrief,
+    state.careBalanceOutlook,
+    state.subjectCareReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -2287,6 +2310,33 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceSafetyIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.safetyCareCouplingBrief?.band === 'decoupled' ||
+      state.safetyCareCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.safetyCareCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.careBalanceOutlook?.band === 'ebbing' || state.careBalanceOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.careBalanceOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectCareReadinessBrief?.band === 'below_care' ||
+      state.subjectCareReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectCareReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceCareIndex?.band === 'fragile' ||
+      state.nationalWorkforceCareIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceCareIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
