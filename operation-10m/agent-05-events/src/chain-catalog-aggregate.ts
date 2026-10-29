@@ -78,6 +78,10 @@ export {
   OP10M_AGENT05_CHAIN_CATALOG_TRANCHE59,
   OP10M_AGENT05_CATALOG_TRANCHE59_STATS,
 } from '../generated/chain-catalog-tranche59.ts';
+export {
+  OP10M_AGENT05_CHAIN_CATALOG_TRANCHE60,
+  OP10M_AGENT05_CATALOG_TRANCHE60_STATS,
+} from '../generated/chain-catalog-tranche60.ts';
 import { OP10M_AGENT05_CHAIN_CATALOG_TRANCHE53 } from '../generated/chain-catalog-tranche53.ts';
 import { OP10M_AGENT05_CHAIN_CATALOG_TRANCHE54 } from '../generated/chain-catalog-tranche54.ts';
 import { OP10M_AGENT05_CHAIN_CATALOG_TRANCHE55 } from '../generated/chain-catalog-tranche55.ts';
@@ -85,6 +89,7 @@ import { OP10M_AGENT05_CHAIN_CATALOG_TRANCHE56 } from '../generated/chain-catalo
 import { OP10M_AGENT05_CHAIN_CATALOG_TRANCHE57 } from '../generated/chain-catalog-tranche57.ts';
 import { OP10M_AGENT05_CHAIN_CATALOG_TRANCHE58 } from '../generated/chain-catalog-tranche58.ts';
 import { OP10M_AGENT05_CHAIN_CATALOG_TRANCHE59 } from '../generated/chain-catalog-tranche59.ts';
+import { OP10M_AGENT05_CHAIN_CATALOG_TRANCHE60 } from '../generated/chain-catalog-tranche60.ts';
 
 
 
@@ -153,6 +158,7 @@ export const OP10M_AGENT05_CATALOG_STATS = {
   tranche57Chains: OP10M_AGENT05_CHAIN_CATALOG_TRANCHE57.length,
   tranche58Chains: OP10M_AGENT05_CHAIN_CATALOG_TRANCHE58.length,
   tranche59Chains: OP10M_AGENT05_CHAIN_CATALOG_TRANCHE59.length,
+  tranche60Chains: OP10M_AGENT05_CHAIN_CATALOG_TRANCHE60.length,
   totalChains:
     OP10M_AGENT05_CHAIN_CATALOG_TRANCHE1.length +
     OP10M_AGENT05_CHAIN_CATALOG_TRANCHE2.length +
@@ -212,7 +218,8 @@ export const OP10M_AGENT05_CATALOG_STATS = {
     OP10M_AGENT05_CHAIN_CATALOG_TRANCHE56.length +
     OP10M_AGENT05_CHAIN_CATALOG_TRANCHE57.length +
     OP10M_AGENT05_CHAIN_CATALOG_TRANCHE58.length +
-    OP10M_AGENT05_CHAIN_CATALOG_TRANCHE59.length,
+    OP10M_AGENT05_CHAIN_CATALOG_TRANCHE59.length +
+    OP10M_AGENT05_CHAIN_CATALOG_TRANCHE60.length,
   regions: 8,
 } as const;
 
@@ -276,6 +283,7 @@ export const OP10M_AGENT05_CHAIN_CATALOG: Op10mChainDescriptor[] = [
   ...OP10M_AGENT05_CHAIN_CATALOG_TRANCHE57,
   ...OP10M_AGENT05_CHAIN_CATALOG_TRANCHE58,
   ...OP10M_AGENT05_CHAIN_CATALOG_TRANCHE59,
+  ...OP10M_AGENT05_CHAIN_CATALOG_TRANCHE60,
 ];
 
 export {
