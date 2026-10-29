@@ -74,11 +74,13 @@ import type { CorporateSurvivalPricingInflationLatchBand } from '../inflation/co
 import type { TradeTariffExchangeInflationEscalationBand } from '../inflation/trade-tariff-exchange-inflation-escalation.js';
 import type { MetroCapacityRentInflationLatchBand } from '../inflation/metro-capacity-rent-inflation-latch.js';
 import type { GridWholesaleTariffInflationSurgeBand } from '../inflation/grid-wholesale-tariff-inflation-surge.js';
+import type { GuardianCopilotInflationPressureLatchBand } from '../inflation/guardian-copilot-inflation-pressure-latch.js';
+import type { TeamBriefingConsensusInflationUnmooringBand } from '../inflation/team-briefing-consensus-inflation-unmooring.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r40';
+  schemaVersion: '10.14.agent10.r41';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -154,6 +156,8 @@ export interface Agent21InflationForecastBundle {
   terminalTradeTariffExchangeInflationEscalation: TradeTariffExchangeInflationEscalationBand;
   terminalMetroCapacityRentInflationLatch: MetroCapacityRentInflationLatchBand;
   terminalGridWholesaleTariffInflationSurge: GridWholesaleTariffInflationSurgeBand;
+  terminalGuardianCopilotInflationPressureLatch: GuardianCopilotInflationPressureLatchBand;
+  terminalTeamBriefingConsensusInflationUnmooring: TeamBriefingConsensusInflationUnmooringBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -182,7 +186,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r40',
+    schemaVersion: '10.14.agent10.r41',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -260,6 +264,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalTradeTariffExchangeInflationEscalation: lastPoint?.tradeTariffExchangeInflationEscalationBand ?? 'stable',
     terminalMetroCapacityRentInflationLatch: lastPoint?.metroCapacityRentInflationLatchBand ?? 'subdued',
     terminalGridWholesaleTariffInflationSurge: lastPoint?.gridWholesaleTariffInflationSurgeBand ?? 'stable',
+    terminalGuardianCopilotInflationPressureLatch: lastPoint?.guardianCopilotInflationPressureLatchBand ?? 'subdued',
+    terminalTeamBriefingConsensusInflationUnmooring: lastPoint?.teamBriefingConsensusInflationUnmooringBand ?? 'stable',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

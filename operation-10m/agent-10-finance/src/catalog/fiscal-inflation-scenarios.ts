@@ -1457,6 +1457,47 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'cities', 'energy', 'round40'],
   },
+  {
+    id: 'guardian_copilot_pressure_latch_stack',
+    label: 'Guardian co-pilot pressure latch stack',
+    description: 'Runaway co-pilot escalation with guardian pressure latch.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.45,
+      publicStability: 34,
+    },
+    tags: ['inflation', 'guardian', 'round41'],
+  },
+  {
+    id: 'team_briefing_consensus_unmoor_stress',
+    label: 'Team briefing consensus unmoor stress',
+    description: 'Ruptured briefing consensus under team latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.42,
+      publicStability: 30,
+    },
+    tags: ['inflation', 'team', 'round41'],
+  },
+  {
+    id: 'guardian_team_wave41_fusion_stress',
+    label: 'Guardian & team wave 41 fusion stress',
+    description: 'Runaway guardian latch colliding with consensus rupture.',
+    patch: {
+      inflationSettingMultiplier: 1.52,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 20,
+    },
+    tags: ['inflation', 'guardian', 'team', 'round41'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

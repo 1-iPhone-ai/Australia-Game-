@@ -288,6 +288,14 @@ import {
   assessGridWholesaleTariffInflationSurge,
   type GridWholesaleTariffInflationSurgeBand,
 } from '../inflation/grid-wholesale-tariff-inflation-surge.js';
+import {
+  assessGuardianCopilotInflationPressureLatch,
+  type GuardianCopilotInflationPressureLatchBand,
+} from '../inflation/guardian-copilot-inflation-pressure-latch.js';
+import {
+  assessTeamBriefingConsensusInflationUnmooring,
+  type TeamBriefingConsensusInflationUnmooringBand,
+} from '../inflation/team-briefing-consensus-inflation-unmooring.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -368,6 +376,8 @@ export interface InflationForecastPoint {
   tradeTariffExchangeInflationEscalationBand: TradeTariffExchangeInflationEscalationBand;
   metroCapacityRentInflationLatchBand: MetroCapacityRentInflationLatchBand;
   gridWholesaleTariffInflationSurgeBand: GridWholesaleTariffInflationSurgeBand;
+  guardianCopilotInflationPressureLatchBand: GuardianCopilotInflationPressureLatchBand;
+  teamBriefingConsensusInflationUnmooringBand: TeamBriefingConsensusInflationUnmooringBand;
 }
 
 export interface InflationForecastPath {
@@ -1066,6 +1076,29 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const guardianCopilotPressure = assessGuardianCopilotInflationPressureLatch({
+      inflationGuardrailTripped: inputs.highInflationScenario || inputs.creditShockActive,
+      stabilityInterventionBand:
+        inputs.fiscalPressure === 'critical' ? 'urgent' : inputs.publicStability < 45 ? 'advisory' : 'none',
+      wave41GuardianPressureLatch: inputs.householdInflationScenarioActive,
+      copilotPressureEscalationBand:
+        inputs.systemicLiquidityBand === 'critical'
+          ? 'runaway'
+          : inputs.highInflationScenario
+            ? 'elevated'
+            : 'contained',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const teamBriefingUnmooring = assessTeamBriefingConsensusInflationUnmooring({
+      consensusInflationOutlook: inputs.highInflationScenario ? 'upside_risk' : inputs.creditShockActive ? 'reacceleration' : 'stable',
+      briefingUrgencyBand: inputs.creditShockActive ? 'critical' : inputs.householdInflationScenarioActive ? 'elevated' : 'routine',
+      wave41TeamConsensusLatch: inputs.creditShockActive,
+      briefingConsensusUnmoorBand:
+        inputs.fiscalPressure === 'critical' ? 'ruptured' : inputs.systemicLiquidityBand === 'critical' ? 'drifting' : 'anchored',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -1146,6 +1179,8 @@ export function projectInflationForecastPath(
       tradeTariffExchangeInflationEscalationBand: tariffExchange.escalationBand,
       metroCapacityRentInflationLatchBand: metroCapacityRent.latchBand,
       gridWholesaleTariffInflationSurgeBand: gridWholesaleTariff.surgeBand,
+      guardianCopilotInflationPressureLatchBand: guardianCopilotPressure.latchBand,
+      teamBriefingConsensusInflationUnmooringBand: teamBriefingUnmooring.unmooringBand,
     });
   }
 
