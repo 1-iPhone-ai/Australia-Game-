@@ -955,6 +955,7 @@ export interface TurnExplainabilityPack {
   horizonDiffLines: string[];
   influenceSummary: ReturnType<typeof summarizeTurnMemoryInfluence>;
   topSlices: ReturnType<typeof rankInfluenceSlicesByMagnitude>;
+  counterfactual: ReturnType<typeof buildCounterfactualMemoryReport>;
   timelineLines: string[];
   narrativeLines: string[];
 }
@@ -975,6 +976,7 @@ export function buildTurnExplainabilityPack(params: {
   });
   const horizonDiffLines = compareHorizonSnapshots(horizonBefore, horizonAfter);
   const influenceSummary = summarizeTurnMemoryInfluence(params.decisionsBefore, params.decisionsAfter);
+  const counterfactual = buildCounterfactualMemoryReport(params.decisionsBefore, params.decisionsAfter);
   const allSlices = params.decisionsAfter.flatMap(d => d.memoryInfluenceSlices || []);
   const topSlices = rankInfluenceSlicesByMagnitude(allSlices, 4);
   const timelineLines = summarizeMemoryEventTimeline(buildMemoryEventTimeline(params.memoryAfter));
@@ -982,6 +984,7 @@ export function buildTurnExplainabilityPack(params: {
     `Turn ${params.turn} memory explainability pack.`,
     ...horizonDiffLines,
     ...influenceSummary.narrativeLines,
+    ...counterfactual.narrativeLines.slice(0, 2),
     ...timelineLines.slice(0, 3),
   ];
   if (topSlices.length) {
@@ -995,9 +998,259 @@ export function buildTurnExplainabilityPack(params: {
     horizonDiffLines,
     influenceSummary,
     topSlices,
+    counterfactual,
     timelineLines,
     narrativeLines,
   };
+}
+
+
+// --- source: counterfactual-explainability.ts ---
+
+export interface CounterfactualDecisionDelta {
+  type: string;
+  baselineScore: number;
+  influencedScore: number;
+  memoryInfluence: number;
+  sliceCount: number;
+}
+
+export interface CounterfactualMemoryReport {
+  decisionCount: number;
+  influencedCount: number;
+  totalAbsInfluence: number;
+  deltas: CounterfactualDecisionDelta[];
+  narrativeLines: string[];
+}
+
+/** Scores as if memory influence were stripped (never removes options — only score deltas). */
+export function baselineScoresWithoutMemory(decisions: MemoryInfluenceDecisionLike[]): MemoryInfluenceDecisionLike[] {
+  return decisions.map(d => {
+    const score = d.score ?? 0;
+    const influence = d.memoryInfluence ?? 0;
+    return {
+      ...d,
+      score: score - influence,
+      memoryInfluence: 0,
+      memoryReasons: [],
+      memoryInfluenceSlices: [],
+    };
+  });
+}
+
+export function buildCounterfactualMemoryReport(
+  decisionsBefore: MemoryInfluenceDecisionLike[],
+  decisionsAfter: MemoryInfluenceDecisionLike[],
+): CounterfactualMemoryReport {
+  const baseline = baselineScoresWithoutMemory(decisionsAfter);
+  const deltas: CounterfactualDecisionDelta[] = [];
+  let influencedCount = 0;
+  let totalAbsInfluence = 0;
+  const n = Math.min(decisionsBefore.length, decisionsAfter.length, baseline.length);
+  for (let i = 0; i < n; i++) {
+    const after = decisionsAfter[i];
+    const base = baseline[i];
+    const influence = after.memoryInfluence ?? 0;
+    if (Math.abs(influence) > 0.001) influencedCount++;
+    totalAbsInfluence += Math.abs(influence);
+    deltas.push({
+      type: after.type || decisionsBefore[i]?.type || `option_${i}`,
+      baselineScore: base.score ?? 0,
+      influencedScore: after.score ?? 0,
+      memoryInfluence: influence,
+      sliceCount: after.memoryInfluenceSlices?.length ?? 0,
+    });
+  }
+  const narrativeLines = [
+    `Counterfactual: ${influencedCount}/${n} decisions received memory score nudges (total |Δ| ${totalAbsInfluence.toFixed(2)}).`,
+    'Without memory, scores revert to pre-influence baselines; legal option sets stay unchanged.',
+  ];
+  deltas
+    .filter(d => Math.abs(d.memoryInfluence) > 0.001)
+    .slice(0, 4)
+    .forEach(d => {
+      narrativeLines.push(
+        `• ${d.type}: ${d.baselineScore.toFixed(1)} → ${d.influencedScore.toFixed(1)} (${d.memoryInfluence >= 0 ? '+' : ''}${d.memoryInfluence.toFixed(2)}, ${d.sliceCount} slice(s))`,
+      );
+    });
+  return {
+    decisionCount: n,
+    influencedCount,
+    totalAbsInfluence,
+    deltas,
+    narrativeLines,
+  };
+}
+
+export function formatCounterfactualBrief(report: CounterfactualMemoryReport): string[] {
+  return report.narrativeLines;
+}
+
+
+// --- source: memory-staleness-audit.ts ---
+
+export const AGENT19_RELATIONSHIP_STALE_TURN_GAP = 8;
+export const AGENT19_DECAY_STALE_TURN_GAP = 12;
+
+/** Flags explainability risk when relationship axes or decay state may be outdated vs current turn. */
+export function auditMemoryStaleness(
+  memory: AiActorMemory | null | undefined,
+  currentTurn: number,
+): MemoryInfluenceAuditFinding[] {
+  const findings: MemoryInfluenceAuditFinding[] = [];
+  if (!memory) return findings;
+  if (currentTurn - (memory.lastDecayTurn ?? 0) >= AGENT19_DECAY_STALE_TURN_GAP) {
+    findings.push({
+      code: 'decay_not_recent',
+      severity: 'info',
+      message: `Last decay turn ${memory.lastDecayTurn ?? 0} is ${currentTurn - (memory.lastDecayTurn ?? 0)} turns behind — long-run weights may lag recent events in briefs.`,
+    });
+  }
+  Object.values(memory.relationships || {}).forEach(rel => {
+    const gap = currentTurn - (rel.lastUpdatedTurn ?? 0);
+    if (gap >= AGENT19_RELATIONSHIP_STALE_TURN_GAP) {
+      findings.push({
+        code: 'relationship_stale',
+        severity: 'warn',
+        message: `Relationship toward ${rel.actorId} last updated turn ${rel.lastUpdatedTurn} (${gap} turns ago) — negotiation copy may understate recent shifts.`,
+      });
+    }
+  });
+  return findings;
+}
+
+export function stalenessAuditOk(findings: MemoryInfluenceAuditFinding[]): boolean {
+  return !findings.some(f => f.severity === 'fail');
+}
+
+export function summarizeMemoryStaleness(
+  memory: AiActorMemory | null | undefined,
+  currentTurn: number,
+): { findings: MemoryInfluenceAuditFinding[]; narrativeLines: string[] } {
+  const findings = auditMemoryStaleness(memory, currentTurn);
+  const staleRels = findings.filter(f => f.code === 'relationship_stale').length;
+  const lines = [
+    staleRels
+      ? `${staleRels} tracked relationship(s) may be stale vs turn ${currentTurn} — refresh after committed actions.`
+      : `Relationship tracks appear fresh for turn ${currentTurn} (gap threshold ${AGENT19_RELATIONSHIP_STALE_TURN_GAP} turns).`,
+  ];
+  findings.slice(0, 3).forEach(f => lines.push(`[${f.severity}] ${f.message}`));
+  return { findings, narrativeLines: lines };
+}
+
+
+// --- source: session-explainability-rollup.ts ---
+
+export interface SessionExplainabilityRollup {
+  turnCount: number;
+  totalInfluencedDecisions: number;
+  totalAbsInfluence: number;
+  byHorizon: ReturnType<typeof summarizeSlicesByHorizon>;
+  dominantHorizon: AiMemoryHorizon | null;
+  narrativeLines: string[];
+}
+
+export function buildSessionExplainabilityRollup(packs: TurnExplainabilityPack[]): SessionExplainabilityRollup {
+  const merged = packs.flatMap(p =>
+    p.topSlices.map(s => ({ horizon: s.horizon, delta: s.delta, reason: s.reason || `turn_${p.turn}` })),
+  );
+  const byHorizon = summarizeSlicesByHorizon(merged);
+  let dominantHorizon: AiMemoryHorizon | null = null;
+  let best = 0;
+  (Object.keys(byHorizon) as AiMemoryHorizon[]).forEach(h => {
+    const mag = Math.abs(byHorizon[h]?.totalDelta ?? 0);
+    if (mag > best) {
+      best = mag;
+      dominantHorizon = h;
+    }
+  });
+  const totalInfluencedDecisions = packs.reduce((s, p) => s + p.influenceSummary.influencedDecisionCount, 0);
+  const totalAbsInfluence = packs.reduce((s, p) => s + Math.abs(p.influenceSummary.totalInfluenceDelta), 0);
+  const narrativeLines = [
+    `Session rollup across ${packs.length} turn pack(s): ${totalInfluencedDecisions} influenced decision(s), |Δ| sum ${totalAbsInfluence.toFixed(2)}.`,
+  ];
+  if (dominantHorizon) {
+    narrativeLines.push(
+      `Dominant horizon: ${dominantHorizon} (${(byHorizon[dominantHorizon]?.totalDelta ?? 0).toFixed(2)} cumulative slice delta).`,
+    );
+  }
+  packs.slice(-2).forEach(p => narrativeLines.push(`Turn ${p.turn}: ${p.influenceSummary.narrativeLines[0] || 'no influence'}`));
+  return {
+    turnCount: packs.length,
+    totalInfluencedDecisions,
+    totalAbsInfluence,
+    byHorizon,
+    dominantHorizon,
+    narrativeLines,
+  };
+}
+
+
+// --- source: explainability-debug-export.ts ---
+
+export const AGENT19_DEBUG_EXPORT_NARRATIVE_CAP = 20;
+
+/** Bounded, JSON-safe snapshot for dashboards / replay tooling (no full memory graph). */
+export function buildExplainabilityDebugExport(pack: TurnExplainabilityPack): Record<string, unknown> {
+  return {
+    schema: 'agent19.explainability.v1',
+    turn: pack.turn,
+    horizon: {
+      beforeEvents: pack.horizonBefore.shortTermEventCount,
+      afterEvents: pack.horizonAfter.shortTermEventCount,
+      priorActive: pack.horizonAfter.longTermPriorActive,
+    },
+    influence: {
+      influenced: pack.influenceSummary.influencedDecisionCount,
+      totalDelta: pack.influenceSummary.totalInfluenceDelta,
+      auditOk: pack.influenceSummary.auditOk,
+    },
+    topSlices: pack.topSlices.slice(0, 5).map(s => ({
+      horizon: s.horizon,
+      delta: s.delta,
+      reason: s.reason,
+    })),
+    narrative: pack.narrativeLines.slice(0, AGENT19_DEBUG_EXPORT_NARRATIVE_CAP),
+    horizonDiff: pack.horizonDiffLines.slice(0, 8),
+  };
+}
+
+export function explainabilityDebugExportWithinCap(exportObj: Record<string, unknown>): boolean {
+  const narrative = exportObj.narrative;
+  return Array.isArray(narrative) && narrative.length <= AGENT19_DEBUG_EXPORT_NARRATIVE_CAP;
+}
+
+
+// --- source: memory-explainability-integrity.ts ---
+
+export interface ExplainabilityIntegrityReport {
+  boundsOk: boolean;
+  retentionOk: boolean;
+  stalenessOk: boolean;
+  findings: MemoryInfluenceAuditFinding[];
+  narrativeLines: string[];
+}
+
+/** Single read-only pass merging bounds, retention ordering, and staleness explainability audits. */
+export function auditExplainabilityIntegrity(
+  memory: AiActorMemory | null | undefined,
+  currentTurn: number,
+): ExplainabilityIntegrityReport {
+  const findings = [
+    ...auditActorMemoryBounds(memory),
+    ...auditMemoryRetentionOrdering(memory),
+    ...auditMemoryStaleness(memory, currentTurn),
+  ];
+  const boundsOk = memoryBoundsOk(memory);
+  const retentionOk = retentionAuditOk(findings);
+  const stalenessOk = stalenessAuditOk(findings);
+  const failCount = findings.filter(f => f.severity === 'fail').length;
+  const warnCount = findings.filter(f => f.severity === 'warn').length;
+  const narrativeLines = [
+    `Explainability integrity @ turn ${currentTurn}: bounds ${boundsOk ? 'ok' : 'FAIL'}, ${findings.length} finding(s) (${warnCount} warn, ${failCount} fail).`,
+  ];
+  findings.slice(0, 5).forEach(f => narrativeLines.push(`[${f.severity}] ${f.code}: ${f.message}`));
+  return { boundsOk, retentionOk, stalenessOk, findings, narrativeLines };
 }
 
 
@@ -1114,6 +1367,17 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   buildRelationshipExplainabilityBrief,
   listTrackedRelationshipActorIds,
 } from '../relationship-explainability.ts';
+  buildCounterfactualMemoryReport,
+  baselineScoresWithoutMemory,
+} from '../counterfactual-explainability.ts';
+  auditMemoryStaleness,
+  summarizeMemoryStaleness,
+  AGENT19_RELATIONSHIP_STALE_TURN_GAP,
+} from '../memory-staleness-audit.ts';
+  buildExplainabilityDebugExport,
+  explainabilityDebugExportWithinCap,
+  AGENT19_DEBUG_EXPORT_NARRATIVE_CAP,
+} from '../explainability-debug-export.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -1546,6 +1810,116 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
         () => {
           const lines = summarizeMemoryEventTimeline([]);
           return lines[0].includes('No committed') || lines[0];
+        },
+      ],
+      [
+        'a19_r5_counterfactual_delta',
+        'Counterfactual report quantifies memory score nudges',
+        () => {
+          const before = [{ type: 'sell', score: 10 }];
+          const after = [{ type: 'sell', score: 15, memoryInfluence: 5, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 'trust' }] }];
+          const report = buildCounterfactualMemoryReport(before, after);
+          return report.influencedCount === 1 && report.deltas[0].baselineScore === 10 || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r5_counterfactual_baseline',
+        'Baseline strip removes influence but keeps option count',
+        () => {
+          const after = [{ type: 'a', score: 12, memoryInfluence: 2 }];
+          const stripped = baselineScoresWithoutMemory(after);
+          return stripped[0].score === 10 && (stripped[0].memoryInfluence ?? 1) === 0 || JSON.stringify(stripped);
+        },
+      ],
+      [
+        'a19_r5_staleness_relationship',
+        'Staleness audit warns on old relationship updates',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.relationships.player = {
+            actorId: 'player',
+            trust: 50,
+            respect: 50,
+            rivalry: 0,
+            reliability: 50,
+            cooperation: 50,
+            threat: 0,
+            grievance: 0,
+            gratitude: 0,
+            lastUpdatedTurn: 1,
+          };
+          const findings = auditMemoryStaleness(mem, 1 + AGENT19_RELATIONSHIP_STALE_TURN_GAP);
+          return findings.some(f => f.code === 'relationship_stale') || JSON.stringify(findings);
+        },
+      ],
+      [
+        'a19_r5_staleness_fresh',
+        'Fresh relationships produce no staleness warnings',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.relationships.player = {
+            actorId: 'player',
+            trust: 50,
+            respect: 50,
+            rivalry: 0,
+            reliability: 50,
+            cooperation: 50,
+            threat: 0,
+            grievance: 0,
+            gratitude: 0,
+            lastUpdatedTurn: 10,
+          };
+          const summary = summarizeMemoryStaleness(mem, 10);
+          return summary.findings.filter(f => f.code === 'relationship_stale').length === 0 || summary.narrativeLines.join('|');
+        },
+      ],
+      [
+        'a19_r5_session_rollup',
+        'Session rollup aggregates turn packs by horizon',
+        () => {
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 5 }],
+            decisionsAfter: [
+              {
+                type: 'a',
+                score: 30,
+                memoryInfluence: 25,
+                memoryInfluenceSlices: [{ horizon: 'team_directive', delta: 25, reason: 'plan' }],
+              },
+            ],
+          });
+          const rollup = buildSessionExplainabilityRollup([pack, { ...pack, turn: 2 }]);
+          return rollup.turnCount === 2 && rollup.dominantHorizon === 'team_directive' || JSON.stringify(rollup);
+        },
+      ],
+      [
+        'a19_r5_debug_export_cap',
+        'Debug export caps narrative lines',
+        () => {
+          const pack = buildTurnExplainabilityPack({
+            turn: 3,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'x', score: 1 }],
+            decisionsAfter: [{ type: 'x', score: 1 }],
+          });
+          const exp = buildExplainabilityDebugExport(pack);
+          return (
+            exp.schema === 'agent19.explainability.v1' &&
+            explainabilityDebugExportWithinCap(exp) &&
+            AGENT19_DEBUG_EXPORT_NARRATIVE_CAP >= 10
+          ) || JSON.stringify(exp);
+        },
+      ],
+      [
+        'a19_r5_integrity_merge',
+        'Integrity audit merges bounds retention and staleness',
+        () => {
+          const report = auditExplainabilityIntegrity(createEmptyAiActorMemory('ai'), 1);
+          return report.boundsOk && report.findings.length >= 0 && report.narrativeLines[0].includes('integrity') || report.narrativeLines[0];
         },
       ],
     ]),

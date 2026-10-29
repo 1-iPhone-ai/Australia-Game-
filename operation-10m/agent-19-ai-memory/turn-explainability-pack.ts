@@ -3,6 +3,7 @@ import { compareHorizonSnapshots } from './decision-trace.ts';
 import { rankInfluenceSlicesByMagnitude } from './explainability.ts';
 import { buildMemoryEventTimeline, summarizeMemoryEventTimeline } from './memory-event-timeline.ts';
 import { summarizeTurnMemoryInfluence } from './turn-influence-summary.ts';
+import { buildCounterfactualMemoryReport } from './counterfactual-explainability.ts';
 import type { AiActorMemory, AiMemoryHorizonSnapshot, MemoryInfluenceDecisionLike } from './types.ts';
 
 export interface TurnExplainabilityPack {
@@ -12,6 +13,7 @@ export interface TurnExplainabilityPack {
   horizonDiffLines: string[];
   influenceSummary: ReturnType<typeof summarizeTurnMemoryInfluence>;
   topSlices: ReturnType<typeof rankInfluenceSlicesByMagnitude>;
+  counterfactual: ReturnType<typeof buildCounterfactualMemoryReport>;
   timelineLines: string[];
   narrativeLines: string[];
 }
@@ -32,6 +34,7 @@ export function buildTurnExplainabilityPack(params: {
   });
   const horizonDiffLines = compareHorizonSnapshots(horizonBefore, horizonAfter);
   const influenceSummary = summarizeTurnMemoryInfluence(params.decisionsBefore, params.decisionsAfter);
+  const counterfactual = buildCounterfactualMemoryReport(params.decisionsBefore, params.decisionsAfter);
   const allSlices = params.decisionsAfter.flatMap(d => d.memoryInfluenceSlices || []);
   const topSlices = rankInfluenceSlicesByMagnitude(allSlices, 4);
   const timelineLines = summarizeMemoryEventTimeline(buildMemoryEventTimeline(params.memoryAfter));
@@ -39,6 +42,7 @@ export function buildTurnExplainabilityPack(params: {
     `Turn ${params.turn} memory explainability pack.`,
     ...horizonDiffLines,
     ...influenceSummary.narrativeLines,
+    ...counterfactual.narrativeLines.slice(0, 2),
     ...timelineLines.slice(0, 3),
   ];
   if (topSlices.length) {
@@ -52,6 +56,7 @@ export function buildTurnExplainabilityPack(params: {
     horizonDiffLines,
     influenceSummary,
     topSlices,
+    counterfactual,
     timelineLines,
     narrativeLines,
   };
