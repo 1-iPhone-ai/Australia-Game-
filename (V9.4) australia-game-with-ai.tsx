@@ -11635,9 +11635,20 @@ export function reduceGameAction(
         }
 
         case 'work': {
-          const specifiedWage = action.price ?? action.parameters?.wage ?? action.parameters?.amount;
-          const wage = specifiedWage === undefined ? v95WalletAmount(50, 0) : v95WalletAmount(specifiedWage, 0);
-          if (actor && wage !== null && Number.isFinite(actor.money) && Number.isFinite(actor.money + wage)) {
+          // A zero price is the free cost the intent mapper stamps from costEstimate, not the wage.
+          // The wage is parameters.wage / parameters.amount, otherwise a positive price, otherwise $50.
+          // A negative or non-finite wage does not pay.
+          const named = [action.parameters?.wage, action.parameters?.amount].find((v: unknown) => v !== undefined && v !== null);
+          const namedWage = named === undefined ? null : v95WalletAmount(named, 0);
+          if (named !== undefined && (namedWage === null || namedWage <= 0)) break;
+          let wage = namedWage && namedWage > 0 ? namedWage : null;
+          if (wage === null && action.price !== undefined && action.price !== null) {
+            const priced = Number(action.price) > 0 ? v95WalletAmount(action.price, 0) : null;
+            if (Number(action.price) !== 0 && (priced === null || priced <= 0)) break;
+            if (priced && priced > 0) wage = priced;
+          }
+          if (wage === null) wage = v95WalletAmount(50, 0);
+          if (actor && wage !== null && wage > 0 && Number.isFinite(actor.money) && Number.isFinite(actor.money + wage)) {
             actor.money += wage;
             actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
             actionExecuted = true;
@@ -137172,6 +137183,17 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number; pr
     const stops = isModalTabStop({ tabIndex: 0 }) && !isModalTabStop({ tabIndex: -1 }) && !isModalTabStop({ tabIndex: 0, disabled: true });
     const ok = forward === 'first' && backward === 'last' && middle === null && released === null && escaped === 'first' && requeries && stops;
     return ok || JSON.stringify({ forward, backward, middle, released, escaped, requeries, stops });
+  });
+  check('u_work_click_pays_the_wage', 'Do It on Work for Wages pays $50 when the cost estimate is 0 (SIM-059)', () => {
+    const settings = { ...DEFAULT_GAME_SETTINGS, actionLimitsEnabled: true, playerActionsPerDay: 3, coPilotSettings: { ...createDefaultCoPilotSettings(), coPilotEnabled: false, authorityMode: 'off' as const } };
+    const player = { id: 'player', money: 1220, currentRegion: 'QLD', actionsUsedThisTurn: 2, actionPoints: 3, inventory: ['Wheat'], teamId: 'team_player' };
+    const state: any = { day: 1, turn: 1, turnCounter: 1, gameMode: 'game', selectedMode: 'single', currentTurn: 'player', currentActorId: 'player', player, actorsById: { player: { ...player } }, gameSettings: settings };
+    const clicked = executeCoPilotActionIntent({ gameState: state, player, gameSettings: settings, actorsById: state.actorsById }, { actionType: 'work', actorId: 'player', parameters: { wage: 50, amount: 50 }, costEstimate: 0, expectedCashDelta: 50, expectedAPDelta: -1 }, { forceExecution: true, playerClicked: true });
+    const money = clicked.updatedState?.player?.money;
+    const used = clicked.updatedState?.player?.actionsUsedThisTurn;
+    const refused = reduceGameAction(state, { type: 'work', actorId: 'player', price: -400 } as any);
+    const ok = clicked.executionResult.success && money === 1270 && used === 3 && !refused.success && refused.nextState.player.money === 1220;
+    return ok || JSON.stringify({ ok: clicked.executionResult.success, err: clicked.executionResult.error, money, used, refused: refused.nextState.player.money });
   });
   check('u_stress_yields_and_lab_restores_rng', 'Long stress yields and a mid-match lab run restores RNG (UI-008)', () => {
     const before = JSON.stringify([globalRngRegistry.exportStreamStates(), globalDeterministicCounters]);
