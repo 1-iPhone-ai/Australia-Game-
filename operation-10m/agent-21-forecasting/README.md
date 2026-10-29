@@ -16,6 +16,8 @@ Non-authoritative strategic forecasts and **counterfactual policy forks** for th
 | `counterfactual-experiments.ts` | Multi-branch counterfactual fork matrix |
 | `scenario-catalog.ts` | 120+ exploratory scenario narratives |
 | `strategic-forecast-policy-lab.tsx` | Policy experiments, bundle, self-tests, UI strip |
+| `forecast-evaluation-metrics.ts` | Composite forecast evaluation + scenario comparison rows |
+| `scenario-comparison-ui.tsx` | Side-by-side scenario comparison strip |
 | `tests/` | Node test runner coverage for modular slices |
 
 ## Tests

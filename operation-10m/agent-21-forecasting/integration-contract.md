@@ -8,7 +8,7 @@
 ## Module identity
 
 - `O10M_AGENT21_MODULE_ID` = `forecasting_policy_lab`
-- `O10M_AGENT21_MODULE_VERSION` = `1.1.0`
+- `O10M_AGENT21_MODULE_VERSION` = `1.2.0`
 
 ## Primary exports (Agent 25 wiring)
 
@@ -20,6 +20,8 @@
 | `runAg21StrategicForecastSelfTests` | In-game self-test battery |
 | `Ag21StrategicForecastLabStrip` | Dashboard UI strip (`data-testid="ag21-forecast-lab"`) |
 | `AG21_FORECAST_SCENARIO_CATALOG` / `lookupAg21Scenario` | Scenario library |
+| `evaluateAg21ForecastRun` / `compareAg21Scenarios` | Forecast evaluation metrics |
+| `Ag21ScenarioComparisonStrip` | Scenario comparison UI (`data-testid="ag21-scenario-comparison"`) |
 
 ## Upstream dependencies (canonical only)
 
