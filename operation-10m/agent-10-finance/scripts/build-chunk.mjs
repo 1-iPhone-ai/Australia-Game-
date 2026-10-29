@@ -131,6 +131,8 @@ const FILES = [
   'inflation/transport-corridor-freight-inflation-surge-latch.ts',
   'inflation/macro-transmission-coherence-inflation-reconciliation-latch.ts',
   'inflation/public-finance-charges-indexation-inflation-surge-latch.ts',
+  'inflation/fiscal-sovereign-reconciliation-outlook-inflation-latch.ts',
+  'inflation/buffer-grant-reconciliation-outlook-coherence-inflation-latch.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -216,6 +218,7 @@ const FILES = [
   'react/TradeGuardianWaveInflationPanel.tsx',
   'react/HousingTransportWave50InflationPanel.tsx',
   'react/MacroFiscalWave51InflationPanel.tsx',
+  'react/MacroFiscalWave52InflationPanel.tsx',
 ];
 
 function stripModulePreamble(source) {

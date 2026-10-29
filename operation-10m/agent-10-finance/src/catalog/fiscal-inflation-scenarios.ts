@@ -1959,6 +1959,49 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'macro', 'fiscal', 'round51'],
   },
+  {
+    id: 'fiscal_sovereign_reconciliation_outlook_latch_stack',
+    label: 'Fiscal sovereign reconciliation outlook latch stack',
+    description: 'Sovereign reconciliation outlook under ruptured buffer bridge stress.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.56,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 22,
+    },
+    tags: ['inflation', 'fiscal', 'round52'],
+  },
+  {
+    id: 'buffer_grant_reconciliation_outlook_coherence_stress',
+    label: 'Buffer grant reconciliation outlook coherence stress',
+    description: 'Grant reconciliation coherence under critical fiscal outlook.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.53,
+      fiscalPressure: 'critical',
+      creditShockActive: true,
+      publicStability: 20,
+    },
+    tags: ['inflation', 'fiscal', 'round52'],
+  },
+  {
+    id: 'macro_fiscal_wave52_fusion_stress',
+    label: 'Macro & fiscal wave 52 fusion stress',
+    description: 'Sovereign reconciliation outlook colliding with grant coherence rupture.',
+    patch: {
+      inflationSettingMultiplier: 1.63,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 8,
+    },
+    tags: ['inflation', 'macro', 'fiscal', 'round52'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

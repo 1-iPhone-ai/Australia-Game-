@@ -27,6 +27,20 @@ export interface Agent07FiscalSnapshot {
   wave51PublicFinanceIndexationSurgeLatch?: boolean;
   /** Round 51: charges indexation surge band. */
   chargesIndexationSurgeBand?: 'contained' | 'building' | 'ruptured';
+  /** Round 52: fiscal sovereign reconciliation outlook latch. */
+  wave52FiscalSovereignReconciliationOutlookLatch?: boolean;
+  /** Round 52: fiscal sovereign reconciliation outlook band. */
+  fiscalSovereignReconciliationOutlookBand?: 'aligned' | 'strained' | 'ruptured';
+  /** Round 52: buffer grant reconciliation outlook coherence latch. */
+  wave52BufferGrantReconciliationOutlookCoherenceLatch?: boolean;
+  /** Round 52: buffer grant reconciliation outlook coherence band. */
+  bufferGrantReconciliationOutlookCoherenceBand?: 'contained' | 'building' | 'critical';
+  /** Round 52: grant fiscal coherence gap elevated. */
+  grantFiscalCoherenceGapElevated?: boolean;
+  /** Round 52: grant outlook within reconciliation band. */
+  grantOutlookWithinBand?: boolean;
+  /** Round 52: sovereign buffer bridge gap elevated. */
+  sovereignBufferBridgeGapElevated?: boolean;
 }
 
 export function mergeAgent07IntoMacroFinancialInputs(
@@ -98,6 +112,32 @@ export function mergeAgent07IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.chargesIndexationSurgeBand === 'building' && snapshot.indexedChargesInflationPassThrough) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (
+    snapshot.wave52FiscalSovereignReconciliationOutlookLatch &&
+    snapshot.fiscalSovereignReconciliationOutlookBand === 'ruptured'
+  ) {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (
+    snapshot.fiscalSovereignReconciliationOutlookBand === 'strained' &&
+    snapshot.sovereignBufferBridgeGapElevated
+  ) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (
+    snapshot.wave52BufferGrantReconciliationOutlookCoherenceLatch &&
+    snapshot.bufferGrantReconciliationOutlookCoherenceBand === 'critical'
+  ) {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (
+    snapshot.bufferGrantReconciliationOutlookCoherenceBand === 'building' &&
+    snapshot.grantFiscalCoherenceGapElevated
+  ) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
