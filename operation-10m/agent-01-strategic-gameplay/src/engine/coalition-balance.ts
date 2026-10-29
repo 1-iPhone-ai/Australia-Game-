@@ -368,3 +368,13 @@ export function custodialEternityRankingBonus(
   if (streak >= action.minCoalitionCustodialEternityStreakDays) return 32;
   return 2;
 }
+
+export function vanguardSynthesisRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionVanguardSynthesisStreakDays === undefined) return 0;
+  const streak = state.coalitionVanguardSynthesisStreakDays ?? 0;
+  if (streak >= action.minCoalitionVanguardSynthesisStreakDays) return 33;
+  return 2;
+}

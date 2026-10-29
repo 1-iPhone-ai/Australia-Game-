@@ -126,6 +126,10 @@ import {
   advanceCoalitionCustodialEternityStreak,
   applyCustodialEternityMandateBonus,
 } from './coalition-custodial-eternity.ts';
+import {
+  advanceCoalitionVanguardSynthesisStreak,
+  applyVanguardSynthesisMandateBonus,
+} from './coalition-vanguard-synthesis.ts';
 import { advanceCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 import type { StakeholderGroupId, StakeholderSentiment } from '../types/coalition-mandate.ts';
@@ -243,6 +247,8 @@ export function advanceStrategicGameplayCalendar(
   next = applyImperialPerpetuityMandateBonus(next, daysAdvanced);
   next = advanceCoalitionCustodialEternityStreak(next, daysAdvanced);
   next = applyCustodialEternityMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionVanguardSynthesisStreak(next, daysAdvanced);
+  next = applyVanguardSynthesisMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 
