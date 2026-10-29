@@ -829,6 +829,23 @@ export type {
   TransitionCommemorationBand,
 } from './production-transition-commemoration';
 
+export {
+  AGENT08_TRANSITION_VENERATION_SCHEMA_VERSION,
+  buildFirmProductionTransitionVeneration,
+  classifyNationalVenerationBand,
+  computeNationalVenerationPressure,
+  computeNationalProductionTransitionVeneration,
+  summarizeRegionalTransitionVeneration,
+  runAgent08TransitionVenerationSelfTests,
+} from './production-transition-veneration';
+
+export type {
+  FirmProductionTransitionVeneration,
+  NationalProductionTransitionVeneration,
+  RegionalTransitionVenerationSummary,
+  TransitionVenerationBand,
+} from './production-transition-veneration';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -878,6 +895,7 @@ import { runAgent08TransitionRetirementSelfTests } from './production-transition
 import { runAgent08TransitionLegacySelfTests } from './production-transition-legacy';
 import { runAgent08TransitionRemembranceSelfTests } from './production-transition-remembrance';
 import { runAgent08TransitionCommemorationSelfTests } from './production-transition-commemoration';
+import { runAgent08TransitionVenerationSelfTests } from './production-transition-veneration';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -1127,6 +1145,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionVeneration = runAgent08TransitionVenerationSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -1177,5 +1200,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionLegacy,
     ...transitionRemembrance,
     ...transitionCommemoration,
+    ...transitionVeneration,
   ];
 }
