@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: 55885baff77fce2e83af8bc95325a0b14c31f76443af79b6dc748599bd8932c5
-// OP10M_MODULE_VERSION: 10m.1.18.0-agent20
+// OP10M_MANIFEST_SHA256: 9cec06e71626365d447e9a4702660fa304190f717516d0d51202966894b54d06
+// OP10M_MODULE_VERSION: 10m.1.19.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
@@ -9063,6 +9063,454 @@ export function runO10Agent20IdleGovernanceProgramWaveAssemblyGateSelfTests(): O
 }
 
 
+// --- source: automation-idle-governance-program-wave-scorecard-compare.ts ---
+
+export interface O10IdleGovernanceProgramWaveScorecardCompareResult {
+  schema: '10m.agent20.idle-governance-program-wave-scorecard-compare.v1';
+  waveRound: number;
+  parityOk: boolean;
+  mismatches: string[];
+  summaryLine: string;
+}
+
+function compareScorecardFields(
+  baseline: O10IdleGovernanceProgramWaveScorecardResult,
+  candidate: O10IdleGovernanceProgramWaveScorecardResult
+): string[] {
+  const mismatches: string[] = [];
+  if (baseline.waveRound !== candidate.waveRound) {
+    mismatches.push(`wave_round ${baseline.waveRound} vs ${candidate.waveRound}`);
+  }
+  if (baseline.scorecardBand !== candidate.scorecardBand) {
+    mismatches.push(`band ${baseline.scorecardBand} vs ${candidate.scorecardBand}`);
+  }
+  if (baseline.assemblyReady !== candidate.assemblyReady) {
+    mismatches.push(`assembly_ready ${baseline.assemblyReady} vs ${candidate.assemblyReady}`);
+  }
+  if (baseline.waveRecommendation !== candidate.waveRecommendation) {
+    mismatches.push(`rec ${baseline.waveRecommendation} vs ${candidate.waveRecommendation}`);
+  }
+  if (baseline.clearance !== candidate.clearance) {
+    mismatches.push(`clearance ${baseline.clearance} vs ${candidate.clearance}`);
+  }
+  const scoreDelta = Math.abs(baseline.meanComplianceScore - candidate.meanComplianceScore);
+  if (scoreDelta > 0.001) {
+    mismatches.push(`mean_score_delta ${scoreDelta.toFixed(4)}`);
+  }
+  return mismatches;
+}
+
+/** Round-19 scorecard compare across twin assembly gate runs. */
+export function compareIdleGovernanceProgramWaveScorecards(
+  baseline: O10IdleGovernanceProgramWaveScorecardResult,
+  candidate: O10IdleGovernanceProgramWaveScorecardResult
+): O10IdleGovernanceProgramWaveScorecardCompareResult {
+  const mismatches = compareScorecardFields(baseline, candidate);
+  const waveRound = baseline.waveRound;
+  const parityOk = mismatches.length === 0;
+
+  const summaryLine = [
+    'gov_program_wave_scorecard_compare',
+    `round=${waveRound}`,
+    `parity=${parityOk}`,
+    `mismatches=${mismatches.length}`,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-scorecard-compare.v1',
+    waveRound,
+    parityOk,
+    mismatches,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveScorecardCompareSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const twin = (): O10IdleGovernanceProgramWaveScorecardResult => ({
+    schema: '10m.agent20.idle-governance-program-wave-scorecard.v1',
+    waveRound: 19,
+    clearance: 'cleared',
+    waveRecommendation: 'advance_scale_wave',
+    meanComplianceScore: 81,
+    scorecardBand: 'green',
+    assemblyReady: true,
+    scorecardMarkdown: 'md',
+    summaryLine: 'sc',
+  });
+
+  const ok = compareIdleGovernanceProgramWaveScorecards(twin(), twin());
+  push('gov_prog_sc_cmp_parity', 'identical scorecards report parity', ok.parityOk === true);
+
+  const drift = compareIdleGovernanceProgramWaveScorecards(twin(), { ...twin(), assemblyReady: false });
+  push(
+    'gov_prog_sc_cmp_drift',
+    'assembly readiness drift surfaces mismatch',
+    drift.parityOk === false && drift.mismatches.some(m => m.startsWith('assembly_ready'))
+  );
+
+  push(
+    'gov_prog_sc_cmp_schema',
+    'scorecard compare schema marker',
+    ok.schema === '10m.agent20.idle-governance-program-wave-scorecard-compare.v1'
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-wave-assembly-run.ts ---
+  createEmptyIdleGovernanceProgramRegistry,
+  type O10IdleGovernanceProgramRegistry,
+} from './automation-idle-governance-program-registry.js';
+
+export interface O10IdleGovernanceProgramWaveAssemblyDigest {
+  waveRound: number;
+  gateOpen: boolean;
+  scorecardBand: string;
+  waveRecommendation: string;
+  closeoutParityOk: boolean;
+  scorecardParityOk: boolean;
+  assemblyReady: boolean;
+}
+
+export interface O10IdleGovernanceProgramWaveAssemblyRunResult {
+  schema: '10m.agent20.idle-governance-program-wave-assembly-run.v1';
+  waveRound: number;
+  primaryGate: ReturnType<typeof gateIdleGovernanceProgramWaveAssembly>;
+  twinGate: ReturnType<typeof gateIdleGovernanceProgramWaveAssembly>;
+  scorecardCompare: ReturnType<typeof compareIdleGovernanceProgramWaveScorecards>;
+  assemblyDigest: O10IdleGovernanceProgramWaveAssemblyDigest;
+  runSucceeded: boolean;
+  runMarkdown: string;
+  summaryLine: string;
+}
+
+export function buildIdleGovernanceProgramWaveAssemblyRunMarkdown(
+  digest: O10IdleGovernanceProgramWaveAssemblyDigest,
+  primaryGate: ReturnType<typeof gateIdleGovernanceProgramWaveAssembly>
+): string {
+  return [
+    '# Agent 20 idle governance wave assembly run',
+    '',
+    `- wave_round=${digest.waveRound}`,
+    `- run_succeeded=${digest.gateOpen && digest.scorecardParityOk}`,
+    `- gate_open=${digest.gateOpen}`,
+    `- scorecard_parity=${digest.scorecardParityOk}`,
+    '',
+    primaryGate.gateMarkdown,
+  ].join('\n');
+}
+
+/** Round-19 orchestrated assembly run: twin gates + scorecard compare + digest. */
+export function runIdleGovernanceProgramWaveAssembly(
+  spec: O10IdleOpsWindowSpec,
+  rule: PortableHumanAutomationRule,
+  startTurn: number,
+  requestedCycles: number,
+  waveRound: number,
+  priorRegistry: O10IdleGovernanceProgramRegistry = createEmptyIdleGovernanceProgramRegistry()
+): O10IdleGovernanceProgramWaveAssemblyRunResult {
+  const primaryGate = gateIdleGovernanceProgramWaveAssembly(
+    spec,
+    rule,
+    startTurn,
+    requestedCycles,
+    waveRound,
+    priorRegistry
+  );
+  const twinGate = gateIdleGovernanceProgramWaveAssembly(
+    spec,
+    rule,
+    startTurn,
+    requestedCycles,
+    waveRound,
+    priorRegistry
+  );
+  const scorecardCompare = compareIdleGovernanceProgramWaveScorecards(
+    primaryGate.scorecard,
+    twinGate.scorecard
+  );
+
+  const assemblyDigest: O10IdleGovernanceProgramWaveAssemblyDigest = {
+    waveRound,
+    gateOpen: primaryGate.gateOpen,
+    scorecardBand: primaryGate.scorecard.scorecardBand,
+    waveRecommendation: primaryGate.scorecard.waveRecommendation,
+    closeoutParityOk: primaryGate.compare.parityOk,
+    scorecardParityOk: scorecardCompare.parityOk,
+    assemblyReady: primaryGate.scorecard.assemblyReady,
+  };
+
+  const runSucceeded =
+    primaryGate.gateOpen && scorecardCompare.parityOk && primaryGate.compare.parityOk;
+
+  const runMarkdown = buildIdleGovernanceProgramWaveAssemblyRunMarkdown(assemblyDigest, primaryGate);
+
+  const summaryLine = [
+    'gov_program_wave_assembly_run',
+    `round=${waveRound}`,
+    `ok=${runSucceeded}`,
+    scorecardCompare.summaryLine,
+    primaryGate.summaryLine,
+  ].join(' | ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-assembly-run.v1',
+    waveRound,
+    primaryGate,
+    twinGate,
+    scorecardCompare,
+    assemblyDigest,
+    runSucceeded,
+    runMarkdown,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveAssemblyRunSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const sampleRule: PortableHumanAutomationRule = {
+    id: 'run1',
+    name: 'Assembly run',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 5,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 10, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+  };
+
+  const calmSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 2,
+    humanCommittedEvery: 1,
+    idleMsStart: 0,
+    idleMsStep: 0,
+    consecutiveIdleStart: 0,
+  };
+
+  const run = runIdleGovernanceProgramWaveAssembly(calmSpec, sampleRule, 1, 3, 19);
+  push(
+    'gov_prog_asm_run_calm',
+    'calm assembly run succeeds with digest',
+    run.runSucceeded === true &&
+      run.assemblyDigest.scorecardParityOk === true &&
+      run.runMarkdown.includes('assembly run')
+  );
+
+  const run2 = runIdleGovernanceProgramWaveAssembly(
+    calmSpec,
+    sampleRule,
+    3,
+    2,
+    19,
+    run.primaryGate.primaryCloseout.subject.executive.director.operations.registry
+  );
+  push(
+    'gov_prog_asm_run_chain',
+    'chained assembly run accumulates registry',
+    run2.primaryGate.primaryCloseout.subject.executive.director.registryRollup.entryCount === 2 &&
+      run2.summaryLine.includes('gov_program_wave_assembly_run')
+  );
+
+  push(
+    'gov_prog_asm_run_schema',
+    'wave assembly run schema marker',
+    run.schema === '10m.agent20.idle-governance-program-wave-assembly-run.v1'
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-wave-assembly-export.ts ---
+  createEmptyIdleGovernanceProgramRegistry,
+  type O10IdleGovernanceProgramRegistry,
+} from './automation-idle-governance-program-registry.js';
+
+export interface O10IdleGovernanceProgramWaveAssemblyExportPayload {
+  schema: '10m.agent20.idle-governance-program-wave-assembly-export.v1';
+  waveRound: number;
+  runSucceeded: boolean;
+  assemblyDigest: O10IdleGovernanceProgramWaveAssemblyRunResult['assemblyDigest'];
+  integrationHookLines: string[];
+}
+
+export interface O10IdleGovernanceProgramWaveAssemblyExportResult {
+  schema: '10m.agent20.idle-governance-program-wave-assembly-export.v1';
+  waveRound: number;
+  run: O10IdleGovernanceProgramWaveAssemblyRunResult;
+  payload: O10IdleGovernanceProgramWaveAssemblyExportPayload;
+  exportMarkdown: string;
+  summaryLine: string;
+}
+
+function buildIntegrationHookLines(
+  run: O10IdleGovernanceProgramWaveAssemblyRunResult
+): string[] {
+  const d = run.assemblyDigest;
+  return [
+    `O10_AGENT20_WAVE_ASSEMBLY round=${d.waveRound}`,
+    `O10_AGENT20_WAVE_GATE open=${d.gateOpen}`,
+    `O10_AGENT20_WAVE_SCORECARD band=${d.scorecardBand} rec=${d.waveRecommendation}`,
+    `O10_AGENT20_WAVE_PARITY closeout=${d.closeoutParityOk} scorecard=${d.scorecardParityOk}`,
+    `O10_AGENT20_WAVE_RUN ok=${run.runSucceeded}`,
+  ];
+}
+
+/** Round-19 flattened assembly export for Agent 25 integration hooks. */
+export function exportIdleGovernanceProgramWaveAssembly(
+  run: O10IdleGovernanceProgramWaveAssemblyRunResult
+): O10IdleGovernanceProgramWaveAssemblyExportResult {
+  const integrationHookLines = buildIntegrationHookLines(run);
+  const payload: O10IdleGovernanceProgramWaveAssemblyExportPayload = {
+    schema: '10m.agent20.idle-governance-program-wave-assembly-export.v1',
+    waveRound: run.waveRound,
+    runSucceeded: run.runSucceeded,
+    assemblyDigest: run.assemblyDigest,
+    integrationHookLines,
+  };
+
+  const exportMarkdown = [
+    '# Agent 20 idle governance wave assembly export',
+    '',
+    ...integrationHookLines.map(line => `- ${line}`),
+    '',
+    run.runMarkdown,
+  ].join('\n');
+
+  const summaryLine = [
+    'gov_program_wave_assembly_export',
+    `round=${run.waveRound}`,
+    `ok=${run.runSucceeded}`,
+    `hooks=${integrationHookLines.length}`,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-assembly-export.v1',
+    waveRound: run.waveRound,
+    run,
+    payload,
+    exportMarkdown,
+    summaryLine,
+  };
+}
+
+/** Convenience entry: run assembly then export in one call. */
+export function runAndExportIdleGovernanceProgramWaveAssembly(
+  spec: O10IdleOpsWindowSpec,
+  rule: PortableHumanAutomationRule,
+  startTurn: number,
+  requestedCycles: number,
+  waveRound: number,
+  priorRegistry: O10IdleGovernanceProgramRegistry = createEmptyIdleGovernanceProgramRegistry()
+): O10IdleGovernanceProgramWaveAssemblyExportResult {
+  const run = runIdleGovernanceProgramWaveAssembly(
+    spec,
+    rule,
+    startTurn,
+    requestedCycles,
+    waveRound,
+    priorRegistry
+  );
+  return exportIdleGovernanceProgramWaveAssembly(run);
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveAssemblyExportSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const sampleRule: PortableHumanAutomationRule = {
+    id: 'exp1',
+    name: 'Assembly export',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 5,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 10, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+  };
+
+  const calmSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 2,
+    humanCommittedEvery: 1,
+    idleMsStart: 0,
+    idleMsStep: 0,
+    consecutiveIdleStart: 0,
+  };
+
+  const exported = runAndExportIdleGovernanceProgramWaveAssembly(calmSpec, sampleRule, 1, 3, 19);
+  push(
+    'gov_prog_asm_export_calm',
+    'export includes integration hook lines',
+    exported.payload.integrationHookLines.length === 5 &&
+      exported.exportMarkdown.includes('O10_AGENT20_WAVE_RUN') &&
+      exported.payload.runSucceeded === true
+  );
+
+  push(
+    'gov_prog_asm_export_schema',
+    'assembly export schema marker',
+    exported.schema === '10m.agent20.idle-governance-program-wave-assembly-export.v1'
+  );
+
+  push(
+    'gov_prog_asm_export_payload',
+    'payload schema marker',
+    exported.payload.schema === '10m.agent20.idle-governance-program-wave-assembly-export.v1'
+  );
+
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -9152,6 +9600,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceProgramWaveScorecardSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveCloseoutCompareSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveAssemblyGateSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveScorecardCompareSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveAssemblyRunSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveAssemblyExportSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }

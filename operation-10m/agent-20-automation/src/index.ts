@@ -57,6 +57,9 @@ export * from './automation-idle-governance-program-wave-closeout.js';
 export * from './automation-idle-governance-program-wave-scorecard.js';
 export * from './automation-idle-governance-program-wave-closeout-compare.js';
 export * from './automation-idle-governance-program-wave-assembly-gate.js';
+export * from './automation-idle-governance-program-wave-scorecard-compare.js';
+export * from './automation-idle-governance-program-wave-assembly-run.js';
+export * from './automation-idle-governance-program-wave-assembly-export.js';
 
 import type { O10SelfTestResult } from './types.js';
 import { runO10Agent20NationalStewardSelfTests } from './national-steward.js';
@@ -114,6 +117,9 @@ import { runO10Agent20IdleGovernanceProgramWaveCloseoutSelfTests } from './autom
 import { runO10Agent20IdleGovernanceProgramWaveScorecardSelfTests } from './automation-idle-governance-program-wave-scorecard.js';
 import { runO10Agent20IdleGovernanceProgramWaveCloseoutCompareSelfTests } from './automation-idle-governance-program-wave-closeout-compare.js';
 import { runO10Agent20IdleGovernanceProgramWaveAssemblyGateSelfTests } from './automation-idle-governance-program-wave-assembly-gate.js';
+import { runO10Agent20IdleGovernanceProgramWaveScorecardCompareSelfTests } from './automation-idle-governance-program-wave-scorecard-compare.js';
+import { runO10Agent20IdleGovernanceProgramWaveAssemblyRunSelfTests } from './automation-idle-governance-program-wave-assembly-run.js';
+import { runO10Agent20IdleGovernanceProgramWaveAssemblyExportSelfTests } from './automation-idle-governance-program-wave-assembly-export.js';
 
 /** Full module self-test bundle for Agent 25 dev lab registration. */
 export function runO10Agent20ModuleSelfTests(): {
@@ -201,6 +207,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceProgramWaveScorecardSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveCloseoutCompareSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveAssemblyGateSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveScorecardCompareSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveAssemblyRunSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveAssemblyExportSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }
