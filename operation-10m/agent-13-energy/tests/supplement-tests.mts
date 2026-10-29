@@ -215,6 +215,11 @@ import {
   V1014_CLIMATE_HARDENING_FEDERATION_TURN_SCENARIOS,
 } from '../modules/compound-climate-grid-hardening-federation-ledger.ts';
 import {
+  runAgent13SovereignInterconnectorInfrastructureScaleSelfTests,
+  runAgent13SovereignInterconnectorInfrastructureTurnScenario,
+  V1014_SOVEREIGN_INTERCONNECTOR_INFRA_TURN_SCENARIOS,
+} from '../modules/sovereign-interconnector-critical-infrastructure-federation-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -574,6 +579,18 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const offshoreWindExportTurn = runAgent13OffshoreWindExportTurnScenario(V1014_OFFSHORE_WIND_EXPORT_TURN_SCENARIOS[0]);
   ok(offshoreWindExportTurn.passed);
+
+  const climateHardening = runAgent13ClimateHardeningFederationScaleSelfTests();
+  ok(climateHardening.failed === 0 && climateHardening.passed >= 5);
+
+  const climateHardeningTurn = runAgent13ClimateHardeningFederationTurnScenario(V1014_CLIMATE_HARDENING_FEDERATION_TURN_SCENARIOS[0]);
+  ok(climateHardeningTurn.passed);
+
+  const sovereignInterconnector = runAgent13SovereignInterconnectorInfrastructureScaleSelfTests();
+  ok(sovereignInterconnector.failed === 0 && sovereignInterconnector.passed >= 5);
+
+  const sovereignInterconnectorTurn = runAgent13SovereignInterconnectorInfrastructureTurnScenario(V1014_SOVEREIGN_INTERCONNECTOR_INFRA_TURN_SCENARIOS[0]);
+  ok(sovereignInterconnectorTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

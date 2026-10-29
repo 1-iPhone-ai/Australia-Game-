@@ -6,7 +6,7 @@
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p operation-10m/agent-13-energy/tsconfig.json",
     "test": "npm run test:agent-13",
     "bundle:chunk": "npm run build:agent-13-chunk",
     "build:agent-13-chunk": "node operation-10m/agent-13-energy/scripts/bundle-chunk.mjs",
@@ -27,6 +27,7 @@
     "react-dom": "19.3.1"
   },
   "devDependencies": {
+    "@types/node": "^22.20.5",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "5.2.0",

@@ -12,5 +12,6 @@
     "isolatedModules": true,
     "types": ["vite/client"]
   },
-  "include": ["src", "(V9.4) australia-game-with-ai.tsx"]
+  "include": ["src", "operation-10m/agent-13-energy/**/*.ts", "operation-10m/agent-13-energy/**/*.tsx"],
+  "exclude": ["(V9.4) australia-game-with-ai.tsx"]
 }

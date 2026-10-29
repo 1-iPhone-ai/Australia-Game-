@@ -66,6 +66,7 @@ const FILES = [
   'transmission-mlf-merchant-arbitration-federation-ledger.ts',
   'offshore-floating-wind-export-corridor-federation-ledger.ts',
   'compound-climate-grid-hardening-federation-ledger.ts',
+  'sovereign-interconnector-critical-infrastructure-federation-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -297,6 +298,12 @@ const EXPORT_MANIFEST = [
   'runAgent13OffshoreWindExportFederationScaleSelfTests',
   'runAgent13OffshoreWindExportTurnScenario',
   'V1014_OFFSHORE_WIND_EXPORT_TURN_SCENARIOS',
+  'runAgent13ClimateHardeningFederationScaleSelfTests',
+  'runAgent13ClimateHardeningFederationTurnScenario',
+  'V1014_CLIMATE_HARDENING_FEDERATION_TURN_SCENARIOS',
+  'runAgent13SovereignInterconnectorInfrastructureScaleSelfTests',
+  'runAgent13SovereignInterconnectorInfrastructureTurnScenario',
+  'V1014_SOVEREIGN_INTERCONNECTOR_INFRA_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];
