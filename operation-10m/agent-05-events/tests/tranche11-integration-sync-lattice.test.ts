@@ -18,12 +18,12 @@ describe('Tranche 11 integration-sync-lattice catalog', () => {
   it('adds 320 integration-sync-lattice chains', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE11_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche11Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 3720);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 4040);
   });
 
   it('uses op10m_t11 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 3720);
+    assert.equal(ids.size, 4040);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE11) {
       assert.match(c.chainId, /^op10m_t11_/);
     }

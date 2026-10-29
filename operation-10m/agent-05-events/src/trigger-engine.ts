@@ -36,6 +36,10 @@ import {
   OP10M_CLOSURE_SEAL_READY_FLAG,
   OP10M_INTEGRATION_SYNC_GATE_FLAG,
 } from './compute-turn-integration-sync-coordinator.ts';
+import {
+  OP10M_ASSEMBLY_HANDOFF_WAVE_FLAG,
+  OP10M_SYNC_MANIFEST_LATCH_FLAG,
+} from './compute-turn-assembly-handoff-coordinator.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -276,6 +280,16 @@ export function evaluateRequirements(
       case 'closure_seal_ready':
         if (!sim.flags[OP10M_CLOSURE_SEAL_READY_FLAG]) {
           return { ok: false, reason: 'closure seal not ready' };
+        }
+        break;
+      case 'assembly_handoff_wave':
+        if (!sim.flags[OP10M_ASSEMBLY_HANDOFF_WAVE_FLAG]) {
+          return { ok: false, reason: 'no assembly handoff wave' };
+        }
+        break;
+      case 'sync_manifest_latch':
+        if (!sim.flags[OP10M_SYNC_MANIFEST_LATCH_FLAG]) {
+          return { ok: false, reason: 'sync manifest not latched' };
         }
         break;
       default:

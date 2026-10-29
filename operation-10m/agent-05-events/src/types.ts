@@ -1,7 +1,7 @@
 /** Operation 10M · Agent 05 — dynamic events & narrative (standalone contract). */
 
 export const OP10M_AGENT05_MODULE_ID = 'op10m_agent05_dynamic_events';
-export const OP10M_AGENT05_MODULE_VERSION = '1.9.0';
+export const OP10M_AGENT05_MODULE_VERSION = '1.10.0';
 export const OP10M_TURN_COMPUTE_DIGEST_FLAG = 'op10m_turn_compute_digest';
 
 export type Op10mChainPhase = 'signal' | 'pressure' | 'rupture' | 'recovery';
@@ -273,6 +273,14 @@ export interface Op10mTriggerRequireClosureSealReady {
   k: 'closure_seal_ready';
 }
 
+export interface Op10mTriggerRequireAssemblyHandoffWave {
+  k: 'assembly_handoff_wave';
+}
+
+export interface Op10mTriggerRequireSyncManifestLatch {
+  k: 'sync_manifest_latch';
+}
+
 export type Op10mComputeTurnStage =
   | 'pre_simulation'
   | 'post_simulation'
@@ -333,7 +341,9 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequireStabilizationClosureWave
   | Op10mTriggerRequireDigestClosureLatch
   | Op10mTriggerRequireIntegrationSyncGate
-  | Op10mTriggerRequireClosureSealReady;
+  | Op10mTriggerRequireClosureSealReady
+  | Op10mTriggerRequireAssemblyHandoffWave
+  | Op10mTriggerRequireSyncManifestLatch;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -431,6 +441,8 @@ export interface Op10mNarrativeEngineState {
     digestClosureLatches: number;
     integrationSyncGates: number;
     closureSealReadyPasses: number;
+    assemblyHandoffWaves: number;
+    syncManifestLatches: number;
   };
   regional?: Op10mRegionalContagionLedger;
   turnCompute?: Op10mTurnComputeLedger;
