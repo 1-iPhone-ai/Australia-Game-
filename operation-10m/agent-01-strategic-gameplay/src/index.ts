@@ -124,6 +124,7 @@ export {
   apexTranscendenceRankingBonus,
   zenithPerpetuityRankingBonus,
   paragonInfinityRankingBonus,
+  paramountAscendancyRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -479,6 +480,16 @@ export {
   applyParagonInfinityMandateBonus,
 } from './engine/coalition-paragon-infinity.ts';
 
+export { coalitionParamountAscendancyStreakIssues } from './engine/coalition-paramount-ascendancy-gates.ts';
+
+export {
+  PARAMOUNT_COALITION_ASCENDANCY_THRESHOLD,
+  advanceCoalitionParamountAscendancyStreak,
+  resetCoalitionParamountAscendancyStreak,
+  isParamountCoalitionAscendancy,
+  applyParamountAscendancyMandateBonus,
+} from './engine/coalition-paramount-ascendancy.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '4.6.0';
+export const AGENT_01_MODULE_VERSION = '4.7.0';

@@ -131,6 +131,8 @@ export interface StrategicActionDefinition {
   minCoalitionZenithPerpetuityStreakDays?: number;
   /** Action requires paragon infinity streak after zenith perpetuity. */
   minCoalitionParagonInfinityStreakDays?: number;
+  /** Action requires paramount ascendancy streak after paragon infinity. */
+  minCoalitionParamountAscendancyStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -202,7 +204,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_supreme_convergence_streak'; minDays: number }
   | { kind: 'min_coalition_apex_transcendence_streak'; minDays: number }
   | { kind: 'min_coalition_zenith_perpetuity_streak'; minDays: number }
-  | { kind: 'min_coalition_paragon_infinity_streak'; minDays: number };
+  | { kind: 'min_coalition_paragon_infinity_streak'; minDays: number }
+  | { kind: 'min_coalition_paramount_ascendancy_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -308,6 +311,8 @@ export interface StrategicGameplayState {
   coalitionZenithPerpetuityStreakDays?: number;
   /** Days zenith perpetuity held paragon infinity eligibility. */
   coalitionParagonInfinityStreakDays?: number;
+  /** Days paragon infinity held paramount ascendancy eligibility. */
+  coalitionParamountAscendancyStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;

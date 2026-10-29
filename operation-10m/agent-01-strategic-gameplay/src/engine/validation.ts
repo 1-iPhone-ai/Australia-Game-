@@ -56,6 +56,7 @@ import { coalitionSupremeConvergenceStreakIssues } from './coalition-supreme-con
 import { coalitionApexTranscendenceStreakIssues } from './coalition-apex-transcendence-gates.ts';
 import { coalitionZenithPerpetuityStreakIssues } from './coalition-zenith-perpetuity-gates.ts';
 import { coalitionParagonInfinityStreakIssues } from './coalition-paragon-infinity-gates.ts';
+import { coalitionParamountAscendancyStreakIssues } from './coalition-paramount-ascendancy-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -335,6 +336,7 @@ export function validateAction(
     issues.push(...coalitionApexTranscendenceStreakIssues(action, state));
     issues.push(...coalitionZenithPerpetuityStreakIssues(action, state));
     issues.push(...coalitionParagonInfinityStreakIssues(action, state));
+    issues.push(...coalitionParamountAscendancyStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

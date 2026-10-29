@@ -57,6 +57,7 @@ import { resetCoalitionSupremeConvergenceStreak } from './coalition-supreme-conv
 import { resetCoalitionApexTranscendenceStreak } from './coalition-apex-transcendence.ts';
 import { resetCoalitionZenithPerpetuityStreak } from './coalition-zenith-perpetuity.ts';
 import { resetCoalitionParagonInfinityStreak } from './coalition-paragon-infinity.ts';
+import { resetCoalitionParamountAscendancyStreak } from './coalition-paramount-ascendancy.ts';
 import {
   scoreNationalPriorityAlignment,
   validateAction,
@@ -109,6 +110,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     coalitionApexTranscendenceStreakDays: 0,
     coalitionZenithPerpetuityStreakDays: 0,
     coalitionParagonInfinityStreakDays: 0,
+    coalitionParamountAscendancyStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -431,6 +433,12 @@ export function executeStrategicAction(
   }
   if (action.id === 'sga_coalition_paragon_continuity_covenant') {
     nextState = resetCoalitionParagonInfinityStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_paramount_ascendancy_charter') {
+    nextState = resetCoalitionParamountAscendancyStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_paramount_continuity_pact') {
+    nextState = resetCoalitionParamountAscendancyStreak(nextState);
   }
 
   contracts.ui.pushToast({

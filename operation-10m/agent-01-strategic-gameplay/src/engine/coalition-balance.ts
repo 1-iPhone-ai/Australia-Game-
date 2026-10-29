@@ -338,3 +338,13 @@ export function paragonInfinityRankingBonus(
   if (streak >= action.minCoalitionParagonInfinityStreakDays) return 29;
   return 2;
 }
+
+export function paramountAscendancyRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionParamountAscendancyStreakDays === undefined) return 0;
+  const streak = state.coalitionParamountAscendancyStreakDays ?? 0;
+  if (streak >= action.minCoalitionParamountAscendancyStreakDays) return 30;
+  return 2;
+}
