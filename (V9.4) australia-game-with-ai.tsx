@@ -133348,7 +133348,7 @@ export function runV93ContentReplayabilitySelfTests(): V9SelfTestResult[] {
 
 
 // ============================================================================
-// SECTION 20P-A8: O111 REACT PERFORMANCE — LOAD_STATE COALESCING & V10 DIAG SNAPSHOTS
+// SECTION 20P-A87: O111 REACT PERFORMANCE — LOAD_STATE COALESCING & V10 DIAG SNAPSHOTS
 // ============================================================================
 // Agent 87 (Division I). Pure helpers + a dispatch wrapper that merge partial V10 band-memory
 // LOAD_STATE patches within one microtask so chained useEffects cause one reducer pass instead of
@@ -136687,7 +136687,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
-  { id: 'o111_a87', label: 'O111 React Performance (A8)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111ReactPerformanceSelfTests() },
+  { id: 'o111_a87', label: 'O111 React Performance (A87)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111ReactPerformanceSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
