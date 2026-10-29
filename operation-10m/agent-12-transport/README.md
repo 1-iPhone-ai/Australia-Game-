@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 31
+
+- Schema **`agent12/32`**: synthetic graphite battery anode export throughput, cyclone-resilient coastal freight readiness, electric bus depot charging logistics share (`graphiteBatteryAnodeExportPolicy`, `cycloneResilientCoastalFreightPolicy`, `electricBusDepotChargingLogisticsPolicy`)
+- Catalog: **432** assets, **107** corridors, **173** scenarios
+- Systems: `network/graphite-battery-anode-export-index.ts`, `operations/cyclone-resilient-coastal-freight-index.ts`, `productivity/electric-bus-depot-charging-logistics-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 30
 
 - Schema **`agent12/31`**: nickel–cobalt battery precursor export throughput, remote island sealift readiness, rail inland terminal automation share (`nickelCobaltBatteryPrecursorPolicy`, `remoteIslandSealiftPolicy`, `railInlandTerminalAutomationPolicy`)

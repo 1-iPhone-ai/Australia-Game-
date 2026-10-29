@@ -465,6 +465,23 @@ import {
   nationalRailInlandTerminalAutomationThroughputIndex,
   railInlandTerminalAutomationProductivityMultiplier,
 } from './rail-inland-terminal-automation-index.ts';
+import {
+  computeGraphiteBatteryAnodeExportByRegion,
+  graphiteBatteryAnodeExportProductivityMultiplier,
+  nationalGraphiteBatteryAnodeExportIndex,
+} from '../network/graphite-battery-anode-export-index.ts';
+import {
+  computeCycloneResilientCoastalFreightByRegion,
+  computeCycloneResilientCoastalFreightShare,
+  cycloneResilientCoastalFreightProductivityMultiplier,
+  nationalCycloneResilientCoastalFreightIndex,
+} from '../operations/cyclone-resilient-coastal-freight-index.ts';
+import {
+  computeElectricBusDepotChargingLogisticsShare,
+  computeElectricBusDepotChargingLogisticsThroughputByRegion,
+  electricBusDepotChargingLogisticsProductivityMultiplier,
+  nationalElectricBusDepotChargingLogisticsThroughputIndex,
+} from './electric-bus-depot-charging-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1505,6 +1522,35 @@ export function computeTransportInfrastructureState(
     railInlandTerminalAutomationShare,
     options?.railInlandTerminalAutomationPolicy ?? 'baseline',
   );
+  const graphiteBatteryAnodeExportByRegion = computeGraphiteBatteryAnodeExportByRegion(ops);
+  const nationalGraphiteAnode = nationalGraphiteBatteryAnodeExportIndex(graphiteBatteryAnodeExportByRegion);
+  const graphiteAnodeMult = graphiteBatteryAnodeExportProductivityMultiplier(
+    nationalGraphiteAnode,
+    options?.graphiteBatteryAnodeExportPolicy ?? 'baseline',
+  );
+  const cycloneResilientCoastalFreightByRegion = computeCycloneResilientCoastalFreightByRegion(ops, networkStress);
+  const nationalCycloneCoastal = nationalCycloneResilientCoastalFreightIndex(cycloneResilientCoastalFreightByRegion);
+  const cycloneResilientCoastalFreightShare = computeCycloneResilientCoastalFreightShare(
+    ops,
+    options?.cycloneResilientCoastalFreightPolicy ?? 'baseline',
+  );
+  const cycloneCoastalMult = cycloneResilientCoastalFreightProductivityMultiplier(
+    cycloneResilientCoastalFreightShare,
+    options?.cycloneResilientCoastalFreightPolicy ?? 'baseline',
+  );
+  const electricBusDepotChargingLogisticsThroughputByRegion =
+    computeElectricBusDepotChargingLogisticsThroughputByRegion(ops);
+  const nationalEbusDepot = nationalElectricBusDepotChargingLogisticsThroughputIndex(
+    electricBusDepotChargingLogisticsThroughputByRegion,
+  );
+  const electricBusDepotChargingLogisticsShare = computeElectricBusDepotChargingLogisticsShare(
+    ops,
+    options?.electricBusDepotChargingLogisticsPolicy ?? 'baseline',
+  );
+  const ebusDepotMult = electricBusDepotChargingLogisticsProductivityMultiplier(
+    electricBusDepotChargingLogisticsShare,
+    options?.electricBusDepotChargingLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1552,6 +1598,9 @@ export function computeTransportInfrastructureState(
     const nickelPrecursorBoost = (nickelCobaltBatteryPrecursorByRegion[code] - 5) * 0.0038;
     const remoteSealiftBoost = (remoteIslandSealiftByRegion[code] - 6) * 0.0034;
     const inlandTerminalAutoBoost = (railInlandTerminalAutomationThroughputByRegion[code] - 1.8) * 0.003;
+    const graphiteAnodeBoost = (graphiteBatteryAnodeExportByRegion[code] - 5) * 0.0037;
+    const cycloneCoastalBoost = (cycloneResilientCoastalFreightByRegion[code] - 6) * 0.0033;
+    const ebusDepotBoost = (electricBusDepotChargingLogisticsThroughputByRegion[code] - 1.8) * 0.0029;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -1598,7 +1647,10 @@ export function computeTransportInfrastructureState(
         yardAutoBoost +
         nickelPrecursorBoost +
         remoteSealiftBoost +
-        inlandTerminalAutoBoost) *
+        inlandTerminalAutoBoost +
+        graphiteAnodeBoost +
+        cycloneCoastalBoost +
+        ebusDepotBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -1643,7 +1695,10 @@ export function computeTransportInfrastructureState(
       yardAutoMult *
       nickelPrecursorMult *
       remoteSealiftMult *
-      inlandTerminalAutoMult;
+      inlandTerminalAutoMult *
+      graphiteAnodeMult *
+      cycloneCoastalMult *
+      ebusDepotMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -1711,7 +1766,10 @@ export function computeTransportInfrastructureState(
     nationalContainerYardAuto * 0.003 +
     nationalNickelPrecursor * 0.003 +
     nationalRemoteSealift * 0.003 +
-    nationalInlandTerminalAuto * 0.003;
+    nationalInlandTerminalAuto * 0.003 +
+    nationalGraphiteAnode * 0.003 +
+    nationalCycloneCoastal * 0.003 +
+    nationalEbusDepot * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -1726,7 +1784,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/31',
+    schemaVersion: 'agent12/32',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -1940,6 +1998,14 @@ export function computeTransportInfrastructureState(
     railInlandTerminalAutomationShare,
     nationalRailInlandTerminalAutomationThroughputIndex: nationalInlandTerminalAuto,
     railInlandTerminalAutomationThroughputByRegion,
+    nationalGraphiteBatteryAnodeExportIndex: nationalGraphiteAnode,
+    graphiteBatteryAnodeExportByRegion,
+    cycloneResilientCoastalFreightShare,
+    nationalCycloneResilientCoastalFreightIndex: nationalCycloneCoastal,
+    cycloneResilientCoastalFreightByRegion,
+    electricBusDepotChargingLogisticsShare,
+    nationalElectricBusDepotChargingLogisticsThroughputIndex: nationalEbusDepot,
+    electricBusDepotChargingLogisticsThroughputByRegion,
     computeMs,
   };
 }

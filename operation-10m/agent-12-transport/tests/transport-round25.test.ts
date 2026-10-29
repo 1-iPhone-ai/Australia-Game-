@@ -37,13 +37,13 @@ describe('Agent 12 round 25 catalog', () => {
 });
 
 describe('Agent 12 round 25 systems', () => {
-  it('returns agent12/31 with SAF supply, outback diesel, double-stack rail', () => {
+  it('returns agent12/32 with SAF supply, outback diesel, double-stack rail', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(220), {
       sustainableAviationFuelSupplyPolicy: 'expand',
       outbackDieselSecurityPolicy: 'harden',
       railDoubleStackContainerPolicy: 'deploy',
     });
-    assert.equal(state.schemaVersion, 'agent12/31');
+    assert.equal(state.schemaVersion, 'agent12/32');
     assert.ok(state.nationalSustainableAviationFuelSupplyIndex >= 5);
     assert.ok(state.nationalOutbackDieselSecurityIndex >= 5);
     assert.ok(state.railDoubleStackContainerShare >= 0.03);

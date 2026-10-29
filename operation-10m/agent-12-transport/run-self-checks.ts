@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/31' &&
+      infra.schemaVersion === 'agent12/32' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -174,8 +174,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalNickelCobaltBatteryPrecursorIndex >= 5 &&
       infra.nationalRemoteIslandSealiftIndex >= 6 &&
       infra.railInlandTerminalAutomationShare >= 0.03 &&
-      infra.nationalRailInlandTerminalAutomationThroughputIndex >= 1.8,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} nickel=${infra.nationalNickelCobaltBatteryPrecursorIndex.toFixed(1)} sealift=${infra.nationalRemoteIslandSealiftIndex.toFixed(1)} inland=${infra.nationalRailInlandTerminalAutomationThroughputIndex.toFixed(1)}`,
+      infra.nationalRailInlandTerminalAutomationThroughputIndex >= 1.8 &&
+      infra.nationalGraphiteBatteryAnodeExportIndex >= 5 &&
+      infra.nationalCycloneResilientCoastalFreightIndex >= 6 &&
+      infra.electricBusDepotChargingLogisticsShare >= 0.03 &&
+      infra.nationalElectricBusDepotChargingLogisticsThroughputIndex >= 1.8,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} graphite=${infra.nationalGraphiteBatteryAnodeExportIndex.toFixed(1)} cyclone=${infra.nationalCycloneResilientCoastalFreightIndex.toFixed(1)} ebus=${infra.nationalElectricBusDepotChargingLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;

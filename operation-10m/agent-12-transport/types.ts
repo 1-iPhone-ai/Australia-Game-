@@ -333,8 +333,14 @@ export type RemoteIslandSealiftPolicy = 'baseline' | 'surge';
 
 export type RailInlandTerminalAutomationPolicy = 'baseline' | 'deploy';
 
+export type GraphiteBatteryAnodeExportPolicy = 'baseline' | 'accelerate';
+
+export type CycloneResilientCoastalFreightPolicy = 'baseline' | 'harden';
+
+export type ElectricBusDepotChargingLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/31';
+  schemaVersion: 'agent12/32';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -548,6 +554,14 @@ export interface TransportInfrastructureState {
   railInlandTerminalAutomationShare: number;
   nationalRailInlandTerminalAutomationThroughputIndex: number;
   railInlandTerminalAutomationThroughputByRegion: Record<AuRegionCode, number>;
+  nationalGraphiteBatteryAnodeExportIndex: number;
+  graphiteBatteryAnodeExportByRegion: Record<AuRegionCode, number>;
+  cycloneResilientCoastalFreightShare: number;
+  nationalCycloneResilientCoastalFreightIndex: number;
+  cycloneResilientCoastalFreightByRegion: Record<AuRegionCode, number>;
+  electricBusDepotChargingLogisticsShare: number;
+  nationalElectricBusDepotChargingLogisticsThroughputIndex: number;
+  electricBusDepotChargingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -631,6 +645,9 @@ export interface TransportInfrastructureOptions {
   nickelCobaltBatteryPrecursorPolicy?: NickelCobaltBatteryPrecursorPolicy;
   remoteIslandSealiftPolicy?: RemoteIslandSealiftPolicy;
   railInlandTerminalAutomationPolicy?: RailInlandTerminalAutomationPolicy;
+  graphiteBatteryAnodeExportPolicy?: GraphiteBatteryAnodeExportPolicy;
+  cycloneResilientCoastalFreightPolicy?: CycloneResilientCoastalFreightPolicy;
+  electricBusDepotChargingLogisticsPolicy?: ElectricBusDepotChargingLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {

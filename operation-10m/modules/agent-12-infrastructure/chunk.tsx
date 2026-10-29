@@ -337,8 +337,14 @@ export type RemoteIslandSealiftPolicy = 'baseline' | 'surge';
 
 export type RailInlandTerminalAutomationPolicy = 'baseline' | 'deploy';
 
+export type GraphiteBatteryAnodeExportPolicy = 'baseline' | 'accelerate';
+
+export type CycloneResilientCoastalFreightPolicy = 'baseline' | 'harden';
+
+export type ElectricBusDepotChargingLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/31';
+  schemaVersion: 'agent12/32';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -552,6 +558,14 @@ export interface TransportInfrastructureState {
   railInlandTerminalAutomationShare: number;
   nationalRailInlandTerminalAutomationThroughputIndex: number;
   railInlandTerminalAutomationThroughputByRegion: Record<AuRegionCode, number>;
+  nationalGraphiteBatteryAnodeExportIndex: number;
+  graphiteBatteryAnodeExportByRegion: Record<AuRegionCode, number>;
+  cycloneResilientCoastalFreightShare: number;
+  nationalCycloneResilientCoastalFreightIndex: number;
+  cycloneResilientCoastalFreightByRegion: Record<AuRegionCode, number>;
+  electricBusDepotChargingLogisticsShare: number;
+  nationalElectricBusDepotChargingLogisticsThroughputIndex: number;
+  electricBusDepotChargingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -635,6 +649,9 @@ export interface TransportInfrastructureOptions {
   nickelCobaltBatteryPrecursorPolicy?: NickelCobaltBatteryPrecursorPolicy;
   remoteIslandSealiftPolicy?: RemoteIslandSealiftPolicy;
   railInlandTerminalAutomationPolicy?: RailInlandTerminalAutomationPolicy;
+  graphiteBatteryAnodeExportPolicy?: GraphiteBatteryAnodeExportPolicy;
+  cycloneResilientCoastalFreightPolicy?: CycloneResilientCoastalFreightPolicy;
+  electricBusDepotChargingLogisticsPolicy?: ElectricBusDepotChargingLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -1954,6 +1971,48 @@ export const TRANSPORT_CORRIDORS_ROUND30: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round31.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND31: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_qld_graphite_anode',
+    name: 'WA–QLD Graphite Anode',
+    networkKind: 'trade',
+    regionSequence: ['WA', 'QLD'],
+    requiredTagsByRegion: {
+      WA: ['graphite_anode_export', 'battery_anode_feed', 'synthetic_graphite_rail'],
+      QLD: ['graphite_anode_export', 'battery_anode_feed', 'synthetic_graphite_rail'],
+    },
+    productivitySynergyPoints: 6.1,
+    logisticsRelief: 0.037,
+  },
+  {
+    id: 'corr_nt_qld_cyclone_coastal',
+    name: 'NT–QLD Cyclone Coastal',
+    networkKind: 'freight',
+    regionSequence: ['NT', 'QLD'],
+    requiredTagsByRegion: {
+      NT: ['cyclone_resilient_coastal', 'tropical_storm_routing', 'coastal_freight_harden'],
+      QLD: ['cyclone_resilient_coastal', 'tropical_storm_routing', 'coastal_freight_harden'],
+    },
+    productivitySynergyPoints: 5.8,
+    logisticsRelief: 0.032,
+  },
+  {
+    id: 'corr_nsw_vic_ebus_depot',
+    name: 'NSW–VIC E-Bus Depot',
+    networkKind: 'mobility',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['e_bus_depot_charge', 'transit_depot_logistics', 'fleet_charge_staging'],
+      VIC: ['e_bus_depot_charge', 'transit_depot_logistics', 'fleet_charge_staging'],
+    },
+    productivitySynergyPoints: 5.6,
+    logisticsRelief: 0.029,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -2131,6 +2190,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND28,
   ...TRANSPORT_CORRIDORS_ROUND29,
   ...TRANSPORT_CORRIDORS_ROUND30,
+  ...TRANSPORT_CORRIDORS_ROUND31,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -3787,6 +3847,118 @@ export const TRANSPORT_SCENARIOS_ROUND29: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round30.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND30: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_nickel_precursor_surge',
+    label: 'WA Nickel Precursor Surge',
+    description: 'Battery demand rush overloads Esperance precursor berths.',
+    targetRegions: ['WA', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_nsw_cathode_feed_rail_delay',
+    label: 'NSW Cathode Feed Rail Delay',
+    description: 'Possession delays Hunter precursor export slots.',
+    targetRegions: ['NSW', 'WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail'],
+  },
+  {
+    id: 'scn_qld_pacific_sealift_surge',
+    label: 'Queensland Pacific Sealift Surge',
+    description: 'Cyclone season strains Townsville island sealift.',
+    targetRegions: ['QLD', 'TAS'],
+    networkKind: 'trade',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_tas_island_supply_hold',
+    label: 'Tasmania Island Supply Hold',
+    description: 'Weather hold backs up Burnie sea-lift staging.',
+    targetRegions: ['TAS', 'QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.2,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port'],
+  },
+  {
+    id: 'scn_nsw_inland_gantry_fault',
+    label: 'NSW Inland Gantry Fault',
+    description: 'Robot gantry fault cuts Parkes terminal throughput.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.21,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'rail'],
+  },
+];
+
+
+// --- source: catalog/scenarios-round31.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND31: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_graphite_anode_surge',
+    label: 'WA Graphite Anode Surge',
+    description: 'Battery anode demand overloads Geraldton export berths.',
+    targetRegions: ['WA', 'QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_qld_cyclone_port_closure',
+    label: 'Queensland Cyclone Port Closure',
+    description: 'Category storm shutters Mackay coastal freight.',
+    targetRegions: ['QLD', 'NT'],
+    networkKind: 'freight',
+    utilizationAdd: 0.28,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'road'],
+  },
+  {
+    id: 'scn_nt_darwin_cyclone_hold',
+    label: 'Darwin Cyclone Hold',
+    description: 'Tropical low delays Darwin staging handoffs.',
+    targetRegions: ['NT', 'QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port'],
+  },
+  {
+    id: 'scn_nsw_ebus_depot_peak',
+    label: 'NSW E-Bus Depot Peak',
+    description: 'Fleet rollout strains Blacktown charge staging.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.19,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_vic_depot_charger_fault',
+    label: 'Victoria Depot Charger Fault',
+    description: 'Charge bay fault cuts Coburg depot throughput.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.2,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -3978,6 +4150,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND28,
   ...TRANSPORT_SCENARIOS_ROUND29,
   ...TRANSPORT_SCENARIOS_ROUND30,
+  ...TRANSPORT_SCENARIOS_ROUND31,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -11317,6 +11490,460 @@ export const SCALE_WAVE_ROUND29_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round30-assets.ts ---
+
+export const ROUND30_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_kalgoorlie_nickel_haul',
+    category: 'road',
+    name: 'Kalgoorlie Nickel Precursor Haul',
+    description: 'Critical mineral road feed to cathode export rail.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'NSW'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['nickel_cobalt_precursor', 'battery_cathode_feed', 'critical_mineral_rail'],
+    laneKilometres: 50,
+    designSpeedKmh: 88,
+    freightShare: 0.43,
+    urbanShare: 0.03,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_newcastle_precursor_feed',
+    category: 'road',
+    name: 'Newcastle Precursor Feed',
+    description: 'NSW battery cathode feed road to export ports.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'WA'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['trade'],
+    tags: ['nickel_cobalt_precursor', 'battery_cathode_feed', 'critical_mineral_rail'],
+    laneKilometres: 28,
+    designSpeedKmh: 84,
+    freightShare: 0.35,
+    urbanShare: 0.14,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_cairns_island_sealift',
+    category: 'road',
+    name: 'Cairns Island Sealift Feed',
+    description: 'Pacific island supply road to sea-lift staging.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'TAS'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['trade', 'mobility'],
+    tags: ['remote_island_sealift', 'pacific_island_supply', 'sea_lift_staging'],
+    laneKilometres: 26,
+    designSpeedKmh: 80,
+    freightShare: 0.22,
+    urbanShare: 0.18,
+    tollRoad: false,
+  },
+  {
+    id: 'road_tas_hobart_sealift_staging',
+    category: 'road',
+    name: 'Hobart Sealift Staging Road',
+    description: 'Tasmanian remote island sea-lift access.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'QLD'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['trade'],
+    tags: ['remote_island_sealift', 'pacific_island_supply', 'sea_lift_staging'],
+    laneKilometres: 18,
+    designSpeedKmh: 78,
+    freightShare: 0.19,
+    urbanShare: 0.25,
+    tollRoad: false,
+  },
+];
+
+export const ROUND30_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_goldfields_nickel_rail',
+    category: 'rail',
+    name: 'Goldfields Nickel Precursor Rail',
+    description: 'WA critical mineral cathode-feed export line.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'NSW'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['nickel_cobalt_precursor', 'battery_cathode_feed', 'critical_mineral_rail'],
+    trackKilometres: 108,
+    dualTrackShare: 0.46,
+    electrifiedShare: 0.17,
+    designFreightTonnesPerYear: 7_800_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nsw_hunter_precursor_link',
+    category: 'rail',
+    name: 'Hunter Precursor Link',
+    description: 'NSW battery precursor export rail corridor.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'WA'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['trade'],
+    tags: ['nickel_cobalt_precursor', 'battery_cathode_feed', 'critical_mineral_rail'],
+    trackKilometres: 42,
+    dualTrackShare: 0.5,
+    electrifiedShare: 0.55,
+    designFreightTonnesPerYear: 4_200_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_nsw_parkes_inland_terminal_auto',
+    category: 'rail',
+    name: 'Parkes Inland Terminal Auto Rail',
+    description: 'Automated gantry inland rail terminal feed.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['freight'],
+    tags: ['inland_terminal_auto', 'rail_terminal_robot', 'automated_gantry'],
+    trackKilometres: 26,
+    dualTrackShare: 0.54,
+    electrifiedShare: 0.48,
+    designFreightTonnesPerYear: 3_800_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND30_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_espance_nickel_export',
+    category: 'port',
+    name: 'Esperance Nickel Export',
+    description: 'WA nickel–cobalt precursor bulk export berths.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'NSW'],
+    baseProductivityPoints: 5.8,
+    strategicNetworks: ['trade'],
+    tags: ['nickel_cobalt_precursor', 'battery_cathode_feed', 'critical_mineral_rail', 'bulk'],
+    berthCount: 3,
+    maxDraftMetres: 14.0,
+    teuCapacityPerYear: 125_000,
+    automationLevel: 2,
+    bulkShare: 0.7,
+  },
+  {
+    id: 'port_qld_townsville_island_sealift',
+    category: 'port',
+    name: 'Townsville Island Sealift',
+    description: 'Pacific remote island sea-lift staging port.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'TAS'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade', 'mobility'],
+    tags: ['remote_island_sealift', 'pacific_island_supply', 'sea_lift_staging'],
+    berthCount: 3,
+    maxDraftMetres: 12.5,
+    teuCapacityPerYear: 220_000,
+    automationLevel: 1,
+    bulkShare: 0.2,
+  },
+  {
+    id: 'port_tas_burnie_sealift_hub',
+    category: 'port',
+    name: 'Burnie Sealift Hub',
+    description: 'Tasmanian Pacific supply and sea-lift handoff.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'QLD'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['trade'],
+    tags: ['remote_island_sealift', 'pacific_island_supply', 'sea_lift_staging'],
+    berthCount: 2,
+    maxDraftMetres: 11.8,
+    teuCapacityPerYear: 105_000,
+    automationLevel: 1,
+    bulkShare: 0.18,
+  },
+];
+
+export const ROUND30_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_nsw_parkes_inland_auto_yard',
+    category: 'logistics',
+    name: 'Parkes Inland Auto Yard',
+    description: 'NSW automated gantry inland rail terminal staging.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['freight'],
+    tags: ['inland_terminal_auto', 'rail_terminal_robot', 'automated_gantry'],
+    warehouseSqm: 78_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 51,
+  },
+  {
+    id: 'log_vic_somerton_inland_auto_dc',
+    category: 'logistics',
+    name: 'Somerton Inland Terminal Auto DC',
+    description: 'Victorian rail terminal robot intermodal yard.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['inland_terminal_auto', 'rail_terminal_robot', 'automated_gantry'],
+    warehouseSqm: 71_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 64,
+  },
+  {
+    id: 'log_qld_townsville_pacific_stores',
+    category: 'logistics',
+    name: 'Townsville Pacific Stores',
+    description: 'QLD Pacific island supply consolidation.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'TAS'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['trade'],
+    tags: ['remote_island_sealift', 'pacific_island_supply', 'sea_lift_staging'],
+    warehouseSqm: 54_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 46,
+  },
+];
+
+export const SCALE_WAVE_ROUND30_ASSETS = [
+  ...ROUND30_ROADS,
+  ...ROUND30_RAIL,
+  ...ROUND30_PORTS,
+  ...ROUND30_LOGISTICS,
+];
+
+
+// --- source: catalog/scale-wave-round31-assets.ts ---
+
+export const ROUND31_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_pilbara_graphite_haul',
+    category: 'road',
+    name: 'Pilbara Graphite Anode Haul',
+    description: 'WA synthetic graphite feed road to export rail.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['graphite_anode_export', 'battery_anode_feed', 'synthetic_graphite_rail'],
+    laneKilometres: 48,
+    designSpeedKmh: 86,
+    freightShare: 0.41,
+    urbanShare: 0.04,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_townsville_cyclone_feed',
+    category: 'road',
+    name: 'Townsville Cyclone Coastal Feed',
+    description: 'Tropical storm-hardened coastal freight access.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NT'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['cyclone_resilient_coastal', 'tropical_storm_routing', 'coastal_freight_harden'],
+    laneKilometres: 32,
+    designSpeedKmh: 82,
+    freightShare: 0.28,
+    urbanShare: 0.16,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_parramatta_ebus_depot',
+    category: 'road',
+    name: 'Parramatta E-Bus Depot Access',
+    description: 'NSW transit depot charging fleet staging road.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['e_bus_depot_charge', 'transit_depot_logistics', 'fleet_charge_staging'],
+    laneKilometres: 14,
+    designSpeedKmh: 72,
+    freightShare: 0.12,
+    urbanShare: 0.62,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_dandenong_ebus_staging',
+    category: 'road',
+    name: 'Dandenong E-Bus Staging',
+    description: 'Victorian depot charge logistics connector.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['mobility'],
+    tags: ['e_bus_depot_charge', 'transit_depot_logistics', 'fleet_charge_staging'],
+    laneKilometres: 12,
+    designSpeedKmh: 70,
+    freightShare: 0.1,
+    urbanShare: 0.58,
+    tollRoad: false,
+  },
+];
+
+export const ROUND31_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_pilbara_graphite_export',
+    category: 'rail',
+    name: 'Pilbara Graphite Export Rail',
+    description: 'WA battery anode synthetic graphite export line.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['graphite_anode_export', 'battery_anode_feed', 'synthetic_graphite_rail'],
+    trackKilometres: 102,
+    dualTrackShare: 0.44,
+    electrifiedShare: 0.19,
+    designFreightTonnesPerYear: 7_400_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_qld_coastal_cyclone_rail',
+    category: 'rail',
+    name: 'North Queensland Cyclone Rail',
+    description: 'Cyclone-resilient coastal freight corridor.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NT'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['cyclone_resilient_coastal', 'tropical_storm_routing', 'coastal_freight_harden'],
+    trackKilometres: 88,
+    dualTrackShare: 0.42,
+    electrifiedShare: 0.22,
+    designFreightTonnesPerYear: 5_600_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_qld_gladstone_graphite_link',
+    category: 'rail',
+    name: 'Gladstone Graphite Link',
+    description: 'QLD anode feed rail to deep-sea export.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['trade'],
+    tags: ['graphite_anode_export', 'battery_anode_feed', 'synthetic_graphite_rail'],
+    trackKilometres: 36,
+    dualTrackShare: 0.48,
+    electrifiedShare: 0.51,
+    designFreightTonnesPerYear: 3_900_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND31_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_geraldton_graphite_export',
+    category: 'port',
+    name: 'Geraldton Graphite Export',
+    description: 'WA synthetic graphite anode bulk export berths.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.7,
+    strategicNetworks: ['trade'],
+    tags: ['graphite_anode_export', 'battery_anode_feed', 'synthetic_graphite_rail', 'bulk'],
+    berthCount: 3,
+    maxDraftMetres: 13.8,
+    teuCapacityPerYear: 118_000,
+    automationLevel: 2,
+    bulkShare: 0.68,
+  },
+  {
+    id: 'port_qld_mackay_cyclone_port',
+    category: 'port',
+    name: 'Mackay Cyclone Resilient Port',
+    description: 'Tropical storm-hardened coastal freight gateway.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NT'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['cyclone_resilient_coastal', 'tropical_storm_routing', 'coastal_freight_harden'],
+    berthCount: 3,
+    maxDraftMetres: 12.2,
+    teuCapacityPerYear: 195_000,
+    automationLevel: 1,
+    bulkShare: 0.32,
+  },
+  {
+    id: 'port_nt_darwin_cyclone_staging',
+    category: 'port',
+    name: 'Darwin Cyclone Staging',
+    description: 'NT tropical freight resilience handoff port.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'QLD'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['trade'],
+    tags: ['cyclone_resilient_coastal', 'tropical_storm_routing', 'coastal_freight_harden'],
+    berthCount: 2,
+    maxDraftMetres: 13.5,
+    teuCapacityPerYear: 142_000,
+    automationLevel: 2,
+    bulkShare: 0.28,
+  },
+];
+
+export const ROUND31_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_qld_gladstone_anode_stores',
+    category: 'logistics',
+    name: 'Gladstone Anode Stores',
+    description: 'QLD battery anode feed consolidation yard.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['trade'],
+    tags: ['graphite_anode_export', 'battery_anode_feed', 'synthetic_graphite_rail'],
+    warehouseSqm: 76_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 49,
+  },
+  {
+    id: 'log_nsw_blacktown_ebus_depot',
+    category: 'logistics',
+    name: 'Blacktown E-Bus Depot Logistics',
+    description: 'NSW fleet charge staging and parts logistics.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['mobility'],
+    tags: ['e_bus_depot_charge', 'transit_depot_logistics', 'fleet_charge_staging'],
+    warehouseSqm: 42_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road'],
+    lastMileCoveragePct: 78,
+  },
+  {
+    id: 'log_vic_coburg_ebus_charge_yard',
+    category: 'logistics',
+    name: 'Coburg E-Bus Charge Yard',
+    description: 'Victorian transit depot charging logistics hub.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['e_bus_depot_charge', 'transit_depot_logistics', 'fleet_charge_staging'],
+    warehouseSqm: 38_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 71,
+  },
+];
+
+export const SCALE_WAVE_ROUND31_ASSETS = [
+  ...ROUND31_ROADS,
+  ...ROUND31_RAIL,
+  ...ROUND31_PORTS,
+  ...ROUND31_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -11355,6 +11982,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND28_ASSETS,
     ...SCALE_WAVE_ROUND29_ASSETS,
     ...SCALE_WAVE_ROUND30_ASSETS,
+    ...SCALE_WAVE_ROUND31_ASSETS,
   ];
 }
 
@@ -12980,6 +13608,122 @@ export function aluminaRefineryExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.038 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.043 + policyBoost, 0.93, 1.1);
+}
+
+
+// --- source: network/nickel-cobalt-battery-precursor-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type NickelCobaltBatteryPrecursorPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 nickel–cobalt battery precursor and cathode-feed export throughput by region. */
+export function computeNickelCobaltBatteryPrecursorByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) => t === 'nickel_cobalt_precursor' || t === 'battery_cathode_feed' || t === 'critical_mineral_rail',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.2 + asset.bulkShare * 4.8;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 83_000 + asset.intermodalLinks.length * 0.77;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 550;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 9_600_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalNickelCobaltBatteryPrecursorIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.48 + max * 0.52, 5, 76) * 10) / 10;
+}
+
+export function nickelCobaltBatteryPrecursorProductivityMultiplier(
+  index: number,
+  policy: NickelCobaltBatteryPrecursorPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.037 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.042 + policyBoost, 0.93, 1.1);
+}
+
+
+// --- source: network/graphite-battery-anode-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type GraphiteBatteryAnodeExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 synthetic graphite battery anode export throughput by region. */
+export function computeGraphiteBatteryAnodeExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) => t === 'graphite_anode_export' || t === 'battery_anode_feed' || t === 'synthetic_graphite_rail',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.1 + asset.bulkShare * 4.6;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 81_000 + asset.intermodalLinks.length * 0.74;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 540;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 9_400_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalGraphiteBatteryAnodeExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.47 + max * 0.53, 5, 75) * 10) / 10;
+}
+
+export function graphiteBatteryAnodeExportProductivityMultiplier(
+  index: number,
+  policy: GraphiteBatteryAnodeExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.036 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.041 + policyBoost, 0.93, 1.1);
 }
 
 
@@ -14981,6 +15725,179 @@ export function disasterReliefAirBridgeProductivityMultiplier(
 ): number {
   const bias = policy === 'surge' ? 1.021 : 1;
   return (1 + (share - 0.05) * 0.029) * bias;
+}
+
+
+// --- source: operations/remote-island-sealift-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RemoteIslandSealiftPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 remote island sealift and Pacific supply readiness by region. */
+export function computeRemoteIslandSealiftByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'remote_island_sealift' || t === 'pacific_island_supply' || t === 'sea_lift_staging',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.0 + asset.teuCapacityPerYear / 310_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 80_000 + (asset.coldChainCapable ? 1.3 : 0.7);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 610;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 16_200_000;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.035 - stress * 0.028), 5, 80) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRemoteIslandSealiftIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.49 + max * 0.51, 6, 78) * 10) / 10;
+}
+
+export function computeRemoteIslandSealiftShare(
+  operationalAssets: TransportAsset[],
+  policy: RemoteIslandSealiftPolicy = 'baseline',
+): number {
+  let sealiftUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('remote_island_sealift') || asset.tags.includes('pacific_island_supply')) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.4;
+        sealiftUnits += asset.berthCount * 0.95;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 74_000;
+        sealiftUnits += asset.warehouseSqm / 74_000 * 0.61;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.035;
+  const policyBoost = policy === 'surge' ? 0.03 : 0;
+  return Math.round(clamp(sealiftUnits / totalUnits + policyBoost, 0.034, 0.27) * 1000) / 1000;
+}
+
+export function remoteIslandSealiftProductivityMultiplier(
+  share: number,
+  policy: RemoteIslandSealiftPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.022 : 1;
+  return (1 + (share - 0.051) * 0.028) * bias;
+}
+
+
+// --- source: operations/cyclone-resilient-coastal-freight-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type CycloneResilientCoastalFreightPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 cyclone-resilient coastal freight routing readiness by region. */
+export function computeCycloneResilientCoastalFreightByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'cyclone_resilient_coastal' || t === 'tropical_storm_routing' || t === 'coastal_freight_harden',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.95 + asset.maxDraftMetres * 0.42;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 79_000 + (asset.coldChainCapable ? 1.2 : 0.65);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 580;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 15_800_000;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.04 - stress * 0.026), 5, 79) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalCycloneResilientCoastalFreightIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 6, 77) * 10) / 10;
+}
+
+export function computeCycloneResilientCoastalFreightShare(
+  operationalAssets: TransportAsset[],
+  policy: CycloneResilientCoastalFreightPolicy = 'baseline',
+): number {
+  let resilientUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('cyclone_resilient_coastal') || asset.tags.includes('tropical_storm_routing')) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.35;
+        resilientUnits += asset.berthCount * 0.92;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 520;
+        resilientUnits += (asset.laneKilometres / 520) * 0.58;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.036;
+  const policyBoost = policy === 'harden' ? 0.029 : 0;
+  return Math.round(clamp(resilientUnits / totalUnits + policyBoost, 0.035, 0.26) * 1000) / 1000;
+}
+
+export function cycloneResilientCoastalFreightProductivityMultiplier(
+  share: number,
+  policy: CycloneResilientCoastalFreightPolicy,
+): number {
+  const bias = policy === 'harden' ? 1.021 : 1;
+  return (1 + (share - 0.052) * 0.027) * bias;
 }
 
 
@@ -17216,6 +18133,178 @@ export function nationalContainerYardAutomationThroughputIndex(
 }
 
 
+// --- source: productivity/rail-inland-terminal-automation-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RailInlandTerminalAutomationPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of inland rail terminal moves using automated gantry systems. */
+export function computeRailInlandTerminalAutomationShare(
+  operationalAssets: TransportAsset[],
+  policy: RailInlandTerminalAutomationPolicy = 'baseline',
+): number {
+  let autoUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) => t === 'inland_terminal_auto' || t === 'rail_terminal_robot' || t === 'automated_gantry',
+      )
+    ) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 56_000 + asset.intermodalLinks.length * 0.85;
+        autoUnits += (asset.warehouseSqm / 56_000) * 0.6 + asset.intermodalLinks.length * 0.52;
+      }
+      if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+        totalUnits += asset.designFreightTonnesPerYear / 8_200_000;
+        autoUnits += (asset.designFreightTonnesPerYear / 8_200_000) * 0.57;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.037;
+  const policyBoost = policy === 'deploy' ? 0.031 : 0;
+  return Math.round(clamp(autoUnits / totalUnits + policyBoost, 0.036, 0.3) * 1000) / 1000;
+}
+
+export function railInlandTerminalAutomationProductivityMultiplier(
+  share: number,
+  policy: RailInlandTerminalAutomationPolicy,
+): number {
+  const bias = policy === 'deploy' ? 1.023 : 1;
+  return (1 + (share - 0.058) * 0.028) * bias;
+}
+
+export function computeRailInlandTerminalAutomationThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'inland_terminal_auto' || t === 'rail_terminal_robot' || t === 'automated_gantry',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 68_000;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 8_800_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 430;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRailInlandTerminalAutomationThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 1.8, 54) * 10) / 10;
+}
+
+
+// --- source: productivity/electric-bus-depot-charging-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type ElectricBusDepotChargingLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of transit depot logistics using staged e-bus charging. */
+export function computeElectricBusDepotChargingLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: ElectricBusDepotChargingLogisticsPolicy = 'baseline',
+): number {
+  let chargeUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) => t === 'e_bus_depot_charge' || t === 'transit_depot_logistics' || t === 'fleet_charge_staging',
+      )
+    ) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 62_000 + asset.lastMileCoveragePct / 95;
+        chargeUnits += (asset.warehouseSqm / 62_000) * 0.62 + asset.lastMileCoveragePct / 95 * 0.48;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 480;
+        chargeUnits += (asset.laneKilometres / 480) * 0.55;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.037;
+  const policyBoost = policy === 'expand' ? 0.031 : 0;
+  return Math.round(clamp(chargeUnits / totalUnits + policyBoost, 0.036, 0.31) * 1000) / 1000;
+}
+
+export function electricBusDepotChargingLogisticsProductivityMultiplier(
+  share: number,
+  policy: ElectricBusDepotChargingLogisticsPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.023 : 1;
+  return (1 + (share - 0.058) * 0.028) * bias;
+}
+
+export function computeElectricBusDepotChargingLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'e_bus_depot_charge' || t === 'transit_depot_logistics' || t === 'fleet_charge_staging',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 68_000 + asset.lastMileCoveragePct / 38;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 430;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 18_500_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalElectricBusDepotChargingLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.51 + max * 0.49, 1.8, 55) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -17761,6 +18850,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalRailInlandTerminalAutomationThroughputIndex,
   railInlandTerminalAutomationProductivityMultiplier,
 } from './rail-inland-terminal-automation-index.ts';
+  computeGraphiteBatteryAnodeExportByRegion,
+  graphiteBatteryAnodeExportProductivityMultiplier,
+  nationalGraphiteBatteryAnodeExportIndex,
+} from '../network/graphite-battery-anode-export-index.ts';
+  computeCycloneResilientCoastalFreightByRegion,
+  computeCycloneResilientCoastalFreightShare,
+  cycloneResilientCoastalFreightProductivityMultiplier,
+  nationalCycloneResilientCoastalFreightIndex,
+} from '../operations/cyclone-resilient-coastal-freight-index.ts';
+  computeElectricBusDepotChargingLogisticsShare,
+  computeElectricBusDepotChargingLogisticsThroughputByRegion,
+  electricBusDepotChargingLogisticsProductivityMultiplier,
+  nationalElectricBusDepotChargingLogisticsThroughputIndex,
+} from './electric-bus-depot-charging-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -18800,6 +19903,35 @@ export function computeTransportInfrastructureState(
     railInlandTerminalAutomationShare,
     options?.railInlandTerminalAutomationPolicy ?? 'baseline',
   );
+  const graphiteBatteryAnodeExportByRegion = computeGraphiteBatteryAnodeExportByRegion(ops);
+  const nationalGraphiteAnode = nationalGraphiteBatteryAnodeExportIndex(graphiteBatteryAnodeExportByRegion);
+  const graphiteAnodeMult = graphiteBatteryAnodeExportProductivityMultiplier(
+    nationalGraphiteAnode,
+    options?.graphiteBatteryAnodeExportPolicy ?? 'baseline',
+  );
+  const cycloneResilientCoastalFreightByRegion = computeCycloneResilientCoastalFreightByRegion(ops, networkStress);
+  const nationalCycloneCoastal = nationalCycloneResilientCoastalFreightIndex(cycloneResilientCoastalFreightByRegion);
+  const cycloneResilientCoastalFreightShare = computeCycloneResilientCoastalFreightShare(
+    ops,
+    options?.cycloneResilientCoastalFreightPolicy ?? 'baseline',
+  );
+  const cycloneCoastalMult = cycloneResilientCoastalFreightProductivityMultiplier(
+    cycloneResilientCoastalFreightShare,
+    options?.cycloneResilientCoastalFreightPolicy ?? 'baseline',
+  );
+  const electricBusDepotChargingLogisticsThroughputByRegion =
+    computeElectricBusDepotChargingLogisticsThroughputByRegion(ops);
+  const nationalEbusDepot = nationalElectricBusDepotChargingLogisticsThroughputIndex(
+    electricBusDepotChargingLogisticsThroughputByRegion,
+  );
+  const electricBusDepotChargingLogisticsShare = computeElectricBusDepotChargingLogisticsShare(
+    ops,
+    options?.electricBusDepotChargingLogisticsPolicy ?? 'baseline',
+  );
+  const ebusDepotMult = electricBusDepotChargingLogisticsProductivityMultiplier(
+    electricBusDepotChargingLogisticsShare,
+    options?.electricBusDepotChargingLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -18847,6 +19979,9 @@ export function computeTransportInfrastructureState(
     const nickelPrecursorBoost = (nickelCobaltBatteryPrecursorByRegion[code] - 5) * 0.0038;
     const remoteSealiftBoost = (remoteIslandSealiftByRegion[code] - 6) * 0.0034;
     const inlandTerminalAutoBoost = (railInlandTerminalAutomationThroughputByRegion[code] - 1.8) * 0.003;
+    const graphiteAnodeBoost = (graphiteBatteryAnodeExportByRegion[code] - 5) * 0.0037;
+    const cycloneCoastalBoost = (cycloneResilientCoastalFreightByRegion[code] - 6) * 0.0033;
+    const ebusDepotBoost = (electricBusDepotChargingLogisticsThroughputByRegion[code] - 1.8) * 0.0029;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -18893,7 +20028,10 @@ export function computeTransportInfrastructureState(
         yardAutoBoost +
         nickelPrecursorBoost +
         remoteSealiftBoost +
-        inlandTerminalAutoBoost) *
+        inlandTerminalAutoBoost +
+        graphiteAnodeBoost +
+        cycloneCoastalBoost +
+        ebusDepotBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -18938,7 +20076,10 @@ export function computeTransportInfrastructureState(
       yardAutoMult *
       nickelPrecursorMult *
       remoteSealiftMult *
-      inlandTerminalAutoMult;
+      inlandTerminalAutoMult *
+      graphiteAnodeMult *
+      cycloneCoastalMult *
+      ebusDepotMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -19006,7 +20147,10 @@ export function computeTransportInfrastructureState(
     nationalContainerYardAuto * 0.003 +
     nationalNickelPrecursor * 0.003 +
     nationalRemoteSealift * 0.003 +
-    nationalInlandTerminalAuto * 0.003;
+    nationalInlandTerminalAuto * 0.003 +
+    nationalGraphiteAnode * 0.003 +
+    nationalCycloneCoastal * 0.003 +
+    nationalEbusDepot * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -19021,7 +20165,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/31',
+    schemaVersion: 'agent12/32',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -19235,6 +20379,14 @@ export function computeTransportInfrastructureState(
     railInlandTerminalAutomationShare,
     nationalRailInlandTerminalAutomationThroughputIndex: nationalInlandTerminalAuto,
     railInlandTerminalAutomationThroughputByRegion,
+    nationalGraphiteBatteryAnodeExportIndex: nationalGraphiteAnode,
+    graphiteBatteryAnodeExportByRegion,
+    cycloneResilientCoastalFreightShare,
+    nationalCycloneResilientCoastalFreightIndex: nationalCycloneCoastal,
+    cycloneResilientCoastalFreightByRegion,
+    electricBusDepotChargingLogisticsShare,
+    nationalElectricBusDepotChargingLogisticsThroughputIndex: nationalEbusDepot,
+    electricBusDepotChargingLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -19317,7 +20469,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/31' &&
+      infra.schemaVersion === 'agent12/32' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -19419,8 +20571,16 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalAluminaRefineryExportIndex >= 5 &&
       infra.nationalDisasterReliefAirBridgeIndex >= 6 &&
       infra.containerYardAutomationShare >= 0.03 &&
-      infra.nationalContainerYardAutomationThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} alumina=${infra.nationalAluminaRefineryExportIndex.toFixed(1)} relief=${infra.nationalDisasterReliefAirBridgeIndex.toFixed(1)} yard=${infra.nationalContainerYardAutomationThroughputIndex.toFixed(1)}`,
+      infra.nationalContainerYardAutomationThroughputIndex >= 2 &&
+      infra.nationalNickelCobaltBatteryPrecursorIndex >= 5 &&
+      infra.nationalRemoteIslandSealiftIndex >= 6 &&
+      infra.railInlandTerminalAutomationShare >= 0.03 &&
+      infra.nationalRailInlandTerminalAutomationThroughputIndex >= 1.8 &&
+      infra.nationalGraphiteBatteryAnodeExportIndex >= 5 &&
+      infra.nationalCycloneResilientCoastalFreightIndex >= 6 &&
+      infra.electricBusDepotChargingLogisticsShare >= 0.03 &&
+      infra.nationalElectricBusDepotChargingLogisticsThroughputIndex >= 1.8,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} graphite=${infra.nationalGraphiteBatteryAnodeExportIndex.toFixed(1)} cyclone=${infra.nationalCycloneResilientCoastalFreightIndex.toFixed(1)} ebus=${infra.nationalElectricBusDepotChargingLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;
