@@ -29,6 +29,13 @@ import {
   dedupeMacroFinancialEvidence,
 } from './persistence/validate-state.js';
 import { simulateMacroFinancialTurns, detectSimulationStressSpiral } from './integration/regression-harness.js';
+import {
+  applyMacroFinancialScenarioPreset,
+  getMacroFinancialScenarioPreset,
+  MACRO_FINANCIAL_SCENARIO_PRESETS,
+} from './catalog/fiscal-inflation-scenarios.js';
+import { exportMacroFinancialSaveBridge, importMacroFinancialSaveBridge } from './integration/save-bridge.js';
+import { effectiveTierLoanRate } from './credit/tier-spreads.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -270,6 +277,39 @@ export function runAgent10FinanceSelfTests(): {
     'regional spread NSW',
     computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state.regionalSpreads.some((r) => r.regionId === 'NSW'),
   );
+
+  check('a10_r3b_01', 'scenario preset count', MACRO_FINANCIAL_SCENARIO_PRESETS.length >= 6);
+  check(
+    'a10_r3b_02',
+    'apply credit shock preset',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'credit_shock_stack');
+      return inp?.creditShockActive === true && inp.fiscalPressure === 'strained';
+    })(),
+  );
+  check('a10_r3b_03', 'unknown preset null', applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'nope') === null);
+  check(
+    'a10_r3b_04',
+    'high infl preset raises cost',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'high_inflation_pass_through');
+      if (!inp) return false;
+      const r = computeNationalMacroFinancialConditions(inp, null, null);
+      return r.state.modifiers.costOfLivingMultiplier > 1.05;
+    })(),
+  );
+  {
+    const p = computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).persisted;
+    const bridge = exportMacroFinancialSaveBridge(p);
+    const back = importMacroFinancialSaveBridge(bridge);
+    check('a10_r3b_05', 'save bridge round-trip', back?.persisted.lastCreditBand === p.lastCreditBand);
+  }
+  check(
+    'a10_r3b_06',
+    'tier rate frozen credit',
+    effectiveTierLoanRate('standard', 0.1, 1.2, 'frozen') > effectiveTierLoanRate('standard', 0.1, 1.2, 'accommodative'),
+  );
+  check('a10_r3b_07', 'get preset by id', getMacroFinancialScenarioPreset('liquidity_crisis')?.tags.includes('liquidity'));
 
   const passed = results.filter((r) => r.passed).length;
   const failed = results.length - passed;

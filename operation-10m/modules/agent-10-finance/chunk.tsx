@@ -1003,6 +1003,83 @@ export function auditModifierIntegrity(state: NationalMacroFinancialState): bool
 }
 
 
+// --- source: catalog/fiscal-inflation-scenarios.ts ---
+
+export interface MacroFinancialScenarioPreset {
+  id: string;
+  label: string;
+  description: string;
+  patch: Partial<MacroFinancialSystemInputs>;
+  tags: string[];
+}
+
+export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPreset[] = [
+  {
+    id: 'baseline_balanced',
+    label: 'Balanced baseline',
+    description: 'Neutral fiscal, credit, and inflation inputs for regression default.',
+    patch: {},
+    tags: ['baseline', 'regression'],
+  },
+  {
+    id: 'high_inflation_pass_through',
+    label: 'High inflation pass-through',
+    description: 'Scenario + multiplier without touching commodity prices.',
+    patch: { highInflationScenario: true, inflationSettingMultiplier: 1.25 },
+    tags: ['inflation', 'scenario'],
+  },
+  {
+    id: 'credit_shock_stack',
+    label: 'Credit shock stack',
+    description: 'Active credit shock with strained fiscal spillover.',
+    patch: { creditShockActive: true, fiscalPressure: 'strained', actorCreditStressIndex: 0.65 },
+    tags: ['credit', 'shock'],
+  },
+  {
+    id: 'liquidity_crisis',
+    label: 'Liquidity stress',
+    description: 'Systemic liquidity critical with multiple active crises.',
+    patch: { systemicLiquidityBand: 'critical', activeCrises: 3, publicStability: 35 },
+    tags: ['stability', 'liquidity'],
+  },
+  {
+    id: 'household_cost_wave',
+    label: 'Household cost wave',
+    description: 'Affordability strain feeding service-cost inflation channel.',
+    patch: { householdAffordability: 'severe_pressure', householdInflationScenarioActive: true },
+    tags: ['inflation', 'household'],
+  },
+  {
+    id: 'sovereign_risk_tight',
+    label: 'Sovereign risk + tight credit',
+    description: 'Debt overhang with capital squeeze.',
+    patch: {
+      sovereignDebtPressure: 'high',
+      fiscalSustainability: 'vulnerable',
+      capitalFlexibility: 'very_low',
+    },
+    tags: ['fiscal', 'credit'],
+  },
+] as const;
+
+export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
+  return MACRO_FINANCIAL_SCENARIO_PRESETS.find((p) => p.id === id);
+}
+
+export function applyMacroFinancialScenarioPreset(
+  base: MacroFinancialSystemInputs,
+  presetId: string,
+): MacroFinancialSystemInputs | null {
+  const preset = getMacroFinancialScenarioPreset(presetId);
+  if (!preset) return null;
+  return {
+    ...base,
+    ...preset.patch,
+    regions: { ...base.regions, ...(preset.patch.regions || {}) },
+  };
+}
+
+
 // --- source: compute/national-macro-financial.ts ---
   V1014_FINSTAB_CORE_REGIONS,
   V1014_FINSTAB_LIMITS,
@@ -1677,6 +1754,88 @@ export function detectSimulationStressSpiral(rows: MacroFinancialTurnSimulationR
 }
 
 
+// --- source: integration/save-bridge.ts ---
+
+export interface MacroFinancialSaveBridge {
+  schemaVersion: string;
+  persisted: MacroFinancialPersisted;
+  snapshot?: Pick<
+    NationalMacroFinancialState,
+    'inflation' | 'credit' | 'stability' | 'stance' | 'modifiers' | 'turn'
+  >;
+}
+
+export function exportMacroFinancialSaveBridge(
+  persisted: MacroFinancialPersisted,
+  state?: NationalMacroFinancialState | null,
+): MacroFinancialSaveBridge {
+  return {
+    schemaVersion: V1014_FINSTAB_SCHEMA_VERSION,
+    persisted,
+    snapshot: state
+      ? {
+          turn: state.turn,
+          inflation: state.inflation,
+          credit: state.credit,
+          stability: state.stability,
+          stance: state.stance,
+          modifiers: { ...state.modifiers },
+        }
+      : undefined,
+  };
+}
+
+export function importMacroFinancialSaveBridge(raw: unknown, turn = 1): MacroFinancialSaveBridge | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const persisted = sanitizeMacroFinancialPersisted(r.persisted ?? r, turn);
+  if (!persisted) return null;
+  return {
+    schemaVersion: String(r.schemaVersion || V1014_FINSTAB_SCHEMA_VERSION),
+    persisted,
+    snapshot: undefined,
+  };
+}
+
+export function saveBridgeJsonSize(bridge: MacroFinancialSaveBridge): number {
+  return JSON.stringify(bridge).length;
+}
+
+
+// --- source: credit/tier-spreads.ts ---
+
+export type AdvancedLoanTierId = 'starter' | 'standard' | 'growth' | 'distressed';
+
+export interface LoanTierSpreadProfile {
+  tierId: AdvancedLoanTierId;
+  baseSpreadAdd: number;
+  maxEffectiveRate: number;
+  label: string;
+}
+
+export const ADVANCED_LOAN_TIER_SPREADS: readonly LoanTierSpreadProfile[] = [
+  { tierId: 'starter', baseSpreadAdd: 0.02, maxEffectiveRate: 0.35, label: 'Starter facility' },
+  { tierId: 'standard', baseSpreadAdd: 0.04, maxEffectiveRate: 0.45, label: 'Standard facility' },
+  { tierId: 'growth', baseSpreadAdd: 0.06, maxEffectiveRate: 0.55, label: 'Growth facility' },
+  { tierId: 'distressed', baseSpreadAdd: 0.12, maxEffectiveRate: 0.75, label: 'Distressed facility' },
+] as const;
+
+export function effectiveTierLoanRate(
+  tierId: AdvancedLoanTierId,
+  baseRate: number,
+  macroSpreadMultiplier: number,
+  credit: CreditConditionsBand,
+): number {
+  const tier = ADVANCED_LOAN_TIER_SPREADS.find((t) => t.tierId === tierId) ?? ADVANCED_LOAN_TIER_SPREADS[1];
+  let creditAdd = 0;
+  if (credit === 'tight') creditAdd = 0.02;
+  if (credit === 'restricted') creditAdd = 0.05;
+  if (credit === 'frozen') creditAdd = 0.1;
+  const raw = baseRate * macroSpreadMultiplier + tier.baseSpreadAdd + creditAdd;
+  return finClamp(raw, 0, tier.maxEffectiveRate);
+}
+
+
 // --- source: self-tests.ts ---
   computeNationalMacroFinancialConditions,
   createInitialMacroFinancialPersisted,
@@ -1697,6 +1856,10 @@ export function detectSimulationStressSpiral(rows: MacroFinancialTurnSimulationR
   auditModifierIntegrity,
   dedupeMacroFinancialEvidence,
 } from './persistence/validate-state.js';
+  applyMacroFinancialScenarioPreset,
+  getMacroFinancialScenarioPreset,
+  MACRO_FINANCIAL_SCENARIO_PRESETS,
+} from './catalog/fiscal-inflation-scenarios.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -1938,6 +2101,39 @@ export function runAgent10FinanceSelfTests(): {
     'regional spread NSW',
     computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state.regionalSpreads.some((r) => r.regionId === 'NSW'),
   );
+
+  check('a10_r3b_01', 'scenario preset count', MACRO_FINANCIAL_SCENARIO_PRESETS.length >= 6);
+  check(
+    'a10_r3b_02',
+    'apply credit shock preset',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'credit_shock_stack');
+      return inp?.creditShockActive === true && inp.fiscalPressure === 'strained';
+    })(),
+  );
+  check('a10_r3b_03', 'unknown preset null', applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'nope') === null);
+  check(
+    'a10_r3b_04',
+    'high infl preset raises cost',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'high_inflation_pass_through');
+      if (!inp) return false;
+      const r = computeNationalMacroFinancialConditions(inp, null, null);
+      return r.state.modifiers.costOfLivingMultiplier > 1.05;
+    })(),
+  );
+  {
+    const p = computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).persisted;
+    const bridge = exportMacroFinancialSaveBridge(p);
+    const back = importMacroFinancialSaveBridge(bridge);
+    check('a10_r3b_05', 'save bridge round-trip', back?.persisted.lastCreditBand === p.lastCreditBand);
+  }
+  check(
+    'a10_r3b_06',
+    'tier rate frozen credit',
+    effectiveTierLoanRate('standard', 0.1, 1.2, 'frozen') > effectiveTierLoanRate('standard', 0.1, 1.2, 'accommodative'),
+  );
+  check('a10_r3b_07', 'get preset by id', getMacroFinancialScenarioPreset('liquidity_crisis')?.tags.includes('liquidity'));
 
   const passed = results.filter((r) => r.passed).length;
   const failed = results.length - passed;

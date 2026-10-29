@@ -35,6 +35,8 @@ import { evaluatePolicyTransmissionChannels } from '../src/transmission/channels
 import { runFinancialShockSequence } from '../src/shocks/scenario-runner.js';
 import { stepResourceMarketPriceDeterministic } from '../src/prices/market-dynamics.js';
 import { simulateMacroFinancialTurns } from '../src/integration/regression-harness.js';
+import { applyMacroFinancialScenarioPreset } from '../src/catalog/fiscal-inflation-scenarios.js';
+import { effectiveTierLoanRate } from '../src/credit/tier-spreads.js';
 import { assessInvestmentClimateLink } from '../src/investment/climate-link.js';
 
 describe('Agent 10 glossary & boundaries', () => {
@@ -182,7 +184,7 @@ describe('Agent 10 scale-wave extensions', () => {
   it('runAgent10FinanceSelfTests all pass', () => {
     const r = runAgent10FinanceSelfTests();
     assert.equal(r.allPassed, true, r.results.filter((x) => !x.passed).map((x) => `${x.id}:${x.name}`).join('; '));
-    assert.ok(r.total >= 60);
+    assert.ok(r.total >= 67);
   });
 
   it('transmission channels activate under fiscal critical', () => {
@@ -216,5 +218,16 @@ describe('Agent 10 scale-wave extensions', () => {
   it('round-3 investment climate defer under stress', () => {
     const a = assessInvestmentClimateLink('crisis_defensive', 'restricted', 'high');
     assert.equal(a.deferMegaproject, true);
+  });
+
+  it('round-3 scenario preset compute', () => {
+    const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'credit_shock_stack');
+    assert.ok(inp?.creditShockActive);
+    const r = computeNationalMacroFinancialConditions(inp!, null, null);
+    assert.ok(r.state.modifiers.creditSpreadMultiplier >= 1);
+  });
+
+  it('round-3 tier spread under frozen credit', () => {
+    assert.ok(effectiveTierLoanRate('growth', 0.08, 1.3, 'frozen') > 0.15);
   });
 });
