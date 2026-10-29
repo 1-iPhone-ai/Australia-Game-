@@ -19,7 +19,7 @@ import {
 describe('content audit at scale', () => {
   it('catalog meets scale wave minimums', () => {
     assert.ok(O10M_OPERATION_SCENARIOS.length >= 46);
-    assert.equal(O10M_SCENARIO_CHAINS.length, 31);
+    assert.equal(O10M_SCENARIO_CHAINS.length, 32);
     assert.ok(O10M_CHALLENGE_MODES.length >= 5);
   });
 

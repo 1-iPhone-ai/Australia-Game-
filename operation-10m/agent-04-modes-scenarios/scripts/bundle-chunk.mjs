@@ -55,6 +55,7 @@ const SOURCE_FILES = [
   'operation-10m/agent-04-modes-scenarios/src/save-format-probation.ts',
   'operation-10m/agent-04-modes-scenarios/src/save-format-commutation.ts',
   'operation-10m/agent-04-modes-scenarios/src/save-format-acquittal.ts',
+  'operation-10m/agent-04-modes-scenarios/src/save-format-exoneration.ts',
   'operation-10m/agent-04-modes-scenarios/src/scenario-campaign-planner.ts',
 ];
 
@@ -90,7 +91,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 31, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 32, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -326,16 +327,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const acquittalState = acquittal ? attachAcquittalSessionToState(createEmptyO10mModesPersistedState(), acquittal) : null;
   push('agent04_chunk_38', acquittalState !== null && planNextCampaignAction(acquittalState!).kind === 'acquittal_step');
 
+  const exoneration = createExonerationSession({
+    exonerationId: 'o10m_exoneration_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_exoneration_claim_docket'],
+  }).session;
+  const exonerationState = exoneration ? attachExonerationSessionToState(createEmptyO10mModesPersistedState(), exoneration) : null;
+  push('agent04_chunk_39', exonerationState !== null && planNextCampaignAction(exonerationState!).kind === 'exoneration_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: '${MODULE_ID}',
-  schemaVersion: 'op10m-agent04-v31',
+  schemaVersion: 'op10m-agent04-v32',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 30,
+  saveSchemaVersion: 31,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;
@@ -376,9 +385,9 @@ const manifest = {
   touchesSaveFormat: true,
   proposedGameStateFields: ['o10mModesProgress'],
   saveFormat: {
-    schemaVersion: 30,
+    schemaVersion: 31,
     gameStateKey: 'o10mModesProgress',
-    nestedFields: ['chainProgress', 'milestones', 'challengeModeIds', 'sandboxProfileId', 'recentRuns', 'integrityFingerprint', 'saveKind', 'objectiveProgress', 'campaignSlots', 'challengeStreak', 'marathonQueue', 'replayLedger', 'gauntletSession', 'catalogUnlockTokens', 'relaySession', 'circuitSession', 'expeditionSession', 'odysseySession', 'pilgrimageSession', 'caravanSession', 'voyageSession', 'siegeSession', 'convoySession', 'escortSession', 'extractionSession', 'subjectSession', 'witnessSession', 'tribunalSession', 'indictmentSession', 'appealSession', 'clemencySession', 'pardonSession', 'amnestySession', 'reprieveSession', 'paroleSession', 'probationSession', 'commutationSession', 'acquittalSession'],
+    nestedFields: ['chainProgress', 'milestones', 'challengeModeIds', 'sandboxProfileId', 'recentRuns', 'integrityFingerprint', 'saveKind', 'objectiveProgress', 'campaignSlots', 'challengeStreak', 'marathonQueue', 'replayLedger', 'gauntletSession', 'catalogUnlockTokens', 'relaySession', 'circuitSession', 'expeditionSession', 'odysseySession', 'pilgrimageSession', 'caravanSession', 'voyageSession', 'siegeSession', 'convoySession', 'escortSession', 'extractionSession', 'subjectSession', 'witnessSession', 'tribunalSession', 'indictmentSession', 'appealSession', 'clemencySession', 'pardonSession', 'amnestySession', 'reprieveSession', 'paroleSession', 'probationSession', 'commutationSession', 'acquittalSession', 'exonerationSession'],
   },
   contentSha256: hash,
   chunkPath: 'operation-10m/modules/agent-04-modes-scenarios/chunk.tsx',

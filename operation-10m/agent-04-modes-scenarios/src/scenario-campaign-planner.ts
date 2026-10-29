@@ -97,6 +97,11 @@ import {
   sanitizeAmnestySession,
 } from './save-format-amnesty.js';
 import {
+  getExonerationScenarioAtCursor,
+  exonerationSessionSummary,
+  sanitizeExonerationSession,
+} from './save-format-exoneration.js';
+import {
   getAcquittalScenarioAtCursor,
   acquittalSessionSummary,
   sanitizeAcquittalSession,
@@ -155,6 +160,7 @@ import type {
   O10mProbationPhase,
   O10mCommutationPhase,
   O10mAcquittalPhase,
+  O10mExonerationPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -261,9 +267,31 @@ const emptyQueuePlan = {
   acquittalCursor: null as number | null,
   acquittalPhase: null as O10mAcquittalPhase | null,
   acquittalVerdict: null as number | null,
+  exonerationId: null as string | null,
+  exonerationCursor: null as number | null,
+  exonerationPhase: null as O10mExonerationPhase | null,
+  exonerationRestitution: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const exoneration = sanitizeExonerationSession(state.exonerationSession);
+  const exonerationScenario = getExonerationScenarioAtCursor(exoneration);
+  if (exoneration && exoneration.active && exonerationScenario) {
+    return {
+      kind: 'exoneration_step',
+      scenarioId: exonerationScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      exonerationId: exoneration.exonerationId,
+      exonerationCursor: exoneration.cursor,
+      exonerationPhase: exoneration.phaseTag,
+      exonerationRestitution: exoneration.restitutionScore,
+      reason: `Exoneration "${exoneration.label}" ${exoneration.phaseTag} phase ${exoneration.cursor + 1}/${exoneration.scenarioIds.length} (restitution ${exoneration.restitutionScore}).`,
+    };
+  }
+
   const acquittal = sanitizeAcquittalSession(state.acquittalSession);
   const acquittalScenario = getAcquittalScenarioAtCursor(acquittal);
   if (acquittal && acquittal.active && acquittalScenario) {
@@ -823,6 +851,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   probationActive: boolean;
   commutationActive: boolean;
   acquittalActive: boolean;
+  exonerationActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -856,6 +885,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const probation = probationSessionSummary(state);
   const commutation = commutationSessionSummary(state);
   const acquittal = acquittalSessionSummary(state);
+  const exoneration = exonerationSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -887,6 +917,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     probationActive: probation.active,
     commutationActive: commutation.active,
     acquittalActive: acquittal.active,
+    exonerationActive: exoneration.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

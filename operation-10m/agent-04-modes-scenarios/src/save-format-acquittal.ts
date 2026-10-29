@@ -125,6 +125,7 @@ export function attachAcquittalSessionToState(
   return {
     ...state,
     acquittalSession: sanitized,
+    exonerationSession: null,
     commutationSession: null,
     probationSession: null,
     paroleSession: null,

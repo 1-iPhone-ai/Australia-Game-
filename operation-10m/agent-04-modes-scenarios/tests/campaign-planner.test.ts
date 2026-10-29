@@ -25,6 +25,7 @@ import {
   attachProbationSessionToState,
   attachCommutationSessionToState,
   attachAcquittalSessionToState,
+  attachExonerationSessionToState,
   attachGauntletSessionToState,
   attachMarathonQueueToState,
   attachRelaySessionToState,
