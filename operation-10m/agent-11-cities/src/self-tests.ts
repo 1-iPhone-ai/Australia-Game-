@@ -150,6 +150,9 @@ import { op10mA11ComputeSettlementExistentialAbsoluteNullityContinuity } from '.
 import { op10mA11ComputeRegionalCollapseOmniSingularityUnification } from './regional-collapse-omni-singularity-unification.ts';
 import { op10mA11ComputeInterregionalVoidTotalErosionElimination } from './interregional-void-total-erosion-elimination.ts';
 import { op10mA11ComputeSettlementExistentialAbsoluteNullityPerpetuity } from './settlement-existential-absolute-nullity-perpetuity.ts';
+import { op10mA11ComputeRegionalCollapseOmniSingularityConsolidation } from './regional-collapse-omni-singularity-consolidation.ts';
+import { op10mA11ComputeInterregionalVoidTotalErosionDissolution } from './interregional-void-total-erosion-dissolution.ts';
+import { op10mA11ComputeSettlementExistentialAbsoluteNullityImmutability } from './settlement-existential-absolute-nullity-immutability.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -476,7 +479,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.35',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.36',
     composite.state.schemaVersion,
   );
 
@@ -657,7 +660,10 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastExistentialAbsoluteNullityContinuityIndex === composite.state.nationalExistentialAbsoluteNullityContinuityIndex &&
       composite.persisted.lastCollapseOmniSingularityUnificationIndex === composite.state.nationalCollapseOmniSingularityUnificationIndex &&
       composite.persisted.lastVoidTotalErosionEliminationIndex === composite.state.nationalVoidTotalErosionEliminationIndex &&
-      composite.persisted.lastExistentialAbsoluteNullityPerpetuityIndex === composite.state.nationalExistentialAbsoluteNullityPerpetuityIndex,
+      composite.persisted.lastExistentialAbsoluteNullityPerpetuityIndex === composite.state.nationalExistentialAbsoluteNullityPerpetuityIndex &&
+      composite.persisted.lastCollapseOmniSingularityConsolidationIndex === composite.state.nationalCollapseOmniSingularityConsolidationIndex &&
+      composite.persisted.lastVoidTotalErosionDissolutionIndex === composite.state.nationalVoidTotalErosionDissolutionIndex &&
+      composite.persisted.lastExistentialAbsoluteNullityImmutabilityIndex === composite.state.nationalExistentialAbsoluteNullityImmutabilityIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -3316,6 +3322,89 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     composite.state.existentialAbsoluteNullityPerpetuity[0]?.band ?? 'none',
   );
 
+  const collapseOmniSingularityConsolidation = op10mA11ComputeRegionalCollapseOmniSingularityConsolidation({
+    collapseOmniSingularityUnification: composite.state.collapseOmniSingularityUnification,
+    voidTotalErosionElimination: composite.state.voidTotalErosionElimination,
+    existentialAbsoluteNullityPerpetuity: composite.state.existentialAbsoluteNullityPerpetuity,
+  });
+  push(
+    out,
+    'a11_321',
+    composite.state.collapseOmniSingularityConsolidation.length === 8 &&
+      composite.state.nationalCollapseOmniSingularityConsolidationIndex === collapseOmniSingularityConsolidation.nationalIndex,
+    `omni consolidation ${composite.state.nationalCollapseOmniSingularityConsolidationIndex}`,
+  );
+
+  const voidTotalErosionDissolution = op10mA11ComputeInterregionalVoidTotalErosionDissolution({
+    voidTotalErosionElimination: composite.state.voidTotalErosionElimination,
+    collapseOmniSingularityUnification: composite.state.collapseOmniSingularityUnification,
+    voidExistenceAnnihilationFront: composite.state.voidExistenceAnnihilationFront,
+  });
+  push(
+    out,
+    'a11_322',
+    composite.state.voidTotalErosionDissolution.length === 8 &&
+      composite.state.nationalVoidTotalErosionDissolutionIndex === voidTotalErosionDissolution.nationalIndex,
+    `erosion dissolution ${composite.state.nationalVoidTotalErosionDissolutionIndex}`,
+  );
+
+  const existentialAbsoluteNullityImmutability = op10mA11ComputeSettlementExistentialAbsoluteNullityImmutability({
+    existentialAbsoluteNullityPerpetuity: composite.state.existentialAbsoluteNullityPerpetuity,
+    collapseOmniSingularityUnification: composite.state.collapseOmniSingularityUnification,
+    existentialFinalNullitySentence: composite.state.existentialFinalNullitySentence,
+  });
+  push(
+    out,
+    'a11_323',
+    composite.state.existentialAbsoluteNullityImmutability.length === 8 &&
+      composite.state.nationalExistentialAbsoluteNullityImmutabilityIndex === existentialAbsoluteNullityImmutability.nationalIndex,
+    `nullity immutability ${composite.state.nationalExistentialAbsoluteNullityImmutabilityIndex}`,
+  );
+
+  push(
+    out,
+    'a11_324',
+    composite.state.collapseOmniSingularityConsolidation.every((c) => c.narrative.includes('collapse omni singularity consolidation')),
+    composite.state.collapseOmniSingularityConsolidation[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_325',
+    composite.derived.some((d) => d.kind === 'collapse_omni_singularity_consolidation') ||
+      composite.state.collapseOmniSingularityConsolidation.some((c) => c.band === 'total' || c.band === 'consolidation'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_326',
+    composite.derived.some((d) => d.kind === 'void_total_erosion_dissolution') ||
+      composite.state.voidTotalErosionDissolution.some((d) => d.band === 'total' || d.band === 'complete_dissolution'),
+    composite.state.voidTotalErosionDissolution[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_327',
+    composite.persisted.lastVoidTotalErosionDissolutionIndex === composite.state.nationalVoidTotalErosionDissolutionIndex,
+    `persisted dissolution ${composite.persisted.lastVoidTotalErosionDissolutionIndex}`,
+  );
+
+  push(
+    out,
+    'a11_328',
+    composite.derived.some((d) => d.kind === 'existential_absolute_nullity_immutability') ||
+      composite.state.existentialAbsoluteNullityImmutability.some((i) => i.band === 'absolute' || i.band === 'total_immutability'),
+    composite.state.existentialAbsoluteNullityImmutability[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_329',
+    composite.state.existentialAbsoluteNullityImmutability.every((i) => i.narrative.includes('existential absolute nullity immutability')),
+    composite.state.existentialAbsoluteNullityImmutability[0]?.band ?? 'none',
+  );
 
   return out;
 }
