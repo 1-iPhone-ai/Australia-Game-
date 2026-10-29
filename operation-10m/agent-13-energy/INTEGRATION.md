@@ -35,6 +35,7 @@ operation-10m/agent-13-energy/
   modules/industrial-symbiosis-waste-heat-recovery-ledger.ts  # scale wave round 27 (O10-185)
   modules/green-hydrogen-export-electrolyser-hub-ledger.ts  # scale wave round 28 (O10-187)
   modules/critical-minerals-circular-battery-supply-ledger.ts  # scale wave round 29 (O10-189)
+  modules/offshore-shore-port-green-corridor-ledger.ts  # scale wave round 30 (O10-191) — wave capstone
   modules/climate-hazards.ts
   modules/household-industry-links.ts
   modules/v94-type-stubs.ts                    # drop on merge
@@ -75,6 +76,7 @@ operation-10m/agent-13-energy/
 - Round 27 slices: `regionalIndustrialSymbiosisMemory`, `regionalWasteHeatRecoveryMemory`
 - Round 28 slices: `regionalGreenHydrogenExportMemory`, `regionalElectrolyserHubMemory`
 - Round 29 slices: `regionalMineralsCircularRecoveryMemory`, `regionalBatterySupplyChainMemory`
+- Round 30 slices: `regionalOffshoreShoreElectrificationMemory`, `regionalPortGreenCorridorMemory`
 - Regression id: `v1014_energy` → `runV1014IndustrialEnergyEnvironmentalSelfTests()`
 
 ## Boundaries

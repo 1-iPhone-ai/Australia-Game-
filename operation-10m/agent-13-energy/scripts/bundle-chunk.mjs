@@ -49,6 +49,7 @@ const FILES = [
   'industrial-symbiosis-waste-heat-recovery-ledger.ts',
   'green-hydrogen-export-electrolyser-hub-ledger.ts',
   'critical-minerals-circular-battery-supply-ledger.ts',
+  'offshore-shore-port-green-corridor-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -107,6 +108,8 @@ const EXPORT_MANIFEST = [
   'V1014_ELECTROLYSER_HUB_CATALOG',
   'V1014_MINERALS_CIRCULAR_RECOVERY_CATALOG',
   'V1014_BATTERY_SUPPLY_CHAIN_CATALOG',
+  'V1014_OFFSHORE_SHORE_ELECTRIFICATION_CATALOG',
+  'V1014_PORT_GREEN_CORRIDOR_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -200,6 +203,9 @@ const EXPORT_MANIFEST = [
   'runAgent13MineralsBatterySupplyScaleSelfTests',
   'runAgent13MineralsBatterySupplyTurnScenario',
   'V1014_MINERALS_BATTERY_SUPPLY_TURN_SCENARIOS',
+  'runAgent13OffshorePortScaleSelfTests',
+  'runAgent13OffshorePortTurnScenario',
+  'V1014_OFFSHORE_PORT_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

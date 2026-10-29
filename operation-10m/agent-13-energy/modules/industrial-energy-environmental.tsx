@@ -212,6 +212,13 @@ import {
   type V1014RegionalMineralsCircularRecoveryLedger,
 } from './critical-minerals-circular-battery-supply-ledger';
 import {
+  advanceRegionalPortGreenCorridorOrchestration,
+  computeRegionalOffshoreShoreElectrificationLedger,
+  scoreAgent13OffshorePortGIAlignment,
+  type V1014RegionalOffshoreShoreElectrificationLedger,
+  type V1014RegionalPortGreenCorridorLedger,
+} from './offshore-shore-port-green-corridor-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25780,6 +25787,10 @@ export interface V1014RegionalEnergyProfile {
   mineralsCircularRecoveryRelief: number;
   batterySupplyChainBand: string;
   batterySupplyChainRelief: number;
+  offshoreShoreElectrificationBand: string;
+  offshoreShoreElectrificationRelief: number;
+  portGreenCorridorBand: string;
+  portGreenCorridorRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25872,6 +25883,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalElectrolyserHubLedgers: Record<string, V1014RegionalElectrolyserHubLedger>;
   regionalMineralsCircularRecoveryLedgers: Record<string, V1014RegionalMineralsCircularRecoveryLedger>;
   regionalBatterySupplyChainLedgers: Record<string, V1014RegionalBatterySupplyChainLedger>;
+  regionalOffshoreShoreElectrificationLedgers: Record<string, V1014RegionalOffshoreShoreElectrificationLedger>;
+  regionalPortGreenCorridorLedgers: Record<string, V1014RegionalPortGreenCorridorLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25935,6 +25948,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalElectrolyserHubMemory: Record<string, { electrolyserIndex: number }>;
   regionalMineralsCircularRecoveryMemory: Record<string, { circularBalance: number; recoveryIndex: number }>;
   regionalBatterySupplyChainMemory: Record<string, { supplyIndex: number }>;
+  regionalOffshoreShoreElectrificationMemory: Record<string, { shoreTieBalance: number; shoreIndex: number }>;
+  regionalPortGreenCorridorMemory: Record<string, { corridorIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -26010,6 +26025,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalElectrolyserHubMemory: {},
     regionalMineralsCircularRecoveryMemory: {},
     regionalBatterySupplyChainMemory: {},
+    regionalOffshoreShoreElectrificationMemory: {},
+    regionalPortGreenCorridorMemory: {},
     history: [],
   };
 }
@@ -26158,6 +26175,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
     regionalBatterySupplyChainMemory:
       typeof raw.regionalBatterySupplyChainMemory === 'object' && raw.regionalBatterySupplyChainMemory
         ? raw.regionalBatterySupplyChainMemory
+        : {},
+    regionalOffshoreShoreElectrificationMemory:
+      typeof raw.regionalOffshoreShoreElectrificationMemory === 'object' && raw.regionalOffshoreShoreElectrificationMemory
+        ? raw.regionalOffshoreShoreElectrificationMemory
+        : {},
+    regionalPortGreenCorridorMemory:
+      typeof raw.regionalPortGreenCorridorMemory === 'object' && raw.regionalPortGreenCorridorMemory
+        ? raw.regionalPortGreenCorridorMemory
         : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
@@ -26321,6 +26346,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalElectrolyserHubLedgers: {},
       regionalMineralsCircularRecoveryLedgers: {},
       regionalBatterySupplyChainLedgers: {},
+      regionalOffshoreShoreElectrificationLedgers: {},
+      regionalPortGreenCorridorLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26387,6 +26414,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const electrolyserHubLedgers: Record<string, V1014RegionalElectrolyserHubLedger> = {};
   const mineralsCircularRecoveryLedgers: Record<string, V1014RegionalMineralsCircularRecoveryLedger> = {};
   const batterySupplyChainLedgers: Record<string, V1014RegionalBatterySupplyChainLedger> = {};
+  const offshoreShoreElectrificationLedgers: Record<string, V1014RegionalOffshoreShoreElectrificationLedger> = {};
+  const portGreenCorridorLedgers: Record<string, V1014RegionalPortGreenCorridorLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26509,6 +26538,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextBatterySupplyChainMemory: Record<string, { supplyIndex: number }> = {
     ...persisted.regionalBatterySupplyChainMemory,
+  };
+  const nextOffshoreShoreElectrificationMemory: Record<string, { shoreTieBalance: number; shoreIndex: number }> = {
+    ...persisted.regionalOffshoreShoreElectrificationMemory,
+  };
+  const nextPortGreenCorridorMemory: Record<string, { corridorIndex: number }> = {
+    ...persisted.regionalPortGreenCorridorMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -27248,6 +27283,33 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= batterySupplyChainStep.ledger.batterySupplyChainRelief;
     pressure = v1014Clamp(pressure, 0, 100);
 
+    const offshoreShoreElectrificationStep = computeRegionalOffshoreShoreElectrificationLedger({
+      regionId,
+      offshoreRenewableRelief: offshoreStep.ledger.offshoreRenewableRelief,
+      shoreMarineEnergyRelief: shoreMarineStep.ledger.shoreMarineEnergyRelief,
+      greenHydrogenExportRelief: greenHydrogenExportStep.ledger.greenHydrogenExportRelief,
+      batterySupplyChainRelief: batterySupplyChainStep.ledger.batterySupplyChainRelief,
+      blueCarbonCoastalRelief: blueCarbonStep.ledger.blueCarbonCoastalRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextOffshoreShoreElectrificationMemory[regionId] || null,
+    });
+    nextOffshoreShoreElectrificationMemory[regionId] = offshoreShoreElectrificationStep.next;
+    offshoreShoreElectrificationLedgers[regionId] = offshoreShoreElectrificationStep.ledger;
+    pressure -= offshoreShoreElectrificationStep.ledger.offshoreShoreElectrificationRelief;
+
+    const portGreenCorridorStep = advanceRegionalPortGreenCorridorOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      shoreBand: offshoreShoreElectrificationStep.ledger.band,
+      climateAdaptationRelief: climateAdaptationHardeningStep.ledger.climateAdaptationRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextPortGreenCorridorMemory[regionId] || null,
+    });
+    nextPortGreenCorridorMemory[regionId] = portGreenCorridorStep.next;
+    portGreenCorridorLedgers[regionId] = portGreenCorridorStep.ledger;
+    pressure -= portGreenCorridorStep.ledger.portGreenCorridorRelief;
+    pressure = v1014Clamp(pressure, 0, 100);
+
     nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
 
     const extractionBand = v1014BandExtraction(extractionScore);
@@ -27327,6 +27389,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       electrolyserHubStep.ledger.summary,
       mineralsCircularRecoveryStep.ledger.summary,
       batterySupplyChainStep.ledger.summary,
+      offshoreShoreElectrificationStep.ledger.summary,
+      portGreenCorridorStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -27515,6 +27579,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       mineralsCircularRecoveryRelief: mineralsCircularRecoveryStep.ledger.mineralsCircularRecoveryRelief,
       batterySupplyChainBand: batterySupplyChainStep.ledger.band,
       batterySupplyChainRelief: batterySupplyChainStep.ledger.batterySupplyChainRelief,
+      offshoreShoreElectrificationBand: offshoreShoreElectrificationStep.ledger.band,
+      offshoreShoreElectrificationRelief: offshoreShoreElectrificationStep.ledger.offshoreShoreElectrificationRelief,
+      portGreenCorridorBand: portGreenCorridorStep.ledger.band,
+      portGreenCorridorRelief: portGreenCorridorStep.ledger.portGreenCorridorRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -27636,6 +27704,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalElectrolyserHubLedgers: electrolyserHubLedgers,
     regionalMineralsCircularRecoveryLedgers: mineralsCircularRecoveryLedgers,
     regionalBatterySupplyChainLedgers: batterySupplyChainLedgers,
+    regionalOffshoreShoreElectrificationLedgers: offshoreShoreElectrificationLedgers,
+    regionalPortGreenCorridorLedgers: portGreenCorridorLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -27699,6 +27769,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalElectrolyserHubMemory: nextElectrolyserHubMemory,
     regionalMineralsCircularRecoveryMemory: nextMineralsCircularRecoveryMemory,
     regionalBatterySupplyChainMemory: nextBatterySupplyChainMemory,
+    regionalOffshoreShoreElectrificationMemory: nextOffshoreShoreElectrificationMemory,
+    regionalPortGreenCorridorMemory: nextPortGreenCorridorMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -28742,6 +28814,47 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     supplyBand: rr29.state.regions.WA?.batterySupplyChainBand,
   });
   check('MINERALS BATTERY SUPPLY GI alignment', giMb.relevanceDelta > 0.5, giMb.reason || '');
+
+  const opInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'offshore_export_cable_corridor',
+      'marine_renewable_shore_tie_hub',
+      'export_cargo_electrification_mesh',
+      'hydrogen_bunkering_green_corridor',
+      'shore_substation_electrification_mesh',
+      'industrial_pier_electrification_loop',
+      'shore_power_cold_ironing_corridor',
+      'battery_swapping_port_hub',
+      'offshore_floating_wind',
+      'coastal_battery_shore_hub',
+      'green_hydrogen_export_terminal_backbone',
+      'export_aligned_battery_supply_corridor',
+      'substation_flood_barrier_mesh',
+    ],
+  };
+  const rr30 = computeIndustrialEnergyEnvironmentalState(opInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check(
+    'OFFSHORE SHORE electrification ledger tracked',
+    !!rr30.state.regionalOffshoreShoreElectrificationLedgers.WA?.band,
+    rr30.state.regionalOffshoreShoreElectrificationLedgers.WA?.band || '',
+  );
+  check(
+    'PORT GREEN corridor relief',
+    (rr30.state.regions.WA?.portGreenCorridorRelief || 0) > 0,
+    String(rr30.state.regions.WA?.portGreenCorridorRelief),
+  );
+  check(
+    'OFFSHORE SHORE memory persisted',
+    !!rr30.persisted.regionalOffshoreShoreElectrificationMemory.WA,
+    String(rr30.persisted.regionalOffshoreShoreElectrificationMemory.WA?.shoreIndex),
+  );
+  const giOp = scoreAgent13OffshorePortGIAlignment({
+    actionText: 'Offshore export cable with hydrogen bunkering green corridor and export cargo electrification',
+    shoreBand: rr30.state.regions.WA?.offshoreShoreElectrificationBand,
+    portBand: rr30.state.regions.WA?.portGreenCorridorBand,
+  });
+  check('OFFSHORE PORT GI alignment', giOp.relevanceDelta > 0.5, giOp.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');
