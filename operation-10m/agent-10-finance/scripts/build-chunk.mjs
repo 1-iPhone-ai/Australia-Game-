@@ -69,6 +69,8 @@ const FILES = [
   'inflation/population-labor-wage-inflation.ts',
   'inflation/wholesale-energy-transition-inflation.ts',
   'inflation/urban-rent-dispersion-inflation.ts',
+  'inflation/corporate-pricing-pass-through-inflation.ts',
+  'inflation/trade-exchange-import-inflation.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -124,6 +126,7 @@ const FILES = [
   'react/EventsDashboardInflationPanel.tsx',
   'react/FiscalLaborInflationPanel.tsx',
   'react/EnergyCitiesInflationPanel.tsx',
+  'react/CorporateTradeInflationPanel.tsx',
 ];
 
 function stripModulePreamble(source) {

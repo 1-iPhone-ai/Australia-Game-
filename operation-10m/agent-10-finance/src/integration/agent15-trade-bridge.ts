@@ -7,6 +7,10 @@ export interface Agent15TradeSnapshot {
   tradeOpennessBand: 'closed' | 'mixed' | 'open';
   exchangeRatePressure: 'appreciation' | 'stable' | 'depreciation' | 'sharp_depreciation';
   commodityImportShare: number;
+  /** Round 22: tariff shock inflation latch. */
+  tariffShockInflationActive?: boolean;
+  /** Round 22: import pipeline fragility band. */
+  importPipelineFragileBand?: 'stable' | 'strained' | 'critical';
 }
 
 export function mergeAgent15IntoMacroFinancialInputs(
@@ -29,6 +33,10 @@ export function mergeAgent15IntoMacroFinancialInputs(
   let highInflationScenario = base.highInflationScenario;
   if (snapshot.exchangeRatePressure === 'sharp_depreciation' && snapshot.tradeOpennessBand === 'open') {
     highInflationScenario = true;
+  }
+  if (snapshot.tariffShockInflationActive && snapshot.importPipelineFragileBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   }
 
   return {

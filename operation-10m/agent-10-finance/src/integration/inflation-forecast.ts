@@ -136,6 +136,14 @@ import {
   assessUrbanRentDispersionInflation,
   type UrbanRentDispersionBand,
 } from '../inflation/urban-rent-dispersion-inflation.js';
+import {
+  assessCorporatePricingPassThroughInflation,
+  type CorporatePricingPassThroughBand,
+} from '../inflation/corporate-pricing-pass-through-inflation.js';
+import {
+  assessTradeExchangeImportInflation,
+  type TradeExchangeImportBand,
+} from '../inflation/trade-exchange-import-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -178,6 +186,8 @@ export interface InflationForecastPoint {
   populationLaborWageBand: PopulationLaborWageBand;
   wholesaleEnergyTransitionBand: WholesaleEnergyTransitionBand;
   urbanRentDispersionBand: UrbanRentDispersionBand;
+  corporatePricingPassThroughBand: CorporatePricingPassThroughBand;
+  tradeExchangeImportBand: TradeExchangeImportBand;
 }
 
 export interface InflationForecastPath {
@@ -501,6 +511,25 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const corporatePricing = assessCorporatePricingPassThroughInflation({
+      pricingPowerBand: inputs.highInflationScenario ? 'strong' : 'moderate',
+      marginCompression: inputs.actorCreditStressIndex > 0.55 ? 'severe' : 'mild',
+      passThroughIntent: inputs.fiscalPressure === 'critical' ? 'full' : 'partial',
+      productionCapacityStrainInflationFlag: inputs.systemicLiquidityBand === 'strained' || inputs.systemicLiquidityBand === 'critical',
+      corporateMarkupCascadeBand: inputs.creditShockActive ? 'active' : inputs.highInflationScenario ? 'building' : 'none',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const tradeImport = assessTradeExchangeImportInflation({
+      tradeOpennessBand: 'open',
+      exchangeRatePressure: inputs.highInflationScenario ? 'sharp_depreciation' : 'stable',
+      commodityImportShare: 0.38,
+      tariffShockInflationActive: inputs.creditShockActive,
+      importPipelineFragileBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'critical' : inputs.fiscalPressure === 'critical' ? 'strained' : 'stable',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -543,6 +572,8 @@ export function projectInflationForecastPath(
       populationLaborWageBand: populationLabor.wageBand,
       wholesaleEnergyTransitionBand: wholesaleEnergy.transitionBand,
       urbanRentDispersionBand: urbanRent.dispersionBand,
+      corporatePricingPassThroughBand: corporatePricing.passThroughBand,
+      tradeExchangeImportBand: tradeImport.importBand,
     });
   }
 

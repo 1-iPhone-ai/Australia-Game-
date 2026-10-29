@@ -709,6 +709,43 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'energy', 'cities', 'round21'],
   },
+  {
+    id: 'corporate_markup_cascade_stack',
+    label: 'Corporate markup cascade stack',
+    description: 'Active markup cascade with production capacity strain.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'strained',
+      inflationSettingMultiplier: 1.28,
+    },
+    tags: ['inflation', 'corporate', 'round22'],
+  },
+  {
+    id: 'trade_fx_import_pipeline_stress',
+    label: 'Trade FX import pipeline stress',
+    description: 'Sharp depreciation with critical import pipeline fragility.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.26,
+      fiscalPressure: 'critical',
+    },
+    tags: ['inflation', 'trade', 'round22'],
+  },
+  {
+    id: 'corporate_trade_fusion_stress',
+    label: 'Corporate & trade fusion stress',
+    description: 'Aligned Agent 08 markup cascade + Agent 15 tariff import shock.',
+    patch: {
+      inflationSettingMultiplier: 1.33,
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'critical',
+      fiscalPressure: 'critical',
+    },
+    tags: ['inflation', 'corporate', 'trade', 'round22'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

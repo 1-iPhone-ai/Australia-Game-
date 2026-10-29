@@ -7,6 +7,10 @@ export interface Agent08CorporateSnapshot {
   pricingPowerBand: 'weak' | 'moderate' | 'strong' | 'dominant';
   marginCompression: 'none' | 'mild' | 'severe';
   passThroughIntent: 'absorb' | 'partial' | 'full';
+  /** Round 22: production capacity strain feeding markup CPI. */
+  productionCapacityStrainInflationFlag?: boolean;
+  /** Round 22: corporate markup cascade band. */
+  corporateMarkupCascadeBand?: 'none' | 'building' | 'active';
 }
 
 export function mergeAgent08IntoMacroFinancialInputs(
@@ -31,11 +35,20 @@ export function mergeAgent08IntoMacroFinancialInputs(
     actorCreditStressIndex = finClamp(actorCreditStressIndex + 0.05, 0, 1);
   }
 
+  let highInflationScenario = base.highInflationScenario;
+  if (snapshot.corporateMarkupCascadeBand === 'active' || snapshot.productionCapacityStrainInflationFlag) {
+    highInflationScenario = highInflationScenario || snapshot.corporateMarkupCascadeBand === 'active';
+    if (snapshot.corporateMarkupCascadeBand === 'active') {
+      inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+    }
+  }
+
   return {
     ...base,
     turn: Math.max(base.turn, snapshot.turn),
     inflationSettingMultiplier,
     actorCreditStressIndex,
+    highInflationScenario,
   };
 }
 
