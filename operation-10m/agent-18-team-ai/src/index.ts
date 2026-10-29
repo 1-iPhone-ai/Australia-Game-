@@ -75,4 +75,7 @@ export * from './resonance-audit-cascade-index.ts';
 export * from './coupling-stack-cascade-index.ts';
 export * from './stack-cascade-amplification-index.ts';
 export * from './cascade-coupling-synthesis-index.ts';
+export * from './cascade-synthesis-fusion-index.ts';
+export * from './amplification-stack-resonance-index.ts';
+export * from './synthesis-escalation-pressure-index.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';
