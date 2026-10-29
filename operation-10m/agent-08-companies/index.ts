@@ -557,6 +557,23 @@ export type {
   TransitionAccountabilityBand,
 } from './production-transition-accountability';
 
+export {
+  AGENT08_TRANSITION_ASSURANCE_SCHEMA_VERSION,
+  buildFirmProductionTransitionAssurance,
+  classifyNationalAssuranceBand,
+  computeNationalAssurancePressure,
+  computeNationalProductionTransitionAssurance,
+  summarizeRegionalTransitionAssurance,
+  runAgent08TransitionAssuranceSelfTests,
+} from './production-transition-assurance';
+
+export type {
+  FirmProductionTransitionAssurance,
+  NationalProductionTransitionAssurance,
+  RegionalTransitionAssuranceSummary,
+  TransitionAssuranceBand,
+} from './production-transition-assurance';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -590,6 +607,7 @@ import { runAgent08TransitionCodificationSelfTests } from './production-transiti
 import { runAgent08TransitionStewardshipSelfTests } from './production-transition-stewardship';
 import { runAgent08TransitionGovernanceSelfTests } from './production-transition-governance';
 import { runAgent08TransitionAccountabilitySelfTests } from './production-transition-accountability';
+import { runAgent08TransitionAssuranceSelfTests } from './production-transition-assurance';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -759,6 +777,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionAssurance = runAgent08TransitionAssuranceSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -793,5 +816,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionStewardship,
     ...transitionGovernance,
     ...transitionAccountability,
+    ...transitionAssurance,
   ];
 }
