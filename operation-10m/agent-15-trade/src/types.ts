@@ -212,6 +212,8 @@ export interface GTELPersisted {
   bilateralForwardArcRechargeGateSmoothing?: number;
   forwardArcRechargeContinuitySmoothing?: number;
   bilateralRenewalArcPrimingGateSmoothing?: number;
+  renewalArcPrimingContinuitySmoothing?: number;
+  bilateralNextArcOpenPrepGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -293,6 +295,8 @@ export interface GTELState {
   bilateralForwardArcRechargeGate: GTELBilateralForwardArcRechargeGateSnapshot;
   forwardArcRechargeContinuity: GTELForwardArcRechargeContinuitySnapshot;
   bilateralRenewalArcPrimingGate: GTELBilateralRenewalArcPrimingGateSnapshot;
+  renewalArcPrimingContinuity: GTELRenewalArcPrimingContinuitySnapshot;
+  bilateralNextArcOpenPrepGate: GTELBilateralNextArcOpenPrepGateSnapshot;
   inputHash: string;
 }
 
@@ -1097,6 +1101,26 @@ export interface GTELBilateralRenewalArcPrimingGateSnapshot {
   band: GTELBilateralRenewalArcPrimingGateBand;
   rechargeContinuityFeed: number;
   readinessLift: number;
+  summary: string;
+}
+
+export type GTELRenewalArcPrimingContinuityBand = 'settled' | 'holding' | 'unsettled' | 'void';
+
+export interface GTELRenewalArcPrimingContinuitySnapshot {
+  score: number;
+  band: GTELRenewalArcPrimingContinuityBand;
+  primingGateSupport: number;
+  rechargeAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralNextArcOpenPrepGateBand = 'prepped' | 'staging' | 'deferred' | 'blocked';
+
+export interface GTELBilateralNextArcOpenPrepGateSnapshot {
+  score: number;
+  band: GTELBilateralNextArcOpenPrepGateBand;
+  continuityFeed: number;
+  cyclePrimingLift: number;
   summary: string;
 }
 

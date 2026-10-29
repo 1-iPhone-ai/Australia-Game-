@@ -300,6 +300,16 @@ import {
   bilateralRenewalArcPrimingGateExportScale,
 } from './bilateral-renewal-arc-priming-gate.ts';
 import {
+  computeRenewalArcPrimingContinuitySnapshot,
+  createEmptyRenewalArcPrimingContinuitySnapshot,
+  renewalArcPrimingContinuityExportScale,
+} from './renewal-arc-priming-continuity.ts';
+import {
+  computeBilateralNextArcOpenPrepGateSnapshot,
+  createEmptyBilateralNextArcOpenPrepGateSnapshot,
+  bilateralNextArcOpenPrepGateExportScale,
+} from './bilateral-next-arc-open-prep-gate.ts';
+import {
   computeBilateralTradeWindowContinuitySnapshot,
   createEmptyBilateralTradeWindowContinuitySnapshot,
 } from './bilateral-trade-window-continuity.ts';

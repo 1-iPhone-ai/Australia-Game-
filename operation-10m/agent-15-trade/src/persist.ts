@@ -64,6 +64,8 @@ import { sanitizeReopenedCommitmentLoopContinuitySmoothing } from './reopened-co
 import { sanitizeBilateralForwardArcRechargeGateSmoothing } from './bilateral-forward-arc-recharge-gate.ts';
 import { sanitizeForwardArcRechargeContinuitySmoothing } from './forward-arc-recharge-continuity.ts';
 import { sanitizeBilateralRenewalArcPrimingGateSmoothing } from './bilateral-renewal-arc-priming-gate.ts';
+import { sanitizeRenewalArcPrimingContinuitySmoothing } from './renewal-arc-priming-continuity.ts';
+import { sanitizeBilateralNextArcOpenPrepGateSmoothing } from './bilateral-next-arc-open-prep-gate.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -146,6 +148,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     bilateralForwardArcRechargeGateSmoothing: 0.52,
     forwardArcRechargeContinuitySmoothing: 0.52,
     bilateralRenewalArcPrimingGateSmoothing: 0.52,
+    renewalArcPrimingContinuitySmoothing: 0.52,
+    bilateralNextArcOpenPrepGateSmoothing: 0.52,
   };
 }
 
@@ -429,6 +433,12 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   );
   base.bilateralRenewalArcPrimingGateSmoothing = sanitizeBilateralRenewalArcPrimingGateSmoothing(
     r.bilateralRenewalArcPrimingGateSmoothing,
+  );
+  base.renewalArcPrimingContinuitySmoothing = sanitizeRenewalArcPrimingContinuitySmoothing(
+    r.renewalArcPrimingContinuitySmoothing,
+  );
+  base.bilateralNextArcOpenPrepGateSmoothing = sanitizeBilateralNextArcOpenPrepGateSmoothing(
+    r.bilateralNextArcOpenPrepGateSmoothing,
   );
   return base;
 }

@@ -216,6 +216,8 @@ export interface GTELPersisted {
   bilateralForwardArcRechargeGateSmoothing?: number;
   forwardArcRechargeContinuitySmoothing?: number;
   bilateralRenewalArcPrimingGateSmoothing?: number;
+  renewalArcPrimingContinuitySmoothing?: number;
+  bilateralNextArcOpenPrepGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -297,6 +299,8 @@ export interface GTELState {
   bilateralForwardArcRechargeGate: GTELBilateralForwardArcRechargeGateSnapshot;
   forwardArcRechargeContinuity: GTELForwardArcRechargeContinuitySnapshot;
   bilateralRenewalArcPrimingGate: GTELBilateralRenewalArcPrimingGateSnapshot;
+  renewalArcPrimingContinuity: GTELRenewalArcPrimingContinuitySnapshot;
+  bilateralNextArcOpenPrepGate: GTELBilateralNextArcOpenPrepGateSnapshot;
   inputHash: string;
 }
 
@@ -1104,6 +1108,26 @@ export interface GTELBilateralRenewalArcPrimingGateSnapshot {
   summary: string;
 }
 
+export type GTELRenewalArcPrimingContinuityBand = 'settled' | 'holding' | 'unsettled' | 'void';
+
+export interface GTELRenewalArcPrimingContinuitySnapshot {
+  score: number;
+  band: GTELRenewalArcPrimingContinuityBand;
+  primingGateSupport: number;
+  rechargeAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralNextArcOpenPrepGateBand = 'prepped' | 'staging' | 'deferred' | 'blocked';
+
+export interface GTELBilateralNextArcOpenPrepGateSnapshot {
+  score: number;
+  band: GTELBilateralNextArcOpenPrepGateBand;
+  continuityFeed: number;
+  cyclePrimingLift: number;
+  summary: string;
+}
+
 export interface GlobalTradeEconomyPanelProps {
   state: GTELState | null;
   theme?: { isDark?: boolean };
@@ -1317,6 +1341,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     bilateralForwardArcRechargeGateSmoothing: 0.52,
     forwardArcRechargeContinuitySmoothing: 0.52,
     bilateralRenewalArcPrimingGateSmoothing: 0.52,
+    renewalArcPrimingContinuitySmoothing: 0.52,
+    bilateralNextArcOpenPrepGateSmoothing: 0.52,
   };
 }
 
@@ -1600,6 +1626,12 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   );
   base.bilateralRenewalArcPrimingGateSmoothing = sanitizeBilateralRenewalArcPrimingGateSmoothing(
     r.bilateralRenewalArcPrimingGateSmoothing,
+  );
+  base.renewalArcPrimingContinuitySmoothing = sanitizeRenewalArcPrimingContinuitySmoothing(
+    r.renewalArcPrimingContinuitySmoothing,
+  );
+  base.bilateralNextArcOpenPrepGateSmoothing = sanitizeBilateralNextArcOpenPrepGateSmoothing(
+    r.bilateralNextArcOpenPrepGateSmoothing,
   );
   return base;
 }
@@ -7444,6 +7476,18 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   bilateralRenewalArcPrimingGateGiNotes,
   bilateralRenewalArcPrimingGateWorldEvent,
 } from './bilateral-renewal-arc-priming-gate.ts';
+  computeRenewalArcPrimingContinuitySnapshot,
+  renewalArcPrimingContinuityDomesticStress,
+  renewalArcPrimingContinuityExportScale,
+  renewalArcPrimingContinuityGiNotes,
+  renewalArcPrimingContinuityWorldEvent,
+} from './renewal-arc-priming-continuity.ts';
+  computeBilateralNextArcOpenPrepGateSnapshot,
+  bilateralNextArcOpenPrepGateDomesticStressRelief,
+  bilateralNextArcOpenPrepGateExportScale,
+  bilateralNextArcOpenPrepGateGiNotes,
+  bilateralNextArcOpenPrepGateWorldEvent,
+} from './bilateral-next-arc-open-prep-gate.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -8315,6 +8359,26 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const renewalPrimingGateEvent = bilateralRenewalArcPrimingGateWorldEvent(bilateralRenewalArcPrimingGate, turn);
   if (renewalPrimingGateEvent) worldEvents.push(renewalPrimingGateEvent);
 
+  const primingContinuityStep = computeRenewalArcPrimingContinuitySnapshot({
+    bilateralRenewalArcPrimingGate,
+    forwardArcRechargeContinuity,
+    persisted,
+  });
+  persisted = primingContinuityStep.persisted;
+  const renewalArcPrimingContinuity = primingContinuityStep.snapshot;
+  const primingContinuityEvent = renewalArcPrimingContinuityWorldEvent(renewalArcPrimingContinuity, turn);
+  if (primingContinuityEvent) worldEvents.push(primingContinuityEvent);
+
+  const nextArcPrepStep = computeBilateralNextArcOpenPrepGateSnapshot({
+    renewalArcPrimingContinuity,
+    acknowledgedCyclePriming,
+    persisted,
+  });
+  persisted = nextArcPrepStep.persisted;
+  const bilateralNextArcOpenPrepGate = nextArcPrepStep.snapshot;
+  const nextArcPrepEvent = bilateralNextArcOpenPrepGateWorldEvent(bilateralNextArcOpenPrepGate, turn);
+  if (nextArcPrepEvent) worldEvents.push(nextArcPrepEvent);
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -8372,6 +8436,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         bilateralForwardArcRechargeGateExportScale(bilateralForwardArcRechargeGate) *
         forwardArcRechargeContinuityExportScale(forwardArcRechargeContinuity) *
         bilateralRenewalArcPrimingGateExportScale(bilateralRenewalArcPrimingGate) *
+        renewalArcPrimingContinuityExportScale(renewalArcPrimingContinuity) *
+        bilateralNextArcOpenPrepGateExportScale(bilateralNextArcOpenPrepGate) *
         10,
     ) / 10;
 
@@ -8453,6 +8519,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       bilateralCommitmentLoopReopenGateDomesticStressRelief(bilateralCommitmentLoopReopenGate) +
       bilateralForwardArcRechargeGateDomesticStressRelief(bilateralForwardArcRechargeGate) +
       bilateralRenewalArcPrimingGateDomesticStressRelief(bilateralRenewalArcPrimingGate) +
+      bilateralNextArcOpenPrepGateDomesticStressRelief(bilateralNextArcOpenPrepGate) +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
@@ -8480,7 +8547,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       commitmentWindowSustainmentDomesticStress(commitmentWindowSustainment) +
       forwardCycleAdvanceContinuityDomesticStress(forwardCycleAdvanceContinuity) +
       reopenedCommitmentLoopContinuityDomesticStress(reopenedCommitmentLoopContinuity) +
-      forwardArcRechargeContinuityDomesticStress(forwardArcRechargeContinuity),
+      forwardArcRechargeContinuityDomesticStress(forwardArcRechargeContinuity) +
+      renewalArcPrimingContinuityDomesticStress(renewalArcPrimingContinuity),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -8559,6 +8627,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.bilateralForwardArcRechargeGateSmoothing,
     persisted.forwardArcRechargeContinuitySmoothing,
     persisted.bilateralRenewalArcPrimingGateSmoothing,
+    persisted.renewalArcPrimingContinuitySmoothing,
+    persisted.bilateralNextArcOpenPrepGateSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -8669,6 +8739,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     bilateralForwardArcRechargeGate,
     forwardArcRechargeContinuity,
     bilateralRenewalArcPrimingGate,
+    renewalArcPrimingContinuity,
+    bilateralNextArcOpenPrepGate,
     inputHash,
   };
 
@@ -8758,6 +8830,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...bilateralForwardArcRechargeGateGiNotes(state.bilateralForwardArcRechargeGate));
   lines.push(...forwardArcRechargeContinuityGiNotes(state.forwardArcRechargeContinuity));
   lines.push(...bilateralRenewalArcPrimingGateGiNotes(state.bilateralRenewalArcPrimingGate));
+  lines.push(...renewalArcPrimingContinuityGiNotes(state.renewalArcPrimingContinuity));
+  lines.push(...bilateralNextArcOpenPrepGateGiNotes(state.bilateralNextArcOpenPrepGate));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
@@ -8993,6 +9067,14 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   createEmptyBilateralRenewalArcPrimingGateSnapshot,
   bilateralRenewalArcPrimingGateExportScale,
 } from './bilateral-renewal-arc-priming-gate.ts';
+  computeRenewalArcPrimingContinuitySnapshot,
+  createEmptyRenewalArcPrimingContinuitySnapshot,
+  renewalArcPrimingContinuityExportScale,
+} from './renewal-arc-priming-continuity.ts';
+  computeBilateralNextArcOpenPrepGateSnapshot,
+  createEmptyBilateralNextArcOpenPrepGateSnapshot,
+  bilateralNextArcOpenPrepGateExportScale,
+} from './bilateral-next-arc-open-prep-gate.ts';
   computeBilateralTradeWindowContinuitySnapshot,
   createEmptyBilateralTradeWindowContinuitySnapshot,
 } from './bilateral-trade-window-continuity.ts';
