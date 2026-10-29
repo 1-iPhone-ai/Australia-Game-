@@ -15,6 +15,10 @@ export interface Agent04ModesSnapshot {
   wave37SandboxInflationLatch?: boolean;
   /** Round 37: scenario bias cascade band. */
   scenarioBiasCascadeBand?: 'routine' | 'stressed' | 'runaway';
+  /** Round 45: sandbox pressure inflation latch. */
+  wave45SandboxPressureLatch?: boolean;
+  /** Round 45: scenario stress surge band. */
+  scenarioStressSurgeBand?: 'routine' | 'stressed' | 'surge';
 }
 
 export function mergeAgent04IntoMacroFinancialInputs(
@@ -53,6 +57,13 @@ export function mergeAgent04IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.scenarioBiasCascadeBand === 'stressed' && snapshot.scenarioInflationBias === 'extreme') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave45SandboxPressureLatch && snapshot.scenarioStressSurgeBand === 'surge') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.scenarioStressSurgeBand === 'stressed' && snapshot.sandboxStressModeActive) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 

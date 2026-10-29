@@ -19,6 +19,10 @@ export interface Agent05EventsSnapshot {
   wave37EventInflationLatch?: boolean;
   /** Round 37: staged shock persistence band. */
   stagedShockPersistenceBand?: 'none' | 'building' | 'entrenched';
+  /** Round 45: event shock inflation latch. */
+  wave45EventShockLatch?: boolean;
+  /** Round 45: narrative shock entrench band. */
+  narrativeShockEntrenchBand?: 'none' | 'building' | 'entrenched';
 }
 
 export function mergeAgent05IntoMacroFinancialInputs(
@@ -69,6 +73,13 @@ export function mergeAgent05IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.stagedShockPersistenceBand === 'building' && snapshot.supplyDisruptionSeverity === 'national') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave45EventShockLatch && snapshot.narrativeShockEntrenchBand === 'entrenched') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.narrativeShockEntrenchBand === 'building' && snapshot.inflationShockEventActive) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 

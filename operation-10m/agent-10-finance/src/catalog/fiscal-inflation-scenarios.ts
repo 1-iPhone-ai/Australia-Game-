@@ -1621,6 +1621,47 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'command', 'transport', 'round44'],
   },
+  {
+    id: 'events_narrative_shock_latch_stack',
+    label: 'Events narrative shock latch stack',
+    description: 'Entrenched narrative shock under event latch.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.49,
+      publicStability: 30,
+    },
+    tags: ['inflation', 'events', 'round45'],
+  },
+  {
+    id: 'modes_sandbox_pressure_surge_stress',
+    label: 'Modes sandbox pressure surge stress',
+    description: 'Scenario surge under sandbox pressure latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.46,
+      publicStability: 26,
+    },
+    tags: ['inflation', 'modes', 'round45'],
+  },
+  {
+    id: 'events_modes_wave45_fusion_stress',
+    label: 'Events & modes wave 45 fusion stress',
+    description: 'Shock crisis latch colliding with sandbox pressure surge.',
+    patch: {
+      inflationSettingMultiplier: 1.56,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 16,
+    },
+    tags: ['inflation', 'events', 'modes', 'round45'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
