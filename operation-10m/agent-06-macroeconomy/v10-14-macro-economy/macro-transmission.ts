@@ -54,6 +54,8 @@ import type { MacroExpectationsAnchorSpillover } from './bridge-v1010-expectatio
 import type { MacroMetroMomentumSpillover } from './bridge-v1011-metro-momentum.ts';
 import type { MacroTransportThroughputSpillover } from './bridge-v1012-transport-throughput.ts';
 import type { MacroEnergyTransitionPaceSpillover } from './bridge-v1013-energy-transition-pace.ts';
+import type { MacroHousingAffordabilitySpillover } from './bridge-v1014-housing-affordability.ts';
+import type { MacroTradeExposureSpillover } from './bridge-v1015-trade-exposure.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -116,6 +118,8 @@ export function buildMacroTransmissionReport(params: {
   metroMomentum?: MacroMetroMomentumSpillover;
   transportThroughput?: MacroTransportThroughputSpillover;
   energyTransitionPace?: MacroEnergyTransitionPaceSpillover;
+  housingAffordability?: MacroHousingAffordabilitySpillover;
+  tradeExposure?: MacroTradeExposureSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -163,6 +167,8 @@ export function buildMacroTransmissionReport(params: {
   const metroMomentum = params.metroMomentum ?? ZERO_SPILLOVER;
   const transportThroughput = params.transportThroughput ?? ZERO_SPILLOVER;
   const energyTransitionPace = params.energyTransitionPace ?? ZERO_SPILLOVER;
+  const housingAffordability = params.housingAffordability ?? ZERO_SPILLOVER;
+  const tradeExposure = params.tradeExposure ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -583,6 +589,22 @@ export function buildMacroTransmissionReport(params: {
       energyTransitionPace.investmentNudge,
       energyTransitionPace.productivityNudge,
       energyTransitionPace.summary
+    ),
+    layer(
+      'v10.14_housing_affordability',
+      'Housing affordability',
+      housingAffordability.cycleNudge,
+      housingAffordability.investmentNudge,
+      housingAffordability.productivityNudge,
+      housingAffordability.summary
+    ),
+    layer(
+      'v10.15_trade_exposure',
+      'Trade exposure',
+      tradeExposure.cycleNudge,
+      tradeExposure.investmentNudge,
+      tradeExposure.productivityNudge,
+      tradeExposure.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

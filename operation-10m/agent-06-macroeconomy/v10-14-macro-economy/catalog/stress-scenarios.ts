@@ -192,6 +192,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Transport & energy stress',
     shockIds: ['commodity_bust', 'drought_ag_cycle'],
     description: 'Collapsed transport throughput with disruptive energy transition pace (harness overlay).'
+  },
+  {
+    id: 'housing_trade_stress',
+    label: 'Housing & trade stress',
+    shockIds: ['housing_correction', 'global_slowdown'],
+    description: 'Crushed housing affordability with dislocated trade exposure (harness overlay).'
   }
 ];
 

@@ -46,8 +46,8 @@ export function runAgent06Round14SelfTests(): {
   record('R14-04', 'State exposes automation summary', integrated.state.automationSpilloverSummary != null, 'ok');
   record(
     'R14-05',
-    'Fifty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 56,
+    'Fifty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 58,
     String(integrated.state.transmissionReport.layers.length)
   );
 

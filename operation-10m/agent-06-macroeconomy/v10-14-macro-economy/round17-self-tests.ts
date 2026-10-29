@@ -62,8 +62,8 @@ export function runAgent06Round17SelfTests(): {
   record('R17-04', 'State exposes utilities summary', integrated.state.utilitiesSpilloverSummary != null, 'ok');
   record(
     'R17-05',
-    'Fifty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 56,
+    'Fifty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 58,
     String(integrated.state.transmissionReport.layers.length)
   );
 

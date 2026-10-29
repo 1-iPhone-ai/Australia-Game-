@@ -982,5 +982,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Elevated transmission synthesis — gross spillover mass is high across layers.'
     });
   }
+  const haAff: any = inputs.housingAffordability ?? inputs.housingWellbeing?.affordability;
+  const affordStress = String(haAff?.stressBand ?? haAff?.affordabilityBand ?? '');
+  if (
+    (affordStress === 'crushed' || affordStress === 'critical') &&
+    (state.housingSpilloverSummary != null || state.rentalSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'housing_affordability_crushed',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Crushed housing affordability aligns with strained housing/rental spillover read.'
+    });
+  }
+  const tradeExpIn: any = inputs.tradeExposure ?? inputs.trade?.exposure;
+  const exposureShock = String(tradeExpIn?.shockBand ?? tradeExpIn?.vulnerabilityBand ?? '');
+  if (
+    (exposureShock === 'dislocated' || exposureShock === 'critical') &&
+    (state.tradeSpilloverSummary != null || state.tradeExposureSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'trade_exposure_dislocated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Dislocated trade exposure coincides with strained external/trade spillover.'
+    });
+  }
+  if (state.transmissionDispersion?.band === 'wide') {
+    gates.push({
+      id: 'transmission_dispersion_wide',
+      triggered: true,
+      severity: 'info',
+      summary: 'Wide transmission dispersion — spillover mass is uneven across layers.'
+    });
+  }
   return gates;
 }
