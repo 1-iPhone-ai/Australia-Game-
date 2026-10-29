@@ -29045,7 +29045,7 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
   });
   check('FEDERATION ARBITRATION GI alignment', giFa.relevanceDelta > 0.5, giFa.reason || '');
 
-  const peInp: IndustrialEnergyEnvironmentalInputs = {
+  const pathwayCiInp: IndustrialEnergyEnvironmentalInputs = {
     ...baseInp,
     completedProjectTypes: [
       'scope12_pathway_orchestration_hub',
@@ -29061,7 +29061,7 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
       'industrial_ccs_cluster',
     ],
   };
-  const rr32 = computeIndustrialEnergyEnvironmentalState(peInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  const rr32 = computeIndustrialEnergyEnvironmentalState(pathwayCiInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
   check(
     'NET ZERO pathway ledger tracked',
     !!rr32.state.regionalNetZeroPathwayLedgers.QLD?.band,
@@ -29077,12 +29077,12 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     !!rr32.persisted.regionalNetZeroPathwayMemory.QLD,
     String(rr32.persisted.regionalNetZeroPathwayMemory.QLD?.pathwayIndex),
   );
-  const giPe = scoreAgent13PathwayExportCiGIAlignment({
+  const giPathwayCi = scoreAgent13PathwayExportCiGIAlignment({
     actionText: 'Scope 1-2 pathway with CBAM alignment export corridor and trade-exposed abatement mesh',
     pathwayBand: rr32.state.regions.QLD?.netZeroPathwayBand,
     intensityBand: rr32.state.regions.QLD?.exportCarbonIntensityBand,
   });
-  check('PATHWAY EXPORT CI GI alignment', giPe.relevanceDelta > 0.5, giPe.reason || '');
+  check('PATHWAY EXPORT CI GI alignment', giPathwayCi.relevanceDelta > 0.5, giPathwayCi.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');
