@@ -4,6 +4,6 @@ Modular slices live under `operation-10m/agent-NN-*` until Agent 25 deterministi
 
 | Agent | Path | Canonical hook (planned) |
 |------:|------|-------------------------|
-| 11 | [agent-11-cities](./agent-11-cities/INTEGRATION.md) | Extends V10.14 §20AK cities layer with inequality + national–local coupling |
+| 11 | [agent-11-cities](./agent-11-cities/INTEGRATION.md) | Extends V10.14 §20AK cities layer with inequality + national–local coupling; assembly chunk `modules/agent-11-cities/chunk.tsx` |
 
 Assembly owner: Agent 25. Workers must not edit the canonical TSX directly.

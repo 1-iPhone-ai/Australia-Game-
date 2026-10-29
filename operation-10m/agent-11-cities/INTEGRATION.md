@@ -36,4 +36,7 @@ All symbols are prefixed `OP10M_A11_` for grep-safe assembly.
 
 ```bash
 npm run test:agent-11-cities
+npm run build:agent11-chunk
 ```
+
+Assembly-ready inline module: `operation-10m/modules/agent-11-cities/chunk.tsx` (`OP10M_MODULE_BEGIN agent-11-cities`).
