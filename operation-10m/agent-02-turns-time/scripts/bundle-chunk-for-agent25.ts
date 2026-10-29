@@ -196,6 +196,10 @@ const SOURCE_FILES = [
   'src/batch-national-tick-session-wave51-integration-export.ts',
   'src/batch-national-tick-session-wave51-integration-export-compare.ts',
   'src/batch-national-tick-session-wave51-integration-replay-parity.ts',
+  'src/batch-national-tick-session-wave52-integration-seal.ts',
+  'src/batch-national-tick-session-wave52-integration-export.ts',
+  'src/batch-national-tick-session-wave52-integration-export-compare.ts',
+  'src/batch-national-tick-session-wave52-integration-replay-parity.ts',
   'src/fast-forward.ts',
 ] as const;
 
@@ -245,7 +249,7 @@ function bundleSources(): string {
 
   parts.push(
     `export const AGENT_02_MODULE_ID = 'operation-10m/${moduleId}';`,
-    `export const AGENT_02_MODULE_VERSION = '5.10.0';`,
+    `export const AGENT_02_MODULE_VERSION = '5.12.0';`,
     '',
     `export function runOp10mAgent02TurnsTimeSelfTests(): {`,
     `  passed: number;`,
@@ -885,8 +889,8 @@ function bundleSources(): string {
     `    ).ok,`,
     `  });`,
     `  results.push({`,
-    `    id: 'agent02_national_tick_session_wave51_integration_seal',`,
-    `    name: 'national tick session wave 51 O10-233 integration seal a32b2b15',`,
+    `    id: 'agent02_national_tick_session_wave52_integration_seal',`,
+    `    name: 'national tick session wave 52 O10-235 integration seal ba97bdce',`,
     `    passed: exportBatchNationalTickSessionWave51Integration(`,
     `      sealBatchNationalTickSessionWave51Integration(`,
     `        new TurnTimeEngine(),`,
