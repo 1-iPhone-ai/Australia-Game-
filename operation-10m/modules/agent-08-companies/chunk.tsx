@@ -32031,7 +32031,7 @@ export function runAgent08TransitionDivinizationSelfTests(): Array<{
 
   check('a08_divinization_04', () => {
     const band = classifyNationalDivinizationBand(0.998, 1, 'omnipotent');
-    return band === 'divinized';
+    return band === 'transcendent';
   });
 
   check('a08_divinization_05', () => {
