@@ -216,7 +216,16 @@ import {
 import {
   buildAgent17SanctionAccord,
   sanctionAccordBlocksCharter,
+  sanctionAccordBlocksStatute,
 } from '../planning/sanction-accord.ts';
+import {
+  buildAgent17StatuteIndex,
+  statuteIndexBlocksCompliance,
+} from '../planning/statute-index.ts';
+import {
+  buildAgent17ComplianceAccord,
+  complianceAccordBlocksStatute,
+} from '../planning/compliance-accord.ts';
 import {
   Agent17RollbackController,
   createAgent17RollbackController,
@@ -1763,6 +1772,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const statuteIndex = depthEval.snapshot.planningDepth?.statuteIndex;
+  goalResults.push(
+    result(
+      'G17-103',
+      !!statuteIndex &&
+        statuteIndex.sections.length >= 5 &&
+        statuteIndex.statuteScore >= 0 &&
+        statuteIndex.statuteScore <= 100 &&
+        (statuteIndex.band === 'codified' ||
+          statuteIndex.band === 'drafting' ||
+          statuteIndex.band === 'struck'),
+      `sections=${statuteIndex?.sections.length} score=${statuteIndex?.statuteScore}`
+    )
+  );
+
+  const complianceAccord = depthEval.snapshot.planningDepth?.complianceAccord;
+  goalResults.push(
+    result(
+      'G17-104',
+      !!complianceAccord &&
+        complianceAccord.checks.length >= 5 &&
+        complianceAccord.complianceScore >= 0 &&
+        complianceAccord.complianceScore <= 100,
+      `checks=${complianceAccord?.checks.length} score=${complianceAccord?.complianceScore}`
+    )
+  );
+
+  const struckStatute = buildAgent17StatuteIndex({
+    sanctionAccord: liftedSanction,
+    charterIndex: repealedCharter,
+    legitimacyAccord: forfeitLegitimacy,
+  });
+  const breachedCompliance = buildAgent17ComplianceAccord({
+    statuteIndex: struckStatute,
+    sanctionAccord: liftedSanction,
+    charterIndex: repealedCharter,
+  });
+  goalResults.push(
+    result(
+      'G17-105',
+      sanctionAccordBlocksStatute(liftedSanction) ||
+        statuteIndexBlocksCompliance(struckStatute) ||
+        complianceAccordBlocksStatute(breachedCompliance),
+      `${struckStatute.band}/${breachedCompliance.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -1895,6 +1951,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-100',
     'G17-101',
     'G17-102',
+    'G17-103',
+    'G17-104',
+    'G17-105',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

@@ -100,3 +100,7 @@ export function buildAgent17SanctionAccord(
 export function sanctionAccordBlocksCharter(snapshot: Agent17SanctionAccordSnapshot): boolean {
   return snapshot.band === 'lifted' || !snapshot.sanctionBinding;
 }
+
+export function sanctionAccordBlocksStatute(snapshot: Agent17SanctionAccordSnapshot): boolean {
+  return snapshot.band === 'lifted' || !snapshot.sanctionBinding;
+}

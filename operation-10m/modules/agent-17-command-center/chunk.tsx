@@ -239,6 +239,8 @@ export interface Agent17PlanningDepthSnapshot {
   legitimacyAccord: Agent17LegitimacyAccordSnapshot;
   charterIndex: Agent17CharterIndexSnapshot;
   sanctionAccord: Agent17SanctionAccordSnapshot;
+  statuteIndex: Agent17StatuteIndexSnapshot;
+  complianceAccord: Agent17ComplianceAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1115,6 +1117,40 @@ export interface Agent17SanctionAccordSnapshot {
   charterBand: Agent17CharterIndexSnapshot['band'];
   legitimacyBand: Agent17LegitimacyAccordSnapshot['band'];
   sanctionBinding: boolean;
+  headline: string;
+}
+
+export interface Agent17StatuteSection {
+  id: string;
+  label: string;
+  codified: boolean;
+  weight: number;
+}
+
+export interface Agent17StatuteIndexSnapshot {
+  statuteScore: number;
+  band: 'codified' | 'drafting' | 'struck';
+  sections: Agent17StatuteSection[];
+  sanctionBand: Agent17SanctionAccordSnapshot['band'];
+  charterBand: Agent17CharterIndexSnapshot['band'];
+  statuteCodified: boolean;
+  headline: string;
+}
+
+export interface Agent17ComplianceCheck {
+  id: string;
+  label: string;
+  verified: boolean;
+  weight: number;
+}
+
+export interface Agent17ComplianceAccordSnapshot {
+  complianceScore: number;
+  band: 'verified' | 'pending' | 'breached';
+  checks: Agent17ComplianceCheck[];
+  statuteBand: Agent17StatuteIndexSnapshot['band'];
+  sanctionBand: Agent17SanctionAccordSnapshot['band'];
+  complianceVerified: boolean;
   headline: string;
 }
 
@@ -8138,6 +8174,214 @@ export function sanctionAccordBlocksCharter(snapshot: Agent17SanctionAccordSnaps
   return snapshot.band === 'lifted' || !snapshot.sanctionBinding;
 }
 
+export function sanctionAccordBlocksStatute(snapshot: Agent17SanctionAccordSnapshot): boolean {
+  return snapshot.band === 'lifted' || !snapshot.sanctionBinding;
+}
+
+
+// --- source: planning/statute-index.ts ---
+  Agent17CharterIndexSnapshot,
+  Agent17LegitimacyAccordSnapshot,
+  Agent17SanctionAccordSnapshot,
+  Agent17StatuteIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17StatuteIndexInputs {
+  sanctionAccord: Agent17SanctionAccordSnapshot;
+  charterIndex: Agent17CharterIndexSnapshot;
+  legitimacyAccord: Agent17LegitimacyAccordSnapshot;
+}
+
+export function buildAgent17StatuteIndex(
+  inputs: Agent17StatuteIndexInputs
+): Agent17StatuteIndexSnapshot {
+  const sections: Agent17StatuteIndexSnapshot['sections'] = [];
+
+  sections.push({
+    id: 'sanction_binding',
+    label: 'Sanction accord binding',
+    codified:
+      inputs.sanctionAccord.sanctionBinding &&
+      !sanctionAccordBlocksStatute(inputs.sanctionAccord),
+    weight: 30,
+  });
+
+  sections.push({
+    id: 'sanction_band',
+    label: 'Sanction binding or suspended',
+    codified:
+      inputs.sanctionAccord.band === 'binding' ||
+      inputs.sanctionAccord.band === 'suspended',
+    weight: 25,
+  });
+
+  sections.push({
+    id: 'charter_enacted',
+    label: 'Charter index charter-enacted',
+    codified:
+      inputs.charterIndex.charterEnacted && !charterIndexBlocksSanction(inputs.charterIndex),
+    weight: 20,
+  });
+
+  sections.push({
+    id: 'legitimacy_clear',
+    label: 'Legitimacy accord not blocking charter',
+    codified: !legitimacyAccordBlocksCharter(inputs.legitimacyAccord),
+    weight: 15,
+  });
+
+  sections.push({
+    id: 'sanction_score',
+    label: 'Sanction score headroom',
+    codified: inputs.sanctionAccord.sanctionScore >= 34,
+    weight: 10,
+  });
+
+  const weighted = sections.reduce(
+    (n, s) => n + (s.codified ? 100 : 6) * (s.weight / 100),
+    0
+  );
+  const totalWeight = sections.reduce((n, s) => n + s.weight, 0);
+  const statuteScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const struckSignals =
+    sanctionAccordBlocksStatute(inputs.sanctionAccord) ||
+    charterIndexBlocksSanction(inputs.charterIndex) ||
+    legitimacyAccordBlocksCharter(inputs.legitimacyAccord);
+
+  const band: Agent17StatuteIndexSnapshot['band'] = struckSignals
+    ? 'struck'
+    : statuteScore >= 59 &&
+        inputs.sanctionAccord.band === 'binding' &&
+        inputs.charterIndex.band === 'enacted'
+      ? 'codified'
+      : 'drafting';
+
+  const statuteCodified =
+    band === 'codified' &&
+    inputs.sanctionAccord.sanctionBinding &&
+    !sanctionAccordBlocksStatute(inputs.sanctionAccord);
+
+  return {
+    statuteScore,
+    band,
+    sections,
+    sanctionBand: inputs.sanctionAccord.band,
+    charterBand: inputs.charterIndex.band,
+    statuteCodified,
+    headline: `Statute ${band} (${statuteScore}/100) · ${sections.filter(s => s.codified).length}/${sections.length} sections`,
+  };
+}
+
+export function statuteIndexBlocksCompliance(snapshot: Agent17StatuteIndexSnapshot): boolean {
+  return snapshot.band === 'struck' || !snapshot.statuteCodified;
+}
+
+
+// --- source: planning/compliance-accord.ts ---
+  Agent17CharterIndexSnapshot,
+  Agent17ComplianceAccordSnapshot,
+  Agent17SanctionAccordSnapshot,
+  Agent17StatuteIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17ComplianceAccordInputs {
+  statuteIndex: Agent17StatuteIndexSnapshot;
+  sanctionAccord: Agent17SanctionAccordSnapshot;
+  charterIndex: Agent17CharterIndexSnapshot;
+}
+
+export function buildAgent17ComplianceAccord(
+  inputs: Agent17ComplianceAccordInputs
+): Agent17ComplianceAccordSnapshot {
+  const checks: Agent17ComplianceAccordSnapshot['checks'] = [];
+
+  checks.push({
+    id: 'statute_codified',
+    label: 'Statute index statute-codified',
+    verified:
+      inputs.statuteIndex.statuteCodified &&
+      !statuteIndexBlocksCompliance(inputs.statuteIndex),
+    weight: 30,
+  });
+
+  checks.push({
+    id: 'statute_band',
+    label: 'Statute codified or drafting',
+    verified:
+      inputs.statuteIndex.band === 'codified' || inputs.statuteIndex.band === 'drafting',
+    weight: 25,
+  });
+
+  checks.push({
+    id: 'sanction_binding',
+    label: 'Sanction accord binding-ready',
+    verified:
+      inputs.sanctionAccord.sanctionBinding &&
+      !sanctionAccordBlocksStatute(inputs.sanctionAccord),
+    weight: 20,
+  });
+
+  checks.push({
+    id: 'charter_clear',
+    label: 'Charter index not blocking sanction',
+    verified: !charterIndexBlocksSanction(inputs.charterIndex),
+    weight: 15,
+  });
+
+  checks.push({
+    id: 'statute_score',
+    label: 'Statute score headroom',
+    verified: inputs.statuteIndex.statuteScore >= 33,
+    weight: 10,
+  });
+
+  const weighted = checks.reduce(
+    (n, c) => n + (c.verified ? 100 : 5) * (c.weight / 100),
+    0
+  );
+  const totalWeight = checks.reduce((n, c) => n + c.weight, 0);
+  const complianceScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const breachedSignals =
+    statuteIndexBlocksCompliance(inputs.statuteIndex) ||
+    sanctionAccordBlocksStatute(inputs.sanctionAccord) ||
+    charterIndexBlocksSanction(inputs.charterIndex);
+
+  const band: Agent17ComplianceAccordSnapshot['band'] = breachedSignals
+    ? 'breached'
+    : complianceScore >= 56 &&
+        inputs.statuteIndex.band === 'codified' &&
+        inputs.sanctionAccord.band === 'binding'
+      ? 'verified'
+      : 'pending';
+
+  const complianceVerified =
+    band === 'verified' &&
+    inputs.statuteIndex.statuteCodified &&
+    !charterIndexBlocksSanction(inputs.charterIndex);
+
+  return {
+    complianceScore,
+    band,
+    checks,
+    statuteBand: inputs.statuteIndex.band,
+    sanctionBand: inputs.sanctionAccord.band,
+    complianceVerified,
+    headline: `Compliance ${band} (${complianceScore}/100) · ${checks.filter(c => c.verified).length}/${checks.length} checks`,
+  };
+}
+
+export function complianceAccordBlocksStatute(snapshot: Agent17ComplianceAccordSnapshot): boolean {
+  return snapshot.band === 'breached' || !snapshot.complianceVerified;
+}
+
 
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
@@ -8518,6 +8762,16 @@ export function buildAgent17PlanningDepthSnapshot(
     legitimacyAccord,
     canonIndex,
   });
+  const statuteIndex = buildAgent17StatuteIndex({
+    sanctionAccord,
+    charterIndex,
+    legitimacyAccord,
+  });
+  const complianceAccord = buildAgent17ComplianceAccord({
+    statuteIndex,
+    sanctionAccord,
+    charterIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -8575,6 +8829,8 @@ export function buildAgent17PlanningDepthSnapshot(
     legitimacyAccord,
     charterIndex,
     sanctionAccord,
+    statuteIndex,
+    complianceAccord,
   };
 }
 
@@ -9581,6 +9837,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Repealed charter or forfeit legitimacy yields sanctionAccordBlocksCharter.',
     severity: 'major',
   },
+  {
+    id: 'G17-103',
+    title: 'Statute index on planning depth',
+    category: 'telemetry',
+    acceptance: 'statuteIndex reports statuteScore 0–100 with codified/drafting/struck band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-104',
+    title: 'Compliance accord checks complete',
+    category: 'telemetry',
+    acceptance: 'complianceAccord exposes ≥5 checks and complianceScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-105',
+    title: 'Struck statute breaches compliance accord',
+    category: 'integration',
+    acceptance: 'Struck statute or lifted sanction yields complianceAccordBlocksStatute.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -9745,7 +10022,14 @@ export function listAgent17GoalIds(): string[] {
 } from '../planning/charter-index.ts';
   buildAgent17SanctionAccord,
   sanctionAccordBlocksCharter,
+  sanctionAccordBlocksStatute,
 } from '../planning/sanction-accord.ts';
+  buildAgent17StatuteIndex,
+  statuteIndexBlocksCompliance,
+} from '../planning/statute-index.ts';
+  buildAgent17ComplianceAccord,
+  complianceAccordBlocksStatute,
+} from '../planning/compliance-accord.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -11291,6 +11575,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const statuteIndex = depthEval.snapshot.planningDepth?.statuteIndex;
+  goalResults.push(
+    result(
+      'G17-103',
+      !!statuteIndex &&
+        statuteIndex.sections.length >= 5 &&
+        statuteIndex.statuteScore >= 0 &&
+        statuteIndex.statuteScore <= 100 &&
+        (statuteIndex.band === 'codified' ||
+          statuteIndex.band === 'drafting' ||
+          statuteIndex.band === 'struck'),
+      `sections=${statuteIndex?.sections.length} score=${statuteIndex?.statuteScore}`
+    )
+  );
+
+  const complianceAccord = depthEval.snapshot.planningDepth?.complianceAccord;
+  goalResults.push(
+    result(
+      'G17-104',
+      !!complianceAccord &&
+        complianceAccord.checks.length >= 5 &&
+        complianceAccord.complianceScore >= 0 &&
+        complianceAccord.complianceScore <= 100,
+      `checks=${complianceAccord?.checks.length} score=${complianceAccord?.complianceScore}`
+    )
+  );
+
+  const struckStatute = buildAgent17StatuteIndex({
+    sanctionAccord: liftedSanction,
+    charterIndex: repealedCharter,
+    legitimacyAccord: forfeitLegitimacy,
+  });
+  const breachedCompliance = buildAgent17ComplianceAccord({
+    statuteIndex: struckStatute,
+    sanctionAccord: liftedSanction,
+    charterIndex: repealedCharter,
+  });
+  goalResults.push(
+    result(
+      'G17-105',
+      sanctionAccordBlocksStatute(liftedSanction) ||
+        statuteIndexBlocksCompliance(struckStatute) ||
+        complianceAccordBlocksStatute(breachedCompliance),
+      `${struckStatute.band}/${breachedCompliance.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -11423,6 +11754,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-100',
     'G17-101',
     'G17-102',
+    'G17-103',
+    'G17-104',
+    'G17-105',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

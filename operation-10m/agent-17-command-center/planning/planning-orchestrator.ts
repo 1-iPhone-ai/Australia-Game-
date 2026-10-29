@@ -75,6 +75,8 @@ import { buildAgent17CanonIndex } from './canon-index.ts';
 import { buildAgent17LegitimacyAccord } from './legitimacy-accord.ts';
 import { buildAgent17CharterIndex } from './charter-index.ts';
 import { buildAgent17SanctionAccord } from './sanction-accord.ts';
+import { buildAgent17StatuteIndex } from './statute-index.ts';
+import { buildAgent17ComplianceAccord } from './compliance-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -439,6 +441,16 @@ export function buildAgent17PlanningDepthSnapshot(
     legitimacyAccord,
     canonIndex,
   });
+  const statuteIndex = buildAgent17StatuteIndex({
+    sanctionAccord,
+    charterIndex,
+    legitimacyAccord,
+  });
+  const complianceAccord = buildAgent17ComplianceAccord({
+    statuteIndex,
+    sanctionAccord,
+    charterIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -496,6 +508,8 @@ export function buildAgent17PlanningDepthSnapshot(
     legitimacyAccord,
     charterIndex,
     sanctionAccord,
+    statuteIndex,
+    complianceAccord,
   };
 }
 

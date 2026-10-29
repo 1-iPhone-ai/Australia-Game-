@@ -716,6 +716,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Repealed charter or forfeit legitimacy yields sanctionAccordBlocksCharter.',
     severity: 'major',
   },
+  {
+    id: 'G17-103',
+    title: 'Statute index on planning depth',
+    category: 'telemetry',
+    acceptance: 'statuteIndex reports statuteScore 0–100 with codified/drafting/struck band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-104',
+    title: 'Compliance accord checks complete',
+    category: 'telemetry',
+    acceptance: 'complianceAccord exposes ≥5 checks and complianceScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-105',
+    title: 'Struck statute breaches compliance accord',
+    category: 'integration',
+    acceptance: 'Struck statute or lifted sanction yields complianceAccordBlocksStatute.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
