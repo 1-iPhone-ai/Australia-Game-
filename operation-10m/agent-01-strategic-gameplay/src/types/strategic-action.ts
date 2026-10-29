@@ -3,6 +3,7 @@ import type { GovernancePatch } from '../contracts/government.ts';
 import type { PopulationPatch } from '../contracts/population.ts';
 import type { TechPatch } from '../contracts/tech.ts';
 import type {
+  MandateMilestoneId,
   MandateProgress,
   StakeholderSentiment,
 } from './coalition-mandate.ts';
@@ -58,6 +59,8 @@ export interface StrategicActionDefinition {
   cooldownDays?: number;
   /** Bonus approval when synergy matches exist (applied in engine). */
   synergyEligible?: boolean;
+  /** All listed mandate milestones must be unlocked before execution. */
+  requiredMandateMilestones?: { priorityId: NationalPriorityId; milestoneId: MandateMilestoneId }[];
 }
 
 export interface MultiStageChoiceOption {
@@ -93,7 +96,8 @@ export type StrategicValidationRequirement =
   | { kind: 'no_investment_lockout' }
   | { kind: 'directive_slot_available' }
   | { kind: 'max_pending_tradeoffs'; max: number }
-  | { kind: 'action_not_yet_completed'; actionId: string };
+  | { kind: 'action_not_yet_completed'; actionId: string }
+  | { kind: 'mandate_milestone'; priorityId: NationalPriorityId; milestoneId: MandateMilestoneId };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -133,6 +137,8 @@ export interface StrategicGameplayState {
   actionCooldowns: Record<string, { untilDay: number }>;
   mandateProgress?: MandateProgress;
   stakeholderSentiment?: StakeholderSentiment;
+  /** Last calendar day an aligned-priority action completed (mandate idle drift). */
+  lastAlignedActionDay?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;

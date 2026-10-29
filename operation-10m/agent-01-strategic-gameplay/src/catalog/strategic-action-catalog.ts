@@ -343,6 +343,37 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
       },
     ],
   },
+  'sga_mandate_leadership_summit': {
+    id: 'sga_mandate_leadership_summit',
+    title: 'Mandate Leadership Summit',
+    category: 'governance',
+    apCost: 2,
+    cashCost: 22_000,
+    treasuryCost: 85_000,
+    minApproval: 50,
+    alignedPriorities: ['water_security', 'energy_resilience'],
+    conflictingPriorities: [],
+    tags: ['national_priority', 'compact'],
+    repeatable: false,
+    requiredMandateMilestones: [
+      { priorityId: 'water_security', milestoneId: 'mandate_priority_leadership' },
+    ],
+    immediateEffects: {
+      economy: { cashDelta: -22_000, treasuryDelta: -85_000 },
+      government: { approvalDelta: 5, directiveSlotsDelta: 1, regulatoryBurdenDelta: -1 },
+      population: { publicStabilityDelta: 4, essentialAccessDelta: 2 },
+    },
+    delayedTradeOffs: [
+      {
+        label: 'Summit follow-through audits',
+        warning: 'Independent reviewers increase regulatory load briefly.',
+        effects: {
+          government: { regulatoryBurdenDelta: 2 },
+          economy: { treasuryDelta: -20_000 },
+        },
+      },
+    ],
+  },
 };
 
 export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefinition> = {

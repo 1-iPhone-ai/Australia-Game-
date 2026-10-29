@@ -29,6 +29,8 @@ export interface TurnStrategicBriefing {
   stakeholderWarnings: string[];
   completedActionCount: number;
   activeChoiceId: string | null;
+  coalitionBalanceIndex: number;
+  mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;
 }

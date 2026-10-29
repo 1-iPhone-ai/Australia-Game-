@@ -20,6 +20,7 @@ import {
   canExecuteAfterCooldown,
 } from './strategic-synergies.ts';
 import { stakeholderOppositionIssues } from './stakeholder-coalition.ts';
+import { mandateMilestoneIssues } from './mandate-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -145,6 +146,32 @@ export function evaluateRequirements(
           });
         }
         break;
+      case 'mandate_milestone':
+        if (state) {
+          issues.push(
+            ...mandateMilestoneIssues(
+              {
+                id: '_gate',
+                title: '',
+                category: 'governance',
+                apCost: 0,
+                cashCost: 0,
+                treasuryCost: 0,
+                minApproval: 0,
+                alignedPriorities: [],
+                conflictingPriorities: [],
+                immediateEffects: {},
+                delayedTradeOffs: [],
+                tags: [],
+                requiredMandateMilestones: [
+                  { priorityId: req.priorityId, milestoneId: req.milestoneId },
+                ],
+              },
+              state,
+            ),
+          );
+        }
+        break;
       default:
         break;
     }
@@ -190,6 +217,7 @@ export function validateAction(
 
   if (state) {
     issues.push(...stakeholderOppositionIssues(action, contracts, state));
+    issues.push(...mandateMilestoneIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

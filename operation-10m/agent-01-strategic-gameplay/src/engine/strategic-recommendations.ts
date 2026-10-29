@@ -10,6 +10,7 @@ import { priorityMomentumBonus } from './priority-momentum.ts';
 import { detectStrategicSynergies, synergyScoreBonus } from './strategic-synergies.ts';
 import { STRATEGIC_ACTION_CATALOG } from '../catalog/strategic-action-catalog.ts';
 import { mandateRankingBonus } from './strategic-mandate.ts';
+import { coalitionBalanceRankingBonus } from './coalition-balance.ts';
 import { scoreNationalPriorityAlignment, validateAction } from './validation.ts';
 
 export function rankStrategicActions(
@@ -37,7 +38,8 @@ export function rankStrategicActions(
         (alignment?.score ?? 0) +
         priorityMomentumBonus(state, action) +
         synergyScoreBonus(synergies) +
-        mandateRankingBonus(state, action),
+        mandateRankingBonus(state, action) +
+        coalitionBalanceRankingBonus(state),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });

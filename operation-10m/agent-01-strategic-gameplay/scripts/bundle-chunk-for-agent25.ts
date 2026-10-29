@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const moduleRoot = resolve(__dirname, '..');
 const moduleId = 'agent-01-strategic-gameplay';
+const moduleVersion = '1.5.0';
 
 /** Stable concat order: dependencies before dependents. */
 const SOURCE_FILES = [
@@ -19,17 +20,25 @@ const SOURCE_FILES = [
   'src/contracts/tech.ts',
   'src/contracts/ui.ts',
   'src/types/national-priority.ts',
+  'src/types/coalition-mandate.ts',
   'src/types/strategic-action.ts',
   'src/engine/commitment-journal.ts',
   'src/engine/action-prerequisites.ts',
   'src/engine/priority-momentum.ts',
   'src/engine/consequence-forecast.ts',
   'src/engine/strategic-synergies.ts',
+  'src/engine/strategic-mandate.ts',
+  'src/engine/stakeholder-coalition.ts',
+  'src/engine/coalition-balance.ts',
+  'src/engine/mandate-idle-drift.ts',
+  'src/engine/mandate-gates.ts',
   'src/engine/strategic-save.ts',
   'src/engine/tradeoff-mitigation.ts',
   'src/engine/validation.ts',
   'src/engine/strategic-recommendations.ts',
+  'src/engine/turn-briefing.ts',
   'src/engine/delayed-effects.ts',
+  'src/engine/strategic-calendar.ts',
   'src/engine/strategic-gameplay-engine.ts',
   'src/catalog/strategic-action-catalog.ts',
   'src/adapters/memory-contracts.ts',
@@ -80,7 +89,7 @@ function bundleSources(): string {
 
   parts.push(
     `export const AGENT_01_MODULE_ID = 'operation-10m/${moduleId}';`,
-    `export const AGENT_01_MODULE_VERSION = '1.3.0';`,
+    `export const AGENT_01_MODULE_VERSION = '${moduleVersion}';`,
     '',
     `export function runOp10mAgent01StrategicGameplaySelfTests(): {`,
     `  passed: number;`,
@@ -91,7 +100,7 @@ function bundleSources(): string {
     `  results.push({`,
     `    id: 'agent01_catalog',`,
     `    name: 'strategic action catalog non-empty',`,
-    `    passed: listStrategicActions().length >= 10,`,
+    `    passed: listStrategicActions().length >= 12,`,
     `  });`,
     `  const contracts = createMemoryStrategicContracts();`,
     `  const action = getStrategicAction('sga_supply_chain_buffer');`,

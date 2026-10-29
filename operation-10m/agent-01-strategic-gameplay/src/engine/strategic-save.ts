@@ -20,13 +20,21 @@ export interface StrategicGameplaySaveV2 extends Omit<StrategicGameplaySaveV1, '
   stakeholderSentiment: StakeholderSentiment;
 }
 
-export type StrategicGameplaySaveBlob = StrategicGameplaySaveV1 | StrategicGameplaySaveV2;
+export interface StrategicGameplaySaveV3 extends Omit<StrategicGameplaySaveV2, 'version'> {
+  version: 3;
+  lastAlignedActionDay: number;
+}
+
+export type StrategicGameplaySaveBlob =
+  | StrategicGameplaySaveV1
+  | StrategicGameplaySaveV2
+  | StrategicGameplaySaveV3;
 
 export function serializeStrategicGameplayState(
   state: StrategicGameplayState,
-): StrategicGameplaySaveV2 {
+): StrategicGameplaySaveV3 {
   return {
-    version: 2,
+    version: 3,
     day: state.day,
     completedActionIds: [...state.completedActionIds],
     pendingDelayed: state.pendingDelayed.map((p) => ({ ...p, effects: { ...p.effects } })),
@@ -38,6 +46,7 @@ export function serializeStrategicGameplayState(
     stakeholderSentiment: {
       ...(state.stakeholderSentiment ?? createDefaultStakeholderSentiment()),
     },
+    lastAlignedActionDay: state.lastAlignedActionDay ?? state.day,
   };
 }
 
@@ -55,9 +64,24 @@ export function deserializeStrategicGameplayState(
       activeChoice: save.activeChoice ? { ...save.activeChoice } : null,
       mandateProgress: createEmptyMandateProgress(),
       stakeholderSentiment: createDefaultStakeholderSentiment(),
+      lastAlignedActionDay: save.day,
     };
   }
-  if (save.version !== 2) {
+  if (save.version === 2) {
+    return {
+      day: save.day,
+      completedActionIds: [...save.completedActionIds],
+      pendingDelayed: save.pendingDelayed.slice(),
+      journal: save.journal.slice(),
+      priorityMomentum: { ...save.priorityMomentum },
+      actionCooldowns: { ...save.actionCooldowns },
+      activeChoice: save.activeChoice ? { ...save.activeChoice } : null,
+      mandateProgress: { ...save.mandateProgress },
+      stakeholderSentiment: { ...save.stakeholderSentiment },
+      lastAlignedActionDay: save.day,
+    };
+  }
+  if (save.version !== 3) {
     throw new Error(`Unsupported strategic save version: ${(save as { version: number }).version}`);
   }
   return {
@@ -70,6 +94,7 @@ export function deserializeStrategicGameplayState(
     activeChoice: save.activeChoice ? { ...save.activeChoice } : null,
     mandateProgress: { ...save.mandateProgress },
     stakeholderSentiment: { ...save.stakeholderSentiment },
+    lastAlignedActionDay: save.lastAlignedActionDay,
   };
 }
 

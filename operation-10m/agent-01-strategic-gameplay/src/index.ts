@@ -90,4 +90,22 @@ export {
 
 export { buildTurnStrategicBriefing } from './engine/turn-briefing.ts';
 
-export const AGENT_01_MODULE_VERSION = '1.4.0';
+export {
+  computeCoalitionBalanceIndex,
+  coalitionBalanceRankingBonus,
+} from './engine/coalition-balance.ts';
+
+export {
+  applyMandateIdleDrift,
+  classifyMandateDriftRisk,
+  touchLastAlignedActionDay,
+} from './engine/mandate-idle-drift.ts';
+
+export { mandateMilestoneIssues } from './engine/mandate-gates.ts';
+
+export {
+  advanceStrategicGameplayCalendar,
+  applyPassiveStakeholderReversion,
+} from './engine/strategic-calendar.ts';
+
+export const AGENT_01_MODULE_VERSION = '1.5.0';

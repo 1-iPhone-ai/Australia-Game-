@@ -5,6 +5,8 @@ import type { StrategicGameplayState } from '../types/strategic-action.ts';
 import { computeCommitmentPressure } from './commitment-journal.ts';
 import { pendingTradeOffCount } from './commitment-journal.ts';
 import { summarizeMandateProgress } from './strategic-mandate.ts';
+import { classifyMandateDriftRisk } from './mandate-idle-drift.ts';
+import { computeCoalitionBalanceIndex } from './coalition-balance.ts';
 import { listStakeholderWarnings } from './stakeholder-coalition.ts';
 import { rankStrategicActions } from './strategic-recommendations.ts';
 import { listStrategicActions } from '../catalog/strategic-action-catalog.ts';
@@ -30,6 +32,8 @@ export function buildTurnStrategicBriefing(
     pendingTradeOffCount: pendingTradeOffCount(state),
     mandateHeadline: summarizeMandateProgress(state),
     stakeholderWarnings: listStakeholderWarnings(state),
+    coalitionBalanceIndex: computeCoalitionBalanceIndex(state.stakeholderSentiment),
+    mandateDriftRisk: classifyMandateDriftRisk(state),
     completedActionCount: state.completedActionIds.length,
     activeChoiceId: state.activeChoice?.choiceId ?? null,
     ...(topFeasible

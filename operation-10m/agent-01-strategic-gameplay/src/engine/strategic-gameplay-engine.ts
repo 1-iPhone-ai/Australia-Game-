@@ -24,6 +24,7 @@ import {
 } from './delayed-effects.ts';
 import { advanceMandateOnAction } from './strategic-mandate.ts';
 import { applyStakeholderReaction } from './stakeholder-coalition.ts';
+import { touchLastAlignedActionDay } from './mandate-idle-drift.ts';
 import {
   scoreNationalPriorityAlignment,
   validateAction,
@@ -43,6 +44,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     actionCooldowns: {},
     mandateProgress: createEmptyMandateProgress(),
     stakeholderSentiment: createDefaultStakeholderSentiment(),
+    lastAlignedActionDay: day,
     activeChoice: null,
   };
 }
@@ -175,6 +177,9 @@ export function executeStrategicAction(
   nextState = applyPriorityMomentum(nextState, action);
   nextState = advanceMandateOnAction(nextState, action);
   nextState = applyStakeholderReaction(nextState, action);
+  if (action.alignedPriorities.length > 0) {
+    nextState = touchLastAlignedActionDay(nextState, state.day);
+  }
   if (action.cooldownDays && action.cooldownDays > 0) {
     nextState = startActionCooldown(nextState, action.id, action.cooldownDays);
   }
