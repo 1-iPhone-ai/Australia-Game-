@@ -506,6 +506,23 @@ export type {
   TransitionCodificationBand,
 } from './production-transition-codification';
 
+export {
+  AGENT08_TRANSITION_STEWARDSHIP_SCHEMA_VERSION,
+  buildFirmProductionTransitionStewardship,
+  classifyNationalStewardshipBand,
+  computeNationalStewardshipPressure,
+  computeNationalProductionTransitionStewardship,
+  summarizeRegionalTransitionStewardship,
+  runAgent08TransitionStewardshipSelfTests,
+} from './production-transition-stewardship';
+
+export type {
+  FirmProductionTransitionStewardship,
+  NationalProductionTransitionStewardship,
+  RegionalTransitionStewardshipSummary,
+  TransitionStewardshipBand,
+} from './production-transition-stewardship';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -536,6 +553,7 @@ import { runAgent08TransitionMaturitySelfTests } from './production-transition-m
 import { runAgent08TransitionContinuitySelfTests } from './production-transition-continuity';
 import { runAgent08TransitionHeritageSelfTests } from './production-transition-heritage';
 import { runAgent08TransitionCodificationSelfTests } from './production-transition-codification';
+import { runAgent08TransitionStewardshipSelfTests } from './production-transition-stewardship';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -690,6 +708,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionStewardship = runAgent08TransitionStewardshipSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -721,5 +744,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionContinuity,
     ...transitionHeritage,
     ...transitionCodification,
+    ...transitionStewardship,
   ];
 }

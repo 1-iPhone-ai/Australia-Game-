@@ -44,6 +44,7 @@ const FILES = [
   'production-transition-continuity.ts',
   'production-transition-heritage.ts',
   'production-transition-codification.ts',
+  'production-transition-stewardship.ts',
   'chunk-exports.ts',
 ];
 
