@@ -100,7 +100,7 @@ export function runAgent24ArchiveScaleWaveReleaseHandoffGateSelfTests(): Array<{
   const attestationVerification = {
     reportId: 'av',
     matchId: 'self',
-    waveRound: 41,
+    waveRound: 42,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -121,7 +121,7 @@ export function runAgent24ArchiveScaleWaveReleaseHandoffGateSelfTests(): Array<{
   const attestation = {
     attestationId: 'att',
     matchId: 'self',
-    waveRound: 41,
+    waveRound: 42,
     status: 'verified' as const,
     verificationOk: true,
     finalizationOk: true,
@@ -139,7 +139,7 @@ export function runAgent24ArchiveScaleWaveReleaseHandoffGateSelfTests(): Array<{
 
   return [
     { name: 'handoff_allowed_when_release_stack_ready', passed: report.handoffAllowed && report.blockerCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 41 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 42 },
     {
       name: 'deterministic_fingerprint',
       passed:
