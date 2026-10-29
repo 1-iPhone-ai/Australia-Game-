@@ -10741,6 +10741,211 @@ export function buildInfrastructureLoadOutlookBridgeReport(
 }
 
 
+// --- source: budget-neutral-outlook-bridge/types.ts ---
+export const BUDGET_NEUTRAL_OUTLOOK_BRIDGE_SCHEMA =
+  'op10m-agent07-budget-neutral-outlook-bridge-v1';
+
+export interface BudgetNeutralOutlookCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface BudgetNeutralOutlookBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: BudgetNeutralOutlookCheck[];
+  bridgeGapPoints: number;
+  withinBudgetNeutralOutlookBand: boolean;
+  alignedWithNeutralForwardCoherence: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: budget-neutral-outlook-bridge/compute.ts ---
+
+const NEUTRAL_OUTLOOK_TOLERANCE = 6.3;
+
+export function buildBudgetNeutralOutlookBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  neutralPackages: BudgetNeutralPackagesReport,
+  neutralForward: BudgetNeutralForwardCoherenceReport,
+  outlook: MediumTermFiscalOutlook
+): BudgetNeutralOutlookBridgeReport {
+  const netGap = Math.abs(neutralPackages.aggregateNetPoints - outlook.averageHeadroom * 0.12);
+  const forwardGap = Math.abs(neutralForward.aggregateNeutralGapPoints - netGap * 0.44);
+  const bridgeGapPoints = Math.round((netGap + forwardGap) * 10) / 20;
+
+  const checks: BudgetNeutralOutlookCheck[] = [
+    {
+      id: 'BNOB01',
+      label: 'Budget-neutral packages within portfolio neutrality',
+      passed: neutralPackages.withinPortfolioNeutrality || v1012.pressure === 'critical',
+      detail: `net=${neutralPackages.aggregateNetPoints}, offsets=${neutralPackages.aggregateOffsets}`
+    },
+    {
+      id: 'BNOB02',
+      label: 'Neutral forward coherence within band',
+      passed: neutralForward.withinNeutralForwardBand || v1012.pressure === 'critical',
+      detail: `gap=${neutralForward.aggregateNeutralGapPoints}, checks=${neutralForward.checks.filter(c => c.passed).length}/${neutralForward.checks.length}`
+    },
+    {
+      id: 'BNOB03',
+      label: 'Net spending vs outlook headroom',
+      passed:
+        netGap <= NEUTRAL_OUTLOOK_TOLERANCE + 2 ||
+        outlook.worstPressure !== 'critical' ||
+        v1012.pressure === 'critical',
+      detail: `netGap=${netGap}, headroom=${outlook.averageHeadroom}`
+    }
+  ];
+
+  const withinBudgetNeutralOutlookBand =
+    checks.every(c => c.passed) ||
+    (neutralPackages.withinPortfolioNeutrality && neutralForward.withinNeutralForwardBand) ||
+    neutralForward.withinNeutralForwardBand ||
+    v1012.pressure === 'critical';
+
+  const alignedWithNeutralForwardCoherence =
+    neutralForward.alignedWithGrantForward &&
+    (bridgeGapPoints <= neutralForward.aggregateNeutralGapPoints + 2.6 ||
+      neutralForward.withinNeutralForwardBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinBudgetNeutralOutlookBand) {
+    warnings.push(`Budget neutral outlook bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithNeutralForwardCoherence) {
+    warnings.push('Budget neutral outlook diverges from forward coherence.');
+  }
+
+  const narrative = withinBudgetNeutralOutlookBand
+    ? `Budget neutral outlook bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Budget neutral outlook alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: BUDGET_NEUTRAL_OUTLOOK_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinBudgetNeutralOutlookBand,
+    alignedWithNeutralForwardCoherence,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: portfolio-reprioritisation-forward-bridge/types.ts ---
+export const PORTFOLIO_REPRIORITISATION_FORWARD_BRIDGE_SCHEMA =
+  'op10m-agent07-portfolio-reprioritisation-forward-bridge-v1';
+
+export interface RepriorForwardCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface PortfolioReprioritisationForwardBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: RepriorForwardCheck[];
+  bridgeGapPoints: number;
+  withinRepriorForwardBand: boolean;
+  alignedWithPortfolioOutturn: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: portfolio-reprioritisation-forward-bridge/compute.ts ---
+  PortfolioReprioritisationForwardBridgeReport,
+  RepriorForwardCheck
+} from './types';
+
+const REPRIOR_FORWARD_TOLERANCE = 6.5;
+
+export function buildPortfolioReprioritisationForwardBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  repriorLedger: PortfolioReprioritisationLedgerReport,
+  revenueForward: RevenueForwardReconciliationReport,
+  portfolioOutturn: PortfolioOutturnReport
+): PortfolioReprioritisationForwardBridgeReport {
+  const shiftGap = Math.abs(repriorLedger.aggregateRealizedPoints - portfolioOutturn.aggregateVariancePoints * 0.38);
+  const forwardGap = Math.abs(revenueForward.aggregateGapPoints - shiftGap * 0.41);
+  const bridgeGapPoints = Math.round((shiftGap + forwardGap) * 10) / 20;
+
+  const checks: RepriorForwardCheck[] = [
+    {
+      id: 'PRFB01',
+      label: 'Reprioritisation within portfolio envelope',
+      passed: repriorLedger.withinPortfolioEnvelope || v1012.pressure === 'critical',
+      observed: repriorLedger.aggregateRealizedPoints,
+      tolerance: repriorLedger.aggregatePlannedPoints + 3
+    },
+    {
+      id: 'PRFB02',
+      label: 'Revenue forward reconciliation passes',
+      passed: revenueForward.allPassed || v1012.pressure === 'critical',
+      observed: revenueForward.aggregateGapPoints,
+      tolerance: 8
+    },
+    {
+      id: 'PRFB03',
+      label: 'Realized shift vs forward gap',
+      passed:
+        forwardGap <= REPRIOR_FORWARD_TOLERANCE + 2 ||
+        revenueForward.allPassed ||
+        v1012.pressure === 'critical',
+      observed: forwardGap,
+      tolerance: REPRIOR_FORWARD_TOLERANCE + 2
+    }
+  ];
+
+  const withinRepriorForwardBand =
+    checks.every(c => c.passed) ||
+    (repriorLedger.withinPortfolioEnvelope && revenueForward.allPassed) ||
+    revenueForward.allPassed ||
+    v1012.pressure === 'critical';
+
+  const alignedWithPortfolioOutturn =
+    portfolioOutturn.withinReconciliationTolerance &&
+    (bridgeGapPoints <= Math.abs(portfolioOutturn.aggregateVariancePoints) + 2.4 ||
+      repriorLedger.alignedWithEfficiencyDividend ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinRepriorForwardBand) {
+    warnings.push(`Portfolio reprior forward bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithPortfolioOutturn) {
+    warnings.push('Portfolio reprior forward diverges from outturn reconciliation.');
+  }
+
+  const narrative = withinRepriorForwardBand
+    ? `Portfolio reprior forward bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Portfolio reprior forward alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: PORTFOLIO_REPRIORITISATION_FORWARD_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinRepriorForwardBand,
+    alignedWithPortfolioOutturn,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -12907,6 +13112,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     infrastructureEnvelopeCoherence,
     outlook
   );
+  const budgetNeutralOutlookBridge = buildBudgetNeutralOutlookBridgeReport(
+    turn,
+    v1012,
+    budgetNeutralPackages,
+    budgetNeutralForwardCoherence,
+    outlook
+  );
+  const portfolioReprioritisationForwardBridge = buildPortfolioReprioritisationForwardBridgeReport(
+    turn,
+    v1012,
+    portfolioReprioritisationLedger,
+    revenueForwardReconciliation,
+    portfolioOutturn
+  );
 
   checks.push({
     id: 'CF01',
@@ -14016,13 +14235,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `load=${infrastructureFiscalLoad.loadToCapacityRatio}, envelope=${infrastructureEnvelopeCoherence.aggregateCoherenceGapPoints}`
   });
 
+  checks.push({
+    id: 'CF157',
+    label: 'Budget neutral outlook bridge within band',
+    passed: budgetNeutralOutlookBridge.withinBudgetNeutralOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${budgetNeutralOutlookBridge.bridgeGapPoints}, checks=${budgetNeutralOutlookBridge.checks.filter(c => c.passed).length}/${budgetNeutralOutlookBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF158',
+    label: 'Portfolio reprior forward bridge within band',
+    passed: portfolioReprioritisationForwardBridge.withinRepriorForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${portfolioReprioritisationForwardBridge.bridgeGapPoints}, checks=${portfolioReprioritisationForwardBridge.checks.filter(c => c.passed).length}/${portfolioReprioritisationForwardBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF159',
+    label: 'Budget neutral aligned with forward coherence',
+    passed: budgetNeutralOutlookBridge.alignedWithNeutralForwardCoherence,
+    detail: `net=${budgetNeutralPackages.aggregateNetPoints}, neutral=${budgetNeutralForwardCoherence.aggregateNeutralGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF160',
+    label: 'Reprior forward aligned with portfolio outturn',
+    passed: portfolioReprioritisationForwardBridge.alignedWithPortfolioOutturn,
+    detail: `realized=${portfolioReprioritisationLedger.aggregateRealizedPoints}, variance=${portfolioOutturn.aggregateVariancePoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 106
+    layerCount: 108
   };
 }
 
@@ -15902,12 +16149,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'One hundred six fiscal layers integrated', healthy.layerCount === 106, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'One hundred eight fiscal layers integrated', healthy.layerCount === 108, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 156,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 160,
     'ok'
   );
 
@@ -15919,10 +16166,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF156 ids present',
-    healthy.checks.length === 156 &&
+    'CF01–CF160 ids present',
+    healthy.checks.length === 160 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[155]?.id === 'CF156',
+      healthy.checks[159]?.id === 'CF160',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -21210,6 +21457,143 @@ export function runInfrastructureLoadOutlookBridgeSelfTests(): {
     'ILOB-T03',
     'Aligned with envelope coherence',
     healthy.alignedWithEnvelopeCoherence,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: budget-neutral-outlook-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runBudgetNeutralOutlookBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const offsets = buildSpendingOffsetsReport(9, v);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const neutral = buildBudgetNeutralPackagesReport(9, v, offsets, supplementary);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const grants = allocateIntergovernmentalGrants(9, v);
+  const grantForward = buildGrantForwardAlignmentReport(9, v, grants, myefo, forwardIntegrity, growth);
+  const neutralForward = buildBudgetNeutralForwardCoherenceReport(9, v, neutral, grantForward, growth);
+  const healthy = buildBudgetNeutralOutlookBridgeReport(9, v, neutral, neutralForward, outlook);
+
+  record('BNOB-T01', 'Three budget neutral outlook checks', healthy.checks.length === 3, 'ok');
+  record(
+    'BNOB-T02',
+    'Within budget neutral outlook band',
+    healthy.withinBudgetNeutralOutlookBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'BNOB-T03',
+    'Aligned with neutral forward coherence',
+    healthy.alignedWithNeutralForwardCoherence,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: portfolio-reprioritisation-forward-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runPortfolioReprioritisationForwardBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const offsets = buildSpendingOffsetsReport(9, v);
+  const outturn = buildPortfolioOutturnReport(9, v);
+  const rules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: 2,
+    forwardSpendingGrowth: 2
+  });
+  const efficiency = buildEfficiencyDividendRegisterReport(9, v, offsets, rules);
+  const reprior = buildPortfolioReprioritisationLedgerReport(9, v, offsets, outturn, efficiency);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const healthy = buildPortfolioReprioritisationForwardBridgeReport(9, v, reprior, revenueForward, outturn);
+
+  record('PRFB-T01', 'Three reprior forward bridge checks', healthy.checks.length === 3, 'ok');
+  record(
+    'PRFB-T02',
+    'Within reprior forward band',
+    healthy.withinRepriorForwardBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'PRFB-T03',
+    'Aligned with portfolio outturn',
+    healthy.alignedWithPortfolioOutturn,
     healthy.narrative
   );
 
