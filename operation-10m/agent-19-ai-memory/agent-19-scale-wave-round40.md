@@ -1,0 +1,6 @@
+# Agent 19 scale wave — round 40 handoff (O10-211)
+
+**Issue:** O10-211 · **scale wave round 40**  
+Store handoff: `/cursor/stores/self/internal/operation-10m/agent-19-scale-wave-round40.md`
+
+**Commit subject:** O10-211 · wave 40 · round 40

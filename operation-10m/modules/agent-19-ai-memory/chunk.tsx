@@ -10556,6 +10556,293 @@ export function hegemonyRecoveryOrchestratorWithinCap(report: HegemonyRecoveryOr
 }
 
 
+// --- source: match-explainability-supremacy-bundle.ts ---
+  auditMatchExplainabilitySupremacyGate,
+  matchExplainabilitySupremacyAllowed,
+} from './match-explainability-supremacy-gate.ts';
+  buildMatchExplainabilityHegemonyBundle,
+  matchExplainabilityHegemonyReady,
+} from './match-explainability-hegemony-bundle.ts';
+  buildSessionHegemonyExportBundle,
+  sessionHegemonyExportShipped,
+} from './session-hegemony-export-bundle.ts';
+
+export const AGENT19_SUPREMACY_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilitySupremacyBundle {
+  supremacyReady: boolean;
+  supremacyAllowed: boolean;
+  hegemonyReady: boolean;
+  hegemonyExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type SupremacyParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Supremacy bundle: supremacy gate and hegemony export must both be green. */
+export function buildMatchExplainabilitySupremacyBundle(
+  packs: TurnExplainabilityPack[],
+  params: SupremacyParams,
+): MatchExplainabilitySupremacyBundle {
+  const supremacy = auditMatchExplainabilitySupremacyGate(packs, params);
+  const hegemony = buildMatchExplainabilityHegemonyBundle(packs, params);
+  const hegemonyExport = buildSessionHegemonyExportBundle(packs, params);
+  const supremacyAllowed = matchExplainabilitySupremacyAllowed(supremacy);
+  const hegemonyReady = matchExplainabilityHegemonyReady(hegemony);
+  const hegemonyExportShipped = sessionHegemonyExportShipped(hegemonyExport);
+  const supremacyReady = supremacyAllowed && hegemonyReady && hegemonyExportShipped;
+  const narrativeLines = [
+    `Match explainability supremacy bundle: ${supremacyReady ? 'READY' : 'PENDING'} (gate ${supremacyAllowed ? 'ok' : 'fail'}, hegemony ${hegemonyReady ? 'ok' : 'fail'}).`,
+    ...supremacy.narrativeLines.slice(0, 2),
+    ...hegemony.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_SUPREMACY_NARRATIVE_CAP);
+  return {
+    supremacyReady,
+    supremacyAllowed,
+    hegemonyReady,
+    hegemonyExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilitySupremacyReady(bundle: MatchExplainabilitySupremacyBundle): boolean {
+  return bundle.supremacyReady;
+}
+
+
+// --- source: session-supremacy-export-bundle.ts ---
+  buildSessionHegemonyExportBundle,
+  type SessionHegemonyExportBundle,
+} from './session-hegemony-export-bundle.ts';
+  buildMatchExplainabilitySupremacyBundle,
+  matchExplainabilitySupremacyReady,
+} from './match-explainability-supremacy-bundle.ts';
+
+export interface SessionSupremacyExportBundle extends SessionHegemonyExportBundle {
+  supremacyReady: boolean;
+  supremacySchema: string;
+}
+
+/** Supremacy export wraps hegemony export when supremacy bundle is ready. */
+export function buildSessionSupremacyExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionSupremacyExportBundle {
+  const base = buildSessionHegemonyExportBundle(packs, params);
+  const supremacy = buildMatchExplainabilitySupremacyBundle(packs, params);
+  const supremacyReady = matchExplainabilitySupremacyReady(supremacy);
+  const exports = supremacyReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    supremacyReady,
+    supremacySchema: 'agent19.supremacy.v1',
+    releaseReady: supremacyReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Supremacy export: ${supremacyReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionSupremacyExportShipped(bundle: SessionSupremacyExportBundle): boolean {
+  return (
+    bundle.supremacyReady &&
+    bundle.exports.length > 0 &&
+    bundle.supremacySchema === 'agent19.supremacy.v1'
+  );
+}
+
+
+// --- source: hegemony-supremacy-bridge.ts ---
+  buildMatchExplainabilitySupremacyBundle,
+  matchExplainabilitySupremacyReady,
+} from './match-explainability-supremacy-bundle.ts';
+  buildMatchExplainabilityHegemonyBundle,
+  matchExplainabilityHegemonyReady,
+} from './match-explainability-hegemony-bundle.ts';
+
+export interface HegemonySupremacyBridgeReport {
+  aligned: boolean;
+  supremacyReady: boolean;
+  hegemonyReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Supremacy-ready should match hegemony-ready when hegemony export stack passes. */
+export function auditHegemonySupremacyBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): HegemonySupremacyBridgeReport {
+  const supremacy = buildMatchExplainabilitySupremacyBundle(packs, params);
+  const hegemony = buildMatchExplainabilityHegemonyBundle(packs, params);
+  const supremacyReady = matchExplainabilitySupremacyReady(supremacy);
+  const hegemonyReady = matchExplainabilityHegemonyReady(hegemony);
+  const aligned = supremacyReady === hegemonyReady;
+  const narrativeLines = [
+    `Hegemony/supremacy bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (supremacy ${supremacyReady ? 'ok' : 'fail'}, hegemony ${hegemonyReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, supremacyReady, hegemonyReady, narrativeLines };
+}
+
+export function hegemonySupremacyBridgeHealthy(report: HegemonySupremacyBridgeReport): boolean {
+  return report.supremacyReady && report.hegemonyReady && report.aligned;
+}
+
+
+// --- source: match-explainability-ascendancy-gate.ts ---
+  buildMatchExplainabilitySupremacyBundle,
+  matchExplainabilitySupremacyReady,
+} from './match-explainability-supremacy-bundle.ts';
+  buildSessionSupremacyExportBundle,
+  sessionSupremacyExportShipped,
+} from './session-supremacy-export-bundle.ts';
+
+export interface MatchExplainabilityAscendancyGateReport {
+  ascendancyAllowed: boolean;
+  supremacyReady: boolean;
+  supremacyExportShipped: boolean;
+  hegemonySupremacyHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Ascendancy gate: supremacy bundle + supremacy export + hegemony/supremacy bridge. */
+export function auditMatchExplainabilityAscendancyGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityAscendancyGateReport {
+  const supremacy = buildMatchExplainabilitySupremacyBundle(packs, params);
+  const supremacyExport = buildSessionSupremacyExportBundle(packs, params);
+  const bridge = auditHegemonySupremacyBridge(packs, params);
+  const supremacyReady = matchExplainabilitySupremacyReady(supremacy);
+  const supremacyExportShipped = sessionSupremacyExportShipped(supremacyExport);
+  const hegemonySupremacyHealthy = hegemonySupremacyBridgeHealthy(bridge);
+  const ascendancyAllowed = supremacyReady && supremacyExportShipped && hegemonySupremacyHealthy;
+  const narrativeLines = [
+    `Match explainability ascendancy: ${ascendancyAllowed ? 'ALLOWED' : 'DENIED'} (supremacy ${supremacyReady ? 'ok' : 'fail'}, export ${supremacyExportShipped ? 'ok' : 'fail'}).`,
+    ...supremacy.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    ascendancyAllowed,
+    supremacyReady,
+    supremacyExportShipped,
+    hegemonySupremacyHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityAscendancyAllowed(report: MatchExplainabilityAscendancyGateReport): boolean {
+  return report.ascendancyAllowed;
+}
+
+
+// --- source: supremacy-recovery-orchestrator.ts ---
+  auditMatchExplainabilitySupremacyGate,
+  matchExplainabilitySupremacyAllowed,
+} from './match-explainability-supremacy-gate.ts';
+
+export const AGENT19_SUPREMACY_RECOVERY_CAP = 10;
+
+export interface SupremacyRecoveryOrchestratorReport {
+  supremacyBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when supremacy gate blocks ascendancy rollout. */
+export function buildSupremacyRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): SupremacyRecoveryOrchestratorReport {
+  const supremacy = auditMatchExplainabilitySupremacyGate(packs, params);
+  const supremacyBlocked = !matchExplainabilitySupremacyAllowed(supremacy);
+  const steps: string[] = [];
+  if (supremacyBlocked) {
+    if (!supremacy.hegemonyReady) {
+      steps.push('Restore hegemony bundle: dominion and hegemony export must pass.');
+    }
+    if (!supremacy.hegemonyExportShipped) {
+      steps.push('Emit session hegemony export before supremacy clearance.');
+    }
+    if (!supremacy.dominionHegemonyHealthy) {
+      steps.push('Reconcile dominion/hegemony bridge before supremacy.');
+    }
+    steps.push(...buildHegemonyRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const hegemony = buildMatchExplainabilityHegemonyBundle(packs, params);
+    if (!hegemony.hegemonyReady) {
+      steps.push('Re-run hegemony readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Supremacy gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_SUPREMACY_RECOVERY_CAP);
+  return {
+    supremacyBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Supremacy recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function supremacyRecoveryOrchestratorWithinCap(report: SupremacyRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_SUPREMACY_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -11100,6 +11387,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilitySupremacyGate,
   matchExplainabilitySupremacyAllowed,
 } from '../match-explainability-supremacy-gate.ts';
+  buildMatchExplainabilitySupremacyBundle,
+  matchExplainabilitySupremacyReady,
+} from '../match-explainability-supremacy-bundle.ts';
+  buildSessionSupremacyExportBundle,
+  sessionSupremacyExportShipped,
+} from '../session-supremacy-export-bundle.ts';
+  buildSupremacyRecoveryOrchestrator,
+  supremacyRecoveryOrchestratorWithinCap,
+} from '../supremacy-recovery-orchestrator.ts';
+  auditMatchExplainabilityAscendancyGate,
+  matchExplainabilityAscendancyAllowed,
+} from '../match-explainability-ascendancy-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -16625,6 +16924,138 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilitySupremacyAllowed(report) && !report.hegemonyReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r40_supremacy_ready',
+        'Supremacy bundle ready when supremacy gate and hegemony export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilitySupremacyBundle([pack], params);
+          return matchExplainabilitySupremacyReady(bundle) && bundle.supremacyAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r40_supremacy_held',
+        'Supremacy bundle pending when supremacy gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 55, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilitySupremacyBundle([pack], {
+            memory: null,
+            currentTurn: 55,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilitySupremacyReady(bundle) && !bundle.supremacyAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r40_supremacy_recovery',
+        'Supremacy recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 25, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 25, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildSupremacyRecoveryOrchestrator([pack], params);
+          return report.supremacyBlocked && supremacyRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r40_hegemony_supremacy_bridge',
+        'Hegemony supremacy bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditHegemonySupremacyBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return hegemonySupremacyBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r40_supremacy_export',
+        'Supremacy export shipped when supremacy ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionSupremacyExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionSupremacyExportShipped(bundle) && bundle.supremacySchema === 'agent19.supremacy.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r40_ascendancy_gate_ok',
+        'Ascendancy gate allowed on healthy supremacy stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityAscendancyGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityAscendancyAllowed(report) && report.supremacyExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r40_ascendancy_gate_block',
+        'Ascendancy gate denied when supremacy pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 56, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityAscendancyGate([pack], {
+            memory: null,
+            currentTurn: 56,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityAscendancyAllowed(report) && !report.supremacyReady || JSON.stringify(report);
         },
       ],
     ]),
