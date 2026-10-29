@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 /**
- * Sync manifest from local modules and/or scan origin/op10m/* branches.
- *
- *   node sync-manifest.mjs                 # local operation-10m/modules only
- *   node sync-manifest.mjs --remote-op10m    # also scan remote branches → audits/manifest-remote-sync.json
+ * Sync manifest from local modules and/or scan ALL origin/op10m/* branches.
  */
 import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -15,13 +12,148 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "../..");
 const modulesRoot = resolve(repoRoot, "operation-10m/modules");
 const manifestPath = resolve(__dirname, "manifest.json");
-const sourcesPath = resolve(__dirname, "module-sources.json");
 
 const args = process.argv.slice(2);
 const remoteOp10m = args.includes("--remote-op10m");
 
+/** Branch slug (after op10m/) → canonical moduleId when chunk marker or path differs */
+const BRANCH_TO_MODULE_ID = {
+  "agent-10-finance-inflation": "agent-10-finance",
+  "agent-19-memory": "agent-19-ai-memory",
+  "agent-12-infrastructure": "agent-12-infrastructure",
+  "agent-24-history": "agent-24-replay",
+};
+
+const SKIP_BRANCHES = new Set(["agent-25-integration"]);
+
+function parseMarkerModuleId(chunkText) {
+  const m = chunkText.match(/OP10M_MODULE_BEGIN\s+([a-z0-9-]+)/i);
+  return m?.[1] ?? null;
+}
+
+function resolveModuleId(branchSlug, markerId) {
+  if (markerId) return markerId;
+  if (BRANCH_TO_MODULE_ID[branchSlug]) return BRANCH_TO_MODULE_ID[branchSlug];
+  return branchSlug;
+}
+
+function listOp10mRemoteBranches() {
+  const r = spawnSync("git", ["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/op10m/"], {
+    encoding: "utf8",
+    cwd: repoRoot,
+  });
+  if (r.status !== 0) return [];
+  return r.stdout
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith("origin/op10m/"))
+    .map((l) => ({
+      branch: l,
+      slug: l.replace("origin/op10m/", ""),
+    }))
+    .filter(({ slug }) => !SKIP_BRANCHES.has(slug));
+}
+
+function gitLines(branch, path) {
+  const r = spawnSync("git", ["show", `${branch}:${path}`], {
+    encoding: "utf8",
+    cwd: repoRoot,
+    maxBuffer: 128 * 1024 * 1024,
+  });
+  if (r.status !== 0) return null;
+  return r.stdout;
+}
+
+function discoverChunkOnBranch(branch) {
+  const r = spawnSync(
+    "git",
+    ["ls-tree", "-r", "--name-only", branch, "operation-10m"],
+    { encoding: "utf8", cwd: repoRoot, maxBuffer: 16 * 1024 * 1024 }
+  );
+  if (r.status !== 0) return null;
+  const candidates = r.stdout
+    .split("\n")
+    .filter(Boolean)
+    .filter(
+      (p) =>
+        /chunk\.tsx$/.test(p) &&
+        (/^operation-10m\/modules\/agent-/.test(p) || /^operation-10m\/agent-/.test(p))
+    );
+  for (const path of candidates) {
+    const text = gitLines(branch, path);
+    if (text && text.includes("OP10M_MODULE_BEGIN")) {
+      return { path, text, markerModuleId: parseMarkerModuleId(text) };
+    }
+  }
+  return null;
+}
+
+function scanRemoteBranches() {
+  const branches = listOp10mRemoteBranches();
+  const totalHeads = spawnSync("git", ["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/op10m/"], {
+    encoding: "utf8",
+    cwd: repoRoot,
+  });
+  const originOp10mHeadCount = totalHeads.stdout.split("\n").filter((l) => l.trim()).length;
+  const rows = [];
+  const seenModuleIds = new Map();
+
+  for (const { branch, slug } of branches) {
+    const chunk = discoverChunkOnBranch(branch);
+    let moduleId = null;
+    let contentSha256 = null;
+    let assemblyReady = false;
+    if (chunk) {
+      moduleId = resolveModuleId(slug, chunk.markerModuleId);
+      try {
+        contentSha256 = hashModuleBody(moduleId, chunk.text);
+        assemblyReady = true;
+      } catch {
+        assemblyReady = false;
+      }
+    } else {
+      moduleId = resolveModuleId(slug, null);
+    }
+
+    const row = {
+      branch,
+      branchSlug: slug,
+      moduleId,
+      chunkPath: chunk?.path ?? null,
+      markerModuleId: chunk?.markerModuleId ?? null,
+      assemblyReady,
+      contentSha256,
+      defaultSlot: "pre-final-export",
+    };
+
+    if (assemblyReady && seenModuleIds.has(moduleId)) {
+      row.duplicateModuleIdOf = seenModuleIds.get(moduleId);
+      row.assemblyReady = false;
+      row.skipReason = "duplicate moduleId (branch not primary)";
+    } else if (assemblyReady) {
+      seenModuleIds.set(moduleId, branch);
+    }
+
+    rows.push(row);
+  }
+
+  rows.sort((a, b) => a.moduleId.localeCompare(b.moduleId));
+  return {
+    scannedAt: new Date().toISOString(),
+    canonicalBase: "origin/australia-game-upgrade",
+    baselineCommit: "bc1adf3",
+    originOp10mHeadCount,
+    branchHeadCount: branches.length,
+    branchCount: rows.length,
+    assemblyReadyCount: rows.filter((r) => r.assemblyReady).length,
+    pendingAgent14: !rows.some((r) => r.branchSlug.includes("agent-14") && r.assemblyReady),
+    rows,
+  };
+}
+
 function syncLocalModules() {
   const modules = [];
+  if (!existsSync(modulesRoot)) return modules;
   for (const name of readdirSync(modulesRoot)) {
     const dir = join(modulesRoot, name);
     if (!statSync(dir).isDirectory()) continue;
@@ -38,93 +170,12 @@ function syncLocalModules() {
       path: `operation-10m/modules/${name}/chunk.tsx`,
       slot: local.slot,
       contentSha256: sha,
-      source: "local",
       ...(local.touchesSaveFormat ? { touchesSaveFormat: true } : {}),
       ...(local.dependsOn ? { dependsOn: local.dependsOn } : {}),
     });
   }
   modules.sort((a, b) => a.moduleId.localeCompare(b.moduleId));
   return modules;
-}
-
-function gitLines(branch, path) {
-  const r = spawnSync("git", ["show", `${branch}:${path}`], {
-    encoding: "utf8",
-    cwd: repoRoot,
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  if (r.status !== 0) return null;
-  return r.stdout;
-}
-
-function gitLs(branch, root) {
-  const r = spawnSync("git", ["ls-tree", "-r", "--name-only", branch, root], {
-    encoding: "utf8",
-    cwd: repoRoot,
-  });
-  if (r.status !== 0) return [];
-  return r.stdout.split("\n").filter(Boolean);
-}
-
-function scanRemoteBranches() {
-  const sources = JSON.parse(readFileSync(sourcesPath, "utf8"));
-  const rows = [];
-  for (const src of sources.sources) {
-    const branch = src.branch;
-    const root = src.root;
-    const files = gitLs(branch, root);
-    const tsFiles = files.filter((f) => /\.(ts|tsx)$/.test(f));
-    const chunkPaths = [
-      `operation-10m/modules/${src.moduleId}/chunk.tsx`,
-      `${root}/chunk.tsx`,
-      `${root}/src/chunk.tsx`,
-    ];
-    let chunkOnBranch = null;
-    let chunkText = null;
-    for (const p of chunkPaths) {
-      const t = gitLines(branch, p);
-      if (t && t.includes("OP10M_MODULE_BEGIN")) {
-        chunkOnBranch = p;
-        chunkText = t;
-        break;
-      }
-    }
-    let contentSha256 = null;
-    let assemblyReady = false;
-    if (chunkText) {
-      try {
-        contentSha256 = hashModuleBody(src.moduleId, chunkText);
-        assemblyReady = true;
-      } catch {
-        assemblyReady = false;
-      }
-    }
-    let estSourceLines = 0;
-    for (const f of tsFiles.slice(0, 300)) {
-      const t = gitLines(branch, f);
-      if (t) estSourceLines += t.split("\n").length;
-    }
-    rows.push({
-      moduleId: src.moduleId,
-      branch,
-      pr: src.pr,
-      root,
-      tsFileCount: tsFiles.length,
-      estimatedSourceLines: estSourceLines,
-      chunkPath: chunkOnBranch,
-      assemblyReady,
-      contentSha256,
-      defaultSlot: "pre-final-export",
-    });
-  }
-  rows.sort((a, b) => a.moduleId.localeCompare(b.moduleId));
-  return {
-    scannedAt: new Date().toISOString(),
-    canonicalBase: sources.canonicalBase,
-    branchCount: rows.length,
-    assemblyReadyCount: rows.filter((r) => r.assemblyReady).length,
-    rows,
-  };
 }
 
 function materializeReadyChunks(scan) {
@@ -145,17 +196,15 @@ function materializeReadyChunks(scan) {
     if (remoteManifest) {
       writeFileSync(manifestFile, remoteManifest.endsWith("\n") ? remoteManifest : remoteManifest + "\n");
     } else if (!existsSync(manifestFile)) {
+      const slot =
+        row.moduleId === "agent-03-research-tech"
+          ? "post-v10z"
+          : row.moduleId === "agent-06-macroeconomy"
+            ? "append-only-self-tests"
+            : row.defaultSlot;
       writeFileSync(
         manifestFile,
-        JSON.stringify(
-          {
-            moduleId: row.moduleId,
-            slot: row.defaultSlot || "pre-final-export",
-            importedFrom: row.branch,
-          },
-          null,
-          2
-        ) + "\n"
+        JSON.stringify({ moduleId: row.moduleId, slot, importedFrom: row.branch }, null, 2) + "\n"
       );
     }
     imported++;
@@ -166,13 +215,7 @@ function materializeReadyChunks(scan) {
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 const localModules = syncLocalModules();
 manifest.modules = localModules.map(({ source, ...rest }) => rest);
-if (!manifest.canonicalBaseCommit) {
-  const head = spawnSync("git", ["rev-parse", "origin/australia-game-upgrade"], {
-    encoding: "utf8",
-    cwd: repoRoot,
-  });
-  if (head.status === 0) manifest.canonicalBaseCommit = head.stdout.trim().slice(0, 7);
-}
+manifest.canonicalBaseCommit = manifest.canonicalBaseCommit || "bc1adf3";
 writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
 console.log(`sync-manifest: ${localModules.length} local module(s) → manifest.json`);
 
@@ -186,7 +229,7 @@ if (remoteOp10m) {
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(scan, null, 2) + "\n");
   console.log(
-    `remote scan: ${scan.branchCount} branches, ${scan.assemblyReadyCount} assembly-ready chunk(s) → audits/manifest-remote-sync.json`
+    `remote scan: ${scan.originOp10mHeadCount} origin/op10m heads (${scan.branchHeadCount} excl. integration), ${scan.assemblyReadyCount} assembly-ready → audits/manifest-remote-sync.json`
   );
   const localModulesAfter = syncLocalModules();
   manifest.modules = localModulesAfter.map(({ source, ...rest }) => rest);

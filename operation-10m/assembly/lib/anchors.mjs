@@ -35,8 +35,15 @@ export function parseSectionAnchors(canonicalText) {
   return sections;
 }
 
+const SLOT_ALIASES = {
+  "scenario-engine-extension": "pre-final-export",
+  "post-living-regions-national-systems": "post-v10z",
+  O10M_AGENT21_INTEGRATION_ANCHOR: "pre-final-export",
+};
+
 export function findSlotInsertLine(canonicalText, slotId) {
-  const spec = SLOT_ANCHORS[slotId];
+  const normalized = SLOT_ALIASES[slotId] || slotId;
+  const spec = SLOT_ANCHORS[normalized];
   if (!spec) throw new Error(`Unknown slot: ${slotId}`);
   const lines = canonicalText.split("\n");
   let afterLine = -1;

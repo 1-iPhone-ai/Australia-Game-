@@ -1,0 +1,186 @@
+{
+  "projectionId": "tranche-projection-full-chunks",
+  "dryRunAt": "2026-10-29T06:06:03.610Z",
+  "canonicalBaseCommit": "bc1adf3",
+  "baselineAuditedFunctional": 389566,
+  "projectedAuditedFunctional": 548824,
+  "deltaAuditedFunctional": 159258,
+  "baselinePhysicalLines": 419353,
+  "projectedPhysicalLines": 583710,
+  "branchHeadCount": 28,
+  "branchesScannedExcludingIntegration": 27,
+  "assemblyReadyRemote": 23,
+  "modulesInManifest": 24,
+  "integrationOrder": [
+    "agent-01-strategic-gameplay",
+    "agent-02-turns-time",
+    "agent-03-research-tech",
+    "agent-04-modes-scenarios",
+    "agent-05-events",
+    "agent-06-macroeconomy",
+    "agent-07-public-finance",
+    "agent-08-companies",
+    "agent-09-population",
+    "agent-10-finance",
+    "agent-11-cities",
+    "agent-12-infrastructure",
+    "agent-13-energy",
+    "agent-15-trade",
+    "agent-16-guardian",
+    "agent-17-command-center",
+    "agent-18-team-ai",
+    "agent-19-ai-memory",
+    "agent-20-automation",
+    "agent-21-forecasting",
+    "agent-22-ui",
+    "agent-23-dashboards",
+    "agent-24-history",
+    "agent-25-op10m-registry"
+  ],
+  "pendingChunks": [
+    {
+      "branchSlug": "agent-10-finance",
+      "moduleId": "agent-10-finance",
+      "skipReason": "no OP10M chunk"
+    },
+    {
+      "branchSlug": "agent-12-transport",
+      "moduleId": "agent-12-transport",
+      "skipReason": "no OP10M chunk"
+    },
+    {
+      "branchSlug": "agent-19-ai-memory",
+      "moduleId": "agent-19-ai-memory",
+      "skipReason": "no OP10M chunk"
+    },
+    {
+      "branchSlug": "agent-24-replay",
+      "moduleId": "agent-24-replay",
+      "skipReason": "no OP10M chunk"
+    }
+  ],
+  "moduleStats": [
+    {
+      "moduleId": "agent-01-strategic-gameplay",
+      "slot": "pre-final-export",
+      "contentSha256": "c0a2bd2d6280181bb002f1211c5119ed1ed8528dd8cdf10d2cd55c8a69e2247d"
+    },
+    {
+      "moduleId": "agent-02-turns-time",
+      "slot": "pre-final-export",
+      "contentSha256": "51f5bb0bb3729c1bff1ed42e56809bc2496bcb506c70db806e0ac8315b1095f9"
+    },
+    {
+      "moduleId": "agent-03-research-tech",
+      "slot": "post-v10z",
+      "contentSha256": "527c8a7ff5a398c3c6071dd7bc29e5fb2830684efb012f719ea5e1e51deef9f3"
+    },
+    {
+      "moduleId": "agent-04-modes-scenarios",
+      "slot": "scenario-engine-extension",
+      "contentSha256": "b4d5ac5d8268ba53b39928a4a9ff608803e22c3123220002ddaaefa986d39d94"
+    },
+    {
+      "moduleId": "agent-05-events",
+      "slot": "pre-final-export",
+      "contentSha256": "f2d2821cab6b1dd2a20e36addbe66589dd881cf88773a2e0954a253d3a79ae0f"
+    },
+    {
+      "moduleId": "agent-06-macroeconomy",
+      "slot": "append-only-self-tests",
+      "contentSha256": "679422a0c9b2af2ab20fdba3612650dbb15c6317f086a20482544617e9a195ef"
+    },
+    {
+      "moduleId": "agent-07-public-finance",
+      "slot": "pre-final-export",
+      "contentSha256": "50b21673449bd01a149c414d9a6996e79200df5e475a71c28e6bdcbb69173f9a"
+    },
+    {
+      "moduleId": "agent-08-companies",
+      "slot": "append-only-self-tests",
+      "contentSha256": "cfaebb043826997fbddd64e6a4d0557cf4e8bdfb3b98c1e396362897c181507e"
+    },
+    {
+      "moduleId": "agent-09-population",
+      "slot": "pre-final-export",
+      "contentSha256": "6679d86b2436caeb3f765b565f776ae1071a3815d766282a193678330b3c3358"
+    },
+    {
+      "moduleId": "agent-10-finance",
+      "slot": "append-only-self-tests",
+      "contentSha256": "d704a61613c3dcb9cc86e91fed492fee94e4feb62338be5386a5933d34e772e5"
+    },
+    {
+      "moduleId": "agent-11-cities",
+      "slot": "pre-final-export",
+      "contentSha256": "573701abec38931fe875a327f96a37ee767b9ed23453b18e63705743b888f89c"
+    },
+    {
+      "moduleId": "agent-12-infrastructure",
+      "slot": "pre-final-export",
+      "contentSha256": "da1ed718eea768190f7ee1a661e783a4a5e2663554eeab3ae18e95c529da4613"
+    },
+    {
+      "moduleId": "agent-13-energy",
+      "slot": "pre-final-export",
+      "contentSha256": "bcbe9089db3088f71a1941b146e0e144e872d11d15afaf5096553157ce22beb7"
+    },
+    {
+      "moduleId": "agent-15-trade",
+      "slot": "pre-final-export",
+      "contentSha256": "05ee79d0ec9d4eb42e03d55e8e24598b9c392f3c7a44ec5a1e34c19d284482af"
+    },
+    {
+      "moduleId": "agent-16-guardian",
+      "slot": "pre-final-export",
+      "contentSha256": "5ac5aa25d6956df4bd0c3cc26eeafce09b70548bfefbb8f811b43c143f763ceb"
+    },
+    {
+      "moduleId": "agent-17-command-center",
+      "slot": "pre-final-export",
+      "contentSha256": "4ef90154c42a838b33a5b6cf00bbfcd85b7a997c729922873ad8b928ea71b215"
+    },
+    {
+      "moduleId": "agent-18-team-ai",
+      "slot": "pre-final-export",
+      "contentSha256": "e4d3a5a31f4ad34e5e8420221853e389d491646f81e2d1a211d4b1ba3da0c456"
+    },
+    {
+      "moduleId": "agent-19-ai-memory",
+      "slot": "pre-final-export",
+      "contentSha256": "3f258906c0a714730b1bfccb27368b36d1ce5f8bbe3757b9b5e420ab6a7350c4"
+    },
+    {
+      "moduleId": "agent-20-automation",
+      "slot": "append-only-self-tests",
+      "contentSha256": "21759bd330b5b873a7827b5bcbaadc52ff6ae9500fb004d584cac5b80c69643c"
+    },
+    {
+      "moduleId": "agent-21-forecasting",
+      "slot": "O10M_AGENT21_INTEGRATION_ANCHOR",
+      "contentSha256": "f7eca6853d8431fb27617881fa10a1f18866d92a0df0801a3af4df19dbc487d2"
+    },
+    {
+      "moduleId": "agent-22-ui",
+      "slot": "pre-final-export",
+      "contentSha256": "4a89e1913a5b4fdadf59ce6299d9e1be35771f33e329cde46a51b8ef3fc6c93b"
+    },
+    {
+      "moduleId": "agent-23-dashboards",
+      "slot": "post-living-regions-national-systems",
+      "contentSha256": "2ed401f6af4b1b97d6491e48da8faef8e808874f3a6aedf44a4feba2539aa602"
+    },
+    {
+      "moduleId": "agent-24-history",
+      "slot": "pre-final-export",
+      "contentSha256": "ea6596f3a73e8156e4eabd3531d69cbd214af7d555adfe351fda17d9290cc055"
+    },
+    {
+      "moduleId": "agent-25-op10m-registry",
+      "slot": "pre-final-export",
+      "contentSha256": "ab4c5979022091045987084038013d0911b9789f54fdcc58804a4d37ec9e6ff8"
+    }
+  ],
+  "artifact": "build/tranche-full-chunks-projection.tsx",
+  "note": "Projection only — canonical not modified."
+}
