@@ -14,7 +14,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   const integrity = getCatalogIntegrityReport();
   results.push({
     id: 'catalog_integrity',
-    ok: integrity.duplicateIds.length === 0 && integrity.invalidRegions.length === 0 && integrity.totalAssets >= 80,
+    ok: integrity.duplicateIds.length === 0 && integrity.invalidRegions.length === 0 && integrity.totalAssets >= 90,
     detail: JSON.stringify(integrity),
   });
 
@@ -66,15 +66,18 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
 
   const infra = computeTransportInfrastructureState(defaultInfrastructureInputs(5));
   results.push({
-    id: 'infrastructure_state_v5',
+    id: 'infrastructure_state_v6',
     ok:
-      infra.schemaVersion === 'agent12/5' &&
+      infra.schemaVersion === 'agent12/6' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
       infra.supplyChainResilienceIndex > 0.2 &&
-      infra.nationalFreightLatencyMedian > 0,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} scri=${infra.supplyChainResilienceIndex.toFixed(2)} latency=${infra.nationalFreightLatencyMedian.toFixed(1)}h`,
+      infra.nationalFreightLatencyMedian > 0 &&
+      infra.intercapitalConnectivityIndex > 0.15 &&
+      infra.modalBalanceIndex > 0.2 &&
+      infra.nationalLastMileCoverage > 45,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} scri=${infra.supplyChainResilienceIndex.toFixed(2)} connectivity=${infra.intercapitalConnectivityIndex.toFixed(2)} lastMile=${infra.nationalLastMileCoverage.toFixed(0)}%`,
   });
 
   return results;

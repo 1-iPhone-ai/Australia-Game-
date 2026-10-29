@@ -46,6 +46,20 @@ import {
   nationalMedianFreightLatency,
 } from '../network/freight-latency-index.ts';
 import { computeDisruptionRecovery } from '../operations/disruption-recovery.ts';
+import {
+  computeLastMileCoverageByRegion,
+  nationalLastMileCoverage,
+} from '../operations/last-mile-coverage.ts';
+import {
+  connectivityBonusByRegion,
+  computeIntercapitalConnectivityIndex,
+} from '../network/intercapital-connectivity.ts';
+import { TRANSPORT_CORRIDORS } from '../catalog/corridors-catalog.ts';
+import {
+  computeElectrifiedFreightShare,
+  computeModalBalanceIndex,
+  modalBalanceProductivityMultiplier,
+} from './modal-balance-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -229,6 +243,29 @@ export function computeTransportInfrastructureState(
   }
   productivity.nationalProductivityIndexBonus += supplyChain.nationalIndex * 3;
 
+  const modalBalanceIndex = computeModalBalanceIndex(ops, options?.modalShiftPolicy ?? 'balanced');
+  const electrifiedFreightShare = computeElectrifiedFreightShare(ops);
+  const lastMileCoverageByRegion = computeLastMileCoverageByRegion(ops);
+  const nationalLastMile = nationalLastMileCoverage(lastMileCoverageByRegion);
+  const intercapitalConnectivityIndex = computeIntercapitalConnectivityIndex(
+    corridorActivations,
+    TRANSPORT_CORRIDORS,
+  );
+  const connectivityBonus = connectivityBonusByRegion(corridorActivations, TRANSPORT_CORRIDORS);
+  const modalMult = modalBalanceProductivityMultiplier(modalBalanceIndex, options?.modalShiftPolicy ?? 'balanced');
+
+  for (const code of AU_REGION_CODES) {
+    const lastMileBoost = (lastMileCoverageByRegion[code] - 50) * 0.015;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + connectivityBonus[code] + lastMileBoost) *
+      modalMult *
+      (1 + intercapitalConnectivityIndex * 0.04);
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -242,7 +279,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/5',
+    schemaVersion: 'agent12/6',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -267,6 +304,11 @@ export function computeTransportInfrastructureState(
     supplyChainResilienceByRegion: supplyChain.byRegion,
     weakestSupplyChainRegion: supplyChain.weakestRegion,
     disruptionRecoveryFactor: recovery.nationalRecoveryFactor,
+    intercapitalConnectivityIndex,
+    modalBalanceIndex,
+    electrifiedFreightShare,
+    lastMileCoverageByRegion,
+    nationalLastMileCoverage: nationalLastMile,
     computeMs,
   };
 }
