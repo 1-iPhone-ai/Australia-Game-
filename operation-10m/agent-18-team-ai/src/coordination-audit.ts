@@ -870,6 +870,42 @@ export function auditTeamMultiAgentLayer(
     });
   }
 
+  if (
+    typeof state.meta.convergenceCascadeSynthesisIndex === 'number' &&
+    state.meta.convergenceCascadeSynthesisIndex >= 48
+  ) {
+    push({
+      severity: 'warning',
+      message: `Convergence–cascade synthesis (${state.meta.convergenceCascadeSynthesisIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.synthesisConvergenceStackIndex === 'number' &&
+    state.meta.synthesisConvergenceStackIndex >= 47
+  ) {
+    push({
+      severity: 'warning',
+      message: `Synthesis–convergence stack (${state.meta.synthesisConvergenceStackIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.cascadeResonanceAmplificationIndex === 'number' &&
+    state.meta.cascadeResonanceAmplificationIndex >= 46
+  ) {
+    push({
+      severity: 'warning',
+      message: `Cascade–resonance amplification (${state.meta.cascadeResonanceAmplificationIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
   state.coordination.leases.forEach(lease => {
     if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
       push({
