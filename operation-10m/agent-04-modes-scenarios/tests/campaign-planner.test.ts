@@ -62,6 +62,7 @@ import {
   createExpungementSession,
   createVacaturSession,
   createRemandSession,
+  createReversalSession,
   createGauntletSession,
   createMarathonQueue,
   createRelaySession,
@@ -237,6 +238,22 @@ describe('scenario campaign planner round 4', () => {
     state = attachReprieveSessionToState(state, reprieve!);
     state = attachParoleSessionToState(state, parole!);
     assert.equal(planNextCampaignAction(state).kind, 'parole_step');
+  });
+
+  it('prefers active reversal over remand, vacatur, expungement, exoneration, acquittal, commutation, probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: reversal } = createReversalSession({
+      reversalId: 'o10m_reversal_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_reversal_motion_docket', 'o10m_reversal_review_chamber'],
+    });
+    const { session: remand } = createRemandSession({
+      remandId: 'o10m_remand_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_remand_order_docket', 'o10m_remand_review_chamber'],
+    });
+    let state = attachRemandSessionToState(createEmptyO10mModesPersistedState(), remand!);
+    state = attachReversalSessionToState(state, reversal!);
+    assert.equal(planNextCampaignAction(state).kind, 'reversal_step');
   });
 
   it('prefers active remand over vacatur, expungement, exoneration, acquittal, commutation, probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
