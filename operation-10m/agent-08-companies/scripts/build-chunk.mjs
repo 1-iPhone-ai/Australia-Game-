@@ -20,6 +20,7 @@ const FILES = [
   'sector-production-depth.ts',
   'production-capacity-cascade.ts',
   'integrated-production-synthesis.ts',
+  'production-recovery-playbook.ts',
   'chunk-exports.ts',
 ];
 

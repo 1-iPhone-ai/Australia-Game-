@@ -83,12 +83,30 @@ export type {
   RegionalIntegratedProductionSummary,
 } from './integrated-production-synthesis';
 
+export {
+  AGENT08_RECOVERY_SCHEMA_VERSION,
+  buildFirmProductionRecoveryAction,
+  computeNationalProductionRecoveryPlaybook,
+  rankRecoveryLeversForFirm,
+  summarizeRegionalRecoveryPlan,
+  runAgent08RecoverySelfTests,
+} from './production-recovery-playbook';
+
+export type {
+  FirmProductionRecoveryAction,
+  NationalProductionRecoveryPlaybook,
+  ProductionRecoveryLever,
+  RecoveryPriorityBand,
+  RegionalProductionRecoveryPlan,
+} from './production-recovery-playbook';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
 import { runAgent08SectorDepthSelfTests } from './sector-production-depth';
 import { runAgent08CascadeSelfTests } from './production-capacity-cascade';
 import { runAgent08IntegratedSelfTests } from './integrated-production-synthesis';
+import { runAgent08RecoverySelfTests } from './production-recovery-playbook';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -123,5 +141,10 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
-  return [...core.slice(0, 5), ...taxLabor, ...supply, ...sector, ...cascade, ...integrated];
+  const recovery = runAgent08RecoverySelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
+  return [...core.slice(0, 5), ...taxLabor, ...supply, ...sector, ...cascade, ...integrated, ...recovery];
 }

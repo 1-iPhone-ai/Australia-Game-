@@ -22,6 +22,7 @@ Recommended placement: adjacent to existing V10.14 private sector block (SECTION
 | `computeNationalSectorProductionDepth` | Regional sector mix vs Living Regions + industry overload flags |
 | `computeNationalProductionCapacityCascade` | Upstream stress propagation on supply links → firm exposure |
 | `computeNationalIntegratedProductionBrief` | Unified firm/regional production risk from all Agent 08 layers |
+| `computeNationalProductionRecoveryPlaybook` | Ranked recovery levers + regional plans from integrated brief (wave 4) |
 | `applySupplyChainDepthEvidence` | Bounded evidence tags on company rows |
 | `privateSectorWorldRoots` | World Reaction roots from derived private-sector events |
 | `runAgent08ModuleSelfTests` | Lab / release self-test registry |

@@ -1,4 +1,4 @@
-import { runAgent08ModuleSelfTests, runAgent08IntegratedSelfTests, runAgent08CascadeSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
+import { runAgent08ModuleSelfTests, runAgent08IntegratedSelfTests, runAgent08RecoverySelfTests, runAgent08CascadeSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
 
 function main() {
   const tax = runAgent08TaxLaborSelfTests();
@@ -40,6 +40,14 @@ function main() {
     process.exit(1);
   }
   console.log(`Agent 08 integrated synthesis: ${integrated.length} passed`);
+
+  const recovery = runAgent08RecoverySelfTests();
+  const failedRecovery = recovery.filter(t => !t.passed);
+  if (failedRecovery.length) {
+    console.error('Agent 08 recovery playbook tests failed:', failedRecovery);
+    process.exit(1);
+  }
+  console.log(`Agent 08 recovery playbook: ${recovery.length} passed`);
 
   const moduleTests = runAgent08ModuleSelfTests();
   const failed = moduleTests.filter(t => !t.passed);
