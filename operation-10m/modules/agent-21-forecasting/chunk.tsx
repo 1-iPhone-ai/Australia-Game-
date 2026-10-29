@@ -102,7 +102,7 @@ export function ag21Provenance(
   };
 }
 
-export const O10M_AGENT21_MODULE_VERSION = '2.4.0';
+export const O10M_AGENT21_MODULE_VERSION = '2.5.0';
 export const O10M_AGENT21_MODULE_ID = 'forecasting_policy_lab';
 
 // --- bundled from counterfactual-experiments.ts ---
@@ -4799,6 +4799,286 @@ export const Ag21ForecastRound12Console: React.FC<{ seed?: number }> = ({ seed =
   );
 };
 
+// --- bundled from forecast-manifest-confirmation.ts ---
+/**
+ * Agent 21 — export manifest confirmation against archive seal (read-only round 13).
+ */
+
+
+export type Ag21ManifestConfirmationStatus = 'confirmed' | 'pending' | 'revoked';
+
+export interface Ag21ManifestConfirmation {
+  status: Ag21ManifestConfirmationStatus;
+  manifestId: string;
+  sealStatus: ReturnType<typeof sealAg21LabArchiveRecord>['status'];
+  manifestMayPublish: boolean;
+  mismatchNotes: string[];
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Confirm export manifest aligns with archive seal state (round 13). */
+export function confirmAg21ExportManifest(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21ManifestConfirmation {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.69),
+      actorDebt: baseCtx.actorDebt + 255
+    } satisfies Ag21ForecastContext);
+
+  const manifest = buildAg21ExportManifest(baseCtx, candidate);
+  const seal = sealAg21LabArchiveRecord(baseCtx, candidate);
+
+  const mismatchNotes: string[] = [];
+  if (seal.manifestId !== manifest.manifestId) {
+    mismatchNotes.push('seal manifestId differs from live manifest');
+  }
+  if (seal.manifestMayPublish !== manifest.mayPublish) {
+    mismatchNotes.push('publish flag mismatch between seal and manifest');
+  }
+  if (seal.status === 'sealed' && !manifest.mayPublish) {
+    mismatchNotes.push('sealed archive but manifest mayPublish false');
+  }
+  if (seal.status === 'void' && manifest.exportLevel !== 'denied') {
+    mismatchNotes.push('void seal with non-denied export level');
+  }
+
+  let status: Ag21ManifestConfirmationStatus = 'confirmed';
+  if (seal.status === 'void' || mismatchNotes.length >= 2) status = 'revoked';
+  else if (seal.status === 'open' || mismatchNotes.length === 1) status = 'pending';
+
+  return {
+    status,
+    manifestId: manifest.manifestId,
+    sealStatus: seal.status,
+    manifestMayPublish: manifest.mayPublish,
+    mismatchNotes,
+    disclaimer: '(Non-authoritative forecast.) Manifest confirmation for export wiring only.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'confirmed' ? 'low' : status === 'pending' ? 'moderate' : 'high',
+      [`confirm=${status}`, `notes=${mismatchNotes.length}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21ManifestConfirmationSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 17, seed: 58, actorCash: 970, actorDebt: 100, regionsControlled: 3 };
+  const confirmation = confirmAg21ExportManifest(ctx);
+
+  push('confirm_status', ['confirmed', 'pending', 'revoked'].includes(confirmation.status), confirmation.status);
+  push('confirm_manifest', confirmation.manifestId.startsWith('ag21_manifest_'), confirmation.manifestId);
+  push('confirm_notes', Array.isArray(confirmation.mismatchNotes), String(confirmation.mismatchNotes.length));
+  push('confirm_non_auth', confirmation.authoritative === false, confirmation.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-archive-audit-trail.ts ---
+/**
+ * Agent 21 — archive audit trail from seal through confirmation (read-only round 13).
+ */
+
+
+export interface Ag21ArchiveAuditEvent {
+  seq: number;
+  kind: string;
+  refId: string;
+}
+
+export interface Ag21ArchiveAuditTrail {
+  trailId: string;
+  eventCount: number;
+  events: Ag21ArchiveAuditEvent[];
+  confirmationStatus: ReturnType<typeof confirmAg21ExportManifest>['status'];
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Build ordered audit trail for archive lifecycle (round 13). */
+export function buildAg21ArchiveAuditTrail(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21ArchiveAuditTrail {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.68),
+      actorDebt: baseCtx.actorDebt + 265
+    } satisfies Ag21ForecastContext);
+
+  const attestation = attestAg21LabCloseout(baseCtx, candidate);
+  const seal = sealAg21LabArchiveRecord(baseCtx, candidate);
+  const confirmation = confirmAg21ExportManifest(baseCtx, candidate);
+
+  const events: Ag21ArchiveAuditEvent[] = [
+    { seq: 1, kind: 'attestation', refId: attestation.attestationId },
+    { seq: 2, kind: 'archive_seal', refId: seal.sealId },
+    { seq: 3, kind: 'manifest_confirm', refId: confirmation.manifestId }
+  ];
+
+  const trailId = `ag21_audit_${baseCtx.turn}_${baseCtx.seed}_${confirmation.status}`;
+
+  return {
+    trailId,
+    eventCount: events.length,
+    events,
+    confirmationStatus: confirmation.status,
+    disclaimer: '(Non-authoritative forecast.) Archive audit trail for operator review only.',
+    overallUncertainty: ag21LabelUncertainty(
+      confirmation.status === 'confirmed' ? 'low' : 'moderate',
+      [`trail=${trailId}`, `events=${events.length}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21ArchiveAuditTrailSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 21, seed: 14, actorCash: 1100, actorDebt: 75, regionsControlled: 4 };
+  const trail = buildAg21ArchiveAuditTrail(ctx);
+
+  push('audit_trail_id', trail.trailId.startsWith('ag21_audit_'), trail.trailId);
+  push('audit_events', trail.eventCount === 3 && trail.events.every((e, i) => e.seq === i + 1), String(trail.eventCount));
+  push('audit_confirm', ['confirmed', 'pending', 'revoked'].includes(trail.confirmationStatus), trail.confirmationStatus);
+  push('audit_non_auth', trail.authoritative === false, trail.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-lab-retention-policy.ts ---
+/**
+ * Agent 21 — retention policy from confirmation + audit trail (read-only round 13).
+ */
+
+
+export type Ag21RetentionDisposition = 'retain' | 'purge_candidate' | 'hold';
+
+export interface Ag21LabRetentionPolicy {
+  policyId: string;
+  disposition: Ag21RetentionDisposition;
+  retentionDaysHint: number;
+  confirmationStatus: ReturnType<typeof confirmAg21ExportManifest>['status'];
+  auditTrailId: string;
+  rationale: string;
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Resolve lab artifact retention disposition for checkpoint logs (round 13). */
+export function resolveAg21LabRetentionPolicy(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21LabRetentionPolicy {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.67),
+      actorDebt: baseCtx.actorDebt + 275
+    } satisfies Ag21ForecastContext);
+
+  const confirmation = confirmAg21ExportManifest(baseCtx, candidate);
+  const trail = buildAg21ArchiveAuditTrail(baseCtx, candidate);
+
+  let disposition: Ag21RetentionDisposition = 'hold';
+  let retentionDaysHint = 14;
+  if (confirmation.status === 'confirmed') {
+    disposition = 'retain';
+    retentionDaysHint = 90;
+  } else if (confirmation.status === 'revoked') {
+    disposition = 'purge_candidate';
+    retentionDaysHint = 7;
+  }
+
+  const rationale =
+    disposition === 'retain'
+      ? 'Confirmed manifest — retain audit trail for history module sync.'
+      : disposition === 'purge_candidate'
+        ? 'Revoked confirmation — mark lab artifacts for purge review.'
+        : 'Pending confirmation — hold retention until operator sign-off.';
+
+  const policyId = `ag21_retention_${baseCtx.turn}_${baseCtx.seed}_${disposition}_v${O10M_AGENT21_MODULE_VERSION.replace(/\./g, '')}`;
+
+  return {
+    policyId,
+    disposition,
+    retentionDaysHint,
+    confirmationStatus: confirmation.status,
+    auditTrailId: trail.trailId,
+    rationale,
+    disclaimer: '(Non-authoritative forecast.) Retention policy for lab checkpoints only.',
+    overallUncertainty: ag21LabelUncertainty(
+      disposition === 'retain' ? 'low' : disposition === 'purge_candidate' ? 'high' : 'moderate',
+      [`disposition=${disposition}`, `days=${retentionDaysHint}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21LabRetentionPolicySelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 27, seed: 6, actorCash: 1380, actorDebt: 52, regionsControlled: 5 };
+  const policy = resolveAg21LabRetentionPolicy(ctx);
+
+  push('retention_id', policy.policyId.startsWith('ag21_retention_'), policy.policyId);
+  push('retention_disposition', ['retain', 'purge_candidate', 'hold'].includes(policy.disposition), policy.disposition);
+  push('retention_days', policy.retentionDaysHint > 0, String(policy.retentionDaysHint));
+  push('retention_non_auth', policy.authoritative === false, policy.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-round13-console.tsx ---
+/**
+ * Agent 21 — scale wave round 13 console (confirmation + audit trail + retention).
+ */
+
+
+export const Ag21ForecastRound13Console: React.FC<{ seed?: number }> = ({ seed = 92 }) => {
+  const base = useMemo(() => createDefaultAg21ForecastContext({ seed, turn: 26 }), [seed]);
+  const stressed = useMemo(
+    () => ({ ...base, actorCash: Math.round(base.actorCash * 0.6), actorDebt: base.actorDebt + 380 }),
+    [base]
+  );
+
+  const confirmation = useMemo(() => confirmAg21ExportManifest(base, stressed), [base, stressed]);
+  const trail = useMemo(() => buildAg21ArchiveAuditTrail(base, stressed), [base, stressed]);
+  const retention = useMemo(() => resolveAg21LabRetentionPolicy(base, stressed), [base, stressed]);
+
+  return (
+    <div className="border border-lime-500/30 rounded-lg p-3 bg-slate-950/85 text-xs space-y-2" data-testid="ag21-round13-console">
+      <div className="font-bold text-lime-200">
+        🔬 Forecast Lab Round 13 <span className="text-[10px] font-normal opacity-70">(non-authoritative)</span>
+      </div>
+      <div data-testid="ag21-round13-confirmation">
+        Confirm · {confirmation.status} · notes {confirmation.mismatchNotes.length}
+      </div>
+      <div data-testid="ag21-round13-audit">
+        Audit · {trail.eventCount} events · {trail.trailId.slice(0, 24)}…
+      </div>
+      <div data-testid="ag21-round13-retention">
+        Retention · {retention.disposition} · {retention.retentionDaysHint}d hint
+      </div>
+    </div>
+  );
+};
+
 
 
 /** Agent 25 — modular self-tests (subset of npm run test:ag21). */
@@ -4914,6 +5194,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21LabArchiveSealSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21ManifestConfirmationSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21ArchiveAuditTrailSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21LabRetentionPolicySelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({

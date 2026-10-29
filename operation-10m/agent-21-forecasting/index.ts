@@ -49,4 +49,8 @@ export * from './forecast-closeout-attestation';
 export * from './forecast-export-manifest';
 export * from './forecast-lab-archive-seal';
 export * from './forecast-round12-console';
+export * from './forecast-manifest-confirmation';
+export * from './forecast-archive-audit-trail';
+export * from './forecast-lab-retention-policy';
+export * from './forecast-round13-console';
 export * from './strategic-forecast-policy-lab';

@@ -8,7 +8,7 @@
 ## Module identity
 
 - `O10M_AGENT21_MODULE_ID` = `forecasting_policy_lab`
-- `O10M_AGENT21_MODULE_VERSION` = `2.4.0`
+- `O10M_AGENT21_MODULE_VERSION` = `2.5.0`
 
 ## Assembly chunk
 
@@ -71,6 +71,10 @@
 | `buildAg21ExportManifest` | Round 12 history export manifest |
 | `sealAg21LabArchiveRecord` | Round 12 archive seal |
 | `Ag21ForecastRound12Console` | Round 12 UI (`data-testid="ag21-round12-console"`) |
+| `confirmAg21ExportManifest` | Round 13 manifest confirmation |
+| `buildAg21ArchiveAuditTrail` | Round 13 archive audit trail |
+| `resolveAg21LabRetentionPolicy` | Round 13 retention disposition |
+| `Ag21ForecastRound13Console` | Round 13 UI (`data-testid="ag21-round13-console"`) |
 
 ## Upstream dependencies (canonical only)
 
