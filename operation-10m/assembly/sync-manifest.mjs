@@ -26,6 +26,21 @@ const BRANCH_TO_MODULE_ID = {
 
 const SKIP_BRANCHES = new Set(["agent-25-integration"]);
 
+/** Pre-smudged Agent 05 chunk (gate repo worktree) when `git lfs smudge` cannot run in-process. */
+const AGENT05_WT_CHUNK = "/tmp/agent05-wt/operation-10m/agent-05-events/chunk.tsx";
+
+function resolveChunkText(branch, slug, path, rawText) {
+  if (!rawText) return rawText;
+  if (rawText.includes("OP10M_MODULE_BEGIN")) return rawText;
+  const primaryChunk = `operation-10m/${slug}/chunk.tsx`;
+  if (path === primaryChunk && rawText.startsWith("version https://git-lfs.github.com/spec/v1")) {
+    if (slug === "agent-05-events" && existsSync(AGENT05_WT_CHUNK)) {
+      return readFileSync(AGENT05_WT_CHUNK, "utf8");
+    }
+  }
+  return rawText;
+}
+
 function parseMarkerModuleId(chunkText) {
   const m = chunkText.match(/OP10M_MODULE_BEGIN\s+([a-z0-9-]+)/i);
   return m?.[1] ?? null;
@@ -61,16 +76,45 @@ function gitLines(branch, path) {
     maxBuffer: 128 * 1024 * 1024,
   });
   if (r.status !== 0) return null;
-  return r.stdout;
+  let text = r.stdout;
+  if (text.startsWith("version https://git-lfs.github.com/spec/v1")) {
+    const rev = spawnSync("git", ["rev-parse", branch], { encoding: "utf8", cwd: repoRoot }).stdout.trim();
+    if (rev) {
+      spawnSync("git", ["lfs", "fetch", "origin", rev, "--include", path], {
+        cwd: repoRoot,
+        stdio: "ignore",
+      });
+    }
+    const sm = spawnSync("git", ["lfs", "smudge"], {
+      input: text,
+      encoding: "utf8",
+      cwd: repoRoot,
+      maxBuffer: 512 * 1024 * 1024,
+    });
+    if (sm.status === 0 && sm.stdout) text = sm.stdout;
+  }
+  return text;
 }
 
-function discoverChunkOnBranch(branch) {
+function discoverChunkOnBranch(branch, slug) {
   const r = spawnSync(
     "git",
     ["ls-tree", "-r", "--name-only", branch, "operation-10m"],
     { encoding: "utf8", cwd: repoRoot, maxBuffer: 16 * 1024 * 1024 }
   );
   if (r.status !== 0) return null;
+  const primaryChunk = `operation-10m/${slug}/chunk.tsx`;
+  const primaryText = gitLines(branch, primaryChunk);
+  if (primaryText) {
+    const resolvedPrimary = resolveChunkText(branch, slug, primaryChunk, primaryText);
+    if (resolvedPrimary?.includes("OP10M_MODULE_BEGIN")) {
+      return {
+        path: primaryChunk,
+        text: resolvedPrimary,
+        markerModuleId: parseMarkerModuleId(resolvedPrimary),
+      };
+    }
+  }
   const candidates = r.stdout
     .split("\n")
     .filter(Boolean)
@@ -78,11 +122,18 @@ function discoverChunkOnBranch(branch) {
       (p) =>
         /chunk\.tsx$/.test(p) &&
         (/^operation-10m\/modules\/agent-/.test(p) || /^operation-10m\/agent-/.test(p))
-    );
+    )
+    .sort((a, b) => {
+      if (a === primaryChunk) return -1;
+      if (b === primaryChunk) return 1;
+      return a.localeCompare(b);
+    });
   for (const path of candidates) {
+    if (path === primaryChunk) continue;
     const text = gitLines(branch, path);
-    if (text && text.includes("OP10M_MODULE_BEGIN")) {
-      return { path, text, markerModuleId: parseMarkerModuleId(text) };
+    const resolved = resolveChunkText(branch, slug, path, text);
+    if (resolved && resolved.includes("OP10M_MODULE_BEGIN")) {
+      return { path, text: resolved, markerModuleId: parseMarkerModuleId(resolved) };
     }
   }
   return null;
@@ -99,7 +150,7 @@ function scanRemoteBranches() {
   const seenModuleIds = new Map();
 
   for (const { branch, slug } of branches) {
-    const chunk = discoverChunkOnBranch(branch);
+    const chunk = discoverChunkOnBranch(branch, slug);
     let moduleId = null;
     let contentSha256 = null;
     let assemblyReady = false;
@@ -182,7 +233,8 @@ function materializeReadyChunks(scan) {
   let imported = 0;
   for (const row of scan.rows) {
     if (!row.assemblyReady || !row.chunkPath) continue;
-    const chunkText = gitLines(row.branch, row.chunkPath);
+    const chunkTextRaw = gitLines(row.branch, row.chunkPath);
+    const chunkText = resolveChunkText(row.branch, row.branchSlug, row.chunkPath, chunkTextRaw);
     if (!chunkText) continue;
     const destDir = join(modulesRoot, row.moduleId);
     mkdirSync(destDir, { recursive: true });
