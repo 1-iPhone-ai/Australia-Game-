@@ -1,0 +1,31 @@
+import type { V1021ImfdHandoffStackEdge } from '../../types/core.ts';
+
+/** Handoff stack graph shard 005 (rail/port/air corridor coupling). */
+export const V1021_IMFD_HANDOFF_STACK_SHARD_005: readonly V1021ImfdHandoffStackEdge[] = [
+  { fromMode: 'bulk', toMode: 'express', weight: 0.384, lagTurns: 7, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.39, lagTurns: 8, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.396, lagTurns: 9, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.3, lagTurns: 10, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.306, lagTurns: 7, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.312, lagTurns: 8, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.318, lagTurns: 9, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.324, lagTurns: 10, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.33, lagTurns: 7, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.336, lagTurns: 8, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.342, lagTurns: 9, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.348, lagTurns: 10, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.354, lagTurns: 7, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.36, lagTurns: 8, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.366, lagTurns: 9, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.372, lagTurns: 10, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.378, lagTurns: 7, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.384, lagTurns: 8, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.39, lagTurns: 9, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.396, lagTurns: 10, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.3, lagTurns: 7, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.306, lagTurns: 8, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.312, lagTurns: 9, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.318, lagTurns: 10, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.324, lagTurns: 7, hubId: 'dwell_hub_05' },
+  { fromMode: 'bulk', toMode: 'express', weight: 0.33, lagTurns: 8, hubId: 'dwell_hub_05' },
+];

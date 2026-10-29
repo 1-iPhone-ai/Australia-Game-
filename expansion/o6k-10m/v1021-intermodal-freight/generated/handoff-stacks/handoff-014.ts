@@ -1,0 +1,31 @@
+import type { V1021ImfdHandoffStackEdge } from '../../types/core.ts';
+
+/** Handoff stack graph shard 014 (rail/port/air corridor coupling). */
+export const V1021_IMFD_HANDOFF_STACK_SHARD_014: readonly V1021ImfdHandoffStackEdge[] = [
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.66, lagTurns: 7, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.666, lagTurns: 8, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.672, lagTurns: 9, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.678, lagTurns: 10, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.684, lagTurns: 7, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.588, lagTurns: 8, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.594, lagTurns: 9, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.6, lagTurns: 10, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.606, lagTurns: 7, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.612, lagTurns: 8, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.618, lagTurns: 9, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.624, lagTurns: 10, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.63, lagTurns: 7, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.636, lagTurns: 8, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.642, lagTurns: 9, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.648, lagTurns: 10, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.654, lagTurns: 7, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.66, lagTurns: 8, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.666, lagTurns: 9, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.672, lagTurns: 10, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.678, lagTurns: 7, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.684, lagTurns: 8, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.588, lagTurns: 9, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.594, lagTurns: 10, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.6, lagTurns: 7, hubId: 'dwell_hub_14' },
+  { fromMode: 'intermodal', toMode: 'refrigerated', weight: 0.606, lagTurns: 8, hubId: 'dwell_hub_14' },
+];
