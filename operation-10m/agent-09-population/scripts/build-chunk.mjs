@@ -233,6 +233,7 @@ const FILES = [
   'national-workforce-steadfast-depth-index.ts',
   'catalog/workforce-steadfast-levers.ts',
   'steadfast-advocacy-coupling-brief.ts',
+  'resolute-advocacy-coupling-brief.ts',
   'advocacy-resilience-outlook.ts',
   'subject-advocacy-steadfast-readiness-brief.ts',
   'national-workforce-advocacy-depth-index.ts',

@@ -215,6 +215,7 @@ import { computeNationalSteadfastResilienceOutlook } from './steadfast-resilienc
 import { computeNationalSubjectSteadfastReadinessBrief } from './subject-steadfast-readiness-brief';
 import { computeNationalWorkforceSteadfastDepthIndex } from './national-workforce-steadfast-depth-index';
 import { computeNationalSteadfastAdvocacyCouplingBrief } from './steadfast-advocacy-coupling-brief';
+import { computeNationalResoluteAdvocacyCouplingBrief } from './resolute-advocacy-coupling-brief';
 import { computeNationalAdvocacyResilienceOutlook } from './advocacy-resilience-outlook';
 import { computeNationalSubjectAdvocacySteadfastReadinessBrief } from './subject-advocacy-steadfast-readiness-brief';
 import { computeNationalWorkforceAdvocacyDepthIndex } from './national-workforce-advocacy-depth-index';
@@ -1382,6 +1383,10 @@ export function computeNationalLaborDemographics(
     state.resolveSteadfastCouplingBrief,
     state.steadfastResilienceOutlook,
     state.subjectSteadfastReadinessBrief
+  );
+  state.resoluteAdvocacyCouplingBrief = computeNationalResoluteAdvocacyCouplingBrief(
+    state,
+    state.nationalWorkforceSteadfastDepthIndex,
   );
   state.steadfastAdvocacyCouplingBrief = computeNationalSteadfastAdvocacyCouplingBrief(
     state,
