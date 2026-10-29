@@ -2798,6 +2798,271 @@ export function buildNationalRevenueLedger(inputs: RevenueLedgerInputs): Nationa
 }
 
 
+// --- source: fiscal-risk-register/types.ts ---
+export const FISCAL_RISK_REGISTER_SCHEMA = 'op10m-agent07-fiscal-risk-register-v1';
+
+export type FiscalRiskCategory =
+  | 'revenue_volatility'
+  | 'debt_rollover'
+  | 'demand_pressure'
+  | 'commodity_exposure'
+  | 'policy_reversal'
+  | 'intergovernmental_clawback';
+
+export interface FiscalRiskEntry {
+  id: string;
+  category: FiscalRiskCategory;
+  label: string;
+  likelihood: number;
+  impactPoints: number;
+  mitigationReady: boolean;
+  warnOnly: boolean;
+}
+
+export interface FiscalRiskRegisterReport {
+  schemaVersion: string;
+  turn: number;
+  entries: FiscalRiskEntry[];
+  aggregateHeat: number;
+  highImpactCount: number;
+  unmitigatedCount: number;
+  withinRiskAppetite: boolean;
+  tier: 'low' | 'elevated' | 'severe';
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: fiscal-risk-register/compute.ts ---
+
+export const BASE_FISCAL_RISKS: Omit<FiscalRiskEntry, 'id'>[] = [
+  {
+    category: 'revenue_volatility',
+    label: 'Commodity-linked revenue volatility',
+    likelihood: 0.22,
+    impactPoints: 12,
+    mitigationReady: true,
+    warnOnly: true
+  },
+  {
+    category: 'debt_rollover',
+    label: 'Refinancing cluster concentration',
+    likelihood: 0.18,
+    impactPoints: 16,
+    mitigationReady: false,
+    warnOnly: true
+  },
+  {
+    category: 'demand_pressure',
+    label: 'Health and social demand overshoot',
+    likelihood: 0.28,
+    impactPoints: 10,
+    mitigationReady: true,
+    warnOnly: true
+  },
+  {
+    category: 'commodity_exposure',
+    label: 'Resource rent cyclicality',
+    likelihood: 0.15,
+    impactPoints: 14,
+    mitigationReady: false,
+    warnOnly: true
+  },
+  {
+    category: 'policy_reversal',
+    label: 'Tax instrument rollback risk',
+    likelihood: 0.12,
+    impactPoints: 8,
+    mitigationReady: true,
+    warnOnly: true
+  },
+  {
+    category: 'intergovernmental_clawback',
+    label: 'Grant clawback after performance miss',
+    likelihood: 0.1,
+    impactPoints: 6,
+    mitigationReady: true,
+    warnOnly: false
+  }
+];
+
+export function catalogFiscalRisks(turn: number): FiscalRiskEntry[] {
+  return BASE_FISCAL_RISKS.map((row, idx) => ({
+    id: `fr_${turn}_${idx}_${row.category}`,
+    ...row
+  }));
+}
+
+function stressLikelihoodScale(v1012: V1012FiscalSnapshot): number {
+  if (v1012.pressure === 'critical') return 1.35;
+  if (v1012.pressure === 'strained') return 1.18;
+  if (v1012.pressure === 'tight') return 1.06;
+  return 1;
+}
+
+export function buildFiscalRiskRegister(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  entries: FiscalRiskEntry[] = catalogFiscalRisks(turn)
+): FiscalRiskRegisterReport {
+  const scale = stressLikelihoodScale(v1012);
+  const debtAdj = v1012.debtServiceLoad > 14 ? 1.12 : 1;
+  const headroomAdj = v1012.fiscalHeadroom < 0 ? 1.15 : 1;
+
+  const scored = entries.map(e => ({
+    ...e,
+    score: e.likelihood * scale * debtAdj * headroomAdj * e.impactPoints
+  }));
+
+  const aggregateHeat = Math.round(scored.reduce((s, e) => s + e.score, 0) * 10) / 10;
+  const highImpactCount = scored.filter(e => e.impactPoints >= 12).length;
+  const unmitigatedCount = scored.filter(e => !e.mitigationReady).length;
+
+  const appetiteCeiling = 28 + Math.max(0, v1012.fiscalHeadroom * 0.8);
+  const withinRiskAppetite = aggregateHeat <= appetiteCeiling;
+
+  let tier: FiscalRiskRegisterReport['tier'] = 'low';
+  if (aggregateHeat > appetiteCeiling * 1.25 || v1012.pressure === 'critical') tier = 'severe';
+  else if (
+    aggregateHeat > appetiteCeiling * 0.85 ||
+    unmitigatedCount >= 3 ||
+    (v1012.pressure === 'strained' && aggregateHeat >= 16)
+  ) {
+    tier = 'elevated';
+  }
+
+  const warnings: string[] = [];
+  if (!withinRiskAppetite) {
+    warnings.push(`Aggregate heat ${aggregateHeat} exceeds appetite ${appetiteCeiling.toFixed(1)}.`);
+  }
+  if (unmitigatedCount >= 2 && v1012.fiscalHeadroom < 2) {
+    warnings.push('Multiple unmitigated risks with limited fiscal headroom.');
+  }
+
+  const narrative = withinRiskAppetite
+    ? `Fiscal risk register: heat ${aggregateHeat} within appetite (${tier} tier).`
+    : `Fiscal risk register elevated (${tier}): ${unmitigatedCount} unmitigated, ${highImpactCount} high-impact entries.`;
+
+  return {
+    schemaVersion: FISCAL_RISK_REGISTER_SCHEMA,
+    turn,
+    entries,
+    aggregateHeat,
+    highImpactCount,
+    unmitigatedCount,
+    withinRiskAppetite,
+    tier,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: intergovernmental-grants/types.ts ---
+export const INTERGOVERNMENTAL_GRANTS_SCHEMA = 'op10m-agent07-intergovernmental-grants-v1';
+
+export type GrantProgramKind =
+  | 'health_block'
+  | 'education_reform'
+  | 'roads_partner'
+  | 'housing_accelerator'
+  | 'disaster_recovery';
+
+export interface GrantAllocationLine {
+  programId: GrantProgramKind;
+  label: string;
+  federalPoints: number;
+  stateMatchRequired: number;
+  performanceGateMet: boolean;
+  clawbackPoints: number;
+  netToStates: number;
+}
+
+export interface IntergovernmentalGrantsReport {
+  schemaVersion: string;
+  turn: number;
+  allocations: GrantAllocationLine[];
+  totalFederal: number;
+  totalClawback: number;
+  netFederalOutlay: number;
+  performancePassRate: number;
+  reconciledToIgrPool: boolean;
+  warnings: string[];
+}
+
+
+// --- source: intergovernmental-grants/compute.ts ---
+
+const PROGRAM_WEIGHTS: Record<GrantProgramKind, { share: number; match: number; label: string }> = {
+  health_block: { share: 0.32, match: 0.05, label: 'Health block grant' },
+  education_reform: { share: 0.24, match: 0.08, label: 'Schools reform partnership' },
+  roads_partner: { share: 0.18, match: 0.12, label: 'Roads of significance partner' },
+  housing_accelerator: { share: 0.14, match: 0.1, label: 'Housing accelerator' },
+  disaster_recovery: { share: 0.12, match: 0, label: 'Disaster recovery advance' }
+};
+
+function performanceGate(v1012: V1012FiscalSnapshot, program: GrantProgramKind): boolean {
+  if (program === 'disaster_recovery') return v1012.pressure !== 'critical';
+  if (program === 'housing_accelerator') return v1012.fiscalHeadroom > -8;
+  if (program === 'roads_partner') return v1012.maintenanceLoad < 16;
+  if (program === 'education_reform') return v1012.sustainability !== 'fragile';
+  return v1012.debtServiceLoad < 20;
+}
+
+export function allocateIntergovernmentalGrants(
+  turn: number,
+  v1012: V1012FiscalSnapshot
+): IntergovernmentalGrantsReport {
+  const igr = reconcileFederalStateTransfers(turn, v1012);
+  const grantPool = Math.max(8, Math.round(igr.federalRevenuePool * 0.38));
+  const warnings: string[] = [];
+
+  const allocations: GrantAllocationLine[] = (Object.keys(PROGRAM_WEIGHTS) as GrantProgramKind[]).map(programId => {
+    const meta = PROGRAM_WEIGHTS[programId];
+    const federalPoints = Math.round(grantPool * meta.share * 10) / 10;
+    const gate = performanceGate(v1012, programId);
+    const clawbackRate = gate ? 0 : programId === 'disaster_recovery' ? 0.15 : 0.22;
+    const clawbackPoints = Math.round(federalPoints * clawbackRate * 10) / 10;
+    const netToStates = Math.round((federalPoints - clawbackPoints) * 10) / 10;
+    return {
+      programId,
+      label: meta.label,
+      federalPoints,
+      stateMatchRequired: Math.round(federalPoints * meta.match * 10) / 10,
+      performanceGateMet: gate,
+      clawbackPoints,
+      netToStates
+    };
+  });
+
+  const totalFederal = Math.round(allocations.reduce((s, a) => s + a.federalPoints, 0) * 10) / 10;
+  const totalClawback = Math.round(allocations.reduce((s, a) => s + a.clawbackPoints, 0) * 10) / 10;
+  const netFederalOutlay = Math.round((totalFederal - totalClawback) * 10) / 10;
+  const performancePassRate =
+    allocations.length > 0 ? allocations.filter(a => a.performanceGateMet).length / allocations.length : 0;
+
+  const reconciledToIgrPool = Math.abs(totalFederal - grantPool) <= 1.5;
+  if (!reconciledToIgrPool) {
+    warnings.push(`Grant pool ${totalFederal} vs IGR-derived ${grantPool} — rounding tolerance.`);
+  }
+  if (totalClawback > grantPool * 0.25) {
+    warnings.push('Clawbacks exceed 25% of grant pool — state delivery stress.');
+  }
+
+  return {
+    schemaVersion: INTERGOVERNMENTAL_GRANTS_SCHEMA,
+    turn,
+    allocations,
+    totalFederal,
+    totalClawback,
+    netFederalOutlay,
+    performancePassRate,
+    reconciledToIgrPool,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -4534,6 +4799,8 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     publishesProgramOutcomes: true,
     auditLagTurns: 2
   });
+  const riskRegister = buildFiscalRiskRegister(turn, v1012);
+  const igGrants = allocateIntergovernmentalGrants(turn, v1012);
 
   checks.push({
     id: 'CF01',
@@ -4612,13 +4879,34 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `tier=${transparency.compositeTier}, score=${transparency.compositeScore}`
   });
 
+  checks.push({
+    id: 'CF12',
+    label: 'Fiscal risk register within appetite or critical override',
+    passed: riskRegister.withinRiskAppetite || v1012.pressure === 'critical',
+    detail: `heat=${riskRegister.aggregateHeat}, tier=${riskRegister.tier}`
+  });
+
+  checks.push({
+    id: 'CF13',
+    label: 'Intergovernmental grants reconcile to IGR pool slice',
+    passed: igGrants.reconciledToIgrPool,
+    detail: `federal=${igGrants.totalFederal}, clawback=${igGrants.totalClawback}`
+  });
+
+  checks.push({
+    id: 'CF14',
+    label: 'Grant performance pass rate above floor under non-critical pressure',
+    passed: igGrants.performancePassRate >= 0.4 || v1012.pressure === 'critical',
+    detail: `rate=${igGrants.performancePassRate}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 10
+    layerCount: 12
   };
 }
 
@@ -6498,12 +6786,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Ten fiscal layers integrated', healthy.layerCount === 10, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Twelve fiscal layers integrated', healthy.layerCount === 12, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 11,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 14,
     'ok'
   );
 
@@ -6515,8 +6803,9 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF11 ids present',
-    healthy.checks.map(c => c.id).join(',') === 'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08,CF09,CF10,CF11',
+    'CF01–CF14 ids present',
+    healthy.checks.map(c => c.id).join(',') ===
+      'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08,CF09,CF10,CF11,CF12,CF13,CF14',
     'ok'
   );
 
@@ -6895,6 +7184,150 @@ export function runInfrastructureFinancingSelfTests(): {
   const summary = summarizeInfrastructureFinancing(6, [sampleRequest(), sampleRequest({ projectId: 'infra_test_2', capitalPoints: 8 })], v1012, state.budget);
   record('IF04', 'Summary aggregates service load', summary.aggregateServiceLoad >= 0, `load=${summary.aggregateServiceLoad}`);
   record('IF05', 'Two-project portfolio plans', summary.plans.length === 2, `n=${summary.plans.length}`);
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: revenue-ledger/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 8,
+    revenueCapacity: partial.revenueCapacity ?? 58,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 3,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 6,
+    debtLevel: partial.debtLevel ?? 19,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 5,
+    commitmentCount: partial.commitmentCount ?? 2,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runRevenueLedgerSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v1012 = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(8);
+  const { state } = computeFiscalOutcomesLayer({ turn: 8, v1012 }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 8, v1012, taxInstruments: state.taxInstruments });
+
+  record('RL01', 'Streams mirror tax instruments', ledger.streams.length >= state.taxInstruments.length, `streams=${ledger.streams.length}`);
+  record('RL02', 'Reconciled under balanced policy', ledger.reconciledToV1012, ledger.reconciliationNotes[0] ?? '');
+  record('RL03', 'Structural capacity matches V10.12', ledger.structuralCapacity === v1012.revenueCapacity, 'ok');
+
+  const focused = buildNationalRevenueLedger({
+    turn: 8,
+    v1012: snap({ revenuePolicy: 'revenue_focused' }),
+    taxInstruments: state.taxInstruments
+  });
+  record('RL04', 'Revenue-focused policy adds dividend stream', focused.streams.some(s => s.id === 'stream_policy_dividend'), 'ok');
+  record('RL05', 'Total delta aggregates stream deltas', focused.totalDelta === focused.streams.reduce((s, l) => s + l.deltaPoints, 0), `delta=${focused.totalDelta}`);
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: fiscal-risk-register/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 62,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 6,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 4,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runFiscalRiskRegisterSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const catalog = catalogFiscalRisks(9);
+  record('FR01', 'Risk catalog covers core categories', catalog.length >= 6, `n=${catalog.length}`);
+
+  const base = buildFiscalRiskRegister(9, snap({}));
+  record('FR02', 'Healthy snapshot within appetite', base.withinRiskAppetite && base.tier === 'low', `heat=${base.aggregateHeat}`);
+  record('FR03', 'Aggregate heat positive', base.aggregateHeat > 0, 'ok');
+  record('FR04', 'Unmitigated count matches catalog', base.unmitigatedCount === catalog.filter(c => !c.mitigationReady).length, `u=${base.unmitigatedCount}`);
+
+  const strained = buildFiscalRiskRegister(9, snap({ fiscalHeadroom: -2, pressure: 'strained', debtServiceLoad: 16 }));
+  record('FR05', 'Strained snapshot raises heat', strained.aggregateHeat > base.aggregateHeat, `${strained.aggregateHeat} vs ${base.aggregateHeat}`);
+  record('FR06', 'Elevated or severe under strain', strained.tier !== 'low', `tier=${strained.tier}`);
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: intergovernmental-grants/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 11,
+    revenueCapacity: partial.revenueCapacity ?? 64,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 5,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 7,
+    debtLevel: partial.debtLevel ?? 22,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 7,
+    commitmentCount: partial.commitmentCount ?? 3,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runIntergovernmentalGrantsSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const healthy = allocateIntergovernmentalGrants(11, snap({}));
+  record('IG01', 'Five grant programs allocated', healthy.allocations.length === 5, 'ok');
+  record('IG02', 'Pool reconciled to IGR slice', healthy.reconciledToIgrPool, `total=${healthy.totalFederal}`);
+  record('IG03', 'Net outlay equals federal minus clawback', healthy.netFederalOutlay === Math.round((healthy.totalFederal - healthy.totalClawback) * 10) / 10, 'ok');
+  record('IG04', 'Healthy pass rate high', healthy.performancePassRate >= 0.6, `rate=${healthy.performancePassRate}`);
+
+  const critical = allocateIntergovernmentalGrants(11, snap({ pressure: 'critical', fiscalHeadroom: -12, maintenanceLoad: 20, debtServiceLoad: 24, sustainability: 'fragile' }));
+  record('IG05', 'Critical snapshot triggers clawbacks', critical.totalClawback > healthy.totalClawback, `${critical.totalClawback} vs ${healthy.totalClawback}`);
+  record('IG06', 'Performance pass rate drops under stress', critical.performancePassRate < healthy.performancePassRate, `rate=${critical.performancePassRate}`);
 
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };

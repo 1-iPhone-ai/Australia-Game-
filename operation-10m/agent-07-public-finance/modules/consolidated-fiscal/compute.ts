@@ -9,6 +9,8 @@ import { buildMediumTermFiscalOutlook } from '../medium-term-outlook/compute';
 import { buildMultiYearExpenditureFramework } from '../multi-year-framework/compute';
 import { assessContingentLiabilities } from '../contingent-liabilities/compute';
 import { scoreFiscalTransparencyIndex } from '../fiscal-transparency/compute';
+import { buildFiscalRiskRegister } from '../fiscal-risk-register/compute';
+import { allocateIntergovernmentalGrants } from '../intergovernmental-grants/compute';
 import type { V1012FiscalSnapshot } from '../fiscal-outcomes/types';
 
 export const CONSOLIDATED_FISCAL_SCHEMA = 'op10m-agent07-consolidated-v1';
@@ -49,6 +51,8 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     publishesProgramOutcomes: true,
     auditLagTurns: 2
   });
+  const riskRegister = buildFiscalRiskRegister(turn, v1012);
+  const igGrants = allocateIntergovernmentalGrants(turn, v1012);
 
   checks.push({
     id: 'CF01',
@@ -127,12 +131,33 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `tier=${transparency.compositeTier}, score=${transparency.compositeScore}`
   });
 
+  checks.push({
+    id: 'CF12',
+    label: 'Fiscal risk register within appetite or critical override',
+    passed: riskRegister.withinRiskAppetite || v1012.pressure === 'critical',
+    detail: `heat=${riskRegister.aggregateHeat}, tier=${riskRegister.tier}`
+  });
+
+  checks.push({
+    id: 'CF13',
+    label: 'Intergovernmental grants reconcile to IGR pool slice',
+    passed: igGrants.reconciledToIgrPool,
+    detail: `federal=${igGrants.totalFederal}, clawback=${igGrants.totalClawback}`
+  });
+
+  checks.push({
+    id: 'CF14',
+    label: 'Grant performance pass rate above floor under non-critical pressure',
+    passed: igGrants.performancePassRate >= 0.4 || v1012.pressure === 'critical',
+    detail: `rate=${igGrants.performancePassRate}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 10
+    layerCount: 12
   };
 }

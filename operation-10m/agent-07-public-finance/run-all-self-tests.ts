@@ -16,6 +16,9 @@ import { runMultiYearFrameworkSelfTests } from './modules/multi-year-framework/s
 import { runContingentLiabilitiesSelfTests } from './modules/contingent-liabilities/self-tests';
 import { runFiscalTransparencySelfTests } from './modules/fiscal-transparency/self-tests';
 import { runInfrastructureFinancingSelfTests } from './modules/infrastructure-financing/self-tests';
+import { runRevenueLedgerSelfTests } from './modules/revenue-ledger/self-tests';
+import { runFiscalRiskRegisterSelfTests } from './modules/fiscal-risk-register/self-tests';
+import { runIntergovernmentalGrantsSelfTests } from './modules/intergovernmental-grants/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -41,6 +44,9 @@ ok = runSuite('Multi-year expenditure framework', runMultiYearFrameworkSelfTests
 ok = runSuite('Contingent liabilities register', runContingentLiabilitiesSelfTests) && ok;
 ok = runSuite('Fiscal transparency index', runFiscalTransparencySelfTests) && ok;
 ok = runSuite('Infrastructure financing stacks', runInfrastructureFinancingSelfTests) && ok;
+ok = runSuite('National revenue ledger', runRevenueLedgerSelfTests) && ok;
+ok = runSuite('Fiscal risk register', runFiscalRiskRegisterSelfTests) && ok;
+ok = runSuite('Intergovernmental grants', runIntergovernmentalGrantsSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

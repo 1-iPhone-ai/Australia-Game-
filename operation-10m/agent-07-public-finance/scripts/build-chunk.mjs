@@ -28,6 +28,10 @@ const FILES = [
   'fiscal-outcomes/catalog/policy-scenarios.ts',
   'revenue-ledger/types.ts',
   'revenue-ledger/compute.ts',
+  'fiscal-risk-register/types.ts',
+  'fiscal-risk-register/compute.ts',
+  'intergovernmental-grants/types.ts',
+  'intergovernmental-grants/compute.ts',
   'infrastructure-financing/types.ts',
   'infrastructure-financing/compute.ts',
   'recurring-commitments/types.ts',
@@ -78,7 +82,10 @@ const FILES = [
   'multi-year-framework/self-tests.ts',
   'contingent-liabilities/self-tests.ts',
   'fiscal-transparency/self-tests.ts',
-  'infrastructure-financing/self-tests.ts'
+  'infrastructure-financing/self-tests.ts',
+  'revenue-ledger/self-tests.ts',
+  'fiscal-risk-register/self-tests.ts',
+  'intergovernmental-grants/self-tests.ts'
 ];
 
 function stripModulePreamble(source) {
