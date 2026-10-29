@@ -121,6 +121,9 @@ const SOURCE_FILES = [
   'src/batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly.ts',
   'src/batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-export.ts',
   'src/batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-export-compare.ts',
+  'src/batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-replay-parity.ts',
+  'src/batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-gate.ts',
+  'src/batch-national-tick-session-wave-assembly-batch-integration-audit-closure-gate-assembly-gate-export.ts',
   'src/fast-forward.ts',
 ] as const;
 
@@ -170,7 +173,7 @@ function bundleSources(): string {
 
   parts.push(
     `export const AGENT_02_MODULE_ID = 'operation-10m/${moduleId}';`,
-    `export const AGENT_02_MODULE_VERSION = '3.7.0';`,
+    `export const AGENT_02_MODULE_VERSION = '3.8.0';`,
     '',
     `export function runOp10mAgent02TurnsTimeSelfTests(): {`,
     `  passed: number;`,
@@ -618,6 +621,17 @@ function bundleSources(): string {
     `    name: 'assembly batch integration audit closure gate assembly wave 28',`,
     `    passed: exportBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssembly(`,
     `      assembleBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGate(`,
+    `        new TurnTimeEngine(),`,
+    `        createTurnAdvanceBudget(2),`,
+    `        [[{ maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } }]],`,
+    `      ),`,
+    `    ).ok,`,
+    `  });`,
+    `  results.push({`,
+    `    id: 'agent02_national_tick_session_wave_assembly_batch_integration_audit_closure_gate_assembly_gate',`,
+    `    name: 'assembly batch integration audit closure gate assembly gate wave 29',`,
+    `    passed: exportBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGate(`,
+    `      gateBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssembly(`,
     `        new TurnTimeEngine(),`,
     `        createTurnAdvanceBudget(2),`,
     `        [[{ maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } }]],`,
