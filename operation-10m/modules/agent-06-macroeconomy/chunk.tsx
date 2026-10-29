@@ -167,6 +167,8 @@ export interface NationalMacroEconomyState {
   dashboardClarityWave40ExportSpilloverSummary: string | null;
   replayWave41ExportSpilloverSummary: string | null;
   integrationHealthWave41ExportSpilloverSummary: string | null;
+  automationIdleGovernanceWave42ExportSpilloverSummary: string | null;
+  forecastWave42ExportSpilloverSummary: string | null;
   capacitySnapshot: MacroCapacitySnapshot;
   transmissionBalance: MacroTransmissionBalanceSnapshot;
   transmissionCoherence: MacroTransmissionCoherenceSnapshot;
@@ -717,6 +719,8 @@ export interface MacroEconomyInputs {
   dashboardClarityWave40Export?: any;
   replayWave41Export?: any;
   integrationHealthWave41Export?: any;
+  automationIdleGovernanceWave42Export?: any;
+  forecastWave42Export?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;
   /** Additional catalog shock ids (see catalog/cyclical-shocks.ts). Legacy flags merge in. */
@@ -1544,6 +1548,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Wave 41 replay & integration stress',
     shockIds: ['global_slowdown', 'credit_contraction'],
     description: 'Blocked replay wave 41 export with unready integration health wave 41 export (harness overlay).'
+  },
+  {
+    id: 'wave42_automation_forecast_export_stress',
+    label: 'Wave 42 automation & forecast export stress',
+    shockIds: ['stimulus_bounce', 'global_slowdown'],
+    description: 'Blocked automation idle governance wave 42 export with drifted forecast wave 42 export (harness overlay).'
   }
 ];
 
@@ -2291,6 +2301,16 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
       params?.integrationHealth?.wave41Export ??
       params?.assembly?.integrationHealthWave41Export ??
       params?.nationalIntegration?.healthWave41Export,
+    automationIdleGovernanceWave42Export:
+      params?.automationIdleGovernanceWave42Export ??
+      params?.automationIdleGovernance?.wave42Export ??
+      params?.idleAutomation?.governanceWave42Export ??
+      params?.automation?.idleGovernanceWave42Export,
+    forecastWave42Export:
+      params?.forecastWave42Export ??
+      params?.forecastingLab?.wave42Export ??
+      params?.macroForecasts?.wave42Export ??
+      params?.nationalForecasts?.wave42Sync,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };
@@ -6937,6 +6957,8 @@ export function buildMacroTransmissionReport(params: {
   dashboardClarityWave40Export?: MacroDashboardClarityWave40ExportSpillover;
   replayWave41Export?: MacroReplayWave41ExportSpillover;
   integrationHealthWave41Export?: MacroIntegrationHealthWave41ExportSpillover;
+  automationIdleGovernanceWave42Export?: MacroAutomationIdleGovernanceWave42ExportSpillover;
+  forecastWave42Export?: MacroForecastWave42ExportSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -7006,6 +7028,8 @@ export function buildMacroTransmissionReport(params: {
   const dashboardClarityWave40Export = params.dashboardClarityWave40Export ?? ZERO_SPILLOVER;
   const replayWave41Export = params.replayWave41Export ?? ZERO_SPILLOVER;
   const integrationHealthWave41Export = params.integrationHealthWave41Export ?? ZERO_SPILLOVER;
+  const automationIdleGovernanceWave42Export = params.automationIdleGovernanceWave42Export ?? ZERO_SPILLOVER;
+  const forecastWave42Export = params.forecastWave42Export ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -7602,6 +7626,22 @@ export function buildMacroTransmissionReport(params: {
       integrationHealthWave41Export.investmentNudge,
       integrationHealthWave41Export.productivityNudge,
       integrationHealthWave41Export.summary
+    ),
+    layer(
+      'v10.20_automation_idle_governance_wave42_export',
+      'Automation idle governance wave 42 export',
+      automationIdleGovernanceWave42Export.cycleNudge,
+      automationIdleGovernanceWave42Export.investmentNudge,
+      automationIdleGovernanceWave42Export.productivityNudge,
+      automationIdleGovernanceWave42Export.summary
+    ),
+    layer(
+      'v10.21_forecast_wave42_export',
+      'Forecast wave 42 export',
+      forecastWave42Export.cycleNudge,
+      forecastWave42Export.investmentNudge,
+      forecastWave42Export.productivityNudge,
+      forecastWave42Export.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);
@@ -11219,6 +11259,180 @@ export function rankMacroScenarioWave41Integration(rows: MacroScenarioCompareRow
 }
 
 
+// --- source: bridge-v1020-automation-idle-governance-wave-round42-export.ts ---
+
+export interface MacroAutomationIdleGovernanceWave42ExportSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.20 automation idle governance wave 42 export spillover (Agent 20 wave 42 export). */
+export function readMacroAutomationIdleGovernanceWave42ExportSpilloverFromV1020(
+  inputs: MacroEconomyInputs
+): MacroAutomationIdleGovernanceWave42ExportSpillover {
+  const exportPayload: any =
+    inputs.automationIdleGovernanceWave42Export ??
+    inputs.automationIdleGovernance?.wave42Export ??
+    inputs.idleAutomation?.governanceWave42Export ??
+    inputs.automation?.idleGovernanceWave42Export;
+  if (!exportPayload) {
+    return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+  }
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const round42Ready = Boolean(
+    exportPayload.round42Ready ??
+      exportPayload.payload?.round42Ready ??
+      exportPayload.exportReady ??
+      exportPayload.ready
+  );
+  const o10Task = String(exportPayload.o10TaskId ?? exportPayload.taskId ?? exportPayload.payload?.o10TaskId ?? '');
+  const waveRound = Number(exportPayload.waveRound ?? exportPayload.payload?.waveRound ?? 0);
+  const locHint = Number(
+    exportPayload.projectedLocHint ?? exportPayload.payload?.projectedLocHint ?? exportPayload.locHint ?? 0
+  );
+
+  if (!round42Ready) {
+    investmentNudge -= 3;
+    cycleNudge -= 1;
+    summary = 'Automation idle governance wave 42 export not ready — macro investment read drags.';
+  } else if (o10Task === 'O10-215' || waveRound === 42) {
+    investmentNudge += 1;
+    productivityNudge += 1;
+    summary = `Wave 42 idle governance export latched (${o10Task || 'O10-215'}) supports macro productivity read.`;
+  }
+
+  if (locHint > 0 && locHint < 2_180_000) {
+    cycleNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Stale wave 42 projected LOC hint misaligns macro cycle transmission.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroAutomationIdleGovernanceWave42ExportSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroAutomationIdleGovernanceWave42ExportSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: bridge-v1021-forecast-wave-round42-export.ts ---
+
+export interface MacroForecastWave42ExportSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.21 forecast wave 42 export spillover (Agent 21 wave 42 baseline). */
+export function readMacroForecastWave42ExportSpilloverFromV1021(
+  inputs: MacroEconomyInputs
+): MacroForecastWave42ExportSpillover {
+  const sync: any =
+    inputs.forecastWave42Export ??
+    inputs.forecastingLab?.wave42Export ??
+    inputs.macroForecasts?.wave42Export ??
+    inputs.nationalForecasts?.wave42Sync;
+  if (!sync) {
+    return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+  }
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const status = String(sync.status ?? sync.syncStatus ?? sync.exportStatus ?? 'unknown').toLowerCase();
+  const baselineSha = String(sync.baselineSha ?? sync.baseline ?? '');
+  const projectedLoc = Number(sync.projectedFunctionalLoc ?? sync.projectedLoc ?? 0);
+
+  if (status === 'drift') {
+    cycleNudge -= 3;
+    investmentNudge -= 2;
+    summary = 'Forecast wave 42 export drifted — macro downside transmission amplifies.';
+  } else if (status === 'aligned') {
+    investmentNudge += 1;
+    productivityNudge += 1;
+    summary = 'Aligned forecast wave 42 export supports macro investment interpretation.';
+  } else if (status === 'unknown') {
+    productivityNudge -= 1;
+    summary = 'Unknown forecast wave 42 export weakens macro productivity spillover.';
+  }
+
+  if (baselineSha && !baselineSha.toLowerCase().startsWith('431df5d')) {
+    cycleNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Non-431df5d wave 42 baseline SHA misaligns macro cycle read.';
+  }
+
+  if (projectedLoc > 0 && projectedLoc < 2_190_000) {
+    investmentNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Under-projected wave 42 functional LOC drags macro investment read.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroForecastWave42ExportSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroForecastWave42ExportSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: scenario-wave42-integration-rank.ts ---
+
+export interface MacroScenarioWave42IntegrationRow {
+  scenarioId: string;
+  integrationPriority: number;
+}
+
+/** Rank overlays for wave 42 integration (wave 41 latch plus wave 40 integration cushion). */
+export function rankMacroScenarioWave42Integration(rows: MacroScenarioCompareRow[]): MacroScenarioWave42IntegrationRow[] {
+  const wave41 = rankMacroScenarioWave41Integration(rows);
+  const wave40 = rankMacroScenarioWave40Integration(rows);
+  const w41Max = Math.max(1, ...wave41.map(w => w.integrationPriority));
+  const w40Max = Math.max(1, ...wave40.map(w => w.integrationPriority));
+
+  return rows
+    .map(row => {
+      const w41 = wave41.find(w => w.scenarioId === row.scenarioId)?.integrationPriority ?? 0;
+      const w40 = wave40.find(w => w.scenarioId === row.scenarioId)?.integrationPriority ?? 0;
+      const integrationPriority =
+        Math.round(((w41 / w41Max) * 0.55 + (w40 / w40Max) * 0.45) * 1000) / 1000;
+      return { scenarioId: row.scenarioId, integrationPriority };
+    })
+    .sort((a, b) => b.integrationPriority - a.integrationPriority);
+}
+
+
 // --- source: regression-harness.ts ---
 
 export interface MacroRegressionCheck {
@@ -11275,6 +11489,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeWave39AutomationForecastExportStress?: boolean;
   includeWave40UiDashboardExportStress?: boolean;
   includeWave41ReplayIntegrationStress?: boolean;
+  includeWave42AutomationForecastExportStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
@@ -11315,6 +11530,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   const includeWave39AutomationForecastExportStress = Boolean(options?.includeWave39AutomationForecastExportStress);
   const includeWave40UiDashboardExportStress = Boolean(options?.includeWave40UiDashboardExportStress);
   const includeWave41ReplayIntegrationStress = Boolean(options?.includeWave41ReplayIntegrationStress);
+  const includeWave42AutomationForecastExportStress = Boolean(options?.includeWave42AutomationForecastExportStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -11846,6 +12062,21 @@ export function runMacroEconomyRegressionHarness(options?: {
             baselineSha: t % 7 === 0 ? 'deadbeef' : '875d6f3',
             projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_165_132
           }
+        : undefined,
+      automationIdleGovernanceWave42Export: includeWave42AutomationForecastExportStress
+        ? {
+            round42Ready: t % 6 !== 0,
+            o10TaskId: 'O10-215',
+            waveRound: 42,
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_207_543
+          }
+        : undefined,
+      forecastWave42Export: includeWave42AutomationForecastExportStress
+        ? {
+            status: t % 5 === 0 ? 'drift' : t % 7 === 0 ? 'unknown' : 'aligned',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : '431df5d',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_207_543
+          }
         : undefined
     });
     const { state, persisted: nextP } = computeNationalMacroEconomy(inputs, persisted, prev);
@@ -12087,7 +12318,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'forty_two_transmission_layers_liquidity',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -12099,7 +12330,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'forty_four_transmission_layers_gameplay',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -12111,7 +12342,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'forty_six_transmission_layers_integration',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -12123,7 +12354,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'forty_eight_transmission_layers_research',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -12135,7 +12366,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'fifty_transmission_layers_mode',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -12147,7 +12378,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'fifty_two_transmission_layers_event',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -12159,7 +12390,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'fifty_four_transmission_layers_expectations',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -12171,7 +12402,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'fifty_six_transmission_layers_transport',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -12183,7 +12414,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'fifty_eight_transmission_layers_housing',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -12195,7 +12426,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'sixty_transmission_layers_guardian',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -12207,7 +12438,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'sixty_two_transmission_layers_team',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -12219,7 +12450,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'sixty_four_transmission_layers_automation',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -12231,7 +12462,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'sixty_six_transmission_layers_governance',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -12243,7 +12474,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'sixty_eight_transmission_layers_wave36',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -12255,7 +12486,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'seventy_transmission_layers_wave37',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -12267,7 +12498,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'seventy_two_transmission_layers_wave38',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -12279,7 +12510,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'seventy_four_transmission_layers_wave39',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -12291,7 +12522,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'seventy_six_transmission_layers_wave40',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -12303,7 +12534,19 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'seventy_eight_transmission_layers_wave41',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 78,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeWave42AutomationForecastExportStress && prev) {
+    checks.push({
+      id: 'transmission_gradient_finite',
+      passed: Number.isFinite(prev.transmissionGradient.gradientIndex),
+      detail: String(prev.transmissionGradient.gradientIndex)
+    });
+    checks.push({
+      id: 'eighty_transmission_layers_wave42',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 80,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -13914,6 +14157,47 @@ export function evaluateMacroConsistencyGates(
       summary: 'Integration health wave 41 export not ready coincides with strained integration health spillover.'
     });
   }
+  const wave42Auto: any =
+    inputs.automationIdleGovernanceWave42Export ??
+    inputs.automationIdleGovernance?.wave42Export ??
+    inputs.idleAutomation?.governanceWave42Export;
+  const round42Ready = Boolean(
+    wave42Auto?.round42Ready ?? wave42Auto?.payload?.round42Ready ?? wave42Auto?.exportReady
+  );
+  if (
+    wave42Auto &&
+    !round42Ready &&
+    (state.automationSpilloverSummary != null || state.automationIdleGovernanceWave42ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'automation_idle_governance_wave42_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Automation idle governance wave 42 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave42Forecast: any =
+    inputs.forecastWave42Export ?? inputs.forecastingLab?.wave42Export ?? inputs.macroForecasts?.wave42Export;
+  const export42Status = String(wave42Forecast?.status ?? wave42Forecast?.syncStatus ?? '').toLowerCase();
+  if (
+    export42Status === 'drift' &&
+    (state.forecastingSpilloverSummary != null || state.forecastWave42ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'forecast_wave42_export_drifted',
+      triggered: true,
+      severity: 'info',
+      summary: 'Forecast wave 42 export drifted coincides with strained forecasting spillover.'
+    });
+  }
+  if (state.transmissionGradient?.band === 'steep' || state.transmissionGradient?.band === 'sloped') {
+    gates.push({
+      id: 'transmission_gradient_steep_wave42',
+      triggered: true,
+      severity: 'info',
+      summary: 'Steep transmission gradient after wave 42 export layers — spillover mass is concentrated.'
+    });
+  }
   if (state.transmissionPersistence?.band === 'cohesive') {
     gates.push({
       id: 'transmission_persistence_cohesive',
@@ -14159,6 +14443,12 @@ export function composeMacroEconomyGiAnswer(state: NationalMacroEconomyState, ma
   applyMacroIntegrationHealthWave41ExportSpillover,
   readMacroIntegrationHealthWave41ExportSpilloverFromV1025
 } from './bridge-v1025-integration-health-wave-round41-export.ts';
+  applyMacroAutomationIdleGovernanceWave42ExportSpillover,
+  readMacroAutomationIdleGovernanceWave42ExportSpilloverFromV1020
+} from './bridge-v1020-automation-idle-governance-wave-round42-export.ts';
+  applyMacroForecastWave42ExportSpillover,
+  readMacroForecastWave42ExportSpilloverFromV1021
+} from './bridge-v1021-forecast-wave-round42-export.ts';
   v1014macroBandInvestment,
   v1014macroBandProductivity,
   v1014macroBandUtilization,
@@ -14288,6 +14578,9 @@ export function computeNationalMacroEconomy(
   const dashboardClarityWave40ExportSpillover = readMacroDashboardClarityWave40ExportSpilloverFromV1023(inputs);
   const replayWave41ExportSpillover = readMacroReplayWave41ExportSpilloverFromV1024(inputs);
   const integrationHealthWave41ExportSpillover = readMacroIntegrationHealthWave41ExportSpilloverFromV1025(inputs);
+  const automationIdleGovernanceWave42ExportSpillover =
+    readMacroAutomationIdleGovernanceWave42ExportSpilloverFromV1020(inputs);
+  const forecastWave42ExportSpillover = readMacroForecastWave42ExportSpilloverFromV1021(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -14408,7 +14701,15 @@ export function computeNationalMacroEconomy(
     withReplayWave41Export,
     integrationHealthWave41ExportSpillover
   );
-  const shocked = applyMacroShockAdjustments(inputs, withIntegrationHealthWave41Export, pushEv);
+  const withAutomationIdleGovernanceWave42Export = applyMacroAutomationIdleGovernanceWave42ExportSpillover(
+    withIntegrationHealthWave41Export,
+    automationIdleGovernanceWave42ExportSpillover
+  );
+  const withForecastWave42Export = applyMacroForecastWave42ExportSpillover(
+    withAutomationIdleGovernanceWave42Export,
+    forecastWave42ExportSpillover
+  );
+  const shocked = applyMacroShockAdjustments(inputs, withForecastWave42Export, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -14514,7 +14815,9 @@ export function computeNationalMacroEconomy(
     uiResponsivenessWave40Export: uiResponsivenessWave40ExportSpillover,
     dashboardClarityWave40Export: dashboardClarityWave40ExportSpillover,
     replayWave41Export: replayWave41ExportSpillover,
-    integrationHealthWave41Export: integrationHealthWave41ExportSpillover
+    integrationHealthWave41Export: integrationHealthWave41ExportSpillover,
+    automationIdleGovernanceWave42Export: automationIdleGovernanceWave42ExportSpillover,
+    forecastWave42Export: forecastWave42ExportSpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
@@ -14674,6 +14977,8 @@ export function computeNationalMacroEconomy(
     dashboardClarityWave40ExportSpilloverSummary: dashboardClarityWave40ExportSpillover.summary,
     replayWave41ExportSpilloverSummary: replayWave41ExportSpillover.summary,
     integrationHealthWave41ExportSpilloverSummary: integrationHealthWave41ExportSpillover.summary,
+    automationIdleGovernanceWave42ExportSpilloverSummary: automationIdleGovernanceWave42ExportSpillover.summary,
+    forecastWave42ExportSpilloverSummary: forecastWave42ExportSpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,
@@ -15364,7 +15669,7 @@ export function runAgent06Round4SelfTests(): {
     strategic: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null },
     housing: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null }
   });
-  record('R4-03', 'Transmission report has sixty-eight layers', report.layers.length === 78, String(report.layers.length));
+  record('R4-03', 'Transmission report has sixty-eight layers', report.layers.length === 80, String(report.layers.length));
   record('R4-04', 'Net cycle nudge finite', Number.isFinite(report.netCycleNudge), String(report.netCycleNudge));
 
   const integrated = computeNationalMacroEconomy(
@@ -15375,7 +15680,7 @@ export function runAgent06Round4SelfTests(): {
     null,
     null
   );
-  record('R4-05', 'State carries transmission report', integrated.state.transmissionReport.layers.length === 78, 'ok');
+  record('R4-05', 'State carries transmission report', integrated.state.transmissionReport.layers.length === 80, 'ok');
   record('R4-06', 'Trade summary on state', integrated.state.tradeSpilloverSummary != null, String(integrated.state.tradeSpilloverSummary));
 
   const stress = computeNationalMacroEconomy(
@@ -15518,7 +15823,7 @@ export function runAgent06Round6SelfTests(): {
   );
   record('R6-03', 'State exposes innovation summary', integrated.state.innovationSpilloverSummary != null, 'ok');
   record('R6-04', 'State exposes workforce summary', integrated.state.workforceSpilloverSummary != null, 'ok');
-  record('R6-05', 'Seventy-eight transmission layers', integrated.state.transmissionReport.layers.length === 78, String(integrated.state.transmissionReport.layers.length));
+  record('R6-05', 'Seventy-eight transmission layers', integrated.state.transmissionReport.layers.length === 80, String(integrated.state.transmissionReport.layers.length));
 
   const capacity = buildMacroCapacitySnapshot({
     state: integrated.state,
@@ -15603,7 +15908,7 @@ export function runAgent06Round7SelfTests(): {
   record(
     'R7-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -15691,7 +15996,7 @@ export function runAgent06Round8SelfTests(): {
   record(
     'R8-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -15788,7 +16093,7 @@ export function runAgent06Round9SelfTests(): {
   record(
     'R9-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -15882,7 +16187,7 @@ export function runAgent06Round10SelfTests(): {
   record(
     'R10-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -15972,7 +16277,7 @@ export function runAgent06Round11SelfTests(): {
   record(
     'R11-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -16061,7 +16366,7 @@ export function runAgent06Round12SelfTests(): {
   record(
     'R12-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -16150,7 +16455,7 @@ export function runAgent06Round13SelfTests(): {
   record(
     'R13-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -16239,7 +16544,7 @@ export function runAgent06Round14SelfTests(): {
   record(
     'R14-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -16328,7 +16633,7 @@ export function runAgent06Round15SelfTests(): {
   record(
     'R15-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -16421,7 +16726,7 @@ export function runAgent06Round16SelfTests(): {
   record(
     'R16-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -16526,7 +16831,7 @@ export function runAgent06Round17SelfTests(): {
   record(
     'R17-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -16643,7 +16948,7 @@ export function runAgent06Round18SelfTests(): {
   record(
     'R18-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -16742,7 +17047,7 @@ export function runAgent06Round19SelfTests(): {
   record(
     'R19-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -16845,7 +17150,7 @@ export function runAgent06Round20SelfTests(): {
   record(
     'R20-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -16948,7 +17253,7 @@ export function runAgent06Round21SelfTests(): {
   record(
     'R21-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -17053,7 +17358,7 @@ export function runAgent06Round22SelfTests(): {
   record(
     'R22-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -17142,7 +17447,7 @@ export function runAgent06Round23SelfTests(): {
   record(
     'R23-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -17236,7 +17541,7 @@ export function runAgent06Round24SelfTests(): {
   record(
     'R24-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -17330,7 +17635,7 @@ export function runAgent06Round25SelfTests(): {
   record(
     'R25-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -17424,7 +17729,7 @@ export function runAgent06Round26SelfTests(): {
   record(
     'R26-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -17523,7 +17828,7 @@ export function runAgent06Round27SelfTests(): {
   record(
     'R27-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -17617,7 +17922,7 @@ export function runAgent06Round28SelfTests(): {
   record(
     'R28-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -17716,7 +18021,7 @@ export function runAgent06Round29SelfTests(): {
   record(
     'R29-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -17810,7 +18115,7 @@ export function runAgent06Round30SelfTests(): {
   record(
     'R30-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -17904,7 +18209,7 @@ export function runAgent06Round31SelfTests(): {
   record(
     'R31-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -17998,7 +18303,7 @@ export function runAgent06Round32SelfTests(): {
   record(
     'R32-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18097,7 +18402,7 @@ export function runAgent06Round33SelfTests(): {
   record(
     'R33-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18191,7 +18496,7 @@ export function runAgent06Round34SelfTests(): {
   record(
     'R34-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18285,7 +18590,7 @@ export function runAgent06Round35SelfTests(): {
   record(
     'R35-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18403,7 +18708,7 @@ export function runAgent06Round36SelfTests(): {
   record(
     'R36-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18531,7 +18836,7 @@ export function runAgent06Round37SelfTests(): {
   record(
     'R37-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18664,7 +18969,7 @@ export function runAgent06Round38SelfTests(): {
   record(
     'R38-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18793,7 +19098,7 @@ export function runAgent06Round39SelfTests(): {
   record(
     'R39-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18926,7 +19231,7 @@ export function runAgent06Round40SelfTests(): {
   record(
     'R40-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 78,
+    integrated.state.transmissionReport.layers.length === 80,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18978,6 +19283,268 @@ export function runAgent06Round40SelfTests(): {
   record(
     'R40-10',
     'Wave 40 UI/dashboard export regression harness',
+    harness.allPassed,
+    harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: round41-self-tests.ts ---
+
+export function runAgent06Round41SelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const replay = readMacroReplayWave41ExportSpilloverFromV1024(
+    makeDefaultV1014_MACRO_TestInputs({
+      replayWave41Export: {
+        round41Ready: false,
+        o10TaskId: 'O10-213',
+        waveRound: 41,
+        integrityBand: 'broken',
+        projectedLocHint: 1_800_000
+      }
+    })
+  );
+  record('R41-01', 'Wave 41 replay export not ready drags cycle', replay.cycleNudge <= -2, String(replay.cycleNudge));
+
+  const health = readMacroIntegrationHealthWave41ExportSpilloverFromV1025(
+    makeDefaultV1014_MACRO_TestInputs({
+      integrationHealthWave41Export: {
+        healthReady: false,
+        slotBand: 'red',
+        baselineSha: 'deadbeef',
+        projectedFunctionalLoc: 1_800_000
+      }
+    })
+  );
+  record('R41-02', 'Wave 41 integration health export not ready drags investment', health.investmentNudge <= -2, String(health.investmentNudge));
+
+  const integrated = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({
+      replayWave41Export: {
+        round41Ready: true,
+        o10TaskId: 'O10-213',
+        waveRound: 41,
+        integrityBand: 'sound',
+        projectedLocHint: 2_165_132
+      },
+      integrationHealthWave41Export: {
+        healthReady: true,
+        slotBand: 'latched',
+        baselineSha: '875d6f3',
+        projectedFunctionalLoc: 2_165_132
+      }
+    }),
+    null,
+    null
+  );
+  record(
+    'R41-03',
+    'State exposes wave 41 replay export summary',
+    integrated.state.replayWave41ExportSpilloverSummary != null,
+    'ok'
+  );
+  record(
+    'R41-04',
+    'Transmission includes integration health wave 41 export layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.25_integration_health_wave41_export'),
+    'ok'
+  );
+  record(
+    'R41-05',
+    'Seventy-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 80,
+    String(integrated.state.transmissionReport.layers.length)
+  );
+
+  const persistence = buildMacroTransmissionPersistenceSnapshot(integrated.state.transmissionReport);
+  record(
+    'R41-06',
+    'Transmission persistence finite',
+    Number.isFinite(persistence.persistenceIndex),
+    String(persistence.persistenceIndex)
+  );
+  record(
+    'R41-07',
+    'Transmission includes replay wave 41 export layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.24_replay_wave41_export'),
+    'ok'
+  );
+
+  const compare = compareMacroEconomyScenarios(
+    makeDefaultV1014_MACRO_TestInputs({ turn: 63 }),
+    [
+      {
+        id: 'replay_shock',
+        overlay: {
+          replayWave41Export: { round41Ready: false, o10TaskId: 'O10-213', waveRound: 41, integrityBand: 'corrupt' }
+        }
+      },
+      {
+        id: 'health_shock',
+        overlay: { integrationHealthWave41Export: { healthReady: false, slotBand: 'red', baselineSha: '875d6f3' } }
+      }
+    ],
+    null,
+    null
+  );
+  const integration = rankMacroScenarioWave41Integration(compare);
+  record('R41-08', 'Wave 41 integration rank preserves row count', integration.length === 2, String(integration.length));
+  record(
+    'R41-09',
+    'Wave 41 integration ranks scenarios',
+    integration[0].integrationPriority >= 0,
+    integration.map(r => r.scenarioId).join('>')
+  );
+
+  const harness = runMacroEconomyRegressionHarness({
+    turns: 10,
+    scenarioId: 'wave41_replay_integration_stress',
+    includeWave41ReplayIntegrationStress: true
+  });
+  record(
+    'R41-10',
+    'Wave 41 replay/integration regression harness',
+    harness.allPassed,
+    harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: round42-self-tests.ts ---
+
+export function runAgent06Round42SelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const exportSpill = readMacroAutomationIdleGovernanceWave42ExportSpilloverFromV1020(
+    makeDefaultV1014_MACRO_TestInputs({
+      automationIdleGovernanceWave42Export: {
+        round42Ready: false,
+        o10TaskId: 'O10-215',
+        waveRound: 42,
+        projectedLocHint: 1_800_000
+      }
+    })
+  );
+  record('R42-01', 'Wave 42 automation export not ready drags investment', exportSpill.investmentNudge <= -2, String(exportSpill.investmentNudge));
+
+  const forecast = readMacroForecastWave42ExportSpilloverFromV1021(
+    makeDefaultV1014_MACRO_TestInputs({
+      forecastWave42Export: {
+        status: 'drift',
+        baselineSha: 'deadbeef',
+        projectedFunctionalLoc: 1_800_000
+      }
+    })
+  );
+  record('R42-02', 'Wave 42 forecast export drift drags cycle', forecast.cycleNudge <= -2, String(forecast.cycleNudge));
+
+  const integrated = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({
+      automationIdleGovernanceWave42Export: {
+        round42Ready: true,
+        o10TaskId: 'O10-215',
+        waveRound: 42,
+        projectedLocHint: 2_207_543
+      },
+      forecastWave42Export: {
+        status: 'aligned',
+        baselineSha: '431df5d',
+        projectedFunctionalLoc: 2_207_543
+      }
+    }),
+    null,
+    null
+  );
+  record(
+    'R42-03',
+    'State exposes wave 42 automation export summary',
+    integrated.state.automationIdleGovernanceWave42ExportSpilloverSummary != null,
+    'ok'
+  );
+  record(
+    'R42-04',
+    'Transmission includes forecast wave 42 export layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.21_forecast_wave42_export'),
+    'ok'
+  );
+  record(
+    'R42-05',
+    'Eighty transmission layers',
+    integrated.state.transmissionReport.layers.length === 80,
+    String(integrated.state.transmissionReport.layers.length)
+  );
+
+  const gradient = buildMacroTransmissionGradientSnapshot(integrated.state.transmissionReport);
+  record(
+    'R42-06',
+    'Transmission gradient finite',
+    Number.isFinite(gradient.gradientIndex),
+    String(gradient.gradientIndex)
+  );
+  record(
+    'R42-07',
+    'Transmission includes automation wave 42 export layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.20_automation_idle_governance_wave42_export'),
+    'ok'
+  );
+
+  const compare = compareMacroEconomyScenarios(
+    makeDefaultV1014_MACRO_TestInputs({ turn: 64 }),
+    [
+      {
+        id: 'auto_shock',
+        overlay: {
+          automationIdleGovernanceWave42Export: { round42Ready: false, o10TaskId: 'O10-215', waveRound: 42 }
+        }
+      },
+      {
+        id: 'forecast_shock',
+        overlay: { forecastWave42Export: { status: 'drift', baselineSha: '431df5d' } }
+      }
+    ],
+    null,
+    null
+  );
+  const integration = rankMacroScenarioWave42Integration(compare);
+  record('R42-08', 'Wave 42 integration rank preserves row count', integration.length === 2, String(integration.length));
+  record(
+    'R42-09',
+    'Wave 42 integration ranks scenarios',
+    integration[0].integrationPriority >= 0,
+    integration.map(r => r.scenarioId).join('>')
+  );
+
+  const harness = runMacroEconomyRegressionHarness({
+    turns: 10,
+    scenarioId: 'wave42_automation_forecast_export_stress',
+    includeWave42AutomationForecastExportStress: true
+  });
+  record(
+    'R42-10',
+    'Wave 42 automation/forecast export regression harness',
     harness.allPassed,
     harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
   );
@@ -19280,6 +19847,11 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
 
   const round41 = runAgent06Round41SelfTests();
   for (const r of round41.results) {
+    check(r.id, r.name, r.passed, r.detail);
+  }
+
+  const round42 = runAgent06Round42SelfTests();
+  for (const r of round42.results) {
     check(r.id, r.name, r.passed, r.detail);
   }
 

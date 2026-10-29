@@ -1400,6 +1400,47 @@ export function evaluateMacroConsistencyGates(
       summary: 'Integration health wave 41 export not ready coincides with strained integration health spillover.'
     });
   }
+  const wave42Auto: any =
+    inputs.automationIdleGovernanceWave42Export ??
+    inputs.automationIdleGovernance?.wave42Export ??
+    inputs.idleAutomation?.governanceWave42Export;
+  const round42Ready = Boolean(
+    wave42Auto?.round42Ready ?? wave42Auto?.payload?.round42Ready ?? wave42Auto?.exportReady
+  );
+  if (
+    wave42Auto &&
+    !round42Ready &&
+    (state.automationSpilloverSummary != null || state.automationIdleGovernanceWave42ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'automation_idle_governance_wave42_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Automation idle governance wave 42 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave42Forecast: any =
+    inputs.forecastWave42Export ?? inputs.forecastingLab?.wave42Export ?? inputs.macroForecasts?.wave42Export;
+  const export42Status = String(wave42Forecast?.status ?? wave42Forecast?.syncStatus ?? '').toLowerCase();
+  if (
+    export42Status === 'drift' &&
+    (state.forecastingSpilloverSummary != null || state.forecastWave42ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'forecast_wave42_export_drifted',
+      triggered: true,
+      severity: 'info',
+      summary: 'Forecast wave 42 export drifted coincides with strained forecasting spillover.'
+    });
+  }
+  if (state.transmissionGradient?.band === 'steep' || state.transmissionGradient?.band === 'sloped') {
+    gates.push({
+      id: 'transmission_gradient_steep_wave42',
+      triggered: true,
+      severity: 'info',
+      summary: 'Steep transmission gradient after wave 42 export layers — spillover mass is concentrated.'
+    });
+  }
   if (state.transmissionPersistence?.band === 'cohesive') {
     gates.push({
       id: 'transmission_persistence_cohesive',
