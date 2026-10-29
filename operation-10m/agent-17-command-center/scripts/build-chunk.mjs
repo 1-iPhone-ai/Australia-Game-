@@ -113,6 +113,8 @@ const FILES = [
   'planning/beneficiary-accord.ts',
   'planning/stewardship-index.ts',
   'planning/steward-accord.ts',
+  'planning/fiduciary-index.ts',
+  'planning/trustee-accord.ts',
   'planning/planning-orchestrator.ts',
   'evaluation/operations-evaluator.ts',
   'rollback/rollback-controller.ts',

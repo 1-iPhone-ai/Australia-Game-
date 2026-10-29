@@ -353,6 +353,14 @@ import {
   stewardAccordBlocksStewardship,
 } from '../planning/steward-accord.ts';
 import {
+  buildAgent17FiduciaryIndex,
+  fiduciaryIndexBlocksTrustee,
+} from '../planning/fiduciary-index.ts';
+import {
+  buildAgent17TrusteeAccord,
+  trusteeAccordBlocksFiduciary,
+} from '../planning/trustee-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -2650,6 +2658,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const fiduciaryIndex = depthEval.snapshot.planningDepth?.fiduciaryIndex;
+  goalResults.push(
+    result(
+      'G17-151',
+      !!fiduciaryIndex &&
+        fiduciaryIndex.duties.length >= 5 &&
+        fiduciaryIndex.fiduciaryScore >= 0 &&
+        fiduciaryIndex.fiduciaryScore <= 100 &&
+        (fiduciaryIndex.band === 'bound' ||
+          fiduciaryIndex.band === 'pending' ||
+          fiduciaryIndex.band === 'breached'),
+      `duties=${fiduciaryIndex?.duties.length} score=${fiduciaryIndex?.fiduciaryScore}`
+    )
+  );
+
+  const trusteeAccord = depthEval.snapshot.planningDepth?.trusteeAccord;
+  goalResults.push(
+    result(
+      'G17-152',
+      !!trusteeAccord &&
+        trusteeAccord.instruments.length >= 5 &&
+        trusteeAccord.trusteeScore >= 0 &&
+        trusteeAccord.trusteeScore <= 100,
+      `instruments=${trusteeAccord?.instruments.length} score=${trusteeAccord?.trusteeScore}`
+    )
+  );
+
+  const breachedFiduciary = buildAgent17FiduciaryIndex({
+    stewardAccord: recalledSteward,
+    stewardshipIndex: abdicatedStewardship,
+    beneficiaryAccord: vacatedBeneficiary,
+  });
+  const removedTrustee = buildAgent17TrusteeAccord({
+    fiduciaryIndex: breachedFiduciary,
+    stewardAccord: recalledSteward,
+    stewardshipIndex: abdicatedStewardship,
+  });
+  goalResults.push(
+    result(
+      'G17-153',
+      stewardAccordBlocksStewardship(recalledSteward) ||
+        fiduciaryIndexBlocksTrustee(breachedFiduciary) ||
+        trusteeAccordBlocksFiduciary(removedTrustee),
+      `${breachedFiduciary.band}/${removedTrustee.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -2830,6 +2885,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-148',
     'G17-149',
     'G17-150',
+    'G17-151',
+    'G17-152',
+    'G17-153',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

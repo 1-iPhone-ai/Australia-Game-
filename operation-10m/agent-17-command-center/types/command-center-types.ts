@@ -267,6 +267,8 @@ export interface Agent17PlanningDepthSnapshot {
   beneficiaryAccord: Agent17BeneficiaryAccordSnapshot;
   stewardshipIndex: Agent17StewardshipIndexSnapshot;
   stewardAccord: Agent17StewardAccordSnapshot;
+  fiduciaryIndex: Agent17FiduciaryIndexSnapshot;
+  trusteeAccord: Agent17TrusteeAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1687,6 +1689,40 @@ export interface Agent17StewardAccordSnapshot {
   stewardshipBand: Agent17StewardshipIndexSnapshot['band'];
   beneficiaryBand: Agent17BeneficiaryAccordSnapshot['band'];
   stewardCommissioned: boolean;
+  headline: string;
+}
+
+export interface Agent17FiduciaryDuty {
+  id: string;
+  label: string;
+  bound: boolean;
+  weight: number;
+}
+
+export interface Agent17FiduciaryIndexSnapshot {
+  fiduciaryScore: number;
+  band: 'bound' | 'pending' | 'breached';
+  duties: Agent17FiduciaryDuty[];
+  stewardBand: Agent17StewardAccordSnapshot['band'];
+  stewardshipBand: Agent17StewardshipIndexSnapshot['band'];
+  fiduciaryBound: boolean;
+  headline: string;
+}
+
+export interface Agent17TrusteeInstrument {
+  id: string;
+  label: string;
+  installed: boolean;
+  weight: number;
+}
+
+export interface Agent17TrusteeAccordSnapshot {
+  trusteeScore: number;
+  band: 'installed' | 'acting' | 'removed';
+  instruments: Agent17TrusteeInstrument[];
+  fiduciaryBand: Agent17FiduciaryIndexSnapshot['band'];
+  stewardBand: Agent17StewardAccordSnapshot['band'];
+  trusteeInstalled: boolean;
   headline: string;
 }
 

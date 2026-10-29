@@ -1062,6 +1062,28 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Abdicated stewardship or vacated beneficiary yields stewardAccordBlocksStewardship.',
     severity: 'major',
   },
+  {
+    id: 'G17-151',
+    title: 'Fiduciary index on planning depth',
+    category: 'telemetry',
+    acceptance: 'fiduciaryIndex reports fiduciaryScore 0–100 with bound/pending/breached band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-152',
+    title: 'Trustee accord instruments complete',
+    category: 'telemetry',
+    acceptance: 'trusteeAccord exposes ≥5 instruments and trusteeScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-153',
+    title: 'Breached fiduciary removes trustee accord',
+    category: 'integration',
+    acceptance:
+      'Breached fiduciary or recalled steward yields trusteeAccordBlocksFiduciary.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

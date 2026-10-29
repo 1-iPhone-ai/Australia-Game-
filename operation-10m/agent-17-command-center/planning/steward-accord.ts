@@ -102,3 +102,7 @@ export function buildAgent17StewardAccord(
 export function stewardAccordBlocksStewardship(snapshot: Agent17StewardAccordSnapshot): boolean {
   return snapshot.band === 'recalled' || !snapshot.stewardCommissioned;
 }
+
+export function stewardAccordBlocksFiduciary(snapshot: Agent17StewardAccordSnapshot): boolean {
+  return stewardAccordBlocksStewardship(snapshot);
+}
