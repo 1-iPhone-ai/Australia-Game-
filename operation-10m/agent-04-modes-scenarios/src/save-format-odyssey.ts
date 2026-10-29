@@ -151,6 +151,7 @@ export function attachOdysseySessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,

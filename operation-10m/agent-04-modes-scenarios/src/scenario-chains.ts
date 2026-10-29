@@ -1504,6 +1504,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_habeas_route',
+    title: 'Habeas Route',
+    description:
+      'Three-phase habeas arc with score accrual between legs — round-44 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_habeas_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_habeas_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File habeas petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 540 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_habeas_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, VIC: 5 },
+          forcedSettingsPatch: { o10mHabeasMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_habeas_corpus_finale',
+        title: 'Corpus Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainHabeasRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

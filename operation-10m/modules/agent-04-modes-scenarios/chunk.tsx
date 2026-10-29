@@ -399,6 +399,7 @@ export type O10mSupersedePhase = 'filing' | 'review' | 'supersede';
 export type O10mCertiorariPhase = 'filing' | 'review' | 'certiorari';
 export type O10mMandamusPhase = 'filing' | 'review' | 'mandamus';
 export type O10mProhibitionPhase = 'filing' | 'review' | 'prohibition';
+export type O10mHabeasPhase = 'filing' | 'review' | 'habeas';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -796,6 +797,17 @@ export interface O10mProhibitionSession {
   phaseTag: O10mProhibitionPhase;
 }
 
+/** Schema v44 — habeas arc with score accrual between phases. */
+export interface O10mHabeasSession {
+  habeasId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  habeasScore: number;
+  phaseTag: O10mHabeasPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -820,6 +832,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'habeas_step'
     | 'prohibition_step'
     | 'mandamus_step'
     | 'certiorari_step'
@@ -1018,6 +1031,10 @@ export interface O10mCampaignPlan {
   prohibitionCursor: number | null;
   prohibitionPhase: O10mProhibitionPhase | null;
   prohibitionScore: number | null;
+  habeasId: string | null;
+  habeasCursor: number | null;
+  habeasPhase: O10mHabeasPhase | null;
+  habeasScore: number | null;
   reason: string;
 }
 
@@ -1125,8 +1142,10 @@ export interface O10mModesPersistedState {
   certiorariSession?: O10mCertiorariSession | null;
   /** Schema v42 — active mandamus arc (mutually exclusive with prohibition / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   mandamusSession?: O10mMandamusSession | null;
-  /** Schema v43 — active prohibition arc (mutually exclusive with mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v43 — active prohibition arc (mutually exclusive with habeas / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   prohibitionSession?: O10mProhibitionSession | null;
+  /** Schema v44 — active habeas arc (mutually exclusive with prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  habeasSession?: O10mHabeasSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -5845,6 +5864,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Prohibition finales', 'Score ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_habeas_filing_docket',
+    title: 'Habeas Filing Docket',
+    description: 'Open a habeas arc with low-pressure score pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100541,
+    startingMoney: 4000,
+    startingRegions: ['NT', 'QLD'],
+    badgeId: 'badge_o10m_habeas_filing_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100541),
+      o10mHabeasFilingDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_hfd_obj_day',
+        label: 'Filing Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Habeas arcs', 'Score pacing', 'Filing phase'],
+  },
+  {
+    id: 'o10m_habeas_review_chamber',
+    title: 'Habeas Review Chamber',
+    description: 'Mid habeas review with accrued score bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100542,
+    startingMoney: 4550,
+    startingRegions: ['WA', 'SA'],
+    startingStanding: { WA: 72, SA: 70 },
+    badgeId: 'badge_o10m_habeas_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100542),
+      regionalStandingEnabled: true,
+      o10mHabeasReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_hrc_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 75',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 75,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Score carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_habeas_corpus_finale',
+    title: 'Habeas Corpus Finale',
+    description: 'Finale habeas stage — net worth gate with full score bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100543,
+    startingMoney: 5000,
+    startingRegions: ['ACT', 'NSW', 'VIC'],
+    badgeId: 'badge_o10m_habeas_corpus_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100543),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mHabeasCorpusFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_hcf_obj_net',
+        label: 'Corpus Net Worth',
+        description: 'Reach $22,400 net worth',
+        targetType: 'netWorth',
+        targetValue: 22400,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Habeas finales', 'Score ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -7789,6 +7905,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_habeas_route',
+    title: 'Habeas Route',
+    description:
+      'Three-phase habeas arc with score accrual between legs — round-44 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_habeas_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_habeas_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File habeas petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 540 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_habeas_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, VIC: 5 },
+          forcedSettingsPatch: { o10mHabeasMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_habeas_corpus_finale',
+        title: 'Corpus Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainHabeasRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -8615,7 +8765,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 43;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 44;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -8757,6 +8907,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
   };
 }
 
@@ -8819,6 +8970,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       certiorariSession: merged.certiorariSession ?? null,
       mandamusSession: merged.mandamusSession ?? null,
       prohibitionSession: merged.prohibitionSession ?? null,
+      habeasSession: merged.habeasSession ?? null,
     };
     return upgraded;
   }
@@ -8905,6 +9057,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     certiorariSession: sanitizeCertiorariSession(o.certiorariSession),
     mandamusSession: sanitizeMandamusSession(o.mandamusSession),
     prohibitionSession: sanitizeProhibitionSession(o.prohibitionSession),
+    habeasSession: sanitizeHabeasSession(o.habeasSession),
   };
 }
 
@@ -9214,6 +9367,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Prohibition cursor out of range; clamp on next sanitize.');
   }
 
+  const habeas = sanitizeHabeasSession(state.habeasSession);
+  if (state.habeasSession && !habeas) {
+    warnings.push('Habeas session failed sanitization; planner will ignore it.');
+  } else if (habeas && habeas.cursor >= habeas.scenarioIds.length) {
+    warnings.push('Habeas cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -9360,6 +9520,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'certiorariSession',
   'mandamusSession',
   'prohibitionSession',
+  'habeasSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -9901,6 +10062,7 @@ export function attachMarathonQueueToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -10018,6 +10180,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceHabeasSessionAfterRun(next, run);
   next = advanceProhibitionSessionAfterRun(next, run);
   next = advanceMandamusSessionAfterRun(next, run);
   next = advanceCertiorariSessionAfterRun(next, run);
@@ -10220,6 +10383,7 @@ export function attachGauntletSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -10485,6 +10649,7 @@ export function attachRelaySessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -10710,6 +10875,7 @@ export function attachCircuitSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -10953,6 +11119,7 @@ export function attachExpeditionSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -11194,6 +11361,7 @@ export function attachOdysseySessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -11434,6 +11602,7 @@ export function attachPilgrimageSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -11675,6 +11844,7 @@ export function attachCaravanSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -11910,6 +12080,7 @@ export function attachVoyageSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -12145,6 +12316,7 @@ export function attachSiegeSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -12380,6 +12552,7 @@ export function attachConvoySessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -12615,6 +12788,7 @@ export function attachEscortSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -12859,6 +13033,7 @@ export function attachExtractionSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -13111,6 +13286,7 @@ export function attachSubjectSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -13363,6 +13539,7 @@ export function attachWitnessSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -13615,6 +13792,7 @@ export function attachTribunalSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -13867,6 +14045,7 @@ export function attachIndictmentSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -14119,6 +14298,7 @@ export function attachAppealSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -14371,6 +14551,7 @@ export function attachClemencySessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -14623,6 +14804,7 @@ export function attachPardonSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,
@@ -14875,6 +15057,7 @@ export function attachAmnestySessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     pardonSession: null,
     clemencySession: null,
     appealSession: null,
@@ -15127,6 +15310,7 @@ export function attachReprieveSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,
@@ -15379,6 +15563,7 @@ export function attachParoleSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     reprieveSession: null,
     amnestySession: null,
     pardonSession: null,
@@ -15631,6 +15816,7 @@ export function attachProbationSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     paroleSession: null,
     reprieveSession: null,
     amnestySession: null,
@@ -15883,6 +16069,7 @@ export function attachCommutationSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     probationSession: null,
     paroleSession: null,
     reprieveSession: null,
@@ -16135,6 +16322,7 @@ export function attachAcquittalSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     commutationSession: null,
     probationSession: null,
     paroleSession: null,
@@ -16387,6 +16575,7 @@ export function attachExonerationSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     acquittalSession: null,
     commutationSession: null,
     probationSession: null,
@@ -16639,6 +16828,7 @@ export function attachExpungementSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     exonerationSession: null,
     acquittalSession: null,
     commutationSession: null,
@@ -16891,6 +17081,7 @@ export function attachVacaturSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     expungementSession: null,
     exonerationSession: null,
     acquittalSession: null,
@@ -17143,6 +17334,7 @@ export function attachRemandSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     vacaturSession: null,
     expungementSession: null,
     exonerationSession: null,
@@ -17395,6 +17587,7 @@ export function attachReversalSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     remandSession: null,
     vacaturSession: null,
     expungementSession: null,
@@ -17647,6 +17840,7 @@ export function attachAnnulmentSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     reversalSession: null,
     remandSession: null,
     vacaturSession: null,
@@ -17901,6 +18095,7 @@ export function attachReinstatementSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     annulmentSession: null,
     reversalSession: null,
     remandSession: null,
@@ -18155,6 +18350,7 @@ export function attachSetAsideSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     reinstatementSession: null,
     annulmentSession: null,
     reversalSession: null,
@@ -18407,6 +18603,7 @@ export function attachQuashSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     setAsideSession: null,
     reinstatementSession: null,
     annulmentSession: null,
@@ -18661,6 +18858,7 @@ export function attachSupersedeSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     quashSession: null,
     setAsideSession: null,
     reinstatementSession: null,
@@ -19554,6 +19752,262 @@ export function prohibitionSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-habeas.ts ---
+export const O10M_HABEAS_SCENARIO_CAP = 6;
+export const O10M_HABEAS_SCORE_CAP = 1100;
+export const O10M_HABEAS_SCORE_MONEY_CAP = 1180;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mHabeasPhase>(['filing', 'review', 'habeas']);
+
+export function unlockTokenForHabeasId(habeasId: string): string | null {
+  if (!habeasId.startsWith('o10m_habeas_')) return null;
+  return `o10m_unlock_${habeasId.slice('o10m_habeas_'.length)}`;
+}
+
+export function habeasPhaseForCursor(cursor: number, scenarioCount: number): O10mHabeasPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'habeas';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'filing';
+}
+
+export function habeasScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(143, Math.max(36, Math.floor(run.playerNetWorth / 122) + standingSlice));
+}
+
+export function sanitizeHabeasSession(raw: unknown): O10mHabeasSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const habeasId =
+    typeof o.habeasId === 'string' && o.habeasId.startsWith('o10m_habeas_')
+      ? o.habeasId
+      : null;
+  if (!habeasId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : habeasId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_HABEAS_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const habeasScore = Math.min(
+    O10M_HABEAS_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.habeasScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mHabeasPhase)
+      ? (phaseRaw as O10mHabeasPhase)
+      : habeasPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    habeasId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    habeasScore,
+    phaseTag,
+  };
+}
+
+export function createHabeasSession(params: {
+  habeasId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mHabeasSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.habeasId.startsWith('o10m_habeas_')) {
+    return { session: null, warnings: ['Habeas ids must start with o10m_habeas_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_HABEAS_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Habeas arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      habeasId: params.habeasId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      habeasScore: 0,
+      phaseTag: habeasPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachHabeasSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mHabeasSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeHabeasSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    habeasSession: sanitized,
+    prohibitionSession: null,
+    mandamusSession: null,
+    certiorariSession: null,
+    supersedeSession: null,
+    quashSession: null,
+    setAsideSession: null,
+    reinstatementSession: null,
+    annulmentSession: null,
+    reversalSession: null,
+    remandSession: null,
+    vacaturSession: null,
+    expungementSession: null,
+    exonerationSession: null,
+    acquittalSession: null,
+    commutationSession: null,
+    probationSession: null,
+    paroleSession: null,
+    reprieveSession: null,
+    amnestySession: null,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearHabeasSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, habeasSession: null };
+}
+
+export function getHabeasScenarioAtCursor(
+  session: O10mHabeasSession | null | undefined,
+): string | null {
+  const habeas = sanitizeHabeasSession(session);
+  if (!habeas || !habeas.active) return null;
+  return habeas.scenarioIds[habeas.cursor] ?? null;
+}
+
+export function buildHabeasScenarioStartOverrides(
+  session: O10mHabeasSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const habeas = sanitizeHabeasSession(session);
+  if (!habeas) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_HABEAS_SCORE_MONEY_CAP,
+    Math.floor(habeas.habeasScore * 0.89),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveHabeasId: habeas.habeasId,
+      o10mActiveHabeasStep: habeas.cursor,
+      o10mActiveHabeasPhase: habeas.phaseTag,
+      o10mHabeasScore: habeas.habeasScore,
+    },
+  };
+}
+
+export function advanceHabeasSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeHabeasSession(state.habeasSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const habeasScore = Math.min(
+    O10M_HABEAS_SCORE_CAP,
+    session.habeasScore + habeasScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      habeasSession: {
+        ...session,
+        cursor,
+        habeasScore,
+        phaseTag: habeasPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForHabeasId(session.habeasId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    habeasSession: { ...session, active: false, habeasScore, phaseTag: 'habeas' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function habeasSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  habeasScore: number;
+  phase: O10mHabeasPhase | null;
+} {
+  const session = sanitizeHabeasSession(state.habeasSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    habeasScore: session?.habeasScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -19708,9 +20162,31 @@ const emptyQueuePlan = {
   prohibitionCursor: null as number | null,
   prohibitionPhase: null as O10mProhibitionPhase | null,
   prohibitionScore: null as number | null,
+  habeasId: null as string | null,
+  habeasCursor: null as number | null,
+  habeasPhase: null as O10mHabeasPhase | null,
+  habeasScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const habeas = sanitizeHabeasSession(state.habeasSession);
+  const habeasScenario = getHabeasScenarioAtCursor(habeas);
+  if (habeas && habeas.active && habeasScenario) {
+    return {
+      kind: 'habeas_step',
+      scenarioId: habeasScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      habeasId: habeas.habeasId,
+      habeasCursor: habeas.cursor,
+      habeasPhase: habeas.phaseTag,
+      habeasScore: habeas.habeasScore,
+      reason: `Habeas "${habeas.label}" ${habeas.phaseTag} phase ${habeas.cursor + 1}/${habeas.scenarioIds.length} (score ${habeas.habeasScore}).`,
+    };
+  }
+
   const prohibition = sanitizeProhibitionSession(state.prohibitionSession);
   const prohibitionScenario = getProhibitionScenarioAtCursor(prohibition);
   if (prohibition && prohibition.active && prohibitionScenario) {
@@ -20517,6 +20993,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   certiorariActive: boolean;
   mandamusActive: boolean;
   prohibitionActive: boolean;
+  habeasActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -20563,6 +21040,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const certiorari = certiorariSessionSummary(state);
   const mandamus = mandamusSessionSummary(state);
   const prohibition = prohibitionSessionSummary(state);
+  const habeas = habeasSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -20607,6 +21085,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     certiorariActive: certiorari.active,
     mandamusActive: mandamus.active,
     prohibitionActive: prohibition.active,
+    habeasActive: habeas.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -20625,7 +21104,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 44, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 45, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -20965,16 +21444,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const prohibitionState = prohibition ? attachProhibitionSessionToState(createEmptyO10mModesPersistedState(), prohibition) : null;
   push('agent04_chunk_51', prohibitionState !== null && planNextCampaignAction(prohibitionState!).kind === 'prohibition_step');
 
+  const habeas = createHabeasSession({
+    habeasId: 'o10m_habeas_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_habeas_filing_docket'],
+  }).session;
+  const habeasState = habeas ? attachHabeasSessionToState(createEmptyO10mModesPersistedState(), habeas) : null;
+  push('agent04_chunk_52', habeasState !== null && planNextCampaignAction(habeasState!).kind === 'habeas_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v44',
+  schemaVersion: 'op10m-agent04-v45',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 43,
+  saveSchemaVersion: 44,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

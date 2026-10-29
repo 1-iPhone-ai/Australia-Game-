@@ -43,6 +43,7 @@ import { sanitizeSupersedeSession } from './save-format-supersede.js';
 import { sanitizeCertiorariSession } from './save-format-certiorari.js';
 import { sanitizeMandamusSession } from './save-format-mandamus.js';
 import { sanitizeProhibitionSession } from './save-format-prohibition.js';
+import { sanitizeHabeasSession } from './save-format-habeas.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -61,7 +62,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 43;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 44;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -203,6 +204,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
   };
 }
 
@@ -265,6 +267,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       certiorariSession: merged.certiorariSession ?? null,
       mandamusSession: merged.mandamusSession ?? null,
       prohibitionSession: merged.prohibitionSession ?? null,
+      habeasSession: merged.habeasSession ?? null,
     };
     return upgraded;
   }
@@ -351,6 +354,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     certiorariSession: sanitizeCertiorariSession(o.certiorariSession),
     mandamusSession: sanitizeMandamusSession(o.mandamusSession),
     prohibitionSession: sanitizeProhibitionSession(o.prohibitionSession),
+    habeasSession: sanitizeHabeasSession(o.habeasSession),
   };
 }
 
@@ -658,6 +662,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Prohibition session failed sanitization; planner will ignore it.');
   } else if (prohibition && prohibition.cursor >= prohibition.scenarioIds.length) {
     warnings.push('Prohibition cursor out of range; clamp on next sanitize.');
+  }
+
+  const habeas = sanitizeHabeasSession(state.habeasSession);
+  if (state.habeasSession && !habeas) {
+    warnings.push('Habeas session failed sanitization; planner will ignore it.');
+  } else if (habeas && habeas.cursor >= habeas.scenarioIds.length) {
+    warnings.push('Habeas cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

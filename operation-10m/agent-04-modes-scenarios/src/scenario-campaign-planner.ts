@@ -117,6 +117,11 @@ import {
   sanitizeReversalSession,
 } from './save-format-reversal.js';
 import {
+  getHabeasScenarioAtCursor,
+  habeasSessionSummary,
+  sanitizeHabeasSession,
+} from './save-format-habeas.js';
+import {
   getProhibitionScenarioAtCursor,
   prohibitionSessionSummary,
   sanitizeProhibitionSession,
@@ -233,6 +238,7 @@ import type {
   O10mCertiorariPhase,
   O10mMandamusPhase,
   O10mProhibitionPhase,
+  O10mHabeasPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -391,9 +397,31 @@ const emptyQueuePlan = {
   prohibitionCursor: null as number | null,
   prohibitionPhase: null as O10mProhibitionPhase | null,
   prohibitionScore: null as number | null,
+  habeasId: null as string | null,
+  habeasCursor: null as number | null,
+  habeasPhase: null as O10mHabeasPhase | null,
+  habeasScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const habeas = sanitizeHabeasSession(state.habeasSession);
+  const habeasScenario = getHabeasScenarioAtCursor(habeas);
+  if (habeas && habeas.active && habeasScenario) {
+    return {
+      kind: 'habeas_step',
+      scenarioId: habeasScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      habeasId: habeas.habeasId,
+      habeasCursor: habeas.cursor,
+      habeasPhase: habeas.phaseTag,
+      habeasScore: habeas.habeasScore,
+      reason: `Habeas "${habeas.label}" ${habeas.phaseTag} phase ${habeas.cursor + 1}/${habeas.scenarioIds.length} (score ${habeas.habeasScore}).`,
+    };
+  }
+
   const prohibition = sanitizeProhibitionSession(state.prohibitionSession);
   const prohibitionScenario = getProhibitionScenarioAtCursor(prohibition);
   if (prohibition && prohibition.active && prohibitionScenario) {
@@ -1200,6 +1228,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   certiorariActive: boolean;
   mandamusActive: boolean;
   prohibitionActive: boolean;
+  habeasActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -1246,6 +1275,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const certiorari = certiorariSessionSummary(state);
   const mandamus = mandamusSessionSummary(state);
   const prohibition = prohibitionSessionSummary(state);
+  const habeas = habeasSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -1290,6 +1320,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     certiorariActive: certiorari.active,
     mandamusActive: mandamus.active,
     prohibitionActive: prohibition.active,
+    habeasActive: habeas.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

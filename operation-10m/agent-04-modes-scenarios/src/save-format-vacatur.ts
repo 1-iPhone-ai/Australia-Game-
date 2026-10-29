@@ -135,6 +135,7 @@ export function attachVacaturSessionToState(
     certiorariSession: null,
     mandamusSession: null,
     prohibitionSession: null,
+    habeasSession: null,
     expungementSession: null,
     exonerationSession: null,
     acquittalSession: null,
