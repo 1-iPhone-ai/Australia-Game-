@@ -11167,6 +11167,7 @@ export function advanceActiveRegionalContractsDay(contracts: Record<string, any>
 
 /** The single contract payout rule (reward, XP, regional development). Caller guarantees objectives are done. */
 export function completeRegionalContractPayout(nextState: any, contract: any, actor: any): void {
+  if (!contract || contract.status === 'completed' || contract.status === 'failed' || contract.status === 'expired') return;
   const baseRewardMoney = contract.rewards?.money || 0;
   const rewardBoost = actor?.rewardBoostPct ?? 0;
   actor.money += Math.round(baseRewardMoney * (1 + rewardBoost));
@@ -11424,6 +11425,21 @@ export function reduceGameAction(
         case 'repay_emergency_loan':
         case 'repay_advanced_loan':
         case 'repay_loan': {
+          if ((action.type as string) === 'repay_advanced_loan' && actor && Array.isArray(actor.advancedLoans)) {
+            const loanId = action.parameters?.loanId || action.item;
+            const open = actor.advancedLoans.filter((loan: any) => loan && Number(loan.amount) > 0);
+            const target = loanId ? open.find((loan: any) => loan.id === loanId) : open[0];
+            const principal = Number(target?.amount);
+            const accrued = Number(target?.accrued);
+            const owed = principal + (Number.isFinite(accrued) && accrued > 0 ? accrued : 0);
+            if (target && Number.isFinite(owed) && owed > 0 && Number.isFinite(actor.money) && actor.money >= owed) {
+              actor.money -= owed;
+              actor.advancedLoans = actor.advancedLoans.filter((loan: any) => loan !== target);
+              actor.debt = actor.advancedLoans.reduce((sum: number, loan: any) => sum + (Number(loan?.amount) > 0 ? Number(loan.amount) : 0), 0);
+              actionExecuted = true;
+            }
+            break;
+          }
           // V9.1: simple emergency loans (the `loans` list) are repaid by principal, smallest first. Like taking
           // one, repaying via 'repay_emergency_loan' costs no action (same as the human Quick Action).
           const simpleLoans = Array.isArray(actor?.loans) ? actor.loans.filter((l: any) => l && Number(l.amount) > 0) : [];
@@ -11471,6 +11487,24 @@ export function reduceGameAction(
             if (Number.isFinite(debtDelta) && Number.isFinite(nextMoney) && (debtDelta > 0 || actor.money >= Math.abs(debtDelta))) {
               actor.money = nextMoney;
               actor.debt = newPrincipal;
+              if (Array.isArray(actor.advancedLoans)) {
+                const open = actor.advancedLoans.filter((loan: any) => loan && Number(loan.amount) > 0);
+                if (open.length === 1) {
+                  open[0].amount = newPrincipal;
+                } else if (open.length > 1) {
+                  const sum = open.reduce((total: number, loan: any) => total + Number(loan.amount), 0);
+                  let assigned = 0;
+                  open.forEach((loan: any, index: number) => {
+                    if (index === open.length - 1) {
+                      loan.amount = Math.max(0, newPrincipal - assigned);
+                    } else {
+                      const share = sum > 0 ? Math.floor(newPrincipal * (Number(loan.amount) / sum)) : 0;
+                      loan.amount = share;
+                      assigned += share;
+                    }
+                  });
+                }
+              }
               actionExecuted = true;
             }
           }
@@ -137448,6 +137482,25 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number; pr
     const partial = treasuryResolutionTransactionType('approve_partial', true);
     const full = treasuryResolutionTransactionType('approve_full', false);
     return (emergency === 'emergency_zero_cash_support' && partial === 'partial_funding_approval' && full === 'approved_funding_request') || JSON.stringify({ emergency, partial, full });
+  });
+  check('u_advanced_loan_repay_and_refinance_follow_the_schedule', 'Repay and refinance update the advanced loan schedule (SIM-048)', () => {
+    const player = { id: 'player', money: 6000, currentRegion: 'QLD', debt: 0, advancedLoans: [{ id: 'L1', amount: 1000, accrued: 0 }] };
+    const pocket = () => ({ day: 1, turnCounter: 1, player: { ...player, advancedLoans: [{ id: 'L1', amount: 1000, accrued: 0 }] }, actorsById: { player: { ...player, advancedLoans: [{ id: 'L1', amount: 1000, accrued: 0 }] } } });
+    const repaid = reduceGameAction(pocket(), { type: 'repay_advanced_loan', actorId: 'player' } as any);
+    const refinanced = reduceGameAction({ ...pocket(), player: { ...player, money: 5000, advancedLoans: [{ id: 'L1', amount: 1000, accrued: 0 }] }, actorsById: { player: { ...player, money: 5000, advancedLoans: [{ id: 'L1', amount: 1000, accrued: 0 }] } } }, { type: 'refinance_advanced_loan', actorId: 'player', parameters: { newPrincipal: 800 } } as any);
+    const schedule = (row: any) => row.nextState.player.advancedLoans || [];
+    const cleared = repaid.success && repaid.nextState.player.money === 5000 && schedule(repaid).length === 0 && repaid.nextState.player.debt === 0;
+    const resized = refinanced.success && refinanced.nextState.player.money === 4800 && refinanced.nextState.player.debt === 800 && schedule(refinanced)[0]?.amount === 800;
+    return (cleared && resized) || JSON.stringify({ repay: { ok: repaid.success, money: repaid.nextState.player.money, debt: repaid.nextState.player.debt, loans: schedule(repaid) }, refinance: { ok: refinanced.success, money: refinanced.nextState.player.money, debt: refinanced.nextState.player.debt, loans: schedule(refinanced) } });
+  });
+  check('u_completed_contract_pays_once', 'A completed contract does not pay out a second time (SIM-049)', () => {
+    const actor: any = { id: 'player', money: 1000, xp: 0 };
+    const contract: any = { id: 'c1', status: 'active', issuingRegionId: 'QLD', rewards: { money: 500 } };
+    const state: any = { turn: 4, regionalDevLevels: {}, standingPerActor: { player: { QLD: 0 } } };
+    completeRegionalContractPayout(state, contract, actor);
+    const once = actor.money;
+    completeRegionalContractPayout(state, contract, actor);
+    return (once === 1500 && actor.money === 1500 && contract.status === 'completed') || JSON.stringify({ once, money: actor.money, status: contract.status });
   });
   check('u_player_click_commits_when_copilot_is_off', 'A player click on the recommended depot commits when Co-Pilot is off (SIM-047)', () => {
     const player = { id: 'player', money: 1000, currentRegion: 'QLD', actionsUsedThisTurn: 0, actionPoints: 3, inventory: ['Iron Ore'] };
