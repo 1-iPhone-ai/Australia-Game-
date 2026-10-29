@@ -162,12 +162,13 @@ export interface ResearchBranchEmphasisState {
   setTurn: number;
 }
 
-export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v10' as const;
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v11' as const;
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
 export type ResearchProgressSchemaVersion =
   | typeof RESEARCH_PROGRESS_SCHEMA_VERSION
+  | 'op10m-agent03-v10'
   | 'op10m-agent03-v9'
   | 'op10m-agent03-v8'
   | 'op10m-agent03-v7'
@@ -416,6 +417,44 @@ export interface ResearchExportContinuityOutlook {
   links: ResearchExportContinuityLink[];
 }
 
+export type ResearchDiffusionIntegrationMilestone = 1 | 2 | 4 | 6;
+
+export interface ResearchDiffusionIntegrationMilestoneEvent {
+  seq: number;
+  turn: number;
+  milestone: ResearchDiffusionIntegrationMilestone;
+  integratedRegionCount: number;
+  meanDiffusionScore: number;
+  phase: 'escalation' | 'de-escalation';
+}
+
+export interface ResearchDiffusionIntegrationSnapshot {
+  capturedAtTurn: number;
+  integratedRegionCount: number;
+  adoptingRegionCount: number;
+  meanDiffusionScore: number;
+  leadingResearchRegion: V94AustralianRegionCode | null;
+  peakMilestone: ResearchDiffusionIntegrationMilestone | 0;
+  digest: string;
+}
+
+export interface ResearchNationalCoherenceLink {
+  regionId: V94AustralianRegionCode;
+  diffusionScore: number;
+  driver: 'integrated_cluster' | 'adoption_wave';
+}
+
+export interface ResearchNationalCoherenceOutlook {
+  active: boolean;
+  baseTurn: number;
+  horizonTurns: number;
+  nationalCoherenceScore: number;
+  projectedCoherenceScore: number;
+  integratedRegionCount: number;
+  integrationMomentum: number;
+  links: ResearchNationalCoherenceLink[];
+}
+
 export interface ResearchProgressState {
   schemaVersion: ResearchProgressSchemaVersion;
   revision: number;
@@ -437,6 +476,7 @@ export interface ResearchProgressState {
   adoptionHorizonOutlook?: ResearchAdoptionHorizonOutlook | null;
   portfolioStabilizationOutlook?: ResearchPortfolioStabilizationOutlook | null;
   exportContinuityOutlook?: ResearchExportContinuityOutlook | null;
+  nationalCoherenceOutlook?: ResearchNationalCoherenceOutlook | null;
   unlockSeq: number;
   branchEmphasis?: ResearchBranchEmphasisState[];
   emphasisRevision?: number;
@@ -458,6 +498,8 @@ export interface ResearchProgressState {
   synergySnapshot?: ResearchSynergySnapshot | null;
   commercializationMilestoneLog?: ResearchCommercializationMilestoneEvent[];
   commercializationSnapshot?: ResearchCommercializationSnapshot | null;
+  diffusionIntegrationLog?: ResearchDiffusionIntegrationMilestoneEvent[];
+  diffusionIntegrationSnapshot?: ResearchDiffusionIntegrationSnapshot | null;
 }
 
 export interface StrategyHookDefinition {

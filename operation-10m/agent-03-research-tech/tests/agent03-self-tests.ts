@@ -702,6 +702,65 @@ tests.push(
 );
 
 tests.push(
+  test('save_v10_migrates_to_v11_with_diffusion_integration_fields', () => {
+    const v10 = {
+      schemaVersion: 'op10m-agent03-v10',
+      turn: 18,
+      revision: 2,
+      unlockedNodes: [],
+      institutionUpgrades: [],
+      unlockSeq: 0,
+      branchEmphasis: [],
+      emphasisRevision: 1,
+      migrationLog: [{ fromVersion: 'op10m-agent03-v9', toVersion: 'op10m-agent03-v10', turn: 17 }],
+      saveKind: 'manual',
+      updatedAtTurn: 18,
+      sessionId: 'v10',
+      persistRevision: 8,
+      unlockEventLog: [],
+      lastReconciledAtTurn: 18,
+      emphasisChangeLog: [],
+      institutionTierSnapshot: { capturedAtTurn: 18, tiers: {}, digest: 'abc', nationalIntegrationCount: 0, strategicOrAboveCount: 0 },
+      readinessMilestoneLog: [],
+      readinessBranchSnapshot: null,
+      integrationRiskLog: [],
+      integrationRiskSnapshot: null,
+      scaleWaveSnapshot: null,
+      synergyThresholdLog: [],
+      synergySnapshot: null,
+      commercializationMilestoneLog: [],
+      commercializationSnapshot: null,
+      coreFingerprint: 'legacy',
+    };
+    const core = migrateResearchProgressSave(v10);
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v10'));
+    assert(Array.isArray(core?.diffusionIntegrationLog));
+    assert(core?.diffusionIntegrationSnapshot === null);
+  })
+);
+
+tests.push(
+  test('diffusion_integration_log_and_snapshot_on_compute', () => {
+    const inputs = baseInputs({ turn: 26 });
+    const state = computeResearchProgress(inputs, null);
+    assert(typeof state.diffusionIntegrationSnapshot?.digest === 'string');
+    assert(Array.isArray(state.diffusionIntegrationLog));
+  })
+);
+
+tests.push(
+  test('national_coherence_outlook_derived', () => {
+    const inputs = baseInputs({ turn: 22 });
+    const state = computeResearchProgress(inputs, null);
+    const outlook = state.nationalCoherenceOutlook;
+    assert(outlook != null);
+    assert(typeof outlook?.nationalCoherenceScore === 'number');
+    assert(detectForeignSaveFields({ nationalCoherenceOutlook: outlook }).includes('nationalCoherenceOutlook'));
+  })
+);
+
+tests.push(
   test('save_v9_migrates_to_v10_with_commercialization_fields', () => {
     const v9 = {
       schemaVersion: 'op10m-agent03-v9',

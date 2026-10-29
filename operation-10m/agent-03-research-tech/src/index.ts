@@ -31,4 +31,7 @@ export * from './portfolio-stabilization-outlook.ts';
 export * from './commercialization-milestone-log.ts';
 export * from './commercialization-snapshot.ts';
 export * from './export-continuity-outlook.ts';
+export * from './diffusion-integration-log.ts';
+export * from './diffusion-integration-snapshot.ts';
+export * from './national-coherence-outlook.ts';
 export * from './compute.ts';

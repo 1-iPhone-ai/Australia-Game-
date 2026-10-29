@@ -14,6 +14,7 @@ import type {
   ResearchIntegrationRiskEvent,
   ResearchSynergyThresholdEvent,
   ResearchCommercializationMilestoneEvent,
+  ResearchDiffusionIntegrationMilestoneEvent,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { RESEARCH_UNLOCK_EVENT_LOG_CAP } from './unlock-event-log.ts';
@@ -24,10 +25,12 @@ import { mergeReadinessBranchSnapshots } from './readiness-branch-snapshot.ts';
 import { RESEARCH_INTEGRATION_RISK_LOG_CAP } from './integration-risk-log.ts';
 import { RESEARCH_SYNERGY_THRESHOLD_LOG_CAP } from './synergy-threshold-log.ts';
 import { RESEARCH_COMMERCIALIZATION_MILESTONE_LOG_CAP } from './commercialization-milestone-log.ts';
+import { RESEARCH_DIFFUSION_INTEGRATION_LOG_CAP } from './diffusion-integration-log.ts';
 import { mergeIntegrationRiskSnapshots } from './integration-risk-snapshot.ts';
 import { mergeScaleWaveSnapshots } from './scale-wave-snapshot.ts';
 import { mergeSynergySnapshots } from './synergy-snapshot.ts';
 import { mergeCommercializationSnapshots } from './commercialization-snapshot.ts';
+import { mergeDiffusionIntegrationSnapshots } from './diffusion-integration-snapshot.ts';
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
@@ -113,6 +116,18 @@ function mergeCommercializationMilestoneLogs(
     byKey.set(key, ev);
   }
   return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_COMMERCIALIZATION_MILESTONE_LOG_CAP);
+}
+
+function mergeDiffusionIntegrationLogs(
+  local: ResearchDiffusionIntegrationMilestoneEvent[] | undefined,
+  remote: ResearchDiffusionIntegrationMilestoneEvent[] | undefined
+): ResearchDiffusionIntegrationMilestoneEvent[] {
+  const byKey = new Map<string, ResearchDiffusionIntegrationMilestoneEvent>();
+  for (const ev of [...(local ?? []), ...(remote ?? [])]) {
+    const key = `${ev.seq}:${ev.milestone}:${ev.phase}`;
+    byKey.set(key, ev);
+  }
+  return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_DIFFUSION_INTEGRATION_LOG_CAP);
 }
 
 function stableCoreSnapshot(core: ResearchProgressPersistedCore): Record<string, unknown> {
@@ -226,6 +241,15 @@ export function mergeResearchPersistedCores(
         local.commercializationSnapshot ?? undefined,
         remote.commercializationSnapshot ?? undefined
       ) ?? null,
+    diffusionIntegrationLog: mergeDiffusionIntegrationLogs(
+      local.diffusionIntegrationLog,
+      remote.diffusionIntegrationLog
+    ),
+    diffusionIntegrationSnapshot:
+      mergeDiffusionIntegrationSnapshots(
+        local.diffusionIntegrationSnapshot ?? undefined,
+        remote.diffusionIntegrationSnapshot ?? undefined
+      ) ?? null,
     lastReconciledAtTurn: Math.max(local.lastReconciledAtTurn ?? 0, remote.lastReconciledAtTurn ?? 0),
   });
 }
@@ -262,6 +286,8 @@ export function reconcileResearchProgressOnLoad(
         synergySnapshot: persist.synergySnapshot,
         commercializationMilestoneLog: persist.commercializationMilestoneLog,
         commercializationSnapshot: persist.commercializationSnapshot,
+        diffusionIntegrationLog: persist.diffusionIntegrationLog,
+        diffusionIntegrationSnapshot: persist.diffusionIntegrationSnapshot,
       },
       persist,
     };
@@ -290,6 +316,8 @@ export function reconcileResearchProgressOnLoad(
     synergySnapshot: mergedCore.synergySnapshot,
     commercializationMilestoneLog: mergedCore.commercializationMilestoneLog,
     commercializationSnapshot: mergedCore.commercializationSnapshot,
+    diffusionIntegrationLog: mergedCore.diffusionIntegrationLog,
+    diffusionIntegrationSnapshot: mergedCore.diffusionIntegrationSnapshot,
     lastReconciledAtTurn: ctx.turn,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
   };
@@ -319,6 +347,8 @@ export function reconcileResearchProgressOnLoad(
       synergySnapshot: persist.synergySnapshot,
       commercializationMilestoneLog: persist.commercializationMilestoneLog,
       commercializationSnapshot: persist.commercializationSnapshot,
+      diffusionIntegrationLog: persist.diffusionIntegrationLog,
+      diffusionIntegrationSnapshot: persist.diffusionIntegrationSnapshot,
     },
     persist,
   };

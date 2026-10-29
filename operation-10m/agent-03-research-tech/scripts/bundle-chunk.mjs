@@ -43,6 +43,9 @@ const SOURCE_FILES = [
   "operation-10m/agent-03-research-tech/src/commercialization-milestone-log.ts",
   "operation-10m/agent-03-research-tech/src/commercialization-snapshot.ts",
   "operation-10m/agent-03-research-tech/src/export-continuity-outlook.ts",
+  "operation-10m/agent-03-research-tech/src/diffusion-integration-log.ts",
+  "operation-10m/agent-03-research-tech/src/diffusion-integration-snapshot.ts",
+  "operation-10m/agent-03-research-tech/src/national-coherence-outlook.ts",
   "operation-10m/agent-03-research-tech/src/save-migration.ts",
   "operation-10m/agent-03-research-tech/src/save-lifecycle.ts",
   "operation-10m/agent-03-research-tech/src/regression-harness.ts",
@@ -95,7 +98,7 @@ export function runAgent03ResearchTechSelfTests(): {
   const state = computeResearchProgress(inputs, createEmptyResearchProgressState());
   push('agent03_chunk_04', state.unlockedNodes.some(u => u.nodeId === 'df_t1_campus_foundation'));
   push('agent03_chunk_05', (state.institutionUpgrades?.length ?? 0) >= 6, String(state.institutionUpgrades?.length));
-  push('agent03_chunk_06', OP10M_AGENT03_MODULE_META.schemaVersion === 'op10m-agent03-v10');
+  push('agent03_chunk_06', OP10M_AGENT03_MODULE_META.schemaVersion === 'op10m-agent03-v11');
   const saved = prepareResearchProgressForSave(state);
   push('agent03_chunk_07', validatePersistedCoreForWrite(saved).length === 0);
 
@@ -111,21 +114,23 @@ export function runAgent03ResearchSaveFormatSelfTests(): {
   const results: Array<{ id: string; passed: boolean; detail?: string }> = [];
   const push = (id: string, passed: boolean, detail?: string) => results.push({ id, passed, detail });
   const v2 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v2', turn: 1, revision: 0, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [] });
-  push('savefmt_v2_to_v10', v2?.schemaVersion === 'op10m-agent03-v10');
+  push('savefmt_v2_to_v11', v2?.schemaVersion === 'op10m-agent03-v11');
   const v3 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v3', turn: 2, revision: 1, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [], emphasisRevision: 0, migrationLog: [], coreFingerprint: 'x' });
-  push('savefmt_v3_to_v10', v3?.schemaVersion === 'op10m-agent03-v10' && (v3?.persistRevision ?? 0) === 0);
+  push('savefmt_v3_to_v11', v3?.schemaVersion === 'op10m-agent03-v11' && (v3?.persistRevision ?? 0) === 0);
   const v4 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v4', turn: 3, revision: 1, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [], emphasisRevision: 0, migrationLog: [], persistRevision: 2, saveKind: 'manual', updatedAtTurn: 3, sessionId: 'x' });
-  push('savefmt_v4_to_v10', v4?.schemaVersion === 'op10m-agent03-v10' && Array.isArray(v4?.unlockEventLog));
+  push('savefmt_v4_to_v11', v4?.schemaVersion === 'op10m-agent03-v11' && Array.isArray(v4?.unlockEventLog));
   const v5 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v5', turn: 4, revision: 1, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [], emphasisRevision: 1, migrationLog: [], persistRevision: 1, saveKind: 'manual', updatedAtTurn: 4, sessionId: 'x', unlockEventLog: [], lastReconciledAtTurn: 4 });
-  push('savefmt_v5_to_v10', v5?.schemaVersion === 'op10m-agent03-v10' && Array.isArray(v5?.emphasisChangeLog));
+  push('savefmt_v5_to_v11', v5?.schemaVersion === 'op10m-agent03-v11' && Array.isArray(v5?.emphasisChangeLog));
   const v6 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v6', turn: 5, revision: 1, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [], emphasisRevision: 0, migrationLog: [], persistRevision: 1, saveKind: 'manual', updatedAtTurn: 5, sessionId: 'x', unlockEventLog: [], lastReconciledAtTurn: 5, emphasisChangeLog: [], institutionTierSnapshot: { capturedAtTurn: 5, tiers: {}, digest: 'd', nationalIntegrationCount: 0, strategicOrAboveCount: 0 } });
-  push('savefmt_v6_to_v10', v6?.schemaVersion === 'op10m-agent03-v10' && Array.isArray(v6?.readinessMilestoneLog));
+  push('savefmt_v6_to_v11', v6?.schemaVersion === 'op10m-agent03-v11' && Array.isArray(v6?.readinessMilestoneLog));
   const v7 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v7', turn: 6, revision: 1, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [], emphasisRevision: 0, migrationLog: [], persistRevision: 1, saveKind: 'manual', updatedAtTurn: 6, sessionId: 'x', unlockEventLog: [], lastReconciledAtTurn: 6, emphasisChangeLog: [], institutionTierSnapshot: { capturedAtTurn: 6, tiers: {}, digest: 'd', nationalIntegrationCount: 0, strategicOrAboveCount: 0 }, readinessMilestoneLog: [], readinessBranchSnapshot: null });
-  push('savefmt_v7_to_v10', v7?.schemaVersion === 'op10m-agent03-v10' && Array.isArray(v7?.integrationRiskLog));
+  push('savefmt_v7_to_v11', v7?.schemaVersion === 'op10m-agent03-v11' && Array.isArray(v7?.integrationRiskLog));
   const v8 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v8', turn: 7, revision: 1, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [], emphasisRevision: 0, migrationLog: [], persistRevision: 1, saveKind: 'manual', updatedAtTurn: 7, sessionId: 'x', unlockEventLog: [], lastReconciledAtTurn: 7, emphasisChangeLog: [], institutionTierSnapshot: { capturedAtTurn: 7, tiers: {}, digest: 'd', nationalIntegrationCount: 0, strategicOrAboveCount: 0 }, readinessMilestoneLog: [], readinessBranchSnapshot: null, integrationRiskLog: [], integrationRiskSnapshot: null, scaleWaveSnapshot: null });
-  push('savefmt_v8_to_v10', v8?.schemaVersion === 'op10m-agent03-v10' && Array.isArray(v8?.synergyThresholdLog));
+  push('savefmt_v8_to_v11', v8?.schemaVersion === 'op10m-agent03-v11' && Array.isArray(v8?.synergyThresholdLog));
   const v9 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v9', turn: 8, revision: 1, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [], emphasisRevision: 0, migrationLog: [], persistRevision: 1, saveKind: 'manual', updatedAtTurn: 8, sessionId: 'x', unlockEventLog: [], lastReconciledAtTurn: 8, emphasisChangeLog: [], institutionTierSnapshot: { capturedAtTurn: 8, tiers: {}, digest: 'd', nationalIntegrationCount: 0, strategicOrAboveCount: 0 }, readinessMilestoneLog: [], readinessBranchSnapshot: null, integrationRiskLog: [], integrationRiskSnapshot: null, scaleWaveSnapshot: null, synergyThresholdLog: [], synergySnapshot: null });
-  push('savefmt_v9_to_v10', v9?.schemaVersion === 'op10m-agent03-v10' && Array.isArray(v9?.commercializationMilestoneLog));
+  push('savefmt_v9_to_v11', v9?.schemaVersion === 'op10m-agent03-v11' && Array.isArray(v9?.commercializationMilestoneLog));
+  const v10 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v10', turn: 9, revision: 1, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [], emphasisRevision: 0, migrationLog: [], persistRevision: 1, saveKind: 'manual', updatedAtTurn: 9, sessionId: 'x', unlockEventLog: [], lastReconciledAtTurn: 9, emphasisChangeLog: [], institutionTierSnapshot: { capturedAtTurn: 9, tiers: {}, digest: 'd', nationalIntegrationCount: 0, strategicOrAboveCount: 0 }, readinessMilestoneLog: [], readinessBranchSnapshot: null, integrationRiskLog: [], integrationRiskSnapshot: null, scaleWaveSnapshot: null, synergyThresholdLog: [], synergySnapshot: null, commercializationMilestoneLog: [], commercializationSnapshot: null });
+  push('savefmt_v10_to_v11', v10?.schemaVersion === 'op10m-agent03-v11' && Array.isArray(v10?.diffusionIntegrationLog));
   push('savefmt_foreign', detectForeignSaveFields({ diffusion: [] }).includes('diffusion'));
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
@@ -133,8 +138,8 @@ export function runAgent03ResearchSaveFormatSelfTests(): {
 
 export const OP10M_AGENT03_MODULE_META = {
   moduleId: '${MODULE_ID}',
-  schemaVersion: 'op10m-agent03-v10',
-  saveFormatVersion: 10,
+  schemaVersion: 'op10m-agent03-v11',
+  saveFormatVersion: 11,
   touchesSaveFormat: true,
   proposedGameStateField: 'researchProgress',
   integrationDoc: 'operation-10m/agent-03-research-tech/INTEGRATION.md',
@@ -176,8 +181,8 @@ const manifest = {
   touchesSaveFormat: true,
   proposedGameStateField: "researchProgress",
   contentSha256: hash,
-  saveFormatVersion: 10,
-  schemaVersion: "op10m-agent03-v10",
+  saveFormatVersion: 11,
+  schemaVersion: "op10m-agent03-v11",
   chunkPath: "operation-10m/modules/agent-03-research-tech/chunk.tsx",
 };
 
