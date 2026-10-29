@@ -135,7 +135,11 @@ export type LaborGiQueryTopic =
   | 'integration_retention_coupling'
   | 'retention_cohesion'
   | 'subject_retention_readiness'
-  | 'workforce_retention';
+  | 'workforce_retention'
+  | 'retention_reengagement_coupling'
+  | 'reengagement_alignment'
+  | 'subject_reengagement_readiness'
+  | 'workforce_reengagement';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -276,6 +280,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_retention_readiness';
   }
   if (/\b(workforce retention|retention index labor)/.test(q)) return 'workforce_retention';
+  if (/\b(retention reengagement|retention-reengagement coupling)/.test(q)) return 'retention_reengagement_coupling';
+  if (/\b(reengagement alignment|reengagement pipeline alignment)/.test(q)) return 'reengagement_alignment';
+  if (/\b(subject reengagement readiness|reengagement readiness subject)/.test(q)) {
+    return 'subject_reengagement_readiness';
+  }
+  if (/\b(workforce reengagement|reengagement index labor workforce)/.test(q)) return 'workforce_reengagement';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1350,6 +1360,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Retention band ${state.nationalWorkforceRetentionIndex?.band ?? 'unknown'}; retention drag ${Math.round(state.nationalWorkforceRetentionIndex?.retentionDrag ?? 0)}.`,
         inference: state.nationalWorkforceRetentionIndex?.stewardNote || state.summary,
         projection: 'Workforce retention synthesizes integration-retention coupling, retention cohesion, and subject retention.'
+      };
+    case 'retention_reengagement_coupling':
+      return {
+        topic,
+        headline: state.retentionReengagementCouplingBrief?.summary || 'Retention-reengagement coupling unavailable.',
+        fact: `Coupling band ${state.retentionReengagementCouplingBrief?.band ?? 'unknown'}; retention drag ${Math.round(state.retentionReengagementCouplingBrief?.retentionDrag ?? 0)}.`,
+        inference: state.retentionReengagementCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce retention with reengagement levers — wave 38 / O10-207 depth.'
+      };
+    case 'reengagement_alignment':
+      return {
+        topic,
+        headline: state.reengagementAlignmentOutlook?.summary || 'Reengagement alignment unavailable.',
+        fact: `Alignment band ${state.reengagementAlignmentOutlook?.band ?? 'unknown'}; retention drag ${Math.round(state.reengagementAlignmentOutlook?.retentionDrag ?? 0)}.`,
+        inference: state.reengagementAlignmentOutlook?.stewardNote || state.outlook,
+        projection: 'Alignment blends reengagement levers with retention cohesion — bounded indices only.'
+      };
+    case 'subject_reengagement_readiness':
+      return {
+        topic,
+        headline: state.subjectReengagementReadinessBrief?.summary || 'Subject reengagement readiness unavailable.',
+        fact: `Reengagement band ${state.subjectReengagementReadinessBrief?.band ?? 'unknown'}; reengagement drag ${Math.round(state.subjectReengagementReadinessBrief?.reengagementDrag ?? 0)}.`,
+        inference: state.subjectReengagementReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject reengagement readiness gates subject retention against workforce retention for O10-207 wave 38.'
+      };
+    case 'workforce_reengagement':
+      return {
+        topic,
+        headline: state.nationalWorkforceReengagementIndex?.summary || 'Workforce reengagement unavailable.',
+        fact: `Reengagement band ${state.nationalWorkforceReengagementIndex?.band ?? 'unknown'}; reengagement drag ${Math.round(state.nationalWorkforceReengagementIndex?.reengagementDrag ?? 0)}.`,
+        inference: state.nationalWorkforceReengagementIndex?.stewardNote || state.summary,
+        projection: 'Workforce reengagement synthesizes retention-reengagement coupling, reengagement alignment, and subject reengagement.'
       };
     default:
       return {

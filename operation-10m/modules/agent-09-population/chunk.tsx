@@ -321,6 +321,10 @@ export interface NationalLaborDemographicsState {
   retentionCohesionOutlook?: NationalRetentionCohesionOutlook;
   subjectRetentionReadinessBrief?: NationalSubjectRetentionReadinessBrief;
   nationalWorkforceRetentionIndex?: NationalWorkforceRetentionIndex;
+  retentionReengagementCouplingBrief?: NationalRetentionReengagementCouplingBrief;
+  reengagementAlignmentOutlook?: NationalReengagementAlignmentOutlook;
+  subjectReengagementReadinessBrief?: NationalSubjectReengagementReadinessBrief;
+  nationalWorkforceReengagementIndex?: NationalWorkforceReengagementIndex;
 }
 
 export type MigrationShockKind =
@@ -1809,6 +1813,54 @@ export interface NationalWorkforceRetentionIndex {
   stewardNote: string;
 }
 
+export type RetentionReengagementCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalRetentionReengagementCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: RetentionReengagementCouplingBand;
+  retentionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ReengagementAlignmentBand = 'ebbing' | 'patchy' | 'rising' | 'aligned';
+
+export interface NationalReengagementAlignmentOutlook {
+  turn: number;
+  alignmentIndex: number;
+  band: ReengagementAlignmentBand;
+  retentionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectReengagementReadinessBand =
+  | 'below_reengagement'
+  | 'approaching'
+  | 'reengagement_ready'
+  | 'retention_locked';
+
+export interface NationalSubjectReengagementReadinessBrief {
+  turn: number;
+  reengagementIndex: number;
+  band: SubjectReengagementReadinessBand;
+  reengagementDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceReengagementBand = 'fragile' | 'thin' | 'elevated' | 'reengagement';
+
+export interface NationalWorkforceReengagementIndex {
+  turn: number;
+  reengagementIndex: number;
+  band: WorkforceReengagementBand;
+  reengagementDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -3007,7 +3059,11 @@ export type LaborGiQueryTopic =
   | 'integration_retention_coupling'
   | 'retention_cohesion'
   | 'subject_retention_readiness'
-  | 'workforce_retention';
+  | 'workforce_retention'
+  | 'retention_reengagement_coupling'
+  | 'reengagement_alignment'
+  | 'subject_reengagement_readiness'
+  | 'workforce_reengagement';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -3148,6 +3204,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_retention_readiness';
   }
   if (/\b(workforce retention|retention index labor)/.test(q)) return 'workforce_retention';
+  if (/\b(retention reengagement|retention-reengagement coupling)/.test(q)) return 'retention_reengagement_coupling';
+  if (/\b(reengagement alignment|reengagement pipeline alignment)/.test(q)) return 'reengagement_alignment';
+  if (/\b(subject reengagement readiness|reengagement readiness subject)/.test(q)) {
+    return 'subject_reengagement_readiness';
+  }
+  if (/\b(workforce reengagement|reengagement index labor workforce)/.test(q)) return 'workforce_reengagement';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -4223,6 +4285,38 @@ export function answerLaborDemographicsQuestion(
         inference: state.nationalWorkforceRetentionIndex?.stewardNote || state.summary,
         projection: 'Workforce retention synthesizes integration-retention coupling, retention cohesion, and subject retention.'
       };
+    case 'retention_reengagement_coupling':
+      return {
+        topic,
+        headline: state.retentionReengagementCouplingBrief?.summary || 'Retention-reengagement coupling unavailable.',
+        fact: `Coupling band ${state.retentionReengagementCouplingBrief?.band ?? 'unknown'}; retention drag ${Math.round(state.retentionReengagementCouplingBrief?.retentionDrag ?? 0)}.`,
+        inference: state.retentionReengagementCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce retention with reengagement levers — wave 38 / O10-207 depth.'
+      };
+    case 'reengagement_alignment':
+      return {
+        topic,
+        headline: state.reengagementAlignmentOutlook?.summary || 'Reengagement alignment unavailable.',
+        fact: `Alignment band ${state.reengagementAlignmentOutlook?.band ?? 'unknown'}; retention drag ${Math.round(state.reengagementAlignmentOutlook?.retentionDrag ?? 0)}.`,
+        inference: state.reengagementAlignmentOutlook?.stewardNote || state.outlook,
+        projection: 'Alignment blends reengagement levers with retention cohesion — bounded indices only.'
+      };
+    case 'subject_reengagement_readiness':
+      return {
+        topic,
+        headline: state.subjectReengagementReadinessBrief?.summary || 'Subject reengagement readiness unavailable.',
+        fact: `Reengagement band ${state.subjectReengagementReadinessBrief?.band ?? 'unknown'}; reengagement drag ${Math.round(state.subjectReengagementReadinessBrief?.reengagementDrag ?? 0)}.`,
+        inference: state.subjectReengagementReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject reengagement readiness gates subject retention against workforce retention for O10-207 wave 38.'
+      };
+    case 'workforce_reengagement':
+      return {
+        topic,
+        headline: state.nationalWorkforceReengagementIndex?.summary || 'Workforce reengagement unavailable.',
+        fact: `Reengagement band ${state.nationalWorkforceReengagementIndex?.band ?? 'unknown'}; reengagement drag ${Math.round(state.nationalWorkforceReengagementIndex?.reengagementDrag ?? 0)}.`,
+        inference: state.nationalWorkforceReengagementIndex?.stewardNote || state.summary,
+        projection: 'Workforce reengagement synthesizes retention-reengagement coupling, reengagement alignment, and subject reengagement.'
+      };
     default:
       return {
         topic: 'national_summary',
@@ -5259,6 +5353,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceRetentionIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceRetentionIndex.stewardNote);
+  }
+  if (
+    state.retentionReengagementCouplingBrief?.band === 'decoupled' ||
+    state.retentionReengagementCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.retentionReengagementCouplingBrief.stewardNote);
+  }
+  if (
+    state.reengagementAlignmentOutlook?.band === 'ebbing' ||
+    state.reengagementAlignmentOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.reengagementAlignmentOutlook.stewardNote);
+  }
+  if (
+    state.subjectReengagementReadinessBrief?.band === 'below_reengagement' ||
+    state.subjectReengagementReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectReengagementReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceReengagementIndex?.band === 'fragile' ||
+    state.nationalWorkforceReengagementIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceReengagementIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -15312,6 +15430,278 @@ export function computeNationalWorkforceRetentionIndex(
 }
 
 
+// --- source: retention-reengagement-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalRetentionReengagementCouplingBrief,
+  type NationalWorkforceRetentionIndex,
+  type RetentionReengagementCouplingBand
+} from './types';
+
+function couplingBand(index: number): RetentionReengagementCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-38 / wave-38 retention-reengagement coupling — retention × reengagement (O10-207). */
+export function computeNationalRetentionReengagementCouplingBrief(
+  state: NationalLaborDemographicsState,
+  retention: NationalWorkforceRetentionIndex | null | undefined
+): NationalRetentionReengagementCouplingBrief {
+  if (!state.enabled || !retention) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      retentionDrag: 0,
+      summary: 'Retention-reengagement coupling idle — workforce retention unavailable.',
+      stewardNote: 'Compute workforce retention before reengagement coupling guidance.'
+    };
+  }
+
+  let reengagementLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    reengagementLift += reengagementPullForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  reengagementLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const retentionDrag = v1014laborClamp(
+    retention.retentionDrag * 0.48 + (retention.band === 'fragile' || retention.band === 'thin' ? 11 : 3)
+  );
+  const retentionLift =
+    retention.band === 'elevated' || retention.band === 'retention'
+      ? retention.retentionIndex * 0.24
+      : retention.retentionIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + reengagementLift * 21 + retentionLift - retentionDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained retention-reengagement link — deploy reengagement levers before wave-38 reengagement commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard reengagement alignment spikes that drain retention buffers.'
+        : 'Amplified coupling — pair reengagement packs with subject reengagement readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    retentionDrag,
+    summary: `Retention-reengagement coupling ${band} (index ${Math.round(couplingIndex)}); retention drag ${Math.round(retentionDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: reengagement-alignment-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalReengagementAlignmentOutlook,
+  type NationalRetentionCohesionOutlook,
+  type ReengagementAlignmentBand
+} from './types';
+
+function alignmentBand(index: number): ReengagementAlignmentBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'aligned';
+}
+
+export function computeNationalReengagementAlignmentOutlook(
+  state: NationalLaborDemographicsState,
+  retentionCohesion: NationalRetentionCohesionOutlook | null | undefined
+): NationalReengagementAlignmentOutlook {
+  if (!state.enabled || !retentionCohesion) {
+    return {
+      turn: state.turn,
+      alignmentIndex: 50,
+      band: 'patchy',
+      retentionDrag: 0,
+      summary: 'Reengagement alignment idle — retention cohesion unavailable.',
+      stewardNote: 'Compute retention cohesion before reengagement alignment guidance.'
+    };
+  }
+
+  let reengagementLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    reengagementLift += reengagementPullForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  reengagementLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const retentionDrag = v1014laborClamp(
+    retentionCohesion.integrationDrag * 0.46 +
+      (retentionCohesion.band === 'ebbing' || retentionCohesion.band === 'patchy' ? 10 : 3)
+  );
+  const cohesionLift =
+    retentionCohesion.band === 'rising' || retentionCohesion.band === 'cohesion'
+      ? retentionCohesion.cohesionIndex * 0.2
+      : retentionCohesion.cohesionIndex * 0.1;
+
+  const alignmentIndex = v1014laborClamp(24 + reengagementLift * 22 + cohesionLift - retentionDrag);
+  const band = alignmentBand(alignmentIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy reengagement alignment — deploy reengagement levers before subject reengagement assembly.'
+      : band === 'aligned'
+        ? 'Aligned band — verify retention-reengagement coupling before auto workforce pushes.'
+        : 'Rising alignment — align with retention cohesion outlook checks.';
+
+  return {
+    turn: state.turn,
+    alignmentIndex,
+    band,
+    retentionDrag,
+    summary: `National reengagement alignment ${band} (index ${Math.round(alignmentIndex)}); retention drag ${Math.round(retentionDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-reengagement-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectReengagementReadinessBrief,
+  type NationalSubjectRetentionReadinessBrief,
+  type NationalWorkforceRetentionIndex,
+  type SubjectReengagementReadinessBand
+} from './types';
+
+function reengagementBand(index: number): SubjectReengagementReadinessBand {
+  if (index <= 34) return 'below_reengagement';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'reengagement_ready';
+  return 'retention_locked';
+}
+
+/** Round-38 / wave-38 subject reengagement readiness — retention × workforce retention (O10-207). */
+export function computeNationalSubjectReengagementReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectRetention: NationalSubjectRetentionReadinessBrief | null | undefined,
+  workforceRetention: NationalWorkforceRetentionIndex | null | undefined
+): NationalSubjectReengagementReadinessBrief {
+  if (!state.enabled || !subjectRetention || !workforceRetention) {
+    return {
+      turn: state.turn,
+      reengagementIndex: 50,
+      band: 'approaching',
+      reengagementDrag: 0,
+      summary: 'Subject reengagement readiness idle — subject retention or workforce retention unavailable.',
+      stewardNote: 'Compute subject retention and workforce retention before reengagement guidance.'
+    };
+  }
+
+  const reengagementDrag = v1014laborClamp(
+    subjectRetention.retentionDrag * 0.38 +
+      workforceRetention.retentionDrag * 0.38 +
+      (subjectRetention.band === 'below_retention' || workforceRetention.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectRetention.band === 'retention_ready' || subjectRetention.band === 'integration_locked'
+      ? subjectRetention.retentionIndex * 0.27
+      : subjectRetention.retentionIndex * 0.14;
+  const workforceLift =
+    workforceRetention.band === 'elevated' || workforceRetention.band === 'retention'
+      ? workforceRetention.retentionIndex * 0.25
+      : workforceRetention.retentionIndex * 0.12;
+
+  const reengagementIndex = v1014laborClamp(20 + subjectLift + workforceLift - reengagementDrag);
+  const band = reengagementBand(reengagementIndex);
+
+  const stewardNote =
+    band === 'below_reengagement' || band === 'approaching'
+      ? 'Approaching reengagement — hold O10-207 wave-38 scale until retention-reengagement syncs.'
+      : band === 'retention_locked'
+        ? 'Retention-locked reengagement — still monitor reengagement alignment during corridor peaks.'
+        : 'Reengagement-ready — pair with workforce reengagement index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    reengagementIndex,
+    band,
+    reengagementDrag,
+    summary: `Subject reengagement readiness ${band} (index ${Math.round(reengagementIndex)}); reengagement drag ${Math.round(reengagementDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-reengagement-index.ts ---
+  type NationalLaborDemographicsState,
+  type NationalRetentionReengagementCouplingBrief,
+  type NationalReengagementAlignmentOutlook,
+  type NationalSubjectReengagementReadinessBrief,
+  type NationalWorkforceReengagementIndex,
+  type WorkforceReengagementBand
+} from './types';
+
+function reengagementBand(index: number): WorkforceReengagementBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'reengagement';
+}
+
+export function computeNationalWorkforceReengagementIndex(
+  state: NationalLaborDemographicsState,
+  reengagementCoupling: NationalRetentionReengagementCouplingBrief | null | undefined,
+  reengagementAlignment: NationalReengagementAlignmentOutlook | null | undefined,
+  subjectReengagement: NationalSubjectReengagementReadinessBrief | null | undefined
+): NationalWorkforceReengagementIndex {
+  if (!state.enabled || !reengagementCoupling || !reengagementAlignment || !subjectReengagement) {
+    return {
+      turn: state.turn,
+      reengagementIndex: 50,
+      band: 'thin',
+      reengagementDrag: 0,
+      summary: 'Workforce reengagement idle — reengagement coupling, alignment, or subject reengagement unavailable.',
+      stewardNote: 'Compute O10-207 wave-38 depth stack before reengagement guidance.'
+    };
+  }
+
+  const reengagementDrag = v1014laborClamp(
+    subjectReengagement.reengagementDrag * 0.35 +
+      reengagementCoupling.retentionDrag * 0.3 +
+      reengagementAlignment.retentionDrag * 0.25 +
+      (subjectReengagement.band === 'below_reengagement' || reengagementCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const couplingLift =
+    reengagementCoupling.band === 'amplified' || reengagementCoupling.band === 'elevated'
+      ? reengagementCoupling.couplingIndex * 0.2
+      : reengagementCoupling.couplingIndex * 0.1;
+  const alignmentLift =
+    reengagementAlignment.band === 'rising' || reengagementAlignment.band === 'aligned'
+      ? reengagementAlignment.alignmentIndex * 0.18
+      : reengagementAlignment.alignmentIndex * 0.09;
+  const subjectLift =
+    subjectReengagement.band === 'reengagement_ready' || subjectReengagement.band === 'retention_locked'
+      ? subjectReengagement.reengagementIndex * 0.22
+      : subjectReengagement.reengagementIndex * 0.11;
+
+  const reengagementIndex = v1014laborClamp(18 + couplingLift + alignmentLift + subjectLift - reengagementDrag);
+  const band = reengagementBand(reengagementIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce reengagement — sequence retention-reengagement, reengagement alignment, and subject reengagement before post-b44b36f tranche.'
+      : band === 'reengagement'
+        ? 'Reengagement band — avoid corridor overload that breaks subject reengagement bands.'
+        : 'Elevated reengagement — refresh subject reengagement checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    reengagementIndex,
+    band,
+    reengagementDrag,
+    summary: `National workforce reengagement ${band} (index ${Math.round(reengagementIndex)}); reengagement drag ${Math.round(reengagementDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -16382,6 +16772,25 @@ export function computeNationalLaborDemographics(
     state.retentionCohesionOutlook,
     state.subjectRetentionReadinessBrief
   );
+  state.retentionReengagementCouplingBrief = computeNationalRetentionReengagementCouplingBrief(
+    state,
+    state.nationalWorkforceRetentionIndex
+  );
+  state.reengagementAlignmentOutlook = computeNationalReengagementAlignmentOutlook(
+    state,
+    state.retentionCohesionOutlook
+  );
+  state.subjectReengagementReadinessBrief = computeNationalSubjectReengagementReadinessBrief(
+    state,
+    state.subjectRetentionReadinessBrief,
+    state.nationalWorkforceRetentionIndex
+  );
+  state.nationalWorkforceReengagementIndex = computeNationalWorkforceReengagementIndex(
+    state,
+    state.retentionReengagementCouplingBrief,
+    state.reengagementAlignmentOutlook,
+    state.subjectReengagementReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -17204,6 +17613,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceRetentionIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.retentionReengagementCouplingBrief?.band === 'decoupled' ||
+      state.retentionReengagementCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.retentionReengagementCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.reengagementAlignmentOutlook?.band === 'ebbing' ||
+      state.reengagementAlignmentOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.reengagementAlignmentOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectReengagementReadinessBrief?.band === 'below_reengagement' ||
+      state.subjectReengagementReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectReengagementReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceReengagementIndex?.band === 'fragile' ||
+      state.nationalWorkforceReengagementIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceReengagementIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -19381,6 +19818,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'retention steward note'
   );
   check('R3716', retentionPullForRegion('NSW', 'technology') > 0, 'retention pull for region');
+
+  check('R3801', Boolean(r1.state.retentionReengagementCouplingBrief?.band), 'retention reengagement on state');
+  check(
+    'R3802',
+    (r1.state.retentionReengagementCouplingBrief?.retentionDrag ?? 0) >= 0,
+    'retention reengagement drag'
+  );
+  check('R3803', Boolean(r1.state.reengagementAlignmentOutlook?.band), 'reengagement alignment on state');
+  check(
+    'R3804',
+    (r1.state.reengagementAlignmentOutlook?.retentionDrag ?? 0) >= 0,
+    'reengagement alignment retention drag'
+  );
+  check('R3805', Boolean(r1.state.subjectReengagementReadinessBrief?.band), 'subject reengagement on state');
+  check('R3806', Boolean(r1.state.nationalWorkforceReengagementIndex?.band), 'workforce reengagement on state');
+  check(
+    'R3807',
+    detectLaborDemographicsQuery('retention reengagement coupling') === 'retention_reengagement_coupling',
+    'GI retention reengagement detect'
+  );
+  check(
+    'R3808',
+    detectLaborDemographicsQuery('reengagement alignment') === 'reengagement_alignment',
+    'GI reengagement alignment detect'
+  );
+  check(
+    'R3809',
+    detectLaborDemographicsQuery('subject reengagement readiness') === 'subject_reengagement_readiness',
+    'GI subject reengagement detect'
+  );
+  check(
+    'R3810',
+    detectLaborDemographicsQuery('workforce reengagement') === 'workforce_reengagement',
+    'GI workforce reengagement detect'
+  );
+  check(
+    'R3811',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_reengagement').headline.length > 5,
+    'GI workforce reengagement answer'
+  );
+  const retentionReengagementOnly = computeNationalRetentionReengagementCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceRetentionIndex
+  );
+  check('R3812', retentionReengagementOnly.summary.length > 10, 'retention reengagement standalone summary');
+  const reengagementAlignmentOnly = computeNationalReengagementAlignmentOutlook(
+    r1.state,
+    r1.state.retentionCohesionOutlook
+  );
+  check('R3813', reengagementAlignmentOnly.band.length > 3, 'reengagement alignment band string');
+  const subjectReengagementOnly = computeNationalSubjectReengagementReadinessBrief(
+    r1.state,
+    r1.state.subjectRetentionReadinessBrief,
+    r1.state.nationalWorkforceRetentionIndex
+  );
+  check('R3814', subjectReengagementOnly.reengagementDrag >= 0, 'subject reengagement drag');
+  check(
+    'R3815',
+    computeNationalWorkforceReengagementIndex(
+      rHhBad.state,
+      rHhBad.state.retentionReengagementCouplingBrief,
+      rHhBad.state.reengagementAlignmentOutlook,
+      rHhBad.state.subjectReengagementReadinessBrief
+    ).stewardNote.length > 8,
+    'reengagement steward note'
+  );
+  check('R3816', reengagementPullForRegion('NSW', 'technology') > 0, 'reengagement pull for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

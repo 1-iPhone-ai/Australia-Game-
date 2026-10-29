@@ -317,6 +317,10 @@ export interface NationalLaborDemographicsState {
   retentionCohesionOutlook?: NationalRetentionCohesionOutlook;
   subjectRetentionReadinessBrief?: NationalSubjectRetentionReadinessBrief;
   nationalWorkforceRetentionIndex?: NationalWorkforceRetentionIndex;
+  retentionReengagementCouplingBrief?: NationalRetentionReengagementCouplingBrief;
+  reengagementAlignmentOutlook?: NationalReengagementAlignmentOutlook;
+  subjectReengagementReadinessBrief?: NationalSubjectReengagementReadinessBrief;
+  nationalWorkforceReengagementIndex?: NationalWorkforceReengagementIndex;
 }
 
 export type MigrationShockKind =
@@ -1801,6 +1805,54 @@ export interface NationalWorkforceRetentionIndex {
   retentionIndex: number;
   band: WorkforceRetentionBand;
   retentionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type RetentionReengagementCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalRetentionReengagementCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: RetentionReengagementCouplingBand;
+  retentionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ReengagementAlignmentBand = 'ebbing' | 'patchy' | 'rising' | 'aligned';
+
+export interface NationalReengagementAlignmentOutlook {
+  turn: number;
+  alignmentIndex: number;
+  band: ReengagementAlignmentBand;
+  retentionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectReengagementReadinessBand =
+  | 'below_reengagement'
+  | 'approaching'
+  | 'reengagement_ready'
+  | 'retention_locked';
+
+export interface NationalSubjectReengagementReadinessBrief {
+  turn: number;
+  reengagementIndex: number;
+  band: SubjectReengagementReadinessBand;
+  reengagementDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceReengagementBand = 'fragile' | 'thin' | 'elevated' | 'reengagement';
+
+export interface NationalWorkforceReengagementIndex {
+  turn: number;
+  reengagementIndex: number;
+  band: WorkforceReengagementBand;
+  reengagementDrag: number;
   summary: string;
   stewardNote: string;
 }

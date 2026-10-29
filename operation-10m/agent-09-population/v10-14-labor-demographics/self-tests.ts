@@ -202,6 +202,10 @@ import { computeNationalIntegrationRetentionCouplingBrief } from './integration-
 import { computeNationalRetentionCohesionOutlook } from './retention-cohesion-outlook';
 import { computeNationalSubjectRetentionReadinessBrief } from './subject-retention-readiness-brief';
 import { computeNationalWorkforceRetentionIndex } from './national-workforce-retention-index';
+import { computeNationalRetentionReengagementCouplingBrief } from './retention-reengagement-coupling-brief';
+import { computeNationalReengagementAlignmentOutlook } from './reengagement-alignment-outlook';
+import { computeNationalSubjectReengagementReadinessBrief } from './subject-reengagement-readiness-brief';
+import { computeNationalWorkforceReengagementIndex } from './national-workforce-reengagement-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -2310,6 +2314,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'retention steward note'
   );
   check('R3716', retentionPullForRegion('NSW', 'technology') > 0, 'retention pull for region');
+
+  check('R3801', Boolean(r1.state.retentionReengagementCouplingBrief?.band), 'retention reengagement on state');
+  check(
+    'R3802',
+    (r1.state.retentionReengagementCouplingBrief?.retentionDrag ?? 0) >= 0,
+    'retention reengagement drag'
+  );
+  check('R3803', Boolean(r1.state.reengagementAlignmentOutlook?.band), 'reengagement alignment on state');
+  check(
+    'R3804',
+    (r1.state.reengagementAlignmentOutlook?.retentionDrag ?? 0) >= 0,
+    'reengagement alignment retention drag'
+  );
+  check('R3805', Boolean(r1.state.subjectReengagementReadinessBrief?.band), 'subject reengagement on state');
+  check('R3806', Boolean(r1.state.nationalWorkforceReengagementIndex?.band), 'workforce reengagement on state');
+  check(
+    'R3807',
+    detectLaborDemographicsQuery('retention reengagement coupling') === 'retention_reengagement_coupling',
+    'GI retention reengagement detect'
+  );
+  check(
+    'R3808',
+    detectLaborDemographicsQuery('reengagement alignment') === 'reengagement_alignment',
+    'GI reengagement alignment detect'
+  );
+  check(
+    'R3809',
+    detectLaborDemographicsQuery('subject reengagement readiness') === 'subject_reengagement_readiness',
+    'GI subject reengagement detect'
+  );
+  check(
+    'R3810',
+    detectLaborDemographicsQuery('workforce reengagement') === 'workforce_reengagement',
+    'GI workforce reengagement detect'
+  );
+  check(
+    'R3811',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_reengagement').headline.length > 5,
+    'GI workforce reengagement answer'
+  );
+  const retentionReengagementOnly = computeNationalRetentionReengagementCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceRetentionIndex
+  );
+  check('R3812', retentionReengagementOnly.summary.length > 10, 'retention reengagement standalone summary');
+  const reengagementAlignmentOnly = computeNationalReengagementAlignmentOutlook(
+    r1.state,
+    r1.state.retentionCohesionOutlook
+  );
+  check('R3813', reengagementAlignmentOnly.band.length > 3, 'reengagement alignment band string');
+  const subjectReengagementOnly = computeNationalSubjectReengagementReadinessBrief(
+    r1.state,
+    r1.state.subjectRetentionReadinessBrief,
+    r1.state.nationalWorkforceRetentionIndex
+  );
+  check('R3814', subjectReengagementOnly.reengagementDrag >= 0, 'subject reengagement drag');
+  check(
+    'R3815',
+    computeNationalWorkforceReengagementIndex(
+      rHhBad.state,
+      rHhBad.state.retentionReengagementCouplingBrief,
+      rHhBad.state.reengagementAlignmentOutlook,
+      rHhBad.state.subjectReengagementReadinessBrief
+    ).stewardNote.length > 8,
+    'reengagement steward note'
+  );
+  check('R3816', reengagementPullForRegion('NSW', 'technology') > 0, 'reengagement pull for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
