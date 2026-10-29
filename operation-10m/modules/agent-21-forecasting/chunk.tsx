@@ -102,7 +102,7 @@ export function ag21Provenance(
   };
 }
 
-export const O10M_AGENT21_MODULE_VERSION = '1.8.0';
+export const O10M_AGENT21_MODULE_VERSION = '1.9.0';
 export const O10M_AGENT21_MODULE_ID = 'forecasting_policy_lab';
 
 // --- bundled from counterfactual-experiments.ts ---
@@ -3045,6 +3045,298 @@ export const Ag21ForecastRound6Console: React.FC<{ seed?: number }> = ({ seed = 
   );
 };
 
+// --- bundled from forecast-surface-decision.ts ---
+/**
+ * Agent 21 — surface / hold / suppress decision from brief + playbook (read-only round 7).
+ */
+
+
+export type Ag21SurfaceDecisionKind = 'surface' | 'hold' | 'suppress';
+
+export interface Ag21SurfaceDecision {
+  decision: Ag21SurfaceDecisionKind;
+  rationale: string;
+  readinessScore: number;
+  operatorMode: ReturnType<typeof buildAg21LabPlaybook>['operatorMode'];
+  highPriorityHints: number;
+  surfacingTier: ReturnType<typeof assembleAg21PlayerForecastBrief>['surfacingTier'];
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+function ag21DecisionFromSignals(
+  tier: ReturnType<typeof assembleAg21PlayerForecastBrief>['surfacingTier'],
+  operatorMode: ReturnType<typeof buildAg21LabPlaybook>['operatorMode'],
+  highPriorityHints: number,
+  convergenceTone: ReturnType<typeof assembleAg21PlayerForecastBrief>['convergenceTone']
+): Ag21SurfaceDecisionKind {
+  if (tier === 'red' || operatorMode === 'investigate') return 'suppress';
+  if (highPriorityHints >= 2 || convergenceTone === 'divergent') return 'hold';
+  if (tier === 'green' && operatorMode === 'surface') return 'surface';
+  if (tier === 'amber' && operatorMode !== 'investigate') return 'hold';
+  return 'hold';
+}
+
+function ag21BandFromDecision(decision: Ag21SurfaceDecisionKind): Ag21UncertaintyBand {
+  if (decision === 'surface') return 'low';
+  if (decision === 'hold') return 'moderate';
+  return 'high';
+}
+
+/** Resolve whether lab outputs may surface given round 6 brief + playbook signals. */
+export function resolveAg21SurfaceDecision(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21SurfaceDecision {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.77),
+      actorDebt: baseCtx.actorDebt + 180
+    } satisfies Ag21ForecastContext);
+
+  const brief = assembleAg21PlayerForecastBrief(baseCtx, candidate);
+  const playbook = buildAg21LabPlaybook(baseCtx, candidate);
+  const highPriorityHints = playbook.hints.filter(h => h.priority === 'high').length;
+
+  const decision = ag21DecisionFromSignals(
+    brief.surfacingTier,
+    playbook.operatorMode,
+    highPriorityHints,
+    brief.convergenceTone
+  );
+
+  const rationale = `Tier ${brief.surfacingTier} · mode ${playbook.operatorMode} · ${highPriorityHints} high-priority hints · convergence ${brief.convergenceTone}.`;
+
+  return {
+    decision,
+    rationale,
+    readinessScore: brief.readinessScore,
+    operatorMode: playbook.operatorMode,
+    highPriorityHints,
+    surfacingTier: brief.surfacingTier,
+    overallUncertainty: ag21LabelUncertainty(ag21BandFromDecision(decision), [
+      ...brief.overallUncertainty.factors,
+      `decision=${decision}`
+    ]),
+    authoritative: false
+  };
+}
+
+export function runAg21SurfaceDecisionSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 12, seed: 44, actorCash: 920, actorDebt: 110, regionsControlled: 2 };
+  const resolved = resolveAg21SurfaceDecision(ctx);
+
+  push('surface_decision_kind', ['surface', 'hold', 'suppress'].includes(resolved.decision), resolved.decision);
+  push('surface_readiness', resolved.readinessScore >= 0 && resolved.readinessScore <= 100, String(resolved.readinessScore));
+  push('surface_hints', resolved.highPriorityHints >= 0, String(resolved.highPriorityHints));
+  push('surface_non_auth', resolved.authoritative === false, resolved.rationale);
+
+  return out;
+}
+
+// --- bundled from forecast-lab-telemetry.ts ---
+/**
+ * Agent 21 — lab telemetry rollup for operator dashboards (read-only round 7).
+ */
+
+
+export interface Ag21LabTelemetrySnapshot {
+  convergenceGap: number;
+  convergenceTone: ReturnType<typeof measureAg21EnsembleConvergence>['convergenceTone'];
+  gatePassRatio: number;
+  hintCount: number;
+  surfaceDecision: ReturnType<typeof resolveAg21SurfaceDecision>['decision'];
+  readinessScore: number;
+  telemetryHealth: 'healthy' | 'degraded' | 'critical';
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+function ag21HealthFromSignals(
+  gatePassRatio: number,
+  convergenceTone: Ag21LabTelemetrySnapshot['convergenceTone'],
+  decision: Ag21LabTelemetrySnapshot['surfaceDecision']
+): Ag21LabTelemetrySnapshot['telemetryHealth'] {
+  if (decision === 'suppress' || gatePassRatio < 0.25 || convergenceTone === 'divergent') return 'critical';
+  if (decision === 'hold' || gatePassRatio < 0.55 || convergenceTone === 'drifting') return 'degraded';
+  return 'healthy';
+}
+
+function ag21BandFromHealth(health: Ag21LabTelemetrySnapshot['telemetryHealth']): Ag21UncertaintyBand {
+  if (health === 'healthy') return 'low';
+  if (health === 'degraded') return 'moderate';
+  return 'high';
+}
+
+/** Collect a single telemetry snapshot from round 4–7 lab modules. */
+export function collectAg21LabTelemetry(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21LabTelemetrySnapshot {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.79),
+      actorDebt: baseCtx.actorDebt + 150
+    } satisfies Ag21ForecastContext);
+
+  const convergence = measureAg21EnsembleConvergence(baseCtx);
+  const gates = evaluateAg21ReliabilityGates(baseCtx, candidate);
+  const playbook = buildAg21LabPlaybook(baseCtx, candidate);
+  const decision = resolveAg21SurfaceDecision(baseCtx, candidate);
+
+  const gatePassRatio = gates.passCount / Math.max(1, gates.gates.length);
+  const telemetryHealth = ag21HealthFromSignals(gatePassRatio, convergence.convergenceTone, decision.decision);
+
+  return {
+    convergenceGap: convergence.convergenceGap,
+    convergenceTone: convergence.convergenceTone,
+    gatePassRatio,
+    hintCount: playbook.hints.length,
+    surfaceDecision: decision.decision,
+    readinessScore: decision.readinessScore,
+    telemetryHealth,
+    overallUncertainty: ag21LabelUncertainty(ag21BandFromHealth(telemetryHealth), [
+      `health=${telemetryHealth}`,
+      `gap=${convergence.convergenceGap.toFixed(2)}`
+    ]),
+    authoritative: false
+  };
+}
+
+export function runAg21LabTelemetrySelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 10, seed: 61, actorCash: 850, actorDebt: 130, regionsControlled: 2 };
+  const snap = collectAg21LabTelemetry(ctx);
+
+  push('telemetry_gap', snap.convergenceGap >= 0, String(snap.convergenceGap));
+  push('telemetry_health', ['healthy', 'degraded', 'critical'].includes(snap.telemetryHealth), snap.telemetryHealth);
+  push('telemetry_hints', snap.hintCount >= 1, String(snap.hintCount));
+  push('telemetry_non_auth', snap.authoritative === false, snap.surfaceDecision);
+
+  return out;
+}
+
+// --- bundled from forecast-crosslink-packet.ts ---
+/**
+ * Agent 21 — cross-agent dashboard handoff packet (Agent 22/23, read-only round 7).
+ */
+
+
+export interface Ag21CrosslinkPacket {
+  packetId: string;
+  headline: string;
+  dashboardTags: string[];
+  surfaceDecision: ReturnType<typeof resolveAg21SurfaceDecision>['decision'];
+  telemetryHealth: ReturnType<typeof collectAg21LabTelemetry>['telemetryHealth'];
+  readinessScore: number;
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+function ag21PacketId(ctx: Ag21ForecastContext): string {
+  return `ag21_xlink_${ctx.turn}_${ctx.seed}`;
+}
+
+/** Build a compact handoff packet for evolving UI / dashboard modules. */
+export function buildAg21CrosslinkPacket(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21CrosslinkPacket {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.81),
+      actorDebt: baseCtx.actorDebt + 100
+    } satisfies Ag21ForecastContext);
+
+  const brief = assembleAg21PlayerForecastBrief(baseCtx, candidate);
+  const telemetry = collectAg21LabTelemetry(baseCtx, candidate);
+  const decision = resolveAg21SurfaceDecision(baseCtx, candidate);
+
+  const dashboardTags = [
+    `tier:${brief.surfacingTier}`,
+    `decision:${decision.decision}`,
+    `health:${telemetry.telemetryHealth}`,
+    `convergence:${brief.convergenceTone}`
+  ];
+
+  return {
+    packetId: ag21PacketId(baseCtx),
+    headline: brief.headline,
+    dashboardTags,
+    surfaceDecision: decision.decision,
+    telemetryHealth: telemetry.telemetryHealth,
+    readinessScore: brief.readinessScore,
+    disclaimer: '(Non-authoritative forecast.) Crosslink packet for dashboard wiring only.',
+    overallUncertainty: ag21LabelUncertainty(telemetry.overallUncertainty.band, [
+      ...telemetry.overallUncertainty.factors,
+      `packet=${ag21PacketId(baseCtx)}`
+    ]),
+    authoritative: false
+  };
+}
+
+export function runAg21CrosslinkPacketSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 14, seed: 27, actorCash: 1010, actorDebt: 85, regionsControlled: 3 };
+  const packet = buildAg21CrosslinkPacket(ctx);
+
+  push('xlink_id', packet.packetId.startsWith('ag21_xlink_'), packet.packetId);
+  push('xlink_tags', packet.dashboardTags.length === 4, String(packet.dashboardTags.length));
+  push('xlink_disclaimer', packet.disclaimer.includes('Non-authoritative'), packet.disclaimer.slice(0, 40));
+  push('xlink_non_auth', packet.authoritative === false, packet.headline.slice(0, 30));
+
+  return out;
+}
+
+// --- bundled from forecast-round7-console.tsx ---
+/**
+ * Agent 21 — scale wave round 7 console (surface decision + telemetry + crosslink packet).
+ */
+
+
+export const Ag21ForecastRound7Console: React.FC<{ seed?: number }> = ({ seed = 47 }) => {
+  const base = useMemo(() => createDefaultAg21ForecastContext({ seed, turn: 17 }), [seed]);
+  const stressed = useMemo(
+    () => ({ ...base, actorCash: Math.round(base.actorCash * 0.74), actorDebt: base.actorDebt + 240 }),
+    [base]
+  );
+
+  const decision = useMemo(() => resolveAg21SurfaceDecision(base, stressed), [base, stressed]);
+  const telemetry = useMemo(() => collectAg21LabTelemetry(base, stressed), [base, stressed]);
+  const packet = useMemo(() => buildAg21CrosslinkPacket(base, stressed), [base, stressed]);
+
+  return (
+    <div className="border border-violet-500/30 rounded-lg p-3 bg-slate-950/85 text-xs space-y-2" data-testid="ag21-round7-console">
+      <div className="font-bold text-violet-200">
+        🔬 Forecast Lab Round 7 <span className="text-[10px] font-normal opacity-70">(non-authoritative)</span>
+      </div>
+      <div data-testid="ag21-round7-decision">
+        Decision · {decision.decision} · readiness {decision.readinessScore}/100
+      </div>
+      <div data-testid="ag21-round7-telemetry">
+        Telemetry · {telemetry.telemetryHealth} · gates {(telemetry.gatePassRatio * 100).toFixed(0)}%
+      </div>
+      <div data-testid="ag21-round7-packet">
+        Crosslink · {packet.packetId} · tags {packet.dashboardTags.length}
+      </div>
+    </div>
+  );
+};
+
 
 
 /** Agent 25 — modular self-tests (subset of npm run test:ag21). */
@@ -3106,6 +3398,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21LabPlaybookSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21SurfaceDecisionSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21LabTelemetrySelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21CrosslinkPacketSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({

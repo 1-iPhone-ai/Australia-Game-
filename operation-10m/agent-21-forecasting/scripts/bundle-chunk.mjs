@@ -39,7 +39,11 @@ const SOURCE_FILES = [
   'operation-10m/agent-21-forecasting/forecast-round3-console.tsx',
   'operation-10m/agent-21-forecasting/forecast-round4-console.tsx',
   'operation-10m/agent-21-forecasting/forecast-round5-console.tsx',
-  'operation-10m/agent-21-forecasting/forecast-round6-console.tsx'
+  'operation-10m/agent-21-forecasting/forecast-round6-console.tsx',
+  'operation-10m/agent-21-forecasting/forecast-surface-decision.ts',
+  'operation-10m/agent-21-forecasting/forecast-lab-telemetry.ts',
+  'operation-10m/agent-21-forecasting/forecast-crosslink-packet.ts',
+  'operation-10m/agent-21-forecasting/forecast-round7-console.tsx'
 ];
 
 function stripModuleImports(src) {
@@ -122,6 +126,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21LabPlaybookSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21SurfaceDecisionSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21LabTelemetrySelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21CrosslinkPacketSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({

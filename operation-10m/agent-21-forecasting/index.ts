@@ -25,4 +25,8 @@ export * from './forecast-round3-console';
 export * from './forecast-round4-console';
 export * from './forecast-round5-console';
 export * from './forecast-round6-console';
+export * from './forecast-surface-decision';
+export * from './forecast-lab-telemetry';
+export * from './forecast-crosslink-packet';
+export * from './forecast-round7-console';
 export * from './strategic-forecast-policy-lab';

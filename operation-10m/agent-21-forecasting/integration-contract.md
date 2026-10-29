@@ -8,7 +8,7 @@
 ## Module identity
 
 - `O10M_AGENT21_MODULE_ID` = `forecasting_policy_lab`
-- `O10M_AGENT21_MODULE_VERSION` = `1.8.0`
+- `O10M_AGENT21_MODULE_VERSION` = `1.9.0`
 
 ## Assembly chunk
 
@@ -48,6 +48,9 @@
 | `measureAg21EnsembleConvergence` / `assembleAg21PlayerForecastBrief` | Round 6 convergence + player brief |
 | `buildAg21LabPlaybook` | Round 6 operator playbook hints |
 | `Ag21ForecastRound6Console` | Round 6 UI (`data-testid="ag21-round6-console"`) |
+| `resolveAg21SurfaceDecision` / `collectAg21LabTelemetry` | Round 7 surface decision + lab telemetry rollup |
+| `buildAg21CrosslinkPacket` | Round 7 dashboard crosslink handoff packet |
+| `Ag21ForecastRound7Console` | Round 7 UI (`data-testid="ag21-round7-console"`) |
 
 ## Upstream dependencies (canonical only)
 
