@@ -1,0 +1,63 @@
+{
+  "metadata": {
+    "timestamp": 1600000000000,
+    "gameVersion": "7.0.0",
+    "schemaVersion": "7.0",
+    "saveDescription": "Agent 85 legacy tier fixture"
+  },
+  "player": {
+    "name": "Player",
+    "money": 500,
+    "currentRegion": "sydney",
+    "inventory": [],
+    "visitedRegions": ["sydney"],
+    "challengesCompleted": [],
+    "character": { "name": "Trader" },
+    "level": 1,
+    "xp": 0,
+    "stats": { "strength": 1, "charisma": 1, "luck": 1, "intelligence": 1 },
+    "consecutiveWins": 0,
+    "specialAbilityUses": 0,
+    "masteryUnlocks": [],
+    "actionsUsedThisTurn": 0
+  },
+  "aiPlayer": {
+    "name": "Rival",
+    "money": 500,
+    "currentRegion": "melbourne",
+    "inventory": [],
+    "visitedRegions": ["melbourne"],
+    "challengesCompleted": [],
+    "character": { "name": "Trader" },
+    "level": 1,
+    "xp": 0,
+    "stats": { "strength": 1, "charisma": 1, "luck": 1, "intelligence": 1 },
+    "consecutiveWins": 0,
+    "specialAbilityUses": 0,
+    "masteryUnlocks": [],
+    "actionsUsedThisTurn": 0
+  },
+  "gameState": {
+    "day": 3,
+    "season": "summer",
+    "weather": "clear",
+    "resourcePrices": {},
+    "activeEvents": [],
+    "marketTrend": "stable",
+    "gameMode": "game",
+    "selectedMode": "classic",
+    "currentTurn": "player",
+    "isAiThinking": false,
+    "aiDifficulty": "normal",
+    "actionsThisTurn": 0,
+    "maxActionsPerTurn": 3,
+    "actionLimitsEnabled": true,
+    "playerActionsThisTurn": 0,
+    "allChallengesCompleted": false
+  },
+  "gameSettings": {
+    "randomnessMode": "deterministic",
+    "reduceMotion": true
+  },
+  "notifications": []
+}
