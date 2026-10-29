@@ -212,6 +212,8 @@ export interface GTELPersisted {
   bilateralForwardCycleAdvanceGateSmoothing?: number;
   forwardCycleAdvanceContinuitySmoothing?: number;
   bilateralCommitmentLoopReopenGateSmoothing?: number;
+  reopenedCommitmentLoopContinuitySmoothing?: number;
+  bilateralForwardArcRechargeGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -289,6 +291,8 @@ export interface GTELState {
   bilateralForwardCycleAdvanceGate: GTELBilateralForwardCycleAdvanceGateSnapshot;
   forwardCycleAdvanceContinuity: GTELForwardCycleAdvanceContinuitySnapshot;
   bilateralCommitmentLoopReopenGate: GTELBilateralCommitmentLoopReopenGateSnapshot;
+  reopenedCommitmentLoopContinuity: GTELReopenedCommitmentLoopContinuitySnapshot;
+  bilateralForwardArcRechargeGate: GTELBilateralForwardArcRechargeGateSnapshot;
   inputHash: string;
 }
 
@@ -1056,6 +1060,26 @@ export interface GTELBilateralCommitmentLoopReopenGateSnapshot {
   summary: string;
 }
 
+export type GTELReopenedCommitmentLoopContinuityBand = 'stable' | 'linked' | 'fraying' | 'cut';
+
+export interface GTELReopenedCommitmentLoopContinuitySnapshot {
+  score: number;
+  band: GTELReopenedCommitmentLoopContinuityBand;
+  reopenSupport: number;
+  advanceAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralForwardArcRechargeGateBand = 'recharged' | 'charging' | 'starved' | 'blocked';
+
+export interface GTELBilateralForwardArcRechargeGateSnapshot {
+  score: number;
+  band: GTELBilateralForwardArcRechargeGateBand;
+  loopContinuityFeed: number;
+  renewalLift: number;
+  summary: string;
+}
+
 export interface GlobalTradeEconomyPanelProps {
   state: GTELState | null;
   theme?: { isDark?: boolean };
@@ -1265,6 +1289,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     bilateralForwardCycleAdvanceGateSmoothing: 0.52,
     forwardCycleAdvanceContinuitySmoothing: 0.52,
     bilateralCommitmentLoopReopenGateSmoothing: 0.52,
+    reopenedCommitmentLoopContinuitySmoothing: 0.52,
+    bilateralForwardArcRechargeGateSmoothing: 0.52,
   };
 }
 
@@ -1536,6 +1562,12 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   );
   base.bilateralCommitmentLoopReopenGateSmoothing = sanitizeBilateralCommitmentLoopReopenGateSmoothing(
     r.bilateralCommitmentLoopReopenGateSmoothing,
+  );
+  base.reopenedCommitmentLoopContinuitySmoothing = sanitizeReopenedCommitmentLoopContinuitySmoothing(
+    r.reopenedCommitmentLoopContinuitySmoothing,
+  );
+  base.bilateralForwardArcRechargeGateSmoothing = sanitizeBilateralForwardArcRechargeGateSmoothing(
+    r.bilateralForwardArcRechargeGateSmoothing,
   );
   return base;
 }
@@ -7356,6 +7388,18 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   bilateralCommitmentLoopReopenGateGiNotes,
   bilateralCommitmentLoopReopenGateWorldEvent,
 } from './bilateral-commitment-loop-reopen-gate.ts';
+  computeReopenedCommitmentLoopContinuitySnapshot,
+  reopenedCommitmentLoopContinuityDomesticStress,
+  reopenedCommitmentLoopContinuityExportScale,
+  reopenedCommitmentLoopContinuityGiNotes,
+  reopenedCommitmentLoopContinuityWorldEvent,
+} from './reopened-commitment-loop-continuity.ts';
+  computeBilateralForwardArcRechargeGateSnapshot,
+  bilateralForwardArcRechargeGateDomesticStressRelief,
+  bilateralForwardArcRechargeGateExportScale,
+  bilateralForwardArcRechargeGateGiNotes,
+  bilateralForwardArcRechargeGateWorldEvent,
+} from './bilateral-forward-arc-recharge-gate.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -8184,6 +8228,29 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const loopReopenEvent = bilateralCommitmentLoopReopenGateWorldEvent(bilateralCommitmentLoopReopenGate, turn);
   if (loopReopenEvent) worldEvents.push(loopReopenEvent);
 
+  const reopenedLoopContinuityStep = computeReopenedCommitmentLoopContinuitySnapshot({
+    bilateralCommitmentLoopReopenGate,
+    forwardCycleAdvanceContinuity,
+    persisted,
+  });
+  persisted = reopenedLoopContinuityStep.persisted;
+  const reopenedCommitmentLoopContinuity = reopenedLoopContinuityStep.snapshot;
+  const reopenedLoopContinuityEvent = reopenedCommitmentLoopContinuityWorldEvent(
+    reopenedCommitmentLoopContinuity,
+    turn,
+  );
+  if (reopenedLoopContinuityEvent) worldEvents.push(reopenedLoopContinuityEvent);
+
+  const arcRechargeStep = computeBilateralForwardArcRechargeGateSnapshot({
+    reopenedCommitmentLoopContinuity,
+    capacityRenewalPriming,
+    persisted,
+  });
+  persisted = arcRechargeStep.persisted;
+  const bilateralForwardArcRechargeGate = arcRechargeStep.snapshot;
+  const arcRechargeEvent = bilateralForwardArcRechargeGateWorldEvent(bilateralForwardArcRechargeGate, turn);
+  if (arcRechargeEvent) worldEvents.push(arcRechargeEvent);
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -8237,6 +8304,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         bilateralForwardCycleAdvanceGateExportScale(bilateralForwardCycleAdvanceGate) *
         forwardCycleAdvanceContinuityExportScale(forwardCycleAdvanceContinuity) *
         bilateralCommitmentLoopReopenGateExportScale(bilateralCommitmentLoopReopenGate) *
+        reopenedCommitmentLoopContinuityExportScale(reopenedCommitmentLoopContinuity) *
+        bilateralForwardArcRechargeGateExportScale(bilateralForwardArcRechargeGate) *
         10,
     ) / 10;
 
@@ -8316,6 +8385,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       bilateralCommitmentWindowHandoffDomesticStressRelief(bilateralCommitmentWindowHandoff) +
       bilateralForwardCycleAdvanceGateDomesticStressRelief(bilateralForwardCycleAdvanceGate) +
       bilateralCommitmentLoopReopenGateDomesticStressRelief(bilateralCommitmentLoopReopenGate) +
+      bilateralForwardArcRechargeGateDomesticStressRelief(bilateralForwardArcRechargeGate) +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
@@ -8341,7 +8411,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       commitmentArcContinuityDomesticStress(commitmentArcContinuity) +
       admittedForwardCommitmentContinuityDomesticStress(admittedForwardCommitmentContinuity) +
       commitmentWindowSustainmentDomesticStress(commitmentWindowSustainment) +
-      forwardCycleAdvanceContinuityDomesticStress(forwardCycleAdvanceContinuity),
+      forwardCycleAdvanceContinuityDomesticStress(forwardCycleAdvanceContinuity) +
+      reopenedCommitmentLoopContinuityDomesticStress(reopenedCommitmentLoopContinuity),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -8416,6 +8487,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.bilateralForwardCycleAdvanceGateSmoothing,
     persisted.forwardCycleAdvanceContinuitySmoothing,
     persisted.bilateralCommitmentLoopReopenGateSmoothing,
+    persisted.reopenedCommitmentLoopContinuitySmoothing,
+    persisted.bilateralForwardArcRechargeGateSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -8522,6 +8595,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     bilateralForwardCycleAdvanceGate,
     forwardCycleAdvanceContinuity,
     bilateralCommitmentLoopReopenGate,
+    reopenedCommitmentLoopContinuity,
+    bilateralForwardArcRechargeGate,
     inputHash,
   };
 
@@ -8607,6 +8682,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...bilateralForwardCycleAdvanceGateGiNotes(state.bilateralForwardCycleAdvanceGate));
   lines.push(...forwardCycleAdvanceContinuityGiNotes(state.forwardCycleAdvanceContinuity));
   lines.push(...bilateralCommitmentLoopReopenGateGiNotes(state.bilateralCommitmentLoopReopenGate));
+  lines.push(...reopenedCommitmentLoopContinuityGiNotes(state.reopenedCommitmentLoopContinuity));
+  lines.push(...bilateralForwardArcRechargeGateGiNotes(state.bilateralForwardArcRechargeGate));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
@@ -8826,6 +8903,14 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   createEmptyBilateralCommitmentLoopReopenGateSnapshot,
   bilateralCommitmentLoopReopenGateExportScale,
 } from './bilateral-commitment-loop-reopen-gate.ts';
+  computeReopenedCommitmentLoopContinuitySnapshot,
+  createEmptyReopenedCommitmentLoopContinuitySnapshot,
+  reopenedCommitmentLoopContinuityExportScale,
+} from './reopened-commitment-loop-continuity.ts';
+  computeBilateralForwardArcRechargeGateSnapshot,
+  createEmptyBilateralForwardArcRechargeGateSnapshot,
+  bilateralForwardArcRechargeGateExportScale,
+} from './bilateral-forward-arc-recharge-gate.ts';
   computeBilateralTradeWindowContinuitySnapshot,
   createEmptyBilateralTradeWindowContinuitySnapshot,
 } from './bilateral-trade-window-continuity.ts';
@@ -10467,6 +10552,110 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
       bilateralForwardCycleAdvanceGateExportScale(advanced) >=
         bilateralForwardCycleAdvanceGateExportScale(denied),
       'expected cycle advance scale lift',
+    );
+  });
+
+  ok('forward cycle advance continuity improves when gate is advanced', () => {
+    const gate = {
+      ...createEmptyBilateralForwardCycleAdvanceGateSnapshot(),
+      score: 0.95,
+      band: 'advanced' as const,
+    };
+    const sustainment = {
+      ...createEmptyCommitmentWindowSustainmentSnapshot(),
+      score: 0.93,
+      band: 'sustained' as const,
+    };
+    const locked = computeForwardCycleAdvanceContinuitySnapshot({
+      bilateralForwardCycleAdvanceGate: gate,
+      commitmentWindowSustainment: sustainment,
+      persisted: { ...createEmptyGTELPersisted(), forwardCycleAdvanceContinuitySmoothing: 0.91 },
+    }).snapshot;
+    const broken = computeForwardCycleAdvanceContinuitySnapshot({
+      bilateralForwardCycleAdvanceGate: { ...gate, score: 0.1, band: 'denied' },
+      commitmentWindowSustainment: { ...sustainment, score: 0.08, band: 'dropped' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(locked.score > broken.score, 'expected locked advance continuity');
+    gtelAssert(
+      forwardCycleAdvanceContinuityExportScale(locked) >= forwardCycleAdvanceContinuityExportScale(broken),
+      'expected advance continuity scale lift',
+    );
+  });
+
+  ok('bilateral commitment loop reopen gate improves when continuity is locked in', () => {
+    const continuity = {
+      ...createEmptyForwardCycleAdvanceContinuitySnapshot(),
+      score: 0.96,
+      band: 'locked_in' as const,
+    };
+    const loop = { ...createEmptyBilateralLoopResumptionGateSnapshot(), score: 0.91, band: 'resumed' as const };
+    const reopened = computeBilateralCommitmentLoopReopenGateSnapshot({
+      forwardCycleAdvanceContinuity: continuity,
+      bilateralLoopResumptionGate: loop,
+      persisted: { ...createEmptyGTELPersisted(), bilateralCommitmentLoopReopenGateSmoothing: 0.93 },
+    }).snapshot;
+    const sealed = computeBilateralCommitmentLoopReopenGateSnapshot({
+      forwardCycleAdvanceContinuity: { ...continuity, score: 0.11, band: 'broken' },
+      bilateralLoopResumptionGate: { ...loop, score: 0.09, band: 'closed' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(reopened.score > sealed.score, 'expected loop reopen when locked in');
+    gtelAssert(
+      bilateralCommitmentLoopReopenGateExportScale(reopened) >= bilateralCommitmentLoopReopenGateExportScale(sealed),
+      'expected loop reopen scale lift',
+    );
+  });
+
+  ok('reopened commitment loop continuity improves when loop reopen gate is reopened', () => {
+    const reopen = {
+      ...createEmptyBilateralCommitmentLoopReopenGateSnapshot(),
+      score: 0.95,
+      band: 'reopened' as const,
+    };
+    const advance = {
+      ...createEmptyForwardCycleAdvanceContinuitySnapshot(),
+      score: 0.93,
+      band: 'locked_in' as const,
+    };
+    const stable = computeReopenedCommitmentLoopContinuitySnapshot({
+      bilateralCommitmentLoopReopenGate: reopen,
+      forwardCycleAdvanceContinuity: advance,
+      persisted: { ...createEmptyGTELPersisted(), reopenedCommitmentLoopContinuitySmoothing: 0.92 },
+    }).snapshot;
+    const cut = computeReopenedCommitmentLoopContinuitySnapshot({
+      bilateralCommitmentLoopReopenGate: { ...reopen, score: 0.1, band: 'sealed' },
+      forwardCycleAdvanceContinuity: { ...advance, score: 0.08, band: 'broken' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(stable.score > cut.score, 'expected stable reopened loop continuity');
+    gtelAssert(
+      reopenedCommitmentLoopContinuityExportScale(stable) >= reopenedCommitmentLoopContinuityExportScale(cut),
+      'expected reopened loop continuity scale lift',
+    );
+  });
+
+  ok('bilateral forward arc recharge gate improves when loop continuity is stable', () => {
+    const loop = {
+      ...createEmptyReopenedCommitmentLoopContinuitySnapshot(),
+      score: 0.96,
+      band: 'stable' as const,
+    };
+    const priming = { ...createEmptyCapacityRenewalPrimingSnapshot(), score: 0.9, band: 'primed' as const };
+    const recharged = computeBilateralForwardArcRechargeGateSnapshot({
+      reopenedCommitmentLoopContinuity: loop,
+      capacityRenewalPriming: priming,
+      persisted: { ...createEmptyGTELPersisted(), bilateralForwardArcRechargeGateSmoothing: 0.94 },
+    }).snapshot;
+    const blocked = computeBilateralForwardArcRechargeGateSnapshot({
+      reopenedCommitmentLoopContinuity: { ...loop, score: 0.11, band: 'cut' },
+      capacityRenewalPriming: { ...priming, score: 0.08, band: 'starved' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(recharged.score > blocked.score, 'expected arc recharge when stable');
+    gtelAssert(
+      bilateralForwardArcRechargeGateExportScale(recharged) >= bilateralForwardArcRechargeGateExportScale(blocked),
+      'expected arc recharge scale lift',
     );
   });
 

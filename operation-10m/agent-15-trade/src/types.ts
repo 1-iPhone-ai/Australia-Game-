@@ -208,6 +208,8 @@ export interface GTELPersisted {
   bilateralForwardCycleAdvanceGateSmoothing?: number;
   forwardCycleAdvanceContinuitySmoothing?: number;
   bilateralCommitmentLoopReopenGateSmoothing?: number;
+  reopenedCommitmentLoopContinuitySmoothing?: number;
+  bilateralForwardArcRechargeGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -285,6 +287,8 @@ export interface GTELState {
   bilateralForwardCycleAdvanceGate: GTELBilateralForwardCycleAdvanceGateSnapshot;
   forwardCycleAdvanceContinuity: GTELForwardCycleAdvanceContinuitySnapshot;
   bilateralCommitmentLoopReopenGate: GTELBilateralCommitmentLoopReopenGateSnapshot;
+  reopenedCommitmentLoopContinuity: GTELReopenedCommitmentLoopContinuitySnapshot;
+  bilateralForwardArcRechargeGate: GTELBilateralForwardArcRechargeGateSnapshot;
   inputHash: string;
 }
 
@@ -1049,6 +1053,26 @@ export interface GTELBilateralCommitmentLoopReopenGateSnapshot {
   band: GTELBilateralCommitmentLoopReopenGateBand;
   continuityAnchor: number;
   loopLift: number;
+  summary: string;
+}
+
+export type GTELReopenedCommitmentLoopContinuityBand = 'stable' | 'linked' | 'fraying' | 'cut';
+
+export interface GTELReopenedCommitmentLoopContinuitySnapshot {
+  score: number;
+  band: GTELReopenedCommitmentLoopContinuityBand;
+  reopenSupport: number;
+  advanceAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralForwardArcRechargeGateBand = 'recharged' | 'charging' | 'starved' | 'blocked';
+
+export interface GTELBilateralForwardArcRechargeGateSnapshot {
+  score: number;
+  band: GTELBilateralForwardArcRechargeGateBand;
+  loopContinuityFeed: number;
+  renewalLift: number;
   summary: string;
 }
 
