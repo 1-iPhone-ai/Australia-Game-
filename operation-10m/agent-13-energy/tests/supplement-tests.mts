@@ -75,6 +75,11 @@ import {
   V1014_MICROGRID_VPP_TURN_SCENARIOS,
 } from '../modules/community-microgrid-vpp-orchestration-ledger.ts';
 import {
+  runAgent13CspThermalScaleSelfTests,
+  runAgent13CspThermalTurnScenario,
+  V1014_CSP_THERMAL_TURN_SCENARIOS,
+} from '../modules/csp-molten-salt-thermal-dispatch-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -272,6 +277,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const mgTurn = runAgent13MicrogridVppTurnScenario(V1014_MICROGRID_VPP_TURN_SCENARIOS[0]);
   ok(mgTurn.passed);
+
+  const cspThermal = runAgent13CspThermalScaleSelfTests();
+  ok(cspThermal.failed === 0 && cspThermal.passed >= 7);
+
+  const cspTurn = runAgent13CspThermalTurnScenario(V1014_CSP_THERMAL_TURN_SCENARIOS[0]);
+  ok(cspTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

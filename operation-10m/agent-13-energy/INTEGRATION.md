@@ -24,6 +24,7 @@ operation-10m/agent-13-energy/
   modules/bioenergy-sustainable-feedstock-ledger.ts # scale wave round 16
   modules/pumped-hydro-seasonal-storage-ledger.ts   # scale wave round 17
   modules/community-microgrid-vpp-orchestration-ledger.ts  # scale wave round 18
+  modules/csp-molten-salt-thermal-dispatch-ledger.ts  # scale wave round 19
   modules/climate-hazards.ts
   modules/household-industry-links.ts
   modules/v94-type-stubs.ts                    # drop on merge
@@ -53,6 +54,7 @@ operation-10m/agent-13-energy/
 - Round 8 slices: `regionalCcsMemory`, `regionalFirmingMemory`
 - Round 17 slices: `regionalPumpedHydroMemory`, `regionalSeasonalArbitrageMemory` (with round 16 `regionalFeedstockMemory`, `regionalBioFlexMemory`)
 - Round 18 slices: `regionalMicrogridMemory`, `regionalVppMemory`
+- Round 19 slices: `regionalCspMemory`, `regionalThermalDispatchMemory`
 - Regression id: `v1014_energy` → `runV1014IndustrialEnergyEnvironmentalSelfTests()`
 
 ## Boundaries
