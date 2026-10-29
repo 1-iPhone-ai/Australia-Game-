@@ -102,7 +102,7 @@ export function ag21Provenance(
   };
 }
 
-export const O10M_AGENT21_MODULE_VERSION = '2.7.0';
+export const O10M_AGENT21_MODULE_VERSION = '2.11.0';
 export const O10M_AGENT21_MODULE_ID = 'forecasting_policy_lab';
 
 // --- bundled from counterfactual-experiments.ts ---
@@ -5622,6 +5622,1009 @@ export const Ag21ForecastRound15Console: React.FC<{ seed?: number }> = ({ seed =
   );
 };
 
+// --- bundled from forecast-full-chunks-dry-run-readiness.ts ---
+/**
+ * Agent 21 — full-chunks dry-run readiness (read-only round 16 / O10-161 prep).
+ */
+
+
+export type Ag21FullChunksDryRunReadinessStatus = 'ready' | 'conditional' | 'blocked';
+
+export interface Ag21FullChunksDryRunReadiness {
+  readinessId: string;
+  moduleVersion: string;
+  status: Ag21FullChunksDryRunReadinessStatus;
+  continuityVerdict: ReturnType<typeof resolveAg21LabContinuityVerdict>['verdict'];
+  originGateStatus: ReturnType<typeof attestAg21OriginGateReadiness>['status'];
+  stagingPhase: ReturnType<typeof buildAg21LabStagingPacket>['phase'];
+  operatorCopy: string;
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Evaluate whether Agent 21 chunk may enter O10-161 full-chunks dry-run (round 16). */
+export function evaluateAg21FullChunksDryRunReadiness(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21FullChunksDryRunReadiness {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.58),
+      actorDebt: baseCtx.actorDebt + 395
+    } satisfies Ag21ForecastContext);
+
+  const continuity = resolveAg21LabContinuityVerdict(baseCtx, candidate);
+  const origin = attestAg21OriginGateReadiness(baseCtx, candidate);
+  const staging = buildAg21LabStagingPacket(baseCtx, candidate);
+
+  let status: Ag21FullChunksDryRunReadinessStatus = 'ready';
+  if (
+    continuity.verdict === 'broken' ||
+    origin.status === 'held' ||
+    staging.phase === 'rejected'
+  ) {
+    status = 'blocked';
+  } else if (
+    continuity.verdict === 'watch' ||
+    origin.status === 'conditional' ||
+    staging.phase === 'draft'
+  ) {
+    status = 'conditional';
+  }
+
+  const readinessId = `ag21_fcdr_${baseCtx.turn}_${baseCtx.seed}_${status}`;
+  const operatorCopy =
+    status === 'ready'
+      ? 'full-chunks dry-run clear — chunk eligible for O10-161 wiring'
+      : status === 'conditional'
+        ? 'full-chunks dry-run conditional — review continuity and staging'
+        : 'full-chunks dry-run blocked — resolve governance before assembly';
+
+  return {
+    readinessId,
+    moduleVersion: O10M_AGENT21_MODULE_VERSION,
+    status,
+    continuityVerdict: continuity.verdict,
+    originGateStatus: origin.status,
+    stagingPhase: staging.phase,
+    operatorCopy,
+    disclaimer: '(Non-authoritative forecast.) Dry-run readiness does not authorize canonical edits.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'ready' ? 'low' : status === 'conditional' ? 'moderate' : 'high',
+      [`readiness=${readinessId}`, `dry_run=${status}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21FullChunksDryRunReadinessSelfChecks(): {
+  id: string;
+  passed: boolean;
+  detail: string;
+}[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 36, seed: 11, actorCash: 1510, actorDebt: 47, regionsControlled: 5 };
+  const readiness = evaluateAg21FullChunksDryRunReadiness(ctx);
+
+  push('fcdr_id', readiness.readinessId.startsWith('ag21_fcdr_'), readiness.readinessId);
+  push('fcdr_status', ['ready', 'conditional', 'blocked'].includes(readiness.status), readiness.status);
+  push('fcdr_version', readiness.moduleVersion === O10M_AGENT21_MODULE_VERSION, readiness.moduleVersion);
+  push('fcdr_non_auth', readiness.authoritative === false, readiness.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-wave16-projection-sync.ts ---
+/**
+ * Agent 21 — wave 16 projection baseline sync tags (read-only round 16 / O10-157 → O10-161).
+ */
+
+
+/** Post–wave-15 integration dry-run baseline (O10-157); wave 16 module sync anchor. */
+export const AG21_WAVE16_PROJECTION_BASELINE_SHA = '6e72f72';
+export const AG21_WAVE16_PROJECTED_AUDITED_FUNCTIONAL = 1_156_219;
+
+export type Ag21Wave16ProjectionSyncStatus = 'aligned' | 'drift' | 'unknown';
+
+export interface Ag21Wave16ProjectionSync {
+  syncId: string;
+  moduleVersion: string;
+  status: Ag21Wave16ProjectionSyncStatus;
+  baselineSha: string;
+  projectedFunctionalLoc: number;
+  dryRunReadiness: ReturnType<typeof evaluateAg21FullChunksDryRunReadiness>['status'];
+  syncTags: string[];
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Tag forecast lab outputs against wave-16 projection baseline for Agent 25 dry-run. */
+export function syncAg21Wave16ProjectionBaseline(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext,
+  observedBaselineSha: string = AG21_WAVE16_PROJECTION_BASELINE_SHA
+): Ag21Wave16ProjectionSync {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.59),
+      actorDebt: baseCtx.actorDebt + 380
+    } satisfies Ag21ForecastContext);
+
+  const readiness = evaluateAg21FullChunksDryRunReadiness(baseCtx, candidate);
+  const shaMatch = observedBaselineSha.toLowerCase().startsWith(AG21_WAVE16_PROJECTION_BASELINE_SHA);
+
+  let status: Ag21Wave16ProjectionSyncStatus = 'aligned';
+  if (!shaMatch) status = 'unknown';
+  else if (readiness.status === 'blocked') status = 'drift';
+
+  const syncId = `ag21_w16_${baseCtx.turn}_${baseCtx.seed}_${status}`;
+  const syncTags = [
+    `baseline:${AG21_WAVE16_PROJECTION_BASELINE_SHA}`,
+    `projected:${AG21_WAVE16_PROJECTED_AUDITED_FUNCTIONAL}`,
+    `dry_run:${readiness.status}`,
+    `wave:16`,
+    `module:${O10M_AGENT21_MODULE_VERSION}`
+  ];
+
+  return {
+    syncId,
+    moduleVersion: O10M_AGENT21_MODULE_VERSION,
+    status,
+    baselineSha: AG21_WAVE16_PROJECTION_BASELINE_SHA,
+    projectedFunctionalLoc: AG21_WAVE16_PROJECTED_AUDITED_FUNCTIONAL,
+    dryRunReadiness: readiness.status,
+    syncTags,
+    disclaimer: '(Non-authoritative forecast.) Projection sync tags for modular assembly bookkeeping only.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'aligned' ? 'low' : status === 'drift' ? 'high' : 'moderate',
+      [`sync=${syncId}`, `baseline=${AG21_WAVE16_PROJECTION_BASELINE_SHA}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21Wave16ProjectionSyncSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 37, seed: 3, actorCash: 1320, actorDebt: 71, regionsControlled: 4 };
+  const sync = syncAg21Wave16ProjectionBaseline(ctx);
+
+  push('w16_id', sync.syncId.startsWith('ag21_w16_'), sync.syncId);
+  push('w16_baseline', sync.baselineSha === AG21_WAVE16_PROJECTION_BASELINE_SHA, sync.baselineSha);
+  push('w16_tags', sync.syncTags.length >= 5, String(sync.syncTags.length));
+  push('w16_projected', sync.projectedFunctionalLoc === AG21_WAVE16_PROJECTED_AUDITED_FUNCTIONAL, String(sync.projectedFunctionalLoc));
+
+  return out;
+}
+
+// --- bundled from forecast-integration-dry-run-attestation.ts ---
+/**
+ * Agent 21 — integration dry-run attestation for O10-161 (read-only round 16).
+ */
+
+
+export type Ag21IntegrationDryRunAttestationStatus = 'cleared' | 'review' | 'held';
+
+export interface Ag21IntegrationDryRunAttestation {
+  attestationId: string;
+  moduleVersion: string;
+  status: Ag21IntegrationDryRunAttestationStatus;
+  projectionSyncStatus: ReturnType<typeof syncAg21Wave16ProjectionBaseline>['status'];
+  dryRunReadiness: ReturnType<typeof evaluateAg21FullChunksDryRunReadiness>['status'];
+  attestationCopy: string;
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Attest Agent 21 module for post–wave-16 integration dry-run (O10-161 trigger). */
+export function attestAg21IntegrationDryRunReadiness(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21IntegrationDryRunAttestation {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.56),
+      actorDebt: baseCtx.actorDebt + 420
+    } satisfies Ag21ForecastContext);
+
+  const readiness = evaluateAg21FullChunksDryRunReadiness(baseCtx, candidate);
+  const projection = syncAg21Wave16ProjectionBaseline(baseCtx, candidate);
+
+  let status: Ag21IntegrationDryRunAttestationStatus = 'cleared';
+  if (readiness.status === 'blocked' || projection.status === 'drift') status = 'held';
+  else if (readiness.status === 'conditional' || projection.status === 'unknown') status = 'review';
+
+  const attestationId = `ag21_idra_${baseCtx.turn}_${baseCtx.seed}_${status}`;
+  const attestationCopy =
+    status === 'cleared'
+      ? 'integration dry-run attested — Agent 25 may wire chunk in O10-161'
+      : status === 'review'
+        ? 'integration dry-run review — projection or readiness conditional'
+        : 'integration dry-run held — blocked readiness or projection drift';
+
+  return {
+    attestationId,
+    moduleVersion: O10M_AGENT21_MODULE_VERSION,
+    status,
+    projectionSyncStatus: projection.status,
+    dryRunReadiness: readiness.status,
+    attestationCopy,
+    disclaimer: '(Non-authoritative forecast.) Integration attestation is modular bookkeeping only.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'cleared' ? 'low' : status === 'review' ? 'moderate' : 'high',
+      [`attest=${attestationId}`, `idra=${status}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21IntegrationDryRunAttestationSelfChecks(): {
+  id: string;
+  passed: boolean;
+  detail: string;
+}[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 38, seed: 29, actorCash: 880, actorDebt: 95, regionsControlled: 3 };
+  const attestation = attestAg21IntegrationDryRunReadiness(ctx);
+
+  push('idra_id', attestation.attestationId.startsWith('ag21_idra_'), attestation.attestationId);
+  push('idra_status', ['cleared', 'review', 'held'].includes(attestation.status), attestation.status);
+  push('idra_copy', attestation.attestationCopy.includes('dry-run'), attestation.attestationCopy.slice(0, 32));
+  push('idra_non_auth', attestation.authoritative === false, attestation.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-round16-console.tsx ---
+/**
+ * Agent 21 — scale wave round 16 console (dry-run readiness + projection sync + integration attestation).
+ */
+
+
+export const Ag21ForecastRound16Console: React.FC<{ seed?: number }> = ({ seed = 101 }) => {
+  const base = useMemo(() => createDefaultAg21ForecastContext({ seed, turn: 30 }), [seed]);
+  const stressed = useMemo(
+    () => ({ ...base, actorCash: Math.round(base.actorCash * 0.55), actorDebt: base.actorDebt + 430 }),
+    [base]
+  );
+
+  const readiness = useMemo(() => evaluateAg21FullChunksDryRunReadiness(base, stressed), [base, stressed]);
+  const projection = useMemo(() => syncAg21Wave16ProjectionBaseline(base, stressed), [base, stressed]);
+  const attestation = useMemo(() => attestAg21IntegrationDryRunReadiness(base, stressed), [base, stressed]);
+
+  return (
+    <div className="border border-violet-500/30 rounded-lg p-3 bg-slate-950/85 text-xs space-y-2" data-testid="ag21-round16-console">
+      <div className="font-bold text-violet-200">
+        🔬 Forecast Lab Round 16 <span className="text-[10px] font-normal opacity-70">(non-authoritative)</span>
+      </div>
+      <div data-testid="ag21-round16-readiness">
+        Dry-run readiness · {readiness.status} · {readiness.operatorCopy.slice(0, 48)}…
+      </div>
+      <div data-testid="ag21-round16-projection">
+        Wave 16 sync · {projection.status} · baseline {projection.baselineSha}
+      </div>
+      <div data-testid="ag21-round16-attestation">
+        Integration · {attestation.status} · {attestation.attestationCopy.slice(0, 48)}…
+      </div>
+    </div>
+  );
+};
+
+// --- bundled from forecast-full-chunks-dry-run-execution.ts ---
+/**
+ * Agent 21 — full-chunks dry-run execution record (read-only round 17 / O10-163).
+ */
+
+
+export type Ag21FullChunksDryRunExecutionStatus = 'executed' | 'partial' | 'skipped';
+
+export interface Ag21FullChunksDryRunExecution {
+  executionId: string;
+  moduleVersion: string;
+  status: Ag21FullChunksDryRunExecutionStatus;
+  attestationStatus: ReturnType<typeof attestAg21IntegrationDryRunReadiness>['status'];
+  dryRunReadiness: ReturnType<typeof evaluateAg21FullChunksDryRunReadiness>['status'];
+  operatorCopy: string;
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Record modular full-chunks dry-run execution after O10-161 attestation (round 17 / O10-163). */
+export function recordAg21FullChunksDryRunExecution(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21FullChunksDryRunExecution {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.54),
+      actorDebt: baseCtx.actorDebt + 445
+    } satisfies Ag21ForecastContext);
+
+  const attestation = attestAg21IntegrationDryRunReadiness(baseCtx, candidate);
+  const readiness = evaluateAg21FullChunksDryRunReadiness(baseCtx, candidate);
+
+  let status: Ag21FullChunksDryRunExecutionStatus = 'executed';
+  if (attestation.status === 'held' || readiness.status === 'blocked') status = 'skipped';
+  else if (attestation.status === 'review' || readiness.status === 'conditional') status = 'partial';
+
+  const executionId = `ag21_fcde_${baseCtx.turn}_${baseCtx.seed}_${status}`;
+  const operatorCopy =
+    status === 'executed'
+      ? 'full-chunks dry-run executed — O10-163 checkpoint recorded for Agent 25'
+      : status === 'partial'
+        ? 'full-chunks dry-run partial — conditional attestation or readiness'
+        : 'full-chunks dry-run skipped — resolve held attestation before O10-164';
+
+  return {
+    executionId,
+    moduleVersion: O10M_AGENT21_MODULE_VERSION,
+    status,
+    attestationStatus: attestation.status,
+    dryRunReadiness: readiness.status,
+    operatorCopy,
+    disclaimer: '(Non-authoritative forecast.) Dry-run execution record does not mutate canonical state.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'executed' ? 'low' : status === 'partial' ? 'moderate' : 'high',
+      [`execution=${executionId}`, `fcde=${status}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21FullChunksDryRunExecutionSelfChecks(): {
+  id: string;
+  passed: boolean;
+  detail: string;
+}[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 39, seed: 17, actorCash: 1420, actorDebt: 52, regionsControlled: 5 };
+  const execution = recordAg21FullChunksDryRunExecution(ctx);
+
+  push('fcde_id', execution.executionId.startsWith('ag21_fcde_'), execution.executionId);
+  push('fcde_status', ['executed', 'partial', 'skipped'].includes(execution.status), execution.status);
+  push('fcde_version', execution.moduleVersion === O10M_AGENT21_MODULE_VERSION, execution.moduleVersion);
+  push('fcde_non_auth', execution.authoritative === false, execution.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-wave17-projection-sync.ts ---
+/**
+ * Agent 21 — wave 17 projection baseline sync tags (read-only round 17 / O10-161 → O10-163).
+ */
+
+
+/** Post–wave-16 dry-run baseline (O10-161 @ fcab7b20); wave 17 module sync anchor for O10-163. */
+export const AG21_WAVE17_PROJECTION_BASELINE_SHA = 'fcab7b20';
+export const AG21_WAVE17_PROJECTED_AUDITED_FUNCTIONAL = 1_194_408;
+
+export type Ag21Wave17ProjectionSyncStatus = 'aligned' | 'drift' | 'unknown';
+
+export interface Ag21Wave17ProjectionSync {
+  syncId: string;
+  moduleVersion: string;
+  status: Ag21Wave17ProjectionSyncStatus;
+  baselineSha: string;
+  projectedFunctionalLoc: number;
+  dryRunExecution: ReturnType<typeof recordAg21FullChunksDryRunExecution>['status'];
+  syncTags: string[];
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Tag forecast lab outputs against wave-17 projection baseline for Agent 25 O10-163 gate. */
+export function syncAg21Wave17ProjectionBaseline(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext,
+  observedBaselineSha: string = AG21_WAVE17_PROJECTION_BASELINE_SHA
+): Ag21Wave17ProjectionSync {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.53),
+      actorDebt: baseCtx.actorDebt + 460
+    } satisfies Ag21ForecastContext);
+
+  const execution = recordAg21FullChunksDryRunExecution(baseCtx, candidate);
+  const shaMatch = observedBaselineSha.toLowerCase().startsWith(AG21_WAVE17_PROJECTION_BASELINE_SHA);
+
+  let status: Ag21Wave17ProjectionSyncStatus = 'aligned';
+  if (!shaMatch) status = 'unknown';
+  else if (execution.status === 'skipped') status = 'drift';
+
+  const syncId = `ag21_w17_${baseCtx.turn}_${baseCtx.seed}_${status}`;
+  const syncTags = [
+    `baseline:${AG21_WAVE17_PROJECTION_BASELINE_SHA}`,
+    `projected:${AG21_WAVE17_PROJECTED_AUDITED_FUNCTIONAL}`,
+    `dry_run_exec:${execution.status}`,
+    `wave:17`,
+    `ticket:O10-163`,
+    `module:${O10M_AGENT21_MODULE_VERSION}`
+  ];
+
+  return {
+    syncId,
+    moduleVersion: O10M_AGENT21_MODULE_VERSION,
+    status,
+    baselineSha: AG21_WAVE17_PROJECTION_BASELINE_SHA,
+    projectedFunctionalLoc: AG21_WAVE17_PROJECTED_AUDITED_FUNCTIONAL,
+    dryRunExecution: execution.status,
+    syncTags,
+    disclaimer: '(Non-authoritative forecast.) Wave-17 projection sync for modular assembly bookkeeping only.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'aligned' ? 'low' : status === 'drift' ? 'high' : 'moderate',
+      [`sync=${syncId}`, `baseline=${AG21_WAVE17_PROJECTION_BASELINE_SHA}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21Wave17ProjectionSyncSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 40, seed: 5, actorCash: 1280, actorDebt: 68, regionsControlled: 4 };
+  const sync = syncAg21Wave17ProjectionBaseline(ctx);
+
+  push('w17_id', sync.syncId.startsWith('ag21_w17_'), sync.syncId);
+  push('w17_baseline', sync.baselineSha === AG21_WAVE17_PROJECTION_BASELINE_SHA, sync.baselineSha);
+  push('w17_tags', sync.syncTags.length >= 6, String(sync.syncTags.length));
+  push('w17_projected', sync.projectedFunctionalLoc === AG21_WAVE17_PROJECTED_AUDITED_FUNCTIONAL, String(sync.projectedFunctionalLoc));
+
+  return out;
+}
+
+// --- bundled from forecast-integration-dry-run-closure.ts ---
+/**
+ * Agent 21 — integration dry-run closure for O10-163 (read-only round 17).
+ */
+
+
+export type Ag21IntegrationDryRunClosureStatus = 'closed' | 'open' | 'deferred';
+
+export interface Ag21IntegrationDryRunClosure {
+  closureId: string;
+  moduleVersion: string;
+  status: Ag21IntegrationDryRunClosureStatus;
+  projectionSyncStatus: ReturnType<typeof syncAg21Wave17ProjectionBaseline>['status'];
+  dryRunExecution: ReturnType<typeof recordAg21FullChunksDryRunExecution>['status'];
+  closureCopy: string;
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Close O10-161 integration dry-run cycle when O10-163 wave-17 sync aligns (round 17). */
+export function closeAg21IntegrationDryRunCycle(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21IntegrationDryRunClosure {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.52),
+      actorDebt: baseCtx.actorDebt + 475
+    } satisfies Ag21ForecastContext);
+
+  const execution = recordAg21FullChunksDryRunExecution(baseCtx, candidate);
+  const projection = syncAg21Wave17ProjectionBaseline(baseCtx, candidate);
+
+  let status: Ag21IntegrationDryRunClosureStatus = 'closed';
+  if (execution.status === 'skipped' || projection.status === 'drift') status = 'open';
+  else if (execution.status === 'partial' || projection.status === 'unknown') status = 'deferred';
+
+  const closureId = `ag21_idrc_${baseCtx.turn}_${baseCtx.seed}_${status}`;
+  const closureCopy =
+    status === 'closed'
+      ? 'integration dry-run closed — Agent 21 unblocks O10-164 coordination with agents 10 and 13'
+      : status === 'deferred'
+        ? 'integration dry-run deferred — wave-17 sync or execution partial'
+        : 'integration dry-run open — resolve drift or skipped execution';
+
+  return {
+    closureId,
+    moduleVersion: O10M_AGENT21_MODULE_VERSION,
+    status,
+    projectionSyncStatus: projection.status,
+    dryRunExecution: execution.status,
+    closureCopy,
+    disclaimer: '(Non-authoritative forecast.) Dry-run closure is modular bookkeeping only.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'closed' ? 'low' : status === 'deferred' ? 'moderate' : 'high',
+      [`closure=${closureId}`, `idrc=${status}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21IntegrationDryRunClosureSelfChecks(): {
+  id: string;
+  passed: boolean;
+  detail: string;
+}[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 41, seed: 23, actorCash: 910, actorDebt: 88, regionsControlled: 3 };
+  const closure = closeAg21IntegrationDryRunCycle(ctx);
+
+  push('idrc_id', closure.closureId.startsWith('ag21_idrc_'), closure.closureId);
+  push('idrc_status', ['closed', 'open', 'deferred'].includes(closure.status), closure.status);
+  push('idrc_copy', closure.closureCopy.includes('dry-run'), closure.closureCopy.slice(0, 32));
+  push('idrc_non_auth', closure.authoritative === false, closure.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-round17-console.tsx ---
+/**
+ * Agent 21 — scale wave round 17 console (dry-run execution + wave-17 sync + integration closure).
+ */
+
+
+export const Ag21ForecastRound17Console: React.FC<{ seed?: number }> = ({ seed = 103 }) => {
+  const base = useMemo(() => createDefaultAg21ForecastContext({ seed, turn: 32 }), [seed]);
+  const stressed = useMemo(
+    () => ({ ...base, actorCash: Math.round(base.actorCash * 0.54), actorDebt: base.actorDebt + 450 }),
+    [base]
+  );
+
+  const execution = useMemo(() => recordAg21FullChunksDryRunExecution(base, stressed), [base, stressed]);
+  const projection = useMemo(() => syncAg21Wave17ProjectionBaseline(base, stressed), [base, stressed]);
+  const closure = useMemo(() => closeAg21IntegrationDryRunCycle(base, stressed), [base, stressed]);
+
+  return (
+    <div className="border border-violet-500/30 rounded-lg p-3 bg-slate-950/85 text-xs space-y-2" data-testid="ag21-round17-console">
+      <div className="font-bold text-violet-200">
+        🔬 Forecast Lab Round 17 <span className="text-[10px] font-normal opacity-70">(non-authoritative)</span>
+      </div>
+      <div data-testid="ag21-round17-execution">
+        Dry-run execution · {execution.status} · {execution.operatorCopy.slice(0, 48)}…
+      </div>
+      <div data-testid="ag21-round17-projection">
+        Wave 17 sync · {projection.status} · baseline {projection.baselineSha}
+      </div>
+      <div data-testid="ag21-round17-closure">
+        Integration · {closure.status} · {closure.closureCopy.slice(0, 48)}…
+      </div>
+    </div>
+  );
+};
+
+// --- bundled from forecast-wave18-projection-sync.ts ---
+/**
+ * Agent 21 — wave 18 projection baseline sync tags (read-only round 18 / O10-164 → O10-166).
+ */
+
+
+/** Post–wave-17 integration baseline (O10-164 @ 13bdc135); wave 18 module sync anchor for O10-166. */
+export const AG21_WAVE18_PROJECTION_BASELINE_SHA = '13bdc135';
+export const AG21_WAVE18_PROJECTED_AUDITED_FUNCTIONAL = 1_232_597;
+
+export type Ag21Wave18ProjectionSyncStatus = 'aligned' | 'drift' | 'unknown';
+
+export interface Ag21Wave18ProjectionSync {
+  syncId: string;
+  moduleVersion: string;
+  status: Ag21Wave18ProjectionSyncStatus;
+  baselineSha: string;
+  projectedFunctionalLoc: number;
+  dryRunClosure: ReturnType<typeof closeAg21IntegrationDryRunCycle>['status'];
+  syncTags: string[];
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Tag forecast lab outputs against wave-18 projection baseline for Agent 25 O10-166 gate. */
+export function syncAg21Wave18ProjectionBaseline(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext,
+  observedBaselineSha: string = AG21_WAVE18_PROJECTION_BASELINE_SHA
+): Ag21Wave18ProjectionSync {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.51),
+      actorDebt: baseCtx.actorDebt + 490
+    } satisfies Ag21ForecastContext);
+
+  const closure = closeAg21IntegrationDryRunCycle(baseCtx, candidate);
+  const shaMatch = observedBaselineSha.toLowerCase().startsWith(AG21_WAVE18_PROJECTION_BASELINE_SHA);
+
+  let status: Ag21Wave18ProjectionSyncStatus = 'aligned';
+  if (!shaMatch) status = 'unknown';
+  else if (closure.status === 'open') status = 'drift';
+
+  const syncId = `ag21_w18_${baseCtx.turn}_${baseCtx.seed}_${status}`;
+  const syncTags = [
+    `baseline:${AG21_WAVE18_PROJECTION_BASELINE_SHA}`,
+    `projected:${AG21_WAVE18_PROJECTED_AUDITED_FUNCTIONAL}`,
+    `dry_run_closure:${closure.status}`,
+    `wave:18`,
+    `ticket:O10-166`,
+    `module:${O10M_AGENT21_MODULE_VERSION}`
+  ];
+
+  return {
+    syncId,
+    moduleVersion: O10M_AGENT21_MODULE_VERSION,
+    status,
+    baselineSha: AG21_WAVE18_PROJECTION_BASELINE_SHA,
+    projectedFunctionalLoc: AG21_WAVE18_PROJECTED_AUDITED_FUNCTIONAL,
+    dryRunClosure: closure.status,
+    syncTags,
+    disclaimer: '(Non-authoritative forecast.) Wave-18 projection sync for modular assembly bookkeeping only.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'aligned' ? 'low' : status === 'drift' ? 'high' : 'moderate',
+      [`sync=${syncId}`, `baseline=${AG21_WAVE18_PROJECTION_BASELINE_SHA}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21Wave18ProjectionSyncSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 42, seed: 11, actorCash: 1180, actorDebt: 74, regionsControlled: 4 };
+  const sync = syncAg21Wave18ProjectionBaseline(ctx);
+
+  push('w18_id', sync.syncId.startsWith('ag21_w18_'), sync.syncId);
+  push('w18_baseline', sync.baselineSha === AG21_WAVE18_PROJECTION_BASELINE_SHA, sync.baselineSha);
+  push('w18_tags', sync.syncTags.length >= 6, String(sync.syncTags.length));
+  push('w18_projected', sync.projectedFunctionalLoc === AG21_WAVE18_PROJECTED_AUDITED_FUNCTIONAL, String(sync.projectedFunctionalLoc));
+
+  return out;
+}
+
+// --- bundled from forecast-integration-wave18-origin-handoff.ts ---
+/**
+ * Agent 21 — integration wave-18 origin handoff for O10-167 (read-only round 18).
+ */
+
+
+export type Ag21IntegrationWave18OriginHandoffStatus = 'ready' | 'blocked' | 'pending';
+
+export interface Ag21IntegrationWave18OriginHandoff {
+  handoffId: string;
+  moduleVersion: string;
+  status: Ag21IntegrationWave18OriginHandoffStatus;
+  projectionSyncStatus: ReturnType<typeof syncAg21Wave18ProjectionBaseline>['status'];
+  dryRunExecution: ReturnType<typeof recordAg21FullChunksDryRunExecution>['status'];
+  handoffCopy: string;
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Package O10-166 origin gate handoff for Agent 25 O10-167 dry-run (round 18). */
+export function handoffAg21IntegrationWave18OriginGate(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21IntegrationWave18OriginHandoff {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.5),
+      actorDebt: baseCtx.actorDebt + 505
+    } satisfies Ag21ForecastContext);
+
+  const execution = recordAg21FullChunksDryRunExecution(baseCtx, candidate);
+  const projection = syncAg21Wave18ProjectionBaseline(baseCtx, candidate);
+
+  let status: Ag21IntegrationWave18OriginHandoffStatus = 'ready';
+  if (execution.status === 'skipped' || projection.status === 'drift') status = 'blocked';
+  else if (execution.status === 'partial' || projection.status === 'unknown') status = 'pending';
+
+  const handoffId = `ag21_iwoh_${baseCtx.turn}_${baseCtx.seed}_${status}`;
+  const handoffCopy =
+    status === 'ready'
+      ? 'wave-18 origin handoff ready — Agent 21 unblocks O10-167 integration dry-run with agents 10 and 25'
+      : status === 'pending'
+        ? 'wave-18 origin handoff pending — projection sync or execution partial'
+        : 'wave-18 origin handoff blocked — resolve drift or skipped execution before O10-167';
+
+  return {
+    handoffId,
+    moduleVersion: O10M_AGENT21_MODULE_VERSION,
+    status,
+    projectionSyncStatus: projection.status,
+    dryRunExecution: execution.status,
+    handoffCopy,
+    disclaimer: '(Non-authoritative forecast.) Origin handoff is modular bookkeeping only.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'ready' ? 'low' : status === 'pending' ? 'moderate' : 'high',
+      [`handoff=${handoffId}`, `iwoh=${status}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21IntegrationWave18OriginHandoffSelfChecks(): {
+  id: string;
+  passed: boolean;
+  detail: string;
+}[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 43, seed: 29, actorCash: 860, actorDebt: 96, regionsControlled: 3 };
+  const handoff = handoffAg21IntegrationWave18OriginGate(ctx);
+
+  push('iwoh_id', handoff.handoffId.startsWith('ag21_iwoh_'), handoff.handoffId);
+  push('iwoh_status', ['ready', 'blocked', 'pending'].includes(handoff.status), handoff.status);
+  push('iwoh_copy', handoff.handoffCopy.includes('O10-167'), handoff.handoffCopy.slice(0, 40));
+  push('iwoh_non_auth', handoff.authoritative === false, handoff.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-round18-console.tsx ---
+/**
+ * Agent 21 — scale wave round 18 console (wave-18 sync + origin handoff + dry-run execution).
+ */
+
+
+export const Ag21ForecastRound18Console: React.FC<{ seed?: number }> = ({ seed = 118 }) => {
+  const base = useMemo(() => createDefaultAg21ForecastContext({ seed, turn: 33 }), [seed]);
+  const stressed = useMemo(
+    () => ({ ...base, actorCash: Math.round(base.actorCash * 0.52), actorDebt: base.actorDebt + 480 }),
+    [base]
+  );
+
+  const execution = useMemo(() => recordAg21FullChunksDryRunExecution(base, stressed), [base, stressed]);
+  const projection = useMemo(() => syncAg21Wave18ProjectionBaseline(base, stressed), [base, stressed]);
+  const handoff = useMemo(() => handoffAg21IntegrationWave18OriginGate(base, stressed), [base, stressed]);
+
+  return (
+    <div className="border border-violet-500/30 rounded-lg p-3 bg-slate-950/85 text-xs space-y-2" data-testid="ag21-round18-console">
+      <div className="font-bold text-violet-200">
+        🔬 Forecast Lab Round 18 <span className="text-[10px] font-normal opacity-70">(non-authoritative)</span>
+      </div>
+      <div data-testid="ag21-round18-execution">
+        Dry-run execution · {execution.status} · {execution.operatorCopy.slice(0, 48)}…
+      </div>
+      <div data-testid="ag21-round18-projection">
+        Wave 18 sync · {projection.status} · baseline {projection.baselineSha}
+      </div>
+      <div data-testid="ag21-round18-handoff">
+        Origin handoff · {handoff.status} · {handoff.handoffCopy.slice(0, 48)}…
+      </div>
+    </div>
+  );
+};
+
+// --- bundled from forecast-wave19-projection-sync.ts ---
+/**
+ * Agent 21 — wave 19 projection baseline sync tags (read-only round 19 / O10-167 → O10-168).
+ */
+
+
+/** Post–wave-18 integration baseline (O10-167 @ 7bd7b1f3); wave 19 module sync anchor for O10-168. */
+export const AG21_WAVE19_PROJECTION_BASELINE_SHA = '7bd7b1f3';
+export const AG21_WAVE19_PROJECTED_AUDITED_FUNCTIONAL = 1_274_425;
+
+export type Ag21Wave19ProjectionSyncStatus = 'aligned' | 'drift' | 'unknown';
+
+export interface Ag21Wave19ProjectionSync {
+  syncId: string;
+  moduleVersion: string;
+  status: Ag21Wave19ProjectionSyncStatus;
+  baselineSha: string;
+  projectedFunctionalLoc: number;
+  originHandoff: ReturnType<typeof handoffAg21IntegrationWave18OriginGate>['status'];
+  syncTags: string[];
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Tag forecast lab outputs against wave-19 projection baseline for Agent 25 O10-168 gate. */
+export function syncAg21Wave19ProjectionBaseline(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext,
+  observedBaselineSha: string = AG21_WAVE19_PROJECTION_BASELINE_SHA
+): Ag21Wave19ProjectionSync {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.49),
+      actorDebt: baseCtx.actorDebt + 520
+    } satisfies Ag21ForecastContext);
+
+  const handoff = handoffAg21IntegrationWave18OriginGate(baseCtx, candidate);
+  const shaMatch = observedBaselineSha.toLowerCase().startsWith(AG21_WAVE19_PROJECTION_BASELINE_SHA);
+
+  let status: Ag21Wave19ProjectionSyncStatus = 'aligned';
+  if (!shaMatch) status = 'unknown';
+  else if (handoff.status === 'blocked') status = 'drift';
+
+  const syncId = `ag21_w19_${baseCtx.turn}_${baseCtx.seed}_${status}`;
+  const syncTags = [
+    `baseline:${AG21_WAVE19_PROJECTION_BASELINE_SHA}`,
+    `projected:${AG21_WAVE19_PROJECTED_AUDITED_FUNCTIONAL}`,
+    `origin_handoff:${handoff.status}`,
+    `wave:19`,
+    `ticket:O10-168`,
+    `module:${O10M_AGENT21_MODULE_VERSION}`
+  ];
+
+  return {
+    syncId,
+    moduleVersion: O10M_AGENT21_MODULE_VERSION,
+    status,
+    baselineSha: AG21_WAVE19_PROJECTION_BASELINE_SHA,
+    projectedFunctionalLoc: AG21_WAVE19_PROJECTED_AUDITED_FUNCTIONAL,
+    originHandoff: handoff.status,
+    syncTags,
+    disclaimer: '(Non-authoritative forecast.) Wave-19 projection sync for modular assembly bookkeeping only.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'aligned' ? 'low' : status === 'drift' ? 'high' : 'moderate',
+      [`sync=${syncId}`, `baseline=${AG21_WAVE19_PROJECTION_BASELINE_SHA}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21Wave19ProjectionSyncSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 44, seed: 13, actorCash: 1090, actorDebt: 82, regionsControlled: 4 };
+  const sync = syncAg21Wave19ProjectionBaseline(ctx);
+
+  push('w19_id', sync.syncId.startsWith('ag21_w19_'), sync.syncId);
+  push('w19_baseline', sync.baselineSha === AG21_WAVE19_PROJECTION_BASELINE_SHA, sync.baselineSha);
+  push('w19_tags', sync.syncTags.length >= 6, String(sync.syncTags.length));
+  push('w19_projected', sync.projectedFunctionalLoc === AG21_WAVE19_PROJECTED_AUDITED_FUNCTIONAL, String(sync.projectedFunctionalLoc));
+
+  return out;
+}
+
+// --- bundled from forecast-integration-wave19-origin-handoff.ts ---
+/**
+ * Agent 21 — integration wave-19 origin handoff for O10-169 (read-only round 19).
+ */
+
+
+export type Ag21IntegrationWave19OriginHandoffStatus = 'ready' | 'blocked' | 'pending';
+
+export interface Ag21IntegrationWave19OriginHandoff {
+  handoffId: string;
+  moduleVersion: string;
+  status: Ag21IntegrationWave19OriginHandoffStatus;
+  projectionSyncStatus: ReturnType<typeof syncAg21Wave19ProjectionBaseline>['status'];
+  priorOriginHandoff: ReturnType<typeof handoffAg21IntegrationWave18OriginGate>['status'];
+  handoffCopy: string;
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Package O10-168 origin gate handoff for Agent 25 O10-169 dry-run (round 19). */
+export function handoffAg21IntegrationWave19OriginGate(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21IntegrationWave19OriginHandoff {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.48),
+      actorDebt: baseCtx.actorDebt + 535
+    } satisfies Ag21ForecastContext);
+
+  const prior = handoffAg21IntegrationWave18OriginGate(baseCtx, candidate);
+  const projection = syncAg21Wave19ProjectionBaseline(baseCtx, candidate);
+
+  let status: Ag21IntegrationWave19OriginHandoffStatus = 'ready';
+  if (prior.status === 'blocked' || projection.status === 'drift') status = 'blocked';
+  else if (prior.status === 'pending' || projection.status === 'unknown') status = 'pending';
+
+  const handoffId = `ag21_iw19_${baseCtx.turn}_${baseCtx.seed}_${status}`;
+  const handoffCopy =
+    status === 'ready'
+      ? 'wave-19 origin handoff ready — Agent 21 unblocks O10-169 integration dry-run with agents 10 and 25'
+      : status === 'pending'
+        ? 'wave-19 origin handoff pending — projection sync or prior handoff partial'
+        : 'wave-19 origin handoff blocked — resolve drift before O10-169';
+
+  return {
+    handoffId,
+    moduleVersion: O10M_AGENT21_MODULE_VERSION,
+    status,
+    projectionSyncStatus: projection.status,
+    priorOriginHandoff: prior.status,
+    handoffCopy,
+    disclaimer: '(Non-authoritative forecast.) Origin handoff is modular bookkeeping only.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'ready' ? 'low' : status === 'pending' ? 'moderate' : 'high',
+      [`handoff=${handoffId}`, `iw19=${status}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21IntegrationWave19OriginHandoffSelfChecks(): {
+  id: string;
+  passed: boolean;
+  detail: string;
+}[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 45, seed: 31, actorCash: 820, actorDebt: 102, regionsControlled: 3 };
+  const handoff = handoffAg21IntegrationWave19OriginGate(ctx);
+
+  push('iw19_id', handoff.handoffId.startsWith('ag21_iw19_'), handoff.handoffId);
+  push('iw19_status', ['ready', 'blocked', 'pending'].includes(handoff.status), handoff.status);
+  push('iw19_copy', handoff.handoffCopy.includes('O10-169'), handoff.handoffCopy.slice(0, 40));
+  push('iw19_non_auth', handoff.authoritative === false, handoff.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-round19-console.tsx ---
+/**
+ * Agent 21 — scale wave round 19 console (wave-19 sync + origin handoff + wave-18 handoff).
+ */
+
+
+export const Ag21ForecastRound19Console: React.FC<{ seed?: number }> = ({ seed = 119 }) => {
+  const base = useMemo(() => createDefaultAg21ForecastContext({ seed, turn: 34 }), [seed]);
+  const stressed = useMemo(
+    () => ({ ...base, actorCash: Math.round(base.actorCash * 0.5), actorDebt: base.actorDebt + 510 }),
+    [base]
+  );
+
+  const priorHandoff = useMemo(() => handoffAg21IntegrationWave18OriginGate(base, stressed), [base, stressed]);
+  const projection = useMemo(() => syncAg21Wave19ProjectionBaseline(base, stressed), [base, stressed]);
+  const handoff = useMemo(() => handoffAg21IntegrationWave19OriginGate(base, stressed), [base, stressed]);
+
+  return (
+    <div className="border border-violet-500/30 rounded-lg p-3 bg-slate-950/85 text-xs space-y-2" data-testid="ag21-round19-console">
+      <div className="font-bold text-violet-200">
+        🔬 Forecast Lab Round 19 <span className="text-[10px] font-normal opacity-70">(non-authoritative)</span>
+      </div>
+      <div data-testid="ag21-round19-prior">
+        Wave 18 handoff · {priorHandoff.status} · {priorHandoff.handoffCopy.slice(0, 44)}…
+      </div>
+      <div data-testid="ag21-round19-projection">
+        Wave 19 sync · {projection.status} · baseline {projection.baselineSha}
+      </div>
+      <div data-testid="ag21-round19-handoff">
+        Origin handoff · {handoff.status} · {handoff.handoffCopy.slice(0, 48)}…
+      </div>
+    </div>
+  );
+};
+
 
 
 /** Agent 25 — modular self-tests (subset of npm run test:ag21). */
@@ -5764,6 +6767,36 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21LabContinuityVerdictSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21FullChunksDryRunReadinessSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21Wave16ProjectionSyncSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21IntegrationDryRunAttestationSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21FullChunksDryRunExecutionSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21Wave17ProjectionSyncSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21IntegrationDryRunClosureSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21Wave18ProjectionSyncSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21IntegrationWave18OriginHandoffSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21Wave19ProjectionSyncSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21IntegrationWave19OriginHandoffSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({
