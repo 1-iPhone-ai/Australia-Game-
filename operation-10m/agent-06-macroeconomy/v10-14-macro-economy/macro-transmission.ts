@@ -42,6 +42,8 @@ import type { MacroLiquiditySpillover } from './bridge-v1016-liquidity.ts';
 import type { MacroMapsTelemetrySpillover } from './bridge-v1023-maps-telemetry.ts';
 import type { MacroStrategicGameplaySpillover } from './bridge-v1001-strategic-gameplay.ts';
 import type { MacroArchiveIntegritySpillover } from './bridge-v1024-archive-integrity.ts';
+import type { MacroIntegrationHealthSpillover } from './bridge-v1025-integration-health.ts';
+import type { MacroCadenceDriftSpillover } from './bridge-v1002-cadence-drift.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -92,6 +94,8 @@ export function buildMacroTransmissionReport(params: {
   mapsTelemetry?: MacroMapsTelemetrySpillover;
   strategicGameplay?: MacroStrategicGameplaySpillover;
   archiveIntegrity?: MacroArchiveIntegritySpillover;
+  integrationHealth?: MacroIntegrationHealthSpillover;
+  cadenceDrift?: MacroCadenceDriftSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -127,6 +131,8 @@ export function buildMacroTransmissionReport(params: {
   const mapsTelemetry = params.mapsTelemetry ?? ZERO_SPILLOVER;
   const strategicGameplay = params.strategicGameplay ?? ZERO_SPILLOVER;
   const archiveIntegrity = params.archiveIntegrity ?? ZERO_SPILLOVER;
+  const integrationHealth = params.integrationHealth ?? ZERO_SPILLOVER;
+  const cadenceDrift = params.cadenceDrift ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -451,6 +457,22 @@ export function buildMacroTransmissionReport(params: {
       archiveIntegrity.investmentNudge,
       archiveIntegrity.productivityNudge,
       archiveIntegrity.summary
+    ),
+    layer(
+      'v10.25_integration',
+      'Cross-system integration',
+      integrationHealth.cycleNudge,
+      integrationHealth.investmentNudge,
+      integrationHealth.productivityNudge,
+      integrationHealth.summary
+    ),
+    layer(
+      'v10.02_cadence',
+      'Turn cadence drift',
+      cadenceDrift.cycleNudge,
+      cadenceDrift.investmentNudge,
+      cadenceDrift.productivityNudge,
+      cadenceDrift.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

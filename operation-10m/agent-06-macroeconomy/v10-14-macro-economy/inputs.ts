@@ -120,6 +120,18 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
       params?.historyReplay?.archive ??
       params?.nationalHistory?.archive,
     nationalStrategic: params?.nationalStrategic,
+    integrationHealth:
+      params?.integrationHealth ??
+      params?.op10mIntegration?.health ??
+      params?.nationalSystems?.integrationHealth ??
+      params?.assemblyHealth,
+    op10mIntegration: params?.op10mIntegration,
+    assemblyHealth: params?.assemblyHealth,
+    turnCadenceDrift:
+      params?.turnCadenceDrift ??
+      params?.turnsTime?.cadenceDrift ??
+      params?.temporalCadence?.drift ??
+      params?.gameClock?.cadence,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };

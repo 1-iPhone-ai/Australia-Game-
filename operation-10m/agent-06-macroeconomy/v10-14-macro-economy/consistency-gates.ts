@@ -778,5 +778,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Dissonant cross-channel transmission harmonic — layer nudges disagree across cycle/investment/productivity.'
     });
   }
+  const ih: any = inputs.integrationHealth ?? inputs.op10mIntegration?.health;
+  const mesh = String(ih?.meshBand ?? ih?.syncBand ?? '');
+  if (
+    (mesh === 'fractured' || mesh === 'desynced') &&
+    (state.integrationHealthSpilloverSummary != null || state.stressIndex.band !== 'calm')
+  ) {
+    gates.push({
+      id: 'integration_mesh_fractured',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Fractured integration mesh coincides with elevated macro stress read.'
+    });
+  }
+  const cd: any = inputs.turnCadenceDrift ?? inputs.turnsTime?.cadenceDrift;
+  const jitter = String(cd?.jitterBand ?? cd?.clockJitter?.band ?? '');
+  if (
+    (jitter === 'chaotic' || jitter === 'extreme') &&
+    (state.cadenceDriftSpilloverSummary != null || state.turnsSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'turn_cadence_chaotic',
+      triggered: true,
+      severity: 'info',
+      summary: 'Chaotic turn cadence jitter aligns with strained temporal spillover read.'
+    });
+  }
+  if (state.transmissionGradient?.band === 'steep' || state.transmissionGradient?.band === 'sloped') {
+    gates.push({
+      id: 'transmission_gradient_steep',
+      triggered: true,
+      severity: 'info',
+      summary: 'Steep transmission gradient — a few layers dominate macro spillover mass.'
+    });
+  }
   return gates;
 }

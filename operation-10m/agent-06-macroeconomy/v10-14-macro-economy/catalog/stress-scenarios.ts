@@ -156,6 +156,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Gameplay & archive stress',
     shockIds: ['global_slowdown', 'credit_contraction'],
     description: 'Gridlocked strategic gameplay with corrupt history archive integrity (harness overlay).'
+  },
+  {
+    id: 'integration_cadence_stress',
+    label: 'Integration & cadence stress',
+    shockIds: ['global_slowdown', 'credit_contraction'],
+    description: 'Fractured cross-system integration with chaotic turn cadence drift (harness overlay).'
   }
 ];
 
