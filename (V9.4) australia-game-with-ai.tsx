@@ -7297,6 +7297,34 @@ export function createInitialRegionalDevLevels(): Record<string, RegionalDevelop
   return devLevels;
 }
 
+/** Regional development tier used for infrastructure gates (defaults to 0). */
+export function regionalDevTierForInfrastructure(
+  state: { regionalDevLevels?: Record<string, RegionalDevelopmentLevel> },
+  regionId: string
+): number {
+  return Number(state.regionalDevLevels?.[regionId]?.tier ?? 0);
+}
+
+/** Why canonical funding/start may refuse a project (null = allowed for unlocked / under-construction flows). */
+export function infrastructureProjectFundingBlockReason(
+  project: InfrastructureProject | null | undefined,
+  regionalTier: number
+): 'missing' | 'locked' | 'active' | 'dev_tier' | null {
+  if (!project) return 'missing';
+  if (project.status === 'locked') return 'locked';
+  if (project.status === 'active') return 'active';
+  const req = Number(project.requiredDevTier ?? 0);
+  if (req > 0 && regionalTier < req) return 'dev_tier';
+  return null;
+}
+
+const INFRASTRUCTURE_MUTATING_ACTION_TYPES = new Set<string>([
+  'start_infrastructure_project', 'startInfrastructureProject', 'build_infrastructure',
+  'invest_infrastructure_project', 'investInfrastructure',
+  'contribute_infrastructure_labor', 'contributeInfrastructureLabor',
+  'complete_infrastructure_project', 'completeInfrastructureProject'
+]);
+
 // PHASE 5: EXPEDITION EXPANSION & RELICS TYPES & DATASETS
 
 export type ExpeditionType =
@@ -11546,9 +11574,16 @@ export function reduceGameAction(
                 };
                 if (project.totalCost === null) break;
                 nextState.infrastructureProjects[projectId] = project;
-              } else if (project.status === 'locked' || project.status === 'unlocked') {
+              } else if (project.status === 'unlocked') {
+                const tier = regionalDevTierForInfrastructure(nextState, project.regionId || regionId);
+                const block = infrastructureProjectFundingBlockReason(project, tier);
+                if (block === 'locked' || block === 'dev_tier') break;
                 project.status = 'under_construction';
                 if (!project.assignedWorkers.includes(actorId)) project.assignedWorkers.push(actorId);
+              } else if (project.status === 'under_construction') {
+                if (!project.assignedWorkers.includes(actorId)) project.assignedWorkers.push(actorId);
+              } else if (project.status !== 'locked') {
+                break;
               }
               actionExecuted = true;
             }
@@ -12037,8 +12072,10 @@ export function reduceGameAction(
           const investment = v95FirstWalletAmount([action.investmentAmount, action.price, action.parameters?.amount], 1000, 0);
           if (projectId && nextState.infrastructureProjects?.[projectId] && actor && investment !== null && investment > 0 && Number.isFinite(actor.money) && actor.money >= investment) {
             const project = nextState.infrastructureProjects[projectId];
-            // V9.3: a locked project (site committed to a competing project, or not yet opened) cannot be funded.
-            if (project.status === 'locked') break; // actionExecuted stays false → the canonical failure path reports it
+            const regionalTier = regionalDevTierForInfrastructure(nextState, project.regionId);
+            const fundBlock = infrastructureProjectFundingBlockReason(project, regionalTier);
+            // V9.3: locked / wrong dev tier / already active cannot receive investment.
+            if (fundBlock === 'locked' || fundBlock === 'dev_tier' || fundBlock === 'active') break;
             if (project.status !== 'active') {
               const nextMoney = actor.money - investment;
               if (!Number.isFinite(nextMoney)) break;
@@ -12163,7 +12200,13 @@ export function reduceGameAction(
           const laborTurns = action.parameters?.laborTurns || 1;
           if (projectId && nextState.infrastructureProjects?.[projectId]) {
             const project = nextState.infrastructureProjects[projectId];
+            if (project.status === 'locked') break;
             if (project.status === 'under_construction' || project.status === 'unlocked') {
+              if (project.status === 'unlocked') {
+                const tier = regionalDevTierForInfrastructure(nextState, project.regionId);
+                const block = infrastructureProjectFundingBlockReason(project, tier);
+                if (block === 'dev_tier') break;
+              }
               if (capitalAmount > 0 && (!actor || actor.money < capitalAmount)) {
                 break;
               }
@@ -13389,6 +13432,10 @@ export function reduceGameAction(
           if (nextState.teamsById && nextState.teamsById[teamId]) (nextState.teamsById[teamId] as FlexibleTeamState).money = actor.money;
           if (nextState.teamStateMap && nextState.teamStateMap[teamId]) (nextState.teamStateMap[teamId] as FlexibleTeamState).money = actor.money;
         }
+      }
+
+      if (actionExecuted && INFRASTRUCTURE_MUTATING_ACTION_TYPES.has(String(action.type)) && nextState.infrastructureProjects) {
+        nextState.infrastructureProjects = applyInfrastructureCompetition(nextState.infrastructureProjects).projects as Record<string, InfrastructureProject>;
       }
 
       const stateHash = computeCanonicalStateHash(nextState);
@@ -108894,7 +108941,7 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
           'fact', 'confirmed', [`project.${p.id}.step`, 'player.cash'], { derived: stepOk ? [] : [step - P.money] }));
           if (!stepOk) ctx.lastDeficit = { amount: step - P.money, forLabel: `the first ${money(step)} funding step for ${p.title}`, forRef: { kind: 'project', id: p.id, label: p.title, confidence: 1, source: 'context' } };
           if (p.requiredDevTier !== null && p.regionDevTier !== null && p.regionDevTier < p.requiredDevTier) {
-            claims.push(claim(`The project lists development tier ${p.requiredDevTier}; ${p.regionId} is at tier ${p.regionDevTier}. The funding screen does not currently enforce this.`, 'caveat', 'confirmed', [`project.${p.id}.tier`, `project.${p.id}.regionTier`]));
+            claims.push(claim(`The project requires development tier ${p.requiredDevTier}; ${p.regionId} is at tier ${p.regionDevTier}. Investment is blocked until the region reaches that tier.`, 'fact', 'confirmed', [`project.${p.id}.tier`, `project.${p.id}.regionTier`]));
           }
         }
         if (p.maintenancePerTurn) claims.push(claim(`Once active it lists ${money(p.maintenancePerTurn)} of maintenance per turn.`, 'fact', 'confirmed', [`project.${p.id}.maint`]));
@@ -181981,6 +182028,36 @@ export function runReliabilityUpgradeSelfTests(): V9SelfTestResult[] {
     const ka = Object.keys((a.nextState as any).infrastructureProjects).join(','), kb = Object.keys((b.nextState as any).infrastructureProjects).join(',');
     return (ka === kb && !/\d{12,}/.test(ka)) || `${ka} vs ${kb}`;
   });
+  check('ru_infra_dev_tier_gate', 'High-tier infrastructure rejects investment until regional dev tier is met', () => {
+    const preset = getBuiltinInfrastructureProjects().infra_hydrogen_wa;
+    const st: any = {
+      turn: 4, day: 4, regionalDevLevels: createInitialRegionalDevLevels(),
+      actorsById: { player: { id: 'player', money: 500000, teamId: TEAM_PLAYER_ID } },
+      infrastructureProjects: { infra_hydrogen_wa: { ...JSON.parse(JSON.stringify(preset)), status: 'unlocked' } }
+    };
+    const fail = reduceGameAction(st, { type: 'invest_infrastructure_project', actorId: 'player', investmentAmount: 10000, parameters: { projectId: 'infra_hydrogen_wa' } } as any, { active: true, actorId: 'player' } as any);
+    st.regionalDevLevels.WA.tier = 3;
+    const ok = reduceGameAction(st, { type: 'invest_infrastructure_project', actorId: 'player', investmentAmount: 10000, parameters: { projectId: 'infra_hydrogen_wa' } } as any, { active: true, actorId: 'player' } as any);
+    const p: any = (ok.nextState as any).infrastructureProjects.infra_hydrogen_wa;
+    return (!fail.success && fail.nextState.actorsById.player.money === 500000 && ok.success && p.totalInvestedMoney === 10000) || JSON.stringify({ fail: fail.success, ok: ok.success, p });
+  });
+  check('ru_infra_competition_in_reducer', 'Funding a competing project locks rivals inside reduceGameAction (not only the React effect)', () => {
+    const projects: Record<string, InfrastructureProject> = {};
+    for (const p of V93_INFRASTRUCTURE_PROJECTS) {
+      if (p.id === 'infra_v93_qld_port_automated' || p.id === 'infra_v93_qld_port_partnership') {
+        projects[p.id] = JSON.parse(JSON.stringify(p));
+      }
+    }
+    const st: any = {
+      turn: 2, day: 2, regionalDevLevels: createInitialRegionalDevLevels(),
+      actorsById: { player: { id: 'player', money: 200000, teamId: TEAM_PLAYER_ID } },
+      infrastructureProjects: projects
+    };
+    st.regionalDevLevels.QLD.tier = 1;
+    const r = reduceGameAction(st, { type: 'invest_infrastructure_project', actorId: 'player', investmentAmount: 5000, parameters: { projectId: 'infra_v93_qld_port_automated' } } as any, { active: true, actorId: 'player' } as any);
+    const partner: any = (r.nextState as any).infrastructureProjects.infra_v93_qld_port_partnership;
+    return (r.success && partner.status === 'locked' && Boolean(partner.lockedReason)) || JSON.stringify(partner);
+  });
   check('ru_mitigate_real', 'mitigate_crisis runs the real handler (cost + stability), not the $200 stub', () => {
     const r = reduceGameAction({ turn: 4, day: 4, actorsById: { player: { id: 'player', money: 6000, teamId: TEAM_PLAYER_ID } } } as any, { type: 'mitigate_crisis', actorId: 'player', parameters: {} } as any, { active: true, actorId: 'player' } as any);
     const ns: any = r.nextState;
@@ -211164,6 +211241,11 @@ function dispatchGameSettingsChange(
     if (target?.status === 'locked') {
       // V9.3: competing projects share a site — the canonical action refuses a locked project; say why.
       addNotification?.(`${target.title || projectId} is closed: ${target.lockedReason || 'not yet open for investment'}.`, 'warning', true);
+      return;
+    }
+    const regionalTier = regionalDevTierForInfrastructure(gameState as any, String(target?.regionId || 'NSW'));
+    if (target && infrastructureProjectFundingBlockReason(target, regionalTier) === 'dev_tier') {
+      addNotification?.(`${target.title || projectId} needs regional development tier ${target.requiredDevTier} (${target.regionId || 'region'} is tier ${regionalTier}).`, 'warning', true);
       return;
     }
     const actorId = player.id || 'player';
