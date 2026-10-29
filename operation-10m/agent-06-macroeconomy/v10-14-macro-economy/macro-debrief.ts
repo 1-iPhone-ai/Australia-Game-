@@ -15,8 +15,15 @@ export function composeMacroEconomyDebrief(state: NationalMacroEconomyState): Ma
   if (state.industrySpilloverSummary) bullets.push(state.industrySpilloverSummary);
   if (state.tradeSpilloverSummary) bullets.push(state.tradeSpilloverSummary);
   if (state.geographySpilloverSummary) bullets.push(state.geographySpilloverSummary);
+  if (state.creditSpilloverSummary) bullets.push(state.creditSpilloverSummary);
   if (state.transmissionReport?.dominantLayerId) {
     bullets.push(`Dominant transmission: ${state.transmissionReport.dominantLayerId}`);
+  }
+  if (state.stressIndex?.band && state.stressIndex.band !== 'calm') {
+    bullets.push(`Macro stress ${state.stressIndex.band} (${state.stressIndex.score.toFixed(0)})`);
+  }
+  if (state.policyStance?.stance && state.policyStance.stance !== 'neutral') {
+    bullets.push(state.policyStance.summary);
   }
   const triggered = state.consistencyGates.filter(g => g.triggered);
   if (triggered.length) bullets.push(`Consistency notes: ${triggered.map(g => g.id).join(', ')}`);

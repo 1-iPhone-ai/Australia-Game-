@@ -27,6 +27,14 @@ export function MacroEconomyInspectorLab(props: {
           Transmission dominant: {st.transmissionReport.dominantLayerId}
         </div>
       )}
+      {st.stressIndex && (
+        <div style={{ marginTop: 4, color: st.stressIndex.band === 'acute' ? '#f87171' : '#cbd5e1' }}>
+          Stress: {st.stressIndex.band} ({st.stressIndex.score.toFixed(0)})
+        </div>
+      )}
+      {st.policyStance?.stance && st.policyStance.stance !== 'neutral' && (
+        <div style={{ marginTop: 4, color: '#fcd34d' }}>Policy stance: {st.policyStance.stance}</div>
+      )}
       <div style={{ marginTop: 8 }}>
         {st.regionalContributions.map(r => (
           <div key={r.regionId}>

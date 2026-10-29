@@ -94,7 +94,10 @@ export interface NationalMacroEconomyState {
   industrySpilloverSummary: string | null;
   tradeSpilloverSummary: string | null;
   geographySpilloverSummary: string | null;
+  creditSpilloverSummary: string | null;
   transmissionReport: MacroTransmissionReport;
+  stressIndex: MacroStressIndexSnapshot;
+  policyStance: MacroPolicyStanceSnapshot;
   consistencyGates: MacroConsistencyGate[];
   debrief: MacroDebriefSnapshot;
   derivedSignals: Array<{ id: string; kind: string; text: string }>;
@@ -155,6 +158,25 @@ export interface MacroTransmissionReport {
   netProductivityNudge: number;
 }
 
+export type MacroStressBand = 'calm' | 'elevated' | 'acute';
+
+export interface MacroStressIndexSnapshot {
+  score: number;
+  band: MacroStressBand;
+  drivers: string[];
+  transmissionStress: number;
+  gateStress: number;
+}
+
+export type MacroPolicyStanceLabel = 'accommodative' | 'neutral' | 'restrictive' | 'conflicted';
+
+export interface MacroPolicyStanceSnapshot {
+  stance: MacroPolicyStanceLabel;
+  fiscalTilt: number;
+  creditTilt: number;
+  summary: string;
+}
+
 export interface MacroEconomyPersisted {
   schemaVersion: string;
   revision: number;
@@ -183,6 +205,9 @@ export interface MacroEconomyInputs {
   households?: any;
   trade?: any;
   economicGeography?: any;
+  creditMarkets?: any;
+  monetaryPolicy?: any;
+  nationalFinance?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;
   /** Additional catalog shock ids (see catalog/cyclical-shocks.ts). Legacy flags merge in. */
@@ -788,6 +813,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Housing & credit',
     shockIds: ['housing_correction', 'credit_contraction'],
     description: 'Domestic financial stress combination.'
+  },
+  {
+    id: 'credit_crunch',
+    label: 'Credit crunch',
+    shockIds: ['credit_contraction', 'global_slowdown'],
+    description: 'Spread widening with external demand fade.'
   }
 ];
 
@@ -1239,6 +1270,9 @@ export function macroEconomyInputHash(inputs: MacroEconomyInputs): string {
   }
   parts.push(inputs.highInflationScenarioActive ? 'hi1' : 'hi0');
   parts.push(inputs.creditShockActive ? 'cr1' : 'cr0');
+  const cm: any = inputs.creditMarkets ?? inputs.monetaryPolicy;
+  const spread = String(cm?.spreadBand ?? cm?.creditSpread?.band ?? 'none');
+  parts.push(`csp:${spread}`);
   const shocks = (inputs.activeCyclicalShockIds ?? []).slice().sort().join(',');
   parts.push(`sh:${shocks}`);
   return parts.join('|');
@@ -1262,6 +1296,9 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
     households: params?.households,
     trade: params?.trade ?? params?.gameState?.tradeState,
     economicGeography: params?.economicGeography,
+    creditMarkets: params?.creditMarkets ?? params?.gameState?.creditMarketsState,
+    monetaryPolicy: params?.monetaryPolicy,
+    nationalFinance: params?.nationalFinance,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };
@@ -1441,6 +1478,482 @@ export function applyMacroIndustrySpillover(
     productivityScore: scores.productivityScore + spillover.productivityNudge,
     investmentScore: scores.investmentScore,
     cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: bridge-v1015-trade.ts ---
+
+export interface MacroTradeSpillover {
+  cycleNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.15 trade / external demand spillover (never mutates trade state). */
+export function readMacroTradeSpilloverFromV1015(inputs: MacroEconomyInputs): MacroTradeSpillover {
+  const tr: any = inputs.trade;
+  if (!tr) return { cycleNudge: 0, productivityNudge: 0, summary: null };
+  const terms = String(tr.termsOfTrade?.band ?? tr.termsBand ?? tr.externalDemand?.band ?? 'stable');
+  const tension = String(tr.diplomaticTension?.level ?? tr.tensionBand ?? 'calm');
+  const exportMomentum = Number(tr.exportMomentum ?? tr.exportGrowthIndex ?? 0);
+  let cycleNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+  if (terms === 'favorable' || terms === 'strong' || exportMomentum > 4) {
+    cycleNudge += 2;
+    productivityNudge += 1.5;
+    summary = 'Favorable external demand supports macro cycle read.';
+  }
+  if (terms === 'weak' || terms === 'adverse' || exportMomentum < -3) {
+    cycleNudge -= 3;
+    productivityNudge -= 2;
+    summary = 'Weak terms of trade drag on macro cycle and productivity interpretation.';
+  }
+  if (tension === 'elevated' || tension === 'critical' || tension === 'sanctions_risk') {
+    cycleNudge -= 2;
+    productivityNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Trade/diplomatic tension caps external upside.';
+  }
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -6, 6),
+    productivityNudge: v1014macroClamp(productivityNudge, -6, 6),
+    summary
+  };
+}
+
+export function applyMacroTradeSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroTradeSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: bridge-economic-geography.ts ---
+
+export interface MacroGeographySpillover {
+  investmentNudge: number;
+  cycleNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.11 economic geography / urbanization spillover. */
+export function readMacroGeographySpillover(inputs: MacroEconomyInputs): MacroGeographySpillover {
+  const geo: any = inputs.economicGeography;
+  if (!geo) return { investmentNudge: 0, cycleNudge: 0, summary: null };
+  const connectivity = String(geo.connectivity?.band ?? geo.infrastructureConnectivity ?? 'moderate');
+  const urbanization = Number(geo.urbanizationIndex ?? geo.metroConcentration ?? 50);
+  const dispersion = String(geo.regionalDispersion?.band ?? geo.dispersionBand ?? 'balanced');
+  let investmentNudge = 0;
+  let cycleNudge = 0;
+  let summary: string | null = null;
+  if (connectivity === 'strong' || connectivity === 'leading') {
+    investmentNudge += 2;
+    cycleNudge += 1;
+    summary = 'Strong economic geography connectivity lifts investment interpretation.';
+  }
+  if (connectivity === 'weak' || connectivity === 'fragmented') {
+    investmentNudge -= 2;
+    cycleNudge -= 1;
+    summary = 'Fragmented geography weighs on national investment climate read.';
+  }
+  if (urbanization > 68) {
+    investmentNudge += 1;
+    summary = (summary ? summary + ' ' : '') + 'High urban concentration supports services-led macro mix.';
+  }
+  if (dispersion === 'wide' || dispersion === 'polarized') {
+    cycleNudge -= 1.5;
+    summary = (summary ? summary + ' ' : '') + 'Polarized regional geography reinforces divergence risk.';
+  }
+  return {
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    summary
+  };
+}
+
+export function applyMacroGeographySpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroGeographySpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: bridge-v1016-credit.ts ---
+
+export interface MacroCreditSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.16 credit / financial conditions spillover (never mutates finance state). */
+export function readMacroCreditSpilloverFromV1016(inputs: MacroEconomyInputs): MacroCreditSpillover {
+  const cm: any = inputs.creditMarkets ?? inputs.monetaryPolicy ?? inputs.nationalFinance;
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  if (inputs.creditShockActive) {
+    investmentNudge -= 5;
+    cycleNudge -= 3;
+    productivityNudge -= 1;
+    summary = 'Active credit shock flag tightens macro investment and cycle read.';
+  }
+
+  if (!cm && !inputs.creditShockActive) {
+    return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+  }
+
+  const spread = String(cm?.spreadBand ?? cm?.creditSpread?.band ?? cm?.conditions?.band ?? 'normal');
+  const policy = String(cm?.policyStance ?? cm?.stance ?? cm?.ratePolicy?.band ?? 'neutral');
+  const liquidity = String(cm?.liquidity?.band ?? cm?.liquidityBand ?? 'adequate');
+
+  if (spread === 'wide' || spread === 'stressed' || spread === 'frozen') {
+    investmentNudge -= spread === 'frozen' ? 6 : 4;
+    cycleNudge -= 2;
+    summary = `Credit spread band (${spread}) weighs on macro investment climate.`;
+  } else if (spread === 'tight' || spread === 'elevated') {
+    investmentNudge -= 2;
+    cycleNudge -= 1;
+    summary = 'Elevated credit spreads modestly tighten macro cycle read.';
+  } else if (spread === 'narrow' || spread === 'favorable') {
+    investmentNudge += 2;
+    cycleNudge += 1;
+    summary = 'Favorable credit conditions support macro investment interpretation.';
+  }
+
+  if (policy === 'restrictive' || policy === 'tightening') {
+    investmentNudge -= 2;
+    cycleNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Restrictive policy stance caps investment upside.';
+  } else if (policy === 'accommodative' || policy === 'easing') {
+    investmentNudge += 1.5;
+    summary = (summary ? summary + ' ' : '') + 'Accommodative policy stance supports investment read.';
+  }
+
+  if (liquidity === 'strained' || liquidity === 'critical') {
+    cycleNudge -= 2;
+    productivityNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Liquidity strain adds macro downside risk.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -8, 4),
+    investmentNudge: v1014macroClamp(investmentNudge, -10, 6),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 2),
+    summary
+  };
+}
+
+export function applyMacroCreditSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroCreditSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: macro-transmission.ts ---
+
+export function buildMacroTransmissionReport(params: {
+  turn: number;
+  fiscal: MacroFiscalSpillover;
+  household: MacroHouseholdSpillover;
+  industry: MacroIndustrySpillover;
+  trade: MacroTradeSpillover;
+  geography: MacroGeographySpillover;
+  credit: MacroCreditSpillover;
+}): MacroTransmissionReport {
+  const layers: MacroTransmissionLayer[] = [
+    layer(
+      'v10.12_fiscal',
+      'Public finance',
+      params.fiscal.cycleNudge,
+      params.fiscal.investmentNudge,
+      params.fiscal.productivityNudge,
+      params.fiscal.summary
+    ),
+    layer('v10.13_households', 'Household demand', params.household.cycleNudge, params.household.investmentNudge, 0, params.household.summary),
+    layer('v10.1_industries', 'Industry utilization', params.industry.cycleNudge, 0, params.industry.productivityNudge, params.industry.summary),
+    layer('v10.15_trade', 'Trade & external', params.trade.cycleNudge, 0, params.trade.productivityNudge, params.trade.summary),
+    layer('v10.11_geography', 'Economic geography', params.geography.cycleNudge, params.geography.investmentNudge, 0, params.geography.summary),
+    layer(
+      'v10.16_credit',
+      'Credit & financial conditions',
+      params.credit.cycleNudge,
+      params.credit.investmentNudge,
+      params.credit.productivityNudge,
+      params.credit.summary
+    )
+  ];
+  const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);
+  const netInvestmentNudge = layers.reduce((a, l) => a + l.investmentContribution, 0);
+  const netProductivityNudge = layers.reduce((a, l) => a + l.productivityContribution, 0);
+  const ranked = [...layers].sort(
+    (a, b) =>
+      Math.abs(b.cycleContribution) +
+      Math.abs(b.investmentContribution) +
+      Math.abs(b.productivityContribution) -
+      (Math.abs(a.cycleContribution) + Math.abs(a.investmentContribution) + Math.abs(a.productivityContribution))
+  );
+  return {
+    turn: params.turn,
+    dominantLayerId: ranked[0] && magnitude(ranked[0]) > 0.01 ? ranked[0].systemId : null,
+    layers,
+    netCycleNudge,
+    netInvestmentNudge,
+    netProductivityNudge
+  };
+}
+
+function layer(
+  systemId: string,
+  label: string,
+  cycleContribution: number,
+  investmentContribution: number,
+  productivityContribution: number,
+  summary: string | null
+): MacroTransmissionLayer {
+  return { systemId, label, cycleContribution, investmentContribution, productivityContribution, summary };
+}
+
+function magnitude(l: MacroTransmissionLayer): number {
+  return Math.abs(l.cycleContribution) + Math.abs(l.investmentContribution) + Math.abs(l.productivityContribution);
+}
+
+
+// --- source: macro-stress-index.ts ---
+
+export type { MacroStressBand, MacroStressIndexSnapshot };
+
+export function buildMacroStressIndexSnapshot(state: NationalMacroEconomyState): MacroStressIndexSnapshot {
+  const transmissionStress = stressFromTransmission(state.transmissionReport);
+  const gateStress = stressFromGates(state.consistencyGates);
+  const phaseStress = phaseStressWeight(state.cyclePhase);
+  const raw = transmissionStress * 0.45 + gateStress * 0.35 + phaseStress * 0.2;
+  const score = v1014macroClamp(Math.round(raw * 100) / 100, 0, 100);
+  const band: MacroStressBand = score >= 62 ? 'acute' : score >= 34 ? 'elevated' : 'calm';
+  const drivers: string[] = [];
+  if (transmissionStress > 0.35) drivers.push('transmission_dispersion');
+  if (gateStress > 0.25) drivers.push('consistency_gates');
+  if (phaseStress > 0.4) drivers.push('cycle_downside');
+  if (state.investmentClimate === 'frozen') drivers.push('investment_frozen');
+  return {
+    score,
+    band,
+    drivers: drivers.slice(0, 5),
+    transmissionStress: Math.round(transmissionStress * 1000) / 1000,
+    gateStress: Math.round(gateStress * 1000) / 1000
+  };
+}
+
+function stressFromTransmission(report: MacroTransmissionReport | null | undefined): number {
+  if (!report?.layers?.length) return 0;
+  const mag = report.layers.reduce(
+    (a, l) =>
+      a + Math.abs(l.cycleContribution) + Math.abs(l.investmentContribution) + Math.abs(l.productivityContribution),
+    0
+  );
+  return v1014macroClamp(mag / 28, 0, 1);
+}
+
+function stressFromGates(gates: MacroConsistencyGate[]): number {
+  if (!gates.length) return 0;
+  const triggered = gates.filter(g => g.triggered);
+  let w = 0;
+  for (const g of triggered) {
+    w += g.severity === 'warn' ? 0.22 : 0.12;
+  }
+  return v1014macroClamp(w, 0, 1);
+}
+
+function phaseStressWeight(phase: NationalMacroEconomyState['cyclePhase']): number {
+  if (phase === 'contraction' || phase === 'trough') return 0.85;
+  if (phase === 'slowdown') return 0.55;
+  if (phase === 'recovery') return 0.35;
+  return 0.15;
+}
+
+
+// --- source: policy-stance-snapshot.ts ---
+
+export type { MacroPolicyStanceLabel, MacroPolicyStanceSnapshot };
+
+/** Read-only synthesis of fiscal + credit spillovers vs realized macro climate. */
+export function buildMacroPolicyStanceSnapshot(params: {
+  inputs: MacroEconomyInputs;
+  state: Pick<NationalMacroEconomyState, 'investmentClimate' | 'cyclePhase'>;
+  fiscal: MacroFiscalSpillover;
+  credit: MacroCreditSpillover;
+}): MacroPolicyStanceSnapshot {
+  const fiscalTilt = params.fiscal.investmentNudge + params.fiscal.cycleNudge * 0.5;
+  const creditTilt = params.credit.investmentNudge + params.credit.cycleNudge * 0.5;
+  const net = fiscalTilt + creditTilt;
+  let stance: MacroPolicyStanceLabel = 'neutral';
+  if (net >= 2) stance = 'accommodative';
+  else if (net <= -4) stance = 'restrictive';
+  if (fiscalTilt <= -2 && creditTilt <= -2) stance = 'conflicted';
+
+  const pf: any = params.inputs.publicFinance;
+  const pressure = String(pf?.pressure ?? pf?.fiscalPosition?.pressure ?? '');
+  let summary = `Policy read: ${stance} (fiscal tilt ${fiscalTilt.toFixed(1)}, credit tilt ${creditTilt.toFixed(1)}).`;
+  if (stance === 'conflicted' && pressure === 'strained') {
+    summary += ' Simultaneous fiscal and credit tightening — macro stabilizers may bind.';
+  }
+  if (params.state.investmentClimate === 'frozen' && stance === 'restrictive') {
+    summary += ' Investment climate frozen under restrictive composite stance.';
+  }
+  return { stance, fiscalTilt, creditTilt, summary };
+}
+
+
+// --- source: counterfactual-delta.ts ---
+
+export interface MacroCounterfactualDelta {
+  baselineTurn: number;
+  cycleScoreDelta: number;
+  investmentScoreDelta: number;
+  productivityScoreDelta: number;
+  outputIndexDelta: number;
+  stressScoreDelta: number;
+}
+
+/** Single-turn counterfactual: same persisted path, alternate inputs overlay. */
+export function computeMacroCounterfactualDelta(
+  baseInputs: MacroEconomyInputs,
+  overlay: Partial<MacroEconomyInputs>,
+  persisted: Parameters<typeof computeNationalMacroEconomy>[1],
+  prev: NationalMacroEconomyState | null
+): MacroCounterfactualDelta {
+  const baseline = computeNationalMacroEconomy(baseInputs, persisted, prev).state;
+  const stressed = computeNationalMacroEconomy({ ...baseInputs, ...overlay, turn: baseInputs.turn }, persisted, prev)
+    .state;
+  return {
+    baselineTurn: baseInputs.turn,
+    cycleScoreDelta: stressed.cycleMomentum - baseline.cycleMomentum,
+    investmentScoreDelta: stressed.grossInvestmentIndex - baseline.grossInvestmentIndex,
+    productivityScoreDelta: stressed.productivityIndex - baseline.productivityIndex,
+    outputIndexDelta: stressed.accounting.grossOutputIndex - baseline.accounting.grossOutputIndex,
+    stressScoreDelta: stressed.stressIndex.score - baseline.stressIndex.score
+  };
+}
+
+
+// --- source: regression-harness.ts ---
+
+export interface MacroRegressionCheck {
+  id: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface MacroRegressionHarnessResult {
+  scenarioId: string;
+  turnsRun: number;
+  allPassed: boolean;
+  checks: MacroRegressionCheck[];
+}
+
+/** Deterministic multi-turn macro regression (warn-only; no canonical mutation). */
+export function runMacroEconomyRegressionHarness(options?: {
+  turns?: number;
+  scenarioId?: string;
+  includeCreditStress?: boolean;
+}): MacroRegressionHarnessResult {
+  const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
+  const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
+  const includeCreditStress = Boolean(options?.includeCreditStress);
+  const shockIds = macroStressScenarioShockIds(scenarioId);
+  const checks: MacroRegressionCheck[] = [];
+  let persisted: MacroEconomyPersisted | null = null;
+  let prev: NationalMacroEconomyState | null = null;
+  let lastHash = '';
+
+  for (let t = 1; t <= turns; t++) {
+    const inputs: MacroEconomyInputs = makeDefaultV1014_MACRO_TestInputs({
+      turn: t,
+      activeCyclicalShockIds: shockIds,
+      creditMarkets: includeCreditStress
+        ? { spreadBand: t % 5 === 0 ? 'stressed' : 'elevated', policyStance: 'restrictive' }
+        : undefined,
+      trade:
+        t % 7 === 0
+          ? { termsOfTrade: { band: 'weak' }, exportMomentum: -4 }
+          : { termsOfTrade: { band: 'stable' }, exportMomentum: 1 },
+      economicGeography: { connectivity: { band: t % 11 === 0 ? 'fragmented' : 'moderate' }, urbanizationIndex: 58 }
+    });
+    const { state, persisted: nextP } = computeNationalMacroEconomy(inputs, persisted, prev);
+    persisted = nextP;
+    prev = state;
+    lastHash = state.inputHash;
+    const validation = validateNationalMacroEconomyState(state);
+    if (!validation.valid) {
+      checks.push({ id: `turn_${t}_valid`, passed: false, detail: validation.issues.join(';') });
+      break;
+    }
+    if (!Number.isFinite(state.accounting.grossOutputIndex)) {
+      checks.push({ id: `turn_${t}_finite`, passed: false, detail: 'non-finite output' });
+      break;
+    }
+  }
+
+  checks.push({
+    id: 'completed_turns',
+    passed: prev != null && prev.turn === turns,
+    detail: prev ? `last turn ${prev.turn}` : 'no state'
+  });
+  checks.push({
+    id: 'identity_stable',
+    passed: Boolean(prev?.accounting.identityOk),
+    detail: String(prev?.accounting.identityOk)
+  });
+  checks.push({
+    id: 'transmission_present',
+    passed: Boolean(prev?.transmissionReport?.layers?.length && prev.transmissionReport.layers.length >= 6),
+    detail: String(prev?.transmissionReport?.layers?.length ?? 0)
+  });
+  if (includeCreditStress && prev) {
+    checks.push({
+      id: 'stress_index_present',
+      passed: Number.isFinite(prev.stressIndex.score),
+      detail: String(prev.stressIndex.score)
+    });
+  }
+  checks.push({
+    id: 'input_hash_stable_replay',
+    passed: lastHash.length > 8,
+    detail: lastHash.slice(0, 12)
+  });
+  if (prev) {
+    checks.push({
+      id: 'debrief_headline',
+      passed: prev.debrief.headline.includes(`T${turns}`),
+      detail: prev.debrief.headline.slice(0, 40)
+    });
+  }
+
+  return {
+    scenarioId,
+    turnsRun: turns,
+    allPassed: checks.every(c => c.passed),
+    checks
   };
 }
 
@@ -1689,6 +2202,44 @@ export function evaluateMacroConsistencyGates(
       summary: 'External demand layer dominates transmission while cycle is in contraction.'
     });
   }
+  const cm: any = inputs.creditMarkets ?? inputs.monetaryPolicy;
+  const spread = String(cm?.spreadBand ?? cm?.creditSpread?.band ?? '');
+  if (
+    (spread === 'wide' || spread === 'stressed' || spread === 'frozen' || inputs.creditShockActive) &&
+    state.investmentClimate === 'frozen'
+  ) {
+    gates.push({
+      id: 'credit_investment_squeeze',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Tight credit conditions coincide with frozen investment climate — financing constraint likely binding.'
+    });
+  }
+  const creditTight =
+    inputs.creditShockActive ||
+    spread === 'wide' ||
+    spread === 'stressed' ||
+    spread === 'frozen' ||
+    String(cm?.policyStance ?? cm?.stance ?? '') === 'restrictive';
+  if ((fiscalPressure === 'critical' || fiscalPressure === 'strained') && creditTight) {
+    gates.push({
+      id: 'monetary_fiscal_clamp',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Fiscal strain plus simultaneous credit tightening — composite policy stance is conflicted.'
+    });
+  }
+  if (
+    state.transmissionReport?.dominantLayerId === 'v10.16_credit' &&
+    (creditTight || state.investmentClimate === 'frozen')
+  ) {
+    gates.push({
+      id: 'credit_led_stress',
+      triggered: true,
+      severity: 'info',
+      summary: 'Credit layer dominates macro transmission under tight financial conditions.'
+    });
+  }
   return gates;
 }
 
@@ -1709,8 +2260,15 @@ export function composeMacroEconomyDebrief(state: NationalMacroEconomyState): Ma
   if (state.industrySpilloverSummary) bullets.push(state.industrySpilloverSummary);
   if (state.tradeSpilloverSummary) bullets.push(state.tradeSpilloverSummary);
   if (state.geographySpilloverSummary) bullets.push(state.geographySpilloverSummary);
+  if (state.creditSpilloverSummary) bullets.push(state.creditSpilloverSummary);
   if (state.transmissionReport?.dominantLayerId) {
     bullets.push(`Dominant transmission: ${state.transmissionReport.dominantLayerId}`);
+  }
+  if (state.stressIndex?.band && state.stressIndex.band !== 'calm') {
+    bullets.push(`Macro stress ${state.stressIndex.band} (${state.stressIndex.score.toFixed(0)})`);
+  }
+  if (state.policyStance?.stance && state.policyStance.stance !== 'neutral') {
+    bullets.push(state.policyStance.summary);
   }
   const triggered = state.consistencyGates.filter(g => g.triggered);
   if (triggered.length) bullets.push(`Consistency notes: ${triggered.map(g => g.id).join(', ')}`);
@@ -1863,12 +2421,14 @@ export function computeNationalMacroEconomy(
   const industrySpillover = readMacroIndustrySpilloverFromV101(inputs);
   const tradeSpillover = readMacroTradeSpilloverFromV1015(inputs);
   const geographySpillover = readMacroGeographySpillover(inputs);
+  const creditSpillover = readMacroCreditSpilloverFromV1016(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
   const withTrade = applyMacroTradeSpillover(withIndustry, tradeSpillover);
   const withGeography = applyMacroGeographySpillover(withTrade, geographySpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withGeography, pushEv);
+  const withCredit = applyMacroCreditSpillover(withGeography, creditSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withCredit, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -1901,7 +2461,8 @@ export function computeNationalMacroEconomy(
     household: householdSpillover,
     industry: industrySpillover,
     trade: tradeSpillover,
-    geography: geographySpillover
+    geography: geographySpillover,
+    credit: creditSpillover
   });
 
   let nextPersisted: MacroEconomyPersisted = {
@@ -1948,7 +2509,21 @@ export function computeNationalMacroEconomy(
     industrySpilloverSummary: industrySpillover.summary,
     tradeSpilloverSummary: tradeSpillover.summary,
     geographySpilloverSummary: geographySpillover.summary,
+    creditSpilloverSummary: creditSpillover.summary,
     transmissionReport,
+    stressIndex: {
+      score: 0,
+      band: 'calm',
+      drivers: [],
+      transmissionStress: 0,
+      gateStress: 0
+    },
+    policyStance: {
+      stance: 'neutral',
+      fiscalTilt: 0,
+      creditTilt: 0,
+      summary: ''
+    },
     regionalDivergence,
     outlookProjection: {
       horizonTurns: 3,
@@ -1972,12 +2547,21 @@ export function computeNationalMacroEconomy(
     outlookProjection
   };
   const consistencyGates = evaluateMacroConsistencyGates(stateBase, inputs);
-  const debrief = composeMacroEconomyDebrief({ ...stateBase, consistencyGates });
+  const stressIndex = buildMacroStressIndexSnapshot({ ...stateBase, consistencyGates });
+  const policyStance = buildMacroPolicyStanceSnapshot({
+    inputs,
+    state: stateBase,
+    fiscal: fiscalSpillover,
+    credit: creditSpillover
+  });
+  const debrief = composeMacroEconomyDebrief({ ...stateBase, consistencyGates, stressIndex, policyStance });
   const derivedSignals = buildMacroDerivedSignals(stateBase, persisted.cycleHysteresis);
 
   const state: NationalMacroEconomyState = {
     ...stateBase,
     consistencyGates,
+    stressIndex,
+    policyStance,
     debrief,
     derivedSignals
   };
@@ -2550,6 +3134,159 @@ export function runAgent06Round3SelfTests(): {
 }
 
 
+// --- source: round4-self-tests.ts ---
+
+export function runAgent06Round4SelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const trade = readMacroTradeSpilloverFromV1015(
+    makeDefaultV1014_MACRO_TestInputs({ trade: { termsOfTrade: { band: 'weak' }, exportMomentum: -5 } })
+  );
+  record('R4-01', 'Weak trade terms drag cycle', trade.cycleNudge < 0, String(trade.cycleNudge));
+
+  const geo = readMacroGeographySpillover(
+    makeDefaultV1014_MACRO_TestInputs({ economicGeography: { connectivity: { band: 'strong' } } })
+  );
+  record('R4-02', 'Strong geography lifts investment read', geo.investmentNudge > 0, String(geo.investmentNudge));
+
+  const report = buildMacroTransmissionReport({
+    turn: 4,
+    fiscal: readMacroFiscalSpilloverFromV1012(makeDefaultV1014_MACRO_TestInputs({ publicFinance: { pressure: 'strained' } })),
+    household: readMacroHouseholdSpilloverFromV1013(makeDefaultV1014_MACRO_TestInputs()),
+    industry: readMacroIndustrySpilloverFromV101(makeDefaultV1014_MACRO_TestInputs()),
+    trade,
+    geography: geo,
+    credit: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null }
+  });
+  record('R4-03', 'Transmission report has six layers', report.layers.length === 6, String(report.layers.length));
+  record('R4-04', 'Net cycle nudge finite', Number.isFinite(report.netCycleNudge), String(report.netCycleNudge));
+
+  const integrated = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({
+      trade: { termsOfTrade: { band: 'favorable' } },
+      economicGeography: { connectivity: { band: 'moderate' } }
+    }),
+    null,
+    null
+  );
+  record('R4-05', 'State carries transmission report', integrated.state.transmissionReport.layers.length === 6, 'ok');
+  record('R4-06', 'Trade summary on state', integrated.state.tradeSpilloverSummary != null, String(integrated.state.tradeSpilloverSummary));
+
+  const stress = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({
+      publicFinance: { pressure: 'critical' },
+      trade: { termsOfTrade: { band: 'weak' } }
+    }),
+    null,
+    null
+  );
+  record(
+    'R4-07',
+    'Trade/fiscal stress gate',
+    stress.state.consistencyGates.some(g => g.id === 'trade_fiscal_stress'),
+    stress.state.consistencyGates.map(g => g.id).join(',')
+  );
+
+  const harness = runMacroEconomyRegressionHarness({ turns: 12, scenarioId: 'resource_bust' });
+  record('R4-08', 'Regression harness passes', harness.allPassed, harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok');
+
+  record(
+    'R4-09',
+    'Debrief cites dominant transmission when present',
+    integrated.state.debrief.bullets.some(b => b.includes('Dominant transmission') || b.includes('external')),
+    integrated.state.debrief.bullets.join('|').slice(0, 60)
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: round5-self-tests.ts ---
+
+export function runAgent06Round5SelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const credit = readMacroCreditSpilloverFromV1016(
+    makeDefaultV1014_MACRO_TestInputs({
+      creditMarkets: { spreadBand: 'stressed', policyStance: 'restrictive' }
+    })
+  );
+  record('R5-01', 'Stressed credit tightens investment read', credit.investmentNudge < -3, String(credit.investmentNudge));
+
+  const integrated = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({
+      creditMarkets: { spreadBand: 'wide', liquidity: { band: 'strained' } },
+      publicFinance: { pressure: 'strained' }
+    }),
+    null,
+    null
+  );
+  record('R5-02', 'State exposes credit spillover summary', integrated.state.creditSpilloverSummary != null, 'ok');
+  record('R5-03', 'Stress index finite', Number.isFinite(integrated.state.stressIndex.score), String(integrated.state.stressIndex.score));
+  record(
+    'R5-04',
+    'Monetary/fiscal clamp gate',
+    integrated.state.consistencyGates.some(g => g.id === 'monetary_fiscal_clamp'),
+    integrated.state.consistencyGates.map(g => g.id).join(',')
+  );
+
+  const stance = buildMacroPolicyStanceSnapshot({
+    inputs: makeDefaultV1014_MACRO_TestInputs({ publicFinance: { pressure: 'critical' } }),
+    state: { investmentClimate: 'frozen', cyclePhase: 'contraction' },
+    fiscal: readMacroFiscalSpilloverFromV1012(
+      makeDefaultV1014_MACRO_TestInputs({ publicFinance: { pressure: 'critical' } })
+    ),
+    credit
+  });
+  record('R5-05', 'Conflicted policy stance under dual tightening', stance.stance === 'conflicted', stance.stance);
+
+  const stress = buildMacroStressIndexSnapshot(integrated.state);
+  record('R5-06', 'Stress band matches score', stress.band !== 'calm' || stress.score < 34, `${stress.band}/${stress.score}`);
+
+  const delta = computeMacroCounterfactualDelta(
+    makeDefaultV1014_MACRO_TestInputs({ turn: 6 }),
+    { creditShockActive: true },
+    null,
+    null
+  );
+  record('R5-07', 'Counterfactual credit shock lowers investment', delta.investmentScoreDelta < 0, String(delta.investmentScoreDelta));
+
+  const harness = runMacroEconomyRegressionHarness({ turns: 10, scenarioId: 'credit_crunch', includeCreditStress: true });
+  record('R5-08', 'Credit regression harness', harness.allPassed, harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok');
+
+  record(
+    'R5-09',
+    'Debrief mentions stress when elevated',
+    integrated.state.stressIndex.band !== 'calm'
+      ? integrated.state.debrief.bullets.some(b => b.includes('stress'))
+      : true,
+    integrated.state.debrief.bullets.join('|').slice(0, 80)
+  );
+
+  record('R5-10', 'Transmission includes credit layer', integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.16_credit'), 'ok');
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
 // --- source: self-tests.ts ---
 
 export function runV1014_MACRO_MacroEconomySelfTests(): {
@@ -2661,6 +3398,11 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
     check(r.id, r.name, r.passed, r.detail);
   }
 
+  const round5 = runAgent06Round5SelfTests();
+  for (const r of round5.results) {
+    check(r.id, r.name, r.passed, r.detail);
+  }
+
   const passed = results.filter(r => r.passed).length;
   return { passed, failed: results.length - passed, total: results.length, results };
 }
@@ -2707,6 +3449,14 @@ export function MacroEconomyInspectorLab(props: {
         <div style={{ marginTop: 6, color: '#a5b4fc' }}>
           Transmission dominant: {st.transmissionReport.dominantLayerId}
         </div>
+      )}
+      {st.stressIndex && (
+        <div style={{ marginTop: 4, color: st.stressIndex.band === 'acute' ? '#f87171' : '#cbd5e1' }}>
+          Stress: {st.stressIndex.band} ({st.stressIndex.score.toFixed(0)})
+        </div>
+      )}
+      {st.policyStance?.stance && st.policyStance.stance !== 'neutral' && (
+        <div style={{ marginTop: 4, color: '#fcd34d' }}>Policy stance: {st.policyStance.stance}</div>
       )}
       <div style={{ marginTop: 8 }}>
         {st.regionalContributions.map(r => (

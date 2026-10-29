@@ -63,6 +63,9 @@ export function macroEconomyInputHash(inputs: MacroEconomyInputs): string {
   }
   parts.push(inputs.highInflationScenarioActive ? 'hi1' : 'hi0');
   parts.push(inputs.creditShockActive ? 'cr1' : 'cr0');
+  const cm: any = inputs.creditMarkets ?? inputs.monetaryPolicy;
+  const spread = String(cm?.spreadBand ?? cm?.creditSpread?.band ?? 'none');
+  parts.push(`csp:${spread}`);
   const shocks = (inputs.activeCyclicalShockIds ?? []).slice().sort().join(',');
   parts.push(`sh:${shocks}`);
   return parts.join('|');

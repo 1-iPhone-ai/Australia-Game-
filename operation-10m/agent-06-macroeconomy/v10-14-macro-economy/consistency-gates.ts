@@ -59,5 +59,43 @@ export function evaluateMacroConsistencyGates(
       summary: 'External demand layer dominates transmission while cycle is in contraction.'
     });
   }
+  const cm: any = inputs.creditMarkets ?? inputs.monetaryPolicy;
+  const spread = String(cm?.spreadBand ?? cm?.creditSpread?.band ?? '');
+  if (
+    (spread === 'wide' || spread === 'stressed' || spread === 'frozen' || inputs.creditShockActive) &&
+    state.investmentClimate === 'frozen'
+  ) {
+    gates.push({
+      id: 'credit_investment_squeeze',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Tight credit conditions coincide with frozen investment climate — financing constraint likely binding.'
+    });
+  }
+  const creditTight =
+    inputs.creditShockActive ||
+    spread === 'wide' ||
+    spread === 'stressed' ||
+    spread === 'frozen' ||
+    String(cm?.policyStance ?? cm?.stance ?? '') === 'restrictive';
+  if ((fiscalPressure === 'critical' || fiscalPressure === 'strained') && creditTight) {
+    gates.push({
+      id: 'monetary_fiscal_clamp',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Fiscal strain plus simultaneous credit tightening — composite policy stance is conflicted.'
+    });
+  }
+  if (
+    state.transmissionReport?.dominantLayerId === 'v10.16_credit' &&
+    (creditTight || state.investmentClimate === 'frozen')
+  ) {
+    gates.push({
+      id: 'credit_led_stress',
+      triggered: true,
+      severity: 'info',
+      summary: 'Credit layer dominates macro transmission under tight financial conditions.'
+    });
+  }
   return gates;
 }

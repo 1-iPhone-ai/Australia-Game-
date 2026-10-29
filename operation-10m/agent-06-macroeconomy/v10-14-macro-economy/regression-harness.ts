@@ -21,9 +21,11 @@ export interface MacroRegressionHarnessResult {
 export function runMacroEconomyRegressionHarness(options?: {
   turns?: number;
   scenarioId?: string;
+  includeCreditStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
+  const includeCreditStress = Boolean(options?.includeCreditStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -34,6 +36,9 @@ export function runMacroEconomyRegressionHarness(options?: {
     const inputs: MacroEconomyInputs = makeDefaultV1014_MACRO_TestInputs({
       turn: t,
       activeCyclicalShockIds: shockIds,
+      creditMarkets: includeCreditStress
+        ? { spreadBand: t % 5 === 0 ? 'stressed' : 'elevated', policyStance: 'restrictive' }
+        : undefined,
       trade:
         t % 7 === 0
           ? { termsOfTrade: { band: 'weak' }, exportMomentum: -4 }
@@ -67,9 +72,16 @@ export function runMacroEconomyRegressionHarness(options?: {
   });
   checks.push({
     id: 'transmission_present',
-    passed: Boolean(prev?.transmissionReport?.layers?.length),
+    passed: Boolean(prev?.transmissionReport?.layers?.length && prev.transmissionReport.layers.length >= 6),
     detail: String(prev?.transmissionReport?.layers?.length ?? 0)
   });
+  if (includeCreditStress && prev) {
+    checks.push({
+      id: 'stress_index_present',
+      passed: Number.isFinite(prev.stressIndex.score),
+      detail: String(prev.stressIndex.score)
+    });
+  }
   checks.push({
     id: 'input_hash_stable_replay',
     passed: lastHash.length > 8,

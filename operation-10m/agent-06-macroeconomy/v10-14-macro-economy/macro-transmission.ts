@@ -3,6 +3,7 @@ import type { MacroGeographySpillover } from './bridge-economic-geography.ts';
 import type { MacroHouseholdSpillover } from './bridge-v1013-households.ts';
 import type { MacroIndustrySpillover } from './bridge-v101-industries.ts';
 import type { MacroFiscalSpillover } from './bridge-v1012-fiscal.ts';
+import type { MacroCreditSpillover } from './bridge-v1016-credit.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 export function buildMacroTransmissionReport(params: {
@@ -12,6 +13,7 @@ export function buildMacroTransmissionReport(params: {
   industry: MacroIndustrySpillover;
   trade: MacroTradeSpillover;
   geography: MacroGeographySpillover;
+  credit: MacroCreditSpillover;
 }): MacroTransmissionReport {
   const layers: MacroTransmissionLayer[] = [
     layer(
@@ -25,7 +27,15 @@ export function buildMacroTransmissionReport(params: {
     layer('v10.13_households', 'Household demand', params.household.cycleNudge, params.household.investmentNudge, 0, params.household.summary),
     layer('v10.1_industries', 'Industry utilization', params.industry.cycleNudge, 0, params.industry.productivityNudge, params.industry.summary),
     layer('v10.15_trade', 'Trade & external', params.trade.cycleNudge, 0, params.trade.productivityNudge, params.trade.summary),
-    layer('v10.11_geography', 'Economic geography', params.geography.cycleNudge, params.geography.investmentNudge, 0, params.geography.summary)
+    layer('v10.11_geography', 'Economic geography', params.geography.cycleNudge, params.geography.investmentNudge, 0, params.geography.summary),
+    layer(
+      'v10.16_credit',
+      'Credit & financial conditions',
+      params.credit.cycleNudge,
+      params.credit.investmentNudge,
+      params.credit.productivityNudge,
+      params.credit.summary
+    )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);
   const netInvestmentNudge = layers.reduce((a, l) => a + l.investmentContribution, 0);

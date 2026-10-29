@@ -36,6 +36,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Housing & credit',
     shockIds: ['housing_correction', 'credit_contraction'],
     description: 'Domestic financial stress combination.'
+  },
+  {
+    id: 'credit_crunch',
+    label: 'Credit crunch',
+    shockIds: ['credit_contraction', 'global_slowdown'],
+    description: 'Spread widening with external demand fade.'
   }
 ];
 

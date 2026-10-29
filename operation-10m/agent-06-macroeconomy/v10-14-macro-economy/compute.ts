@@ -4,9 +4,12 @@ import { applyMacroHouseholdSpillover, readMacroHouseholdSpilloverFromV1013 } fr
 import { applyMacroIndustrySpillover, readMacroIndustrySpilloverFromV101 } from './bridge-v101-industries.ts';
 import { applyMacroTradeSpillover, readMacroTradeSpilloverFromV1015 } from './bridge-v1015-trade.ts';
 import { applyMacroGeographySpillover, readMacroGeographySpillover } from './bridge-economic-geography.ts';
+import { applyMacroCreditSpillover, readMacroCreditSpilloverFromV1016 } from './bridge-v1016-credit.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
+import { buildMacroStressIndexSnapshot } from './macro-stress-index.ts';
+import { buildMacroPolicyStanceSnapshot } from './policy-stance-snapshot.ts';
 import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
 import { V1014_MACRO_LIMITS } from './constants.ts';
 import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
@@ -75,12 +78,14 @@ export function computeNationalMacroEconomy(
   const industrySpillover = readMacroIndustrySpilloverFromV101(inputs);
   const tradeSpillover = readMacroTradeSpilloverFromV1015(inputs);
   const geographySpillover = readMacroGeographySpillover(inputs);
+  const creditSpillover = readMacroCreditSpilloverFromV1016(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
   const withTrade = applyMacroTradeSpillover(withIndustry, tradeSpillover);
   const withGeography = applyMacroGeographySpillover(withTrade, geographySpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withGeography, pushEv);
+  const withCredit = applyMacroCreditSpillover(withGeography, creditSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withCredit, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -113,7 +118,8 @@ export function computeNationalMacroEconomy(
     household: householdSpillover,
     industry: industrySpillover,
     trade: tradeSpillover,
-    geography: geographySpillover
+    geography: geographySpillover,
+    credit: creditSpillover
   });
 
   let nextPersisted: MacroEconomyPersisted = {
@@ -160,7 +166,21 @@ export function computeNationalMacroEconomy(
     industrySpilloverSummary: industrySpillover.summary,
     tradeSpilloverSummary: tradeSpillover.summary,
     geographySpilloverSummary: geographySpillover.summary,
+    creditSpilloverSummary: creditSpillover.summary,
     transmissionReport,
+    stressIndex: {
+      score: 0,
+      band: 'calm',
+      drivers: [],
+      transmissionStress: 0,
+      gateStress: 0
+    },
+    policyStance: {
+      stance: 'neutral',
+      fiscalTilt: 0,
+      creditTilt: 0,
+      summary: ''
+    },
     regionalDivergence,
     outlookProjection: {
       horizonTurns: 3,
@@ -184,12 +204,21 @@ export function computeNationalMacroEconomy(
     outlookProjection
   };
   const consistencyGates = evaluateMacroConsistencyGates(stateBase, inputs);
-  const debrief = composeMacroEconomyDebrief({ ...stateBase, consistencyGates });
+  const stressIndex = buildMacroStressIndexSnapshot({ ...stateBase, consistencyGates });
+  const policyStance = buildMacroPolicyStanceSnapshot({
+    inputs,
+    state: stateBase,
+    fiscal: fiscalSpillover,
+    credit: creditSpillover
+  });
+  const debrief = composeMacroEconomyDebrief({ ...stateBase, consistencyGates, stressIndex, policyStance });
   const derivedSignals = buildMacroDerivedSignals(stateBase, persisted.cycleHysteresis);
 
   const state: NationalMacroEconomyState = {
     ...stateBase,
     consistencyGates,
+    stressIndex,
+    policyStance,
     debrief,
     derivedSignals
   };
