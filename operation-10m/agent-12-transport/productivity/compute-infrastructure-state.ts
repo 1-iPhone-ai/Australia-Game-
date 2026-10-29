@@ -840,6 +840,23 @@ import {
   portBioLngBunkeringLogisticsProductivityMultiplier,
 } from './port-bio-lng-bunkering-logistics-index.ts';
 import {
+  computeTokamakDeuteriumExportByRegion,
+  nationalTokamakDeuteriumExportIndex,
+  tokamakDeuteriumExportProductivityMultiplier,
+} from '../network/tokamak-deuterium-export-index.ts';
+import {
+  computeRemoteTraumaSurgerySupplyStagingByRegion,
+  computeRemoteTraumaSurgerySupplyStagingShare,
+  nationalRemoteTraumaSurgerySupplyStagingIndex,
+  remoteTraumaSurgerySupplyStagingProductivityMultiplier,
+} from '../operations/remote-trauma-surgery-supply-staging-index.ts';
+import {
+  computePortLiquidHydrogenBunkeringLogisticsShare,
+  computePortLiquidHydrogenBunkeringLogisticsThroughputByRegion,
+  nationalPortLiquidHydrogenBunkeringLogisticsThroughputIndex,
+  portLiquidHydrogenBunkeringLogisticsProductivityMultiplier,
+} from './port-liquid-hydrogen-bunkering-logistics-index.ts';
+import {
   computeStellaratorHelium3ExportByRegion,
   nationalStellaratorHelium3ExportIndex,
   stellaratorHelium3ExportProductivityMultiplier,
@@ -2591,6 +2608,40 @@ export function computeTransportInfrastructureState(
     portGreenAmmoniaEfuelBunkeringLogisticsShare,
     options?.portGreenAmmoniaEfuelBunkeringLogisticsPolicy ?? 'baseline',
   );
+  const tokamakDeuteriumExportByRegion = computeTokamakDeuteriumExportByRegion(ops);
+  const nationalTokamakDeuterium = nationalTokamakDeuteriumExportIndex(tokamakDeuteriumExportByRegion);
+  const tokamakDeuteriumMult = tokamakDeuteriumExportProductivityMultiplier(
+    nationalTokamakDeuterium,
+    options?.tokamakDeuteriumExportPolicy ?? 'baseline',
+  );
+  const remoteTraumaSurgerySupplyStagingByRegion = computeRemoteTraumaSurgerySupplyStagingByRegion(
+    ops,
+    networkStress,
+  );
+  const nationalTraumaSurgery = nationalRemoteTraumaSurgerySupplyStagingIndex(
+    remoteTraumaSurgerySupplyStagingByRegion,
+  );
+  const remoteTraumaSurgerySupplyStagingShare = computeRemoteTraumaSurgerySupplyStagingShare(
+    ops,
+    options?.remoteTraumaSurgerySupplyStagingPolicy ?? 'baseline',
+  );
+  const traumaSurgeryMult = remoteTraumaSurgerySupplyStagingProductivityMultiplier(
+    remoteTraumaSurgerySupplyStagingShare,
+    options?.remoteTraumaSurgerySupplyStagingPolicy ?? 'baseline',
+  );
+  const portLiquidHydrogenBunkeringLogisticsThroughputByRegion =
+    computePortLiquidHydrogenBunkeringLogisticsThroughputByRegion(ops);
+  const nationalLiquidHydrogenBunkering = nationalPortLiquidHydrogenBunkeringLogisticsThroughputIndex(
+    portLiquidHydrogenBunkeringLogisticsThroughputByRegion,
+  );
+  const portLiquidHydrogenBunkeringLogisticsShare = computePortLiquidHydrogenBunkeringLogisticsShare(
+    ops,
+    options?.portLiquidHydrogenBunkeringLogisticsPolicy ?? 'baseline',
+  );
+  const liquidHydrogenBunkeringMult = portLiquidHydrogenBunkeringLogisticsProductivityMultiplier(
+    portLiquidHydrogenBunkeringLogisticsShare,
+    options?.portLiquidHydrogenBunkeringLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -2704,6 +2755,9 @@ export function computeTransportInfrastructureState(
     const fusionTritiumBreedingBoost = (fusionTritiumBreedingExportByRegion[code] - 5) * 0.0017;
     const pediatricOncologyBoost = (remotePediatricOncologySupplyStagingByRegion[code] - 6) * 0.0013;
     const bioLngBunkeringBoost = (portBioLngBunkeringLogisticsThroughputByRegion[code] - 2) * 0.0009;
+    const tokamakDeuteriumExportBoost = (tokamakDeuteriumExportByRegion[code] - 5) * 0.0017;
+    const traumaSurgeryBoost = (remoteTraumaSurgerySupplyStagingByRegion[code] - 6) * 0.0013;
+    const liquidHydrogenBunkeringBoost = (portLiquidHydrogenBunkeringLogisticsThroughputByRegion[code] - 2) * 0.0009;
     const stellaratorHelium3Boost = (stellaratorHelium3ExportByRegion[code] - 5) * 0.0017;
     const burnCenterBoost = (remoteBurnCenterSupplyStagingByRegion[code] - 6) * 0.0013;
     const greenAmmoniaEfuelBunkeringBoost = (portGreenAmmoniaEfuelBunkeringLogisticsThroughputByRegion[code] - 2) * 0.0009;
@@ -2822,7 +2876,10 @@ export function computeTransportInfrastructureState(
         bioLngBunkeringBoost +
         stellaratorHelium3Boost +
         burnCenterBoost +
-        greenAmmoniaEfuelBunkeringBoost) *
+        greenAmmoniaEfuelBunkeringBoost +
+        tokamakDeuteriumExportBoost +
+        traumaSurgeryBoost +
+        liquidHydrogenBunkeringBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -2936,7 +2993,10 @@ export function computeTransportInfrastructureState(
       bioLngBunkeringMult *
       stellaratorHelium3Mult *
       burnCenterMult *
-      greenAmmoniaEfuelBunkeringMult;
+      greenAmmoniaEfuelBunkeringMult *
+      tokamakDeuteriumMult *
+      traumaSurgeryMult *
+      liquidHydrogenBunkeringMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -3076,7 +3136,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/55',
+    schemaVersion: 'agent12/56',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -3474,6 +3534,14 @@ export function computeTransportInfrastructureState(
     portGreenAmmoniaEfuelBunkeringLogisticsShare,
     nationalPortGreenAmmoniaEfuelBunkeringLogisticsThroughputIndex: nationalGreenAmmoniaEfuelBunkering,
     portGreenAmmoniaEfuelBunkeringLogisticsThroughputByRegion,
+    nationalTokamakDeuteriumExportIndex: nationalTokamakDeuterium,
+    tokamakDeuteriumExportByRegion,
+    remoteTraumaSurgerySupplyStagingShare,
+    nationalRemoteTraumaSurgerySupplyStagingIndex: nationalTraumaSurgery,
+    remoteTraumaSurgerySupplyStagingByRegion,
+    portLiquidHydrogenBunkeringLogisticsShare,
+    nationalPortLiquidHydrogenBunkeringLogisticsThroughputIndex: nationalLiquidHydrogenBunkering,
+    portLiquidHydrogenBunkeringLogisticsThroughputByRegion,
     computeMs,
   };
 }

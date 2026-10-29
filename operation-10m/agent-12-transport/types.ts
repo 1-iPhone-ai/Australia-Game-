@@ -455,14 +455,17 @@ export type PortAmmoniaBunkeringLogisticsPolicy = 'baseline' | 'expand';
 
 export type SuperconductingHvdcExportPolicy = 'baseline' | 'accelerate';
 export type FusionTritiumBreedingExportPolicy = 'baseline' | 'accelerate';
+export type TokamakDeuteriumExportPolicy = 'baseline' | 'accelerate';
 export type StellaratorHelium3ExportPolicy = 'baseline' | 'accelerate';
 
 export type RemoteNeonatalIcuSupplyStagingPolicy = 'baseline' | 'surge';
 export type RemotePediatricOncologySupplyStagingPolicy = 'baseline' | 'surge';
+export type RemoteTraumaSurgerySupplyStagingPolicy = 'baseline' | 'surge';
 export type RemoteBurnCenterSupplyStagingPolicy = 'baseline' | 'surge';
 
 export type PortMethanolDualFuelBunkeringLogisticsPolicy = 'baseline' | 'expand';
 export type PortBioLngBunkeringLogisticsPolicy = 'baseline' | 'expand';
+export type PortLiquidHydrogenBunkeringLogisticsPolicy = 'baseline' | 'expand';
 export type PortGreenAmmoniaEfuelBunkeringLogisticsPolicy = 'baseline' | 'expand';
 
 export interface TransportInfrastructureState {
@@ -864,6 +867,14 @@ export interface TransportInfrastructureState {
   portGreenAmmoniaEfuelBunkeringLogisticsShare: number;
   nationalPortGreenAmmoniaEfuelBunkeringLogisticsThroughputIndex: number;
   portGreenAmmoniaEfuelBunkeringLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalTokamakDeuteriumExportIndex: number;
+  tokamakDeuteriumExportByRegion: Record<AuRegionCode, number>;
+  remoteTraumaSurgerySupplyStagingShare: number;
+  nationalRemoteTraumaSurgerySupplyStagingIndex: number;
+  remoteTraumaSurgerySupplyStagingByRegion: Record<AuRegionCode, number>;
+  portLiquidHydrogenBunkeringLogisticsShare: number;
+  nationalPortLiquidHydrogenBunkeringLogisticsThroughputIndex: number;
+  portLiquidHydrogenBunkeringLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -1016,6 +1027,9 @@ export interface TransportInfrastructureOptions {
   stellaratorHelium3ExportPolicy?: StellaratorHelium3ExportPolicy;
   remoteBurnCenterSupplyStagingPolicy?: RemoteBurnCenterSupplyStagingPolicy;
   portGreenAmmoniaEfuelBunkeringLogisticsPolicy?: PortGreenAmmoniaEfuelBunkeringLogisticsPolicy;
+  tokamakDeuteriumExportPolicy?: TokamakDeuteriumExportPolicy;
+  remoteTraumaSurgerySupplyStagingPolicy?: RemoteTraumaSurgerySupplyStagingPolicy;
+  portLiquidHydrogenBunkeringLogisticsPolicy?: PortLiquidHydrogenBunkeringLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {

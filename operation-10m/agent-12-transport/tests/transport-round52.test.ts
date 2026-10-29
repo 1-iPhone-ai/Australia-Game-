@@ -37,13 +37,13 @@ describe('Agent 12 round 52 catalog', () => {
 });
 
 describe('Agent 12 round 52 systems', () => {
-  it('returns agent12/55 with fusion tritium breeding, Pediatric Oncology, bio-LNG bunkering', () => {
+  it('returns agent12/56 with fusion tritium breeding, Pediatric Oncology, bio-LNG bunkering', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(750), {
       fusionTritiumBreedingExportPolicy: 'accelerate',
       remotePediatricOncologySupplyStagingPolicy: 'surge',
       portBioLngBunkeringLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/55');
+    assert.equal(state.schemaVersion, 'agent12/56');
     assert.ok(state.nationalFusionTritiumBreedingExportIndex >= 5);
     assert.ok(state.nationalRemotePediatricOncologySupplyStagingIndex >= 6);
     assert.ok(state.portBioLngBunkeringLogisticsShare >= 0.03);

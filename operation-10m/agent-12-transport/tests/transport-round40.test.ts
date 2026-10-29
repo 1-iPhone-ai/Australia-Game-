@@ -37,13 +37,13 @@ describe('Agent 12 round 40 catalog', () => {
 });
 
 describe('Agent 12 round 40 systems', () => {
-  it('returns agent12/55 with desal brine, wildlife rescue, EV freight charging', () => {
+  it('returns agent12/56 with desal brine, wildlife rescue, EV freight charging', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(370), {
       desalinationBrineExportPolicy: 'accelerate',
       wildlifeRescueAirliftStagingPolicy: 'surge',
       urbanEvFreightChargingLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/55');
+    assert.equal(state.schemaVersion, 'agent12/56');
     assert.ok(state.nationalDesalinationBrineExportIndex >= 5);
     assert.ok(state.nationalWildlifeRescueAirliftStagingIndex >= 6);
     assert.ok(state.urbanEvFreightChargingLogisticsShare >= 0.03);

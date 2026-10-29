@@ -37,13 +37,13 @@ describe('Agent 12 round 45 catalog', () => {
 });
 
 describe('Agent 12 round 45 systems', () => {
-  it('returns agent12/55 with floating solar, coastal rescue, battery swap', () => {
+  it('returns agent12/56 with floating solar, coastal rescue, battery swap', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(600), {
       floatingSolarArrayExportPolicy: 'accelerate',
       coastalRescueHelicopterStagingPolicy: 'surge',
       portBatterySwappingLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/55');
+    assert.equal(state.schemaVersion, 'agent12/56');
     assert.ok(state.nationalFloatingSolarArrayExportIndex >= 5);
     assert.ok(state.nationalCoastalRescueHelicopterStagingIndex >= 6);
     assert.ok(state.portBatterySwappingLogisticsShare >= 0.03);

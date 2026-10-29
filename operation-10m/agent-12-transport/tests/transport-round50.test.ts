@@ -37,13 +37,13 @@ describe('Agent 12 round 50 catalog', () => {
 });
 
 describe('Agent 12 round 50 systems', () => {
-  it('returns agent12/55 with quantum cryogenic, ECMO, ammonia bunkering', () => {
+  it('returns agent12/56 with quantum cryogenic, ECMO, ammonia bunkering', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(740), {
       quantumCryogenicExportPolicy: 'accelerate',
       remoteEcmoSupplyStagingPolicy: 'surge',
       portAmmoniaBunkeringLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/55');
+    assert.equal(state.schemaVersion, 'agent12/56');
     assert.ok(state.nationalQuantumCryogenicExportIndex >= 5);
     assert.ok(state.nationalRemoteEcmoSupplyStagingIndex >= 6);
     assert.ok(state.portAmmoniaBunkeringLogisticsShare >= 0.03);

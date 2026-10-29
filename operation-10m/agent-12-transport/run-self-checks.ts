@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/55' &&
+      infra.schemaVersion === 'agent12/56' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -253,8 +253,16 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalFusionTritiumBreedingExportIndex >= 5 &&
       infra.nationalRemotePediatricOncologySupplyStagingIndex >= 6 &&
       infra.portBioLngBunkeringLogisticsShare >= 0.03 &&
-      infra.nationalPortBioLngBunkeringLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} eWaste=${infra.nationalEWasteCriticalMineralsRecoveryExportIndex.toFixed(1)} oncology=${infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex.toFixed(1)} tug=${infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex.toFixed(1)} h2=${infra.nationalGreenHydrogenElectrolyzerExportIndex.toFixed(1)} semi=${infra.nationalAdvancedSemiconductorPackagingExportIndex.toFixed(1)} hvdc=${infra.nationalSuperconductingHvdcExportIndex.toFixed(1)} fusion=${infra.nationalFusionTritiumBreedingExportIndex.toFixed(1)}`,
+      infra.nationalPortBioLngBunkeringLogisticsThroughputIndex >= 2 &&
+      infra.nationalStellaratorHelium3ExportIndex >= 5 &&
+      infra.nationalRemoteBurnCenterSupplyStagingIndex >= 6 &&
+      infra.portGreenAmmoniaEfuelBunkeringLogisticsShare >= 0.03 &&
+      infra.nationalPortGreenAmmoniaEfuelBunkeringLogisticsThroughputIndex >= 2 &&
+      infra.nationalTokamakDeuteriumExportIndex >= 5 &&
+      infra.nationalRemoteTraumaSurgerySupplyStagingIndex >= 6 &&
+      infra.portLiquidHydrogenBunkeringLogisticsShare >= 0.03 &&
+      infra.nationalPortLiquidHydrogenBunkeringLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} eWaste=${infra.nationalEWasteCriticalMineralsRecoveryExportIndex.toFixed(1)} oncology=${infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex.toFixed(1)} tug=${infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex.toFixed(1)} h2=${infra.nationalGreenHydrogenElectrolyzerExportIndex.toFixed(1)} semi=${infra.nationalAdvancedSemiconductorPackagingExportIndex.toFixed(1)} hvdc=${infra.nationalSuperconductingHvdcExportIndex.toFixed(1)} fusion=${infra.nationalFusionTritiumBreedingExportIndex.toFixed(1)} deuterium=${infra.nationalTokamakDeuteriumExportIndex.toFixed(1)}`,
   });
 
   return results;

@@ -37,13 +37,13 @@ describe('Agent 12 round 52 catalog', () => {
 });
 
 describe('Agent 12 round 52 systems', () => {
-  it('returns agent12/55 with stellarator helium-3, Burn Center, green ammonia e-fuel bunkering', () => {
+  it('returns agent12/56 with stellarator helium-3, Burn Center, green ammonia e-fuel bunkering', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(750), {
       stellaratorHelium3ExportPolicy: 'accelerate',
       remoteBurnCenterSupplyStagingPolicy: 'surge',
       portGreenAmmoniaEfuelBunkeringLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/55');
+    assert.equal(state.schemaVersion, 'agent12/56');
     assert.ok(state.nationalStellaratorHelium3ExportIndex >= 5);
     assert.ok(state.nationalRemoteBurnCenterSupplyStagingIndex >= 6);
     assert.ok(state.portGreenAmmoniaEfuelBunkeringLogisticsShare >= 0.03);
