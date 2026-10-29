@@ -173,6 +173,8 @@ export interface TeamMultiAgentInputs {
   roleSince: Record<string, number>;
   lockedRoles: string[];
   roleMinTurns: number;
+  /** Optional Strategic Command proposals to filter through coordination (planning-only). */
+  directiveProposals?: TeammateDirectiveProposal[];
 }
 
 export interface TeamMultiAgentLayerState {
@@ -183,12 +185,44 @@ export interface TeamMultiAgentLayerState {
   coordination: CoordinationPlan;
   duplicateGuard: DuplicateGuardState;
   diagnostics: string[];
+  meta: TeamMultiAgentCoordinationMeta;
+  auditFindings: CoordinationAuditFinding[];
 }
 
 export interface TeamMultiAgentEvaluation {
   state: TeamMultiAgentLayerState;
   blockedDuplicates: string[];
   coordinationIssues: string[];
+  auditFindings: CoordinationAuditFinding[];
+}
+
+export interface TeammateDirectiveProposal {
+  id: string;
+  actorId: string;
+  goalKind: string;
+  targetRegionId: string | null;
+  taskId: string | null;
+  priority: number;
+}
+
+export interface DirectiveCoordinationResult {
+  allowed: TeammateDirectiveProposal[];
+  suppressed: Array<{ proposal: TeammateDirectiveProposal; reason: string }>;
+  constraintsByActor: Record<string, string>;
+}
+
+export interface CoordinationAuditFinding {
+  id: string;
+  severity: 'info' | 'warning' | 'error';
+  message: string;
+  actorIds: string[];
+  regionId: string | null;
+}
+
+export interface TeamMultiAgentCoordinationMeta {
+  directiveConstraints: Record<string, string>;
+  suppressedDirectiveIds: string[];
+  auditSummary: { errors: number; warnings: number; info: number };
 }
 
 export const AGENT18_LIMITS = {
@@ -197,6 +231,8 @@ export const AGENT18_LIMITS = {
   maxWorkstreams: 4,
   maxCommittedKeys: 48,
   maxReservations: 24,
+  maxAuditFindings: 16,
+  maxSuppressedDirectives: 24,
   roleMinTurnsDefault: 2,
 } as const;
 
@@ -1094,7 +1130,277 @@ export function serializeCoordinationPlan(plan: CoordinationPlan): string {
 }
 
 
+// --- source: directive-coordination.ts ---
+  CoordinationPlan,
+  RoleAssignment,
+  TeammateDirectiveProposal,
+  DirectiveCoordinationResult,
+} from './types.ts';
+
+function directiveKey(p: TeammateDirectiveProposal): string {
+  return [p.actorId, p.goalKind, p.targetRegionId || '_', p.taskId || '_'].join('|');
+}
+
+function isRegionDepositGoal(kind: string): boolean {
+  return /deposit|defend|take|region/i.test(kind);
+}
+
+/** Stable dedupe before mutex filtering (same actor/goal/target/task). */
+export function dedupeDirectiveProposals(proposals: TeammateDirectiveProposal[]): TeammateDirectiveProposal[] {
+  const seen = new Set<string>();
+  const out: TeammateDirectiveProposal[] = [];
+  proposals
+    .slice()
+    .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id))
+    .forEach(p => {
+      const k = directiveKey(p);
+      if (seen.has(k)) return;
+      seen.add(k);
+      out.push(p);
+    });
+  return out;
+}
+
+export function buildActorDirectiveConstraints(
+  plan: CoordinationPlan,
+  roles: RoleAssignment[],
+): Record<string, string> {
+  const constraints: Record<string, string> = {};
+  Object.entries(plan.mutexRegions).forEach(([regionId, holderId]) => {
+    constraints[holderId] = `Lead region coordination for ${regionId}`;
+  });
+  roles.forEach(r => {
+    if (r.primaryRole === 'support') {
+      constraints[r.actorId] = constraints[r.actorId] || `Support role: ${r.responsibility}`;
+    }
+    if (r.primaryRole === 'recovery') {
+      constraints[r.actorId] = 'Recovery first — no expansion directives';
+    }
+  });
+  plan.handoffs
+    .filter(h => h.status === 'pending')
+    .forEach(h => {
+      constraints[h.toActorId] = `Pending handoff for ${h.regionId || 'task'} from ${h.fromActorId}`;
+    });
+  return constraints;
+}
+
+/**
+ * Filter Strategic Command directive proposals so teammates never receive conflicting
+ * region deposit goals (mutex + duplicate suppression).
+ */
+export function coordinateTeammateDirectives(
+  proposals: TeammateDirectiveProposal[],
+  plan: CoordinationPlan,
+  roles: RoleAssignment[],
+): DirectiveCoordinationResult {
+  const constraintsByActor = buildActorDirectiveConstraints(plan, roles);
+  const allowed: TeammateDirectiveProposal[] = [];
+  const suppressed: DirectiveCoordinationResult['suppressed'] = [];
+  const seen = new Set<string>();
+
+  dedupeDirectiveProposals(proposals).forEach(p => {
+    const key = directiveKey(p);
+    if (seen.has(key)) {
+      suppressed.push({ proposal: p, reason: 'duplicate_directive_proposal' });
+      return;
+    }
+    seen.add(key);
+
+    const role = roles.find(r => r.actorId === p.actorId);
+    if (role?.primaryRole === 'recovery' && /take|expand|expansion/i.test(p.goalKind)) {
+      suppressed.push({ proposal: p, reason: 'recovery_blocks_expansion_directive' });
+      return;
+    }
+
+    if (p.targetRegionId && isRegionDepositGoal(p.goalKind)) {
+      const holder = plan.mutexRegions[p.targetRegionId];
+      if (holder && holder !== p.actorId) {
+        suppressed.push({
+          proposal: p,
+          reason: `mutex_holder_${holder}_for_${p.targetRegionId}`,
+        });
+        return;
+      }
+    }
+
+    if (role?.primaryRole === 'support' && p.targetRegionId && !role.responsibility.includes(p.targetRegionId)) {
+      suppressed.push({ proposal: p, reason: 'support_out_of_scope_region' });
+      return;
+    }
+
+    allowed.push(p);
+  });
+
+  return { allowed, suppressed, constraintsByActor };
+}
+
+export interface DirectiveStressStep {
+  turn: number;
+  allowedCount: number;
+  suppressedCount: number;
+}
+
+/** Deterministic multi-turn directive stress (coordination stability). */
+export function stressDirectiveCoordination(
+  baseProposals: TeammateDirectiveProposal[],
+  evaluatePlan: (turn: number) => CoordinationPlan,
+  roles: RoleAssignment[],
+  turns: number,
+): DirectiveStressStep[] {
+  const steps: DirectiveStressStep[] = [];
+  for (let t = 0; t < turns; t += 1) {
+    const plan = evaluatePlan(t);
+    const proposals = baseProposals.map(p => ({ ...p, id: `${p.id}_t${t}` }));
+    const r = coordinateTeammateDirectives(proposals, plan, roles);
+    steps.push({ turn: t, allowedCount: r.allowed.length, suppressedCount: r.suppressed.length });
+  }
+  return steps;
+}
+
+
+// --- source: coordination-audit.ts ---
+  AGENT18_LIMITS,
+  CoordinationAuditFinding,
+  TeamMultiAgentInputs,
+  TeamMultiAgentLayerState,
+  TeamMultiAgentCoordinationMeta,
+} from './types.ts';
+
+function summarizeAudit(findings: CoordinationAuditFinding[]): TeamMultiAgentCoordinationMeta['auditSummary'] {
+  return {
+    errors: findings.filter(f => f.severity === 'error').length,
+    warnings: findings.filter(f => f.severity === 'warning').length,
+    info: findings.filter(f => f.severity === 'info').length,
+  };
+}
+
+export function emptyCoordinationMeta(): TeamMultiAgentCoordinationMeta {
+  return {
+    directiveConstraints: {},
+    suppressedDirectiveIds: [],
+    auditSummary: { errors: 0, warnings: 0, info: 0 },
+  };
+}
+
+export function auditTeamMultiAgentLayer(
+  state: TeamMultiAgentLayerState,
+  inputs: TeamMultiAgentInputs,
+): CoordinationAuditFinding[] {
+  const findings: CoordinationAuditFinding[] = [];
+  const push = (f: Omit<CoordinationAuditFinding, 'id'>) => {
+    if (findings.length >= AGENT18_LIMITS.maxAuditFindings) return;
+    findings.push({ ...f, id: `audit_${findings.length}_${f.severity}` });
+  };
+
+  detectIllegalSharedExclusiveTasks(inputs.tasks).forEach(msg =>
+    push({ severity: 'error', message: msg, actorIds: [], regionId: null }),
+  );
+
+  Object.entries(state.coordination.mutexRegions).forEach(([regionId, holderId]) => {
+    const role = state.roles.find(r => r.actorId === holderId);
+    const task = inputs.tasks.find(
+      t => t.regionId === regionId && t.assignedActorIds.includes(holderId),
+    );
+    if (!task) {
+      push({
+        severity: 'warning',
+        message: `Mutex holder ${holderId} has no assigned task for ${regionId}`,
+        actorIds: [holderId],
+        regionId,
+      });
+    }
+    if (role && role.primaryRole === 'support') {
+      push({
+        severity: 'warning',
+        message: `Support role holds mutex for ${regionId} — verify handoff`,
+        actorIds: [holderId],
+        regionId,
+      });
+    }
+    const resKey = reservationKeyForRegionAction(regionId, 'region_deposit');
+    const reservation = state.duplicateGuard.reservations[resKey];
+    if (reservation && reservation.holderActorId !== holderId) {
+      push({
+        severity: 'error',
+        message: `Reservation holder ${reservation.holderActorId} disagrees with mutex ${holderId}`,
+        actorIds: [holderId, reservation.holderActorId],
+        regionId,
+      });
+    }
+  });
+
+  state.coordination.arbitrationLog.forEach(entry => {
+    if (entry.regionId && state.coordination.mutexRegions[entry.regionId] !== entry.winnerActorId) {
+      push({
+        severity: 'error',
+        message: `Arbitration winner ${entry.winnerActorId} does not match mutex for ${entry.regionId}`,
+        actorIds: [entry.winnerActorId],
+        regionId: entry.regionId,
+      });
+    }
+  });
+
+  state.coordination.handoffs
+    .filter(h => h.status === 'pending')
+    .forEach(h => {
+      const task = inputs.tasks.find(t => t.id === h.taskId);
+      if (!task || task.status !== 'blocked') {
+        push({
+          severity: 'info',
+          message: `Handoff ${h.id} pending without blocked task ${h.taskId}`,
+          actorIds: [h.fromActorId, h.toActorId],
+          regionId: h.regionId,
+        });
+      }
+    });
+
+  state.coordination.workstreams.forEach(ws => {
+    ws.actorIds.forEach(id => {
+      const role = state.roles.find(r => r.actorId === id);
+      if (!role || role.taskIds.length === 0) {
+        push({
+          severity: 'warning',
+          message: `Workstream ${ws.id} includes idle actor ${id}`,
+          actorIds: [id],
+          regionId: null,
+        });
+      }
+    });
+  });
+
+  if (state.coordination.warnings.length > 3) {
+    push({
+      severity: 'warning',
+      message: `${state.coordination.warnings.length} coordination warnings active`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  return findings;
+}
+
+export function attachAuditToState(
+  state: TeamMultiAgentLayerState,
+  findings: CoordinationAuditFinding[],
+  metaPatch: Partial<TeamMultiAgentCoordinationMeta>,
+): TeamMultiAgentLayerState {
+  const auditFindings = findings.slice(0, AGENT18_LIMITS.maxAuditFindings);
+  const meta: TeamMultiAgentCoordinationMeta = {
+    ...emptyCoordinationMeta(),
+    ...state.meta,
+    ...metaPatch,
+    auditSummary: summarizeAudit(auditFindings),
+  };
+  return { ...state, auditFindings, meta };
+}
+
+
 // --- source: multi-agent-state.ts ---
+  buildActorDirectiveConstraints,
+  coordinateTeammateDirectives,
+} from './directive-coordination.ts';
   advanceDuplicateGuardTurn,
   emptyDuplicateGuardState,
   reserveActionSlot,
@@ -1110,6 +1416,15 @@ export function serializeCoordinationPlan(plan: CoordinationPlan): string {
   TeamMultiAgentLayerState,
 } from './types.ts';
 
+const emptyCoordination = {
+  leases: [],
+  handoffs: [],
+  workstreams: [],
+  mutexRegions: {},
+  warnings: [],
+  arbitrationLog: [],
+};
+
 export function sanitizeTeamMultiAgentCoordinationState(
   raw: unknown,
   teamId: string,
@@ -1120,9 +1435,11 @@ export function sanitizeTeamMultiAgentCoordinationState(
     teamId,
     turn,
     roles: [],
-    coordination: { leases: [], handoffs: [], workstreams: [], mutexRegions: {}, warnings: [], arbitrationLog: [] },
+    coordination: { ...emptyCoordination },
     duplicateGuard: emptyDuplicateGuardState(turn),
     diagnostics: [],
+    meta: emptyCoordinationMeta(),
+    auditFindings: [],
   };
   if (!raw || typeof raw !== 'object') return empty;
   const r = raw as Record<string, unknown>;
@@ -1131,6 +1448,7 @@ export function sanitizeTeamMultiAgentCoordinationState(
     r.coordination && typeof r.coordination === 'object'
       ? (r.coordination as TeamMultiAgentLayerState['coordination'])
       : empty.coordination;
+  const metaRaw = r.meta && typeof r.meta === 'object' ? (r.meta as Record<string, unknown>) : {};
   return {
     version: 1,
     teamId: String(r.teamId || teamId),
@@ -1153,11 +1471,33 @@ export function sanitizeTeamMultiAgentCoordinationState(
     },
     duplicateGuard: sanitizeDuplicateGuardState(r.duplicateGuard, turn),
     diagnostics: Array.isArray(r.diagnostics) ? r.diagnostics.map(String).slice(0, 20) : [],
+    meta: {
+      directiveConstraints:
+        metaRaw.directiveConstraints && typeof metaRaw.directiveConstraints === 'object'
+          ? (metaRaw.directiveConstraints as Record<string, string>)
+          : {},
+      suppressedDirectiveIds: Array.isArray(metaRaw.suppressedDirectiveIds)
+        ? metaRaw.suppressedDirectiveIds.map(String).slice(0, AGENT18_LIMITS.maxSuppressedDirectives)
+        : [],
+      auditSummary:
+        metaRaw.auditSummary && typeof metaRaw.auditSummary === 'object'
+          ? (metaRaw.auditSummary as TeamMultiAgentLayerState['meta']['auditSummary'])
+          : { errors: 0, warnings: 0, info: 0 },
+    },
+    auditFindings: Array.isArray(r.auditFindings)
+      ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
+      : [],
   };
 }
 
 export function teamMultiAgentSignature(state: TeamMultiAgentLayerState): string {
-  return serializeCoordinationPlan(state.coordination) + '::' + state.roles.map(r => [r.actorId, r.primaryRole, r.exclusiveSlotId].join(':')).join(',');
+  return (
+    serializeCoordinationPlan(state.coordination) +
+    '::' +
+    state.roles.map(r => [r.actorId, r.primaryRole, r.exclusiveSlotId].join(':')).join(',') +
+    '::' +
+    JSON.stringify(state.meta.auditSummary)
+  );
 }
 
 /**
@@ -1173,14 +1513,18 @@ export function evaluateTeamMultiAgentLayer(
   const { roles, notes } = assignTeamRolesWithSlots({ ...inputs, roleMinTurns });
   diagnostics.push(...notes);
   const sharedIssues = detectIllegalSharedExclusiveTasks(inputs.tasks);
-  const coordination = orchestrateTeamCoordination(
-    inputs.turn,
-    inputs.tasks,
-    roles,
-    [...inputs.lockedRoles, ...(inputs.command?.lockedActorIds || [])],
-  );
+  const locked = [...inputs.lockedRoles, ...(inputs.command?.lockedActorIds || [])];
+  const coordination = orchestrateTeamCoordination(inputs.turn, inputs.tasks, roles, locked);
   diagnostics.push(...coordination.warnings);
   coordination.arbitrationLog.forEach(a => diagnostics.push(a.reason));
+
+  const directiveConstraints = buildActorDirectiveConstraints(coordination, roles);
+  const proposals = inputs.directiveProposals || [];
+  const directiveResult = coordinateTeammateDirectives(proposals, coordination, roles);
+  directiveResult.suppressed.forEach(s =>
+    diagnostics.push(`Suppressed directive ${s.proposal.id}: ${s.reason}`),
+  );
+
   let duplicateGuard = previous
     ? advanceDuplicateGuardTurn(previous.duplicateGuard, inputs.turn)
     : emptyDuplicateGuardState(inputs.turn);
@@ -1194,7 +1538,8 @@ export function evaluateTeamMultiAgentLayer(
       inputs.turn,
     );
   });
-  const state: TeamMultiAgentLayerState = {
+
+  let state: TeamMultiAgentLayerState = {
     version: 1,
     teamId: inputs.teamId,
     turn: inputs.turn,
@@ -1202,11 +1547,29 @@ export function evaluateTeamMultiAgentLayer(
     coordination,
     duplicateGuard,
     diagnostics,
+    meta: emptyCoordinationMeta(),
+    auditFindings: [],
   };
+
+  const auditFindings = auditTeamMultiAgentLayer(state, inputs);
+  state = attachAuditToState(state, auditFindings, {
+    directiveConstraints: directiveResult.constraintsByActor,
+    suppressedDirectiveIds: directiveResult.suppressed
+      .map(s => s.proposal.id)
+      .slice(0, AGENT18_LIMITS.maxSuppressedDirectives),
+  });
+
+  const coordinationIssues = [
+    ...sharedIssues,
+    ...coordination.warnings,
+    ...auditFindings.filter(f => f.severity !== 'info').map(f => f.message),
+  ];
+
   return {
     state,
     blockedDuplicates: sharedIssues,
-    coordinationIssues: [...sharedIssues, ...coordination.warnings],
+    coordinationIssues,
+    auditFindings: state.auditFindings,
   };
 }
 
@@ -1224,6 +1587,11 @@ export function syncMultiAgentCoordinationForDirectives(
   compareArbitrationCandidates,
   missionTierForTask,
 } from './priority-arbitration.ts';
+  buildActorDirectiveConstraints,
+  coordinateTeammateDirectives,
+  dedupeDirectiveProposals,
+  stressDirectiveCoordination,
+} from './directive-coordination.ts';
   DuplicateActionGuard,
   buildActionFingerprint,
   detectDuplicateIntents,
@@ -1238,6 +1606,7 @@ export function syncMultiAgentCoordinationForDirectives(
   RoleAssignment,
   TeamMultiAgentInputs,
   TeamTaskSnapshot,
+  TeammateDirectiveProposal,
 } from './types.ts';
 
 export interface Agent18SelfTestResult {
@@ -1798,6 +2167,89 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
     const ab = compareArbitrationCandidates(ca, cb, 'TAS');
     const ba = compareArbitrationCandidates(cb, ca, 'TAS');
     return ab < 0 && ba > 0 && missionTierForTask(tasks[0]) === 8;
+  });
+
+  check(results, 'a18_dir_mutex_suppress', 'Directives: non-holder region deposit proposal suppressed', () => {
+    const inp = baseInputs();
+    const proposals: TeammateDirectiveProposal[] = [
+      { id: 'd1', actorId: 'mate', goalKind: 'region_deposit', targetRegionId: 'NSW', taskId: 'x', priority: 1 },
+    ];
+    const ev = evaluateTeamMultiAgentLayer({ ...inp, directiveProposals: proposals }, null);
+    return (
+      ev.state.meta.suppressedDirectiveIds.includes('d1') &&
+      ev.state.coordination.mutexRegions.NSW === 'player'
+    ) || JSON.stringify(ev.state.meta);
+  });
+
+  check(results, 'a18_dir_dedupe', 'Directives: dedupeDirectiveProposals keeps highest-priority unique keys', () => {
+    const proposals: TeammateDirectiveProposal[] = [
+      { id: 'a', actorId: 'm', goalKind: 'travel', targetRegionId: 'VIC', taskId: null, priority: 2 },
+      { id: 'b', actorId: 'm', goalKind: 'travel', targetRegionId: 'VIC', taskId: null, priority: 1 },
+    ];
+    const out = dedupeDirectiveProposals(proposals);
+    return out.length === 1 && out[0].id === 'b' || JSON.stringify(out);
+  });
+
+  check(results, 'a18_dir_recovery_block', 'Directives: recovery role blocks expansion directives', () => {
+    const inp = baseInputs({ command: null });
+    inp.actors = inp.actors.map(a => (a.id === 'mate' ? { ...a, inRecovery: true } : a));
+    const proposals: TeammateDirectiveProposal[] = [
+      { id: 'exp', actorId: 'mate', goalKind: 'take_region', targetRegionId: 'QLD', taskId: null, priority: 1 },
+    ];
+    const ev = evaluateTeamMultiAgentLayer({ ...inp, directiveProposals: proposals }, null);
+    return ev.state.meta.suppressedDirectiveIds.includes('exp') || JSON.stringify(ev.state.meta);
+  });
+
+  check(results, 'a18_dir_constraints', 'Directives: mutex holder receives lead constraint label', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const c = ev.state.meta.directiveConstraints.player;
+    return (typeof c === 'string' && c.includes('NSW')) || JSON.stringify(ev.state.meta.directiveConstraints);
+  });
+
+  check(results, 'a18_audit_shared_exclusive', 'Audit: illegal shared exclusive tasks surface as errors', () => {
+    const tasks = baseInputs().tasks.map(t =>
+      t.id === 'task_defend_NSW' ? { ...t, assignedActorIds: ['player', 'mate'] } : t,
+    );
+    const ev = evaluateTeamMultiAgentLayer(baseInputs({ tasks }), null);
+    return ev.auditFindings.some(f => f.severity === 'error') || JSON.stringify(ev.auditFindings);
+  });
+
+  check(results, 'a18_audit_reservation', 'Audit: reservation/mutex mismatch flagged', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const bad = { ...ev.state };
+    bad.duplicateGuard = {
+      ...bad.duplicateGuard,
+      reservations: {
+        'res:NSW:region_deposit': { holderActorId: 'mate', taskId: 't', turn: ev.state.turn },
+      },
+    };
+    const findings = auditTeamMultiAgentLayer(bad, baseInputs());
+    return findings.some(f => f.severity === 'error' && /disagrees with mutex/.test(f.message));
+  });
+
+  check(results, 'a18_stress_directives', 'Stress: directive coordination stable over 5 turns', () => {
+    const roles = assignTeamRolesWithSlots(baseInputs()).roles;
+    const proposals: TeammateDirectiveProposal[] = [
+      { id: 'p', actorId: 'mate', goalKind: 'region_deposit', targetRegionId: 'NSW', taskId: null, priority: 1 },
+    ];
+    const steps = stressDirectiveCoordination(
+      proposals,
+      () => orchestrateTeamCoordination(0, baseInputs().tasks, roles),
+      roles,
+      5,
+    );
+    return steps.length === 5 && steps.every(s => s.suppressedCount >= 1) || JSON.stringify(steps);
+  });
+
+  check(results, 'a18_meta_summary', 'Audit: meta auditSummary matches finding severities', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const s = ev.state.meta.auditSummary;
+    const counts = {
+      errors: ev.auditFindings.filter(f => f.severity === 'error').length,
+      warnings: ev.auditFindings.filter(f => f.severity === 'warning').length,
+      info: ev.auditFindings.filter(f => f.severity === 'info').length,
+    };
+    return s.errors === counts.errors && s.warnings === counts.warnings && s.info === counts.info;
   });
 
   return results;

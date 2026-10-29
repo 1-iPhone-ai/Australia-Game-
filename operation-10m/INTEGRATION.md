@@ -36,6 +36,7 @@ Hook points:
 2. **Before** Strategic Command generates directives: call `syncMultiAgentCoordinationForDirectives(teamId, live)` (wrapper in assembly) so AI teammates never receive conflicting goals for the same exclusive slot.
 3. **Action commit path**: consult `DuplicateActionGuard.tryCommit(fingerprint)` with the same `executionGeneration` the canonical executor uses; map `blocked` → `duplicate_action_token`.
 4. **Region mutex**: use `buildMutexMapWithPriorityArbitration` / `coordination.arbitrationLog` so defend-vs-take and explicit/locked edge cases match Team OS tier rules before Strategic Command sync.
+5. **Strategic Command**: pass directive proposals through `coordinateTeammateDirectives` before issuing AI teammate goals; persist `state.meta.directiveConstraints` and `state.auditFindings`.
 
 ### Test gate
 

@@ -19,6 +19,8 @@ const FILES = [
   'duplicate-action-guard.ts',
   'role-assignment-engine.ts',
   'coordination-orchestrator.ts',
+  'directive-coordination.ts',
+  'coordination-audit.ts',
   'multi-agent-state.ts',
   'self-tests.ts',
 ];

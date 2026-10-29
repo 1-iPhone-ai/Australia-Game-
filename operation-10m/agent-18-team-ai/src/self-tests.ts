@@ -6,6 +6,13 @@ import {
   missionTierForTask,
 } from './priority-arbitration.ts';
 import {
+  buildActorDirectiveConstraints,
+  coordinateTeammateDirectives,
+  dedupeDirectiveProposals,
+  stressDirectiveCoordination,
+} from './directive-coordination.ts';
+import { auditTeamMultiAgentLayer } from './coordination-audit.ts';
+import {
   DuplicateActionGuard,
   buildActionFingerprint,
   detectDuplicateIntents,
@@ -23,6 +30,7 @@ import {
   RoleAssignment,
   TeamMultiAgentInputs,
   TeamTaskSnapshot,
+  TeammateDirectiveProposal,
 } from './types.ts';
 
 export interface Agent18SelfTestResult {
@@ -583,6 +591,89 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
     const ab = compareArbitrationCandidates(ca, cb, 'TAS');
     const ba = compareArbitrationCandidates(cb, ca, 'TAS');
     return ab < 0 && ba > 0 && missionTierForTask(tasks[0]) === 8;
+  });
+
+  check(results, 'a18_dir_mutex_suppress', 'Directives: non-holder region deposit proposal suppressed', () => {
+    const inp = baseInputs();
+    const proposals: TeammateDirectiveProposal[] = [
+      { id: 'd1', actorId: 'mate', goalKind: 'region_deposit', targetRegionId: 'NSW', taskId: 'x', priority: 1 },
+    ];
+    const ev = evaluateTeamMultiAgentLayer({ ...inp, directiveProposals: proposals }, null);
+    return (
+      ev.state.meta.suppressedDirectiveIds.includes('d1') &&
+      ev.state.coordination.mutexRegions.NSW === 'player'
+    ) || JSON.stringify(ev.state.meta);
+  });
+
+  check(results, 'a18_dir_dedupe', 'Directives: dedupeDirectiveProposals keeps highest-priority unique keys', () => {
+    const proposals: TeammateDirectiveProposal[] = [
+      { id: 'a', actorId: 'm', goalKind: 'travel', targetRegionId: 'VIC', taskId: null, priority: 2 },
+      { id: 'b', actorId: 'm', goalKind: 'travel', targetRegionId: 'VIC', taskId: null, priority: 1 },
+    ];
+    const out = dedupeDirectiveProposals(proposals);
+    return out.length === 1 && out[0].id === 'b' || JSON.stringify(out);
+  });
+
+  check(results, 'a18_dir_recovery_block', 'Directives: recovery role blocks expansion directives', () => {
+    const inp = baseInputs({ command: null });
+    inp.actors = inp.actors.map(a => (a.id === 'mate' ? { ...a, inRecovery: true } : a));
+    const proposals: TeammateDirectiveProposal[] = [
+      { id: 'exp', actorId: 'mate', goalKind: 'take_region', targetRegionId: 'QLD', taskId: null, priority: 1 },
+    ];
+    const ev = evaluateTeamMultiAgentLayer({ ...inp, directiveProposals: proposals }, null);
+    return ev.state.meta.suppressedDirectiveIds.includes('exp') || JSON.stringify(ev.state.meta);
+  });
+
+  check(results, 'a18_dir_constraints', 'Directives: mutex holder receives lead constraint label', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const c = ev.state.meta.directiveConstraints.player;
+    return (typeof c === 'string' && c.includes('NSW')) || JSON.stringify(ev.state.meta.directiveConstraints);
+  });
+
+  check(results, 'a18_audit_shared_exclusive', 'Audit: illegal shared exclusive tasks surface as errors', () => {
+    const tasks = baseInputs().tasks.map(t =>
+      t.id === 'task_defend_NSW' ? { ...t, assignedActorIds: ['player', 'mate'] } : t,
+    );
+    const ev = evaluateTeamMultiAgentLayer(baseInputs({ tasks }), null);
+    return ev.auditFindings.some(f => f.severity === 'error') || JSON.stringify(ev.auditFindings);
+  });
+
+  check(results, 'a18_audit_reservation', 'Audit: reservation/mutex mismatch flagged', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const bad = { ...ev.state };
+    bad.duplicateGuard = {
+      ...bad.duplicateGuard,
+      reservations: {
+        'res:NSW:region_deposit': { holderActorId: 'mate', taskId: 't', turn: ev.state.turn },
+      },
+    };
+    const findings = auditTeamMultiAgentLayer(bad, baseInputs());
+    return findings.some(f => f.severity === 'error' && /disagrees with mutex/.test(f.message));
+  });
+
+  check(results, 'a18_stress_directives', 'Stress: directive coordination stable over 5 turns', () => {
+    const roles = assignTeamRolesWithSlots(baseInputs()).roles;
+    const proposals: TeammateDirectiveProposal[] = [
+      { id: 'p', actorId: 'mate', goalKind: 'region_deposit', targetRegionId: 'NSW', taskId: null, priority: 1 },
+    ];
+    const steps = stressDirectiveCoordination(
+      proposals,
+      () => orchestrateTeamCoordination(0, baseInputs().tasks, roles),
+      roles,
+      5,
+    );
+    return steps.length === 5 && steps.every(s => s.suppressedCount >= 1) || JSON.stringify(steps);
+  });
+
+  check(results, 'a18_meta_summary', 'Audit: meta auditSummary matches finding severities', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const s = ev.state.meta.auditSummary;
+    const counts = {
+      errors: ev.auditFindings.filter(f => f.severity === 'error').length,
+      warnings: ev.auditFindings.filter(f => f.severity === 'warning').length,
+      info: ev.auditFindings.filter(f => f.severity === 'info').length,
+    };
+    return s.errors === counts.errors && s.warnings === counts.warnings && s.info === counts.info;
   });
 
   return results;

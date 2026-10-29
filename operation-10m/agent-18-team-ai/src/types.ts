@@ -169,6 +169,8 @@ export interface TeamMultiAgentInputs {
   roleSince: Record<string, number>;
   lockedRoles: string[];
   roleMinTurns: number;
+  /** Optional Strategic Command proposals to filter through coordination (planning-only). */
+  directiveProposals?: TeammateDirectiveProposal[];
 }
 
 export interface TeamMultiAgentLayerState {
@@ -179,12 +181,44 @@ export interface TeamMultiAgentLayerState {
   coordination: CoordinationPlan;
   duplicateGuard: DuplicateGuardState;
   diagnostics: string[];
+  meta: TeamMultiAgentCoordinationMeta;
+  auditFindings: CoordinationAuditFinding[];
 }
 
 export interface TeamMultiAgentEvaluation {
   state: TeamMultiAgentLayerState;
   blockedDuplicates: string[];
   coordinationIssues: string[];
+  auditFindings: CoordinationAuditFinding[];
+}
+
+export interface TeammateDirectiveProposal {
+  id: string;
+  actorId: string;
+  goalKind: string;
+  targetRegionId: string | null;
+  taskId: string | null;
+  priority: number;
+}
+
+export interface DirectiveCoordinationResult {
+  allowed: TeammateDirectiveProposal[];
+  suppressed: Array<{ proposal: TeammateDirectiveProposal; reason: string }>;
+  constraintsByActor: Record<string, string>;
+}
+
+export interface CoordinationAuditFinding {
+  id: string;
+  severity: 'info' | 'warning' | 'error';
+  message: string;
+  actorIds: string[];
+  regionId: string | null;
+}
+
+export interface TeamMultiAgentCoordinationMeta {
+  directiveConstraints: Record<string, string>;
+  suppressedDirectiveIds: string[];
+  auditSummary: { errors: number; warnings: number; info: number };
 }
 
 export const AGENT18_LIMITS = {
@@ -193,6 +227,8 @@ export const AGENT18_LIMITS = {
   maxWorkstreams: 4,
   maxCommittedKeys: 48,
   maxReservations: 24,
+  maxAuditFindings: 16,
+  maxSuppressedDirectives: 24,
   roleMinTurnsDefault: 2,
 } as const;
 

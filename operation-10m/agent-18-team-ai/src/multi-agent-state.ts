@@ -1,4 +1,9 @@
+import { attachAuditToState, auditTeamMultiAgentLayer, emptyCoordinationMeta } from './coordination-audit.ts';
 import { orchestrateTeamCoordination, serializeCoordinationPlan } from './coordination-orchestrator.ts';
+import {
+  buildActorDirectiveConstraints,
+  coordinateTeammateDirectives,
+} from './directive-coordination.ts';
 import {
   advanceDuplicateGuardTurn,
   emptyDuplicateGuardState,
@@ -17,6 +22,15 @@ import {
   TeamMultiAgentLayerState,
 } from './types.ts';
 
+const emptyCoordination = {
+  leases: [],
+  handoffs: [],
+  workstreams: [],
+  mutexRegions: {},
+  warnings: [],
+  arbitrationLog: [],
+};
+
 export function sanitizeTeamMultiAgentCoordinationState(
   raw: unknown,
   teamId: string,
@@ -27,9 +41,11 @@ export function sanitizeTeamMultiAgentCoordinationState(
     teamId,
     turn,
     roles: [],
-    coordination: { leases: [], handoffs: [], workstreams: [], mutexRegions: {}, warnings: [], arbitrationLog: [] },
+    coordination: { ...emptyCoordination },
     duplicateGuard: emptyDuplicateGuardState(turn),
     diagnostics: [],
+    meta: emptyCoordinationMeta(),
+    auditFindings: [],
   };
   if (!raw || typeof raw !== 'object') return empty;
   const r = raw as Record<string, unknown>;
@@ -38,6 +54,7 @@ export function sanitizeTeamMultiAgentCoordinationState(
     r.coordination && typeof r.coordination === 'object'
       ? (r.coordination as TeamMultiAgentLayerState['coordination'])
       : empty.coordination;
+  const metaRaw = r.meta && typeof r.meta === 'object' ? (r.meta as Record<string, unknown>) : {};
   return {
     version: 1,
     teamId: String(r.teamId || teamId),
@@ -60,11 +77,33 @@ export function sanitizeTeamMultiAgentCoordinationState(
     },
     duplicateGuard: sanitizeDuplicateGuardState(r.duplicateGuard, turn),
     diagnostics: Array.isArray(r.diagnostics) ? r.diagnostics.map(String).slice(0, 20) : [],
+    meta: {
+      directiveConstraints:
+        metaRaw.directiveConstraints && typeof metaRaw.directiveConstraints === 'object'
+          ? (metaRaw.directiveConstraints as Record<string, string>)
+          : {},
+      suppressedDirectiveIds: Array.isArray(metaRaw.suppressedDirectiveIds)
+        ? metaRaw.suppressedDirectiveIds.map(String).slice(0, AGENT18_LIMITS.maxSuppressedDirectives)
+        : [],
+      auditSummary:
+        metaRaw.auditSummary && typeof metaRaw.auditSummary === 'object'
+          ? (metaRaw.auditSummary as TeamMultiAgentLayerState['meta']['auditSummary'])
+          : { errors: 0, warnings: 0, info: 0 },
+    },
+    auditFindings: Array.isArray(r.auditFindings)
+      ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
+      : [],
   };
 }
 
 export function teamMultiAgentSignature(state: TeamMultiAgentLayerState): string {
-  return serializeCoordinationPlan(state.coordination) + '::' + state.roles.map(r => [r.actorId, r.primaryRole, r.exclusiveSlotId].join(':')).join(',');
+  return (
+    serializeCoordinationPlan(state.coordination) +
+    '::' +
+    state.roles.map(r => [r.actorId, r.primaryRole, r.exclusiveSlotId].join(':')).join(',') +
+    '::' +
+    JSON.stringify(state.meta.auditSummary)
+  );
 }
 
 /**
@@ -80,14 +119,18 @@ export function evaluateTeamMultiAgentLayer(
   const { roles, notes } = assignTeamRolesWithSlots({ ...inputs, roleMinTurns });
   diagnostics.push(...notes);
   const sharedIssues = detectIllegalSharedExclusiveTasks(inputs.tasks);
-  const coordination = orchestrateTeamCoordination(
-    inputs.turn,
-    inputs.tasks,
-    roles,
-    [...inputs.lockedRoles, ...(inputs.command?.lockedActorIds || [])],
-  );
+  const locked = [...inputs.lockedRoles, ...(inputs.command?.lockedActorIds || [])];
+  const coordination = orchestrateTeamCoordination(inputs.turn, inputs.tasks, roles, locked);
   diagnostics.push(...coordination.warnings);
   coordination.arbitrationLog.forEach(a => diagnostics.push(a.reason));
+
+  const directiveConstraints = buildActorDirectiveConstraints(coordination, roles);
+  const proposals = inputs.directiveProposals || [];
+  const directiveResult = coordinateTeammateDirectives(proposals, coordination, roles);
+  directiveResult.suppressed.forEach(s =>
+    diagnostics.push(`Suppressed directive ${s.proposal.id}: ${s.reason}`),
+  );
+
   let duplicateGuard = previous
     ? advanceDuplicateGuardTurn(previous.duplicateGuard, inputs.turn)
     : emptyDuplicateGuardState(inputs.turn);
@@ -101,7 +144,8 @@ export function evaluateTeamMultiAgentLayer(
       inputs.turn,
     );
   });
-  const state: TeamMultiAgentLayerState = {
+
+  let state: TeamMultiAgentLayerState = {
     version: 1,
     teamId: inputs.teamId,
     turn: inputs.turn,
@@ -109,11 +153,29 @@ export function evaluateTeamMultiAgentLayer(
     coordination,
     duplicateGuard,
     diagnostics,
+    meta: emptyCoordinationMeta(),
+    auditFindings: [],
   };
+
+  const auditFindings = auditTeamMultiAgentLayer(state, inputs);
+  state = attachAuditToState(state, auditFindings, {
+    directiveConstraints: directiveResult.constraintsByActor,
+    suppressedDirectiveIds: directiveResult.suppressed
+      .map(s => s.proposal.id)
+      .slice(0, AGENT18_LIMITS.maxSuppressedDirectives),
+  });
+
+  const coordinationIssues = [
+    ...sharedIssues,
+    ...coordination.warnings,
+    ...auditFindings.filter(f => f.severity !== 'info').map(f => f.message),
+  ];
+
   return {
     state,
     blockedDuplicates: sharedIssues,
-    coordinationIssues: [...sharedIssues, ...coordination.warnings],
+    coordinationIssues,
+    auditFindings: state.auditFindings,
   };
 }
 
