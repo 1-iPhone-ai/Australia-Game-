@@ -78,6 +78,8 @@ const FILES = [
   'oceanic-sovereign-net-zero-export-continuity-mesh-orchestration-ledger.ts',
   'agent25-wave55-projection-handoff-brief.ts',
   'agent25-wave56-projection-handoff-brief.ts',
+  'planetary-sovereign-net-zero-export-continuity-global-mesh-orchestration-ledger.ts',
+  'agent25-wave57-projection-handoff-brief.ts',
   'industrial-energy-environmental.tsx',
 ];
 

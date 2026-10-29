@@ -265,7 +265,13 @@ import {
   runAgent13OceanicSovereignNetZeroExportContinuityTurnScenario,
   V1014_OCEANIC_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_HEMISPHERIC_MESH_TURN_SCENARIOS,
 } from '../modules/oceanic-sovereign-net-zero-export-continuity-mesh-orchestration-ledger.ts';
+import {
+  runAgent13PlanetarySovereignNetZeroExportContinuityScaleSelfTests,
+  runAgent13PlanetarySovereignNetZeroExportContinuityTurnScenario,
+  V1014_PLANETARY_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_GLOBAL_MESH_TURN_SCENARIOS,
+} from '../modules/planetary-sovereign-net-zero-export-continuity-global-mesh-orchestration-ledger.ts';
 import { runAgent13Agent25Wave56ProjectionHandoffBriefSelfTests } from '../modules/agent25-wave56-projection-handoff-brief.ts';
+import { runAgent13Agent25Wave57ProjectionHandoffBriefSelfTests } from '../modules/agent25-wave57-projection-handoff-brief.ts';
 import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
@@ -708,6 +714,14 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const wave56Handoff = runAgent13Agent25Wave56ProjectionHandoffBriefSelfTests();
   ok(wave56Handoff.failed === 0 && wave56Handoff.passed >= 4);
+  const planetary = runAgent13PlanetarySovereignNetZeroExportContinuityScaleSelfTests();
+  ok(planetary.failed === 0 && planetary.passed >= 4);
+  const planetaryTurn = runAgent13PlanetarySovereignNetZeroExportContinuityTurnScenario(
+    V1014_PLANETARY_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_GLOBAL_MESH_TURN_SCENARIOS[0],
+  );
+  ok(planetaryTurn.passed);
+  const wave57Handoff = runAgent13Agent25Wave57ProjectionHandoffBriefSelfTests();
+  ok(wave57Handoff.failed === 0 && wave57Handoff.passed >= 4);
 
   return { passed, failed, total: passed + failed };
 }
