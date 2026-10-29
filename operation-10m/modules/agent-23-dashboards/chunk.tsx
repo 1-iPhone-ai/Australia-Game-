@@ -106,10 +106,17 @@ export interface NationalSystemHistoryEntry {
 
 export interface NationalBottleneck {
   id: string;
+  regionId?: string;
+  network?: NationalNetworkKind;
+  severity?: 'minor' | 'meaningful' | 'major' | 'critical';
 }
 
 export interface NationalDependency {
   id: string;
+  consumerRegionId: string;
+  providerRegionId: string;
+  network: NationalNetworkKind;
+  importance: 'low' | 'moderate' | 'high' | 'critical';
 }
 
 export interface NationalSystemsState {
@@ -209,6 +216,24 @@ export interface Agent23TestResult {
   name: string;
   passed: boolean;
   detail: string;
+}
+
+export interface NrDashOwnerBreakdown {
+  you: number;
+  rival: number;
+  neutral: number;
+  unknown: number;
+}
+
+export interface NrDashMapLink {
+  id: string;
+  kind: 'adjacency' | 'dependency';
+  fromId: string;
+  toId: string;
+  label: string;
+  stroke: string;
+  dash?: string;
+  title: string;
 }
 
 // --- bundled from core/constants.ts ---
@@ -493,6 +518,220 @@ export function nrDashBuildRegionMapNodes(snap: NrDashAuthSnapshot | null): Regi
   });
 }
 
+// --- bundled from core/adjacency.ts ---
+/** Land adjacency for strategic map overlays (canonical V9.4 COMM graph). */
+export const AGENT23_ADJACENT_REGIONS: Record<string, string[]> = {
+  QLD: ['NT', 'NSW', 'SA'],
+  NSW: ['QLD', 'VIC', 'SA', 'ACT'],
+  VIC: ['NSW', 'SA', 'TAS'],
+  TAS: ['VIC'],
+  SA: ['WA', 'NT', 'QLD', 'NSW', 'VIC'],
+  WA: ['SA', 'NT'],
+  NT: ['WA', 'SA', 'QLD'],
+  ACT: ['NSW'],
+};
+
+export function agent23NormalizeCorridor(a: string, b: string): string {
+  return [a, b].sort().join('-');
+}
+
+/** Unique undirected adjacency pairs for map link layer. */
+export function agent23ListAdjacencyPairs(): Array<{ a: string; b: string; key: string }> {
+  const seen = new Set<string>();
+  const out: Array<{ a: string; b: string; key: string }> = [];
+  Object.entries(AGENT23_ADJACENT_REGIONS).forEach(([a, list]) => {
+    (list || []).forEach(b => {
+      const key = agent23NormalizeCorridor(a, b);
+      if (seen.has(key)) return;
+      seen.add(key);
+      const [x, y] = [a, b].sort();
+      out.push({ a: x, b: y, key });
+    });
+  });
+  return out.sort((p, q) => p.key.localeCompare(q.key));
+}
+
+// --- bundled from core/analytics.ts ---
+export interface NrDashRegionalLeader {
+  regionId: string;
+  name: string;
+  momentumBand: string;
+  rank: number;
+  openNeeds: number;
+  highRisks: number;
+}
+
+export interface NrDashOwnerBreakdown {
+  you: number;
+  rival: number;
+  neutral: number;
+  unknown: number;
+}
+
+export interface NrDashNetworkStressRow {
+  network: NationalNetworkKind;
+  peakUtilization: number;
+  worstRegionId: string | null;
+  worstCondition: NationalNetworkCondition | null;
+}
+
+export interface NrDashCompareInsights {
+  ownerBreakdown: NrDashOwnerBreakdown;
+  momentumLeaders: NrDashRegionalLeader[];
+  momentumLaggards: NrDashRegionalLeader[];
+  totalOpenNeeds: number;
+  totalHighRisks: number;
+  networkStress: NrDashNetworkStressRow[];
+}
+
+function momentumRank(band: string): number {
+  return NR_DASH_MOM_RANK[band as LRMomentumBand] ?? 2;
+}
+
+function rowToLeader(r: NrDashRegionalRow): NrDashRegionalLeader {
+  return {
+    regionId: r.regionId,
+    name: r.name,
+    momentumBand: r.momentumBand,
+    rank: momentumRank(r.momentumBand),
+    openNeeds: r.openNeeds,
+    highRisks: r.highRisks,
+  };
+}
+
+export function nrDashBuildOwnerBreakdown(snap: NrDashAuthSnapshot): NrDashOwnerBreakdown {
+  const out: NrDashOwnerBreakdown = { you: 0, rival: 0, neutral: 0, unknown: 0 };
+  snap.regions.forEach(r => {
+    out[r.owner] += 1;
+  });
+  return out;
+}
+
+export function nrDashBuildRegionalLeaders(snap: NrDashAuthSnapshot, limit = 3): {
+  leaders: NrDashRegionalLeader[];
+  laggards: NrDashRegionalLeader[];
+} {
+  const ranked = snap.regions.map(rowToLeader).sort((a, b) => b.rank - a.rank || a.regionId.localeCompare(b.regionId));
+  return {
+    leaders: ranked.slice(0, limit),
+    laggards: ranked.slice(-limit).reverse(),
+  };
+}
+
+export function nrDashBuildNetworkStress(ns: NationalSystemsState | null): NrDashNetworkStressRow[] {
+  if (!ns) return [];
+  const kinds: NationalNetworkKind[] = ['freight', 'energy', 'water', 'trade', 'digital'];
+  return kinds.map(network => {
+    let peak = 0;
+    let worstRegionId: string | null = null;
+    let worstCondition: NationalNetworkCondition | null = null;
+    Object.values(ns.regions).forEach(reg => {
+      const cell = reg.networks[network];
+      if (!cell) return;
+      if (cell.utilization >= peak) {
+        peak = cell.utilization;
+        worstRegionId = reg.regionId;
+        worstCondition = cell.condition;
+      }
+    });
+    return { network, peakUtilization: peak, worstRegionId, worstCondition };
+  });
+}
+
+/** Insights derived only from snapshot rows + NS region network cells. */
+export function nrDashBuildCompareInsights(
+  snap: NrDashAuthSnapshot,
+  ns: NationalSystemsState | null
+): NrDashCompareInsights {
+  const { leaders, laggards } = nrDashBuildRegionalLeaders(snap, 3);
+  return {
+    ownerBreakdown: nrDashBuildOwnerBreakdown(snap),
+    momentumLeaders: leaders,
+    momentumLaggards: laggards,
+    totalOpenNeeds: snap.regions.reduce((s, r) => s + r.openNeeds, 0),
+    totalHighRisks: snap.regions.reduce((s, r) => s + r.highRisks, 0),
+    networkStress: nrDashBuildNetworkStress(ns),
+  };
+}
+
+// --- bundled from core/map-links.ts ---
+function layoutById(layout: RegionMapLayoutEntry[]): Map<string, RegionMapLayoutEntry> {
+  return new Map(layout.map(l => [l.regionId, l]));
+}
+
+export function nrDashBuildAdjacencyLinks(layout: RegionMapLayoutEntry[]): NrDashMapLink[] {
+  const pos = layoutById(layout);
+  return agent23ListAdjacencyPairs()
+    .filter(p => pos.has(p.a) && pos.has(p.b))
+    .map(p => ({
+      id: `adj_${p.key}`,
+      kind: 'adjacency' as const,
+      fromId: p.a,
+      toId: p.b,
+      label: p.key,
+      stroke: '#475569',
+      dash: '2 2',
+      title: `Land corridor ${p.a}–${p.b}`,
+    }));
+}
+
+export function nrDashBuildDependencyLinks(
+  ns: NationalSystemsState | null,
+  layout: RegionMapLayoutEntry[]
+): NrDashMapLink[] {
+  if (!ns) return [];
+  const pos = layoutById(layout);
+  return ns.dependencies
+    .filter(d => pos.has(d.consumerRegionId) && pos.has(d.providerRegionId))
+    .map(d => {
+      const prov = ns.regions[d.providerRegionId];
+      const cond = prov?.networks[d.network]?.condition ?? 'strained';
+      return {
+        id: `dep_${d.id}`,
+        kind: 'dependency' as const,
+        fromId: d.consumerRegionId,
+        toId: d.providerRegionId,
+        label: d.network,
+        stroke: NR_DASH_COND_COLOR[cond],
+        title: `${d.consumerRegionId} depends on ${d.providerRegionId} (${d.network}, ${d.importance})`,
+      };
+    });
+}
+
+export function nrDashMergeMapLinks(adjacency: NrDashMapLink[], dependency: NrDashMapLink[]): NrDashMapLink[] {
+  return [...adjacency, ...dependency];
+}
+
+export function nrDashLinkEndpoints(
+  link: NrDashMapLink,
+  nodes: RegionMapNode[]
+): { x1: number; y1: number; x2: number; y2: number } | null {
+  const a = nodes.find(n => n.regionId === link.fromId);
+  const b = nodes.find(n => n.regionId === link.toId);
+  if (!a || !b) return null;
+  return { x1: a.x, y1: a.y, x2: b.x, y2: b.y };
+}
+
+// --- bundled from core/bottleneck-rollup.ts ---
+export interface NrDashBottleneckRow {
+  id: string;
+  regionId: string | null;
+  network: string | null;
+  severity: string | null;
+  label: string;
+}
+
+export function nrDashBuildBottleneckRollup(ns: NationalSystemsState | null): NrDashBottleneckRow[] {
+  if (!ns) return [];
+  return ns.bottlenecks.map(b => ({
+    id: b.id,
+    regionId: b.regionId ?? null,
+    network: b.network ? NATIONAL_NETWORK_LABEL[b.network] : null,
+    severity: b.severity ?? null,
+    label: [b.regionId, b.network, b.severity].filter(Boolean).join(' · ') || b.id,
+  }));
+}
+
 // --- bundled from tests/fixtures.ts ---
 function emptyNetworks(): Record<NationalNetworkKind, NationalRegionSystemsState['networks']['freight']> {
   const base = { utilization: 0.4, condition: 'healthy' as const };
@@ -552,8 +791,11 @@ export function createAgent23NsFixture(): NationalSystemsState {
     revision: 2,
     turn: 5,
     regions,
-    bottlenecks: [{ id: 'bn1' }],
-    dependencies: [{ id: 'dep1' }, { id: 'dep2' }],
+    bottlenecks: [{ id: 'bn1', regionId: 'NSW', network: 'freight', severity: 'meaningful' }],
+    dependencies: [
+      { id: 'dep1', consumerRegionId: 'SA', providerRegionId: 'NSW', network: 'energy', importance: 'high' },
+      { id: 'dep2', consumerRegionId: 'TAS', providerRegionId: 'VIC', network: 'freight', importance: 'moderate' },
+    ],
     national,
     history: [{ turn: 5, summary: 'Freight corridor strained in NSW' }],
   };
@@ -686,9 +928,44 @@ export const NrDashHeatMatrix: React.FC<{
   </div>
 );
 
+// --- bundled from ui/compare-insights.tsx ---
+export const NrDashCompareInsightsPanel: React.FC<{ insights: NrDashCompareInsights }> = ({ insights }) => (
+  <div className="grid md:grid-cols-2 gap-3 text-xs" data-testid="nr-dash-compare-insights">
+    <div className="rounded border border-slate-600/50 p-2">
+      <div className="font-semibold mb-1">Regional control (snapshot)</div>
+      <div>You {insights.ownerBreakdown.you} · Rival {insights.ownerBreakdown.rival} · Neutral {insights.ownerBreakdown.neutral}</div>
+      <div className="opacity-75 mt-1">
+        Open needs Σ {insights.totalOpenNeeds} · High risks Σ {insights.totalHighRisks}
+      </div>
+    </div>
+    <div className="rounded border border-slate-600/50 p-2">
+      <div className="font-semibold mb-1">Momentum leaders</div>
+      <ul className="list-disc list-inside">
+        {insights.momentumLeaders.map(l => (
+          <li key={l.regionId}>
+            {l.name} ({l.momentumBand})
+          </li>
+        ))}
+      </ul>
+    </div>
+    <div className="rounded border border-slate-600/50 p-2 md:col-span-2">
+      <div className="font-semibold mb-1">Network stress (peak utilization by network)</div>
+      <div className="flex flex-wrap gap-2">
+        {insights.networkStress.map(s => (
+          <span key={s.network} className="px-1.5 py-0.5 rounded bg-slate-800/80">
+            {NATIONAL_NETWORK_LABEL[s.network]} {Math.round(s.peakUtilization * 100)}%
+            {s.worstRegionId ? ` @ ${s.worstRegionId}` : ''}
+          </span>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
 // --- bundled from ui/region-position-map.tsx ---
 export interface RegionPositionMapProps {
   nodes: RegionMapNode[];
+  links?: NrDashMapLink[];
   focusRegionId?: string | null;
   width?: number;
   height?: number;
@@ -705,6 +982,7 @@ const OWNER_RING: Record<RegionMapNode['owner'], string> = {
 /** SVG strategic map — node size from momentum history activity weight in snapshot. */
 export const RegionPositionMap: React.FC<RegionPositionMapProps> = ({
   nodes,
+  links = [],
   focusRegionId = null,
   width = 420,
   height = 260,
@@ -720,6 +998,26 @@ export const RegionPositionMap: React.FC<RegionPositionMapProps> = ({
     aria-label="Australian regions strategic map"
   >
     <rect x={0} y={0} width={100} height={115} fill="#0f172a" />
+    {links.map(link => {
+      const seg = nrDashLinkEndpoints(link, nodes);
+      if (!seg) return null;
+      return (
+        <line
+          key={link.id}
+          x1={seg.x1}
+          y1={seg.y1}
+          x2={seg.x2}
+          y2={seg.y2}
+          stroke={link.stroke}
+          strokeWidth={link.kind === 'dependency' ? 0.9 : 0.5}
+          strokeDasharray={link.dash}
+          opacity={0.85}
+          data-testid={`agent23-map-link-${link.id}`}
+        >
+          <title>{link.title}</title>
+        </line>
+      );
+    })}
     {nodes.map(n => {
       const r = 2.2 + n.activityWeight * 2.8;
       const focused = focusRegionId === n.regionId;
@@ -761,12 +1059,14 @@ const NrDashProvenanceStrip: React.FC<{ items: NrDashProvenance[] }> = ({ items 
   </div>
 );
 
-export const NrDashOverviewTab: React.FC<{ snap: NrDashAuthSnapshot; onAsk?: (q: string) => void }> = ({
-  snap,
-  onAsk,
-}) => (
+export const NrDashOverviewTab: React.FC<{
+  snap: NrDashAuthSnapshot;
+  nsState: NationalSystemsState | null;
+  onAsk?: (q: string) => void;
+}> = ({ snap, nsState, onAsk }) => (
   <div className="space-y-4" data-testid="nr-dash-tab-overview">
     <NrDashProvenanceStrip items={snap.provenance} />
+    <NrDashCompareInsightsPanel insights={nrDashBuildCompareInsights(snap, nsState)} />
     <div className="grid md:grid-cols-3 gap-3 text-sm">
       <div className="rounded-lg border border-slate-600/50 p-3">
         <div className="text-xs opacity-70">National resilience</div>
@@ -870,6 +1170,7 @@ export const NrDashNetworksTab: React.FC<{
     );
   }
   const heat = nrDashBuildHeatCells(ns);
+  const bottlenecks = nrDashBuildBottleneckRollup(ns);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
       <div className="flex flex-wrap gap-2">
@@ -885,6 +1186,16 @@ export const NrDashNetworksTab: React.FC<{
         ))}
       </div>
       <NrDashHeatMatrix cells={heat.cells} rowLabels={heat.rows} colLabels={heat.cols} />
+      {bottlenecks.length > 0 && (
+        <div className="text-xs" data-testid="nr-dash-bottleneck-list">
+          <div className="font-semibold mb-1">Active bottlenecks (authoritative)</div>
+          <ul className="list-disc list-inside opacity-90">
+            {bottlenecks.map(b => (
+              <li key={b.id}>{b.label}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       <p className="text-[10px] opacity-70">Cell color reflects network condition from National Systems (not Living Regions).</p>
     </div>
   );
@@ -907,16 +1218,25 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
 
 export const NrDashMapTab: React.FC<{
   snap: NrDashAuthSnapshot;
+  nsState: NationalSystemsState | null;
   focusRegionId: string | null;
   onFocusRegion?: (id: string) => void;
-}> = ({ snap, focusRegionId, onFocusRegion }) => {
+}> = ({ snap, nsState, focusRegionId, onFocusRegion }) => {
   const nodes = useMemo(() => nrDashBuildRegionMapNodes(snap), [snap]);
+  const links = useMemo(
+    () =>
+      nrDashMergeMapLinks(
+        nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+        nrDashBuildDependencyLinks(nsState, AGENT23_REGION_MAP_LAYOUT)
+      ),
+    [nsState]
+  );
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-map">
       <NrDashProvenanceStrip items={snap.provenance} />
-      <RegionPositionMap nodes={nodes} focusRegionId={focusRegionId} onSelect={onFocusRegion} />
+      <RegionPositionMap nodes={nodes} links={links} focusRegionId={focusRegionId} onSelect={onFocusRegion} />
       <p className="text-[10px] opacity-70">
-        Node size reflects momentum history span from Living Regions; ring color reflects map owner view from National Systems.
+        Dashed lines: land adjacency. Solid colored lines: interregional dependencies from National Systems.
       </p>
     </div>
   );
@@ -1007,13 +1327,13 @@ export const NationalRegionalDashboardModal: React.FC<NationalRegionalDashboardM
           {!snap ? (
             <p className="text-sm opacity-80">Enable Living Regions or National Systems to populate this dashboard.</p>
           ) : tab === 'overview' ? (
-            <NrDashOverviewTab snap={snap} onAsk={onAsk} />
+            <NrDashOverviewTab snap={snap} nsState={nsState} onAsk={onAsk} />
           ) : tab === 'regions' ? (
             <NrDashRegionsTab snap={snap} focusRegionId={focusRegionId} onFocusRegion={onFocusRegion} />
           ) : tab === 'networks' ? (
             <NrDashNetworksTab ns={nsState} onMapNetwork={onMapNetwork} />
           ) : tab === 'map' ? (
-            <NrDashMapTab snap={snap} focusRegionId={focusRegionId} onFocusRegion={onFocusRegion} />
+            <NrDashMapTab snap={snap} nsState={nsState} focusRegionId={focusRegionId} onFocusRegion={onFocusRegion} />
           ) : (
             <NrDashTrendsTab snap={snap} />
           )}
@@ -1074,10 +1394,74 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
 
   check('a23_map_layout', 'Strategic map layout lists eight AU codes', () => AGENT23_REGION_MAP_LAYOUT.length === 8);
 
+  check('a23_adj_pairs', 'Adjacency pairs are deduplicated', () => {
+    const pairs = agent23ListAdjacencyPairs();
+    const keys = new Set(pairs.map(p => p.key));
+    return pairs.length >= 10 && keys.size === pairs.length;
+  });
+
+  check('a23_adj_links', 'Adjacency links cover TAS-VIC corridor', () => {
+    const links = nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT);
+    return links.some(l => l.id.includes('TAS-VIC') || l.label.includes('TAS-VIC'));
+  });
+
+  check('a23_dep_links', 'Dependency links from NS state', () => {
+    const ns = createAgent23NsFixture();
+    const deps = nrDashBuildDependencyLinks(ns, AGENT23_REGION_MAP_LAYOUT);
+    return deps.length === 2 && deps.every(d => d.kind === 'dependency');
+  });
+
+  check('a23_map_link_geom', 'Link endpoints resolve for SA→NSW dependency', () => {
+    const ns = createAgent23NsFixture();
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), ns, null)!;
+    const nodes = nrDashBuildRegionMapNodes(snap);
+    const dep = nrDashBuildDependencyLinks(ns, AGENT23_REGION_MAP_LAYOUT)[0];
+    const seg = nrDashLinkEndpoints(dep, nodes);
+    return Boolean(seg && seg.x1 !== seg.x2);
+  });
+
   check('a23_map_nodes', 'Map nodes align to layout ids', () => {
     const snap = nrDashBuildAuthSnapshot(3, createAgent23LrFixture(), null, null)!;
     const nodes = nrDashBuildRegionMapNodes(snap);
     return nodes.length === 8 && nodes.every(n => COMM_REGION_CODES.includes(n.regionId as (typeof COMM_REGION_CODES)[number]));
+  });
+
+  check('a23_insights_owner', 'Owner breakdown counts eight regions', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), { NSW: 'you', VIC: 'rival' })!;
+    const ins = nrDashBuildCompareInsights(snap, createAgent23NsFixture());
+    return ins.ownerBreakdown.you === 1 && ins.ownerBreakdown.rival === 1 && ins.ownerBreakdown.unknown === 6;
+  });
+
+  check('a23_insights_needs', 'Total open needs sums regional rows', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const ins = nrDashBuildCompareInsights(snap, null);
+    const expected = snap.regions.reduce((s, r) => s + r.openNeeds, 0);
+    return ins.totalOpenNeeds === expected;
+  });
+
+  check('a23_leaders_order', 'Momentum leaders sorted by band rank', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const { leaders } = nrDashBuildRegionalLeaders(snap, 3);
+    return leaders.length === 3 && leaders[0].rank >= leaders[1].rank;
+  });
+
+  check('a23_network_stress', 'Network stress reports five networks', () => {
+    const stress = nrDashBuildNetworkStress(createAgent23NsFixture());
+    return stress.length === 5 && stress.every(s => s.peakUtilization >= 0);
+  });
+
+  check('a23_bottleneck_rollup', 'Bottleneck rollup preserves region and network', () => {
+    const rows = nrDashBuildBottleneckRollup(createAgent23NsFixture());
+    return rows.length === 1 && rows[0].regionId === 'NSW' && rows[0].network === 'Freight';
+  });
+
+  check('a23_merge_links', 'Merged map links include adjacency and dependency', () => {
+    const ns = createAgent23NsFixture();
+    const merged = nrDashMergeMapLinks(
+      nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+      nrDashBuildDependencyLinks(ns, AGENT23_REGION_MAP_LAYOUT)
+    );
+    return merged.some(l => l.kind === 'adjacency') && merged.some(l => l.kind === 'dependency');
   });
 
   check('a23_activity_weight', 'History activity weight is bounded 0..1', () => {

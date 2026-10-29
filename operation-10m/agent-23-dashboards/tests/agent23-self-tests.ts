@@ -1,5 +1,14 @@
+import { agent23ListAdjacencyPairs } from '../core/adjacency.ts';
+import { nrDashBuildCompareInsights, nrDashBuildNetworkStress, nrDashBuildRegionalLeaders } from '../core/analytics.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
+import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
 import { nrDashBuildHeatCells } from '../core/heat-matrix.ts';
+import {
+  nrDashBuildAdjacencyLinks,
+  nrDashBuildDependencyLinks,
+  nrDashLinkEndpoints,
+  nrDashMergeMapLinks,
+} from '../core/map-links.ts';
 import { nrDashBuildRegionMapNodes } from '../core/region-map-model.ts';
 import { AGENT23_REGION_MAP_LAYOUT, COMM_REGION_CODES, NATIONAL_NETWORKS } from '../core/constants.ts';
 import { nrDashClamp01, nrDashHistoryActivityWeight, nrDashOwnerLabel } from '../core/util.ts';
@@ -51,10 +60,74 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
 
   check('a23_map_layout', 'Strategic map layout lists eight AU codes', () => AGENT23_REGION_MAP_LAYOUT.length === 8);
 
+  check('a23_adj_pairs', 'Adjacency pairs are deduplicated', () => {
+    const pairs = agent23ListAdjacencyPairs();
+    const keys = new Set(pairs.map(p => p.key));
+    return pairs.length >= 10 && keys.size === pairs.length;
+  });
+
+  check('a23_adj_links', 'Adjacency links cover TAS-VIC corridor', () => {
+    const links = nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT);
+    return links.some(l => l.id.includes('TAS-VIC') || l.label.includes('TAS-VIC'));
+  });
+
+  check('a23_dep_links', 'Dependency links from NS state', () => {
+    const ns = createAgent23NsFixture();
+    const deps = nrDashBuildDependencyLinks(ns, AGENT23_REGION_MAP_LAYOUT);
+    return deps.length === 2 && deps.every(d => d.kind === 'dependency');
+  });
+
+  check('a23_map_link_geom', 'Link endpoints resolve for SA→NSW dependency', () => {
+    const ns = createAgent23NsFixture();
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), ns, null)!;
+    const nodes = nrDashBuildRegionMapNodes(snap);
+    const dep = nrDashBuildDependencyLinks(ns, AGENT23_REGION_MAP_LAYOUT)[0];
+    const seg = nrDashLinkEndpoints(dep, nodes);
+    return Boolean(seg && seg.x1 !== seg.x2);
+  });
+
   check('a23_map_nodes', 'Map nodes align to layout ids', () => {
     const snap = nrDashBuildAuthSnapshot(3, createAgent23LrFixture(), null, null)!;
     const nodes = nrDashBuildRegionMapNodes(snap);
     return nodes.length === 8 && nodes.every(n => COMM_REGION_CODES.includes(n.regionId as (typeof COMM_REGION_CODES)[number]));
+  });
+
+  check('a23_insights_owner', 'Owner breakdown counts eight regions', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), { NSW: 'you', VIC: 'rival' })!;
+    const ins = nrDashBuildCompareInsights(snap, createAgent23NsFixture());
+    return ins.ownerBreakdown.you === 1 && ins.ownerBreakdown.rival === 1 && ins.ownerBreakdown.unknown === 6;
+  });
+
+  check('a23_insights_needs', 'Total open needs sums regional rows', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const ins = nrDashBuildCompareInsights(snap, null);
+    const expected = snap.regions.reduce((s, r) => s + r.openNeeds, 0);
+    return ins.totalOpenNeeds === expected;
+  });
+
+  check('a23_leaders_order', 'Momentum leaders sorted by band rank', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const { leaders } = nrDashBuildRegionalLeaders(snap, 3);
+    return leaders.length === 3 && leaders[0].rank >= leaders[1].rank;
+  });
+
+  check('a23_network_stress', 'Network stress reports five networks', () => {
+    const stress = nrDashBuildNetworkStress(createAgent23NsFixture());
+    return stress.length === 5 && stress.every(s => s.peakUtilization >= 0);
+  });
+
+  check('a23_bottleneck_rollup', 'Bottleneck rollup preserves region and network', () => {
+    const rows = nrDashBuildBottleneckRollup(createAgent23NsFixture());
+    return rows.length === 1 && rows[0].regionId === 'NSW' && rows[0].network === 'Freight';
+  });
+
+  check('a23_merge_links', 'Merged map links include adjacency and dependency', () => {
+    const ns = createAgent23NsFixture();
+    const merged = nrDashMergeMapLinks(
+      nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+      nrDashBuildDependencyLinks(ns, AGENT23_REGION_MAP_LAYOUT)
+    );
+    return merged.some(l => l.kind === 'adjacency') && merged.some(l => l.kind === 'dependency');
   });
 
   check('a23_activity_weight', 'History activity weight is bounded 0..1', () => {

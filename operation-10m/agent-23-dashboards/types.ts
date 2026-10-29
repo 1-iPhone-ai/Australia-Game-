@@ -102,10 +102,17 @@ export interface NationalSystemHistoryEntry {
 
 export interface NationalBottleneck {
   id: string;
+  regionId?: string;
+  network?: NationalNetworkKind;
+  severity?: 'minor' | 'meaningful' | 'major' | 'critical';
 }
 
 export interface NationalDependency {
   id: string;
+  consumerRegionId: string;
+  providerRegionId: string;
+  network: NationalNetworkKind;
+  importance: 'low' | 'moderate' | 'high' | 'critical';
 }
 
 export interface NationalSystemsState {
@@ -205,4 +212,22 @@ export interface Agent23TestResult {
   name: string;
   passed: boolean;
   detail: string;
+}
+
+export interface NrDashOwnerBreakdown {
+  you: number;
+  rival: number;
+  neutral: number;
+  unknown: number;
+}
+
+export interface NrDashMapLink {
+  id: string;
+  kind: 'adjacency' | 'dependency';
+  fromId: string;
+  toId: string;
+  label: string;
+  stroke: string;
+  dash?: string;
+  title: string;
 }

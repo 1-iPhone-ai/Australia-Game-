@@ -1,7 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
+import { nrDashBuildCompareInsights } from '../core/analytics.ts';
+import { AGENT23_REGION_MAP_LAYOUT } from '../core/constants.ts';
 import { nrDashBuildHeatCells } from '../core/heat-matrix.ts';
+import {
+  nrDashBuildAdjacencyLinks,
+  nrDashBuildDependencyLinks,
+  nrDashMergeMapLinks,
+} from '../core/map-links.ts';
 import { nrDashBuildRegionMapNodes } from '../core/region-map-model.ts';
+import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -21,6 +29,7 @@ import type {
   NrDashTabId,
 } from '../types.ts';
 import { NrDashBarChart, NrDashHeatMatrix, NrDashSparkline } from './charts.tsx';
+import { NrDashCompareInsightsPanel } from './compare-insights.tsx';
 import { RegionPositionMap } from './region-position-map.tsx';
 
 const NrDashProvenanceStrip: React.FC<{ items: NrDashProvenance[] }> = ({ items }) => (
@@ -33,12 +42,14 @@ const NrDashProvenanceStrip: React.FC<{ items: NrDashProvenance[] }> = ({ items 
   </div>
 );
 
-export const NrDashOverviewTab: React.FC<{ snap: NrDashAuthSnapshot; onAsk?: (q: string) => void }> = ({
-  snap,
-  onAsk,
-}) => (
+export const NrDashOverviewTab: React.FC<{
+  snap: NrDashAuthSnapshot;
+  nsState: NationalSystemsState | null;
+  onAsk?: (q: string) => void;
+}> = ({ snap, nsState, onAsk }) => (
   <div className="space-y-4" data-testid="nr-dash-tab-overview">
     <NrDashProvenanceStrip items={snap.provenance} />
+    <NrDashCompareInsightsPanel insights={nrDashBuildCompareInsights(snap, nsState)} />
     <div className="grid md:grid-cols-3 gap-3 text-sm">
       <div className="rounded-lg border border-slate-600/50 p-3">
         <div className="text-xs opacity-70">National resilience</div>
@@ -142,6 +153,7 @@ export const NrDashNetworksTab: React.FC<{
     );
   }
   const heat = nrDashBuildHeatCells(ns);
+  const bottlenecks = nrDashBuildBottleneckRollup(ns);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
       <div className="flex flex-wrap gap-2">
@@ -157,6 +169,16 @@ export const NrDashNetworksTab: React.FC<{
         ))}
       </div>
       <NrDashHeatMatrix cells={heat.cells} rowLabels={heat.rows} colLabels={heat.cols} />
+      {bottlenecks.length > 0 && (
+        <div className="text-xs" data-testid="nr-dash-bottleneck-list">
+          <div className="font-semibold mb-1">Active bottlenecks (authoritative)</div>
+          <ul className="list-disc list-inside opacity-90">
+            {bottlenecks.map(b => (
+              <li key={b.id}>{b.label}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       <p className="text-[10px] opacity-70">Cell color reflects network condition from National Systems (not Living Regions).</p>
     </div>
   );
@@ -179,16 +201,25 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
 
 export const NrDashMapTab: React.FC<{
   snap: NrDashAuthSnapshot;
+  nsState: NationalSystemsState | null;
   focusRegionId: string | null;
   onFocusRegion?: (id: string) => void;
-}> = ({ snap, focusRegionId, onFocusRegion }) => {
+}> = ({ snap, nsState, focusRegionId, onFocusRegion }) => {
   const nodes = useMemo(() => nrDashBuildRegionMapNodes(snap), [snap]);
+  const links = useMemo(
+    () =>
+      nrDashMergeMapLinks(
+        nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+        nrDashBuildDependencyLinks(nsState, AGENT23_REGION_MAP_LAYOUT)
+      ),
+    [nsState]
+  );
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-map">
       <NrDashProvenanceStrip items={snap.provenance} />
-      <RegionPositionMap nodes={nodes} focusRegionId={focusRegionId} onSelect={onFocusRegion} />
+      <RegionPositionMap nodes={nodes} links={links} focusRegionId={focusRegionId} onSelect={onFocusRegion} />
       <p className="text-[10px] opacity-70">
-        Node size reflects momentum history span from Living Regions; ring color reflects map owner view from National Systems.
+        Dashed lines: land adjacency. Solid colored lines: interregional dependencies from National Systems.
       </p>
     </div>
   );
@@ -279,13 +310,13 @@ export const NationalRegionalDashboardModal: React.FC<NationalRegionalDashboardM
           {!snap ? (
             <p className="text-sm opacity-80">Enable Living Regions or National Systems to populate this dashboard.</p>
           ) : tab === 'overview' ? (
-            <NrDashOverviewTab snap={snap} onAsk={onAsk} />
+            <NrDashOverviewTab snap={snap} nsState={nsState} onAsk={onAsk} />
           ) : tab === 'regions' ? (
             <NrDashRegionsTab snap={snap} focusRegionId={focusRegionId} onFocusRegion={onFocusRegion} />
           ) : tab === 'networks' ? (
             <NrDashNetworksTab ns={nsState} onMapNetwork={onMapNetwork} />
           ) : tab === 'map' ? (
-            <NrDashMapTab snap={snap} focusRegionId={focusRegionId} onFocusRegion={onFocusRegion} />
+            <NrDashMapTab snap={snap} nsState={nsState} focusRegionId={focusRegionId} onFocusRegion={onFocusRegion} />
           ) : (
             <NrDashTrendsTab snap={snap} />
           )}
