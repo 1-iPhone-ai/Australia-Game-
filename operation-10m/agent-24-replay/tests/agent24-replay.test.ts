@@ -133,6 +133,18 @@ import {
   buildAgent24ArchiveHandoffSeal,
   runAgent24ArchiveHandoffSealSelfTests,
 } from '../src/archive-handoff-seal.ts';
+import {
+  buildAgent24ArchiveHandoffVerificationReport,
+  runAgent24ArchiveHandoffVerificationSelfTests,
+} from '../src/archive-handoff-verification.ts';
+import {
+  buildAgent24ReplayPipelineCloseoutReport,
+  runAgent24ReplayPipelineCloseoutSelfTests,
+} from '../src/replay-pipeline-closeout.ts';
+import {
+  buildAgent24ArchiveContinuityFinalizationReport,
+  runAgent24ArchiveContinuityFinalizationSelfTests,
+} from '../src/archive-continuity-finalization.ts';
 import { buildO6kHistoricalAnalyticsSnapshot } from '../src/history-replay-analytics.ts';
 import { o6kAgent24StableStringify, runO6kAgent24SelfTests } from '../src/history-replay-analytics.ts';
 
@@ -254,6 +266,9 @@ describe('Agent 24 replay determinism bundle', () => {
     assert.ok(result.probes.some(p => p.name === 'archive_roundtrip_verification_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'export_ledger_reconciliation_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'archive_handoff_seal_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'archive_handoff_verification_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'replay_pipeline_closeout_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'archive_continuity_finalization_twin' && p.passed));
   });
 
   it('includes analytics depth rollups and stable twin fingerprint', () => {
@@ -1102,6 +1117,52 @@ describe('Agent 24 archive handoff seal', () => {
     });
     assert.equal(direct.deterministicFingerprint, bundle.archiveHandoffSeal.deterministicFingerprint);
     assert.ok(runAgent24ArchiveHandoffSealSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 archive handoff verification', () => {
+  it('verifies handoff when seal, roundtrip, and chain align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.archiveHandoffVerification.verified, true);
+    const direct = buildAgent24ArchiveHandoffVerificationReport({
+      matchId: 'm',
+      archiveHandoffSeal: bundle.archiveHandoffSeal,
+      archiveRoundtripVerification: bundle.archiveRoundtripVerification,
+      attestationChainVerification: bundle.attestationChainVerification,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.archiveHandoffVerification.deterministicFingerprint);
+    assert.ok(runAgent24ArchiveHandoffVerificationSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 replay pipeline closeout', () => {
+  it('completes closeout when continuity pipeline checkpoints pass', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.replayPipelineCloseout.closeoutComplete, true);
+    const direct = buildAgent24ReplayPipelineCloseoutReport({
+      matchId: 'm',
+      currentTurn: 36,
+      archiveContinuityAttestation: bundle.archiveContinuityAttestation,
+      archiveHandoffVerification: bundle.archiveHandoffVerification,
+      exportLedgerReconciliation: bundle.exportLedgerReconciliation,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.replayPipelineCloseout.deterministicFingerprint);
+    assert.ok(runAgent24ReplayPipelineCloseoutSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 archive continuity finalization', () => {
+  it('finalizes when closeout, handoff, and roundtrip gate align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.archiveContinuityFinalization.finalized, true);
+    const direct = buildAgent24ArchiveContinuityFinalizationReport({
+      matchId: 'm',
+      replayPipelineCloseout: bundle.replayPipelineCloseout,
+      archiveHandoffSeal: bundle.archiveHandoffSeal,
+      archiveRoundtripGate: bundle.archiveRoundtripGate,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.archiveContinuityFinalization.deterministicFingerprint);
+    assert.ok(runAgent24ArchiveContinuityFinalizationSelfTests().every(t => t.passed));
   });
 });
 

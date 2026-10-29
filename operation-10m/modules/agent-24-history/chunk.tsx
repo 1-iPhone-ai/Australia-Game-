@@ -6093,6 +6093,444 @@ export function runAgent24ArchiveHandoffSealSelfTests(): Array<{ name: string; p
 }
 
 
+// --- source: archive-handoff-verification.ts ---
+
+export interface Agent24ArchiveHandoffVerificationIssue {
+  segment: string;
+  detail: string;
+  fingerprint: string;
+}
+
+export interface Agent24ArchiveHandoffVerificationReport {
+  reportId: string;
+  matchId: string;
+  verified: boolean;
+  issueCount: number;
+  issues: Agent24ArchiveHandoffVerificationIssue[];
+  readyLinkCount: number;
+  verificationScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ArchiveHandoffVerificationInput {
+  matchId: string;
+  archiveHandoffSeal: Agent24ArchiveHandoffSeal;
+  archiveRoundtripVerification: Agent24ArchiveRoundtripVerificationReport;
+  attestationChainVerification: Agent24AttestationChainVerificationReport;
+}
+
+export function buildAgent24ArchiveHandoffVerificationReport(
+  input: Agent24ArchiveHandoffVerificationInput,
+): Agent24ArchiveHandoffVerificationReport {
+  const issues: Agent24ArchiveHandoffVerificationIssue[] = [];
+
+  if (!input.archiveHandoffSeal.handoffReady) {
+    issues.push({
+      segment: 'handoff_seal',
+      detail: `Handoff seal not ready (${input.archiveHandoffSeal.readyLinkCount}/${input.archiveHandoffSeal.linkCount} links)`,
+      fingerprint: o6kAgent24Fingerprint('ahv_seal', { ready: input.archiveHandoffSeal.readyLinkCount }),
+    });
+  }
+  if (!input.archiveRoundtripVerification.verified) {
+    issues.push({
+      segment: 'roundtrip',
+      detail: 'Roundtrip verification failed',
+      fingerprint: o6kAgent24Fingerprint('ahv_rt', { verified: false }),
+    });
+  }
+  if (!input.attestationChainVerification.verified) {
+    issues.push({
+      segment: 'chain',
+      detail: 'Attestation chain verification failed',
+      fingerprint: o6kAgent24Fingerprint('ahv_chain', { verified: false }),
+    });
+  }
+
+  for (const link of input.archiveHandoffSeal.links) {
+    if (!link.ready) {
+      issues.push({
+        segment: link.segment,
+        detail: `Handoff link ${link.segment} not ready`,
+        fingerprint: o6kAgent24Fingerprint('ahv_link', { segment: link.segment }),
+      });
+    }
+  }
+
+  const uniqueIssues = [...new Map(issues.map(i => [i.fingerprint, i])).values()].sort((a, b) =>
+    a.fingerprint.localeCompare(b.fingerprint),
+  );
+
+  let verificationScore = 100;
+  verificationScore -= uniqueIssues.length * 14;
+  verificationScore = Math.max(0, Math.min(100, verificationScore));
+
+  const verified =
+    uniqueIssues.length === 0 &&
+    input.archiveHandoffSeal.handoffReady &&
+    input.archiveRoundtripVerification.verified &&
+    input.attestationChainVerification.verified;
+
+  return {
+    reportId: o6kAgent24Fingerprint('archive_handoff_verification', { matchId: input.matchId }),
+    matchId: input.matchId,
+    verified,
+    issueCount: uniqueIssues.length,
+    issues: uniqueIssues,
+    readyLinkCount: input.archiveHandoffSeal.readyLinkCount,
+    verificationScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('archive_handoff_verification_body', {
+      issues: uniqueIssues.map(i => i.fingerprint),
+      verified,
+      verificationScore,
+    }),
+  };
+}
+
+export function runAgent24ArchiveHandoffVerificationSelfTests(): Array<{ name: string; passed: boolean }> {
+  const handoff = {
+    sealId: 'h',
+    matchId: 'self',
+    handoffReady: true,
+    linkCount: 3,
+    readyLinkCount: 3,
+    links: [
+      { linkId: 'l1', segment: 'roundtrip_verified' as const, ready: true, fingerprint: 'a' },
+      { linkId: 'l2', segment: 'ledger_reconciled' as const, ready: true, fingerprint: 'b' },
+      { linkId: 'l3', segment: 'chain_sealed' as const, ready: true, fingerprint: 'c' },
+    ],
+    handoffScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('ahs_v', { v: 1 }),
+  };
+  const roundtrip = {
+    reportId: 'rt',
+    matchId: 'self',
+    verified: true,
+    issueCount: 0,
+    issues: [],
+    verificationScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('rtv_v', { v: 1 }),
+  };
+  const chain = {
+    reportId: 'cv',
+    matchId: 'self',
+    verified: true,
+    issueCount: 0,
+    issues: [],
+    alignedLinkCount: 4,
+    verificationScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('acv_v', { v: 1 }),
+  };
+
+  const report = buildAgent24ArchiveHandoffVerificationReport({
+    matchId: 'self',
+    archiveHandoffSeal: handoff,
+    archiveRoundtripVerification: roundtrip,
+    attestationChainVerification: chain,
+  });
+
+  return [
+    { name: 'verified_when_handoff_pipeline_ready', passed: report.verified && report.issueCount === 0 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        report.deterministicFingerprint ===
+        buildAgent24ArchiveHandoffVerificationReport({
+          matchId: 'self',
+          archiveHandoffSeal: handoff,
+          archiveRoundtripVerification: roundtrip,
+          attestationChainVerification: chain,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
+// --- source: replay-pipeline-closeout.ts ---
+
+export interface Agent24ReplayPipelineCloseoutCheckpoint {
+  checkpointId: string;
+  label: string;
+  satisfied: boolean;
+  fingerprint: string;
+}
+
+export interface Agent24ReplayPipelineCloseoutReport {
+  reportId: string;
+  matchId: string;
+  currentTurn: number;
+  closeoutComplete: boolean;
+  checkpointCount: number;
+  satisfiedCheckpointCount: number;
+  checkpoints: Agent24ReplayPipelineCloseoutCheckpoint[];
+  closeoutScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ReplayPipelineCloseoutInput {
+  matchId: string;
+  currentTurn: number;
+  archiveContinuityAttestation: Agent24ArchiveContinuityAttestation;
+  archiveHandoffVerification: Agent24ArchiveHandoffVerificationReport;
+  exportLedgerReconciliation: Agent24ExportLedgerReconciliationReport;
+}
+
+export function buildAgent24ReplayPipelineCloseoutReport(
+  input: Agent24ReplayPipelineCloseoutInput,
+): Agent24ReplayPipelineCloseoutReport {
+  const checkpoints: Agent24ReplayPipelineCloseoutCheckpoint[] = [
+    {
+      checkpointId: o6kAgent24Fingerprint('closeout_cp', { id: 'continuity_attestation' }),
+      label: 'Archive continuity attestation',
+      satisfied: input.archiveContinuityAttestation.status === 'verified',
+      fingerprint: '',
+    },
+    {
+      checkpointId: o6kAgent24Fingerprint('closeout_cp', { id: 'handoff_verification' }),
+      label: 'Archive handoff verification',
+      satisfied: input.archiveHandoffVerification.verified,
+      fingerprint: '',
+    },
+    {
+      checkpointId: o6kAgent24Fingerprint('closeout_cp', { id: 'ledger_reconciliation' }),
+      label: 'Export ledger reconciliation',
+      satisfied: input.exportLedgerReconciliation.reconciled,
+      fingerprint: '',
+    },
+  ];
+
+  for (const cp of checkpoints) {
+    cp.fingerprint = o6kAgent24Fingerprint('closeout_cp_body', {
+      id: cp.checkpointId,
+      satisfied: cp.satisfied,
+    });
+  }
+
+  const satisfiedCheckpointCount = checkpoints.filter(c => c.satisfied).length;
+
+  let closeoutScore = 100;
+  closeoutScore -= (checkpoints.length - satisfiedCheckpointCount) * 22;
+  closeoutScore = Math.max(0, Math.min(100, closeoutScore));
+
+  const closeoutComplete = satisfiedCheckpointCount === checkpoints.length;
+
+  return {
+    reportId: o6kAgent24Fingerprint('replay_pipeline_closeout', {
+      matchId: input.matchId,
+      turn: input.currentTurn,
+    }),
+    matchId: input.matchId,
+    currentTurn: input.currentTurn,
+    closeoutComplete,
+    checkpointCount: checkpoints.length,
+    satisfiedCheckpointCount,
+    checkpoints,
+    closeoutScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('replay_pipeline_closeout_body', {
+      checkpoints: checkpoints.map(c => c.fingerprint),
+      closeoutComplete,
+      closeoutScore,
+    }),
+  };
+}
+
+export function runAgent24ReplayPipelineCloseoutSelfTests(): Array<{ name: string; passed: boolean }> {
+  const attestation = {
+    attestationId: 'a',
+    matchId: 'self',
+    status: 'verified' as const,
+    restoreCommitOk: true,
+    fulfillmentBridgeOk: true,
+    ledgerContinuityOk: true,
+    attestationScore: 98,
+    deterministicFingerprint: o6kAgent24Fingerprint('aca_co', { v: 1 }),
+  };
+  const handoffVerification = {
+    reportId: 'hv',
+    matchId: 'self',
+    verified: true,
+    issueCount: 0,
+    issues: [],
+    readyLinkCount: 3,
+    verificationScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('ahv_co', { v: 1 }),
+  };
+  const reconciliation = {
+    reportId: 'rec',
+    matchId: 'self',
+    reconciled: true,
+    gapCount: 0,
+    gaps: [],
+    receiptEntryCount: 1,
+    exportLedgerEntryCount: 1,
+    reconciliationScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('elr_co', { v: 1 }),
+  };
+
+  const report = buildAgent24ReplayPipelineCloseoutReport({
+    matchId: 'self',
+    currentTurn: 40,
+    archiveContinuityAttestation: attestation,
+    archiveHandoffVerification: handoffVerification,
+    exportLedgerReconciliation: reconciliation,
+  });
+
+  return [
+    { name: 'closeout_complete_when_checkpoints_satisfied', passed: report.closeoutComplete },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        report.deterministicFingerprint ===
+        buildAgent24ReplayPipelineCloseoutReport({
+          matchId: 'self',
+          currentTurn: 40,
+          archiveContinuityAttestation: attestation,
+          archiveHandoffVerification: handoffVerification,
+          exportLedgerReconciliation: reconciliation,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
+// --- source: archive-continuity-finalization.ts ---
+
+export type Agent24ArchiveContinuityFinalizationBlockerKind =
+  | 'closeout_incomplete'
+  | 'handoff_not_ready'
+  | 'roundtrip_blocked';
+
+export interface Agent24ArchiveContinuityFinalizationBlocker {
+  kind: Agent24ArchiveContinuityFinalizationBlockerKind;
+  detail: string;
+  fingerprint: string;
+}
+
+export interface Agent24ArchiveContinuityFinalizationReport {
+  reportId: string;
+  matchId: string;
+  finalized: boolean;
+  blockerCount: number;
+  blockers: Agent24ArchiveContinuityFinalizationBlocker[];
+  finalizationScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ArchiveContinuityFinalizationInput {
+  matchId: string;
+  replayPipelineCloseout: Agent24ReplayPipelineCloseoutReport;
+  archiveHandoffSeal: Agent24ArchiveHandoffSeal;
+  archiveRoundtripGate: Agent24ArchiveRoundtripGateReport;
+}
+
+export function buildAgent24ArchiveContinuityFinalizationReport(
+  input: Agent24ArchiveContinuityFinalizationInput,
+): Agent24ArchiveContinuityFinalizationReport {
+  const blockers: Agent24ArchiveContinuityFinalizationBlocker[] = [];
+
+  if (!input.replayPipelineCloseout.closeoutComplete) {
+    blockers.push({
+      kind: 'closeout_incomplete',
+      detail: `Pipeline closeout ${input.replayPipelineCloseout.satisfiedCheckpointCount}/${input.replayPipelineCloseout.checkpointCount}`,
+      fingerprint: o6kAgent24Fingerprint('acf_closeout', {
+        satisfied: input.replayPipelineCloseout.satisfiedCheckpointCount,
+      }),
+    });
+  }
+  if (!input.archiveHandoffSeal.handoffReady) {
+    blockers.push({
+      kind: 'handoff_not_ready',
+      detail: 'Archive handoff seal not ready',
+      fingerprint: o6kAgent24Fingerprint('acf_handoff', { ready: false }),
+    });
+  }
+  if (!input.archiveRoundtripGate.roundtripAllowed) {
+    blockers.push({
+      kind: 'roundtrip_blocked',
+      detail: `Roundtrip gate blocked (${input.archiveRoundtripGate.blockerCount} blockers)`,
+      fingerprint: o6kAgent24Fingerprint('acf_roundtrip', {
+        blockers: input.archiveRoundtripGate.blockerCount,
+      }),
+    });
+  }
+
+  let finalizationScore = 100;
+  finalizationScore -= blockers.length * 24;
+  finalizationScore -= Math.max(0, 100 - input.replayPipelineCloseout.closeoutScore) * 0.15;
+  finalizationScore = Math.max(0, Math.min(100, Math.round(finalizationScore)));
+
+  const finalized = blockers.length === 0;
+
+  return {
+    reportId: o6kAgent24Fingerprint('archive_continuity_finalization', { matchId: input.matchId }),
+    matchId: input.matchId,
+    finalized,
+    blockerCount: blockers.length,
+    blockers,
+    finalizationScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('archive_continuity_finalization_body', {
+      blockers: blockers.map(b => b.fingerprint),
+      finalized,
+      finalizationScore,
+    }),
+  };
+}
+
+export function runAgent24ArchiveContinuityFinalizationSelfTests(): Array<{ name: string; passed: boolean }> {
+  const closeout = {
+    reportId: 'co',
+    matchId: 'self',
+    currentTurn: 40,
+    closeoutComplete: true,
+    checkpointCount: 3,
+    satisfiedCheckpointCount: 3,
+    checkpoints: [],
+    closeoutScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('rpc_f', { v: 1 }),
+  };
+  const handoff = {
+    sealId: 'h',
+    matchId: 'self',
+    handoffReady: true,
+    linkCount: 3,
+    readyLinkCount: 3,
+    links: [],
+    handoffScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('ahs_f', { v: 1 }),
+  };
+  const roundtripGate = {
+    reportId: 'rg',
+    matchId: 'self',
+    roundtripAllowed: true,
+    blockerCount: 0,
+    blockers: [],
+    roundtripScore: 95,
+    deterministicFingerprint: o6kAgent24Fingerprint('rtg_f', { v: 1 }),
+  };
+
+  const report = buildAgent24ArchiveContinuityFinalizationReport({
+    matchId: 'self',
+    replayPipelineCloseout: closeout,
+    archiveHandoffSeal: handoff,
+    archiveRoundtripGate: roundtripGate,
+  });
+
+  return [
+    { name: 'finalized_when_pipeline_complete', passed: report.finalized && report.blockerCount === 0 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        report.deterministicFingerprint ===
+        buildAgent24ArchiveContinuityFinalizationReport({
+          matchId: 'self',
+          replayPipelineCloseout: closeout,
+          archiveHandoffSeal: handoff,
+          archiveRoundtripGate: roundtripGate,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
 // --- source: history-replay-analytics.ts ---
 
 export const O6K_AGENT24_MODULE_VERSION = '1.1.0-op10m';
@@ -25641,6 +26079,15 @@ export function applyO6kHistoricalAnalyticsCachePatch(state: Record<string, unkn
   buildAgent24ExportLedgerReconciliationReport,
   type Agent24ExportLedgerReconciliationReport,
 } from './export-ledger-reconciliation.ts';
+  buildAgent24ArchiveHandoffVerificationReport,
+  type Agent24ArchiveHandoffVerificationReport,
+} from './archive-handoff-verification.ts';
+  buildAgent24ReplayPipelineCloseoutReport,
+  type Agent24ReplayPipelineCloseoutReport,
+} from './replay-pipeline-closeout.ts';
+  buildAgent24ArchiveContinuityFinalizationReport,
+  type Agent24ArchiveContinuityFinalizationReport,
+} from './archive-continuity-finalization.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -25688,6 +26135,9 @@ export interface Agent24ReplayDeterminismBundle {
   archiveRoundtripVerification: Agent24ArchiveRoundtripVerificationReport;
   exportLedgerReconciliation: Agent24ExportLedgerReconciliationReport;
   archiveHandoffSeal: Agent24ArchiveHandoffSeal;
+  archiveHandoffVerification: Agent24ArchiveHandoffVerificationReport;
+  replayPipelineCloseout: Agent24ReplayPipelineCloseoutReport;
+  archiveContinuityFinalization: Agent24ArchiveContinuityFinalizationReport;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -26075,6 +26525,25 @@ export function buildAgent24ReplayDeterminismBundle(
     archiveRoundtripVerification,
     exportLedgerReconciliation,
   });
+  const archiveHandoffVerification = buildAgent24ArchiveHandoffVerificationReport({
+    matchId: input.matchId,
+    archiveHandoffSeal,
+    archiveRoundtripVerification,
+    attestationChainVerification,
+  });
+  const replayPipelineCloseout = buildAgent24ReplayPipelineCloseoutReport({
+    matchId: input.matchId,
+    currentTurn: input.turn,
+    archiveContinuityAttestation,
+    archiveHandoffVerification,
+    exportLedgerReconciliation,
+  });
+  const archiveContinuityFinalization = buildAgent24ArchiveContinuityFinalizationReport({
+    matchId: input.matchId,
+    replayPipelineCloseout,
+    archiveHandoffSeal,
+    archiveRoundtripGate,
+  });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
@@ -26120,6 +26589,9 @@ export function buildAgent24ReplayDeterminismBundle(
     archiveRoundtripVerification: archiveRoundtripVerification.deterministicFingerprint,
     exportLedgerReconciliation: exportLedgerReconciliation.deterministicFingerprint,
     archiveHandoffSeal: archiveHandoffSeal.deterministicFingerprint,
+    archiveHandoffVerification: archiveHandoffVerification.deterministicFingerprint,
+    replayPipelineCloseout: replayPipelineCloseout.deterministicFingerprint,
+    archiveContinuityFinalization: archiveContinuityFinalization.deterministicFingerprint,
   });
 
   return {
@@ -26160,6 +26632,9 @@ export function buildAgent24ReplayDeterminismBundle(
     archiveRoundtripVerification,
     exportLedgerReconciliation,
     archiveHandoffSeal,
+    archiveHandoffVerification,
+    replayPipelineCloseout,
+    archiveContinuityFinalization,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -26394,6 +26869,23 @@ export function verifyAgent24ReplayDeterminism(
       name: 'archive_handoff_seal_twin',
       passed: a.archiveHandoffSeal.deterministicFingerprint === b.archiveHandoffSeal.deterministicFingerprint,
       detail: 'Twin archive handoff seal fingerprints',
+    },
+    {
+      name: 'archive_handoff_verification_twin',
+      passed:
+        a.archiveHandoffVerification.deterministicFingerprint === b.archiveHandoffVerification.deterministicFingerprint,
+      detail: 'Twin archive handoff verification fingerprints',
+    },
+    {
+      name: 'replay_pipeline_closeout_twin',
+      passed: a.replayPipelineCloseout.deterministicFingerprint === b.replayPipelineCloseout.deterministicFingerprint,
+      detail: 'Twin replay pipeline closeout fingerprints',
+    },
+    {
+      name: 'archive_continuity_finalization_twin',
+      passed:
+        a.archiveContinuityFinalization.deterministicFingerprint === b.archiveContinuityFinalization.deterministicFingerprint,
+      detail: 'Twin archive continuity finalization fingerprints',
     },
     {
       name: 'composite_twin',

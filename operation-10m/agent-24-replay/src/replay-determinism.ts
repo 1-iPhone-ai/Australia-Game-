@@ -113,6 +113,18 @@ import {
   type Agent24ExportLedgerReconciliationReport,
 } from './export-ledger-reconciliation.ts';
 import { buildAgent24ArchiveHandoffSeal, type Agent24ArchiveHandoffSeal } from './archive-handoff-seal.ts';
+import {
+  buildAgent24ArchiveHandoffVerificationReport,
+  type Agent24ArchiveHandoffVerificationReport,
+} from './archive-handoff-verification.ts';
+import {
+  buildAgent24ReplayPipelineCloseoutReport,
+  type Agent24ReplayPipelineCloseoutReport,
+} from './replay-pipeline-closeout.ts';
+import {
+  buildAgent24ArchiveContinuityFinalizationReport,
+  type Agent24ArchiveContinuityFinalizationReport,
+} from './archive-continuity-finalization.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -160,6 +172,9 @@ export interface Agent24ReplayDeterminismBundle {
   archiveRoundtripVerification: Agent24ArchiveRoundtripVerificationReport;
   exportLedgerReconciliation: Agent24ExportLedgerReconciliationReport;
   archiveHandoffSeal: Agent24ArchiveHandoffSeal;
+  archiveHandoffVerification: Agent24ArchiveHandoffVerificationReport;
+  replayPipelineCloseout: Agent24ReplayPipelineCloseoutReport;
+  archiveContinuityFinalization: Agent24ArchiveContinuityFinalizationReport;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -547,6 +562,25 @@ export function buildAgent24ReplayDeterminismBundle(
     archiveRoundtripVerification,
     exportLedgerReconciliation,
   });
+  const archiveHandoffVerification = buildAgent24ArchiveHandoffVerificationReport({
+    matchId: input.matchId,
+    archiveHandoffSeal,
+    archiveRoundtripVerification,
+    attestationChainVerification,
+  });
+  const replayPipelineCloseout = buildAgent24ReplayPipelineCloseoutReport({
+    matchId: input.matchId,
+    currentTurn: input.turn,
+    archiveContinuityAttestation,
+    archiveHandoffVerification,
+    exportLedgerReconciliation,
+  });
+  const archiveContinuityFinalization = buildAgent24ArchiveContinuityFinalizationReport({
+    matchId: input.matchId,
+    replayPipelineCloseout,
+    archiveHandoffSeal,
+    archiveRoundtripGate,
+  });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
@@ -592,6 +626,9 @@ export function buildAgent24ReplayDeterminismBundle(
     archiveRoundtripVerification: archiveRoundtripVerification.deterministicFingerprint,
     exportLedgerReconciliation: exportLedgerReconciliation.deterministicFingerprint,
     archiveHandoffSeal: archiveHandoffSeal.deterministicFingerprint,
+    archiveHandoffVerification: archiveHandoffVerification.deterministicFingerprint,
+    replayPipelineCloseout: replayPipelineCloseout.deterministicFingerprint,
+    archiveContinuityFinalization: archiveContinuityFinalization.deterministicFingerprint,
   });
 
   return {
@@ -632,6 +669,9 @@ export function buildAgent24ReplayDeterminismBundle(
     archiveRoundtripVerification,
     exportLedgerReconciliation,
     archiveHandoffSeal,
+    archiveHandoffVerification,
+    replayPipelineCloseout,
+    archiveContinuityFinalization,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -866,6 +906,23 @@ export function verifyAgent24ReplayDeterminism(
       name: 'archive_handoff_seal_twin',
       passed: a.archiveHandoffSeal.deterministicFingerprint === b.archiveHandoffSeal.deterministicFingerprint,
       detail: 'Twin archive handoff seal fingerprints',
+    },
+    {
+      name: 'archive_handoff_verification_twin',
+      passed:
+        a.archiveHandoffVerification.deterministicFingerprint === b.archiveHandoffVerification.deterministicFingerprint,
+      detail: 'Twin archive handoff verification fingerprints',
+    },
+    {
+      name: 'replay_pipeline_closeout_twin',
+      passed: a.replayPipelineCloseout.deterministicFingerprint === b.replayPipelineCloseout.deterministicFingerprint,
+      detail: 'Twin replay pipeline closeout fingerprints',
+    },
+    {
+      name: 'archive_continuity_finalization_twin',
+      passed:
+        a.archiveContinuityFinalization.deterministicFingerprint === b.archiveContinuityFinalization.deterministicFingerprint,
+      detail: 'Twin archive continuity finalization fingerprints',
     },
     {
       name: 'composite_twin',
