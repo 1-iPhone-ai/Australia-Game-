@@ -141477,6 +141477,11 @@ export function composeNationalSystemsAnswer(query: NationalQuery, gw: GIWorld):
 export type NationalMapNetwork = NationalNetworkKind | null;
 /** Capacity band → stroke width in px (width carries capacity; condition is carried by dash, icon and label). */
 export function nationalLinkWidth(capacity: number): number { return capacity >= 30 ? 6 : capacity >= 16 ? 4.5 : capacity >= 8 ? 3 : 1.5; }
+/** Corridor load ratio 0..1 (used ÷ effective capacity); for map opacity only. */
+export function nationalLinkUtilization(l: Pick<NationalNetworkLink, 'used' | 'effectiveCapacity'>): number {
+  if (!Number.isFinite(l.effectiveCapacity) || l.effectiveCapacity < 1) return 0;
+  return Math.max(0, Math.min(1, l.used / l.effectiveCapacity));
+}
 export const NATIONAL_CONDITION_DASH: Record<NationalNetworkCondition, string | undefined> = { surplus: undefined, healthy: undefined, strained: '6 3', bottlenecked: '3 3', critical: '1.5 2.5' };
 export const NATIONAL_CONDITION_STROKE: Record<NationalNetworkCondition, string> = { surplus: '#34d399', healthy: '#5eead4', strained: '#fbbf24', bottlenecked: '#fb923c', critical: '#f87171' };
 export function nationalMapBadge(s: NationalSystemsState | null, regionId: string, network: NationalNetworkKind): { text: string; title: string; condition: NationalNetworkCondition } | null {
@@ -141495,9 +141500,21 @@ export const NationalNetworkMapLinks: React.FC<{ state: NationalSystemsState; ne
       <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" data-testid="ns-map-links">
         {links.map(l => {
           const a = REGIONS[l.fromRegionId].position, b = REGIONS[l.toRegionId].position;
-          return <line key={l.id} data-testid={`ns-link-${l.fromRegionId}-${l.toRegionId}`} data-condition={l.condition} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={NATIONAL_CONDITION_STROKE[l.condition]} strokeOpacity={0.85} strokeWidth={nationalLinkWidth(l.effectiveCapacity)} strokeDasharray={NATIONAL_CONDITION_DASH[l.condition]} strokeLinecap="round" vectorEffect="non-scaling-stroke" />;
+          const util = nationalLinkUtilization(l);
+          const w = nationalLinkWidth(l.effectiveCapacity);
+          return (
+            <g key={l.id} data-testid={`ns-link-${l.fromRegionId}-${l.toRegionId}`} data-condition={l.condition} data-utilization={Math.round(util * 100)}>
+              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#0f172a" strokeOpacity={0.9} strokeWidth={w + 2.5} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={NATIONAL_CONDITION_STROKE[l.condition]} strokeOpacity={0.35 + util * 0.6} strokeWidth={w} strokeDasharray={NATIONAL_CONDITION_DASH[l.condition]} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+            </g>
+          );
         })}
       </svg>
+      {links.length > 0 && (
+        <div className="absolute left-1 bottom-1 text-[10px] bg-slate-950/85 text-slate-100 px-1.5 py-0.5 rounded z-[6] max-w-[14rem]" data-testid="ns-map-legend">
+          {NATIONAL_NETWORK_ICON[network]} {NATIONAL_NETWORK_LABEL[network]} corridors · width = capacity · brightness = utilization · labels = used/cap
+        </div>
+      )}
       {links.filter(l => l.used >= 1 || l.condition !== 'healthy').map(l => {
         const a = REGIONS[l.fromRegionId].position, b = REGIONS[l.toRegionId].position;
         return (
@@ -154318,13 +154335,109 @@ export function composeEconomicGeographyAnswer(
   return { title, sections, buttons: [], shape };
 }
 
+export type EGMapMode = 'role' | 'pull' | 'clusters' | 'competition';
+export const EG_MAP_MODES: Array<[EGMapMode, string]> = [['role', 'Strategic roles'], ['pull', 'Investment pull'], ['clusters', 'Clusters & links'], ['competition', 'Location competition']];
+
+const EG_PULL_SHORT: Record<InvestmentPullBand, string> = { LOW: 'Low', MODERATE: 'Mod', HIGH: 'High', 'VERY HIGH': 'Very high' };
+
+/** Semantic badge for V10.8 economic geography map layers (no raw scores). */
+export function egMapBadge(state: EconomicGeographyState | null, regionId: string, mode: EGMapMode): { text: string; title: string; tone: 'bad' | 'warn' | 'ok' | 'plan' } | null {
+  const reg = state?.regions[regionId];
+  if (!state || !reg) return null;
+  switch (mode) {
+    case 'role': {
+      const role = reg.primaryRole;
+      if (!role) return { text: 'Balanced', title: `${reg.name}: no dominant strategic role`, tone: 'plan' };
+      const short = REGIONAL_ROLE_LABEL[role.id]?.split(' ')[0] || role.label;
+      return { text: short.slice(0, 12), title: `${reg.name}: ${role.label} (${role.rank})`, tone: role.rank === 'primary' ? 'ok' : 'plan' };
+    }
+    case 'pull': {
+      const p = reg.pull.overall;
+      return { text: EG_PULL_SHORT[p], title: `${reg.name}: investment pull ${p}`, tone: p === 'VERY HIGH' || p === 'HIGH' ? 'ok' : p === 'LOW' ? 'warn' : 'plan' };
+    }
+    case 'clusters': {
+      const top = reg.clusters[0];
+      if (!top) return null;
+      return { text: `${top.status[0].toUpperCase()}${top.status.slice(0, 3)}`, title: `${reg.name}: ${top.label} (${top.status})`, tone: top.congested ? 'warn' : top.status === 'strong' || top.status === 'dominant' ? 'ok' : 'plan' };
+    }
+    case 'competition': {
+      const comp = state.competitions[0];
+      if (!comp) return null;
+      const idx = comp.candidates.findIndex(c => c.regionId === regionId);
+      if (idx < 0) return null;
+      const c = comp.candidates[idx];
+      return { text: `#${idx + 1} ${c.suitabilityBand[0].toUpperCase()}`, title: `${comp.label}: ${regionId} rank ${idx + 1} (${c.suitabilityBand})`, tone: idx === 0 ? 'ok' : idx === 1 ? 'plan' : 'warn' };
+    }
+    default: return null;
+  }
+}
+
+/** PLAY strip: concentration risk, active competition, or cluster headline. */
+export function egPlayStrip(state: EconomicGeographyState | null, _focusRegions: string[] = []): Array<{ mode: EGMapMode; text: string; tone: 'warning' | 'critical' | 'positive' | 'neutral' }> {
+  if (!state) return [];
+  const out: Array<{ mode: EGMapMode; text: string; tone: 'warning' | 'critical' | 'positive' | 'neutral' }> = [];
+  const conc = state.concentration;
+  if (conc.band === 'overconcentrated') out.push({ mode: 'pull', text: `⚠ Overconcentrated · ${conc.topRegionId || '—'}`, tone: 'critical' });
+  else if (conc.band === 'concentrated') out.push({ mode: 'pull', text: `◆ Concentrated · ${conc.topRegionId || '—'}`, tone: 'warning' });
+  const comp = state.competitions[0];
+  if (comp && comp.candidates.length >= 2) out.push({ mode: 'competition', text: `📍 ${comp.label}: ${comp.candidates.slice(0, 2).map(c => c.regionId).join(' vs ')}`, tone: 'neutral' });
+  const cl = state.clusters.find(x => x.status === 'strong' || x.status === 'dominant');
+  if (cl && out.length < 3) out.push({ mode: 'clusters', text: `✦ ${cl.regionId} ${cl.label}`, tone: cl.congested ? 'warning' : 'positive' });
+  return out.slice(0, 3);
+}
+
+/** SVG links for complementarity (clusters) or competition shortlist (competition mode). */
+export const EconomicGeographyMapLinks: React.FC<{ state: EconomicGeographyState; mode: EGMapMode }> = ({ state, mode }) => {
+  if (mode !== 'clusters' && mode !== 'competition') return null;
+  const segs: Array<{ key: string; a: string; b: string; stroke: string; dash?: string; title: string }> = [];
+  if (mode === 'clusters') {
+    state.complementarities.filter(c => c.strength !== 'moderate').slice(0, 6).forEach(c => {
+      segs.push({ key: c.id, a: c.regionA, b: c.regionB, stroke: c.corridorHealthy ? '#34d399' : '#fbbf24', dash: c.corridorHealthy ? undefined : '4 3', title: c.explanation });
+    });
+  } else {
+    const comp = state.competitions[0];
+    if (comp && comp.candidates.length >= 2) {
+      const ids = comp.candidates.slice(0, 4).map(c => c.regionId);
+      for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+        segs.push({ key: `${comp.id}_${ids[i]}_${ids[j]}`, a: ids[i], b: ids[j], stroke: '#a7f3d0', dash: '2 4', title: `${comp.label}: comparing ${ids[i]} and ${ids[j]}` });
+      }
+    }
+  }
+  if (!segs.length) return null;
+  return (
+    <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" data-testid="eg-map-links" data-eg-mode={mode}>
+      {segs.map(s => {
+        const ra = REGIONS[s.a]?.position, rb = REGIONS[s.b]?.position;
+        if (!ra || !rb) return null;
+        return <line key={s.key} x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke={s.stroke} strokeOpacity={0.75} strokeWidth={2} strokeDasharray={s.dash} strokeLinecap="round" vectorEffect="non-scaling-stroke"><title>{s.title}</title></line>;
+      })}
+    </svg>
+  );
+};
+
+export const EconomicGeographyPlayStrip: React.FC<{ state: EconomicGeographyState | null; focusRegions: string[]; theme: any; onMap: (mode: EGMapMode) => void }> = ({ state, focusRegions, theme, onMap }) => {
+  const items = egPlayStrip(state, focusRegions);
+  if (!items.length) return null;
+  return (
+    <section aria-label="Economic geography" className={`${theme.card} ${theme.border} border rounded-lg px-3 py-2 text-xs flex flex-wrap items-center gap-2`} data-testid="eg-play-strip">
+      <span className="font-bold uppercase tracking-wide opacity-70">Geography</span>
+      {items.map(it => (
+        <button key={it.text} type="button" onClick={() => onMap(it.mode)} className={`px-2 py-0.5 rounded border ${it.tone === 'critical' ? 'border-red-500' : it.tone === 'warning' ? 'border-amber-500' : it.tone === 'positive' ? 'border-emerald-500' : 'border-slate-500'}`} data-testid="eg-play-item" title="Show on the map">
+          {it.text}
+        </button>
+      ))}
+    </section>
+  );
+};
+
 /** PLAY surface compact card: "WHERE SHOULD THIS GO?" when a meaningful multi-region choice exists. */
 export const EconomicGeographyPlayCard: React.FC<{
   state: EconomicGeographyState | null;
   theme: any;
   onOpen: () => void;
   onAsk: (q: string) => void;
-}> = ({ state, theme, onOpen, onAsk }) => {
+  onMap?: (mode: EGMapMode) => void;
+}> = ({ state, theme, onOpen, onAsk, onMap }) => {
   const comp = state?.competitions[0] || null;
   if (!comp || comp.candidates.length < 2) return null;
   const top3 = comp.candidates.slice(0, 3);
@@ -154346,6 +154459,11 @@ export const EconomicGeographyPlayCard: React.FC<{
           <button type="button" className="underline opacity-85" onClick={onOpen} data-testid="eg-play-compare">
             Compare
           </button>
+          {onMap && (
+            <button type="button" className="underline opacity-85" onClick={() => onMap('competition')} data-testid="eg-play-map" title="Show location competition on the map">
+              Map
+            </button>
+          )}
           <button
             type="button"
             className="underline opacity-85"
@@ -155574,6 +155692,21 @@ export function runV108RegionalCompetitionSelfTests(): V9SelfTestResult[] {
     return (avgMs < 40 && J(p).length < 65000 && errs.length === 0) || `${avgMs.toFixed(2)}ms avg, ${J(p).length} bytes, errs: ${errs.join(';')}`;
   });
 
+
+  check('eg_map_badge', 'Economic geography map badges expose role and competition rank', () => {
+    const f = X({ sectors: BASE_SECTORS, statuses: A('infra_v93_vic_manufacturing') });
+    const s = computeEconomicGeography(f.inputs, null).state;
+    const role = egMapBadge(s, 'VIC', 'role');
+    const comp = compOf(f.inputs, { id: 'comp:mfg', opportunityType: 'industry_expansion', label: 'Plant', sector: 'manufacturing', projectType: 'advanced_manufacturing' }, s);
+    const top = comp?.candidates[0]?.regionId;
+    const cb = top ? egMapBadge(s, top, 'competition') : null;
+    return (Boolean(role?.text) && (!top || Boolean(cb?.text.startsWith('#1')))) || J({ role, cb });
+  });
+  check('eg_map_util', 'National corridor utilization is bounded 0..1', () => {
+    const u = nationalLinkUtilization({ used: 5, effectiveCapacity: 10 });
+    const u2 = nationalLinkUtilization({ used: 20, effectiveCapacity: 10 });
+    return (u === 0.5 && u2 === 1) || J({ u, u2 });
+  });
   return results;
 }
 
@@ -215896,9 +216029,11 @@ function dispatchGameSettingsChange(
   const [scMapLayer, setScMapLayer] = useState<IndustryMapLayer | null>(null);
   const [inMapKind, setInMapKind] = useState<StrategicInfrastructureNetworkKind | null>(null);
   const [mpMapId, setMpMapId] = useState<string | null>(null);
-  const inShowOnMap = useCallback((k: StrategicInfrastructureNetworkKind) => { setNsMapNetwork(null); setScMapLayer(null); setMpMapId(null); setInMapKind(k); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const scShowOnMap = useCallback((layer: IndustryMapLayer) => { setNsMapNetwork(null); setMpMapId(null); setScMapLayer(layer); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const nsShowOnMap = useCallback((n: NationalNetworkKind) => { setMpMapId(null); setNsMapNetwork(n); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [egMapMode, setEgMapMode] = useState<EGMapMode | null>(null);
+  const egShowOnMap = useCallback((mode: EGMapMode) => { setNsMapNetwork(null); setScMapLayer(null); setInMapKind(null); setMpMapId(null); setEgMapMode(mode); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const inShowOnMap = useCallback((k: StrategicInfrastructureNetworkKind) => { setNsMapNetwork(null); setScMapLayer(null); setMpMapId(null); setEgMapMode(null); setInMapKind(k); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const scShowOnMap = useCallback((layer: IndustryMapLayer) => { setNsMapNetwork(null); setMpMapId(null); setEgMapMode(null); setScMapLayer(layer); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const nsShowOnMap = useCallback((n: NationalNetworkKind) => { setMpMapId(null); setEgMapMode(null); setNsMapNetwork(n); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Regional Factions & Stakeholders 2.0: live wiring ------------------------------------------------
   // Factions read Living Regions + World Reaction events (via the router's derive hook), advance once per round,
@@ -216394,7 +216529,7 @@ function dispatchGameSettingsChange(
     mpPersistedRef.current = next;
     dispatchGameState({ type: 'LOAD_STATE', payload: { megaprojects: next } as any });
   }, [mpViewerId]);
-  const mpShowOnMap = useCallback((programId: string) => { setNsMapNetwork(null); setScMapLayer(null); setInMapKind(null); setMpMapId(programId); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const mpShowOnMap = useCallback((programId: string) => { setNsMapNetwork(null); setScMapLayer(null); setInMapKind(null); setEgMapMode(null); setMpMapId(programId); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   /** Rival AI: one bounded long-horizon candidate per decision (solo rival only); may decline or free-ride. */
   const mpAiCandidateRef = useRef<((aiState: any) => { cmd: MegaprojectCommand; score: number; reason: string } | null) | null>(null);
   mpAiCandidateRef.current = (aiState: any) => {
@@ -233509,7 +233644,8 @@ function dispatchGameSettingsChange(
           {pf12Enabled && pf12View && <PublicFinancePlayChip view={pf12View} onClick={() => updateUiState({ experienceLayer: 'intelligence' } as any)} />}
           {capEnabled && capState && <StrategicCapitalPlayCard state={capState} theme={themeStyles} onOpenCenter={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={() => updateUiState({ experienceLayer: 'intelligence' } as any)} />}
           {hh13Enabled && hh13State && <HouseholdsPlaySignalBanner state={hh13State} onOpenIntel={() => updateUiState({ experienceLayer: 'intelligence' } as any)} />}
-          {egEnabled && egState && <EconomicGeographyPlayCard state={egState} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
+          {egEnabled && egState && <EconomicGeographyPlayCard state={egState} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} onMap={egShowOnMap} />}
+          {egEnabled && egState && <EconomicGeographyPlayStrip state={egState} focusRegions={[String(player.currentRegion || ''), ...(lrFocusRegion ? [lrFocusRegion] : [])]} theme={themeStyles} onMap={egShowOnMap} />}
           {npEnabled && npState?.primary && <NationalPriorityPlayCard state={npState} viewerId={npViewerId} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
           {srEnabled && srState && <SystemicRiskPlayLine state={srState} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
           {icEnabled && icState && <EmergingCapabilityPlayLine state={icState} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
@@ -235264,7 +235400,7 @@ function dispatchGameSettingsChange(
                 <h3 className="text-xl font-bold">🗺️ Australia Map</h3>
                 {lrState && (
                   <label className="text-xs flex items-center gap-1 ml-auto mr-2">Layer
-                    <select aria-label="Map layer" data-testid="lr-map-mode" value={mpMapId && mpPersisted?.programs[mpMapId] ? `mp:${mpMapId}` : inMapKind && inState ? `infra:${inMapKind}` : scMapLayer && scState ? scMapLayer : nsMapNetwork && nsState ? `net:${nsMapNetwork}` : lrMapMode} onChange={e => { const v = e.target.value; setInMapKind(null); setMpMapId(null); if (v.startsWith('mp:')) { setNsMapNetwork(null); setScMapLayer(null); setMpMapId(v.slice(3)); return; } if (v.startsWith('infra:')) { setNsMapNetwork(null); setScMapLayer(null); setInMapKind(v.slice(6) as StrategicInfrastructureNetworkKind); } else if (v === 'ind' || v.startsWith('sc:')) { setNsMapNetwork(null); setScMapLayer(v as IndustryMapLayer); } else if (v.startsWith('net:')) { setScMapLayer(null); setNsMapNetwork(v.slice(4) as NationalNetworkKind); } else { setScMapLayer(null); setNsMapNetwork(null); setLrMapMode(v as LRMapMode); } }} className={`${themeStyles.input || ''} bg-transparent border rounded px-1 py-0.5`}>
+                    <select aria-label="Map layer" data-testid="lr-map-mode" value={mpMapId && mpPersisted?.programs[mpMapId] ? `mp:${mpMapId}` : inMapKind && inState ? `infra:${inMapKind}` : scMapLayer && scState ? scMapLayer : nsMapNetwork && nsState ? `net:${nsMapNetwork}` : egMapMode && egState ? `eg:${egMapMode}` : lrMapMode} onChange={e => { const v = e.target.value; setInMapKind(null); setMpMapId(null); setEgMapMode(null); if (v.startsWith('eg:')) { setNsMapNetwork(null); setScMapLayer(null); setEgMapMode(v.slice(3) as EGMapMode); return; } if (v.startsWith('mp:')) { setNsMapNetwork(null); setScMapLayer(null); setMpMapId(v.slice(3)); return; } if (v.startsWith('infra:')) { setNsMapNetwork(null); setScMapLayer(null); setInMapKind(v.slice(6) as StrategicInfrastructureNetworkKind); } else if (v === 'ind' || v.startsWith('sc:')) { setNsMapNetwork(null); setScMapLayer(v as IndustryMapLayer); } else if (v.startsWith('net:')) { setScMapLayer(null); setNsMapNetwork(v.slice(4) as NationalNetworkKind); } else { setScMapLayer(null); setNsMapNetwork(null); setEgMapMode(null); setLrMapMode(v as LRMapMode); } }} className={`${themeStyles.input || ''} bg-transparent border rounded px-1 py-0.5`}>
                       {LR_MAP_MODES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                       {nsState && <optgroup label="National networks">{NATIONAL_NETWORKS.map(n => <option key={n} value={`net:${n}`}>{NATIONAL_NETWORK_ICON[n]} {NATIONAL_NETWORK_LABEL[n]}</option>)}</optgroup>}
                       {inState && <optgroup label="Infrastructure networks">{INFRA_NETWORK_KINDS.map(k => <option key={k} value={`infra:${k}`}>🕸 {INFRA_NETWORK_ICON[k]} {INFRA_NETWORK_LABEL[k]} network</option>)}</optgroup>}
@@ -235283,6 +235419,7 @@ function dispatchGameSettingsChange(
               
 	              <div className="relative w-full h-96 bg-gray-800 rounded-lg overflow-hidden" data-ns-network={nsMapNetwork && nsState ? nsMapNetwork : undefined}>
 	                {nsMapNetwork && nsState && <NationalNetworkMapLinks state={nsState} network={nsMapNetwork} />}
+	                {egMapMode && egState && <EconomicGeographyMapLinks state={egState} mode={egMapMode} />}
 	                {inMapKind && inState && nsState && <InfraNetworkMapOverlay state={inState} national={nsState} kind={inMapKind} />}
 	                {mpMapId && mpPersisted?.programs[mpMapId] && <MegaprojectMapOverlay persisted={mpPersisted} programId={mpMapId} />}
 	                {scMapLayer && scMapLayer !== 'ind' && scState && <IndustrySupplyMapLinks state={scState} supply={scMapLayer.slice(3) as StrategicSupplyKind} />}
@@ -235358,7 +235495,7 @@ function dispatchGameSettingsChange(
 	                            ${regionControlInfo.highestDeposit}
 	                          </div>
 	                        )}
-                          {mpMapId && mpPersisted?.programs[mpMapId] ? (() => { const mb = megaprojectMapBadge(mpPersisted, code, mpMapId); return mb ? <div data-testid="mp-map-badge" data-tone={mb.tone} title={mb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${mb.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : mb.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : mb.tone === 'ok' ? 'bg-emerald-950 border-emerald-400 text-emerald-100' : 'bg-slate-900 border-slate-400 text-slate-100'}`}>{mb.text}</div> : null; })() : inMapKind && inState ? (() => { const xb = infraMapBadge(inState, code, inMapKind); return xb ? <div data-testid="in-map-badge" data-tone={xb.tone} title={xb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${xb.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : xb.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-sky-950 border-sky-400 text-sky-100'}`}>{xb.text}</div> : null; })() : scMapLayer && scState ? (() => { const ib = industryMapBadge(scState, code, scMapLayer); return ib ? <div data-testid="sc-map-badge" data-tone={ib.tone} title={ib.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${ib.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : ib.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-violet-950 border-violet-400 text-violet-100'}`}>{ib.text}</div> : null; })() : nsMapNetwork && nsState ? (() => { const nb = nationalMapBadge(nsState, code, nsMapNetwork); return nb ? <div data-testid="ns-map-badge" data-condition={nb.condition} title={nb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${nb.condition === 'critical' ? 'bg-red-950 border-red-400 text-red-100' : nb.condition === 'bottlenecked' ? 'bg-orange-950 border-orange-400 text-orange-100' : nb.condition === 'strained' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-teal-950 border-teal-500 text-teal-100'}`}>{nb.text}</div> : null; })() : (() => { const badge = lrMapBadge(lrState?.regions[code], lrMapMode); return badge ? <div data-testid="lr-map-badge" title={badge.title} className="absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap bg-teal-900/90 text-teal-100 px-1 rounded">{badge.text}</div> : null; })()}
+                          {mpMapId && mpPersisted?.programs[mpMapId] ? (() => { const mb = megaprojectMapBadge(mpPersisted, code, mpMapId); return mb ? <div data-testid="mp-map-badge" data-tone={mb.tone} title={mb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${mb.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : mb.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : mb.tone === 'ok' ? 'bg-emerald-950 border-emerald-400 text-emerald-100' : 'bg-slate-900 border-slate-400 text-slate-100'}`}>{mb.text}</div> : null; })() : inMapKind && inState ? (() => { const xb = infraMapBadge(inState, code, inMapKind); return xb ? <div data-testid="in-map-badge" data-tone={xb.tone} title={xb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${xb.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : xb.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-sky-950 border-sky-400 text-sky-100'}`}>{xb.text}</div> : null; })() : scMapLayer && scState ? (() => { const ib = industryMapBadge(scState, code, scMapLayer); return ib ? <div data-testid="sc-map-badge" data-tone={ib.tone} title={ib.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${ib.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : ib.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-violet-950 border-violet-400 text-violet-100'}`}>{ib.text}</div> : null; })() : nsMapNetwork && nsState ? (() => { const nb = nationalMapBadge(nsState, code, nsMapNetwork); return nb ? <div data-testid="ns-map-badge" data-condition={nb.condition} title={nb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${nb.condition === 'critical' ? 'bg-red-950 border-red-400 text-red-100' : nb.condition === 'bottlenecked' ? 'bg-orange-950 border-orange-400 text-orange-100' : nb.condition === 'strained' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-teal-950 border-teal-500 text-teal-100'}`}>{nb.text}</div> : null; })() : egMapMode && egState ? (() => { const eb = egMapBadge(egState, code, egMapMode); return eb ? <div data-testid="eg-map-badge" data-tone={eb.tone} title={eb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${eb.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : eb.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : eb.tone === 'ok' ? 'bg-emerald-950 border-emerald-400 text-emerald-100' : 'bg-slate-900 border-slate-400 text-slate-100'}`}>{eb.text}</div> : null; })() : (() => { const badge = lrMapBadge(lrState?.regions[code], lrMapMode); return badge ? <div data-testid="lr-map-badge" title={badge.title} className="absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap bg-teal-900/90 text-teal-100 px-1 rounded">{badge.text}</div> : null; })()}
                           {interactiveMapActive && completedChallengeCount >= (region.challenges || []).length && (region.challenges || []).length > 0 && (
                             <div className="absolute -top-2 -left-2 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center text-[10px]">
                               ✓
