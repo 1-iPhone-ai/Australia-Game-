@@ -1135,6 +1135,62 @@ export function buildGuardianDepthCertificationReport(snapshot: GuardianCoPilotM
   return lines.slice(0, 3);
 }
 
+export function computeAccreditationStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceAuthenticityScore < 50) load += Math.min(25, 50 - snapshot.governanceAuthenticityScore);
+  if (snapshot.governanceAuthenticityScore < 35) load += 10;
+  if (snapshot.certificationIntegrityScore < 45) load += 20;
+  if (snapshot.certificationIntegrityScore < 35) load += 10;
+  if (snapshot.certificationStrainIndex >= 55) load += 20;
+  if (snapshot.certificationStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeAccreditationIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.accreditationStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.accreditationStrainIndex * 0.35));
+  if (snapshot.certificationIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.certificationIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceAuthenticityScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceCredibilityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.accreditationStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.accreditationStrainIndex * 0.32));
+  if (snapshot.accreditationIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.accreditationIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceAuthenticityScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthAccreditationReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.accreditationStrainIndex >= 55) {
+    lines.push(
+      `Accreditation strain ${snapshot.accreditationStrainIndex} — stacked accreditation review may exceed operator accreditation capacity`
+    );
+  }
+  if (snapshot.accreditationIntegrityScore < 45) {
+    lines.push(
+      `Accreditation integrity ${snapshot.accreditationIntegrityScore} — align Co-Pilot accreditations with Guardian accreditation posture`
+    );
+  }
+  if (snapshot.governanceCredibilityScore < 40) {
+    lines.push(
+      `Governance credibility ${snapshot.governanceCredibilityScore} — little credibility to sustain accreditation oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -1340,9 +1396,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withCertificationStrain: GuardianCoPilotMonitorSnapshot = { ...withSoundness, certificationStrainIndex };
   const certificationIntegrityScore = computeCertificationIntegrityScore(withCertificationStrain);
   const withCertification: GuardianCoPilotMonitorSnapshot = { ...withCertificationStrain, certificationIntegrityScore };
-  return {
+  const withAuthenticity: GuardianCoPilotMonitorSnapshot = {
     ...withCertification,
     governanceAuthenticityScore: computeGovernanceAuthenticityScore(withCertification),
+    accreditationStrainIndex: 0,
+    accreditationIntegrityScore: 100,
+    governanceCredibilityScore: 100,
+  };
+  const accreditationStrainIndex = computeAccreditationStrainIndex(withAuthenticity);
+  const withAccreditationStrain: GuardianCoPilotMonitorSnapshot = { ...withAuthenticity, accreditationStrainIndex };
+  const accreditationIntegrityScore = computeAccreditationIntegrityScore(withAccreditationStrain);
+  const withAccreditation: GuardianCoPilotMonitorSnapshot = { ...withAccreditationStrain, accreditationIntegrityScore };
+  return {
+    ...withAccreditation,
+    governanceCredibilityScore: computeGovernanceCredibilityScore(withAccreditation),
   };
 }
 
@@ -2005,6 +2072,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceAuthenticityScore(snap) < 35;
+  });
+  ok('gd_accreditation_strain', () => {
+    const snap = {
+      governanceAuthenticityScore: 30,
+      certificationIntegrityScore: 32,
+      certificationStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAccreditationStrainIndex(snap) >= 70;
+  });
+  ok('gd_accreditation_integrity', () => {
+    const snap = {
+      accreditationStrainIndex: 72,
+      certificationIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceAuthenticityScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAccreditationIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_credibility', () => {
+    const snap = {
+      accreditationStrainIndex: 78,
+      accreditationIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceAuthenticityScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceCredibilityScore(snap) < 35;
   });
   return out;
 }
