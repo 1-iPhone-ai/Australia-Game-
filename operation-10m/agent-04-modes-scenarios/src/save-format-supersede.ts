@@ -135,6 +135,7 @@ export function attachSupersedeSessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    liquidationSession: null,
     receivershipSession: null,
     quashSession: null,
     setAsideSession: null,

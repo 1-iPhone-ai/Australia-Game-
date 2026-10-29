@@ -404,6 +404,8 @@ export type O10mSequestrationPhase = 'filing' | 'review' | 'sequestration';
 
 export type O10mReceivershipPhase = 'filing' | 'review' | 'receivership';
 
+export type O10mLiquidationPhase = 'filing' | 'review' | 'liquidation';
+
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
   circuitId: string;
@@ -866,6 +868,17 @@ export interface O10mReceivershipSession {
   phaseTag: O10mReceivershipPhase;
 }
 
+/** Schema v50 — liquidation arc with score accrual between phases. */
+export interface O10mLiquidationSession {
+  liquidationId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  liquidationScore: number;
+  phaseTag: O10mLiquidationPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -890,6 +903,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'liquidation_step'
     | 'receivership_step'
     | 'sequestration_step'
     | 'contempt_step'
@@ -1114,6 +1128,10 @@ export interface O10mCampaignPlan {
   receivershipCursor: number | null;
   receivershipPhase: O10mReceivershipPhase | null;
   receivershipScore: number | null;
+  liquidationId: string | null;
+  liquidationCursor: number | null;
+  liquidationPhase: O10mLiquidationPhase | null;
+  liquidationScore: number | null;
   contemptId: string | null;
   contemptCursor: number | null;
   contemptPhase: O10mContemptPhase | null;
@@ -1237,8 +1255,10 @@ export interface O10mModesPersistedState {
   contemptSession?: O10mContemptSession | null;
   /** Schema v48 — active sequestration arc (mutually exclusive with receivership / contempt / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   sequestrationSession?: O10mSequestrationSession | null;
-  /** Schema v49 — active receivership arc (mutually exclusive with sequestration / contempt / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v49 — active receivership arc (mutually exclusive with liquidation / sequestration / contempt / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   receivershipSession?: O10mReceivershipSession | null;
+  /** Schema v50 — active liquidation arc (mutually exclusive with receivership / sequestration / contempt / injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  liquidationSession?: O10mLiquidationSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

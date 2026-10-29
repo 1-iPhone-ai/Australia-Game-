@@ -148,6 +148,7 @@ export function attachAmnestySessionToState(
     injunctionSession: null,
     contemptSession: null,
     sequestrationSession: null,
+    liquidationSession: null,
     receivershipSession: null,
     pardonSession: null,
     clemencySession: null,

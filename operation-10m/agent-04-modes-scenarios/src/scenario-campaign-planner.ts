@@ -127,6 +127,11 @@ import {
   sanitizeSequestrationSession,
 } from './save-format-sequestration.js';
 import {
+  getLiquidationScenarioAtCursor,
+  liquidationSessionSummary,
+  sanitizeLiquidationSession,
+} from './save-format-liquidation.js';
+import {
   getReceivershipScenarioAtCursor,
   receivershipSessionSummary,
   sanitizeReceivershipSession,
@@ -269,6 +274,7 @@ import type {
   O10mContemptPhase,
   O10mSequestrationPhase,
   O10mReceivershipPhase,
+  O10mLiquidationPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -451,9 +457,31 @@ const emptyQueuePlan = {
   receivershipCursor: null as number | null,
   receivershipPhase: null as O10mReceivershipPhase | null,
   receivershipScore: null as number | null,
+  liquidationId: null as string | null,
+  liquidationCursor: null as number | null,
+  liquidationPhase: null as O10mLiquidationPhase | null,
+  liquidationScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const liquidation = sanitizeLiquidationSession(state.liquidationSession);
+  const liquidationScenario = getLiquidationScenarioAtCursor(liquidation);
+  if (liquidation && liquidation.active && liquidationScenario) {
+    return {
+      kind: 'liquidation_step',
+      scenarioId: liquidationScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      liquidationId: liquidation.liquidationId,
+      liquidationCursor: liquidation.cursor,
+      liquidationPhase: liquidation.phaseTag,
+      liquidationScore: liquidation.liquidationScore,
+      reason: `Liquidation "${liquidation.label}" ${liquidation.phaseTag} phase ${liquidation.cursor + 1}/${liquidation.scenarioIds.length} (score ${liquidation.liquidationScore}).`,
+    };
+  }
+
   const receivership = sanitizeReceivershipSession(state.receivershipSession);
   const receivershipScenario = getReceivershipScenarioAtCursor(receivership);
   if (receivership && receivership.active && receivershipScenario) {
@@ -1374,6 +1402,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   contemptActive: boolean;
   sequestrationActive: boolean;
   receivershipActive: boolean;
+  liquidationActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -1426,6 +1455,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const contempt = contemptSessionSummary(state);
   const sequestration = sequestrationSessionSummary(state);
   const receivership = receivershipSessionSummary(state);
+  const liquidation = liquidationSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -1476,6 +1506,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     contemptActive: contempt.active,
     sequestrationActive: sequestration.active,
     receivershipActive: receivership.active,
+    liquidationActive: liquidation.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

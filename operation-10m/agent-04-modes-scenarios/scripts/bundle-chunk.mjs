@@ -74,6 +74,7 @@ const SOURCE_FILES = [
   'operation-10m/agent-04-modes-scenarios/src/save-format-contempt.ts',
   'operation-10m/agent-04-modes-scenarios/src/save-format-sequestration.ts',
   'operation-10m/agent-04-modes-scenarios/src/save-format-receivership.ts',
+  'operation-10m/agent-04-modes-scenarios/src/save-format-liquidation.ts',
   'operation-10m/agent-04-modes-scenarios/src/scenario-campaign-planner.ts',
 ];
 
@@ -109,7 +110,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 50, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 51, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -497,16 +498,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const receivershipState = receivership ? attachReceivershipSessionToState(createEmptyO10mModesPersistedState(), receivership) : null;
   push('agent04_chunk_57', receivershipState !== null && planNextCampaignAction(receivershipState!).kind === 'receivership_step');
 
+  const liquidation = createLiquidationSession({
+    liquidationId: 'o10m_liquidation_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_liquidation_filing_docket'],
+  }).session;
+  const liquidationState = liquidation ? attachLiquidationSessionToState(createEmptyO10mModesPersistedState(), liquidation) : null;
+  push('agent04_chunk_58', liquidationState !== null && planNextCampaignAction(liquidationState!).kind === 'liquidation_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: '${MODULE_ID}',
-  schemaVersion: 'op10m-agent04-v50',
+  schemaVersion: 'op10m-agent04-v51',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 49,
+  saveSchemaVersion: 50,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

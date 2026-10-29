@@ -49,6 +49,7 @@ import { sanitizeInjunctionSession } from './save-format-injunction.js';
 import { sanitizeContemptSession } from './save-format-contempt.js';
 import { sanitizeSequestrationSession } from './save-format-sequestration.js';
 import { sanitizeReceivershipSession } from './save-format-receivership.js';
+import { sanitizeLiquidationSession } from './save-format-liquidation.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -67,7 +68,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 49;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 50;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -215,6 +216,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     contemptSession: null,
     sequestrationSession: null,
     receivershipSession: null,
+    liquidationSession: null,
   };
 }
 
@@ -283,6 +285,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       contemptSession: merged.contemptSession ?? null,
       sequestrationSession: merged.sequestrationSession ?? null,
       receivershipSession: merged.receivershipSession ?? null,
+      liquidationSession: merged.liquidationSession ?? null,
     };
     return upgraded;
   }
@@ -375,6 +378,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     contemptSession: sanitizeContemptSession(o.contemptSession),
     sequestrationSession: sanitizeSequestrationSession(o.sequestrationSession),
     receivershipSession: sanitizeReceivershipSession(o.receivershipSession),
+    liquidationSession: sanitizeLiquidationSession(o.liquidationSession),
   };
 }
 
@@ -724,6 +728,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Receivership session failed sanitization; planner will ignore it.');
   } else if (receivership && receivership.cursor >= receivership.scenarioIds.length) {
     warnings.push('Receivership cursor out of range; clamp on next sanitize.');
+  }
+
+  const liquidation = sanitizeLiquidationSession(state.liquidationSession);
+  if (state.liquidationSession && !liquidation) {
+    warnings.push('Liquidation session failed sanitization; planner will ignore it.');
+  } else if (liquidation && liquidation.cursor >= liquidation.scenarioIds.length) {
+    warnings.push('Liquidation cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
