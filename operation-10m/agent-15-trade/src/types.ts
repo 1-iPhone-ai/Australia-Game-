@@ -174,6 +174,10 @@ export interface GTELPersisted {
   bilateralCargoSchedulingSmoothing?: number;
   /** Smoothed commitment turn closeout score (0–1). */
   commitmentTurnCloseoutSmoothing?: number;
+  /** Smoothed forward slot rollover score (0–1). */
+  forwardSlotRolloverSmoothing?: number;
+  /** Smoothed bilateral settlement reconciliation score (0–1). */
+  bilateralSettlementReconciliationSmoothing?: number;
 }
 
 export interface GTELState {
@@ -223,6 +227,8 @@ export interface GTELState {
   commitmentLedgerHarmonization: GTELCommitmentLedgerHarmonizationSnapshot;
   bilateralCargoScheduling: GTELBilateralCargoSchedulingSnapshot;
   commitmentTurnCloseout: GTELCommitmentTurnCloseoutSnapshot;
+  forwardSlotRollover: GTELForwardSlotRolloverSnapshot;
+  bilateralSettlementReconciliation: GTELBilateralSettlementReconciliationSnapshot;
   inputHash: string;
 }
 
@@ -706,6 +712,26 @@ export interface GTELCommitmentTurnCloseoutSnapshot {
   score: number;
   band: GTELCommitmentTurnCloseoutBand;
   slotVariance: number;
+  schedulingSupport: number;
+  summary: string;
+}
+
+export type GTELForwardSlotRolloverBand = 'seamless' | 'partial' | 'lumpy' | 'blocked';
+
+export interface GTELForwardSlotRolloverSnapshot {
+  score: number;
+  band: GTELForwardSlotRolloverBand;
+  openSlotCarry: number;
+  closeoutSupport: number;
+  summary: string;
+}
+
+export type GTELBilateralSettlementReconciliationBand = 'settled' | 'reconciling' | 'disputed' | 'unsettled';
+
+export interface GTELBilateralSettlementReconciliationSnapshot {
+  score: number;
+  band: GTELBilateralSettlementReconciliationBand;
+  rolloverAlignment: number;
   schedulingSupport: number;
   summary: string;
 }

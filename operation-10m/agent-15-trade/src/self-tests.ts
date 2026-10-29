@@ -139,6 +139,16 @@ import {
   createEmptyCommitmentTurnCloseoutSnapshot,
   commitmentTurnCloseoutExportScale,
 } from './commitment-turn-closeout.ts';
+import {
+  computeForwardSlotRolloverSnapshot,
+  createEmptyForwardSlotRolloverSnapshot,
+  forwardSlotRolloverExportScale,
+} from './forward-slot-rollover.ts';
+import {
+  computeBilateralSettlementReconciliationSnapshot,
+  createEmptyBilateralSettlementReconciliationSnapshot,
+  bilateralSettlementReconciliationExportScale,
+} from './bilateral-settlement-reconciliation.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -1225,6 +1235,52 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       commitmentTurnCloseoutExportScale(clean) >= commitmentTurnCloseoutExportScale(unsettled),
       'expected closeout scale lift',
+    );
+  });
+
+  ok('forward slot rollover improves when closeout is clean', () => {
+    const exportPipe = { ...createEmptyTradeCommitmentPipelineSnapshot(), fillRate: 0.51, band: 'steady' as const };
+    const importPipe = { ...createEmptyImportCommitmentPipelineSnapshot(), fillRate: 0.5, band: 'steady' as const };
+    const closeout = { ...createEmptyCommitmentTurnCloseoutSnapshot(), score: 0.76, band: 'closed_clean' as const, slotVariance: 0.06 };
+    const seamless = computeForwardSlotRolloverSnapshot({
+      exportCommitmentPipeline: exportPipe,
+      importCommitmentPipeline: importPipe,
+      commitmentTurnCloseout: closeout,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const blocked = computeForwardSlotRolloverSnapshot({
+      exportCommitmentPipeline: { ...exportPipe, fillRate: 0.84, band: 'booked_out' },
+      importCommitmentPipeline: { ...importPipe, fillRate: 0.36, band: 'slack' },
+      commitmentTurnCloseout: { ...closeout, score: 0.3, band: 'unsettled', slotVariance: 0.38 },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(seamless.score > blocked.score, 'expected stronger rollover when closeout clean');
+    gtelAssert(
+      forwardSlotRolloverExportScale(seamless) >= forwardSlotRolloverExportScale(blocked),
+      'expected rollover scale lift',
+    );
+  });
+
+  ok('bilateral settlement reconciliation improves when rollover and scheduling align', () => {
+    const rollover = { ...createEmptyForwardSlotRolloverSnapshot(), score: 0.74, band: 'seamless' as const, openSlotCarry: 0.1 };
+    const scheduling = { ...createEmptyBilateralCargoSchedulingSnapshot(), score: 0.72, band: 'on_schedule' as const };
+    const orchestration = { ...createEmptyTradeThroughputOrchestrationSnapshot(), score: 0.68, band: 'fluid' as const };
+    const settled = computeBilateralSettlementReconciliationSnapshot({
+      forwardSlotRollover: rollover,
+      bilateralCargoScheduling: scheduling,
+      tradeThroughputOrchestration: orchestration,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const unsettled = computeBilateralSettlementReconciliationSnapshot({
+      forwardSlotRollover: { ...rollover, score: 0.28, band: 'blocked', openSlotCarry: 0.42 },
+      bilateralCargoScheduling: { ...scheduling, score: 0.3, band: 'gridlocked' },
+      tradeThroughputOrchestration: { ...orchestration, score: 0.26, band: 'stalled' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(settled.score > unsettled.score, 'expected stronger settlement when aligned');
+    gtelAssert(
+      bilateralSettlementReconciliationExportScale(settled) >= bilateralSettlementReconciliationExportScale(unsettled),
+      'expected settlement scale lift',
     );
   });
 

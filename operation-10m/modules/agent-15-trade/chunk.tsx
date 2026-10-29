@@ -178,6 +178,10 @@ export interface GTELPersisted {
   bilateralCargoSchedulingSmoothing?: number;
   /** Smoothed commitment turn closeout score (0–1). */
   commitmentTurnCloseoutSmoothing?: number;
+  /** Smoothed forward slot rollover score (0–1). */
+  forwardSlotRolloverSmoothing?: number;
+  /** Smoothed bilateral settlement reconciliation score (0–1). */
+  bilateralSettlementReconciliationSmoothing?: number;
 }
 
 export interface GTELState {
@@ -227,6 +231,8 @@ export interface GTELState {
   commitmentLedgerHarmonization: GTELCommitmentLedgerHarmonizationSnapshot;
   bilateralCargoScheduling: GTELBilateralCargoSchedulingSnapshot;
   commitmentTurnCloseout: GTELCommitmentTurnCloseoutSnapshot;
+  forwardSlotRollover: GTELForwardSlotRolloverSnapshot;
+  bilateralSettlementReconciliation: GTELBilateralSettlementReconciliationSnapshot;
   inputHash: string;
 }
 
@@ -714,6 +720,26 @@ export interface GTELCommitmentTurnCloseoutSnapshot {
   summary: string;
 }
 
+export type GTELForwardSlotRolloverBand = 'seamless' | 'partial' | 'lumpy' | 'blocked';
+
+export interface GTELForwardSlotRolloverSnapshot {
+  score: number;
+  band: GTELForwardSlotRolloverBand;
+  openSlotCarry: number;
+  closeoutSupport: number;
+  summary: string;
+}
+
+export type GTELBilateralSettlementReconciliationBand = 'settled' | 'reconciling' | 'disputed' | 'unsettled';
+
+export interface GTELBilateralSettlementReconciliationSnapshot {
+  score: number;
+  band: GTELBilateralSettlementReconciliationBand;
+  rolloverAlignment: number;
+  schedulingSupport: number;
+  summary: string;
+}
+
 export interface GlobalTradeEconomyPanelProps {
   state: GTELState | null;
   theme?: { isDark?: boolean };
@@ -895,6 +921,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     commitmentLedgerHarmonizationSmoothing: 0.52,
     bilateralCargoSchedulingSmoothing: 0.52,
     commitmentTurnCloseoutSmoothing: 0.52,
+    forwardSlotRolloverSmoothing: 0.52,
+    bilateralSettlementReconciliationSmoothing: 0.52,
   };
 }
 
@@ -1091,6 +1119,10 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
     r.bilateralCargoSchedulingSmoothing,
   );
   base.commitmentTurnCloseoutSmoothing = sanitizeCommitmentTurnCloseoutSmoothing(r.commitmentTurnCloseoutSmoothing);
+  base.forwardSlotRolloverSmoothing = sanitizeForwardSlotRolloverSmoothing(r.forwardSlotRolloverSmoothing);
+  base.bilateralSettlementReconciliationSmoothing = sanitizeBilateralSettlementReconciliationSmoothing(
+    r.bilateralSettlementReconciliationSmoothing,
+  );
   return base;
 }
 
@@ -6742,6 +6774,18 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   commitmentTurnCloseoutGiNotes,
   commitmentTurnCloseoutWorldEvent,
 } from './commitment-turn-closeout.ts';
+  computeForwardSlotRolloverSnapshot,
+  forwardSlotRolloverDomesticStress,
+  forwardSlotRolloverExportScale,
+  forwardSlotRolloverGiNotes,
+  forwardSlotRolloverWorldEvent,
+} from './forward-slot-rollover.ts';
+  computeBilateralSettlementReconciliationSnapshot,
+  bilateralSettlementReconciliationDomesticStressRelief,
+  bilateralSettlementReconciliationExportScale,
+  bilateralSettlementReconciliationGiNotes,
+  bilateralSettlementReconciliationWorldEvent,
+} from './bilateral-settlement-reconciliation.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -7281,6 +7325,28 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const closeoutEvent = commitmentTurnCloseoutWorldEvent(commitmentTurnCloseout, turn);
   if (closeoutEvent) worldEvents.push(closeoutEvent);
 
+  const rolloverStep = computeForwardSlotRolloverSnapshot({
+    exportCommitmentPipeline,
+    importCommitmentPipeline,
+    commitmentTurnCloseout,
+    persisted,
+  });
+  persisted = rolloverStep.persisted;
+  const forwardSlotRollover = rolloverStep.snapshot;
+  const rolloverEvent = forwardSlotRolloverWorldEvent(forwardSlotRollover, turn);
+  if (rolloverEvent) worldEvents.push(rolloverEvent);
+
+  const settlementStep = computeBilateralSettlementReconciliationSnapshot({
+    forwardSlotRollover,
+    bilateralCargoScheduling,
+    tradeThroughputOrchestration,
+    persisted,
+  });
+  persisted = settlementStep.persisted;
+  const bilateralSettlementReconciliation = settlementStep.snapshot;
+  const settlementEvent = bilateralSettlementReconciliationWorldEvent(bilateralSettlementReconciliation, turn);
+  if (settlementEvent) worldEvents.push(settlementEvent);
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -7306,6 +7372,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         commitmentLedgerHarmonizationExportScale(commitmentLedgerHarmonization) *
         bilateralCargoSchedulingExportScale(bilateralCargoScheduling) *
         commitmentTurnCloseoutExportScale(commitmentTurnCloseout) *
+        forwardSlotRolloverExportScale(forwardSlotRollover) *
+        bilateralSettlementReconciliationExportScale(bilateralSettlementReconciliation) *
         10,
     ) / 10;
 
@@ -7371,6 +7439,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       tradeFlowCohesionDomesticStressRelief(tradeFlowCohesion) +
       commitmentLedgerHarmonizationDomesticStressRelief(commitmentLedgerHarmonization) +
       commitmentTurnCloseoutDomesticStressRelief(commitmentTurnCloseout) +
+      bilateralSettlementReconciliationDomesticStressRelief(bilateralSettlementReconciliation) +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
@@ -7382,7 +7451,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       exportCommitmentPipelineDomesticStress(exportCommitmentPipeline) +
       importCommitmentPipelineDomesticStress(importCommitmentPipeline) +
       tradeThroughputOrchestrationDomesticStress(tradeThroughputOrchestration) +
-      bilateralCargoSchedulingDomesticStress(bilateralCargoScheduling),
+      bilateralCargoSchedulingDomesticStress(bilateralCargoScheduling) +
+      forwardSlotRolloverDomesticStress(forwardSlotRollover),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -7429,6 +7499,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.commitmentLedgerHarmonizationSmoothing,
     persisted.bilateralCargoSchedulingSmoothing,
     persisted.commitmentTurnCloseoutSmoothing,
+    persisted.forwardSlotRolloverSmoothing,
+    persisted.bilateralSettlementReconciliationSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -7507,6 +7579,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     commitmentLedgerHarmonization,
     bilateralCargoScheduling,
     commitmentTurnCloseout,
+    forwardSlotRollover,
+    bilateralSettlementReconciliation,
     inputHash,
   };
 
@@ -7564,6 +7638,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...commitmentLedgerHarmonizationGiNotes(state.commitmentLedgerHarmonization));
   lines.push(...bilateralCargoSchedulingGiNotes(state.bilateralCargoScheduling));
   lines.push(...commitmentTurnCloseoutGiNotes(state.commitmentTurnCloseout));
+  lines.push(...forwardSlotRolloverGiNotes(state.forwardSlotRollover));
+  lines.push(...bilateralSettlementReconciliationGiNotes(state.bilateralSettlementReconciliation));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
@@ -7671,6 +7747,14 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   createEmptyCommitmentTurnCloseoutSnapshot,
   commitmentTurnCloseoutExportScale,
 } from './commitment-turn-closeout.ts';
+  computeForwardSlotRolloverSnapshot,
+  createEmptyForwardSlotRolloverSnapshot,
+  forwardSlotRolloverExportScale,
+} from './forward-slot-rollover.ts';
+  computeBilateralSettlementReconciliationSnapshot,
+  createEmptyBilateralSettlementReconciliationSnapshot,
+  bilateralSettlementReconciliationExportScale,
+} from './bilateral-settlement-reconciliation.ts';
   validateScenarioShockCatalog,
   triggerCommodityShockScenario,
   COMMODITY_SHOCK_SCENARIOS,
@@ -8753,6 +8837,52 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       commitmentTurnCloseoutExportScale(clean) >= commitmentTurnCloseoutExportScale(unsettled),
       'expected closeout scale lift',
+    );
+  });
+
+  ok('forward slot rollover improves when closeout is clean', () => {
+    const exportPipe = { ...createEmptyTradeCommitmentPipelineSnapshot(), fillRate: 0.51, band: 'steady' as const };
+    const importPipe = { ...createEmptyImportCommitmentPipelineSnapshot(), fillRate: 0.5, band: 'steady' as const };
+    const closeout = { ...createEmptyCommitmentTurnCloseoutSnapshot(), score: 0.76, band: 'closed_clean' as const, slotVariance: 0.06 };
+    const seamless = computeForwardSlotRolloverSnapshot({
+      exportCommitmentPipeline: exportPipe,
+      importCommitmentPipeline: importPipe,
+      commitmentTurnCloseout: closeout,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const blocked = computeForwardSlotRolloverSnapshot({
+      exportCommitmentPipeline: { ...exportPipe, fillRate: 0.84, band: 'booked_out' },
+      importCommitmentPipeline: { ...importPipe, fillRate: 0.36, band: 'slack' },
+      commitmentTurnCloseout: { ...closeout, score: 0.3, band: 'unsettled', slotVariance: 0.38 },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(seamless.score > blocked.score, 'expected stronger rollover when closeout clean');
+    gtelAssert(
+      forwardSlotRolloverExportScale(seamless) >= forwardSlotRolloverExportScale(blocked),
+      'expected rollover scale lift',
+    );
+  });
+
+  ok('bilateral settlement reconciliation improves when rollover and scheduling align', () => {
+    const rollover = { ...createEmptyForwardSlotRolloverSnapshot(), score: 0.74, band: 'seamless' as const, openSlotCarry: 0.1 };
+    const scheduling = { ...createEmptyBilateralCargoSchedulingSnapshot(), score: 0.72, band: 'on_schedule' as const };
+    const orchestration = { ...createEmptyTradeThroughputOrchestrationSnapshot(), score: 0.68, band: 'fluid' as const };
+    const settled = computeBilateralSettlementReconciliationSnapshot({
+      forwardSlotRollover: rollover,
+      bilateralCargoScheduling: scheduling,
+      tradeThroughputOrchestration: orchestration,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const unsettled = computeBilateralSettlementReconciliationSnapshot({
+      forwardSlotRollover: { ...rollover, score: 0.28, band: 'blocked', openSlotCarry: 0.42 },
+      bilateralCargoScheduling: { ...scheduling, score: 0.3, band: 'gridlocked' },
+      tradeThroughputOrchestration: { ...orchestration, score: 0.26, band: 'stalled' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(settled.score > unsettled.score, 'expected stronger settlement when aligned');
+    gtelAssert(
+      bilateralSettlementReconciliationExportScale(settled) >= bilateralSettlementReconciliationExportScale(unsettled),
+      'expected settlement scale lift',
     );
   });
 

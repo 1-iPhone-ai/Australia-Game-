@@ -43,5 +43,7 @@ export * from './trade-throughput-orchestration.ts';
 export * from './commitment-ledger-harmonization.ts';
 export * from './bilateral-cargo-scheduling.ts';
 export * from './commitment-turn-closeout.ts';
+export * from './forward-slot-rollover.ts';
+export * from './bilateral-settlement-reconciliation.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';
