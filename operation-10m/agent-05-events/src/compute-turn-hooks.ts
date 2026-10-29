@@ -36,6 +36,7 @@ import { evaluateComputeTurnScaleWaveTrancheSyncLatchCoordination } from './comp
 import { evaluateComputeTurnScaleWaveTrancheReadyCommitCoordination } from './compute-turn-scale-wave-tranche-ready-commit-coordinator.ts';
 import { evaluateComputeTurnScaleWaveFullChunksLatchCoordination } from './compute-turn-scale-wave-full-chunks-latch-coordinator.ts';
 import { evaluateComputeTurnScaleWaveFullChunksCommitCoordination } from './compute-turn-scale-wave-full-chunks-commit-coordinator.ts';
+import { evaluateComputeTurnScaleWaveFullChunksSyncLatchCoordination } from './compute-turn-scale-wave-full-chunks-sync-latch-coordinator.ts';
 import type {
   Op10mChainDescriptor,
   Op10mComputeTurnStage,
@@ -354,6 +355,15 @@ export function executeOp10mNarrativeComputeTurnHook(
   simulation = fullChunksCommitPass.simulation;
   narrative = fullChunksCommitPass.narrative;
   log.push(...fullChunksCommitPass.log);
+
+  const fullChunksSyncPass = evaluateComputeTurnScaleWaveFullChunksSyncLatchCoordination(
+    simulation,
+    narrative,
+    params.day
+  );
+  simulation = fullChunksSyncPass.simulation;
+  narrative = fullChunksSyncPass.narrative;
+  log.push(...fullChunksSyncPass.log);
 
   const postSettle = settleOp10mComputeTurnDriftAfterReconcile(simulation, narrative);
   simulation = postSettle.simulation;
