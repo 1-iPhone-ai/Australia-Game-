@@ -192,6 +192,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   legitimationStrainIndex: number;
   legitimationIntegrityScore: number;
   governancePepScore: number;
+  substantiationStrainIndex: number;
+  substantiationIntegrityScore: number;
+  governanceZestScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
