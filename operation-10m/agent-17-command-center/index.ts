@@ -93,6 +93,8 @@ export * from './planning/heritage-index.ts';
 export * from './planning/legacy-accord.ts';
 export * from './planning/patrimony-index.ts';
 export * from './planning/inheritance-accord.ts';
+export * from './planning/endowment-index.ts';
+export * from './planning/beneficiary-accord.ts';
 export * from './planning/planning-orchestrator.ts';
 export * from './planning/ops-state.ts';
 export * from './evaluation/operations-evaluator.ts';

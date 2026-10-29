@@ -103,3 +103,9 @@ export function inheritanceAccordBlocksPatrimony(
 ): boolean {
   return snapshot.band === 'disclaimed' || !snapshot.inheritanceTransmitted;
 }
+
+export function inheritanceAccordBlocksEndowment(
+  snapshot: Agent17InheritanceAccordSnapshot
+): boolean {
+  return inheritanceAccordBlocksPatrimony(snapshot);
+}

@@ -337,6 +337,14 @@ import {
   inheritanceAccordBlocksPatrimony,
 } from '../planning/inheritance-accord.ts';
 import {
+  buildAgent17EndowmentIndex,
+  endowmentIndexBlocksBeneficiary,
+} from '../planning/endowment-index.ts';
+import {
+  buildAgent17BeneficiaryAccord,
+  beneficiaryAccordBlocksEndowment,
+} from '../planning/beneficiary-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -2540,6 +2548,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const endowmentIndex = depthEval.snapshot.planningDepth?.endowmentIndex;
+  goalResults.push(
+    result(
+      'G17-145',
+      !!endowmentIndex &&
+        endowmentIndex.allocations.length >= 5 &&
+        endowmentIndex.endowmentScore >= 0 &&
+        endowmentIndex.endowmentScore <= 100 &&
+        (endowmentIndex.band === 'funded' ||
+          endowmentIndex.band === 'pending' ||
+          endowmentIndex.band === 'depleted'),
+      `allocations=${endowmentIndex?.allocations.length} score=${endowmentIndex?.endowmentScore}`
+    )
+  );
+
+  const beneficiaryAccord = depthEval.snapshot.planningDepth?.beneficiaryAccord;
+  goalResults.push(
+    result(
+      'G17-146',
+      !!beneficiaryAccord &&
+        beneficiaryAccord.designations.length >= 5 &&
+        beneficiaryAccord.beneficiaryScore >= 0 &&
+        beneficiaryAccord.beneficiaryScore <= 100,
+      `designations=${beneficiaryAccord?.designations.length} score=${beneficiaryAccord?.beneficiaryScore}`
+    )
+  );
+
+  const depletedEndowment = buildAgent17EndowmentIndex({
+    inheritanceAccord: disclaimedInheritance,
+    patrimonyIndex: escheatedPatrimony,
+    legacyAccord: extinguishedLegacy,
+  });
+  const vacatedBeneficiary = buildAgent17BeneficiaryAccord({
+    endowmentIndex: depletedEndowment,
+    inheritanceAccord: disclaimedInheritance,
+    patrimonyIndex: escheatedPatrimony,
+  });
+  goalResults.push(
+    result(
+      'G17-147',
+      inheritanceAccordBlocksPatrimony(disclaimedInheritance) ||
+        endowmentIndexBlocksBeneficiary(depletedEndowment) ||
+        beneficiaryAccordBlocksEndowment(vacatedBeneficiary),
+      `${depletedEndowment.band}/${vacatedBeneficiary.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -2714,6 +2769,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-142',
     'G17-143',
     'G17-144',
+    'G17-145',
+    'G17-146',
+    'G17-147',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

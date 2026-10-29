@@ -263,6 +263,8 @@ export interface Agent17PlanningDepthSnapshot {
   legacyAccord: Agent17LegacyAccordSnapshot;
   patrimonyIndex: Agent17PatrimonyIndexSnapshot;
   inheritanceAccord: Agent17InheritanceAccordSnapshot;
+  endowmentIndex: Agent17EndowmentIndexSnapshot;
+  beneficiaryAccord: Agent17BeneficiaryAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1615,6 +1617,40 @@ export interface Agent17InheritanceAccordSnapshot {
   patrimonyBand: Agent17PatrimonyIndexSnapshot['band'];
   legacyBand: Agent17LegacyAccordSnapshot['band'];
   inheritanceTransmitted: boolean;
+  headline: string;
+}
+
+export interface Agent17EndowmentAllocation {
+  id: string;
+  label: string;
+  funded: boolean;
+  weight: number;
+}
+
+export interface Agent17EndowmentIndexSnapshot {
+  endowmentScore: number;
+  band: 'funded' | 'pending' | 'depleted';
+  allocations: Agent17EndowmentAllocation[];
+  inheritanceBand: Agent17InheritanceAccordSnapshot['band'];
+  patrimonyBand: Agent17PatrimonyIndexSnapshot['band'];
+  endowmentFunded: boolean;
+  headline: string;
+}
+
+export interface Agent17BeneficiaryDesignation {
+  id: string;
+  label: string;
+  designated: boolean;
+  weight: number;
+}
+
+export interface Agent17BeneficiaryAccordSnapshot {
+  beneficiaryScore: number;
+  band: 'designated' | 'nominal' | 'vacated';
+  designations: Agent17BeneficiaryDesignation[];
+  endowmentBand: Agent17EndowmentIndexSnapshot['band'];
+  inheritanceBand: Agent17InheritanceAccordSnapshot['band'];
+  beneficiaryDesignated: boolean;
   headline: string;
 }
 

@@ -103,6 +103,8 @@ import { buildAgent17HeritageIndex } from './heritage-index.ts';
 import { buildAgent17LegacyAccord } from './legacy-accord.ts';
 import { buildAgent17PatrimonyIndex } from './patrimony-index.ts';
 import { buildAgent17InheritanceAccord } from './inheritance-accord.ts';
+import { buildAgent17EndowmentIndex } from './endowment-index.ts';
+import { buildAgent17BeneficiaryAccord } from './beneficiary-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -607,6 +609,16 @@ export function buildAgent17PlanningDepthSnapshot(
     legacyAccord,
     heritageIndex,
   });
+  const endowmentIndex = buildAgent17EndowmentIndex({
+    inheritanceAccord,
+    patrimonyIndex,
+    legacyAccord,
+  });
+  const beneficiaryAccord = buildAgent17BeneficiaryAccord({
+    endowmentIndex,
+    inheritanceAccord,
+    patrimonyIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -692,6 +704,8 @@ export function buildAgent17PlanningDepthSnapshot(
     legacyAccord,
     patrimonyIndex,
     inheritanceAccord,
+    endowmentIndex,
+    beneficiaryAccord,
   };
 }
 

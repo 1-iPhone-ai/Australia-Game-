@@ -267,6 +267,8 @@ export interface Agent17PlanningDepthSnapshot {
   legacyAccord: Agent17LegacyAccordSnapshot;
   patrimonyIndex: Agent17PatrimonyIndexSnapshot;
   inheritanceAccord: Agent17InheritanceAccordSnapshot;
+  endowmentIndex: Agent17EndowmentIndexSnapshot;
+  beneficiaryAccord: Agent17BeneficiaryAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1619,6 +1621,40 @@ export interface Agent17InheritanceAccordSnapshot {
   patrimonyBand: Agent17PatrimonyIndexSnapshot['band'];
   legacyBand: Agent17LegacyAccordSnapshot['band'];
   inheritanceTransmitted: boolean;
+  headline: string;
+}
+
+export interface Agent17EndowmentAllocation {
+  id: string;
+  label: string;
+  funded: boolean;
+  weight: number;
+}
+
+export interface Agent17EndowmentIndexSnapshot {
+  endowmentScore: number;
+  band: 'funded' | 'pending' | 'depleted';
+  allocations: Agent17EndowmentAllocation[];
+  inheritanceBand: Agent17InheritanceAccordSnapshot['band'];
+  patrimonyBand: Agent17PatrimonyIndexSnapshot['band'];
+  endowmentFunded: boolean;
+  headline: string;
+}
+
+export interface Agent17BeneficiaryDesignation {
+  id: string;
+  label: string;
+  designated: boolean;
+  weight: number;
+}
+
+export interface Agent17BeneficiaryAccordSnapshot {
+  beneficiaryScore: number;
+  band: 'designated' | 'nominal' | 'vacated';
+  designations: Agent17BeneficiaryDesignation[];
+  endowmentBand: Agent17EndowmentIndexSnapshot['band'];
+  inheritanceBand: Agent17InheritanceAccordSnapshot['band'];
+  beneficiaryDesignated: boolean;
   headline: string;
 }
 
@@ -11566,6 +11602,221 @@ export function inheritanceAccordBlocksPatrimony(
   return snapshot.band === 'disclaimed' || !snapshot.inheritanceTransmitted;
 }
 
+export function inheritanceAccordBlocksEndowment(
+  snapshot: Agent17InheritanceAccordSnapshot
+): boolean {
+  return inheritanceAccordBlocksPatrimony(snapshot);
+}
+
+
+// --- source: planning/endowment-index.ts ---
+  Agent17EndowmentIndexSnapshot,
+  Agent17InheritanceAccordSnapshot,
+  Agent17LegacyAccordSnapshot,
+  Agent17PatrimonyIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17EndowmentIndexInputs {
+  inheritanceAccord: Agent17InheritanceAccordSnapshot;
+  patrimonyIndex: Agent17PatrimonyIndexSnapshot;
+  legacyAccord: Agent17LegacyAccordSnapshot;
+}
+
+export function buildAgent17EndowmentIndex(
+  inputs: Agent17EndowmentIndexInputs
+): Agent17EndowmentIndexSnapshot {
+  const allocations: Agent17EndowmentIndexSnapshot['allocations'] = [];
+
+  allocations.push({
+    id: 'inheritance_transmitted',
+    label: 'Inheritance accord inheritance-transmitted',
+    funded:
+      inputs.inheritanceAccord.inheritanceTransmitted &&
+      !inheritanceAccordBlocksEndowment(inputs.inheritanceAccord),
+    weight: 30,
+  });
+
+  allocations.push({
+    id: 'inheritance_band',
+    label: 'Inheritance transmitted or provisional',
+    funded:
+      inputs.inheritanceAccord.band === 'transmitted' ||
+      inputs.inheritanceAccord.band === 'provisional',
+    weight: 25,
+  });
+
+  allocations.push({
+    id: 'patrimony_vested',
+    label: 'Patrimony index patrimony-vested',
+    funded:
+      inputs.patrimonyIndex.patrimonyVested &&
+      !patrimonyIndexBlocksInheritance(inputs.patrimonyIndex),
+    weight: 20,
+  });
+
+  allocations.push({
+    id: 'legacy_clear',
+    label: 'Legacy accord not blocking patrimony',
+    funded: !legacyAccordBlocksPatrimony(inputs.legacyAccord),
+    weight: 15,
+  });
+
+  allocations.push({
+    id: 'inheritance_score',
+    label: 'Inheritance score headroom',
+    funded: inputs.inheritanceAccord.inheritanceScore >= 6,
+    weight: 10,
+  });
+
+  const weighted = allocations.reduce(
+    (n, a) => n + (a.funded ? 100 : 1) * (a.weight / 100),
+    0
+  );
+  const totalWeight = allocations.reduce((n, a) => n + a.weight, 0);
+  const endowmentScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const depletedSignals =
+    inheritanceAccordBlocksEndowment(inputs.inheritanceAccord) ||
+    patrimonyIndexBlocksInheritance(inputs.patrimonyIndex) ||
+    legacyAccordBlocksPatrimony(inputs.legacyAccord);
+
+  const band: Agent17EndowmentIndexSnapshot['band'] = depletedSignals
+    ? 'depleted'
+    : endowmentScore >= 45 &&
+        inputs.inheritanceAccord.band === 'transmitted' &&
+        inputs.patrimonyIndex.band === 'vested'
+      ? 'funded'
+      : 'pending';
+
+  const endowmentFunded =
+    band === 'funded' &&
+    inputs.inheritanceAccord.inheritanceTransmitted &&
+    !inheritanceAccordBlocksEndowment(inputs.inheritanceAccord);
+
+  return {
+    endowmentScore,
+    band,
+    allocations,
+    inheritanceBand: inputs.inheritanceAccord.band,
+    patrimonyBand: inputs.patrimonyIndex.band,
+    endowmentFunded,
+    headline: `Endowment ${band} (${endowmentScore}/100) · ${allocations.filter(a => a.funded).length}/${allocations.length} allocations`,
+  };
+}
+
+export function endowmentIndexBlocksBeneficiary(
+  snapshot: Agent17EndowmentIndexSnapshot
+): boolean {
+  return snapshot.band === 'depleted' || !snapshot.endowmentFunded;
+}
+
+
+// --- source: planning/beneficiary-accord.ts ---
+  Agent17BeneficiaryAccordSnapshot,
+  Agent17EndowmentIndexSnapshot,
+  Agent17InheritanceAccordSnapshot,
+  Agent17PatrimonyIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17BeneficiaryAccordInputs {
+  endowmentIndex: Agent17EndowmentIndexSnapshot;
+  inheritanceAccord: Agent17InheritanceAccordSnapshot;
+  patrimonyIndex: Agent17PatrimonyIndexSnapshot;
+}
+
+export function buildAgent17BeneficiaryAccord(
+  inputs: Agent17BeneficiaryAccordInputs
+): Agent17BeneficiaryAccordSnapshot {
+  const designations: Agent17BeneficiaryAccordSnapshot['designations'] = [];
+
+  designations.push({
+    id: 'endowment_funded',
+    label: 'Endowment index endowment-funded',
+    designated:
+      inputs.endowmentIndex.endowmentFunded &&
+      !endowmentIndexBlocksBeneficiary(inputs.endowmentIndex),
+    weight: 30,
+  });
+
+  designations.push({
+    id: 'endowment_band',
+    label: 'Endowment funded or pending',
+    designated:
+      inputs.endowmentIndex.band === 'funded' || inputs.endowmentIndex.band === 'pending',
+    weight: 25,
+  });
+
+  designations.push({
+    id: 'inheritance_transmitted',
+    label: 'Inheritance accord inheritance-ready',
+    designated:
+      inputs.inheritanceAccord.inheritanceTransmitted &&
+      !inheritanceAccordBlocksEndowment(inputs.inheritanceAccord),
+    weight: 20,
+  });
+
+  designations.push({
+    id: 'patrimony_clear',
+    label: 'Patrimony index not blocking inheritance',
+    designated: !patrimonyIndexBlocksInheritance(inputs.patrimonyIndex),
+    weight: 15,
+  });
+
+  designations.push({
+    id: 'endowment_score',
+    label: 'Endowment score headroom',
+    designated: inputs.endowmentIndex.endowmentScore >= 5,
+    weight: 10,
+  });
+
+  const weighted = designations.reduce(
+    (n, d) => n + (d.designated ? 100 : 1) * (d.weight / 100),
+    0
+  );
+  const totalWeight = designations.reduce((n, d) => n + d.weight, 0);
+  const beneficiaryScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const vacatedSignals =
+    endowmentIndexBlocksBeneficiary(inputs.endowmentIndex) ||
+    inheritanceAccordBlocksEndowment(inputs.inheritanceAccord) ||
+    patrimonyIndexBlocksInheritance(inputs.patrimonyIndex);
+
+  const band: Agent17BeneficiaryAccordSnapshot['band'] = vacatedSignals
+    ? 'vacated'
+    : beneficiaryScore >= 42 &&
+        inputs.endowmentIndex.band === 'funded' &&
+        inputs.inheritanceAccord.band === 'transmitted'
+      ? 'designated'
+      : 'nominal';
+
+  const beneficiaryDesignated =
+    band === 'designated' &&
+    inputs.endowmentIndex.endowmentFunded &&
+    !patrimonyIndexBlocksInheritance(inputs.patrimonyIndex);
+
+  return {
+    beneficiaryScore,
+    band,
+    designations,
+    endowmentBand: inputs.endowmentIndex.band,
+    inheritanceBand: inputs.inheritanceAccord.band,
+    beneficiaryDesignated,
+    headline: `Beneficiary ${band} (${beneficiaryScore}/100) · ${designations.filter(d => d.designated).length}/${designations.length} designations`,
+  };
+}
+
+export function beneficiaryAccordBlocksEndowment(
+  snapshot: Agent17BeneficiaryAccordSnapshot
+): boolean {
+  return snapshot.band === 'vacated' || !snapshot.beneficiaryDesignated;
+}
+
 
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
@@ -12086,6 +12337,16 @@ export function buildAgent17PlanningDepthSnapshot(
     legacyAccord,
     heritageIndex,
   });
+  const endowmentIndex = buildAgent17EndowmentIndex({
+    inheritanceAccord,
+    patrimonyIndex,
+    legacyAccord,
+  });
+  const beneficiaryAccord = buildAgent17BeneficiaryAccord({
+    endowmentIndex,
+    inheritanceAccord,
+    patrimonyIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -12171,6 +12432,8 @@ export function buildAgent17PlanningDepthSnapshot(
     legacyAccord,
     patrimonyIndex,
     inheritanceAccord,
+    endowmentIndex,
+    beneficiaryAccord,
   };
 }
 
@@ -13478,6 +13741,28 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Escheated patrimony or extinguished legacy yields inheritanceAccordBlocksPatrimony.',
     severity: 'major',
   },
+  {
+    id: 'G17-145',
+    title: 'Endowment index on planning depth',
+    category: 'telemetry',
+    acceptance: 'endowmentIndex reports endowmentScore 0–100 with funded/pending/depleted band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-146',
+    title: 'Beneficiary accord designations complete',
+    category: 'telemetry',
+    acceptance: 'beneficiaryAccord exposes ≥5 designations and beneficiaryScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-147',
+    title: 'Depleted endowment vacates beneficiary accord',
+    category: 'integration',
+    acceptance:
+      'Depleted endowment or disclaimed inheritance yields beneficiaryAccordBlocksEndowment.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -13734,6 +14019,12 @@ export function listAgent17GoalIds(): string[] {
   buildAgent17InheritanceAccord,
   inheritanceAccordBlocksPatrimony,
 } from '../planning/inheritance-accord.ts';
+  buildAgent17EndowmentIndex,
+  endowmentIndexBlocksBeneficiary,
+} from '../planning/endowment-index.ts';
+  buildAgent17BeneficiaryAccord,
+  beneficiaryAccordBlocksEndowment,
+} from '../planning/beneficiary-accord.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -15937,6 +16228,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const endowmentIndex = depthEval.snapshot.planningDepth?.endowmentIndex;
+  goalResults.push(
+    result(
+      'G17-145',
+      !!endowmentIndex &&
+        endowmentIndex.allocations.length >= 5 &&
+        endowmentIndex.endowmentScore >= 0 &&
+        endowmentIndex.endowmentScore <= 100 &&
+        (endowmentIndex.band === 'funded' ||
+          endowmentIndex.band === 'pending' ||
+          endowmentIndex.band === 'depleted'),
+      `allocations=${endowmentIndex?.allocations.length} score=${endowmentIndex?.endowmentScore}`
+    )
+  );
+
+  const beneficiaryAccord = depthEval.snapshot.planningDepth?.beneficiaryAccord;
+  goalResults.push(
+    result(
+      'G17-146',
+      !!beneficiaryAccord &&
+        beneficiaryAccord.designations.length >= 5 &&
+        beneficiaryAccord.beneficiaryScore >= 0 &&
+        beneficiaryAccord.beneficiaryScore <= 100,
+      `designations=${beneficiaryAccord?.designations.length} score=${beneficiaryAccord?.beneficiaryScore}`
+    )
+  );
+
+  const depletedEndowment = buildAgent17EndowmentIndex({
+    inheritanceAccord: disclaimedInheritance,
+    patrimonyIndex: escheatedPatrimony,
+    legacyAccord: extinguishedLegacy,
+  });
+  const vacatedBeneficiary = buildAgent17BeneficiaryAccord({
+    endowmentIndex: depletedEndowment,
+    inheritanceAccord: disclaimedInheritance,
+    patrimonyIndex: escheatedPatrimony,
+  });
+  goalResults.push(
+    result(
+      'G17-147',
+      inheritanceAccordBlocksPatrimony(disclaimedInheritance) ||
+        endowmentIndexBlocksBeneficiary(depletedEndowment) ||
+        beneficiaryAccordBlocksEndowment(vacatedBeneficiary),
+      `${depletedEndowment.band}/${vacatedBeneficiary.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -16111,6 +16449,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-142',
     'G17-143',
     'G17-144',
+    'G17-145',
+    'G17-146',
+    'G17-147',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

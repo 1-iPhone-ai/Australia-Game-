@@ -1017,6 +1017,28 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Escheated patrimony or extinguished legacy yields inheritanceAccordBlocksPatrimony.',
     severity: 'major',
   },
+  {
+    id: 'G17-145',
+    title: 'Endowment index on planning depth',
+    category: 'telemetry',
+    acceptance: 'endowmentIndex reports endowmentScore 0–100 with funded/pending/depleted band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-146',
+    title: 'Beneficiary accord designations complete',
+    category: 'telemetry',
+    acceptance: 'beneficiaryAccord exposes ≥5 designations and beneficiaryScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-147',
+    title: 'Depleted endowment vacates beneficiary accord',
+    category: 'integration',
+    acceptance:
+      'Depleted endowment or disclaimed inheritance yields beneficiaryAccordBlocksEndowment.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
