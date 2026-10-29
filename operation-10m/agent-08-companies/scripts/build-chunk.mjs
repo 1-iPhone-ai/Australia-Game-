@@ -25,6 +25,7 @@ const FILES = [
   'production-coordination-mandate.ts',
   'production-mandate-compliance.ts',
   'production-compliance-remediation.ts',
+  'production-remediation-execution.ts',
   'chunk-exports.ts',
 ];
 
