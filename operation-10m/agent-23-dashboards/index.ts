@@ -250,6 +250,12 @@ export * from './core/merged-peripheral-chokepoint-border-link-saturation-share.
 export * from './core/ns-derived-critical-snippet-source-gap.ts';
 export * from './core/adjacency-dependency-hub-border-pulse-asymmetry.ts';
 export * from './core/major-derived-critical-history-overlap-gap.ts';
+export * from './core/you-open-needs-tier-concentration.ts';
+export * from './core/unknown-open-needs-peak-severity-spread.ts';
+export * from './core/rim-chokepoint-border-link-saturation-share.ts';
+export * from './core/combined-derived-critical-snippet-source-gap.ts';
+export * from './core/merged-adjacency-dependency-hub-border-pulse-asymmetry.ts';
+export * from './core/meaningful-derived-critical-history-overlap-gap.ts';
 export * from './ui/charts.tsx';
 export * from './ui/compare-insights.tsx';
 export * from './ui/map-legend.tsx';

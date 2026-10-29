@@ -264,6 +264,12 @@ import { nrDashBuildMergedPeripheralChokepointBorderLinkSaturationShare } from '
 import { nrDashBuildNsDerivedCriticalSnippetSourceGap } from '../core/ns-derived-critical-snippet-source-gap.ts';
 import { nrDashBuildAdjacencyDependencyHubBorderPulseAsymmetry } from '../core/adjacency-dependency-hub-border-pulse-asymmetry.ts';
 import { nrDashBuildMajorDerivedCriticalHistoryOverlapGap } from '../core/major-derived-critical-history-overlap-gap.ts';
+import { nrDashBuildYouOpenNeedsTierConcentration } from '../core/you-open-needs-tier-concentration.ts';
+import { nrDashBuildUnknownOpenNeedsPeakSeveritySpread } from '../core/unknown-open-needs-peak-severity-spread.ts';
+import { nrDashBuildRimChokepointBorderLinkSaturationShare } from '../core/rim-chokepoint-border-link-saturation-share.ts';
+import { nrDashBuildCombinedDerivedCriticalSnippetSourceGap } from '../core/combined-derived-critical-snippet-source-gap.ts';
+import { nrDashBuildMergedAdjacencyDependencyHubBorderPulseAsymmetry } from '../core/merged-adjacency-dependency-hub-border-pulse-asymmetry.ts';
+import { nrDashBuildMeaningfulDerivedCriticalHistoryOverlapGap } from '../core/meaningful-derived-critical-history-overlap-gap.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -436,6 +442,15 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const youTierConc = nrDashBuildYouOpenNeedsTierConcentration(lrView, snap);
+      return youTierConc && youTierConc.concentrationIndex > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-you-open-needs-tier-concentration">
+          You open-needs tier concentration {youTierConc.concentrationIndex} · {youTierConc.tierBucketCount} tiers · {youTierConc.openNeedCount}{' '}
+          open across {youTierConc.youRegionCount} you
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const skewGap = nrDashBuildOwnedOpenNeedsMomentumSkewGap(snap);
       return skewGap ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-owned-open-needs-momentum-skew-gap">
@@ -539,6 +554,15 @@ export const NrDashOverviewTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-unknown-open-needs-peak-spread">
           Unknown open-needs peak spread {unknownNeedsPeak.peakSpread} · {unknownNeedsPeak.minOpenNeeds}–
           {unknownNeedsPeak.maxOpenNeeds} across {unknownNeedsPeak.unknownRegionCount} unknown regions
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const unknownPeakSevSpread = nrDashBuildUnknownOpenNeedsPeakSeveritySpread(lrView, snap);
+      return unknownPeakSevSpread && unknownPeakSevSpread.peakSeveritySpread > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-unknown-open-needs-peak-severity-spread">
+          Unknown open-needs peak severity spread {unknownPeakSevSpread.peakSeveritySpread} · ranks {unknownPeakSevSpread.minPeakRank}–
+          {unknownPeakSevSpread.maxPeakRank} across {unknownPeakSevSpread.unknownRegionCount} unknown regions
         </div>
       ) : null;
     })()}
@@ -1107,6 +1131,16 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const combinedDerivedCriticalSourceGap = nrDashBuildCombinedDerivedCriticalSnippetSourceGap(lrView, nsState, snap);
+      return combinedDerivedCriticalSourceGap && combinedDerivedCriticalSourceGap.sourceGap > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-combined-derived-critical-snippet-source-gap">
+          Combined derived critical snippet source gap {combinedDerivedCriticalSourceGap.sourceGap} · sources{' '}
+          {combinedDerivedCriticalSourceGap.combinedDerivedCriticalSourceCount} · matched{' '}
+          {combinedDerivedCriticalSourceGap.matchedSnippetCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const nsSnippetOverlap = nrDashBuildNsHistorySnippetOverlapGap(nsState, snap);
       return nsSnippetOverlap && nsSnippetOverlap.overlapGap > 0 ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-ns-history-snippet-overlap-gap">
@@ -1286,6 +1320,16 @@ export const NrDashOverviewTab: React.FC<{
           Major derived-critical history overlap gap {majorDerivedCriticalHistGap.overlapGap} · shared{' '}
           {majorDerivedCriticalHistGap.sharedTurnCount} · NS {majorDerivedCriticalHistGap.nsEntryCount} · major{' '}
           {majorDerivedCriticalHistGap.majorDerivedCriticalCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const meaningfulDerivedCriticalHistGap = nrDashBuildMeaningfulDerivedCriticalHistoryOverlapGap(lrView, nsState);
+      return meaningfulDerivedCriticalHistGap && meaningfulDerivedCriticalHistGap.overlapGap > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-meaningful-derived-critical-history-overlap-gap">
+          Meaningful derived-critical history overlap gap {meaningfulDerivedCriticalHistGap.overlapGap} · shared{' '}
+          {meaningfulDerivedCriticalHistGap.sharedTurnCount} · NS {meaningfulDerivedCriticalHistGap.nsEntryCount} · meaningful{' '}
+          {meaningfulDerivedCriticalHistGap.meaningfulDerivedCriticalCount}
         </div>
       ) : null;
     })()}
@@ -2410,6 +2454,15 @@ export const NrDashMapTab: React.FC<{
         ) : null;
       })()}
       {(() => {
+        const rimChokepointBorderLinkSat = nrDashBuildRimChokepointBorderLinkSaturationShare(nsState, baseNodes);
+        return rimChokepointBorderLinkSat && rimChokepointBorderLinkSat.saturationShare > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-rim-chokepoint-border-link-saturation-share">
+            Rim chokepoint border link saturation share {rimChokepointBorderLinkSat.saturationShare} · μ {rimChokepointBorderLinkSat.meanBlend}{' '}
+            · peak {rimChokepointBorderLinkSat.peakBlend}
+          </p>
+        ) : null;
+      })()}
+      {(() => {
         const hubRimAsym = nrDashBuildHubRimPulseAsymmetry(nsState, baseNodes);
         return hubRimAsym && hubRimAsym.maxEndpointDelta > 0 ? (
           <p className="text-[10px] opacity-75" data-testid="nr-dash-hub-rim-pulse-asymmetry">
@@ -2469,6 +2522,16 @@ export const NrDashMapTab: React.FC<{
           <p className="text-[10px] opacity-75" data-testid="nr-dash-adjacency-dependency-hub-border-pulse-asymmetry">
             Adjacency dependency hub border pulse asymmetry μΔ {adjacencyDepHubBorderAsym.meanEndpointDelta} · peak{' '}
             {adjacencyDepHubBorderAsym.maxEndpointDelta} · {adjacencyDepHubBorderAsym.adjacencyDependencyHubBorderLinkCount} links
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const mergedAdjacencyDepHubBorderAsym = nrDashBuildMergedAdjacencyDependencyHubBorderPulseAsymmetry(nsState, baseNodes);
+        return mergedAdjacencyDepHubBorderAsym && mergedAdjacencyDepHubBorderAsym.maxEndpointDelta > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-merged-adjacency-dependency-hub-border-pulse-asymmetry">
+            Merged adjacency dependency hub border pulse asymmetry μΔ {mergedAdjacencyDepHubBorderAsym.meanEndpointDelta} · peak{' '}
+            {mergedAdjacencyDepHubBorderAsym.maxEndpointDelta} · {mergedAdjacencyDepHubBorderAsym.mergedAdjacencyDependencyHubBorderLinkCount}{' '}
+            links
           </p>
         ) : null;
       })()}
