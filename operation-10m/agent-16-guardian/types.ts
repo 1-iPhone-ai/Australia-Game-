@@ -180,6 +180,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   acquittalStrainIndex: number;
   acquittalIntegrityScore: number;
   governanceMoxieScore: number;
+  exonerationStrainIndex: number;
+  exonerationIntegrityScore: number;
+  governanceSpunkScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {

@@ -58,6 +58,7 @@ import {
   buildGuardianDepthClemencyReport,
   buildGuardianDepthReprieveReport,
   buildGuardianDepthAcquittalReport,
+  buildGuardianDepthExonerationReport,
   runGuardianDepthUnitSelfTests,
 } from './guardian-depth.js';
 import type { AdvisoryRecommendation, Agent16SelfTestResult, AiSuggestedAction } from './types.js';
@@ -232,8 +233,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 38 scale wave brings monitor catalog to 490+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 490;
+  check(results, 'a16_expansion_count', 'Round 39 scale wave brings monitor catalog to 502+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 502;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -1648,6 +1649,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthAcquittalReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round39_metrics', 'Round 39 exoneration envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.exonerationStrainIndex >= 40 &&
+      snap.exonerationIntegrityScore <= 100 &&
+      snap.governanceSpunkScore <= 100
+    );
+  });
+
+  check(results, 'a16_exoneration_report', 'Guardian depth exoneration report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthExonerationReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 
