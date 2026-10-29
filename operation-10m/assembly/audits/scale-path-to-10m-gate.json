@@ -1,16 +1,16 @@
 {
-  "analyzedAt": "2026-10-29T08:55:19.089Z",
+  "analyzedAt": "2026-10-29T09:00:46.325Z",
   "gateAuditedFunctional": 10000000,
   "baselineCommit": "bc1adf3",
   "baselineAuditedFunctional": 389566,
-  "fullChunksProjectedAudited": 1721932,
-  "netAuditedFunctionalToGate": 8278068,
-  "workerWaveDeltaAudited": 1332366,
+  "fullChunksProjectedAudited": 1760131,
+  "netAuditedFunctionalToGate": 8239869,
+  "workerWaveDeltaAudited": 1370565,
   "modulesInFullDryRun": 25,
   "assemblyReadyRemote": 24,
   "trancheEstimate": {
     "method": "equal worker-wave increments from full-chunks dry-run",
-    "auditedFunctionalPerWave": 1332366,
+    "auditedFunctionalPerWave": 1370565,
     "estimatedWavesToGate": 7,
     "note": "Assumes each future wave adds ~same audited functional as current 24/25 module splice; real tranches vary."
   },
@@ -23,12 +23,12 @@
   "buildRuntimeRisks": [
     {
       "risk": "Single-file bundle size",
-      "signal": "Projected ~100,929,193 bytes / 1,793,879 lines after worker wave",
+      "signal": "Projected ~102,635,839 bytes / 1,833,067 lines after worker wave",
       "at10M": "Linear ~27× current projection bytes if structure unchanged (feasibility unknown for Vite/tsc)"
     },
     {
       "risk": "Typecheck / IDE parse",
-      "signal": "Export declarations ~14886 after wave",
+      "signal": "Export declarations ~14895 after wave",
       "at10M": "Editor and tsc memory limits likely binding before raw line count"
     },
     {
@@ -54,12 +54,12 @@
     },
     "fullChunksProjection": {
       "path": "build/tranche-full-chunks-projection.tsx",
-      "bytes": 100929193,
-      "lines": 1793879,
-      "exportLines": 14886,
-      "readMs": 45,
-      "hashMs": 53,
-      "sha256": "e04deffa32412a50"
+      "bytes": 102635839,
+      "lines": 1833067,
+      "exportLines": 14895,
+      "readMs": 46,
+      "hashMs": 54,
+      "sha256": "12a4780d4b888d91"
     },
     "extrapolatedScanMsAt10M": 382
   },
