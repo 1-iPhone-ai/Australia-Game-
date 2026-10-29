@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: c178211505cc763c
+// content-sha256-prefix: cb3b2222bbb8e259
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -951,6 +951,10 @@ export interface DayAdvanceUiEvolutionResult {
   legacyNavProgressionHiddenDayCoachCopy: string | null;
   largeDayJumpDayCoachCopy: string | null;
   onboardingHighlightRosterDayCoachCopy: string | null;
+  interfaceLevelShiftDayCoachCopy: string | null;
+  pacedStaggerDeferredDayCoachCopy: string | null;
+  legacyNavMissingPatchDayCoachCopy: string | null;
+  guidedConceptCountDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1603,6 +1607,28 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const interfaceLevelShiftDayCoach = buildInterfaceLevelShiftDayCoach({
+    prior: priorSignals,
+    next: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const pacedStaggerDeferredDayCoach = buildPacedStaggerDeferredDayCoach({
+    deferredCount: pacing.deferredCount,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const legacyNavMissingPatchDayCoach = buildLegacyNavMissingPatchDayCoach({
+    signals: nextSignals,
+    policy,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const guidedConceptCountDayCoach = buildGuidedConceptCountDayCoach({
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1725,6 +1751,10 @@ export function tickEvolvingUiOnDayAdvance(
     legacyNavProgressionHiddenDayCoachCopy: legacyNavProgressionHiddenDayCoach.coachCopy,
     largeDayJumpDayCoachCopy: largeDayJumpDayCoach.coachCopy,
     onboardingHighlightRosterDayCoachCopy: onboardingHighlightRosterDayCoach.coachCopy,
+    interfaceLevelShiftDayCoachCopy: interfaceLevelShiftDayCoach.coachCopy,
+    pacedStaggerDeferredDayCoachCopy: pacedStaggerDeferredDayCoach.coachCopy,
+    legacyNavMissingPatchDayCoachCopy: legacyNavMissingPatchDayCoach.coachCopy,
+    guidedConceptCountDayCoachCopy: guidedConceptCountDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -6743,6 +6773,262 @@ export function buildOnboardingHighlightRosterDayCoach(input: {
     highlightCount: ids.length,
     coachCopy: `Day ${input.nextGameDay}: Onboarding highlights ${labels}${extra}.`,
   };
+}
+
+// --- source: engine/interface-level-shift-day-coach.ts ---
+export interface InterfaceLevelShiftDayCoach {
+  interfaceLevelChanged: boolean;
+  coachCopy: string | null;
+}
+
+export function buildInterfaceLevelShiftDayCoach(input: {
+  prior: ProgressionSignalSnapshot;
+  next: ProgressionSignalSnapshot;
+  nextGameDay: number;
+}): InterfaceLevelShiftDayCoach {
+  const delta = computeProgressionSignalDelta(input.prior, input.next);
+  if (!delta.interfaceLevelChanged) {
+    return { interfaceLevelChanged: false, coachCopy: null };
+  }
+  return {
+    interfaceLevelChanged: true,
+    coachCopy: `Day ${input.nextGameDay}: Interface experience shifted from ${delta.priorInterfaceLevel} to ${delta.nextInterfaceLevel}.`,
+  };
+}
+
+// --- source: engine/paced-stagger-deferred-day-coach.ts ---
+export interface PacedStaggerDeferredDayCoach {
+  deferredCount: number;
+  coachCopy: string | null;
+}
+
+export function buildPacedStaggerDeferredDayCoach(input: {
+  deferredCount: number;
+  nextGameDay: number;
+}): PacedStaggerDeferredDayCoach {
+  const base = pacingStatusCopy(input.deferredCount);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+  return {
+    deferredCount: input.deferredCount,
+    coachCopy,
+  };
+}
+
+// --- source: engine/legacy-nav-missing-patch-day-coach.ts ---
+export interface LegacyNavMissingPatchDayCoach {
+  missingPatchCount: number;
+  coachCopy: string | null;
+}
+
+export function buildLegacyNavMissingPatchDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  nextGameDay: number;
+}): LegacyNavMissingPatchDayCoach {
+  const entries = auditLegacyNavTargets(input.signals, input.policy);
+  const missing = entries.filter(e => !e.hasPatch);
+  if (!missing.length) {
+    return { missingPatchCount: 0, coachCopy: null };
+  }
+  return {
+    missingPatchCount: missing.length,
+    coachCopy: `Day ${input.nextGameDay}: ${missing.length} legacy nav targets lack UI patches — deep links may noop.`,
+  };
+}
+
+// --- source: engine/guided-concept-count-day-coach.ts ---
+export interface GuidedConceptCountDayCoach {
+  conceptCount: number;
+  coachCopy: string | null;
+}
+
+export function buildGuidedConceptCountDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  nextGameDay: number;
+}): GuidedConceptCountDayCoach {
+  const conceptCount = countIntroducedGuidedConcepts(input.signals);
+  if (conceptCount <= 0) {
+    return { conceptCount: 0, coachCopy: null };
+  }
+  const noun = conceptCount === 1 ? 'concept' : 'concepts';
+  return {
+    conceptCount,
+    coachCopy: `Day ${input.nextGameDay}: ${conceptCount} guided learning ${noun} active — related panels stay highlighted.`,
+  };
+}
+
+// --- source: engine/round34-self-tests.ts ---
+export function runAgent22Round34SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r34_interface_shift',
+    'interface level shift day coach',
+    (() => {
+      const coach = buildInterfaceLevelShiftDayCoach({
+        prior: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        next: { gameDay: 3, turnCount: 3, interfaceLevel: 'guided' },
+        nextGameDay: 3,
+      });
+      return coach.interfaceLevelChanged && Boolean(coach.coachCopy?.includes('Day 3'));
+    })()
+  );
+
+  check(
+    'r34_paced_stagger',
+    'paced stagger deferred day coach',
+    (() => {
+      const coach = buildPacedStaggerDeferredDayCoach({ deferredCount: 2, nextGameDay: 4 });
+      return coach.deferredCount === 2 && Boolean(coach.coachCopy?.includes('Day 4'));
+    })()
+  );
+
+  check(
+    'r34_legacy_missing',
+    'legacy nav missing patch day coach',
+    (() => {
+      const coach = buildLegacyNavMissingPatchDayCoach({
+        signals: { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        nextGameDay: 1,
+      });
+      return coach.missingPatchCount >= 0;
+    })()
+  );
+
+  check(
+    'r34_guided_concept',
+    'guided concept count day coach',
+    (() => {
+      const coach = buildGuidedConceptCountDayCoach({
+        signals: {
+          gameDay: 5,
+          turnCount: 5,
+          interfaceLevel: 'guided',
+          guidedConceptStatuses: { capital_allocation: 'introduced' },
+        },
+        nextGameDay: 5,
+      });
+      return coach.conceptCount === 1 && Boolean(coach.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r34_tick_interface_shift',
+    'tick exposes interface level shift day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.interfaceLevelShiftDayCoachCopy?.includes('Day 3'));
+    })()
+  );
+
+  check(
+    'r34_tick_paced_stagger',
+    'tick exposes paced stagger deferred day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.pacedStaggerDeferredDayCoachCopy === 'string' || r.pacedStaggerDeferredDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r34_tick_legacy_missing',
+    'tick exposes legacy nav missing patch day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.legacyNavMissingPatchDayCoachCopy === 'string' || r.legacyNavMissingPatchDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r34_tick_guided_concept',
+    'tick exposes guided concept count day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.guidedConceptCountDayCoachCopy === 'string' || r.guidedConceptCountDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r34_shift_none',
+    'interface shift null when unchanged',
+    (() => {
+      const coach = buildInterfaceLevelShiftDayCoach({
+        prior: { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        next: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        nextGameDay: 2,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r34_stagger_zero',
+    'paced stagger null when zero deferred',
+    (() => {
+      const coach = buildPacedStaggerDeferredDayCoach({ deferredCount: 0, nextGameDay: 1 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r34_guided_zero',
+    'guided concept null when none active',
+    (() => {
+      const coach = buildGuidedConceptCountDayCoach({
+        signals: { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        nextGameDay: 1,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r34_missing_patch_copy',
+    'legacy missing patch mentions noop risk',
+    (() => {
+      const coach = buildLegacyNavMissingPatchDayCoach({
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        nextGameDay: 2,
+      });
+      return coach.coachCopy === null || coach.coachCopy.includes('noop');
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round33-self-tests.ts ---
@@ -13092,6 +13378,18 @@ export function SimulationUiEvolutionBridge({
       {result.onboardingHighlightRosterDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-onboarding-roster-day">{result.onboardingHighlightRosterDayCoachCopy}</div>
       ) : null}
+      {result.interfaceLevelShiftDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-interface-shift-day">{result.interfaceLevelShiftDayCoachCopy}</div>
+      ) : null}
+      {result.pacedStaggerDeferredDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-paced-stagger-day">{result.pacedStaggerDeferredDayCoachCopy}</div>
+      ) : null}
+      {result.legacyNavMissingPatchDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-legacy-missing-day">{result.legacyNavMissingPatchDayCoachCopy}</div>
+      ) : null}
+      {result.guidedConceptCountDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-guided-concept-day">{result.guidedConceptCountDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -15142,7 +15440,7 @@ export function ContextualWidgetDayCoachStrip({
 }
 
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.33.0';
+export const AGENT_22_MODULE_VERSION = '1.34.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -15293,6 +15591,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round34 = runAgent22Round34SelfTests();
+  for (const r of round34.results) {
+    check(`agent22_round34_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round33 = runAgent22Round33SelfTests();

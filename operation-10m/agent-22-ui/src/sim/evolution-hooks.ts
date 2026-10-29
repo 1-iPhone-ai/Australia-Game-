@@ -113,6 +113,10 @@ import { buildFlushedDeferredQueueDayCoach } from '../engine/flushed-deferred-qu
 import { buildLegacyNavProgressionHiddenDayCoach } from '../engine/legacy-nav-progression-hidden-day-coach.js';
 import { buildLargeDayJumpDayCoach } from '../engine/large-day-jump-day-coach.js';
 import { buildOnboardingHighlightRosterDayCoach } from '../engine/onboarding-highlight-roster-day-coach.js';
+import { buildInterfaceLevelShiftDayCoach } from '../engine/interface-level-shift-day-coach.js';
+import { buildPacedStaggerDeferredDayCoach } from '../engine/paced-stagger-deferred-day-coach.js';
+import { buildLegacyNavMissingPatchDayCoach } from '../engine/legacy-nav-missing-patch-day-coach.js';
+import { buildGuidedConceptCountDayCoach } from '../engine/guided-concept-count-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -234,6 +238,10 @@ export interface DayAdvanceUiEvolutionResult {
   legacyNavProgressionHiddenDayCoachCopy: string | null;
   largeDayJumpDayCoachCopy: string | null;
   onboardingHighlightRosterDayCoachCopy: string | null;
+  interfaceLevelShiftDayCoachCopy: string | null;
+  pacedStaggerDeferredDayCoachCopy: string | null;
+  legacyNavMissingPatchDayCoachCopy: string | null;
+  guidedConceptCountDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -886,6 +894,28 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const interfaceLevelShiftDayCoach = buildInterfaceLevelShiftDayCoach({
+    prior: priorSignals,
+    next: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const pacedStaggerDeferredDayCoach = buildPacedStaggerDeferredDayCoach({
+    deferredCount: pacing.deferredCount,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const legacyNavMissingPatchDayCoach = buildLegacyNavMissingPatchDayCoach({
+    signals: nextSignals,
+    policy,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const guidedConceptCountDayCoach = buildGuidedConceptCountDayCoach({
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1008,6 +1038,10 @@ export function tickEvolvingUiOnDayAdvance(
     legacyNavProgressionHiddenDayCoachCopy: legacyNavProgressionHiddenDayCoach.coachCopy,
     largeDayJumpDayCoachCopy: largeDayJumpDayCoach.coachCopy,
     onboardingHighlightRosterDayCoachCopy: onboardingHighlightRosterDayCoach.coachCopy,
+    interfaceLevelShiftDayCoachCopy: interfaceLevelShiftDayCoach.coachCopy,
+    pacedStaggerDeferredDayCoachCopy: pacedStaggerDeferredDayCoach.coachCopy,
+    legacyNavMissingPatchDayCoachCopy: legacyNavMissingPatchDayCoach.coachCopy,
+    guidedConceptCountDayCoachCopy: guidedConceptCountDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

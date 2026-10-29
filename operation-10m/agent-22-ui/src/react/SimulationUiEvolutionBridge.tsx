@@ -276,6 +276,18 @@ export function SimulationUiEvolutionBridge({
       {result.onboardingHighlightRosterDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-onboarding-roster-day">{result.onboardingHighlightRosterDayCoachCopy}</div>
       ) : null}
+      {result.interfaceLevelShiftDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-interface-shift-day">{result.interfaceLevelShiftDayCoachCopy}</div>
+      ) : null}
+      {result.pacedStaggerDeferredDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-paced-stagger-day">{result.pacedStaggerDeferredDayCoachCopy}</div>
+      ) : null}
+      {result.legacyNavMissingPatchDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-legacy-missing-day">{result.legacyNavMissingPatchDayCoachCopy}</div>
+      ) : null}
+      {result.guidedConceptCountDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-guided-concept-day">{result.guidedConceptCountDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets

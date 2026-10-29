@@ -109,3 +109,7 @@ export { FlushedDeferredQueueDayCoachStrip } from './FlushedDeferredQueueDayCoac
 export { LegacyNavProgressionHiddenDayCoachStrip } from './LegacyNavProgressionHiddenDayCoachStrip.js';
 export { LargeDayJumpDayCoachStrip } from './LargeDayJumpDayCoachStrip.js';
 export { OnboardingHighlightRosterDayCoachStrip } from './OnboardingHighlightRosterDayCoachStrip.js';
+export { InterfaceLevelShiftDayCoachStrip } from './InterfaceLevelShiftDayCoachStrip.js';
+export { PacedStaggerDeferredDayCoachStrip } from './PacedStaggerDeferredDayCoachStrip.js';
+export { LegacyNavMissingPatchDayCoachStrip } from './LegacyNavMissingPatchDayCoachStrip.js';
+export { GuidedConceptCountDayCoachStrip } from './GuidedConceptCountDayCoachStrip.js';
