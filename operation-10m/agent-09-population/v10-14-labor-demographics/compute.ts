@@ -223,6 +223,11 @@ import { computeNationalAdvocacyResoluteCouplingBrief } from './advocacy-resolut
 import { computeNationalResoluteResilienceOutlook } from './resolute-resilience-outlook';
 import { computeNationalSubjectResoluteReadinessBrief } from './subject-resolute-readiness-brief';
 import { computeNationalWorkforceResoluteDepthIndex } from './national-workforce-resolute-depth-index';
+import { computeNationalResoluteSovereignCouplingBrief } from './resolute-sovereign-coupling-brief';
+import { computeNationalSovereignResilienceOutlook } from './sovereign-resilience-outlook';
+import { computeNationalSubjectSovereignReadinessBrief } from './subject-sovereign-readiness-brief';
+import { computeNationalWorkforceSovereignDepthIndex } from './national-workforce-sovereign-depth-index';
+import { computeNationalSovereignResoluteHandoffCouplingBrief } from './sovereign-resolute-handoff-coupling-brief';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -1429,6 +1434,29 @@ export function computeNationalLaborDemographics(
   state.resoluteAdvocacyCouplingBrief = computeNationalResoluteAdvocacyCouplingBrief(
     state,
     state.nationalWorkforceResoluteDepthIndex
+  );
+  state.resoluteSovereignCouplingBrief = computeNationalResoluteSovereignCouplingBrief(
+    state,
+    state.nationalWorkforceResoluteDepthIndex
+  );
+  state.sovereignResilienceOutlook = computeNationalSovereignResilienceOutlook(
+    state,
+    state.resoluteResilienceOutlook
+  );
+  state.subjectSovereignReadinessBrief = computeNationalSubjectSovereignReadinessBrief(
+    state,
+    state.subjectResoluteReadinessBrief,
+    state.nationalWorkforceResoluteDepthIndex
+  );
+  state.nationalWorkforceSovereignDepthIndex = computeNationalWorkforceSovereignDepthIndex(
+    state,
+    state.resoluteSovereignCouplingBrief,
+    state.sovereignResilienceOutlook,
+    state.subjectSovereignReadinessBrief
+  );
+  state.sovereignResoluteHandoffCouplingBrief = computeNationalSovereignResoluteHandoffCouplingBrief(
+    state,
+    state.nationalWorkforceSovereignDepthIndex
   );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
@@ -2703,6 +2731,41 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.resoluteAdvocacyCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.resoluteSovereignCouplingBrief?.band === 'decoupled' ||
+      state.resoluteSovereignCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.resoluteSovereignCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.sovereignResilienceOutlook?.band === 'ebbing' ||
+      state.sovereignResilienceOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.sovereignResilienceOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectSovereignReadinessBrief?.band === 'below_sovereign' ||
+      state.subjectSovereignReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectSovereignReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceSovereignDepthIndex?.band === 'fragile' ||
+      state.nationalWorkforceSovereignDepthIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceSovereignDepthIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.sovereignResoluteHandoffCouplingBrief?.band === 'decoupled' ||
+      state.sovereignResoluteHandoffCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.sovereignResoluteHandoffCouplingBrief.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);

@@ -382,6 +382,11 @@ export interface NationalLaborDemographicsState {
   subjectResoluteReadinessBrief?: NationalSubjectResoluteReadinessBrief;
   nationalWorkforceResoluteDepthIndex?: NationalWorkforceResoluteDepthIndex;
   resoluteAdvocacyCouplingBrief?: NationalResoluteAdvocacyCouplingBrief;
+  resoluteSovereignCouplingBrief?: NationalResoluteSovereignCouplingBrief;
+  sovereignResilienceOutlook?: NationalSovereignResilienceOutlook;
+  subjectSovereignReadinessBrief?: NationalSubjectSovereignReadinessBrief;
+  nationalWorkforceSovereignDepthIndex?: NationalWorkforceSovereignDepthIndex;
+  sovereignResoluteHandoffCouplingBrief?: NationalSovereignResoluteHandoffCouplingBrief;
 }
 
 export type MigrationShockKind =
@@ -2637,6 +2642,65 @@ export interface NationalWorkforceResoluteDepthIndex {
   resoluteIndex: number;
   band: WorkforceResoluteDepthBand;
   resoluteDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ResoluteSovereignCouplingBand = SteadfastAdvocacyCouplingBand;
+
+export interface NationalResoluteSovereignCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: ResoluteSovereignCouplingBand;
+  resoluteDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SovereignResilienceBand = AdvocacyResilienceBand;
+
+export interface NationalSovereignResilienceOutlook {
+  turn: number;
+  resilienceIndex: number;
+  band: SovereignResilienceBand;
+  resoluteDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectSovereignReadinessBand =
+  | 'below_sovereign'
+  | 'approaching'
+  | 'sovereign_ready'
+  | 'resolute_locked';
+
+export interface NationalSubjectSovereignReadinessBrief {
+  turn: number;
+  sovereignIndex: number;
+  band: SubjectSovereignReadinessBand;
+  sovereignDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceSovereignDepthBand = 'fragile' | 'thin' | 'elevated' | 'sovereign';
+
+export interface NationalWorkforceSovereignDepthIndex {
+  turn: number;
+  sovereignIndex: number;
+  band: WorkforceSovereignDepthBand;
+  sovereignDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SovereignResoluteHandoffCouplingBand = SteadfastAdvocacyCouplingBand;
+
+export interface NationalSovereignResoluteHandoffCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: SovereignResoluteHandoffCouplingBand;
+  sovereignDrag: number;
   summary: string;
   stewardNote: string;
 }

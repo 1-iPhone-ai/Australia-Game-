@@ -200,7 +200,12 @@ export type LaborGiQueryTopic =
   | 'resolute_resilience'
   | 'subject_resolute_readiness'
   | 'workforce_resolute_depth'
-  | 'resolute_advocacy_coupling';
+  | 'resolute_advocacy_coupling'
+  | 'resolute_sovereign_coupling'
+  | 'sovereign_resilience'
+  | 'subject_sovereign_readiness'
+  | 'workforce_sovereign_depth'
+  | 'sovereign_resolute_handoff';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -280,6 +285,11 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(subject resolute readiness|subject resolute labor)/.test(q)) return 'subject_resolute_readiness';
   if (/\b(workforce resolute depth|resolute depth index labor)/.test(q)) return 'workforce_resolute_depth';
   if (/\b(resolute advocacy|resolute-advocacy coupling)/.test(q)) return 'resolute_advocacy_coupling';
+  if (/\b(resolute sovereign|resolute-sovereign coupling)/.test(q)) return 'resolute_sovereign_coupling';
+  if (/\b(sovereign resilience)/.test(q)) return 'sovereign_resilience';
+  if (/\b(subject sovereign readiness|subject sovereign labor)/.test(q)) return 'subject_sovereign_readiness';
+  if (/\b(workforce sovereign depth|sovereign depth index labor)/.test(q)) return 'workforce_sovereign_depth';
+  if (/\b(sovereign resolute handoff|sovereign-resolute handoff)/.test(q)) return 'sovereign_resolute_handoff';
   if (/\b(workforce perseverance depth|perseverance depth index labor)/.test(q)) return 'workforce_perseverance_depth';
   if (/\b(workforce tenacity depth|tenacity depth index labor)/.test(q)) return 'workforce_tenacity_depth';
   if (/\b(workforce tenacity|tenacity index labor)/.test(q)) return 'workforce_tenacity';
@@ -2020,6 +2030,46 @@ export function answerLaborDemographicsQuestion(
         fact: `Coupling band ${state.resoluteAdvocacyCouplingBrief?.band ?? 'unknown'}; resolute drag ${Math.round(state.resoluteAdvocacyCouplingBrief?.resoluteDrag ?? 0)}.`,
         inference: state.resoluteAdvocacyCouplingBrief?.stewardNote || state.outlook,
         projection: 'Resolute-advocacy coupling tracks resolute depth against advocacy levers (O10-237 seed, O10-240 depth).'
+      };
+    case 'resolute_sovereign_coupling':
+      return {
+        topic,
+        headline: state.resoluteSovereignCouplingBrief?.summary || 'Resolute-sovereign coupling unavailable.',
+        fact: `Coupling band ${state.resoluteSovereignCouplingBrief?.band ?? 'unknown'}; resolute drag ${Math.round(state.resoluteSovereignCouplingBrief?.resoluteDrag ?? 0)}.`,
+        inference: state.resoluteSovereignCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Resolute-sovereign coupling tracks resolute depth against sovereign levers for O10-247 wave 55.'
+      };
+    case 'sovereign_resilience':
+      return {
+        topic,
+        headline: state.sovereignResilienceOutlook?.summary || 'Sovereign resilience unavailable.',
+        fact: `Resilience band ${state.sovereignResilienceOutlook?.band ?? 'unknown'}; resolute drag ${Math.round(state.sovereignResilienceOutlook?.resoluteDrag ?? 0)}.`,
+        inference: state.sovereignResilienceOutlook?.stewardNote || state.outlook,
+        projection: 'Sovereign resilience outlook tracks resolute resilience against sovereign levers for wave 55 depth.'
+      };
+    case 'subject_sovereign_readiness':
+      return {
+        topic,
+        headline: state.subjectSovereignReadinessBrief?.summary || 'Subject sovereign readiness unavailable.',
+        fact: `Sovereign band ${state.subjectSovereignReadinessBrief?.band ?? 'unknown'}; sovereign drag ${Math.round(state.subjectSovereignReadinessBrief?.sovereignDrag ?? 0)}.`,
+        inference: state.subjectSovereignReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject sovereign readiness gates subject resolute against resolute depth for O10-247 wave 55.'
+      };
+    case 'workforce_sovereign_depth':
+      return {
+        topic,
+        headline: state.nationalWorkforceSovereignDepthIndex?.summary || 'Workforce sovereign depth unavailable.',
+        fact: `Sovereign band ${state.nationalWorkforceSovereignDepthIndex?.band ?? 'unknown'}; sovereign drag ${Math.round(state.nationalWorkforceSovereignDepthIndex?.sovereignDrag ?? 0)}.`,
+        inference: state.nationalWorkforceSovereignDepthIndex?.stewardNote || state.summary,
+        projection: 'Sovereign depth synthesizes resolute-sovereign coupling, resilience, and subject sovereign.'
+      };
+    case 'sovereign_resolute_handoff':
+      return {
+        topic,
+        headline: state.sovereignResoluteHandoffCouplingBrief?.summary || 'Sovereign-resolute handoff unavailable.',
+        fact: `Handoff band ${state.sovereignResoluteHandoffCouplingBrief?.band ?? 'unknown'}; sovereign drag ${Math.round(state.sovereignResoluteHandoffCouplingBrief?.sovereignDrag ?? 0)}.`,
+        inference: state.sovereignResoluteHandoffCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Sovereign-resolute handoff tracks sovereign depth against resolute levers post wave-54 stack.'
       };
     default:
       return {

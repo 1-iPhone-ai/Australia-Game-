@@ -275,6 +275,12 @@ import { computeNationalSubjectResoluteReadinessBrief } from './subject-resolute
 import { computeNationalWorkforceResoluteDepthIndex } from './national-workforce-resolute-depth-index';
 import { computeNationalResoluteAdvocacyCouplingBrief } from './resolute-advocacy-coupling-brief';
 import { resoluteEaseForRegion } from './catalog/workforce-resolute-levers';
+import { computeNationalResoluteSovereignCouplingBrief } from './resolute-sovereign-coupling-brief';
+import { computeNationalSovereignResilienceOutlook } from './sovereign-resilience-outlook';
+import { computeNationalSubjectSovereignReadinessBrief } from './subject-sovereign-readiness-brief';
+import { computeNationalWorkforceSovereignDepthIndex } from './national-workforce-sovereign-depth-index';
+import { computeNationalSovereignResoluteHandoffCouplingBrief } from './sovereign-resolute-handoff-coupling-brief';
+import { sovereignEaseForRegion } from './catalog/workforce-sovereign-levers';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -3490,6 +3496,82 @@ export function runV1014LaborDemographicsSelfTests(): {
     'resolute depth steward note'
   );
   check('R5417', resoluteEaseForRegion('NSW', 'technology') > 0, 'resolute ease for region');
+
+  check('R5501', Boolean(r1.state.resoluteSovereignCouplingBrief?.band), 'resolute sovereign on state');
+  check(
+    'R5502',
+    detectLaborDemographicsQuery('resolute sovereign coupling') === 'resolute_sovereign_coupling',
+    'GI resolute sovereign detect'
+  );
+  check('R5503', Boolean(r1.state.sovereignResilienceOutlook?.band), 'sovereign resilience on state');
+  check(
+    'R5504',
+    detectLaborDemographicsQuery('sovereign resilience') === 'sovereign_resilience',
+    'GI sovereign resilience detect'
+  );
+  check('R5505', Boolean(r1.state.subjectSovereignReadinessBrief?.band), 'subject sovereign on state');
+  check(
+    'R5506',
+    detectLaborDemographicsQuery('subject sovereign readiness') === 'subject_sovereign_readiness',
+    'GI subject sovereign detect'
+  );
+  check(
+    'R5507',
+    Boolean(r1.state.nationalWorkforceSovereignDepthIndex?.band),
+    'workforce sovereign depth on state'
+  );
+  check(
+    'R5508',
+    detectLaborDemographicsQuery('workforce sovereign depth') === 'workforce_sovereign_depth',
+    'GI workforce sovereign depth detect'
+  );
+  check(
+    'R5509',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_sovereign_depth').headline.length > 5,
+    'GI workforce sovereign depth answer'
+  );
+  check(
+    'R5510',
+    Boolean(r1.state.sovereignResoluteHandoffCouplingBrief?.band),
+    'sovereign resolute handoff on state'
+  );
+  check(
+    'R5511',
+    detectLaborDemographicsQuery('sovereign resolute handoff') === 'sovereign_resolute_handoff',
+    'GI sovereign handoff detect'
+  );
+  const resoluteSovereignOnly = computeNationalResoluteSovereignCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceResoluteDepthIndex
+  );
+  check('R5512', resoluteSovereignOnly.summary.length > 10, 'resolute sovereign standalone summary');
+  const sovereignResilienceOnly = computeNationalSovereignResilienceOutlook(
+    r1.state,
+    r1.state.resoluteResilienceOutlook
+  );
+  check('R5513', sovereignResilienceOnly.band.length > 3, 'sovereign resilience band string');
+  const subjectSovereignOnly = computeNationalSubjectSovereignReadinessBrief(
+    r1.state,
+    r1.state.subjectResoluteReadinessBrief,
+    r1.state.nationalWorkforceResoluteDepthIndex
+  );
+  check('R5514', subjectSovereignOnly.sovereignDrag >= 0, 'subject sovereign drag');
+  check(
+    'R5515',
+    computeNationalWorkforceSovereignDepthIndex(
+      rHhBad.state,
+      rHhBad.state.resoluteSovereignCouplingBrief,
+      rHhBad.state.sovereignResilienceOutlook,
+      rHhBad.state.subjectSovereignReadinessBrief
+    ).stewardNote.length > 8,
+    'sovereign depth steward note'
+  );
+  const sovereignHandoffOnly = computeNationalSovereignResoluteHandoffCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceSovereignDepthIndex
+  );
+  check('R5516', sovereignHandoffOnly.couplingIndex > 0, 'sovereign handoff coupling index');
+  check('R5517', sovereignEaseForRegion('NSW', 'technology') > 0, 'sovereign ease for region');
 
 
   for (let i = 19; i <= 52; i++) {
