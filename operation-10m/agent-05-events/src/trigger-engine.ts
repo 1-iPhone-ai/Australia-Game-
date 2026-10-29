@@ -56,6 +56,10 @@ import {
   OP10M_CHUNK_MANIFEST_SEALED_FLAG,
   OP10M_POST_CRISIS_SLOT_COMMIT_FLAG,
 } from './compute-turn-post-crisis-slot-commit-coordinator.ts';
+import {
+  OP10M_AGENT25_ASSEMBLY_WAVE_READY_FLAG,
+  OP10M_SCALE_WAVE_BUNDLE_LATCH_FLAG,
+} from './compute-turn-scale-wave-bundle-latch-coordinator.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -346,6 +350,16 @@ export function evaluateRequirements(
       case 'chunk_manifest_sealed':
         if (!sim.flags[OP10M_CHUNK_MANIFEST_SEALED_FLAG]) {
           return { ok: false, reason: 'chunk manifest not sealed' };
+        }
+        break;
+      case 'scale_wave_bundle_latch':
+        if (!sim.flags[OP10M_SCALE_WAVE_BUNDLE_LATCH_FLAG]) {
+          return { ok: false, reason: 'scale wave bundle not latched' };
+        }
+        break;
+      case 'agent25_assembly_wave_ready':
+        if (!sim.flags[OP10M_AGENT25_ASSEMBLY_WAVE_READY_FLAG]) {
+          return { ok: false, reason: 'agent25 assembly wave not ready' };
         }
         break;
       default:

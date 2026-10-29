@@ -17,6 +17,7 @@ State-triggered crisis chains with cooldowns, passive persistent modifiers, and 
 - `generated/chain-catalog-tranche14.ts` — 320 module-manifest-anchor lattice chains (`scripts/generate-catalog-tranche14.py`)
 - `generated/chain-catalog-tranche15.ts` — 320 inline-assembly-lock lattice chains (`scripts/generate-catalog-tranche15.py`)
 - `generated/chain-catalog-tranche16.ts` — 320 post-crisis-slot-commit lattice chains (`scripts/generate-catalog-tranche16.py`)
+- `generated/chain-catalog-tranche17.ts` — 320 scale-wave-bundle-latch lattice chains (`scripts/generate-catalog-tranche17.py`)
 - `src/pending-response-expiry-coordinator.ts` — expired dilemma prune + queue-clear flags on compute hook
 - `src/pending-response-stabilization-coordinator.ts` — post-clear calm + stabilization wave flags on compute hook
 - `src/pending-stabilization-closure-coordinator.ts` — digest closure latch after finalize on compute hook
@@ -26,6 +27,7 @@ State-triggered crisis chains with cooldowns, passive persistent modifiers, and 
 - `src/compute-turn-module-manifest-anchor-coordinator.ts` — chunk inline readiness after assembly seal
 - `src/compute-turn-inline-assembly-lock-coordinator.ts` — Agent 25 slot readiness after manifest anchor
 - `src/compute-turn-post-crisis-slot-commit-coordinator.ts` — chunk manifest sealed after inline assembly lock
+- `src/compute-turn-scale-wave-bundle-latch-coordinator.ts` — Agent 25 assembly wave readiness after manifest seal
 - `src/compute-turn-reconcile.ts` — digest drift reconcile + eligibility priming on compute turn hook
 - `src/compute-turn-drift-settle.ts` — drift settlement + turn-gap ack flags on compute turn hook
 - `generated/regional-hook-catalog.ts` — 120 cross-region hooks (`scripts/generate-regional-hooks.py`)

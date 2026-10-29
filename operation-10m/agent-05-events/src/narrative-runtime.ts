@@ -95,6 +95,8 @@ export function createDefaultOp10mNarrativeEngineState(): Op10mNarrativeEngineSt
       agent25SlotReadyPasses: 0,
       postCrisisSlotCommits: 0,
       chunkManifestSealedPasses: 0,
+      scaleWaveBundleLatches: 0,
+      agent25AssemblyWaveReadyPasses: 0,
     },
     regional: createDefaultRegionalContagionLedger(),
   };
@@ -176,6 +178,11 @@ export function sanitizeOp10mNarrativeEngineState(raw: unknown): Op10mNarrativeE
     base.telemetry.agent25SlotReadyPasses = Math.max(0, Number(t.agent25SlotReadyPasses) || 0);
     base.telemetry.postCrisisSlotCommits = Math.max(0, Number(t.postCrisisSlotCommits) || 0);
     base.telemetry.chunkManifestSealedPasses = Math.max(0, Number(t.chunkManifestSealedPasses) || 0);
+    base.telemetry.scaleWaveBundleLatches = Math.max(0, Number(t.scaleWaveBundleLatches) || 0);
+    base.telemetry.agent25AssemblyWaveReadyPasses = Math.max(
+      0,
+      Number(t.agent25AssemblyWaveReadyPasses) || 0
+    );
   }
 
   if (r.turnCompute) {

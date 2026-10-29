@@ -25,6 +25,7 @@ import { evaluateComputeTurnChunkAssemblySealCoordination } from './compute-turn
 import { evaluateComputeTurnModuleManifestAnchorCoordination } from './compute-turn-module-manifest-anchor-coordinator.ts';
 import { evaluateComputeTurnInlineAssemblyLockCoordination } from './compute-turn-inline-assembly-lock-coordinator.ts';
 import { evaluateComputeTurnPostCrisisSlotCommitCoordination } from './compute-turn-post-crisis-slot-commit-coordinator.ts';
+import { evaluateComputeTurnScaleWaveBundleLatchCoordination } from './compute-turn-scale-wave-bundle-latch-coordinator.ts';
 import type {
   Op10mChainDescriptor,
   Op10mComputeTurnStage,
@@ -244,6 +245,15 @@ export function executeOp10mNarrativeComputeTurnHook(
   simulation = slotCommitPass.simulation;
   narrative = slotCommitPass.narrative;
   log.push(...slotCommitPass.log);
+
+  const bundleLatchPass = evaluateComputeTurnScaleWaveBundleLatchCoordination(
+    simulation,
+    narrative,
+    params.day
+  );
+  simulation = bundleLatchPass.simulation;
+  narrative = bundleLatchPass.narrative;
+  log.push(...bundleLatchPass.log);
 
   const postSettle = settleOp10mComputeTurnDriftAfterReconcile(simulation, narrative);
   simulation = postSettle.simulation;

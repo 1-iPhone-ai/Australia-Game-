@@ -313,6 +313,14 @@ export interface Op10mTriggerRequireChunkManifestSealed {
   k: 'chunk_manifest_sealed';
 }
 
+export interface Op10mTriggerRequireScaleWaveBundleLatch {
+  k: 'scale_wave_bundle_latch';
+}
+
+export interface Op10mTriggerRequireAgent25AssemblyWaveReady {
+  k: 'agent25_assembly_wave_ready';
+}
+
 export type Op10mComputeTurnStage =
   | 'pre_simulation'
   | 'post_simulation'
@@ -383,7 +391,9 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequireInlineAssemblyLock
   | Op10mTriggerRequireAgent25SlotReady
   | Op10mTriggerRequirePostCrisisSlotCommit
-  | Op10mTriggerRequireChunkManifestSealed;
+  | Op10mTriggerRequireChunkManifestSealed
+  | Op10mTriggerRequireScaleWaveBundleLatch
+  | Op10mTriggerRequireAgent25AssemblyWaveReady;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -491,6 +501,8 @@ export interface Op10mNarrativeEngineState {
     agent25SlotReadyPasses: number;
     postCrisisSlotCommits: number;
     chunkManifestSealedPasses: number;
+    scaleWaveBundleLatches: number;
+    agent25AssemblyWaveReadyPasses: number;
   };
   regional?: Op10mRegionalContagionLedger;
   turnCompute?: Op10mTurnComputeLedger;
