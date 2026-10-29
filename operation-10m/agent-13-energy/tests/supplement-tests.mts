@@ -65,6 +65,11 @@ import {
   V1014_BIOENERGY_FEEDSTOCK_TURN_SCENARIOS,
 } from '../modules/bioenergy-sustainable-feedstock-ledger.ts';
 import {
+  runAgent13PumpedHydroSeasonalScaleSelfTests,
+  runAgent13PumpedHydroSeasonalTurnScenario,
+  V1014_PUMPED_HYDRO_SEASONAL_TURN_SCENARIOS,
+} from '../modules/pumped-hydro-seasonal-storage-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -250,6 +255,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const bioTurn = runAgent13BioenergyFeedstockTurnScenario(V1014_BIOENERGY_FEEDSTOCK_TURN_SCENARIOS[0]);
   ok(bioTurn.passed);
+
+  const pumpedSeasonal = runAgent13PumpedHydroSeasonalScaleSelfTests();
+  ok(pumpedSeasonal.failed === 0 && pumpedSeasonal.passed >= 7);
+
+  const phesTurn = runAgent13PumpedHydroSeasonalTurnScenario(V1014_PUMPED_HYDRO_SEASONAL_TURN_SCENARIOS[0]);
+  ok(phesTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
