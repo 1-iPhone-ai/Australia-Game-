@@ -98,6 +98,8 @@ import { sanitizeSustainedClearedForwardArcContinuitySmoothing } from './sustain
 import { sanitizeBilateralLaunchedClearedForwardArcHandoffGateSmoothing } from './bilateral-launched-cleared-forward-arc-handoff-gate.ts';
 import { sanitizeLaunchedClearedForwardArcHandoffContinuitySmoothing } from './launched-cleared-forward-arc-handoff-continuity.ts';
 import { sanitizeBilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing } from './bilateral-settled-launched-cleared-forward-arc-readiness-gate.ts';
+import { sanitizeSettledLaunchedClearedForwardArcHandoffContinuitySmoothing } from './settled-launched-cleared-forward-arc-handoff-continuity.ts';
+import { sanitizeBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing } from './bilateral-certified-settled-launched-cleared-forward-arc-handoff-gate.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -214,6 +216,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     bilateralLaunchedClearedForwardArcHandoffGateSmoothing: 0.52,
     launchedClearedForwardArcHandoffContinuitySmoothing: 0.52,
     bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing: 0.52,
+    settledLaunchedClearedForwardArcHandoffContinuitySmoothing: 0.52,
+    bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing: 0.52,
   };
 }
 
@@ -600,6 +604,14 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   base.bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing =
     sanitizeBilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing(
       r.bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing,
+    );
+  base.settledLaunchedClearedForwardArcHandoffContinuitySmoothing =
+    sanitizeSettledLaunchedClearedForwardArcHandoffContinuitySmoothing(
+      r.settledLaunchedClearedForwardArcHandoffContinuitySmoothing,
+    );
+  base.bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing =
+    sanitizeBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing(
+      r.bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing,
     );
   return base;
 }

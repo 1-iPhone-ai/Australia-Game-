@@ -2380,3 +2380,60 @@ test('round 51: blocked launched gate weakens handoff continuity vs cleared base
       blocked.state.launchedClearedForwardArcHandoffContinuity.score - 0.14,
   );
 });
+
+test('round 52: settled launched handoff continuity and certified handoff gate on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.sustainedClearedForwardArcContinuitySmoothing = 0.78;
+  persisted.bilateralLaunchedClearedForwardArcHandoffGateSmoothing = 0.76;
+  persisted.launchedClearedForwardArcHandoffContinuitySmoothing = 0.74;
+  persisted.bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing = 0.72;
+  persisted.settledLaunchedClearedForwardArcHandoffContinuitySmoothing = 0.7;
+  persisted.bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing = 0.68;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 121,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 152 } } },
+    persisted,
+  });
+  assert.ok(r.state.settledLaunchedClearedForwardArcHandoffContinuity);
+  assert.ok(
+    ['settled', 'holding', 'unsettled', 'broken'].includes(
+      r.state.settledLaunchedClearedForwardArcHandoffContinuity.band,
+    ),
+  );
+  assert.ok(r.state.bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGate);
+  assert.ok(
+    ['cleared', 'staging', 'queued', 'blocked'].includes(
+      r.state.bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGate.band,
+    ),
+  );
+  assert.ok(r.persisted.settledLaunchedClearedForwardArcHandoffContinuitySmoothing != null);
+  assert.ok(r.persisted.bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Settled launched cleared forward arc handoff continuity/i.test(n)));
+  assert.ok(notes.some(n => /Bilateral certified settled launched cleared forward arc handoff gate/i.test(n)));
+});
+
+test('round 52: withheld readiness weakens settled handoff continuity vs ready baseline', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing = 0.97;
+  persisted.launchedClearedForwardArcHandoffContinuitySmoothing = 0.96;
+  const ready = advanceGlobalTradeEconomyTurn({
+    turn: 122,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 130 } } },
+    persisted: { ...persisted },
+  });
+  persisted.bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing = 0.22;
+  persisted.launchedClearedForwardArcHandoffContinuitySmoothing = 0.21;
+  const withheld = advanceGlobalTradeEconomyTurn({
+    turn: 122,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 280 } } },
+    persisted: { ...persisted },
+  });
+  assert.ok(
+    ready.state.settledLaunchedClearedForwardArcHandoffContinuity.score >=
+      withheld.state.settledLaunchedClearedForwardArcHandoffContinuity.score - 0.14,
+  );
+});

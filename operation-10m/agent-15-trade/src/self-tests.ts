@@ -469,6 +469,16 @@ import {
   createEmptyBilateralSettledLaunchedClearedForwardArcReadinessGateSnapshot,
   bilateralSettledLaunchedClearedForwardArcReadinessGateExportScale,
 } from './bilateral-settled-launched-cleared-forward-arc-readiness-gate.ts';
+import {
+  computeSettledLaunchedClearedForwardArcHandoffContinuitySnapshot,
+  createEmptySettledLaunchedClearedForwardArcHandoffContinuitySnapshot,
+  settledLaunchedClearedForwardArcHandoffContinuityExportScale,
+} from './settled-launched-cleared-forward-arc-handoff-continuity.ts';
+import {
+  computeBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSnapshot,
+  createEmptyBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSnapshot,
+  bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateExportScale,
+} from './bilateral-certified-settled-launched-cleared-forward-arc-handoff-gate.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -3162,6 +3172,70 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
       bilateralSettledLaunchedClearedForwardArcReadinessGateExportScale(ready) >=
         bilateralSettledLaunchedClearedForwardArcReadinessGateExportScale(withheld),
       'expected settled launched cleared forward arc readiness scale lift',
+    );
+  });
+
+  ok('settled launched cleared forward arc handoff continuity improves when readiness gate is ready', () => {
+    const readiness = {
+      ...createEmptyBilateralSettledLaunchedClearedForwardArcReadinessGateSnapshot(),
+      score: 0.95,
+      band: 'ready' as const,
+    };
+    const launched = {
+      ...createEmptyLaunchedClearedForwardArcHandoffContinuitySnapshot(),
+      score: 0.94,
+      band: 'settled' as const,
+    };
+    const settled = computeSettledLaunchedClearedForwardArcHandoffContinuitySnapshot({
+      bilateralSettledLaunchedClearedForwardArcReadinessGate: readiness,
+      launchedClearedForwardArcHandoffContinuity: launched,
+      persisted: {
+        ...createEmptyGTELPersisted(),
+        settledLaunchedClearedForwardArcHandoffContinuitySmoothing: 0.99,
+      },
+    }).snapshot;
+    const broken = computeSettledLaunchedClearedForwardArcHandoffContinuitySnapshot({
+      bilateralSettledLaunchedClearedForwardArcReadinessGate: { ...readiness, score: 0.11, band: 'withheld' },
+      launchedClearedForwardArcHandoffContinuity: { ...launched, score: 0.1, band: 'broken' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(settled.score > broken.score, 'expected settled launched handoff continuity when readiness ready');
+    gtelAssert(
+      settledLaunchedClearedForwardArcHandoffContinuityExportScale(settled) >=
+        settledLaunchedClearedForwardArcHandoffContinuityExportScale(broken),
+      'expected settled launched handoff continuity scale lift',
+    );
+  });
+
+  ok('certified settled launched cleared forward arc handoff gate improves when handoff continuity is settled', () => {
+    const continuity = {
+      ...createEmptySettledLaunchedClearedForwardArcHandoffContinuitySnapshot(),
+      score: 0.96,
+      band: 'settled' as const,
+    };
+    const readiness = {
+      ...createEmptyBilateralSettledLaunchedClearedForwardArcReadinessGateSnapshot(),
+      score: 0.93,
+      band: 'ready' as const,
+    };
+    const cleared = computeBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSnapshot({
+      settledLaunchedClearedForwardArcHandoffContinuity: continuity,
+      bilateralSettledLaunchedClearedForwardArcReadinessGate: readiness,
+      persisted: {
+        ...createEmptyGTELPersisted(),
+        bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing: 0.99,
+      },
+    }).snapshot;
+    const blocked = computeBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSnapshot({
+      settledLaunchedClearedForwardArcHandoffContinuity: { ...continuity, score: 0.11, band: 'broken' },
+      bilateralSettledLaunchedClearedForwardArcReadinessGate: { ...readiness, score: 0.09, band: 'withheld' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(cleared.score > blocked.score, 'expected certified settled launched handoff gate when continuity settled');
+    gtelAssert(
+      bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateExportScale(cleared) >=
+        bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateExportScale(blocked),
+      'expected certified settled launched cleared forward arc handoff scale lift',
     );
   });
 

@@ -246,6 +246,8 @@ export interface GTELPersisted {
   bilateralLaunchedClearedForwardArcHandoffGateSmoothing?: number;
   launchedClearedForwardArcHandoffContinuitySmoothing?: number;
   bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing?: number;
+  settledLaunchedClearedForwardArcHandoffContinuitySmoothing?: number;
+  bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -361,6 +363,8 @@ export interface GTELState {
   bilateralLaunchedClearedForwardArcHandoffGate: GTELBilateralLaunchedClearedForwardArcHandoffGateSnapshot;
   launchedClearedForwardArcHandoffContinuity: GTELLaunchedClearedForwardArcHandoffContinuitySnapshot;
   bilateralSettledLaunchedClearedForwardArcReadinessGate: GTELBilateralSettledLaunchedClearedForwardArcReadinessGateSnapshot;
+  settledLaunchedClearedForwardArcHandoffContinuity: GTELSettledLaunchedClearedForwardArcHandoffContinuitySnapshot;
+  bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGate: GTELBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSnapshot;
   inputHash: string;
 }
 
@@ -1506,6 +1510,28 @@ export interface GTELBilateralSettledLaunchedClearedForwardArcReadinessGateSnaps
   band: GTELBilateralSettledLaunchedClearedForwardArcReadinessGateBand;
   handoffContinuityFeed: number;
   gateAnchor: number;
+  summary: string;
+}
+
+export type GTELSettledLaunchedClearedForwardArcHandoffContinuityBand =
+  'settled' | 'holding' | 'unsettled' | 'broken';
+
+export interface GTELSettledLaunchedClearedForwardArcHandoffContinuitySnapshot {
+  score: number;
+  band: GTELSettledLaunchedClearedForwardArcHandoffContinuityBand;
+  readinessGateFeed: number;
+  launchedHandoffContinuityAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateBand =
+  'cleared' | 'staging' | 'queued' | 'blocked';
+
+export interface GTELBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSnapshot {
+  score: number;
+  band: GTELBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateBand;
+  continuityFeed: number;
+  readinessAnchor: number;
   summary: string;
 }
 

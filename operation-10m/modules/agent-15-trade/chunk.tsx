@@ -250,6 +250,8 @@ export interface GTELPersisted {
   bilateralLaunchedClearedForwardArcHandoffGateSmoothing?: number;
   launchedClearedForwardArcHandoffContinuitySmoothing?: number;
   bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing?: number;
+  settledLaunchedClearedForwardArcHandoffContinuitySmoothing?: number;
+  bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -365,6 +367,8 @@ export interface GTELState {
   bilateralLaunchedClearedForwardArcHandoffGate: GTELBilateralLaunchedClearedForwardArcHandoffGateSnapshot;
   launchedClearedForwardArcHandoffContinuity: GTELLaunchedClearedForwardArcHandoffContinuitySnapshot;
   bilateralSettledLaunchedClearedForwardArcReadinessGate: GTELBilateralSettledLaunchedClearedForwardArcReadinessGateSnapshot;
+  settledLaunchedClearedForwardArcHandoffContinuity: GTELSettledLaunchedClearedForwardArcHandoffContinuitySnapshot;
+  bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGate: GTELBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSnapshot;
   inputHash: string;
 }
 
@@ -1513,11 +1517,34 @@ export interface GTELBilateralSettledLaunchedClearedForwardArcReadinessGateSnaps
   summary: string;
 }
 
+export type GTELSettledLaunchedClearedForwardArcHandoffContinuityBand =
+  'settled' | 'holding' | 'unsettled' | 'broken';
+
+export interface GTELSettledLaunchedClearedForwardArcHandoffContinuitySnapshot {
+  score: number;
+  band: GTELSettledLaunchedClearedForwardArcHandoffContinuityBand;
+  readinessGateFeed: number;
+  launchedHandoffContinuityAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateBand =
+  'cleared' | 'staging' | 'queued' | 'blocked';
+
+export interface GTELBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSnapshot {
+  score: number;
+  band: GTELBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateBand;
+  continuityFeed: number;
+  readinessAnchor: number;
+  summary: string;
+}
+
 export interface GlobalTradeEconomyPanelProps {
   state: GTELState | null;
   theme?: { isDark?: boolean };
   onAsk?: (question: string) => void;
 }
+
 
 // --- source: constants.ts ---
 
@@ -1645,108 +1672,6 @@ export function gtelAssert(cond: boolean, msg: string): void {
 
 
 // --- source: persist.ts ---
-import { GTEL_COMMODITIES, GTEL_LIMITS, GTEL_PARTNER_DEFS, GTEL_BASE_COMMODITY_INDEX } from './constants.ts';
-import type { GTELAccessBand, GTELCommodityId, GTELPartnerId, GTELPersisted, PartnerSanctionRegime, TradeAgreementRecord } from './types.ts';
-import { gtelClamp, gtelNum } from './util.ts';
-import { sanitizePartnerSanctionRegime } from './sanctions.ts';
-import { createEmptyTradeComplianceRecord, sanitizeTradeComplianceRecord } from './trade-compliance.ts';
-import { sanitizeImportDependencySmoothing } from './import-dependency.ts';
-import { sanitizePartnerMixSmoothing } from './market-diversification.ts';
-import { sanitizeTradeFinanceSmoothing } from './trade-finance.ts';
-import { sanitizeTermsOfTradeSmoothing } from './terms-of-trade.ts';
-import { sanitizeSupplyChainResilienceSmoothing } from './supply-chain-resilience.ts';
-import { sanitizeForeignExchangeSmoothing } from './foreign-exchange-pressure.ts';
-import { sanitizeRetaliationPressureSmoothing } from './trade-retaliation.ts';
-import { sanitizeDeescalationMomentumSmoothing } from './trade-deescalation.ts';
-import { sanitizeExportCapacitySmoothing } from './export-capacity-allocation.ts';
-import { sanitizeReconciliationProgressSmoothing } from './trade-reconciliation.ts';
-import { sanitizeMaritimeRiskSmoothing } from './maritime-risk-premium.ts';
-import { sanitizePreferentialUtilizationSmoothing } from './preferential-access-utilization.ts';
-import { sanitizeEnforcementIntensitySmoothing } from './trade-enforcement-intensity.ts';
-import { sanitizeExportInsuranceStackSmoothing } from './export-credit-insurance-stack.ts';
-import { sanitizeAccessRestorationSmoothing } from './partner-access-restoration.ts';
-import { sanitizeTradeCorridorSmoothing } from './trade-corridor-resilience.ts';
-import { sanitizeSanctionsSpilloverSmoothing } from './sanctions-spillover-depth.ts';
-import { sanitizeTradeFxHedgingSmoothing } from './trade-fx-hedging.ts';
-import { sanitizeImportLanePressureSmoothing } from './import-lane-pressure.ts';
-import { sanitizeDiplomaticTradeCoherenceSmoothing } from './diplomatic-trade-coherence.ts';
-import { sanitizeTradeBalanceStabilizationSmoothing } from './trade-balance-stabilization.ts';
-import { sanitizeTradeShockAbsorptionSmoothing } from './trade-shock-absorption.ts';
-import { sanitizeExportCommitmentPipelineSmoothing } from './export-commitment-pipeline.ts';
-import { sanitizeImportCommitmentPipelineSmoothing } from './import-commitment-pipeline.ts';
-import { sanitizeTradeFlowCohesionSmoothing } from './trade-flow-cohesion.ts';
-import { sanitizeTradeThroughputOrchestrationSmoothing } from './trade-throughput-orchestration.ts';
-import { sanitizeCommitmentLedgerHarmonizationSmoothing } from './commitment-ledger-harmonization.ts';
-import { sanitizeBilateralCargoSchedulingSmoothing } from './bilateral-cargo-scheduling.ts';
-import { sanitizeCommitmentTurnCloseoutSmoothing } from './commitment-turn-closeout.ts';
-import { sanitizeForwardSlotRolloverSmoothing } from './forward-slot-rollover.ts';
-import { sanitizeBilateralSettlementReconciliationSmoothing } from './bilateral-settlement-reconciliation.ts';
-import { sanitizeTradeSettlementContinuitySmoothing } from './trade-settlement-continuity.ts';
-import { sanitizeForwardBookAnchorStabilizationSmoothing } from './forward-book-anchor-stabilization.ts';
-import { sanitizeAnchoredBookReadinessSmoothing } from './anchored-book-readiness.ts';
-import { sanitizeBilateralThroughputCertificationSmoothing } from './bilateral-throughput-certification.ts';
-import { sanitizeCertifiedThroughputSustainmentSmoothing } from './certified-throughput-sustainment.ts';
-import { sanitizeBilateralCapacityHandoffGateSmoothing } from './bilateral-capacity-handoff-gate.ts';
-import { sanitizeCapacityHandoffAbsorptionSmoothing } from './capacity-handoff-absorption.ts';
-import { sanitizeBilateralTradeWindowContinuitySmoothing } from './bilateral-trade-window-continuity.ts';
-import { sanitizeTradeCycleSealVerificationSmoothing } from './trade-cycle-seal-verification.ts';
-import { sanitizeBilateralCapacityRenewalGateSmoothing } from './bilateral-capacity-renewal-gate.ts';
-import { sanitizeCapacityRenewalPrimingSmoothing } from './capacity-renewal-priming.ts';
-import { sanitizeBilateralCycleReentryGateSmoothing } from './bilateral-cycle-reentry-gate.ts';
-import { sanitizeCycleReentryStabilizationSmoothing } from './cycle-reentry-stabilization.ts';
-import { sanitizeBilateralLoopResumptionGateSmoothing } from './bilateral-loop-resumption-gate.ts';
-import { sanitizeResumedLoopContinuitySmoothing } from './resumed-loop-continuity.ts';
-import { sanitizeBilateralCycleRestartAcknowledgmentSmoothing } from './bilateral-cycle-restart-acknowledgment.ts';
-import { sanitizeAcknowledgedCyclePrimingSmoothing } from './acknowledged-cycle-priming.ts';
-import { sanitizeBilateralCommitmentArcOpeningSmoothing } from './bilateral-commitment-arc-opening.ts';
-import { sanitizeCommitmentArcContinuitySmoothing } from './commitment-arc-continuity.ts';
-import { sanitizeBilateralForwardCommitmentAdmissionSmoothing } from './bilateral-forward-commitment-admission.ts';
-import { sanitizeAdmittedForwardCommitmentContinuitySmoothing } from './admitted-forward-commitment-continuity.ts';
-import { sanitizeBilateralCommitmentWindowHandoffSmoothing } from './bilateral-commitment-window-handoff.ts';
-import { sanitizeCommitmentWindowSustainmentSmoothing } from './commitment-window-sustainment.ts';
-import { sanitizeBilateralForwardCycleAdvanceGateSmoothing } from './bilateral-forward-cycle-advance-gate.ts';
-import { sanitizeForwardCycleAdvanceContinuitySmoothing } from './forward-cycle-advance-continuity.ts';
-import { sanitizeBilateralCommitmentLoopReopenGateSmoothing } from './bilateral-commitment-loop-reopen-gate.ts';
-import { sanitizeReopenedCommitmentLoopContinuitySmoothing } from './reopened-commitment-loop-continuity.ts';
-import { sanitizeBilateralForwardArcRechargeGateSmoothing } from './bilateral-forward-arc-recharge-gate.ts';
-import { sanitizeForwardArcRechargeContinuitySmoothing } from './forward-arc-recharge-continuity.ts';
-import { sanitizeBilateralRenewalArcPrimingGateSmoothing } from './bilateral-renewal-arc-priming-gate.ts';
-import { sanitizeRenewalArcPrimingContinuitySmoothing } from './renewal-arc-priming-continuity.ts';
-import { sanitizeBilateralNextArcOpenPrepGateSmoothing } from './bilateral-next-arc-open-prep-gate.ts';
-import { sanitizeNextArcOpenPrepContinuitySmoothing } from './next-arc-open-prep-continuity.ts';
-import { sanitizeBilateralPreparedArcOpeningHandoffSmoothing } from './bilateral-prepared-arc-opening-handoff.ts';
-import { sanitizePreparedArcHandoffContinuitySmoothing } from './prepared-arc-handoff-continuity.ts';
-import { sanitizeBilateralScaleLoopSealGateSmoothing } from './bilateral-scale-loop-seal-gate.ts';
-import { sanitizeSealedScaleLoopContinuitySmoothing } from './sealed-scale-loop-continuity.ts';
-import { sanitizeBilateralScaleWaveReentryGateSmoothing } from './bilateral-scale-wave-reentry-gate.ts';
-import { sanitizeScaleWaveReentryContinuitySmoothing } from './scale-wave-reentry-continuity.ts';
-import { sanitizeBilateralNextWavePrimingGateSmoothing } from './bilateral-next-wave-priming-gate.ts';
-import { sanitizeNextWavePrimingContinuitySmoothing } from './next-wave-priming-continuity.ts';
-import { sanitizeBilateralPrimedWaveLaunchGateSmoothing } from './bilateral-primed-wave-launch-gate.ts';
-import { sanitizePrimedWaveLaunchContinuitySmoothing } from './primed-wave-launch-continuity.ts';
-import { sanitizeBilateralLaunchedWaveSustainGateSmoothing } from './bilateral-launched-wave-sustain-gate.ts';
-import { sanitizeLaunchedWaveSustainContinuitySmoothing } from './launched-wave-sustain-continuity.ts';
-import { sanitizeBilateralSustainedWaveThroughputGateSmoothing } from './bilateral-sustained-wave-throughput-gate.ts';
-import { sanitizeSustainedWaveThroughputContinuitySmoothing } from './sustained-wave-throughput-continuity.ts';
-import { sanitizeBilateralClearedWaveHandoffGateSmoothing } from './bilateral-cleared-wave-handoff-gate.ts';
-import { sanitizeClearedWaveHandoffContinuitySmoothing } from './cleared-wave-handoff-continuity.ts';
-import { sanitizeBilateralHandedWaveCyclePrimingGateSmoothing } from './bilateral-handed-wave-cycle-priming-gate.ts';
-import { sanitizeHandedWaveCyclePrimingContinuitySmoothing } from './handed-wave-cycle-priming-continuity.ts';
-import { sanitizeBilateralPrimedHandoffArcOpeningGateSmoothing } from './bilateral-primed-handoff-arc-opening-gate.ts';
-import { sanitizePrimedHandoffArcOpeningContinuitySmoothing } from './primed-handoff-arc-opening-continuity.ts';
-import { sanitizeBilateralEngagedArcForwardAdmissionGateSmoothing } from './bilateral-engaged-arc-forward-admission-gate.ts';
-import { sanitizeEngagedArcForwardAdmissionContinuitySmoothing } from './engaged-arc-forward-admission-continuity.ts';
-import { sanitizeBilateralAdmittedForwardArcSustainGateSmoothing } from './bilateral-admitted-forward-arc-sustain-gate.ts';
-import { sanitizeSustainedAdmittedForwardArcContinuitySmoothing } from './sustained-admitted-forward-arc-continuity.ts';
-import { sanitizeBilateralSustainedForwardArcHandoffGateSmoothing } from './bilateral-sustained-forward-arc-handoff-gate.ts';
-import { sanitizeClearedForwardArcHandoffContinuitySmoothing } from './cleared-forward-arc-handoff-continuity.ts';
-import { sanitizeBilateralClearedForwardArcReadinessGateSmoothing } from './bilateral-cleared-forward-arc-readiness-gate.ts';
-import { sanitizeSustainedClearedForwardArcContinuitySmoothing } from './sustained-cleared-forward-arc-continuity.ts';
-import { sanitizeBilateralLaunchedClearedForwardArcHandoffGateSmoothing } from './bilateral-launched-cleared-forward-arc-handoff-gate.ts';
-import { sanitizeLaunchedClearedForwardArcHandoffContinuitySmoothing } from './launched-cleared-forward-arc-handoff-continuity.ts';
-import { sanitizeBilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing } from './bilateral-settled-launched-cleared-forward-arc-readiness-gate.ts';
-import { sanitizePartnerTrustScore } from './partner-trust.ts';
-import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
 export function createEmptyGTELPersisted(): GTELPersisted {
   return {
@@ -1861,6 +1786,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     bilateralLaunchedClearedForwardArcHandoffGateSmoothing: 0.52,
     launchedClearedForwardArcHandoffContinuitySmoothing: 0.52,
     bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing: 0.52,
+    settledLaunchedClearedForwardArcHandoffContinuitySmoothing: 0.52,
+    bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing: 0.52,
   };
 }
 
@@ -2248,8 +2175,17 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
     sanitizeBilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing(
       r.bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing,
     );
+  base.settledLaunchedClearedForwardArcHandoffContinuitySmoothing =
+    sanitizeSettledLaunchedClearedForwardArcHandoffContinuitySmoothing(
+      r.settledLaunchedClearedForwardArcHandoffContinuitySmoothing,
+    );
+  base.bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing =
+    sanitizeBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing(
+      r.bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing,
+    );
   return base;
 }
+
 
 // --- source: diplomacy-linkage.ts ---
 
@@ -7704,7 +7640,6 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
 
 
 // --- source: trade-turn.ts ---
-import {
   GTEL_ACCESS_RANK,
   GTEL_BASE_COMMODITY_INDEX,
   GTEL_COMMODITIES,
@@ -7712,68 +7647,50 @@ import {
   GTEL_LIMITS,
   GTEL_PARTNER_DEFS,
 } from './constants.ts';
-import {
   deriveDiplomaticTradeModifiers,
   gtelAccessBandFromScore,
   gtelActiveDeals,
   gtelNetworkModifier,
   gtelRecentViolations,
 } from './diplomacy-linkage.ts';
-import { computeRegionalDomesticImpacts, summarizeDomesticConsequences } from './domestic-consequences.ts';
-import { applyScheduledScenarios, getCommodityShockScenario } from './commodity-shock-scenarios.ts';
-import { createEmptyGTELPersisted, sanitizeGTELPersisted } from './persist.ts';
-import { advancePartnerSanctions, deriveSanctionModifiers } from './sanctions.ts';
-import { advancePartnerTrustScores, deriveTrustAccessModifiers } from './partner-trust.ts';
-import { autoTradePolicyAdjustments, deriveTradePolicyModifiers, listActiveTradePolicies } from './trade-policy.ts';
-import {
   advanceTradeDisputes,
   autoOpenDisputesFromSanctions,
   countOpenTradeDisputes,
 } from './trade-disputes.ts';
-import { advanceTradeComplianceRecord, complianceReviewNotes, deriveCompliancePartnerPenalty } from './trade-compliance.ts';
-import {
   applyLogisticsToCommodityQuotes,
   computeLogisticsStress,
   logisticsWorldEvent,
 } from './export-logistics.ts';
-import { computeTradeBalanceSnapshot, tradeBalanceGiNotes } from './trade-balance.ts';
-import {
   advanceDiplomaticEngagement,
   deriveEngagementPartnerModifiers,
   diplomaticEngagementGiNotes,
 } from './diplomatic-engagement.ts';
-import {
   computeImportDependencySnapshot,
   importDependencyConsumerPressure,
   importDependencyGiNotes,
 } from './import-dependency.ts';
-import {
   advancePartnerMixMemory,
   computeMarketDiversificationSnapshot,
   deriveDiversificationPartnerModifiers,
   diversificationWorldEvent,
   marketDiversificationGiNotes,
 } from './market-diversification.ts';
-import {
   computeTradeFinanceSnapshot,
   tradeFinanceDomesticStress,
   tradeFinanceExportScale,
   tradeFinanceGiNotes,
 } from './trade-finance.ts';
-import {
   computeTermsOfTradeSnapshot,
   termsOfTradeGiNotes,
   termsOfTradeHouseholdModifier,
   termsOfTradeWorldEvent,
 } from './terms-of-trade.ts';
-import {
   computeSupplyChainResilienceSnapshot,
   supplyChainResilienceDomesticStress,
   supplyChainResilienceExportScale,
   supplyChainResilienceGiNotes,
   supplyChainResilienceWorldEvent,
 } from './supply-chain-resilience.ts';
-import {
   computeForeignExchangeSnapshot,
   foreignExchangeDomesticStress,
   foreignExchangeExportScale,
@@ -7781,19 +7698,16 @@ import {
   foreignExchangeHouseholdModifier,
   foreignExchangeWorldEvent,
 } from './foreign-exchange-pressure.ts';
-import {
   computeTradeRetaliationSnapshot,
   deriveRetaliationPartnerModifiers,
   tradeRetaliationGiNotes,
   tradeRetaliationWorldEvent,
 } from './trade-retaliation.ts';
-import {
   computeTradeDeescalationSnapshot,
   deriveDeescalationPartnerModifiers,
   tradeDeescalationGiNotes,
   tradeDeescalationWorldEvent,
 } from './trade-deescalation.ts';
-import {
   applyExportCapacityToCommodityQuotes,
   computeExportCapacitySnapshot,
   exportCapacityDomesticStress,
@@ -7801,616 +7715,538 @@ import {
   exportCapacityGiNotes,
   exportCapacityWorldEvent,
 } from './export-capacity-allocation.ts';
-import {
   computeTradeReconciliationSnapshot,
   deriveReconciliationPartnerModifiers,
   reconciliationEffectiveDisputeCount,
   tradeReconciliationGiNotes,
   tradeReconciliationWorldEvent,
 } from './trade-reconciliation.ts';
-import {
   computeMaritimeRiskSnapshot,
   maritimeRiskDomesticStress,
   maritimeRiskExportScale,
   maritimeRiskGiNotes,
   maritimeRiskWorldEvent,
 } from './maritime-risk-premium.ts';
-import {
   applyPreferentialUtilizationToCommodityQuotes,
   computePreferentialUtilizationSnapshot,
   preferentialUtilizationExportScale,
   preferentialUtilizationGiNotes,
   preferentialUtilizationWorldEvent,
 } from './preferential-access-utilization.ts';
-import {
   computeTradeEnforcementSnapshot,
   deriveEnforcementPartnerModifiers,
   enforcementExportScale,
   tradeEnforcementGiNotes,
   tradeEnforcementWorldEvent,
 } from './trade-enforcement-intensity.ts';
-import {
   computeExportInsuranceStackSnapshot,
   exportInsuranceStackDomesticStress,
   exportInsuranceStackExportScale,
   exportInsuranceStackGiNotes,
   exportInsuranceStackWorldEvent,
 } from './export-credit-insurance-stack.ts';
-import {
   computePartnerAccessRestorationSnapshot,
   deriveAccessRestorationPartnerModifiers,
   partnerAccessRestorationGiNotes,
   partnerAccessRestorationWorldEvent,
 } from './partner-access-restoration.ts';
-import {
   computeSanctionsSpilloverSnapshot,
   deriveSanctionsSpilloverPartnerModifiers,
   sanctionsSpilloverExportScale,
   sanctionsSpilloverGiNotes,
   sanctionsSpilloverWorldEvent,
 } from './sanctions-spillover-depth.ts';
-import {
   computeTradeCorridorResilienceSnapshot,
   tradeCorridorDomesticStress,
   tradeCorridorExportScale,
   tradeCorridorGiNotes,
   tradeCorridorWorldEvent,
 } from './trade-corridor-resilience.ts';
-import {
   computeTradeFxHedgingSnapshot,
   tradeFxHedgingExportScale,
   tradeFxHedgingGiNotes,
   tradeFxHedgingHouseholdModifier,
   tradeFxHedgingWorldEvent,
 } from './trade-fx-hedging.ts';
-import {
   computeImportLanePressureSnapshot,
   importLanePressureDomesticStress,
   importLanePressureExportScale,
   importLanePressureGiNotes,
   importLanePressureWorldEvent,
 } from './import-lane-pressure.ts';
-import {
   computeDiplomaticTradeCoherenceSnapshot,
   diplomaticTradeCoherenceDomesticStressRelief,
   diplomaticTradeCoherenceExportScale,
   diplomaticTradeCoherenceGiNotes,
   diplomaticTradeCoherenceWorldEvent,
 } from './diplomatic-trade-coherence.ts';
-import {
   computeTradeBalanceStabilizationSnapshot,
   tradeBalanceStabilizationDomesticStress,
   tradeBalanceStabilizationExportScale,
   tradeBalanceStabilizationGiNotes,
   tradeBalanceStabilizationWorldEvent,
 } from './trade-balance-stabilization.ts';
-import {
   computeTradeShockAbsorptionSnapshot,
   tradeShockAbsorptionDomesticStressRelief,
   tradeShockAbsorptionExportScale,
   tradeShockAbsorptionGiNotes,
   tradeShockAbsorptionWorldEvent,
 } from './trade-shock-absorption.ts';
-import {
   computeTradeCommitmentPipelineSnapshot,
   exportCommitmentPipelineDomesticStress,
   exportCommitmentPipelineExportScale,
   exportCommitmentPipelineGiNotes,
   exportCommitmentPipelineWorldEvent,
 } from './export-commitment-pipeline.ts';
-import {
   computeImportCommitmentPipelineSnapshot,
   importCommitmentPipelineDomesticStress,
   importCommitmentPipelineExportScale,
   importCommitmentPipelineGiNotes,
   importCommitmentPipelineWorldEvent,
 } from './import-commitment-pipeline.ts';
-import {
   computeTradeFlowCohesionSnapshot,
   tradeFlowCohesionDomesticStressRelief,
   tradeFlowCohesionExportScale,
   tradeFlowCohesionGiNotes,
   tradeFlowCohesionWorldEvent,
 } from './trade-flow-cohesion.ts';
-import {
   computeTradeThroughputOrchestrationSnapshot,
   tradeThroughputOrchestrationDomesticStress,
   tradeThroughputOrchestrationExportScale,
   tradeThroughputOrchestrationGiNotes,
   tradeThroughputOrchestrationWorldEvent,
 } from './trade-throughput-orchestration.ts';
-import {
   computeCommitmentLedgerHarmonizationSnapshot,
   commitmentLedgerHarmonizationDomesticStressRelief,
   commitmentLedgerHarmonizationExportScale,
   commitmentLedgerHarmonizationGiNotes,
   commitmentLedgerHarmonizationWorldEvent,
 } from './commitment-ledger-harmonization.ts';
-import {
   computeBilateralCargoSchedulingSnapshot,
   bilateralCargoSchedulingDomesticStress,
   bilateralCargoSchedulingExportScale,
   bilateralCargoSchedulingGiNotes,
   bilateralCargoSchedulingWorldEvent,
 } from './bilateral-cargo-scheduling.ts';
-import {
   computeCommitmentTurnCloseoutSnapshot,
   commitmentTurnCloseoutDomesticStressRelief,
   commitmentTurnCloseoutExportScale,
   commitmentTurnCloseoutGiNotes,
   commitmentTurnCloseoutWorldEvent,
 } from './commitment-turn-closeout.ts';
-import {
   computeForwardSlotRolloverSnapshot,
   forwardSlotRolloverDomesticStress,
   forwardSlotRolloverExportScale,
   forwardSlotRolloverGiNotes,
   forwardSlotRolloverWorldEvent,
 } from './forward-slot-rollover.ts';
-import {
   computeBilateralSettlementReconciliationSnapshot,
   bilateralSettlementReconciliationDomesticStressRelief,
   bilateralSettlementReconciliationExportScale,
   bilateralSettlementReconciliationGiNotes,
   bilateralSettlementReconciliationWorldEvent,
 } from './bilateral-settlement-reconciliation.ts';
-import {
   computeTradeSettlementContinuitySnapshot,
   tradeSettlementContinuityDomesticStress,
   tradeSettlementContinuityExportScale,
   tradeSettlementContinuityGiNotes,
   tradeSettlementContinuityWorldEvent,
 } from './trade-settlement-continuity.ts';
-import {
   computeForwardBookAnchorStabilizationSnapshot,
   forwardBookAnchorStabilizationDomesticStressRelief,
   forwardBookAnchorStabilizationExportScale,
   forwardBookAnchorStabilizationGiNotes,
   forwardBookAnchorStabilizationWorldEvent,
 } from './forward-book-anchor-stabilization.ts';
-import {
   computeAnchoredBookReadinessSnapshot,
   anchoredBookReadinessDomesticStress,
   anchoredBookReadinessExportScale,
   anchoredBookReadinessGiNotes,
   anchoredBookReadinessWorldEvent,
 } from './anchored-book-readiness.ts';
-import {
   computeBilateralThroughputCertificationSnapshot,
   bilateralThroughputCertificationDomesticStressRelief,
   bilateralThroughputCertificationExportScale,
   bilateralThroughputCertificationGiNotes,
   bilateralThroughputCertificationWorldEvent,
 } from './bilateral-throughput-certification.ts';
-import {
   computeCertifiedThroughputSustainmentSnapshot,
   certifiedThroughputSustainmentDomesticStress,
   certifiedThroughputSustainmentExportScale,
   certifiedThroughputSustainmentGiNotes,
   certifiedThroughputSustainmentWorldEvent,
 } from './certified-throughput-sustainment.ts';
-import {
   computeBilateralCapacityHandoffGateSnapshot,
   bilateralCapacityHandoffGateDomesticStressRelief,
   bilateralCapacityHandoffGateExportScale,
   bilateralCapacityHandoffGateGiNotes,
   bilateralCapacityHandoffGateWorldEvent,
 } from './bilateral-capacity-handoff-gate.ts';
-import {
   computeCapacityHandoffAbsorptionSnapshot,
   capacityHandoffAbsorptionDomesticStress,
   capacityHandoffAbsorptionExportScale,
   capacityHandoffAbsorptionGiNotes,
   capacityHandoffAbsorptionWorldEvent,
 } from './capacity-handoff-absorption.ts';
-import {
   computeBilateralTradeWindowContinuitySnapshot,
   bilateralTradeWindowContinuityDomesticStressRelief,
   bilateralTradeWindowContinuityExportScale,
   bilateralTradeWindowContinuityGiNotes,
   bilateralTradeWindowContinuityWorldEvent,
 } from './bilateral-trade-window-continuity.ts';
-import {
   computeTradeCycleSealVerificationSnapshot,
   tradeCycleSealVerificationDomesticStress,
   tradeCycleSealVerificationExportScale,
   tradeCycleSealVerificationGiNotes,
   tradeCycleSealVerificationWorldEvent,
 } from './trade-cycle-seal-verification.ts';
-import {
   computeBilateralCapacityRenewalGateSnapshot,
   bilateralCapacityRenewalGateDomesticStressRelief,
   bilateralCapacityRenewalGateExportScale,
   bilateralCapacityRenewalGateGiNotes,
   bilateralCapacityRenewalGateWorldEvent,
 } from './bilateral-capacity-renewal-gate.ts';
-import {
   computeCapacityRenewalPrimingSnapshot,
   capacityRenewalPrimingDomesticStress,
   capacityRenewalPrimingExportScale,
   capacityRenewalPrimingGiNotes,
   capacityRenewalPrimingWorldEvent,
 } from './capacity-renewal-priming.ts';
-import {
   computeBilateralCycleReentryGateSnapshot,
   bilateralCycleReentryGateDomesticStressRelief,
   bilateralCycleReentryGateExportScale,
   bilateralCycleReentryGateGiNotes,
   bilateralCycleReentryGateWorldEvent,
 } from './bilateral-cycle-reentry-gate.ts';
-import {
   computeCycleReentryStabilizationSnapshot,
   cycleReentryStabilizationDomesticStress,
   cycleReentryStabilizationExportScale,
   cycleReentryStabilizationGiNotes,
   cycleReentryStabilizationWorldEvent,
 } from './cycle-reentry-stabilization.ts';
-import {
   computeBilateralLoopResumptionGateSnapshot,
   bilateralLoopResumptionGateDomesticStressRelief,
   bilateralLoopResumptionGateExportScale,
   bilateralLoopResumptionGateGiNotes,
   bilateralLoopResumptionGateWorldEvent,
 } from './bilateral-loop-resumption-gate.ts';
-import {
   computeResumedLoopContinuitySnapshot,
   resumedLoopContinuityDomesticStress,
   resumedLoopContinuityExportScale,
   resumedLoopContinuityGiNotes,
   resumedLoopContinuityWorldEvent,
 } from './resumed-loop-continuity.ts';
-import {
   computeBilateralCycleRestartAcknowledgmentSnapshot,
   bilateralCycleRestartAcknowledgmentDomesticStressRelief,
   bilateralCycleRestartAcknowledgmentExportScale,
   bilateralCycleRestartAcknowledgmentGiNotes,
   bilateralCycleRestartAcknowledgmentWorldEvent,
 } from './bilateral-cycle-restart-acknowledgment.ts';
-import {
   computeAcknowledgedCyclePrimingSnapshot,
   acknowledgedCyclePrimingDomesticStress,
   acknowledgedCyclePrimingExportScale,
   acknowledgedCyclePrimingGiNotes,
   acknowledgedCyclePrimingWorldEvent,
 } from './acknowledged-cycle-priming.ts';
-import {
   computeBilateralCommitmentArcOpeningSnapshot,
   bilateralCommitmentArcOpeningDomesticStressRelief,
   bilateralCommitmentArcOpeningExportScale,
   bilateralCommitmentArcOpeningGiNotes,
   bilateralCommitmentArcOpeningWorldEvent,
 } from './bilateral-commitment-arc-opening.ts';
-import {
   computeCommitmentArcContinuitySnapshot,
   commitmentArcContinuityDomesticStress,
   commitmentArcContinuityExportScale,
   commitmentArcContinuityGiNotes,
   commitmentArcContinuityWorldEvent,
 } from './commitment-arc-continuity.ts';
-import {
   computeBilateralForwardCommitmentAdmissionSnapshot,
   bilateralForwardCommitmentAdmissionDomesticStressRelief,
   bilateralForwardCommitmentAdmissionExportScale,
   bilateralForwardCommitmentAdmissionGiNotes,
   bilateralForwardCommitmentAdmissionWorldEvent,
 } from './bilateral-forward-commitment-admission.ts';
-import {
   computeAdmittedForwardCommitmentContinuitySnapshot,
   admittedForwardCommitmentContinuityDomesticStress,
   admittedForwardCommitmentContinuityExportScale,
   admittedForwardCommitmentContinuityGiNotes,
   admittedForwardCommitmentContinuityWorldEvent,
 } from './admitted-forward-commitment-continuity.ts';
-import {
   computeBilateralCommitmentWindowHandoffSnapshot,
   bilateralCommitmentWindowHandoffDomesticStressRelief,
   bilateralCommitmentWindowHandoffExportScale,
   bilateralCommitmentWindowHandoffGiNotes,
   bilateralCommitmentWindowHandoffWorldEvent,
 } from './bilateral-commitment-window-handoff.ts';
-import {
   computeCommitmentWindowSustainmentSnapshot,
   commitmentWindowSustainmentDomesticStress,
   commitmentWindowSustainmentExportScale,
   commitmentWindowSustainmentGiNotes,
   commitmentWindowSustainmentWorldEvent,
 } from './commitment-window-sustainment.ts';
-import {
   computeBilateralForwardCycleAdvanceGateSnapshot,
   bilateralForwardCycleAdvanceGateDomesticStressRelief,
   bilateralForwardCycleAdvanceGateExportScale,
   bilateralForwardCycleAdvanceGateGiNotes,
   bilateralForwardCycleAdvanceGateWorldEvent,
 } from './bilateral-forward-cycle-advance-gate.ts';
-import {
   computeForwardCycleAdvanceContinuitySnapshot,
   forwardCycleAdvanceContinuityDomesticStress,
   forwardCycleAdvanceContinuityExportScale,
   forwardCycleAdvanceContinuityGiNotes,
   forwardCycleAdvanceContinuityWorldEvent,
 } from './forward-cycle-advance-continuity.ts';
-import {
   computeBilateralCommitmentLoopReopenGateSnapshot,
   bilateralCommitmentLoopReopenGateDomesticStressRelief,
   bilateralCommitmentLoopReopenGateExportScale,
   bilateralCommitmentLoopReopenGateGiNotes,
   bilateralCommitmentLoopReopenGateWorldEvent,
 } from './bilateral-commitment-loop-reopen-gate.ts';
-import {
   computeReopenedCommitmentLoopContinuitySnapshot,
   reopenedCommitmentLoopContinuityDomesticStress,
   reopenedCommitmentLoopContinuityExportScale,
   reopenedCommitmentLoopContinuityGiNotes,
   reopenedCommitmentLoopContinuityWorldEvent,
 } from './reopened-commitment-loop-continuity.ts';
-import {
   computeBilateralForwardArcRechargeGateSnapshot,
   bilateralForwardArcRechargeGateDomesticStressRelief,
   bilateralForwardArcRechargeGateExportScale,
   bilateralForwardArcRechargeGateGiNotes,
   bilateralForwardArcRechargeGateWorldEvent,
 } from './bilateral-forward-arc-recharge-gate.ts';
-import {
   computeForwardArcRechargeContinuitySnapshot,
   forwardArcRechargeContinuityDomesticStress,
   forwardArcRechargeContinuityExportScale,
   forwardArcRechargeContinuityGiNotes,
   forwardArcRechargeContinuityWorldEvent,
 } from './forward-arc-recharge-continuity.ts';
-import {
   computeBilateralRenewalArcPrimingGateSnapshot,
   bilateralRenewalArcPrimingGateDomesticStressRelief,
   bilateralRenewalArcPrimingGateExportScale,
   bilateralRenewalArcPrimingGateGiNotes,
   bilateralRenewalArcPrimingGateWorldEvent,
 } from './bilateral-renewal-arc-priming-gate.ts';
-import {
   computeRenewalArcPrimingContinuitySnapshot,
   renewalArcPrimingContinuityDomesticStress,
   renewalArcPrimingContinuityExportScale,
   renewalArcPrimingContinuityGiNotes,
   renewalArcPrimingContinuityWorldEvent,
 } from './renewal-arc-priming-continuity.ts';
-import {
   computeBilateralNextArcOpenPrepGateSnapshot,
   bilateralNextArcOpenPrepGateDomesticStressRelief,
   bilateralNextArcOpenPrepGateExportScale,
   bilateralNextArcOpenPrepGateGiNotes,
   bilateralNextArcOpenPrepGateWorldEvent,
 } from './bilateral-next-arc-open-prep-gate.ts';
-import {
   computeNextArcOpenPrepContinuitySnapshot,
   nextArcOpenPrepContinuityDomesticStress,
   nextArcOpenPrepContinuityExportScale,
   nextArcOpenPrepContinuityGiNotes,
   nextArcOpenPrepContinuityWorldEvent,
 } from './next-arc-open-prep-continuity.ts';
-import {
   computeBilateralPreparedArcOpeningHandoffSnapshot,
   bilateralPreparedArcOpeningHandoffDomesticStressRelief,
   bilateralPreparedArcOpeningHandoffExportScale,
   bilateralPreparedArcOpeningHandoffGiNotes,
   bilateralPreparedArcOpeningHandoffWorldEvent,
 } from './bilateral-prepared-arc-opening-handoff.ts';
-import {
   computePreparedArcHandoffContinuitySnapshot,
   preparedArcHandoffContinuityDomesticStress,
   preparedArcHandoffContinuityExportScale,
   preparedArcHandoffContinuityGiNotes,
   preparedArcHandoffContinuityWorldEvent,
 } from './prepared-arc-handoff-continuity.ts';
-import {
   computeBilateralScaleLoopSealGateSnapshot,
   bilateralScaleLoopSealGateDomesticStressRelief,
   bilateralScaleLoopSealGateExportScale,
   bilateralScaleLoopSealGateGiNotes,
   bilateralScaleLoopSealGateWorldEvent,
 } from './bilateral-scale-loop-seal-gate.ts';
-import {
   computeSealedScaleLoopContinuitySnapshot,
   sealedScaleLoopContinuityDomesticStress,
   sealedScaleLoopContinuityExportScale,
   sealedScaleLoopContinuityGiNotes,
   sealedScaleLoopContinuityWorldEvent,
 } from './sealed-scale-loop-continuity.ts';
-import {
   computeBilateralScaleWaveReentryGateSnapshot,
   bilateralScaleWaveReentryGateDomesticStressRelief,
   bilateralScaleWaveReentryGateExportScale,
   bilateralScaleWaveReentryGateGiNotes,
   bilateralScaleWaveReentryGateWorldEvent,
 } from './bilateral-scale-wave-reentry-gate.ts';
-import {
   computeScaleWaveReentryContinuitySnapshot,
   scaleWaveReentryContinuityDomesticStress,
   scaleWaveReentryContinuityExportScale,
   scaleWaveReentryContinuityGiNotes,
   scaleWaveReentryContinuityWorldEvent,
 } from './scale-wave-reentry-continuity.ts';
-import {
   computeBilateralNextWavePrimingGateSnapshot,
   bilateralNextWavePrimingGateDomesticStressRelief,
   bilateralNextWavePrimingGateExportScale,
   bilateralNextWavePrimingGateGiNotes,
   bilateralNextWavePrimingGateWorldEvent,
 } from './bilateral-next-wave-priming-gate.ts';
-import {
   computeNextWavePrimingContinuitySnapshot,
   nextWavePrimingContinuityDomesticStress,
   nextWavePrimingContinuityExportScale,
   nextWavePrimingContinuityGiNotes,
   nextWavePrimingContinuityWorldEvent,
 } from './next-wave-priming-continuity.ts';
-import {
   computeBilateralPrimedWaveLaunchGateSnapshot,
   bilateralPrimedWaveLaunchGateDomesticStressRelief,
   bilateralPrimedWaveLaunchGateExportScale,
   bilateralPrimedWaveLaunchGateGiNotes,
   bilateralPrimedWaveLaunchGateWorldEvent,
 } from './bilateral-primed-wave-launch-gate.ts';
-import {
   computePrimedWaveLaunchContinuitySnapshot,
   primedWaveLaunchContinuityDomesticStress,
   primedWaveLaunchContinuityExportScale,
   primedWaveLaunchContinuityGiNotes,
   primedWaveLaunchContinuityWorldEvent,
 } from './primed-wave-launch-continuity.ts';
-import {
   computeBilateralLaunchedWaveSustainGateSnapshot,
   bilateralLaunchedWaveSustainGateDomesticStressRelief,
   bilateralLaunchedWaveSustainGateExportScale,
   bilateralLaunchedWaveSustainGateGiNotes,
   bilateralLaunchedWaveSustainGateWorldEvent,
 } from './bilateral-launched-wave-sustain-gate.ts';
-import {
   computeLaunchedWaveSustainContinuitySnapshot,
   launchedWaveSustainContinuityDomesticStress,
   launchedWaveSustainContinuityExportScale,
   launchedWaveSustainContinuityGiNotes,
   launchedWaveSustainContinuityWorldEvent,
 } from './launched-wave-sustain-continuity.ts';
-import {
   computeBilateralSustainedWaveThroughputGateSnapshot,
   bilateralSustainedWaveThroughputGateDomesticStressRelief,
   bilateralSustainedWaveThroughputGateExportScale,
   bilateralSustainedWaveThroughputGateGiNotes,
   bilateralSustainedWaveThroughputGateWorldEvent,
 } from './bilateral-sustained-wave-throughput-gate.ts';
-import {
   computeSustainedWaveThroughputContinuitySnapshot,
   sustainedWaveThroughputContinuityDomesticStress,
   sustainedWaveThroughputContinuityExportScale,
   sustainedWaveThroughputContinuityGiNotes,
   sustainedWaveThroughputContinuityWorldEvent,
 } from './sustained-wave-throughput-continuity.ts';
-import {
   computeBilateralClearedWaveHandoffGateSnapshot,
   bilateralClearedWaveHandoffGateDomesticStressRelief,
   bilateralClearedWaveHandoffGateExportScale,
   bilateralClearedWaveHandoffGateGiNotes,
   bilateralClearedWaveHandoffGateWorldEvent,
 } from './bilateral-cleared-wave-handoff-gate.ts';
-import {
   computeClearedWaveHandoffContinuitySnapshot,
   clearedWaveHandoffContinuityDomesticStress,
   clearedWaveHandoffContinuityExportScale,
   clearedWaveHandoffContinuityGiNotes,
   clearedWaveHandoffContinuityWorldEvent,
 } from './cleared-wave-handoff-continuity.ts';
-import {
   computeBilateralHandedWaveCyclePrimingGateSnapshot,
   bilateralHandedWaveCyclePrimingGateDomesticStressRelief,
   bilateralHandedWaveCyclePrimingGateExportScale,
   bilateralHandedWaveCyclePrimingGateGiNotes,
   bilateralHandedWaveCyclePrimingGateWorldEvent,
 } from './bilateral-handed-wave-cycle-priming-gate.ts';
-import {
   computeHandedWaveCyclePrimingContinuitySnapshot,
   handedWaveCyclePrimingContinuityDomesticStress,
   handedWaveCyclePrimingContinuityExportScale,
   handedWaveCyclePrimingContinuityGiNotes,
   handedWaveCyclePrimingContinuityWorldEvent,
 } from './handed-wave-cycle-priming-continuity.ts';
-import {
   computeBilateralPrimedHandoffArcOpeningGateSnapshot,
   bilateralPrimedHandoffArcOpeningGateDomesticStressRelief,
   bilateralPrimedHandoffArcOpeningGateExportScale,
   bilateralPrimedHandoffArcOpeningGateGiNotes,
   bilateralPrimedHandoffArcOpeningGateWorldEvent,
 } from './bilateral-primed-handoff-arc-opening-gate.ts';
-import {
   computePrimedHandoffArcOpeningContinuitySnapshot,
   primedHandoffArcOpeningContinuityDomesticStress,
   primedHandoffArcOpeningContinuityExportScale,
   primedHandoffArcOpeningContinuityGiNotes,
   primedHandoffArcOpeningContinuityWorldEvent,
 } from './primed-handoff-arc-opening-continuity.ts';
-import {
   computeBilateralEngagedArcForwardAdmissionGateSnapshot,
   bilateralEngagedArcForwardAdmissionGateDomesticStressRelief,
   bilateralEngagedArcForwardAdmissionGateExportScale,
   bilateralEngagedArcForwardAdmissionGateGiNotes,
   bilateralEngagedArcForwardAdmissionGateWorldEvent,
 } from './bilateral-engaged-arc-forward-admission-gate.ts';
-import {
   computeEngagedArcForwardAdmissionContinuitySnapshot,
   engagedArcForwardAdmissionContinuityDomesticStress,
   engagedArcForwardAdmissionContinuityExportScale,
   engagedArcForwardAdmissionContinuityGiNotes,
   engagedArcForwardAdmissionContinuityWorldEvent,
 } from './engaged-arc-forward-admission-continuity.ts';
-import {
   computeBilateralAdmittedForwardArcSustainGateSnapshot,
   bilateralAdmittedForwardArcSustainGateDomesticStressRelief,
   bilateralAdmittedForwardArcSustainGateExportScale,
   bilateralAdmittedForwardArcSustainGateGiNotes,
   bilateralAdmittedForwardArcSustainGateWorldEvent,
 } from './bilateral-admitted-forward-arc-sustain-gate.ts';
-import {
   computeSustainedAdmittedForwardArcContinuitySnapshot,
   sustainedAdmittedForwardArcContinuityDomesticStress,
   sustainedAdmittedForwardArcContinuityExportScale,
   sustainedAdmittedForwardArcContinuityGiNotes,
   sustainedAdmittedForwardArcContinuityWorldEvent,
 } from './sustained-admitted-forward-arc-continuity.ts';
-import {
   computeBilateralSustainedForwardArcHandoffGateSnapshot,
   bilateralSustainedForwardArcHandoffGateDomesticStressRelief,
   bilateralSustainedForwardArcHandoffGateExportScale,
   bilateralSustainedForwardArcHandoffGateGiNotes,
   bilateralSustainedForwardArcHandoffGateWorldEvent,
 } from './bilateral-sustained-forward-arc-handoff-gate.ts';
-import {
   computeClearedForwardArcHandoffContinuitySnapshot,
   clearedForwardArcHandoffContinuityDomesticStress,
   clearedForwardArcHandoffContinuityExportScale,
   clearedForwardArcHandoffContinuityGiNotes,
   clearedForwardArcHandoffContinuityWorldEvent,
 } from './cleared-forward-arc-handoff-continuity.ts';
-import {
   computeBilateralClearedForwardArcReadinessGateSnapshot,
   bilateralClearedForwardArcReadinessGateDomesticStressRelief,
   bilateralClearedForwardArcReadinessGateExportScale,
   bilateralClearedForwardArcReadinessGateGiNotes,
   bilateralClearedForwardArcReadinessGateWorldEvent,
 } from './bilateral-cleared-forward-arc-readiness-gate.ts';
-import {
   computeSustainedClearedForwardArcContinuitySnapshot,
   sustainedClearedForwardArcContinuityDomesticStress,
   sustainedClearedForwardArcContinuityExportScale,
   sustainedClearedForwardArcContinuityGiNotes,
   sustainedClearedForwardArcContinuityWorldEvent,
 } from './sustained-cleared-forward-arc-continuity.ts';
-import {
   computeBilateralLaunchedClearedForwardArcHandoffGateSnapshot,
   bilateralLaunchedClearedForwardArcHandoffGateDomesticStressRelief,
   bilateralLaunchedClearedForwardArcHandoffGateExportScale,
   bilateralLaunchedClearedForwardArcHandoffGateGiNotes,
   bilateralLaunchedClearedForwardArcHandoffGateWorldEvent,
 } from './bilateral-launched-cleared-forward-arc-handoff-gate.ts';
-import {
   computeLaunchedClearedForwardArcHandoffContinuitySnapshot,
   launchedClearedForwardArcHandoffContinuityDomesticStress,
   launchedClearedForwardArcHandoffContinuityExportScale,
   launchedClearedForwardArcHandoffContinuityGiNotes,
   launchedClearedForwardArcHandoffContinuityWorldEvent,
 } from './launched-cleared-forward-arc-handoff-continuity.ts';
-import {
   computeBilateralSettledLaunchedClearedForwardArcReadinessGateSnapshot,
   bilateralSettledLaunchedClearedForwardArcReadinessGateDomesticStressRelief,
   bilateralSettledLaunchedClearedForwardArcReadinessGateExportScale,
   bilateralSettledLaunchedClearedForwardArcReadinessGateGiNotes,
   bilateralSettledLaunchedClearedForwardArcReadinessGateWorldEvent,
 } from './bilateral-settled-launched-cleared-forward-arc-readiness-gate.ts';
-import {
+  computeSettledLaunchedClearedForwardArcHandoffContinuitySnapshot,
+  settledLaunchedClearedForwardArcHandoffContinuityDomesticStress,
+  settledLaunchedClearedForwardArcHandoffContinuityExportScale,
+  settledLaunchedClearedForwardArcHandoffContinuityGiNotes,
+  settledLaunchedClearedForwardArcHandoffContinuityWorldEvent,
+} from './settled-launched-cleared-forward-arc-handoff-continuity.ts';
+  computeBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSnapshot,
+  bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateDomesticStressRelief,
+  bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateExportScale,
+  bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateGiNotes,
+  bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateWorldEvent,
+} from './bilateral-certified-settled-launched-cleared-forward-arc-handoff-gate.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
   mergePartnerDeltas,
 } from './trade-agreements.ts';
-import type { GTELPartnerMarket, GTELTurnInput, GTELTurnResult } from './types.ts';
-import { gtelClamp, gtelHash, gtelNum } from './util.ts';
-import {
   applyScheduledShocks,
   deriveShockModifiers,
   getWorldTradeShockDefinition,
@@ -9689,6 +9525,42 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     worldEvents.push(settledLaunchedClearedForwardArcReadinessEvent);
   }
 
+  const settledLaunchedClearedForwardArcHandoffContinuityStep =
+    computeSettledLaunchedClearedForwardArcHandoffContinuitySnapshot({
+      bilateralSettledLaunchedClearedForwardArcReadinessGate,
+      launchedClearedForwardArcHandoffContinuity,
+      persisted,
+    });
+  persisted = settledLaunchedClearedForwardArcHandoffContinuityStep.persisted;
+  const settledLaunchedClearedForwardArcHandoffContinuity =
+    settledLaunchedClearedForwardArcHandoffContinuityStep.snapshot;
+  const settledLaunchedClearedForwardArcHandoffContinuityEvent =
+    settledLaunchedClearedForwardArcHandoffContinuityWorldEvent(
+      settledLaunchedClearedForwardArcHandoffContinuity,
+      turn,
+    );
+  if (settledLaunchedClearedForwardArcHandoffContinuityEvent) {
+    worldEvents.push(settledLaunchedClearedForwardArcHandoffContinuityEvent);
+  }
+
+  const certifiedSettledLaunchedClearedForwardArcHandoffStep =
+    computeBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSnapshot({
+      settledLaunchedClearedForwardArcHandoffContinuity,
+      bilateralSettledLaunchedClearedForwardArcReadinessGate,
+      persisted,
+    });
+  persisted = certifiedSettledLaunchedClearedForwardArcHandoffStep.persisted;
+  const bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGate =
+    certifiedSettledLaunchedClearedForwardArcHandoffStep.snapshot;
+  const certifiedSettledLaunchedClearedForwardArcHandoffEvent =
+    bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateWorldEvent(
+      bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGate,
+      turn,
+    );
+  if (certifiedSettledLaunchedClearedForwardArcHandoffEvent) {
+    worldEvents.push(certifiedSettledLaunchedClearedForwardArcHandoffEvent);
+  }
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -9781,6 +9653,12 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         launchedClearedForwardArcHandoffContinuityExportScale(launchedClearedForwardArcHandoffContinuity) *
         bilateralSettledLaunchedClearedForwardArcReadinessGateExportScale(
           bilateralSettledLaunchedClearedForwardArcReadinessGate,
+        ) *
+        settledLaunchedClearedForwardArcHandoffContinuityExportScale(
+          settledLaunchedClearedForwardArcHandoffContinuity,
+        ) *
+        bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateExportScale(
+          bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGate,
         ) *
         10,
     ) / 10;
@@ -9882,6 +9760,12 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       launchedClearedForwardArcHandoffContinuityDomesticStress(launchedClearedForwardArcHandoffContinuity) +
       bilateralSettledLaunchedClearedForwardArcReadinessGateDomesticStressRelief(
         bilateralSettledLaunchedClearedForwardArcReadinessGate,
+      ) +
+      settledLaunchedClearedForwardArcHandoffContinuityDomesticStress(
+        settledLaunchedClearedForwardArcHandoffContinuity,
+      ) +
+      bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateDomesticStressRelief(
+        bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGate,
       ) +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
@@ -10039,6 +9923,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.bilateralLaunchedClearedForwardArcHandoffGateSmoothing,
     persisted.launchedClearedForwardArcHandoffContinuitySmoothing,
     persisted.bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing,
+    persisted.settledLaunchedClearedForwardArcHandoffContinuitySmoothing,
+    persisted.bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -10183,6 +10069,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     bilateralLaunchedClearedForwardArcHandoffGate,
     launchedClearedForwardArcHandoffContinuity,
     bilateralSettledLaunchedClearedForwardArcReadinessGate,
+    settledLaunchedClearedForwardArcHandoffContinuity,
+    bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGate,
     inputHash,
   };
 
@@ -10312,492 +10200,397 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
       state.bilateralSettledLaunchedClearedForwardArcReadinessGate,
     ),
   );
+  lines.push(
+    ...settledLaunchedClearedForwardArcHandoffContinuityGiNotes(state.settledLaunchedClearedForwardArcHandoffContinuity),
+  );
+  lines.push(
+    ...bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateGiNotes(
+      state.bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGate,
+    ),
+  );
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
   return lines;
 }
 
+
 // --- source: self-tests.ts ---
-import { createEmptyGTELPersisted } from './persist.ts';
-import {
   createTradeAgreementFromTemplate,
   deriveTradeAgreementModifiers,
   ratifyTradeAgreement,
 } from './trade-agreements.ts';
-import { advanceGlobalTradeEconomyTurn } from './trade-turn.ts';
-import { applyGlobalTradeHouseholdOverrides } from './household-bridge.ts';
-import { activateWorldTradeShock, scheduledShockIdForTurn } from './world-shocks.ts';
-import { advancePartnerSanctions, deriveSanctionModifiers } from './sanctions.ts';
-import { advancePartnerTrustScores, deriveTrustAccessModifiers } from './partner-trust.ts';
-import { autoTradePolicyAdjustments } from './trade-policy.ts';
-import { advanceTradeDisputes, openTradeDispute } from './trade-disputes.ts';
-import { advanceTradeComplianceRecord } from './trade-compliance.ts';
-import { computeLogisticsStress } from './export-logistics.ts';
-import { computeTradeBalanceSnapshot } from './trade-balance.ts';
-import { computeImportDependencySnapshot, createEmptyImportDependencySnapshot, importDependencyConsumerPressure } from './import-dependency.ts';
-import { advanceDiplomaticEngagement, deriveEngagementPartnerModifiers } from './diplomatic-engagement.ts';
-import { computeTradeFinanceSnapshot } from './trade-finance.ts';
-import {
   computeMarketDiversificationSnapshot,
   deriveDiversificationPartnerModifiers,
 } from './market-diversification.ts';
-import { computeTermsOfTradeSnapshot, termsOfTradeHouseholdModifier } from './terms-of-trade.ts';
-import {
   computeSupplyChainResilienceSnapshot,
   createEmptySupplyChainResilienceSnapshot,
   supplyChainResilienceExportScale,
 } from './supply-chain-resilience.ts';
-import { computeForeignExchangeSnapshot } from './foreign-exchange-pressure.ts';
-import {
   computeTradeRetaliationSnapshot,
   createEmptyTradeRetaliationSnapshot,
   deriveRetaliationPartnerModifiers,
 } from './trade-retaliation.ts';
-import {
   computeTradeDeescalationSnapshot,
   createEmptyTradeDeescalationSnapshot,
   deriveDeescalationPartnerModifiers,
 } from './trade-deescalation.ts';
-import {
   computeExportCapacitySnapshot,
   createEmptyExportCapacitySnapshot,
   exportCapacityExportScale,
 } from './export-capacity-allocation.ts';
-import {
   computeTradeReconciliationSnapshot,
   createEmptyTradeReconciliationSnapshot,
   deriveReconciliationPartnerModifiers,
 } from './trade-reconciliation.ts';
-import { computeMaritimeRiskSnapshot, createEmptyMaritimeRiskSnapshot, maritimeRiskExportScale } from './maritime-risk-premium.ts';
-import {
   computePreferentialUtilizationSnapshot,
   createEmptyPreferentialUtilizationSnapshot,
   preferentialUtilizationExportScale,
 } from './preferential-access-utilization.ts';
-import {
   computeTradeEnforcementSnapshot,
   createEmptyTradeEnforcementSnapshot,
   deriveEnforcementPartnerModifiers,
   enforcementExportScale,
 } from './trade-enforcement-intensity.ts';
-import {
   computeExportInsuranceStackSnapshot,
   createEmptyExportInsuranceStackSnapshot,
   exportInsuranceStackExportScale,
 } from './export-credit-insurance-stack.ts';
-import {
   computePartnerAccessRestorationSnapshot,
   createEmptyPartnerAccessRestorationSnapshot,
   deriveAccessRestorationPartnerModifiers,
 } from './partner-access-restoration.ts';
-import {
   computeSanctionsSpilloverSnapshot,
   deriveSanctionsSpilloverPartnerModifiers,
   sanctionsSpilloverExportScale,
 } from './sanctions-spillover-depth.ts';
-import {
   computeTradeCorridorResilienceSnapshot,
   createEmptyTradeCorridorResilienceSnapshot,
   tradeCorridorExportScale,
 } from './trade-corridor-resilience.ts';
-import {
   computeTradeFxHedgingSnapshot,
   createEmptyTradeFxHedgingSnapshot,
   tradeFxHedgingExportScale,
 } from './trade-fx-hedging.ts';
-import {
   computeImportLanePressureSnapshot,
   createEmptyImportLanePressureSnapshot,
   importLanePressureExportScale,
 } from './import-lane-pressure.ts';
-import {
   computeDiplomaticTradeCoherenceSnapshot,
   createEmptyDiplomaticTradeCoherenceSnapshot,
   diplomaticTradeCoherenceExportScale,
 } from './diplomatic-trade-coherence.ts';
-import {
   computeTradeBalanceStabilizationSnapshot,
   tradeBalanceStabilizationExportScale,
 } from './trade-balance-stabilization.ts';
-import {
   computeTradeCommitmentPipelineSnapshot,
   createEmptyTradeCommitmentPipelineSnapshot,
   exportCommitmentPipelineExportScale,
 } from './export-commitment-pipeline.ts';
-import {
   computeTradeShockAbsorptionSnapshot,
   createEmptyTradeShockAbsorptionSnapshot,
   tradeShockAbsorptionExportScale,
 } from './trade-shock-absorption.ts';
-import {
   computeImportCommitmentPipelineSnapshot,
   createEmptyImportCommitmentPipelineSnapshot,
   importCommitmentPipelineExportScale,
 } from './import-commitment-pipeline.ts';
-import {
   computeTradeFlowCohesionSnapshot,
   createEmptyTradeFlowCohesionSnapshot,
   tradeFlowCohesionExportScale,
 } from './trade-flow-cohesion.ts';
-import {
   computeTradeThroughputOrchestrationSnapshot,
   createEmptyTradeThroughputOrchestrationSnapshot,
   tradeThroughputOrchestrationExportScale,
 } from './trade-throughput-orchestration.ts';
-import {
   computeCommitmentLedgerHarmonizationSnapshot,
   createEmptyCommitmentLedgerHarmonizationSnapshot,
   commitmentLedgerHarmonizationExportScale,
 } from './commitment-ledger-harmonization.ts';
-import {
   computeBilateralCargoSchedulingSnapshot,
   createEmptyBilateralCargoSchedulingSnapshot,
   bilateralCargoSchedulingExportScale,
 } from './bilateral-cargo-scheduling.ts';
-import {
   computeCommitmentTurnCloseoutSnapshot,
   createEmptyCommitmentTurnCloseoutSnapshot,
   commitmentTurnCloseoutExportScale,
 } from './commitment-turn-closeout.ts';
-import {
   computeForwardSlotRolloverSnapshot,
   createEmptyForwardSlotRolloverSnapshot,
   forwardSlotRolloverExportScale,
 } from './forward-slot-rollover.ts';
-import {
   computeBilateralSettlementReconciliationSnapshot,
   createEmptyBilateralSettlementReconciliationSnapshot,
   bilateralSettlementReconciliationExportScale,
 } from './bilateral-settlement-reconciliation.ts';
-import {
   computeTradeSettlementContinuitySnapshot,
   createEmptyTradeSettlementContinuitySnapshot,
   tradeSettlementContinuityExportScale,
 } from './trade-settlement-continuity.ts';
-import {
   computeForwardBookAnchorStabilizationSnapshot,
   createEmptyForwardBookAnchorStabilizationSnapshot,
   forwardBookAnchorStabilizationExportScale,
 } from './forward-book-anchor-stabilization.ts';
-import {
   computeAnchoredBookReadinessSnapshot,
   createEmptyAnchoredBookReadinessSnapshot,
   anchoredBookReadinessExportScale,
 } from './anchored-book-readiness.ts';
-import {
   computeBilateralThroughputCertificationSnapshot,
   createEmptyBilateralThroughputCertificationSnapshot,
   bilateralThroughputCertificationExportScale,
 } from './bilateral-throughput-certification.ts';
-import {
   computeCertifiedThroughputSustainmentSnapshot,
   createEmptyCertifiedThroughputSustainmentSnapshot,
   certifiedThroughputSustainmentExportScale,
 } from './certified-throughput-sustainment.ts';
-import {
   computeBilateralCapacityHandoffGateSnapshot,
   createEmptyBilateralCapacityHandoffGateSnapshot,
   bilateralCapacityHandoffGateExportScale,
 } from './bilateral-capacity-handoff-gate.ts';
-import {
   computeCapacityHandoffAbsorptionSnapshot,
   createEmptyCapacityHandoffAbsorptionSnapshot,
   capacityHandoffAbsorptionExportScale,
 } from './capacity-handoff-absorption.ts';
-import {
   computeBilateralTradeWindowContinuitySnapshot,
   createEmptyBilateralTradeWindowContinuitySnapshot,
   bilateralTradeWindowContinuityExportScale,
 } from './bilateral-trade-window-continuity.ts';
-import {
   computeTradeCycleSealVerificationSnapshot,
   createEmptyTradeCycleSealVerificationSnapshot,
   tradeCycleSealVerificationExportScale,
 } from './trade-cycle-seal-verification.ts';
-import {
   computeBilateralCapacityRenewalGateSnapshot,
   createEmptyBilateralCapacityRenewalGateSnapshot,
   bilateralCapacityRenewalGateExportScale,
 } from './bilateral-capacity-renewal-gate.ts';
-import {
   computeCapacityRenewalPrimingSnapshot,
   createEmptyCapacityRenewalPrimingSnapshot,
   capacityRenewalPrimingExportScale,
 } from './capacity-renewal-priming.ts';
-import {
   computeBilateralCycleReentryGateSnapshot,
   createEmptyBilateralCycleReentryGateSnapshot,
   bilateralCycleReentryGateExportScale,
 } from './bilateral-cycle-reentry-gate.ts';
-import {
   computeCycleReentryStabilizationSnapshot,
   createEmptyCycleReentryStabilizationSnapshot,
   cycleReentryStabilizationExportScale,
 } from './cycle-reentry-stabilization.ts';
-import {
   computeBilateralLoopResumptionGateSnapshot,
   createEmptyBilateralLoopResumptionGateSnapshot,
   bilateralLoopResumptionGateExportScale,
 } from './bilateral-loop-resumption-gate.ts';
-import {
   computeResumedLoopContinuitySnapshot,
   createEmptyResumedLoopContinuitySnapshot,
   resumedLoopContinuityExportScale,
 } from './resumed-loop-continuity.ts';
-import {
   computeBilateralCycleRestartAcknowledgmentSnapshot,
   createEmptyBilateralCycleRestartAcknowledgmentSnapshot,
   bilateralCycleRestartAcknowledgmentExportScale,
 } from './bilateral-cycle-restart-acknowledgment.ts';
-import {
   computeAcknowledgedCyclePrimingSnapshot,
   createEmptyAcknowledgedCyclePrimingSnapshot,
   acknowledgedCyclePrimingExportScale,
 } from './acknowledged-cycle-priming.ts';
-import {
   computeBilateralCommitmentArcOpeningSnapshot,
   createEmptyBilateralCommitmentArcOpeningSnapshot,
   bilateralCommitmentArcOpeningExportScale,
 } from './bilateral-commitment-arc-opening.ts';
-import {
   computeCommitmentArcContinuitySnapshot,
   createEmptyCommitmentArcContinuitySnapshot,
   commitmentArcContinuityExportScale,
 } from './commitment-arc-continuity.ts';
-import {
   computeBilateralForwardCommitmentAdmissionSnapshot,
   createEmptyBilateralForwardCommitmentAdmissionSnapshot,
   bilateralForwardCommitmentAdmissionExportScale,
 } from './bilateral-forward-commitment-admission.ts';
-import {
   computeAdmittedForwardCommitmentContinuitySnapshot,
   createEmptyAdmittedForwardCommitmentContinuitySnapshot,
   admittedForwardCommitmentContinuityExportScale,
 } from './admitted-forward-commitment-continuity.ts';
-import {
   computeBilateralCommitmentWindowHandoffSnapshot,
   createEmptyBilateralCommitmentWindowHandoffSnapshot,
   bilateralCommitmentWindowHandoffExportScale,
 } from './bilateral-commitment-window-handoff.ts';
-import {
   computeCommitmentWindowSustainmentSnapshot,
   createEmptyCommitmentWindowSustainmentSnapshot,
   commitmentWindowSustainmentExportScale,
 } from './commitment-window-sustainment.ts';
-import {
   computeBilateralForwardCycleAdvanceGateSnapshot,
   createEmptyBilateralForwardCycleAdvanceGateSnapshot,
   bilateralForwardCycleAdvanceGateExportScale,
 } from './bilateral-forward-cycle-advance-gate.ts';
-import {
   computeForwardCycleAdvanceContinuitySnapshot,
   createEmptyForwardCycleAdvanceContinuitySnapshot,
   forwardCycleAdvanceContinuityExportScale,
 } from './forward-cycle-advance-continuity.ts';
-import {
   computeBilateralCommitmentLoopReopenGateSnapshot,
   createEmptyBilateralCommitmentLoopReopenGateSnapshot,
   bilateralCommitmentLoopReopenGateExportScale,
 } from './bilateral-commitment-loop-reopen-gate.ts';
-import {
   computeReopenedCommitmentLoopContinuitySnapshot,
   createEmptyReopenedCommitmentLoopContinuitySnapshot,
   reopenedCommitmentLoopContinuityExportScale,
 } from './reopened-commitment-loop-continuity.ts';
-import {
   computeBilateralForwardArcRechargeGateSnapshot,
   createEmptyBilateralForwardArcRechargeGateSnapshot,
   bilateralForwardArcRechargeGateExportScale,
 } from './bilateral-forward-arc-recharge-gate.ts';
-import {
   computeForwardArcRechargeContinuitySnapshot,
   createEmptyForwardArcRechargeContinuitySnapshot,
   forwardArcRechargeContinuityExportScale,
 } from './forward-arc-recharge-continuity.ts';
-import {
   computeBilateralRenewalArcPrimingGateSnapshot,
   createEmptyBilateralRenewalArcPrimingGateSnapshot,
   bilateralRenewalArcPrimingGateExportScale,
 } from './bilateral-renewal-arc-priming-gate.ts';
-import {
   computeRenewalArcPrimingContinuitySnapshot,
   createEmptyRenewalArcPrimingContinuitySnapshot,
   renewalArcPrimingContinuityExportScale,
 } from './renewal-arc-priming-continuity.ts';
-import {
   computeBilateralNextArcOpenPrepGateSnapshot,
   createEmptyBilateralNextArcOpenPrepGateSnapshot,
   bilateralNextArcOpenPrepGateExportScale,
 } from './bilateral-next-arc-open-prep-gate.ts';
-import {
   computeNextArcOpenPrepContinuitySnapshot,
   createEmptyNextArcOpenPrepContinuitySnapshot,
   nextArcOpenPrepContinuityExportScale,
 } from './next-arc-open-prep-continuity.ts';
-import {
   computeBilateralPreparedArcOpeningHandoffSnapshot,
   createEmptyBilateralPreparedArcOpeningHandoffSnapshot,
   bilateralPreparedArcOpeningHandoffExportScale,
 } from './bilateral-prepared-arc-opening-handoff.ts';
-import {
   computePreparedArcHandoffContinuitySnapshot,
   createEmptyPreparedArcHandoffContinuitySnapshot,
   preparedArcHandoffContinuityExportScale,
 } from './prepared-arc-handoff-continuity.ts';
-import {
   computeBilateralScaleLoopSealGateSnapshot,
   createEmptyBilateralScaleLoopSealGateSnapshot,
   bilateralScaleLoopSealGateExportScale,
 } from './bilateral-scale-loop-seal-gate.ts';
-import {
   computeSealedScaleLoopContinuitySnapshot,
   createEmptySealedScaleLoopContinuitySnapshot,
   sealedScaleLoopContinuityExportScale,
 } from './sealed-scale-loop-continuity.ts';
-import {
   computeBilateralScaleWaveReentryGateSnapshot,
   createEmptyBilateralScaleWaveReentryGateSnapshot,
   bilateralScaleWaveReentryGateExportScale,
 } from './bilateral-scale-wave-reentry-gate.ts';
-import {
   computeScaleWaveReentryContinuitySnapshot,
   createEmptyScaleWaveReentryContinuitySnapshot,
   scaleWaveReentryContinuityExportScale,
 } from './scale-wave-reentry-continuity.ts';
-import {
   computeBilateralNextWavePrimingGateSnapshot,
   createEmptyBilateralNextWavePrimingGateSnapshot,
   bilateralNextWavePrimingGateExportScale,
 } from './bilateral-next-wave-priming-gate.ts';
-import {
   computeNextWavePrimingContinuitySnapshot,
   createEmptyNextWavePrimingContinuitySnapshot,
   nextWavePrimingContinuityExportScale,
 } from './next-wave-priming-continuity.ts';
-import {
   computeBilateralPrimedWaveLaunchGateSnapshot,
   createEmptyBilateralPrimedWaveLaunchGateSnapshot,
   bilateralPrimedWaveLaunchGateExportScale,
 } from './bilateral-primed-wave-launch-gate.ts';
-import {
   computePrimedWaveLaunchContinuitySnapshot,
   createEmptyPrimedWaveLaunchContinuitySnapshot,
   primedWaveLaunchContinuityExportScale,
 } from './primed-wave-launch-continuity.ts';
-import {
   computeBilateralLaunchedWaveSustainGateSnapshot,
   createEmptyBilateralLaunchedWaveSustainGateSnapshot,
   bilateralLaunchedWaveSustainGateExportScale,
 } from './bilateral-launched-wave-sustain-gate.ts';
-import {
   computeLaunchedWaveSustainContinuitySnapshot,
   createEmptyLaunchedWaveSustainContinuitySnapshot,
   launchedWaveSustainContinuityExportScale,
 } from './launched-wave-sustain-continuity.ts';
-import {
   computeBilateralSustainedWaveThroughputGateSnapshot,
   createEmptyBilateralSustainedWaveThroughputGateSnapshot,
   bilateralSustainedWaveThroughputGateExportScale,
 } from './bilateral-sustained-wave-throughput-gate.ts';
-import {
   computeSustainedWaveThroughputContinuitySnapshot,
   createEmptySustainedWaveThroughputContinuitySnapshot,
   sustainedWaveThroughputContinuityExportScale,
 } from './sustained-wave-throughput-continuity.ts';
-import {
   computeBilateralClearedWaveHandoffGateSnapshot,
   createEmptyBilateralClearedWaveHandoffGateSnapshot,
   bilateralClearedWaveHandoffGateExportScale,
 } from './bilateral-cleared-wave-handoff-gate.ts';
-import {
   computeClearedWaveHandoffContinuitySnapshot,
   createEmptyClearedWaveHandoffContinuitySnapshot,
   clearedWaveHandoffContinuityExportScale,
 } from './cleared-wave-handoff-continuity.ts';
-import {
   computeBilateralHandedWaveCyclePrimingGateSnapshot,
   createEmptyBilateralHandedWaveCyclePrimingGateSnapshot,
   bilateralHandedWaveCyclePrimingGateExportScale,
 } from './bilateral-handed-wave-cycle-priming-gate.ts';
-import {
   computeHandedWaveCyclePrimingContinuitySnapshot,
   createEmptyHandedWaveCyclePrimingContinuitySnapshot,
   handedWaveCyclePrimingContinuityExportScale,
 } from './handed-wave-cycle-priming-continuity.ts';
-import {
   computeBilateralPrimedHandoffArcOpeningGateSnapshot,
   createEmptyBilateralPrimedHandoffArcOpeningGateSnapshot,
   bilateralPrimedHandoffArcOpeningGateExportScale,
 } from './bilateral-primed-handoff-arc-opening-gate.ts';
-import {
   computePrimedHandoffArcOpeningContinuitySnapshot,
   createEmptyPrimedHandoffArcOpeningContinuitySnapshot,
   primedHandoffArcOpeningContinuityExportScale,
 } from './primed-handoff-arc-opening-continuity.ts';
-import {
   computeBilateralEngagedArcForwardAdmissionGateSnapshot,
   createEmptyBilateralEngagedArcForwardAdmissionGateSnapshot,
   bilateralEngagedArcForwardAdmissionGateExportScale,
 } from './bilateral-engaged-arc-forward-admission-gate.ts';
-import {
   computeEngagedArcForwardAdmissionContinuitySnapshot,
   createEmptyEngagedArcForwardAdmissionContinuitySnapshot,
   engagedArcForwardAdmissionContinuityExportScale,
 } from './engaged-arc-forward-admission-continuity.ts';
-import {
   computeBilateralAdmittedForwardArcSustainGateSnapshot,
   createEmptyBilateralAdmittedForwardArcSustainGateSnapshot,
   bilateralAdmittedForwardArcSustainGateExportScale,
 } from './bilateral-admitted-forward-arc-sustain-gate.ts';
-import {
   computeSustainedAdmittedForwardArcContinuitySnapshot,
   createEmptySustainedAdmittedForwardArcContinuitySnapshot,
   sustainedAdmittedForwardArcContinuityExportScale,
 } from './sustained-admitted-forward-arc-continuity.ts';
-import {
   computeBilateralSustainedForwardArcHandoffGateSnapshot,
   createEmptyBilateralSustainedForwardArcHandoffGateSnapshot,
   bilateralSustainedForwardArcHandoffGateExportScale,
 } from './bilateral-sustained-forward-arc-handoff-gate.ts';
-import {
   computeClearedForwardArcHandoffContinuitySnapshot,
   createEmptyClearedForwardArcHandoffContinuitySnapshot,
   clearedForwardArcHandoffContinuityExportScale,
 } from './cleared-forward-arc-handoff-continuity.ts';
-import {
   computeBilateralClearedForwardArcReadinessGateSnapshot,
   createEmptyBilateralClearedForwardArcReadinessGateSnapshot,
   bilateralClearedForwardArcReadinessGateExportScale,
 } from './bilateral-cleared-forward-arc-readiness-gate.ts';
-import {
   computeSustainedClearedForwardArcContinuitySnapshot,
   createEmptySustainedClearedForwardArcContinuitySnapshot,
   sustainedClearedForwardArcContinuityExportScale,
 } from './sustained-cleared-forward-arc-continuity.ts';
-import {
   computeBilateralLaunchedClearedForwardArcHandoffGateSnapshot,
   createEmptyBilateralLaunchedClearedForwardArcHandoffGateSnapshot,
   bilateralLaunchedClearedForwardArcHandoffGateExportScale,
 } from './bilateral-launched-cleared-forward-arc-handoff-gate.ts';
-import {
   computeLaunchedClearedForwardArcHandoffContinuitySnapshot,
   createEmptyLaunchedClearedForwardArcHandoffContinuitySnapshot,
   launchedClearedForwardArcHandoffContinuityExportScale,
 } from './launched-cleared-forward-arc-handoff-continuity.ts';
-import {
   computeBilateralSettledLaunchedClearedForwardArcReadinessGateSnapshot,
   createEmptyBilateralSettledLaunchedClearedForwardArcReadinessGateSnapshot,
   bilateralSettledLaunchedClearedForwardArcReadinessGateExportScale,
 } from './bilateral-settled-launched-cleared-forward-arc-readiness-gate.ts';
-import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
-import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
-import {
+  computeSettledLaunchedClearedForwardArcHandoffContinuitySnapshot,
+  createEmptySettledLaunchedClearedForwardArcHandoffContinuitySnapshot,
+  settledLaunchedClearedForwardArcHandoffContinuityExportScale,
+} from './settled-launched-cleared-forward-arc-handoff-continuity.ts';
+  computeBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSnapshot,
+  createEmptyBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSnapshot,
+  bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateExportScale,
+} from './bilateral-certified-settled-launched-cleared-forward-arc-handoff-gate.ts';
   validateScenarioShockCatalog,
   triggerCommodityShockScenario,
   COMMODITY_SHOCK_SCENARIOS,
 } from './commodity-shock-scenarios.ts';
-import { gtelAssert } from './util.ts';
 
 export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; failed: string[] } {
   const failed: string[] = [];
@@ -13486,6 +13279,70 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     );
   });
 
+  ok('settled launched cleared forward arc handoff continuity improves when readiness gate is ready', () => {
+    const readiness = {
+      ...createEmptyBilateralSettledLaunchedClearedForwardArcReadinessGateSnapshot(),
+      score: 0.95,
+      band: 'ready' as const,
+    };
+    const launched = {
+      ...createEmptyLaunchedClearedForwardArcHandoffContinuitySnapshot(),
+      score: 0.94,
+      band: 'settled' as const,
+    };
+    const settled = computeSettledLaunchedClearedForwardArcHandoffContinuitySnapshot({
+      bilateralSettledLaunchedClearedForwardArcReadinessGate: readiness,
+      launchedClearedForwardArcHandoffContinuity: launched,
+      persisted: {
+        ...createEmptyGTELPersisted(),
+        settledLaunchedClearedForwardArcHandoffContinuitySmoothing: 0.99,
+      },
+    }).snapshot;
+    const broken = computeSettledLaunchedClearedForwardArcHandoffContinuitySnapshot({
+      bilateralSettledLaunchedClearedForwardArcReadinessGate: { ...readiness, score: 0.11, band: 'withheld' },
+      launchedClearedForwardArcHandoffContinuity: { ...launched, score: 0.1, band: 'broken' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(settled.score > broken.score, 'expected settled launched handoff continuity when readiness ready');
+    gtelAssert(
+      settledLaunchedClearedForwardArcHandoffContinuityExportScale(settled) >=
+        settledLaunchedClearedForwardArcHandoffContinuityExportScale(broken),
+      'expected settled launched handoff continuity scale lift',
+    );
+  });
+
+  ok('certified settled launched cleared forward arc handoff gate improves when handoff continuity is settled', () => {
+    const continuity = {
+      ...createEmptySettledLaunchedClearedForwardArcHandoffContinuitySnapshot(),
+      score: 0.96,
+      band: 'settled' as const,
+    };
+    const readiness = {
+      ...createEmptyBilateralSettledLaunchedClearedForwardArcReadinessGateSnapshot(),
+      score: 0.93,
+      band: 'ready' as const,
+    };
+    const cleared = computeBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSnapshot({
+      settledLaunchedClearedForwardArcHandoffContinuity: continuity,
+      bilateralSettledLaunchedClearedForwardArcReadinessGate: readiness,
+      persisted: {
+        ...createEmptyGTELPersisted(),
+        bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing: 0.99,
+      },
+    }).snapshot;
+    const blocked = computeBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSnapshot({
+      settledLaunchedClearedForwardArcHandoffContinuity: { ...continuity, score: 0.11, band: 'broken' },
+      bilateralSettledLaunchedClearedForwardArcReadinessGate: { ...readiness, score: 0.09, band: 'withheld' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(cleared.score > blocked.score, 'expected certified settled launched handoff gate when continuity settled');
+    gtelAssert(
+      bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateExportScale(cleared) >=
+        bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateExportScale(blocked),
+      'expected certified settled launched cleared forward arc handoff scale lift',
+    );
+  });
+
   return { passed, failed };
 }
 
@@ -13493,5 +13350,6 @@ export function runAgent15ModuleSelfTests(): { passed: number; failed: string[];
   const r = runAgent15GlobalTradeLinkageSelfTests();
   return { ...r, total: r.passed + r.failed.length };
 }
+
 
 // OP10M_MODULE_END agent-15-trade
