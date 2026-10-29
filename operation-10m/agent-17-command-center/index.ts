@@ -99,6 +99,8 @@ export * from './planning/stewardship-index.ts';
 export * from './planning/steward-accord.ts';
 export * from './planning/fiduciary-index.ts';
 export * from './planning/trustee-accord.ts';
+export * from './planning/executorship-index.ts';
+export * from './planning/executor-accord.ts';
 export * from './planning/planning-orchestrator.ts';
 export * from './planning/ops-state.ts';
 export * from './evaluation/operations-evaluator.ts';

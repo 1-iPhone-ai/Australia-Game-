@@ -1084,6 +1084,29 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Breached fiduciary or recalled steward yields trusteeAccordBlocksFiduciary.',
     severity: 'major',
   },
+  {
+    id: 'G17-154',
+    title: 'Executorship index on planning depth',
+    category: 'telemetry',
+    acceptance:
+      'executorshipIndex reports executorshipScore 0–100 with empowered/pending/vacated band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-155',
+    title: 'Executor accord warrants complete',
+    category: 'telemetry',
+    acceptance: 'executorAccord exposes ≥5 warrants and executorScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-156',
+    title: 'Removed trustee vacates executor accord',
+    category: 'integration',
+    acceptance:
+      'Removed trustee or vacated executorship yields executorAccordBlocksTrustee.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

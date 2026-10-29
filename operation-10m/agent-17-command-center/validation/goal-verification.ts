@@ -361,6 +361,14 @@ import {
   trusteeAccordBlocksFiduciary,
 } from '../planning/trustee-accord.ts';
 import {
+  buildAgent17ExecutorshipIndex,
+  executorshipIndexBlocksExecutor,
+} from '../planning/executorship-index.ts';
+import {
+  buildAgent17ExecutorAccord,
+  executorAccordBlocksTrustee,
+} from '../planning/executor-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -2705,6 +2713,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const executorshipIndex = depthEval.snapshot.planningDepth?.executorshipIndex;
+  goalResults.push(
+    result(
+      'G17-154',
+      !!executorshipIndex &&
+        executorshipIndex.charges.length >= 5 &&
+        executorshipIndex.executorshipScore >= 0 &&
+        executorshipIndex.executorshipScore <= 100 &&
+        (executorshipIndex.band === 'empowered' ||
+          executorshipIndex.band === 'pending' ||
+          executorshipIndex.band === 'vacated'),
+      `charges=${executorshipIndex?.charges.length} score=${executorshipIndex?.executorshipScore}`
+    )
+  );
+
+  const executorAccord = depthEval.snapshot.planningDepth?.executorAccord;
+  goalResults.push(
+    result(
+      'G17-155',
+      !!executorAccord &&
+        executorAccord.warrants.length >= 5 &&
+        executorAccord.executorScore >= 0 &&
+        executorAccord.executorScore <= 100,
+      `warrants=${executorAccord?.warrants.length} score=${executorAccord?.executorScore}`
+    )
+  );
+
+  const vacatedExecutorship = buildAgent17ExecutorshipIndex({
+    trusteeAccord: removedTrustee,
+    fiduciaryIndex: breachedFiduciary,
+    stewardAccord: recalledSteward,
+  });
+  const dischargedExecutor = buildAgent17ExecutorAccord({
+    executorshipIndex: vacatedExecutorship,
+    trusteeAccord: removedTrustee,
+    fiduciaryIndex: breachedFiduciary,
+  });
+  goalResults.push(
+    result(
+      'G17-156',
+      trusteeAccordBlocksFiduciary(removedTrustee) ||
+        executorshipIndexBlocksExecutor(vacatedExecutorship) ||
+        executorAccordBlocksTrustee(dischargedExecutor),
+      `${vacatedExecutorship.band}/${dischargedExecutor.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -2888,6 +2943,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-151',
     'G17-152',
     'G17-153',
+    'G17-154',
+    'G17-155',
+    'G17-156',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
