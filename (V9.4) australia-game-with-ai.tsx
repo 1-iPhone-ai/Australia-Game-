@@ -18246,9 +18246,6 @@ export function resolveCurrentGamePhase(
   uiState: any,
   surfaceManagerState: GlobalUISurfaceManagerState
 ): StandardizedGamePhase {
-  if (uiState?.showStartScreen || gameState?.gameMode === 'start_screen' || gameState?.gameMode === 'menu' || gameState?.gameStarted === false) {
-    return uiState?.showCampaignSelect ? 'setup' : 'main_menu';
-  }
   if (surfaceManagerState?.activeBlockingModal === 'save_load_modal' || uiState?.showSaveLoadModal) {
     return 'save_load';
   }
@@ -18258,11 +18255,15 @@ export function resolveCurrentGamePhase(
   if (surfaceManagerState?.activeBlockingModal === 'approval_dialog' || uiState?.isApprovalWaiting) {
     return 'approval_waiting';
   }
-  if (uiState?.isPaused || gameState?.isPaused) {
-    return 'paused';
+  const lifecycle = deriveMatchLifecycleSnapshot(gameState, uiState);
+  if (lifecycle.phase === 'menu') {
+    return uiState?.showCampaignSelect ? 'setup' : 'main_menu';
   }
-  if (gameState?.isGameOver || uiState?.showEndGameModal) {
+  if (lifecycle.phase === 'completed') {
     return 'post_match';
+  }
+  if (lifecycle.phase === 'paused') {
+    return 'paused';
   }
   if (gameState?.isAiTurn || gameState?.currentActorId?.startsWith('ai_')) {
     return 'ai_turn';
@@ -27681,6 +27682,256 @@ export function mapGoalKindToPlanType(goal: TeamGoal, context: TeamAiContext): T
 // ============================================================================
 // SECTION 7: CORE GAMEPLAY SYSTEMS
 // ============================================================================
+
+// ---- O111 Agent 14: Match lifecycle (init / pause / restart / completion) -------------------------
+export type MatchLifecycleEventKind = 'match_start' | 'day_start' | 'day_end' | 'turn_start' | 'turn_end' | 'match_end';
+export type MatchLifecyclePhase = 'menu' | 'live' | 'paused' | 'completed';
+export type GameLifecycleCommandKind = 'init' | 'pause' | 'resume' | 'restart' | 'complete';
+
+export interface GameLifecycleUiSlice {
+  isPaused?: boolean;
+  showEndGameModal?: boolean;
+  showStartScreen?: boolean;
+  showCampaignSelect?: boolean;
+}
+
+export interface MatchLifecycleSnapshot {
+  phase: MatchLifecyclePhase;
+  isLiveMatch: boolean;
+  acceptsGameplayInput: boolean;
+  reason: string;
+}
+
+export interface GameLifecycleCommand {
+  kind: GameLifecycleCommandKind;
+  mode?: GameModeSelection;
+  winnerTeamId?: string | null;
+  completionReason?: string;
+}
+
+export interface GameLifecycleApplyResult {
+  ok: boolean;
+  reason?: string;
+  nextGameState?: Record<string, unknown>;
+  nextUiState?: Partial<GameLifecycleUiSlice>;
+  ledger?: { eventKind: MatchLifecycleEventKind; summary: string; details?: Record<string, unknown> };
+}
+
+export function deriveMatchLifecycleSnapshot(
+  gameState: any,
+  uiState?: GameLifecycleUiSlice | null
+): MatchLifecycleSnapshot {
+  const gs = gameState || {};
+  const ui = uiState || {};
+  const completed = gs.gameMode === 'end'
+    || Boolean(gs.gameOver)
+    || Boolean(gs.isGameOver)
+    || Boolean(ui.showEndGameModal);
+  if (completed) {
+    return { phase: 'completed', isLiveMatch: false, acceptsGameplayInput: false, reason: 'post-match' };
+  }
+  const menu = gs.gameMode === 'menu'
+    || gs.gameMode === 'start_screen'
+    || ui.showStartScreen
+    || ui.showCampaignSelect
+    || gs.gameStarted === false;
+  if (menu) {
+    return { phase: 'menu', isLiveMatch: false, acceptsGameplayInput: false, reason: 'pre-match' };
+  }
+  const paused = Boolean(gs.isPaused || ui.isPaused);
+  if (paused) {
+    return { phase: 'paused', isLiveMatch: true, acceptsGameplayInput: false, reason: 'user-paused' };
+  }
+  if (gs.gameMode === 'game') {
+    return { phase: 'live', isLiveMatch: true, acceptsGameplayInput: true, reason: 'live-match' };
+  }
+  return { phase: 'menu', isLiveMatch: false, acceptsGameplayInput: false, reason: 'idle' };
+}
+
+/** Canonical live-match probe for intent layers, Co-Pilot, and learning (includes user pause). */
+export function isMatchLiveForIntent(gameState: any, uiState?: GameLifecycleUiSlice | null): boolean {
+  return deriveMatchLifecycleSnapshot(gameState, uiState).isLiveMatch;
+}
+
+/** Settings hub availability: a started match that has not been sealed complete. */
+export function isMatchLiveForSettings(gameState: any): boolean {
+  const gs = gameState || {};
+  return gs.gameMode === 'game' && Boolean(gs.gameStarted) && !Boolean(gs.gameOver);
+}
+
+export function patchGameStateForMatchInit(mode: GameModeSelection): Record<string, unknown> {
+  return {
+    gameMode: 'game',
+    selectedMode: mode,
+    gameStarted: true,
+    gameOver: false,
+    isGameOver: false,
+    isPaused: false,
+    scenarioOutcome: null
+  };
+}
+
+export function patchGameStateForMatchCompletion(extra?: { winnerTeamId?: string | null }): Record<string, unknown> {
+  return {
+    gameMode: 'end',
+    gameStarted: true,
+    gameOver: true,
+    isGameOver: true,
+    isPaused: false,
+    matchWinnerTeamId: extra?.winnerTeamId ?? null
+  };
+}
+
+export function patchGameStateForMatchRestart(): Record<string, unknown> {
+  return {
+    gameStarted: false,
+    gameOver: false,
+    isGameOver: false,
+    isPaused: false,
+    scenarioOutcome: null,
+    matchWinnerTeamId: null
+  };
+}
+
+export function buildMatchLifecycleLedgerFields(
+  eventKind: MatchLifecycleEventKind,
+  gameState: any,
+  extra?: { winnerTeamId?: string | null; details?: Record<string, unknown> }
+): { summary: string; payload: Record<string, unknown> } {
+  const day = Math.max(1, Number(gameState?.day) || 1);
+  const turn = Math.max(0, Number(gameState?.turnCounter) || 0);
+  const summaryByKind: Record<MatchLifecycleEventKind, string> = {
+    match_start: 'Match started.',
+    day_start: `Day ${day} begins.`,
+    day_end: `Day ${day} ends.`,
+    turn_start: `Turn ${turn} begins.`,
+    turn_end: `Turn ${turn} ends.`,
+    match_end: extra?.winnerTeamId ? `Match ended — winner ${extra.winnerTeamId}.` : 'Match ended.'
+  };
+  return {
+    summary: summaryByKind[eventKind],
+    payload: {
+      category: 'match_lifecycle',
+      eventKind,
+      day,
+      turn,
+      winnerTeamId: extra?.winnerTeamId,
+      details: extra?.details
+    }
+  };
+}
+
+export function applyGameLifecycleCommand(
+  gameState: any,
+  uiState: GameLifecycleUiSlice | null | undefined,
+  command: GameLifecycleCommand
+): GameLifecycleApplyResult {
+  const snap = deriveMatchLifecycleSnapshot(gameState, uiState);
+  switch (command.kind) {
+    case 'init': {
+      if (snap.phase === 'live' || snap.phase === 'paused') {
+        return { ok: false, reason: 'Cannot init while a match is already live.' };
+      }
+      const mode = command.mode || gameState?.selectedMode || 'single';
+      return {
+        ok: true,
+        nextGameState: patchGameStateForMatchInit(mode),
+        nextUiState: { isPaused: false, showEndGameModal: false },
+        ledger: { eventKind: 'match_start', summary: 'Match started.', details: { mode } }
+      };
+    }
+    case 'pause': {
+      if (snap.phase !== 'live') return { ok: false, reason: `Cannot pause from ${snap.phase}.` };
+      return {
+        ok: true,
+        nextGameState: { isPaused: true },
+        nextUiState: { isPaused: true }
+      };
+    }
+    case 'resume': {
+      if (snap.phase !== 'paused') return { ok: false, reason: `Cannot resume from ${snap.phase}.` };
+      return {
+        ok: true,
+        nextGameState: { isPaused: false },
+        nextUiState: { isPaused: false }
+      };
+    }
+    case 'restart': {
+      return {
+        ok: true,
+        nextGameState: patchGameStateForMatchRestart(),
+        nextUiState: { isPaused: false, showEndGameModal: false }
+      };
+    }
+    case 'complete': {
+      if (snap.phase !== 'live' && snap.phase !== 'paused') {
+        return { ok: false, reason: `Cannot complete from ${snap.phase}.` };
+      }
+      return {
+        ok: true,
+        nextGameState: patchGameStateForMatchCompletion({ winnerTeamId: command.winnerTeamId ?? null }),
+        nextUiState: { isPaused: false },
+        ledger: {
+          eventKind: 'match_end',
+          summary: command.completionReason || 'Match completed.',
+          details: { reason: command.completionReason, winnerTeamId: command.winnerTeamId ?? null }
+        }
+      };
+    }
+    default:
+      return { ok: false, reason: 'Unknown lifecycle command.' };
+  }
+}
+
+export function runGameLifecycleSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  check('gl_init_flags', 'Init stamps gameStarted and clears completion flags', () => {
+    const p = patchGameStateForMatchInit('ai');
+    return p.gameStarted === true && p.gameOver === false && p.isGameOver === false && p.isPaused === false && p.gameMode === 'game';
+  });
+  check('gl_complete_flags', 'Completion seals gameOver and end mode', () => {
+    const p = patchGameStateForMatchCompletion({ winnerTeamId: TEAM_PLAYER_ID });
+    return p.gameMode === 'end' && p.gameOver === true && p.isGameOver === true && p.isPaused === false;
+  });
+  check('gl_pause_resume', 'Pause/resume only from live/paused', () => {
+    const live = { gameMode: 'game', gameStarted: true, gameOver: false };
+    const pause = applyGameLifecycleCommand(live, {}, { kind: 'pause' });
+    const bad = applyGameLifecycleCommand({ gameMode: 'menu' }, {}, { kind: 'pause' });
+    const resume = applyGameLifecycleCommand({ ...live, isPaused: true }, { isPaused: true }, { kind: 'resume' });
+    return pause.ok && pause.nextGameState?.isPaused === true && !bad.ok && resume.ok && resume.nextGameState?.isPaused === false;
+  });
+  check('gl_settings_live', 'Settings live-match probe requires gameStarted', () => {
+    return isMatchLiveForSettings({ gameMode: 'game', gameStarted: true, gameOver: false })
+      && !isMatchLiveForSettings({ gameMode: 'game', gameOver: false });
+  });
+  check('gl_reducer_complete', 'SET_GAME_MODE end applies completion patch', () => {
+    const next = gameStateReducer(
+      { ...initialGameState, gameMode: 'game', gameStarted: true, day: 3 },
+      { type: 'SET_GAME_MODE', payload: 'end' }
+    );
+    return next.gameMode === 'end' && next.gameOver === true && next.isGameOver === true;
+  });
+  check('gl_reducer_pause', 'APPLY_GAME_LIFECYCLE pause toggles isPaused', () => {
+    const live = { ...initialGameState, gameMode: 'game', gameStarted: true, gameOver: false };
+    const paused = gameStateReducer(live, { type: 'APPLY_GAME_LIFECYCLE', payload: { kind: 'pause' } });
+    const resumed = gameStateReducer(paused, { type: 'APPLY_GAME_LIFECYCLE', payload: { kind: 'resume' } });
+    return paused.isPaused === true && resumed.isPaused === false;
+  });
+  return results;
+}
+
+if (typeof window !== 'undefined') {
+  (window as any).runGameLifecycleSelfTests = runGameLifecycleSelfTests;
+}
+
 export function gameStateReducer(state: any, action: any) {
   switch (action.type) {
     case 'NEXT_DAY': {
@@ -27717,7 +27968,18 @@ export function gameStateReducer(state: any, action: any) {
     case 'SET_GAME_MODE': {
       const nextMode = action.payload;
       if (nextMode !== 'game' && nextMode !== 'menu' && nextMode !== 'end' && nextMode !== 'start_screen') return state;
+      if (nextMode === 'end') {
+        return { ...state, ...patchGameStateForMatchCompletion({ winnerTeamId: action.winnerTeamId ?? state.matchWinnerTeamId ?? null }) };
+      }
+      if (nextMode === 'menu' || nextMode === 'start_screen') {
+        return { ...state, gameMode: nextMode, ...patchGameStateForMatchRestart() };
+      }
       return { ...state, gameMode: nextMode };
+    }
+    case 'APPLY_GAME_LIFECYCLE': {
+      const result = applyGameLifecycleCommand(state, action.uiState, action.payload);
+      if (!result.ok || !result.nextGameState) return state;
+      return { ...state, ...result.nextGameState };
     }
     case 'SET_SCENARIO_OUTCOME':
       return { ...state, scenarioOutcome: action.payload };
@@ -28524,6 +28786,7 @@ export function gameStateReducer(state: any, action: any) {
         selectedMode: null,
         aiDifficulty: state.aiDifficulty,
         takeoverSession: null,
+        ...patchGameStateForMatchRestart(),
         coPilotSettings: {
           ...(state.coPilotSettings || createDefaultCoPilotSettings()),
           coPilotEnabled: false,
@@ -136512,6 +136775,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
+  { id: 'lifecycle', label: 'Game Lifecycle', tier: 'quick', section: 'Turn Flow', severity: 'MAJOR', run: () => runGameLifecycleSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
@@ -184359,7 +184623,7 @@ function dispatchGameSettingsChange(
   // CPFIX1: Memoize coPilotRuntimeContext and callbacks to prevent controller effect thrash on every render
   // CPFIX2: Supply live actorsById memo, aiPlayer, and teamsById to createCoPilotRuntimeContext
   const coPilotRuntimeContext = useMemo(() => createCoPilotRuntimeContext(player, gameState, gameSettings, takeoverSession, actorsById, aiPlayer, teamsById), [player, gameState, gameSettings, takeoverSession, actorsById, aiPlayer, teamsById]);
-  const isLiveIntentMatch = gameState?.gameMode === 'game' && !gameState?.gameOver;
+  const isLiveIntentMatch = isMatchLiveForIntent(gameState, uiState);
   const intentCandidateCacheRef = useRef<{ fingerprint: string; candidates: any[] }>({ fingerprint: '', candidates: [] });
   const [intentRecCandidates, setIntentRecCandidates] = useState<any[]>([]);
   React.useEffect(() => {
@@ -191485,7 +191749,7 @@ function dispatchGameSettingsChange(
       type: 'LOAD_STATE',
       payload: {
         ...initialGameState,
-        gameMode: 'game',
+        ...patchGameStateForMatchInit(mode),
         selectedMode: mode,
         aiDifficulty: difficulty,
         currentTurn: nextCurrentTurn,
@@ -191595,7 +191859,14 @@ function dispatchGameSettingsChange(
         true
       );
     }
-  }, [addNotification, gameSettings, gameState.gameMode, gameState.selectedMode, isolatedReplayRuntime, pickRandomCharacters, showConfirmation, uiState.playerName, uiState.selectedCharacter, updateUiState]);
+    const matchStartLedger = buildMatchLifecycleLedgerFields('match_start', { day: 1, turnCounter: 0 }, { details: { mode } });
+    dispatchAuthoritativeGameActivityLedgerEvent('match_lifecycle', {
+      summary: matchStartLedger.summary,
+      payload: matchStartLedger.payload,
+      day: 1,
+      turn: 0
+    });
+  }, [addNotification, dispatchAuthoritativeGameActivityLedgerEvent, gameSettings, gameState.gameMode, gameState.selectedMode, isolatedReplayRuntime, pickRandomCharacters, showConfirmation, uiState.playerName, uiState.selectedCharacter, updateUiState]);
 
   // Phase 12: Scenario Launch & Exit Handlers
   const restorePreScenarioSettings = useCallback(() => {
@@ -200028,7 +200299,8 @@ function dispatchGameSettingsChange(
 
       dispatchGameState({ type: 'NEXT_DAY' });
       advanceLiveContractsForDay();
-      dispatchAuthoritativeGameActivityLedgerEvent('match_lifecycle', { summary: `Day ${newDay} begins.` });
+      const dayStartLedger = buildMatchLifecycleLedgerFields('day_start', { day: newDay, turnCounter: gameState.turnCounter });
+      dispatchAuthoritativeGameActivityLedgerEvent('match_lifecycle', { summary: dayStartLedger.summary, payload: dayStartLedger.payload, day: newDay, turn: gameState.turnCounter });
 
       if (seasonChanged) {
         addNotification(`Season changed to ${newSeason}. Challenges have refreshed with mastery tiers.`, 'info', true);
@@ -201422,7 +201694,8 @@ function dispatchGameSettingsChange(
 
     dispatchGameState({ type: 'NEXT_DAY' });
     advanceLiveContractsForDay();
-    dispatchAuthoritativeGameActivityLedgerEvent('match_lifecycle', { summary: `Day ${newDay} begins.` });
+    const dayStartLedger = buildMatchLifecycleLedgerFields('day_start', { day: newDay, turnCounter: gameState.turnCounter });
+      dispatchAuthoritativeGameActivityLedgerEvent('match_lifecycle', { summary: dayStartLedger.summary, payload: dayStartLedger.payload, day: newDay, turn: gameState.turnCounter });
 
     // Build projected states for daily maintenance before committing
     let projectedPlayer = { ...currentPlayer };
@@ -211004,7 +211277,7 @@ function dispatchGameSettingsChange(
         gameSettings,
         draftGameSettings,
         depReport,
-        Boolean(gameState?.gameStarted && !gameState?.gameOver)
+        isMatchLiveForSettings(gameState)
       );
 
       if (isMatch) {
