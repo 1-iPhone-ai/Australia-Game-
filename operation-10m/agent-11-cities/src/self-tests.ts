@@ -105,6 +105,9 @@ import { op10mA11ComputeSettlementPostCollapseRecoveryImpossibility } from './se
 import { op10mA11ComputeRegionalStateCollapseCascadeAmplification } from './regional-state-collapse-cascade-amplification.ts';
 import { op10mA11ComputeInterregionalHollowRegionContagion } from './interregional-hollow-region-contagion.ts';
 import { op10mA11ComputeSettlementPermanentDepopulationLock } from './settlement-permanent-depopulation-lock.ts';
+import { op10mA11ComputeRegionalTotalCollapseSingularityPressure } from './regional-total-collapse-singularity-pressure.ts';
+import { op10mA11ComputeInterregionalVoidExpansionVelocity } from './interregional-void-expansion-velocity.ts';
+import { op10mA11ComputeSettlementExistentialContinuityFracture } from './settlement-existential-continuity-fracture.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -431,7 +434,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.20',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.21',
     composite.state.schemaVersion,
   );
 
@@ -567,7 +570,10 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastPostCollapseRecoveryImpossibilityIndex === composite.state.nationalPostCollapseRecoveryImpossibilityIndex &&
       composite.persisted.lastStateCollapseCascadeAmplificationIndex === composite.state.nationalStateCollapseCascadeAmplificationIndex &&
       composite.persisted.lastHollowRegionContagionIndex === composite.state.nationalHollowRegionContagionIndex &&
-      composite.persisted.lastPermanentDepopulationLockIndex === composite.state.nationalPermanentDepopulationLockIndex,
+      composite.persisted.lastPermanentDepopulationLockIndex === composite.state.nationalPermanentDepopulationLockIndex &&
+      composite.persisted.lastTotalCollapseSingularityIndex === composite.state.nationalTotalCollapseSingularityIndex &&
+      composite.persisted.lastVoidExpansionVelocityIndex === composite.state.nationalVoidExpansionVelocityIndex &&
+      composite.persisted.lastExistentialContinuityFractureIndex === composite.state.nationalExistentialContinuityFractureIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -1966,6 +1972,90 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_185',
     composite.state.permanentDepopulationLock.every((p) => p.narrative.includes('permanent depopulation lock')),
     composite.state.permanentDepopulationLock[0]?.band ?? 'none',
+  );
+
+  const totalCollapseSingularity = op10mA11ComputeRegionalTotalCollapseSingularityPressure({
+    stateCollapseCascadeAmplification: composite.state.stateCollapseCascadeAmplification,
+    hollowRegionContagion: composite.state.hollowRegionContagion,
+    permanentDepopulationLock: composite.state.permanentDepopulationLock,
+  });
+  push(
+    out,
+    'a11_186',
+    composite.state.totalCollapseSingularity.length === 8 &&
+      composite.state.nationalTotalCollapseSingularityIndex === totalCollapseSingularity.nationalIndex,
+    `collapse singularity ${composite.state.nationalTotalCollapseSingularityIndex}`,
+  );
+
+  const voidExpansionVelocity = op10mA11ComputeInterregionalVoidExpansionVelocity({
+    hollowRegionContagion: composite.state.hollowRegionContagion,
+    settlementAbandonmentSpiral: composite.state.settlementAbandonmentSpiral,
+    stateCollapseCascadeAmplification: composite.state.stateCollapseCascadeAmplification,
+  });
+  push(
+    out,
+    'a11_187',
+    composite.state.voidExpansionVelocity.length === 8 &&
+      composite.state.nationalVoidExpansionVelocityIndex === voidExpansionVelocity.nationalIndex,
+    `void expansion ${composite.state.nationalVoidExpansionVelocityIndex}`,
+  );
+
+  const existentialContinuityFracture = op10mA11ComputeSettlementExistentialContinuityFracture({
+    permanentDepopulationLock: composite.state.permanentDepopulationLock,
+    postCollapseRecoveryImpossibility: composite.state.postCollapseRecoveryImpossibility,
+    settlementLegitimacyCollapse: composite.state.settlementLegitimacyCollapse,
+  });
+  push(
+    out,
+    'a11_188',
+    composite.state.existentialContinuityFracture.length === 8 &&
+      composite.state.nationalExistentialContinuityFractureIndex === existentialContinuityFracture.nationalIndex,
+    `continuity fracture ${composite.state.nationalExistentialContinuityFractureIndex}`,
+  );
+
+  push(
+    out,
+    'a11_189',
+    composite.state.totalCollapseSingularity.every((s) => s.narrative.includes('total collapse singularity pressure')),
+    composite.state.totalCollapseSingularity[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_190',
+    composite.derived.some((d) => d.kind === 'total_collapse_singularity_pressure') ||
+      composite.state.totalCollapseSingularity.some((s) => s.band === 'singular' || s.band === 'total'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_191',
+    composite.derived.some((d) => d.kind === 'void_expansion_velocity') ||
+      composite.state.voidExpansionVelocity.some((v) => v.band === 'surging' || v.band === 'unbounded'),
+    composite.state.voidExpansionVelocity[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_192',
+    composite.persisted.lastVoidExpansionVelocityIndex === composite.state.nationalVoidExpansionVelocityIndex,
+    `persisted void ${composite.persisted.lastVoidExpansionVelocityIndex}`,
+  );
+
+  push(
+    out,
+    'a11_193',
+    composite.derived.some((d) => d.kind === 'existential_continuity_fracture') ||
+      composite.state.existentialContinuityFracture.some((e) => e.band === 'shattered' || e.band === 'extinguished'),
+    composite.state.existentialContinuityFracture[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_194',
+    composite.state.existentialContinuityFracture.every((e) => e.narrative.includes('existential continuity fracture')),
+    composite.state.existentialContinuityFracture[0]?.band ?? 'none',
   );
 
   return out;
