@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 4dea17e119514a82
+// content-sha256-prefix: 5e73580d8bc27e80
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -887,6 +887,10 @@ export interface DayAdvanceUiEvolutionResult {
   phaseShellVisibilityDayCoachCopy: string | null;
   legacyNavAutoRememberedCount: number;
   calmRecoveryExpiryHintCopy: string | null;
+  coachDismissalQuietDayHintCopy: string | null;
+  sessionResumeDayCoachCopy: string | null;
+  showAllOverrideDayHintCopy: string | null;
+  highContrastChromeDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -897,6 +901,7 @@ export interface TickEvolvingUiDayAdvanceContext {
   autoApplyCalmRecovery?: boolean;
   autoApplyTextScaleDensity?: boolean;
   autoRememberLegacyNav?: boolean;
+  sessionMemory?: SessionUiMemory;
 }
 
 export function createDefaultEvolvingUiPersistedState(): EvolvingUiPersistedState {
@@ -1074,6 +1079,34 @@ export function tickEvolvingUiOnDayAdvance(
 
   const calmExpiryHint = buildCalmRecoveryExpiryDayHint(persistedAfterCalm, nextSignals.gameDay);
 
+  const dismissalQuietHint = buildCoachDismissalQuietDayHint(persistedAfterCalm, nextSignals.gameDay);
+
+  const sessionResumeCoach = buildSessionResumeDayAdvanceCoach({
+    priorGameDay: priorSignals.gameDay,
+    nextGameDay: nextSignals.gameDay,
+    signals: nextSignals,
+    policy,
+    accessibility,
+    sessionMemory: context.sessionMemory,
+    phaseAllowsResume: context.phase !== 'save_load' && context.phase !== 'main_menu',
+  });
+
+  const showAllDayHint =
+    context.phase != null
+      ? buildShowAllOverrideDayHint({
+          persisted: persistedAfterCalm,
+          phase: context.phase,
+          signals: nextSignals,
+          policy,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { overrideActive: false, riskyPhase: false, coachCopy: null };
+
+  const highContrastDayCoach = buildHighContrastChromeDayCoach({
+    accessibility,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   if (context.phase) {
@@ -1122,6 +1155,10 @@ export function tickEvolvingUiOnDayAdvance(
     phaseShellVisibilityDayCoachCopy,
     legacyNavAutoRememberedCount: legacyRememberApply.rememberedCount,
     calmRecoveryExpiryHintCopy: calmExpiryHint.coachCopy,
+    coachDismissalQuietDayHintCopy: dismissalQuietHint.coachCopy,
+    sessionResumeDayCoachCopy: sessionResumeCoach.coachCopy,
+    showAllOverrideDayHintCopy: showAllDayHint.coachCopy,
+    highContrastChromeDayCoachCopy: highContrastDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -4505,6 +4542,326 @@ export function buildCalmRecoveryExpiryDayHint(
   };
 }
 
+// --- source: engine/coach-dismissal-quiet-day-hint.ts ---
+export interface CoachDismissalQuietDayHint {
+  quietActive: boolean;
+  quietEndsToday: boolean;
+  coachCopy: string | null;
+}
+
+export function buildCoachDismissalQuietDayHint(
+  persisted: EvolvingUiPersistedState,
+  gameDay: number
+): CoachDismissalQuietDayHint {
+  const quietUntil = persisted.coachDismissalQuietUntilDay;
+  const quietActive = isCoachDismissalQuiet(persisted, gameDay);
+  const quietEndsToday = quietUntil != null && gameDay + 1 === quietUntil && quietActive;
+
+  let coachCopy: string | null = null;
+  if (quietEndsToday) {
+    coachCopy = 'Coach dismissal quiet period ends tomorrow — coaching surfaces may return.';
+  } else if (quietActive && quietUntil != null) {
+    coachCopy = coachDismissalQuietCopy(quietUntil, gameDay) || null;
+  } else if (!quietActive && quietUntil != null && gameDay === quietUntil) {
+    coachCopy = 'Coach dismissal quiet period ended today — interface coaching is available again.';
+  }
+
+  return {
+    quietActive,
+    quietEndsToday,
+    coachCopy,
+  };
+}
+
+// --- source: engine/session-resume-day-advance-coach.ts ---
+export interface SessionResumeDayAdvanceCoach {
+  shouldMentionResume: boolean;
+  navTarget: string | null;
+  coachCopy: string | null;
+}
+
+export function buildSessionResumeDayAdvanceCoach(input: {
+  priorGameDay: number;
+  nextGameDay: number;
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  accessibility: AccessibilitySettingsSnapshot;
+  sessionMemory?: SessionUiMemory;
+  phaseAllowsResume?: boolean;
+}): SessionResumeDayAdvanceCoach {
+  if (input.nextGameDay <= input.priorGameDay) {
+    return { shouldMentionResume: false, navTarget: null, coachCopy: null };
+  }
+
+  const plan = buildSessionResumeCoachPlan({
+    memory: input.sessionMemory,
+    signals: input.signals,
+    policy: input.policy,
+    accessibility: input.accessibility,
+    phaseAllowsResume: input.phaseAllowsResume ?? true,
+  });
+
+  if (!plan.shouldShow || !plan.navTarget) {
+    return { shouldMentionResume: false, navTarget: null, coachCopy: null };
+  }
+
+  return {
+    shouldMentionResume: true,
+    navTarget: plan.navTarget,
+    coachCopy: `Day ${input.nextGameDay}: ${plan.coachCopy ?? 'Resume your last panel from session memory.'}`,
+  };
+}
+
+// --- source: engine/show-all-override-day-hint.ts ---
+export interface ShowAllOverrideDayHint {
+  overrideActive: boolean;
+  riskyPhase: boolean;
+  coachCopy: string | null;
+}
+
+export function buildShowAllOverrideDayHint(input: {
+  persisted: EvolvingUiPersistedState;
+  phase: V94StandardizedGamePhase;
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  nextGameDay: number;
+}): ShowAllOverrideDayHint {
+  const assessment = evaluateShowAllOverrideSafety({
+    persisted: input.persisted,
+    phase: input.phase,
+    signals: input.signals,
+    policy: input.policy,
+  });
+
+  let coachCopy = assessment.coachCopy;
+  if (assessment.overrideActive && assessment.coachCopy) {
+    coachCopy = `Day ${input.nextGameDay}: ${assessment.coachCopy}`;
+  }
+
+  return {
+    overrideActive: assessment.overrideActive,
+    riskyPhase: assessment.riskyPhase,
+    coachCopy,
+  };
+}
+
+// --- source: engine/high-contrast-chrome-day-coach.ts ---
+export interface HighContrastChromeDayCoach {
+  elevated: boolean;
+  coachCopy: string | null;
+}
+
+export function buildHighContrastChromeDayCoach(input: {
+  accessibility: AccessibilitySettingsSnapshot;
+  nextGameDay: number;
+}): HighContrastChromeDayCoach {
+  const profile = resolveHighContrastChromeProfile(input.accessibility);
+
+  let coachCopy: string | null = null;
+  if (profile.elevated) {
+    coachCopy = `Day ${input.nextGameDay}: elevated contrast chrome (${profile.borderWidthPx}px borders) stays active for accessibility settings.`;
+  }
+
+  return {
+    elevated: profile.elevated,
+    coachCopy,
+  };
+}
+
+// --- source: engine/round18-self-tests.ts ---
+export function runAgent22Round18SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r18_dismissal_quiet_active',
+    'quiet dismissal hint copy while active',
+    (() => {
+      const hint = buildCoachDismissalQuietDayHint(
+        { ...createDefaultEvolvingUiPersistedState(), coachDismissalQuietUntilDay: 8 },
+        5
+      );
+      return hint.quietActive && Boolean(hint.coachCopy?.toLowerCase().includes('quiet'));
+    })()
+  );
+
+  check(
+    'r18_dismissal_quiet_ended',
+    'quiet dismissal ended today copy',
+    (() => {
+      const hint = buildCoachDismissalQuietDayHint(
+        { ...createDefaultEvolvingUiPersistedState(), coachDismissalQuietUntilDay: 6 },
+        6
+      );
+      return !hint.quietActive && Boolean(hint.coachCopy?.includes('ended'));
+    })()
+  );
+
+  check(
+    'r18_dismissal_quiet_ends_tomorrow',
+    'quiet dismissal ends tomorrow flag',
+    (() => {
+      const hint = buildCoachDismissalQuietDayHint(
+        { ...createDefaultEvolvingUiPersistedState(), coachDismissalQuietUntilDay: 7 },
+        6
+      );
+      return hint.quietEndsToday && Boolean(hint.coachCopy?.toLowerCase().includes('tomorrow'));
+    })()
+  );
+
+  check(
+    'r18_session_resume_day',
+    'session resume day coach mentions day',
+    (() => {
+      const memory = recordNavSelection(createDefaultSessionUiMemory(), 'map');
+      const coach = buildSessionResumeDayAdvanceCoach({
+        priorGameDay: 1,
+        nextGameDay: 2,
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, keyboardNavigationHints: true },
+        sessionMemory: memory,
+      });
+      return coach.shouldMentionResume && Boolean(coach.coachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r18_session_resume_off',
+    'session resume off without keyboard hints',
+    (() => {
+      const coach = buildSessionResumeDayAdvanceCoach({
+        priorGameDay: 1,
+        nextGameDay: 2,
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, keyboardNavigationHints: false },
+        sessionMemory: createDefaultSessionUiMemory(),
+      });
+      return !coach.shouldMentionResume && coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r18_show_all_risky_phase',
+    'show-all day hint during save_load',
+    (() => {
+      const hint = buildShowAllOverrideDayHint({
+        persisted: { ...createDefaultEvolvingUiPersistedState(), showAllPanelsOverride: true },
+        phase: 'save_load',
+        signals: { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        nextGameDay: 3,
+      });
+      return hint.overrideActive && hint.riskyPhase && Boolean(hint.coachCopy?.includes('Day 3'));
+    })()
+  );
+
+  check(
+    'r18_show_all_inactive',
+    'show-all hint null when override off',
+    (() => {
+      const hint = buildShowAllOverrideDayHint({
+        persisted: createDefaultEvolvingUiPersistedState(),
+        phase: 'human_turn',
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        nextGameDay: 2,
+      });
+      return !hint.overrideActive && hint.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r18_high_contrast_elevated',
+    'high contrast day coach when elevated',
+    (() => {
+      const coach = buildHighContrastChromeDayCoach({
+        accessibility: {
+          ...DEFAULT_ACCESSIBILITY_SNAPSHOT,
+          highContrastFocusRings: true,
+        },
+        nextGameDay: 4,
+      });
+      return coach.elevated && Boolean(coach.coachCopy?.includes('Day 4'));
+    })()
+  );
+
+  check(
+    'r18_high_contrast_standard',
+    'high contrast day coach off when standard',
+    (() => {
+      const coach = buildHighContrastChromeDayCoach({
+        accessibility: {
+          ...DEFAULT_ACCESSIBILITY_SNAPSHOT,
+          highContrastFocusRings: false,
+          textScaleMultiplier: 1.0,
+          announceVerbosity: 'polite',
+        },
+        nextGameDay: 2,
+      });
+      return !coach.elevated && coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r18_tick_dismissal_field',
+    'day advance exposes coach dismissal quiet hint copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'simple' },
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        { ...createDefaultEvolvingUiPersistedState(), coachDismissalQuietUntilDay: 8 },
+        { phase: 'human_turn' }
+      );
+      return r.coachDismissalQuietDayHintCopy === null || typeof r.coachDismissalQuietDayHintCopy === 'string';
+    })()
+  );
+
+  check(
+    'r18_tick_show_all_field',
+    'day advance exposes show-all override day hint copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        { ...createDefaultEvolvingUiPersistedState(), showAllPanelsOverride: true },
+        { phase: 'save_load' }
+      );
+      return typeof r.showAllOverrideDayHintCopy === 'string' || r.showAllOverrideDayHintCopy === null;
+    })()
+  );
+
+  check(
+    'r18_tick_hc_field',
+    'day advance exposes high contrast day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        {
+          accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, textScaleMultiplier: 1.2 },
+          phase: 'human_turn',
+        }
+      );
+      return typeof r.highContrastChromeDayCoachCopy === 'string' || r.highContrastChromeDayCoachCopy === null;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
+}
+
 // --- source: engine/round17-self-tests.ts ---
 export function runAgent22Round17SelfTests(): {
   passed: number;
@@ -7729,6 +8086,18 @@ export function SimulationUiEvolutionBridge({
       {result.calmRecoveryExpiryHintCopy ? (
         <div data-testid="sim-ui-evolution-calm-expiry">{result.calmRecoveryExpiryHintCopy}</div>
       ) : null}
+      {result.coachDismissalQuietDayHintCopy ? (
+        <div data-testid="sim-ui-evolution-dismissal-quiet">{result.coachDismissalQuietDayHintCopy}</div>
+      ) : null}
+      {result.sessionResumeDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-session-resume-day">{result.sessionResumeDayCoachCopy}</div>
+      ) : null}
+      {result.showAllOverrideDayHintCopy ? (
+        <div data-testid="sim-ui-evolution-show-all-day">{result.showAllOverrideDayHintCopy}</div>
+      ) : null}
+      {result.highContrastChromeDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-hc-day">{result.highContrastChromeDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -9210,8 +9579,114 @@ export function CalmRecoveryExpiryDayHintStrip({
   );
 }
 
+// --- source: react/CoachDismissalQuietDayHintStrip.tsx ---
+export interface CoachDismissalQuietDayHintStripProps {
+  hint: CoachDismissalQuietDayHint;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function CoachDismissalQuietDayHintStrip({
+  hint,
+  accessibility,
+}: CoachDismissalQuietDayHintStripProps): React.ReactElement | null {
+  if (!hint.coachCopy) return null;
+
+  return (
+    <div
+      data-testid="coach-dismissal-quiet-day-hint"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-amber-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-quiet-active={hint.quietActive ? 'true' : 'false'}
+      data-quiet-ends-today={hint.quietEndsToday ? 'true' : 'false'}
+    >
+      {hint.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/SessionResumeDayAdvanceCoachStrip.tsx ---
+export interface SessionResumeDayAdvanceCoachStripProps {
+  coach: SessionResumeDayAdvanceCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function SessionResumeDayAdvanceCoachStrip({
+  coach,
+  accessibility,
+}: SessionResumeDayAdvanceCoachStripProps): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+
+  return (
+    <div
+      data-testid="session-resume-day-advance-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-sky-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-nav-target={coach.navTarget ?? undefined}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/ShowAllOverrideDayHintStrip.tsx ---
+export interface ShowAllOverrideDayHintStripProps {
+  hint: ShowAllOverrideDayHint;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function ShowAllOverrideDayHintStrip({
+  hint,
+  accessibility,
+}: ShowAllOverrideDayHintStripProps): React.ReactElement | null {
+  if (!hint.coachCopy) return null;
+
+  return (
+    <div
+      data-testid="show-all-override-day-hint"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-orange-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-override-active={hint.overrideActive ? 'true' : 'false'}
+      data-risky-phase={hint.riskyPhase ? 'true' : 'false'}
+    >
+      {hint.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/HighContrastChromeDayCoachStrip.tsx ---
+export interface HighContrastChromeDayCoachStripProps {
+  coach: HighContrastChromeDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function HighContrastChromeDayCoachStrip({
+  coach,
+  accessibility,
+}: HighContrastChromeDayCoachStripProps): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+
+  return (
+    <div
+      data-testid="high-contrast-chrome-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-violet-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-hc-elevated={coach.elevated ? 'true' : 'false'}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.17.0';
+export const AGENT_22_MODULE_VERSION = '1.18.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -9337,6 +9812,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round17 = runAgent22Round17SelfTests();
   for (const r of round17.results) {
     check(`agent22_round17_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round18 = runAgent22Round18SelfTests();
+  for (const r of round18.results) {
+    check(`agent22_round18_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;

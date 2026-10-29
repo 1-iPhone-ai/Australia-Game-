@@ -84,6 +84,18 @@ export function SimulationUiEvolutionBridge({
       {result.calmRecoveryExpiryHintCopy ? (
         <div data-testid="sim-ui-evolution-calm-expiry">{result.calmRecoveryExpiryHintCopy}</div>
       ) : null}
+      {result.coachDismissalQuietDayHintCopy ? (
+        <div data-testid="sim-ui-evolution-dismissal-quiet">{result.coachDismissalQuietDayHintCopy}</div>
+      ) : null}
+      {result.sessionResumeDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-session-resume-day">{result.sessionResumeDayCoachCopy}</div>
+      ) : null}
+      {result.showAllOverrideDayHintCopy ? (
+        <div data-testid="sim-ui-evolution-show-all-day">{result.showAllOverrideDayHintCopy}</div>
+      ) : null}
+      {result.highContrastChromeDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-hc-day">{result.highContrastChromeDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets

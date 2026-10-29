@@ -45,3 +45,7 @@ export { LegacyNavAutoRememberBanner } from './LegacyNavAutoRememberBanner.js';
 export { PhaseShellVisibilityDayCoachStrip } from './PhaseShellVisibilityDayCoachStrip.js';
 export { TextScaleDensityAutoApplyBanner } from './TextScaleDensityAutoApplyBanner.js';
 export { CalmRecoveryExpiryDayHintStrip } from './CalmRecoveryExpiryDayHintStrip.js';
+export { CoachDismissalQuietDayHintStrip } from './CoachDismissalQuietDayHintStrip.js';
+export { SessionResumeDayAdvanceCoachStrip } from './SessionResumeDayAdvanceCoachStrip.js';
+export { ShowAllOverrideDayHintStrip } from './ShowAllOverrideDayHintStrip.js';
+export { HighContrastChromeDayCoachStrip } from './HighContrastChromeDayCoachStrip.js';

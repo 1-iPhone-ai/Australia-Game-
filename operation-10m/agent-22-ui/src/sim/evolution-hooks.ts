@@ -49,7 +49,12 @@ import {
 import { buildPhaseShellVisibilityDayCoach } from '../engine/phase-shell-visibility-day-coach.js';
 import { applyTextScaleDensityFromDayHint } from '../engine/text-scale-density-auto-apply-bridge.js';
 import { buildCalmRecoveryExpiryDayHint } from '../engine/calm-recovery-expiry-day-hint.js';
+import { buildCoachDismissalQuietDayHint } from '../engine/coach-dismissal-quiet-day-hint.js';
+import { buildSessionResumeDayAdvanceCoach } from '../engine/session-resume-day-advance-coach.js';
+import { buildShowAllOverrideDayHint } from '../engine/show-all-override-day-hint.js';
+import { buildHighContrastChromeDayCoach } from '../engine/high-contrast-chrome-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
+import type { SessionUiMemory } from './session-ui-memory.js';
 import type { V94StandardizedGamePhase } from '../adapters/v94-phase-bridge.js';
 import type { AccessibilitySettingsSnapshot } from '../types/accessibility.js';
 
@@ -104,6 +109,10 @@ export interface DayAdvanceUiEvolutionResult {
   phaseShellVisibilityDayCoachCopy: string | null;
   legacyNavAutoRememberedCount: number;
   calmRecoveryExpiryHintCopy: string | null;
+  coachDismissalQuietDayHintCopy: string | null;
+  sessionResumeDayCoachCopy: string | null;
+  showAllOverrideDayHintCopy: string | null;
+  highContrastChromeDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -114,6 +123,7 @@ export interface TickEvolvingUiDayAdvanceContext {
   autoApplyCalmRecovery?: boolean;
   autoApplyTextScaleDensity?: boolean;
   autoRememberLegacyNav?: boolean;
+  sessionMemory?: SessionUiMemory;
 }
 
 export function createDefaultEvolvingUiPersistedState(): EvolvingUiPersistedState {
@@ -291,6 +301,34 @@ export function tickEvolvingUiOnDayAdvance(
 
   const calmExpiryHint = buildCalmRecoveryExpiryDayHint(persistedAfterCalm, nextSignals.gameDay);
 
+  const dismissalQuietHint = buildCoachDismissalQuietDayHint(persistedAfterCalm, nextSignals.gameDay);
+
+  const sessionResumeCoach = buildSessionResumeDayAdvanceCoach({
+    priorGameDay: priorSignals.gameDay,
+    nextGameDay: nextSignals.gameDay,
+    signals: nextSignals,
+    policy,
+    accessibility,
+    sessionMemory: context.sessionMemory,
+    phaseAllowsResume: context.phase !== 'save_load' && context.phase !== 'main_menu',
+  });
+
+  const showAllDayHint =
+    context.phase != null
+      ? buildShowAllOverrideDayHint({
+          persisted: persistedAfterCalm,
+          phase: context.phase,
+          signals: nextSignals,
+          policy,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { overrideActive: false, riskyPhase: false, coachCopy: null };
+
+  const highContrastDayCoach = buildHighContrastChromeDayCoach({
+    accessibility,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   if (context.phase) {
@@ -339,6 +377,10 @@ export function tickEvolvingUiOnDayAdvance(
     phaseShellVisibilityDayCoachCopy,
     legacyNavAutoRememberedCount: legacyRememberApply.rememberedCount,
     calmRecoveryExpiryHintCopy: calmExpiryHint.coachCopy,
+    coachDismissalQuietDayHintCopy: dismissalQuietHint.coachCopy,
+    sessionResumeDayCoachCopy: sessionResumeCoach.coachCopy,
+    showAllOverrideDayHintCopy: showAllDayHint.coachCopy,
+    highContrastChromeDayCoachCopy: highContrastDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

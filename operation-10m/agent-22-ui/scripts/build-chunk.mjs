@@ -83,6 +83,11 @@ const FILES = [
   'engine/phase-shell-visibility-day-coach.ts',
   'engine/text-scale-density-auto-apply-bridge.ts',
   'engine/calm-recovery-expiry-day-hint.ts',
+  'engine/coach-dismissal-quiet-day-hint.ts',
+  'engine/session-resume-day-advance-coach.ts',
+  'engine/show-all-override-day-hint.ts',
+  'engine/high-contrast-chrome-day-coach.ts',
+  'engine/round18-self-tests.ts',
   'engine/round17-self-tests.ts',
   'engine/round16-self-tests.ts',
   'engine/legacy-access.ts',
@@ -155,6 +160,10 @@ const FILES = [
   'react/PhaseShellVisibilityDayCoachStrip.tsx',
   'react/TextScaleDensityAutoApplyBanner.tsx',
   'react/CalmRecoveryExpiryDayHintStrip.tsx',
+  'react/CoachDismissalQuietDayHintStrip.tsx',
+  'react/SessionResumeDayAdvanceCoachStrip.tsx',
+  'react/ShowAllOverrideDayHintStrip.tsx',
+  'react/HighContrastChromeDayCoachStrip.tsx',
 ];
 
 function stripModulePreamble(source) {
@@ -196,7 +205,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.17.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.18.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -324,6 +333,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
     check(\`agent22_round17_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
+  const round18 = runAgent22Round18SelfTests();
+  for (const r of round18.results) {
+    check(\`agent22_round18_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
   const failed = results.filter(r => !r.passed).length;
   return {
     passed: results.length - failed,
@@ -350,7 +364,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.17.0',
+  moduleVersion: '1.18.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),
