@@ -197,8 +197,10 @@ export type SeasonalDemandBand = 'low' | 'normal' | 'peak';
 
 export type ModalShiftPolicy = 'road' | 'balanced' | 'rail';
 
+export type GreenFreightPolicy = 'baseline' | 'accelerate';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/6';
+  schemaVersion: 'agent12/7';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -228,6 +230,11 @@ export interface TransportInfrastructureState {
   electrifiedFreightShare: number;
   lastMileCoverageByRegion: Record<AuRegionCode, number>;
   nationalLastMileCoverage: number;
+  nationalContainerThroughputIndex: number;
+  containerThroughputByRegion: Record<AuRegionCode, number>;
+  coldChainReliabilityIndex: number;
+  coldChainReliabilityByRegion: Record<AuRegionCode, number>;
+  greenFreightShare: number;
   computeMs: number;
 }
 
@@ -241,6 +248,7 @@ export interface TransportInfrastructureOptions {
   climateBand?: ClimateTransportBand;
   seasonalDemandBand?: SeasonalDemandBand;
   modalShiftPolicy?: ModalShiftPolicy;
+  greenFreightPolicy?: GreenFreightPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -520,6 +528,46 @@ export const TRANSPORT_CORRIDORS_ROUND5: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round6.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND6: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_nsw_illawarra_steel',
+    name: 'Illawarra Steel Export Chain',
+    networkKind: 'trade',
+    regionSequence: ['NSW'],
+    requiredTagsByRegion: {
+      NSW: ['steel', 'port_access', 'freight_rail'],
+    },
+    productivitySynergyPoints: 6.8,
+    logisticsRelief: 0.043,
+  },
+  {
+    id: 'corr_qld_cairns_trade',
+    name: 'Cairns Tropical Trade Loop',
+    networkKind: 'trade',
+    regionSequence: ['QLD'],
+    requiredTagsByRegion: {
+      QLD: ['export', 'container', 'port_access'],
+    },
+    productivitySynergyPoints: 5.4,
+    logisticsRelief: 0.036,
+  },
+  {
+    id: 'corr_act_capital_cold_chain',
+    name: 'Capital Cold Chain Feed',
+    networkKind: 'freight',
+    regionSequence: ['ACT', 'NSW'],
+    requiredTagsByRegion: {
+      ACT: ['capital', 'warehouse'],
+      NSW: ['motorway', 'freight'],
+    },
+    productivitySynergyPoints: 4.8,
+    logisticsRelief: 0.031,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -672,6 +720,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND3,
   ...TRANSPORT_CORRIDORS_ROUND4,
   ...TRANSPORT_CORRIDORS_ROUND5,
+  ...TRANSPORT_CORRIDORS_ROUND6,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -984,6 +1033,62 @@ export const TRANSPORT_SCENARIOS_ROUND5: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round6.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND6: TransportStressScenario[] = [
+  {
+    id: 'scn_nsw_kembla_strike',
+    label: 'Port Kembla Stevedore Slowdown',
+    description: 'Steel export backlog extends container dwell at Illawarra.',
+    targetRegions: ['NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_qld_cairns_cyclone',
+    label: 'Cairns Cyclone Supply Hold',
+    description: 'Tropical cyclone closes reef supply highway segments.',
+    targetRegions: ['QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.29,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['road', 'logistics'],
+  },
+  {
+    id: 'scn_act_hume_cold_failure',
+    label: 'Hume Cold Chain Compressor Outage',
+    description: 'Capital region chilled DC reroutes through Sydney overflow.',
+    targetRegions: ['ACT', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_sa_whyalla_rail_derail',
+    label: 'Whyalla Export Rail Derailment',
+    description: 'Spencer Gulf steel coil shuttle offline for recovery.',
+    targetRegions: ['SA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail'],
+  },
+  {
+    id: 'scn_vic_geelong_drayage_peak',
+    label: 'Geelong Drayage Peak Congestion',
+    description: 'Melbourne port diversion saturates Geelong feed motorway.',
+    targetRegions: ['VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['road', 'port'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -1150,6 +1255,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND3,
   ...TRANSPORT_SCENARIOS_ROUND4,
   ...TRANSPORT_SCENARIOS_ROUND5,
+  ...TRANSPORT_SCENARIOS_ROUND6,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -3006,6 +3112,217 @@ export const SCALE_WAVE_ROUND5_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round6-assets.ts ---
+
+export const ROUND6_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_act_barton_freight',
+    category: 'road',
+    name: 'Canberra Barton Freight Ring',
+    description: 'Capital region distribution bypass for interstate B-double feed.',
+    hostRegion: 'ACT',
+    servedRegions: ['ACT', 'NSW'],
+    baseProductivityPoints: 3.2,
+    strategicNetworks: ['freight', 'mobility'],
+    tags: ['capital', 'motorway', 'freight'],
+    laneKilometres: 42,
+    designSpeedKmh: 90,
+    freightShare: 0.38,
+    urbanShare: 0.22,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_illawarra_export',
+    category: 'road',
+    name: 'Illawarra Steel Export Highway',
+    description: 'Port Kembla blast furnace and coal loader road feed.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['steel', 'port_access', 'bulk'],
+    laneKilometres: 88,
+    designSpeedKmh: 100,
+    freightShare: 0.48,
+    urbanShare: 0.12,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_cairns_supply',
+    category: 'road',
+    name: 'Cairns Tropical Supply Highway',
+    description: 'Tableland produce and reef tourism freight to Cairns port.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 3.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['export', 'port_access', 'produce'],
+    laneKilometres: 120,
+    designSpeedKmh: 95,
+    freightShare: 0.36,
+    urbanShare: 0.08,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_geelong_port_feed',
+    category: 'road',
+    name: 'Geelong Port Feed Motorway',
+    description: 'Melbourne–Geelong container drayage and grain export.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['container', 'port_access', 'motorway'],
+    laneKilometres: 72,
+    designSpeedKmh: 110,
+    freightShare: 0.44,
+    urbanShare: 0.18,
+    tollRoad: true,
+  },
+];
+
+export const ROUND6_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_sa_whyalla_steel',
+    category: 'rail',
+    name: 'Whyalla Steel Export Rail',
+    description: 'Onesteel and bulk export to Spencer Gulf.',
+    hostRegion: 'SA',
+    servedRegions: ['SA'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['steel', 'bulk', 'freight_rail', 'port_access'],
+    trackKilometres: 96,
+    dualTrackShare: 0.48,
+    electrifiedShare: 0.42,
+    designFreightTonnesPerYear: 9_800_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nsw_illawarra_coastal',
+    category: 'rail',
+    name: 'Illawarra Coastal Freight Rail',
+    description: 'Steel coil and coal shuttle to Port Kembla.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['steel', 'coal', 'freight_rail', 'port_access'],
+    trackKilometres: 64,
+    dualTrackShare: 0.62,
+    electrifiedShare: 0.88,
+    designFreightTonnesPerYear: 11_200_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_qld_cairns_intermodal',
+    category: 'rail',
+    name: 'Cairns Intermodal Feed',
+    description: 'Atherton Tableland containers into Cairns terminal.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['intermodal', 'container', 'freight_rail'],
+    trackKilometres: 52,
+    dualTrackShare: 0.35,
+    electrifiedShare: 0.12,
+    designFreightTonnesPerYear: 3_600_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND6_PORTS: PortAsset[] = [
+  {
+    id: 'port_qld_cairns_marlin',
+    category: 'port',
+    name: 'Cairns Marlin Wharf',
+    description: 'Reef tourism supplies and tropical export containers.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['export', 'container', 'port_access'],
+    berthCount: 6,
+    maxDraftMetres: 12,
+    teuCapacityPerYear: 290_000,
+    automationLevel: 1,
+    bulkShare: 0.38,
+  },
+  {
+    id: 'port_sa_port_lincoln',
+    category: 'port',
+    name: 'Port Lincoln Grain and Seafood',
+    description: 'Eyre Peninsula grain export and tuna cold chain gateway.',
+    hostRegion: 'SA',
+    servedRegions: ['SA'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['grain', 'export', 'port_access'],
+    berthCount: 8,
+    maxDraftMetres: 12.5,
+    teuCapacityPerYear: 180_000,
+    automationLevel: 1,
+    bulkShare: 0.62,
+  },
+];
+
+export const ROUND6_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_act_hume_cold_dc',
+    category: 'logistics',
+    name: 'Hume Capital Cold Chain DC',
+    description: 'Canberra region chilled grocery and pharma distribution.',
+    hostRegion: 'ACT',
+    servedRegions: ['ACT', 'NSW'],
+    baseProductivityPoints: 3.8,
+    strategicNetworks: ['freight', 'mobility'],
+    tags: ['warehouse', 'capital', 'intermodal'],
+    warehouseSqm: 185_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 71,
+  },
+  {
+    id: 'log_sa_whyalla_cold_store',
+    category: 'logistics',
+    name: 'Whyalla Cold Store Hub',
+    description: 'Spencer Gulf seafood and steel coil staging.',
+    hostRegion: 'SA',
+    servedRegions: ['SA'],
+    baseProductivityPoints: 3.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['warehouse', 'steel', 'port_access'],
+    warehouseSqm: 120_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 58,
+  },
+  {
+    id: 'log_qld_cairns_reef_supply',
+    category: 'logistics',
+    name: 'Cairns Reef Supply Consolidation',
+    description: 'Tourism and tropical produce cold chain to Marlin Wharf.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 3.6,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['warehouse', 'export', 'intermodal'],
+    warehouseSqm: 95_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 62,
+  },
+];
+
+export const SCALE_WAVE_ROUND6_ASSETS = [
+  ...ROUND6_ROADS,
+  ...ROUND6_RAIL,
+  ...ROUND6_PORTS,
+  ...ROUND6_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -3019,6 +3336,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND3_ASSETS,
     ...SCALE_WAVE_ROUND4_ASSETS,
     ...SCALE_WAVE_ROUND5_ASSETS,
+    ...SCALE_WAVE_ROUND6_ASSETS,
   ];
 }
 
@@ -3333,6 +3651,45 @@ export function connectivityBonusByRegion(
     }
   }
   return bonus;
+}
+
+
+// --- source: network/container-throughput-index.ts ---
+
+/** 0–100 normalized container handling capacity from ports and linked logistics. */
+export function computeContainerThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'port' && 'teuCapacityPerYear' in asset) {
+      const teuScore = asset.teuCapacityPerYear / 45_000;
+      const autoBoost = 1 + asset.automationLevel * 0.08;
+      byRegion[asset.hostRegion] += teuScore * autoBoost;
+      for (const r of asset.servedRegions) {
+        if (r !== asset.hostRegion) byRegion[r] += teuScore * 0.18;
+      }
+    }
+    if (asset.category === 'logistics' && asset.intermodalLinks.includes('port')) {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 180_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalContainerThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  const composite = avg * 0.65 + max * 0.35;
+  return Math.round(clamp(composite, 8, 98) * 10) / 10;
 }
 
 
@@ -3658,6 +4015,45 @@ export function nationalLastMileCoverage(byRegion: Record<AuRegionCode, number>)
 }
 
 
+// --- source: operations/cold-chain-reliability.ts ---
+
+/** 0–1 reliability score from cold-chain logistics and refrigerated port share. */
+export function computeColdChainReliabilityByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0.35])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'logistics' && asset.coldChainCapable) {
+      const sqmFactor = clamp(asset.warehouseSqm / 250_000, 0.15, 1);
+      const linkBonus = asset.intermodalLinks.length * 0.04;
+      byRegion[asset.hostRegion] += 0.12 * sqmFactor + linkBonus;
+      for (const r of asset.servedRegions) {
+        if (r !== asset.hostRegion) byRegion[r] += 0.04 * sqmFactor;
+      }
+    }
+    if (asset.category === 'port' && asset.bulkShare < 0.55) {
+      byRegion[asset.hostRegion] += 0.06;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0.2, 0.98) * 1000) / 1000;
+  }
+  return byRegion;
+}
+
+export function nationalColdChainReliabilityIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const sorted = [...values].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)] ?? 0.5;
+  const avg = values.reduce((s, v) => s + v, 0) / values.length;
+  return Math.round(clamp(median * 0.55 + avg * 0.45, 0.25, 0.96) * 1000) / 1000;
+}
+
+
 // --- source: productivity/regional-investment-tiers.ts ---
 
 const TIERS: TransportInvestmentTier[] = ['emerging', 'regional', 'integrated', 'national_gateway'];
@@ -3890,6 +4286,51 @@ export function emptyModalBalanceByRegion(): Record<AuRegionCode, number> {
 }
 
 
+// --- source: productivity/green-freight-index.ts ---
+
+/** 0–1 share of freight capacity meeting low-emission criteria (electrified rail + efficient road). */
+export function computeGreenFreightShare(
+  operationalAssets: TransportAsset[],
+  policy: GreenFreightPolicy = 'baseline',
+): number {
+  let greenUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'rail' && 'electrifiedShare' in asset) {
+      const units = asset.trackKilometres * (0.4 + asset.dualTrackShare);
+      totalUnits += units;
+      greenUnits += units * asset.electrifiedShare;
+      if (asset.tags.includes('gauge_standard')) greenUnits += units * 0.08;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      const units = asset.laneKilometres * asset.freightShare;
+      totalUnits += units;
+      if (asset.designSpeedKmh >= 100 && asset.urbanShare < 0.15) {
+        greenUnits += units * 0.22;
+      }
+    }
+    if (asset.category === 'logistics' && asset.coldChainCapable) {
+      totalUnits += asset.warehouseSqm / 50_000;
+      greenUnits += (asset.warehouseSqm / 50_000) * 0.18;
+    }
+  }
+
+  if (totalUnits <= 0) return 0.2;
+  const policyBoost = policy === 'accelerate' ? 0.06 : 0;
+  return Math.round(clamp(greenUnits / totalUnits + policyBoost, 0.12, 0.94) * 1000) / 1000;
+}
+
+export function greenFreightProductivityMultiplier(share: number, policy: GreenFreightPolicy): number {
+  const bias = policy === 'accelerate' ? 1.03 : 1;
+  return (1 + (share - 0.35) * 0.05) * bias;
+}
+
+export function electrifiedBaselineShare(operationalAssets: TransportAsset[]): number {
+  return computeElectrifiedFreightShare(operationalAssets);
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -4105,6 +4546,15 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   computeModalBalanceIndex,
   modalBalanceProductivityMultiplier,
 } from './modal-balance-index.ts';
+  computeGreenFreightShare,
+  greenFreightProductivityMultiplier,
+} from './green-freight-index.ts';
+  computeContainerThroughputByRegion,
+  nationalContainerThroughputIndex,
+} from '../network/container-throughput-index.ts';
+  computeColdChainReliabilityByRegion,
+  nationalColdChainReliabilityIndex,
+} from '../operations/cold-chain-reliability.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -4310,6 +4760,25 @@ export function computeTransportInfrastructureState(
     pipeline.productivityPoints +
     intercapitalConnectivityIndex * 2.5;
 
+  const containerThroughputByRegion = computeContainerThroughputByRegion(ops);
+  const nationalContainerThroughput = nationalContainerThroughputIndex(containerThroughputByRegion);
+  const coldChainReliabilityByRegion = computeColdChainReliabilityByRegion(ops);
+  const coldChainReliabilityIndex = nationalColdChainReliabilityIndex(coldChainReliabilityByRegion);
+  const greenFreightShare = computeGreenFreightShare(ops, options?.greenFreightPolicy ?? 'baseline');
+  const greenMult = greenFreightProductivityMultiplier(greenFreightShare, options?.greenFreightPolicy ?? 'baseline');
+
+  for (const code of AU_REGION_CODES) {
+    const throughputBoost = (containerThroughputByRegion[code] - 20) * 0.008;
+    const coldBoost = (coldChainReliabilityByRegion[code] - 0.45) * 1.8;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + throughputBoost + coldBoost) * greenMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -4323,7 +4792,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/6',
+    schemaVersion: 'agent12/7',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -4353,6 +4822,11 @@ export function computeTransportInfrastructureState(
     electrifiedFreightShare,
     lastMileCoverageByRegion,
     nationalLastMileCoverage: nationalLastMile,
+    nationalContainerThroughputIndex: nationalContainerThroughput,
+    containerThroughputByRegion,
+    coldChainReliabilityIndex,
+    coldChainReliabilityByRegion,
+    greenFreightShare,
     computeMs,
   };
 }
@@ -4381,7 +4855,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   const integrity = getCatalogIntegrityReport();
   results.push({
     id: 'catalog_integrity',
-    ok: integrity.duplicateIds.length === 0 && integrity.invalidRegions.length === 0 && integrity.totalAssets >= 90,
+    ok: integrity.duplicateIds.length === 0 && integrity.invalidRegions.length === 0 && integrity.totalAssets >= 100,
     detail: JSON.stringify(integrity),
   });
 
@@ -4433,9 +4907,9 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
 
   const infra = computeTransportInfrastructureState(defaultInfrastructureInputs(5));
   results.push({
-    id: 'infrastructure_state_v6',
+    id: 'infrastructure_state_v7',
     ok:
-      infra.schemaVersion === 'agent12/6' &&
+      infra.schemaVersion === 'agent12/7' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -4443,8 +4917,11 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalFreightLatencyMedian > 0 &&
       infra.intercapitalConnectivityIndex > 0.15 &&
       infra.modalBalanceIndex > 0.2 &&
-      infra.nationalLastMileCoverage > 45,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} scri=${infra.supplyChainResilienceIndex.toFixed(2)} connectivity=${infra.intercapitalConnectivityIndex.toFixed(2)} lastMile=${infra.nationalLastMileCoverage.toFixed(0)}%`,
+      infra.nationalLastMileCoverage > 45 &&
+      infra.nationalContainerThroughputIndex > 15 &&
+      infra.coldChainReliabilityIndex > 0.35 &&
+      infra.greenFreightShare > 0.12,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} throughput=${infra.nationalContainerThroughputIndex.toFixed(1)} cold=${infra.coldChainReliabilityIndex.toFixed(2)} green=${infra.greenFreightShare.toFixed(2)}`,
   });
 
   return results;

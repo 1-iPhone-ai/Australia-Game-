@@ -14,7 +14,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   const integrity = getCatalogIntegrityReport();
   results.push({
     id: 'catalog_integrity',
-    ok: integrity.duplicateIds.length === 0 && integrity.invalidRegions.length === 0 && integrity.totalAssets >= 90,
+    ok: integrity.duplicateIds.length === 0 && integrity.invalidRegions.length === 0 && integrity.totalAssets >= 100,
     detail: JSON.stringify(integrity),
   });
 
@@ -66,9 +66,9 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
 
   const infra = computeTransportInfrastructureState(defaultInfrastructureInputs(5));
   results.push({
-    id: 'infrastructure_state_v6',
+    id: 'infrastructure_state_v7',
     ok:
-      infra.schemaVersion === 'agent12/6' &&
+      infra.schemaVersion === 'agent12/7' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -76,8 +76,11 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalFreightLatencyMedian > 0 &&
       infra.intercapitalConnectivityIndex > 0.15 &&
       infra.modalBalanceIndex > 0.2 &&
-      infra.nationalLastMileCoverage > 45,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} scri=${infra.supplyChainResilienceIndex.toFixed(2)} connectivity=${infra.intercapitalConnectivityIndex.toFixed(2)} lastMile=${infra.nationalLastMileCoverage.toFixed(0)}%`,
+      infra.nationalLastMileCoverage > 45 &&
+      infra.nationalContainerThroughputIndex > 15 &&
+      infra.coldChainReliabilityIndex > 0.35 &&
+      infra.greenFreightShare > 0.12,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} throughput=${infra.nationalContainerThroughputIndex.toFixed(1)} cold=${infra.coldChainReliabilityIndex.toFixed(2)} green=${infra.greenFreightShare.toFixed(2)}`,
   });
 
   return results;

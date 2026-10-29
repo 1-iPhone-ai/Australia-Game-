@@ -193,8 +193,10 @@ export type SeasonalDemandBand = 'low' | 'normal' | 'peak';
 
 export type ModalShiftPolicy = 'road' | 'balanced' | 'rail';
 
+export type GreenFreightPolicy = 'baseline' | 'accelerate';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/6';
+  schemaVersion: 'agent12/7';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -224,6 +226,11 @@ export interface TransportInfrastructureState {
   electrifiedFreightShare: number;
   lastMileCoverageByRegion: Record<AuRegionCode, number>;
   nationalLastMileCoverage: number;
+  nationalContainerThroughputIndex: number;
+  containerThroughputByRegion: Record<AuRegionCode, number>;
+  coldChainReliabilityIndex: number;
+  coldChainReliabilityByRegion: Record<AuRegionCode, number>;
+  greenFreightShare: number;
   computeMs: number;
 }
 
@@ -237,6 +244,7 @@ export interface TransportInfrastructureOptions {
   climateBand?: ClimateTransportBand;
   seasonalDemandBand?: SeasonalDemandBand;
   modalShiftPolicy?: ModalShiftPolicy;
+  greenFreightPolicy?: GreenFreightPolicy;
 }
 
 export interface V94ProjectSnapshot {

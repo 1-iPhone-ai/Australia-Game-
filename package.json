@@ -6,7 +6,7 @@
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
-    "test:agent12": "node --import tsx --test operation-10m/agent-12-transport/tests/transport-productivity.test.ts operation-10m/agent-12-transport/tests/transport-depth.test.ts operation-10m/agent-12-transport/tests/transport-round2.test.ts operation-10m/agent-12-transport/tests/transport-round3.test.ts operation-10m/agent-12-transport/tests/transport-round4.test.ts operation-10m/agent-12-transport/tests/transport-round5.test.ts",
+    "test:agent12": "node --import tsx --test operation-10m/agent-12-transport/tests/transport-productivity.test.ts operation-10m/agent-12-transport/tests/transport-depth.test.ts operation-10m/agent-12-transport/tests/transport-round2.test.ts operation-10m/agent-12-transport/tests/transport-round3.test.ts operation-10m/agent-12-transport/tests/transport-round4.test.ts operation-10m/agent-12-transport/tests/transport-round5.test.ts operation-10m/agent-12-transport/tests/transport-round6.test.ts",
     "selfcheck:agent12": "node --import tsx operation-10m/agent-12-transport/run-self-checks.ts",
     "build:agent12-chunk": "node operation-10m/agent-12-transport/scripts/build-chunk.mjs"
   },

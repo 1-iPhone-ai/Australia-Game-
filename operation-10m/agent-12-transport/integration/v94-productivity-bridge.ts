@@ -2,7 +2,7 @@ import type { AuRegionCode, NationalTransportProductivityReport, V94ProjectSnaps
 import { getAgent12TransportCatalog, getDefaultOperationalAssetIds } from '../catalog/all-catalog.ts';
 import { computeNationalTransportProductivity } from '../productivity/compute-national-productivity.ts';
 
-export const AGENT12_CATALOG_VERSION = '2026-10-29.1';
+export const AGENT12_CATALOG_VERSION = '2026-10-29.2';
 
 const ACTIVE_STATUSES = new Set(['active', 'upgraded', 'under_construction']);
 

@@ -60,6 +60,18 @@ import {
   computeModalBalanceIndex,
   modalBalanceProductivityMultiplier,
 } from './modal-balance-index.ts';
+import {
+  computeGreenFreightShare,
+  greenFreightProductivityMultiplier,
+} from './green-freight-index.ts';
+import {
+  computeContainerThroughputByRegion,
+  nationalContainerThroughputIndex,
+} from '../network/container-throughput-index.ts';
+import {
+  computeColdChainReliabilityByRegion,
+  nationalColdChainReliabilityIndex,
+} from '../operations/cold-chain-reliability.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -266,6 +278,25 @@ export function computeTransportInfrastructureState(
     pipeline.productivityPoints +
     intercapitalConnectivityIndex * 2.5;
 
+  const containerThroughputByRegion = computeContainerThroughputByRegion(ops);
+  const nationalContainerThroughput = nationalContainerThroughputIndex(containerThroughputByRegion);
+  const coldChainReliabilityByRegion = computeColdChainReliabilityByRegion(ops);
+  const coldChainReliabilityIndex = nationalColdChainReliabilityIndex(coldChainReliabilityByRegion);
+  const greenFreightShare = computeGreenFreightShare(ops, options?.greenFreightPolicy ?? 'baseline');
+  const greenMult = greenFreightProductivityMultiplier(greenFreightShare, options?.greenFreightPolicy ?? 'baseline');
+
+  for (const code of AU_REGION_CODES) {
+    const throughputBoost = (containerThroughputByRegion[code] - 20) * 0.008;
+    const coldBoost = (coldChainReliabilityByRegion[code] - 0.45) * 1.8;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + throughputBoost + coldBoost) * greenMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -279,7 +310,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/6',
+    schemaVersion: 'agent12/7',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -309,6 +340,11 @@ export function computeTransportInfrastructureState(
     electrifiedFreightShare,
     lastMileCoverageByRegion,
     nationalLastMileCoverage: nationalLastMile,
+    nationalContainerThroughputIndex: nationalContainerThroughput,
+    containerThroughputByRegion,
+    coldChainReliabilityIndex,
+    coldChainReliabilityByRegion,
+    greenFreightShare,
     computeMs,
   };
 }
