@@ -197,6 +197,8 @@ export interface Agent17PlanningDepthSnapshot {
   missionDirective: Agent17MissionDirectiveSnapshot;
   directiveSynthesis: Agent17DirectiveSynthesisSnapshot;
   executionClosure: Agent17ExecutionClosureSnapshot;
+  cadenceLattice: Agent17CadenceLatticeSnapshot;
+  readinessGate: Agent17ReadinessGateSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -439,6 +441,38 @@ export interface Agent17ExecutionClosureSnapshot {
   checkpoints: Agent17ExecutionClosureCheckpoint[];
   stepsReadyToClose: number;
   automationClearance: boolean;
+  headline: string;
+}
+
+export interface Agent17CadenceLatticeFactor {
+  id: string;
+  label: string;
+  score: number;
+  weight: number;
+}
+
+export interface Agent17CadenceLatticeSnapshot {
+  cadenceIndex: number;
+  band: 'flowing' | 'steady' | 'stalled';
+  factors: Agent17CadenceLatticeFactor[];
+  closureBand: Agent17ExecutionClosureSnapshot['band'];
+  synthesisBand: Agent17DirectiveSynthesisSnapshot['band'];
+  headline: string;
+}
+
+export interface Agent17ReadinessGateSignal {
+  id: string;
+  label: string;
+  value: number;
+  unit: 'index' | 'percent' | 'turns';
+}
+
+export interface Agent17ReadinessGateSnapshot {
+  readinessScore: number;
+  band: 'go' | 'caution' | 'stop';
+  signals: Agent17ReadinessGateSignal[];
+  handoffReady: boolean;
+  runAllowed: boolean;
   headline: string;
 }
 

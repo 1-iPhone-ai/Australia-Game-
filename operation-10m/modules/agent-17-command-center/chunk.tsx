@@ -201,6 +201,8 @@ export interface Agent17PlanningDepthSnapshot {
   missionDirective: Agent17MissionDirectiveSnapshot;
   directiveSynthesis: Agent17DirectiveSynthesisSnapshot;
   executionClosure: Agent17ExecutionClosureSnapshot;
+  cadenceLattice: Agent17CadenceLatticeSnapshot;
+  readinessGate: Agent17ReadinessGateSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -443,6 +445,38 @@ export interface Agent17ExecutionClosureSnapshot {
   checkpoints: Agent17ExecutionClosureCheckpoint[];
   stepsReadyToClose: number;
   automationClearance: boolean;
+  headline: string;
+}
+
+export interface Agent17CadenceLatticeFactor {
+  id: string;
+  label: string;
+  score: number;
+  weight: number;
+}
+
+export interface Agent17CadenceLatticeSnapshot {
+  cadenceIndex: number;
+  band: 'flowing' | 'steady' | 'stalled';
+  factors: Agent17CadenceLatticeFactor[];
+  closureBand: Agent17ExecutionClosureSnapshot['band'];
+  synthesisBand: Agent17DirectiveSynthesisSnapshot['band'];
+  headline: string;
+}
+
+export interface Agent17ReadinessGateSignal {
+  id: string;
+  label: string;
+  value: number;
+  unit: 'index' | 'percent' | 'turns';
+}
+
+export interface Agent17ReadinessGateSnapshot {
+  readinessScore: number;
+  band: 'go' | 'caution' | 'stop';
+  signals: Agent17ReadinessGateSignal[];
+  handoffReady: boolean;
+  runAllowed: boolean;
   headline: string;
 }
 
@@ -3705,6 +3739,201 @@ export function executionClosureBlocksAdvance(
 }
 
 
+// --- source: planning/cadence-lattice.ts ---
+  Agent17CadenceLatticeSnapshot,
+  Agent17DirectiveSynthesisSnapshot,
+  Agent17ExecutionClosureSnapshot,
+  Agent17ExecutionPacingSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17CadenceLatticeInputs {
+  executionClosure: Agent17ExecutionClosureSnapshot;
+  directiveSynthesis: Agent17DirectiveSynthesisSnapshot;
+  executionPacing: Agent17ExecutionPacingSnapshot;
+}
+
+export function buildAgent17CadenceLattice(
+  inputs: Agent17CadenceLatticeInputs
+): Agent17CadenceLatticeSnapshot {
+  const factors: Agent17CadenceLatticeSnapshot['factors'] = [];
+
+  factors.push({
+    id: 'closure_score',
+    label: 'Execution closure',
+    score: inputs.executionClosure.closureScore,
+    weight: 35,
+  });
+
+  factors.push({
+    id: 'synthesis_index',
+    label: 'Directive synthesis',
+    score: inputs.directiveSynthesis.synthesisIndex,
+    weight: 30,
+  });
+
+  const pacingScore =
+    inputs.executionPacing.pacingBand === 'urgent'
+      ? 88
+      : inputs.executionPacing.pacingBand === 'steady'
+        ? 72
+        : 38;
+  factors.push({
+    id: 'pacing_band',
+    label: 'Execution pacing band',
+    score: pacingScore,
+    weight: 20,
+  });
+
+  const budgetScore = Math.max(
+    0,
+    Math.min(100, inputs.executionPacing.turnBudgetRemaining * 12)
+  );
+  factors.push({
+    id: 'turn_budget',
+    label: 'Turn budget headroom',
+    score: budgetScore,
+    weight: 15,
+  });
+
+  const weighted = factors.reduce((n, f) => n + f.score * (f.weight / 100), 0);
+  const totalWeight = factors.reduce((n, f) => n + f.weight, 0);
+  const cadenceIndex = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const stalledSignals =
+    inputs.executionClosure.band === 'sealed' ||
+    inputs.directiveSynthesis.band === 'locked' ||
+    directiveSynthesisBlocksAdvance(inputs.directiveSynthesis);
+
+  const band: Agent17CadenceLatticeSnapshot['band'] = stalledSignals
+    ? 'stalled'
+    : cadenceIndex >= 62 &&
+        (inputs.executionClosure.band === 'open' ||
+          inputs.executionClosure.band === 'narrow') &&
+        (inputs.directiveSynthesis.band === 'ready' ||
+          inputs.directiveSynthesis.band === 'pending')
+      ? 'flowing'
+      : 'steady';
+
+  return {
+    cadenceIndex,
+    band,
+    factors,
+    closureBand: inputs.executionClosure.band,
+    synthesisBand: inputs.directiveSynthesis.band,
+    headline: `Cadence ${band} (${cadenceIndex}/100) · closure ${inputs.executionClosure.band}`,
+  };
+}
+
+export function cadenceLatticeBlocksRun(snapshot: Agent17CadenceLatticeSnapshot): boolean {
+  return snapshot.band === 'stalled' || snapshot.cadenceIndex < 34;
+}
+
+
+// --- source: planning/readiness-gate.ts ---
+  Agent17CadenceLatticeSnapshot,
+  Agent17CoordinationBrief,
+  Agent17HandoffReadinessSnapshot,
+  Agent17ReadinessGateSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17ReadinessGateInputs {
+  cadenceLattice: Agent17CadenceLatticeSnapshot;
+  handoffReadiness: Agent17HandoffReadinessSnapshot;
+  coordinationBrief: Agent17CoordinationBrief;
+}
+
+export function buildAgent17ReadinessGate(
+  inputs: Agent17ReadinessGateInputs
+): Agent17ReadinessGateSnapshot {
+  const signals: Agent17ReadinessGateSnapshot['signals'] = [];
+
+  signals.push({
+    id: 'cadence_index',
+    label: 'Cadence lattice index',
+    value: inputs.cadenceLattice.cadenceIndex,
+    unit: 'index',
+  });
+
+  signals.push({
+    id: 'handoff_score',
+    label: 'Handoff readiness score',
+    value: inputs.handoffReadiness.readinessScore,
+    unit: 'index',
+  });
+
+  signals.push({
+    id: 'brief_sections',
+    label: 'Coordination brief sections',
+    value: inputs.coordinationBrief.sections.length,
+    unit: 'index',
+  });
+
+  signals.push({
+    id: 'blocker_count',
+    label: 'Handoff blockers',
+    value: inputs.handoffReadiness.blockers.length,
+    unit: 'index',
+  });
+
+  signals.push({
+    id: 'gi_tags',
+    label: 'GI handoff tags',
+    value: inputs.coordinationBrief.giHandoffTags.length,
+    unit: 'index',
+  });
+
+  const handoffReady =
+    !handoffReadinessBlocked(inputs.handoffReadiness) &&
+    inputs.handoffReadiness.readinessScore >= 55;
+
+  const readinessScore = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        inputs.cadenceLattice.cadenceIndex * 0.45 +
+          inputs.handoffReadiness.readinessScore * 0.35 +
+          Math.min(100, inputs.coordinationBrief.sections.length * 18) * 0.2
+      )
+    )
+  );
+
+  const stopSignals =
+    cadenceLatticeBlocksRun(inputs.cadenceLattice) ||
+    handoffReadinessBlocked(inputs.handoffReadiness) ||
+    inputs.cadenceLattice.band === 'stalled';
+
+  const band: Agent17ReadinessGateSnapshot['band'] = stopSignals
+    ? 'stop'
+    : readinessScore >= 68 &&
+        handoffReady &&
+        inputs.cadenceLattice.band !== 'stalled'
+      ? 'go'
+      : 'caution';
+
+  const runAllowed =
+    band === 'go' &&
+    handoffReady &&
+    !cadenceLatticeBlocksRun(inputs.cadenceLattice);
+
+  return {
+    readinessScore,
+    band,
+    signals,
+    handoffReady,
+    runAllowed,
+    headline: `Readiness ${band} (${readinessScore}/100) · ${signals.length} signals`,
+  };
+}
+
+export function readinessGateBlocksRun(snapshot: Agent17ReadinessGateSnapshot): boolean {
+  return snapshot.band === 'stop' || !snapshot.runAllowed;
+}
+
+
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -3894,6 +4123,16 @@ export function buildAgent17PlanningDepthSnapshot(
     executionPacing,
     missionDirective,
   });
+  const cadenceLattice = buildAgent17CadenceLattice({
+    executionClosure,
+    directiveSynthesis,
+    executionPacing,
+  });
+  const readinessGate = buildAgent17ReadinessGate({
+    cadenceLattice,
+    handoffReadiness,
+    coordinationBrief,
+  });
   return {
     ...core,
     intentQueue,
@@ -3913,6 +4152,8 @@ export function buildAgent17PlanningDepthSnapshot(
     missionDirective,
     directiveSynthesis,
     executionClosure,
+    cadenceLattice,
+    readinessGate,
   };
 }
 
@@ -4520,6 +4761,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Locked synthesis or sealed closure yields executionClosureBlocksAdvance.',
     severity: 'major',
   },
+  {
+    id: 'G17-046',
+    title: 'Cadence lattice on planning depth',
+    category: 'telemetry',
+    acceptance: 'cadenceLattice reports cadenceIndex 0–100 with flowing/steady/stalled band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-047',
+    title: 'Readiness gate signals complete',
+    category: 'telemetry',
+    acceptance: 'readinessGate exposes ≥5 readiness signals and readinessScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-048',
+    title: 'Stalled cadence stops readiness run',
+    category: 'integration',
+    acceptance: 'Stalled cadence or stop band yields readinessGateBlocksRun.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -4567,6 +4829,12 @@ export function listAgent17GoalIds(): string[] {
   buildAgent17ExecutionClosure,
   executionClosureBlocksAdvance,
 } from '../planning/execution-closure.ts';
+  buildAgent17CadenceLattice,
+  cadenceLatticeBlocksRun,
+} from '../planning/cadence-lattice.ts';
+  buildAgent17ReadinessGate,
+  readinessGateBlocksRun,
+} from '../planning/readiness-gate.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -5215,6 +5483,55 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const cadenceLattice = depthEval.snapshot.planningDepth?.cadenceLattice;
+  goalResults.push(
+    result(
+      'G17-046',
+      !!cadenceLattice &&
+        cadenceLattice.cadenceIndex >= 0 &&
+        cadenceLattice.cadenceIndex <= 100 &&
+        (cadenceLattice.band === 'flowing' ||
+          cadenceLattice.band === 'steady' ||
+          cadenceLattice.band === 'stalled'),
+      `${cadenceLattice?.cadenceIndex}/${cadenceLattice?.band}`
+    )
+  );
+
+  const readinessGate = depthEval.snapshot.planningDepth?.readinessGate;
+  goalResults.push(
+    result(
+      'G17-047',
+      !!readinessGate &&
+        readinessGate.signals.length >= 5 &&
+        readinessGate.readinessScore >= 0 &&
+        readinessGate.readinessScore <= 100,
+      `signals=${readinessGate?.signals.length} score=${readinessGate?.readinessScore}`
+    )
+  );
+
+  const stalledCadence = buildAgent17CadenceLattice({
+    executionClosure: sealedClosure,
+    directiveSynthesis: lockedSynthesis,
+    executionPacing: buildAgent17ExecutionPacing(
+      breachOps,
+      baseState,
+      assessAgent17PlanHealth(breachOps.activePlan, baseState, 'player'),
+      buildAgent17VerificationPolicy(breachOps, baseState, 'player')
+    ),
+  });
+  const stopReadiness = buildAgent17ReadinessGate({
+    cadenceLattice: stalledCadence,
+    handoffReadiness: handoff!,
+    coordinationBrief: depthEval.snapshot.planningDepth!.coordinationBrief,
+  });
+  goalResults.push(
+    result(
+      'G17-048',
+      cadenceLatticeBlocksRun(stalledCadence) || readinessGateBlocksRun(stopReadiness),
+      `${stalledCadence.band}/${stopReadiness.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -5290,6 +5607,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-043',
     'G17-044',
     'G17-045',
+    'G17-046',
+    'G17-047',
+    'G17-048',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
@@ -7871,6 +8191,383 @@ export function runAgent17SynthesisDepthTests(): Agent17DevTestReport {
     success: overallStatus === 'passed',
     testResults,
     summary: `Agent 17 Synthesis Depth Tests: ${passedCount}/${testResults.length} Passed`,
+  };
+}
+
+
+// --- source: harness/run-cadence-depth-tests.ts ---
+  createDefaultAcc17CommandCenterOpsState,
+  acc17CreateMultiStepPlanFromObjective,
+  defaultObjectiveResolver,
+} from '../planning/ops-state.ts';
+  buildAgent17GovernanceAudit,
+  governanceAuditBlocksAutomation,
+} from '../planning/governance-audit.ts';
+  buildAgent17EscalationMatrix,
+  escalationMatrixBlocksAutomation,
+} from '../planning/escalation-matrix.ts';
+  buildAgent17RollbackAssurance,
+  rollbackAssuranceNeedsRestore,
+} from '../planning/rollback-assurance.ts';
+  buildAgent17StabilizationIndex,
+  stabilizationIndexBlocksAutomation,
+} from '../planning/stabilization-index.ts';
+  buildAgent17CommandEnvelope,
+  commandEnvelopeNeedsThrottle,
+} from '../planning/command-envelope.ts';
+  buildAgent17ConvergenceIndex,
+  convergenceIndexBlocksDirective,
+} from '../planning/convergence-index.ts';
+  buildAgent17DirectiveSynthesis,
+  directiveSynthesisBlocksAdvance,
+} from '../planning/directive-synthesis.ts';
+  buildAgent17CadenceLattice,
+  cadenceLatticeBlocksRun,
+} from '../planning/cadence-lattice.ts';
+  buildAgent17ReadinessGate,
+  readinessGateBlocksRun,
+} from '../planning/readiness-gate.ts';
+  rankAgent17TemplateCandidates,
+  summarizeAgent17CatalogDepth,
+} from '../planning/template-selector.ts';
+
+export function runAgent17CadenceDepthTests(): Agent17DevTestReport {
+  const start = Date.now();
+  const testResults: Agent17DevTestReport['testResults'] = [];
+  const push = (id: string, name: string, ok: boolean, detail?: string) => {
+    testResults.push({
+      id,
+      name,
+      status: ok ? 'passed' : 'failed',
+      durationMs: 0,
+      errorMessage: ok ? undefined : detail,
+    });
+  };
+
+  try {
+    const settings = {
+      commandCenterSettings: { enabled: true },
+      aiCommunicationAutonomyLevel: 'assisted' as const,
+    };
+    const actor = {
+      id: 'player',
+      money: 120,
+      netWorth: 2400,
+      currentRegion: 'QLD',
+      currentSupplies: 6,
+    };
+    const state: Agent17GameStateSlice = {
+      turnCounter: 29,
+      day: 29,
+      player: actor,
+      actorsById: { player: actor },
+      playerTrackedObjective: {
+        title: 'Expand trade network supply chain',
+        sourceType: 'contract',
+      },
+      gi3Strategy: { headline: 'Expand trade network resilience' },
+      strategyPlannerState: { activePlan: { title: 'Trade network supply expansion' } },
+      lastExecutedAction: { type: 'trade' },
+    };
+    const ops = createDefaultAcc17CommandCenterOpsState();
+    const plan = acc17CreateMultiStepPlanFromObjective(
+      state,
+      settings,
+      'player',
+      (s, st, id) => defaultObjectiveResolver(s, st, id)
+    );
+    const opsWithPlan = {
+      ...ops,
+      activePlan: plan ? { ...plan, title: plan.title || 'Trade supply chain plan' } : plan,
+    };
+    const health = assessAgent17PlanHealth(opsWithPlan.activePlan, state, 'player');
+    const intentQueue = buildAgent17IntentQueue(opsWithPlan, state, settings, 'player', health);
+    const alignment = buildAgent17StrategicAlignment(
+      opsWithPlan,
+      state,
+      settings,
+      'player',
+      intentQueue
+    );
+    const policy = buildAgent17VerificationPolicy(
+      { ...opsWithPlan, lastContextFingerprint: 'cad_fp' },
+      state,
+      'player'
+    );
+    const pacing = buildAgent17ExecutionPacing(opsWithPlan, state, health, policy);
+    const scorecard = buildAgent17ResilienceScorecard(
+      opsWithPlan,
+      state,
+      'player',
+      health,
+      policy
+    );
+    const routing = rankAgent17TemplateCandidates(state, settings, 'player');
+    const delegationAnalytics = buildAgent17DelegationAnalytics(opsWithPlan, settings);
+    const core = {
+      turn: state.turnCounter || 1,
+      actorId: 'player',
+      planHealth: health,
+      suggestion: buildAgent17PlanningSuggestion(
+        opsWithPlan,
+        state,
+        settings,
+        'player',
+        'copilot'
+      ),
+      templateRouting: routing,
+      delegationAnalytics,
+      delegationLadder: buildAgent17DelegationLadder(delegationAnalytics, settings, 'copilot'),
+      planLedger: summarizeAgent17PlanLedger(opsWithPlan, state),
+      catalogDepth: summarizeAgent17CatalogDepth(),
+    };
+    const brief = buildAgent17CoordinationBrief(
+      core,
+      intentQueue,
+      policy,
+      opsWithPlan,
+      state,
+      settings
+    );
+    const handoff = buildAgent17HandoffReadiness({
+      coordinationBrief: brief,
+      verificationPolicy: policy,
+      executionPacing: pacing,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const posture = buildAgent17CommandPosture({
+      planHealth: health,
+      handoffReadiness: handoff,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const audit = buildAgent17GovernanceAudit(opsWithPlan, settings, policy);
+    const matrix = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: audit,
+      handoffReadiness: handoff,
+    });
+    const assurance = buildAgent17RollbackAssurance(opsWithPlan, health, audit);
+    const stabilization = buildAgent17StabilizationIndex({
+      escalationMatrix: matrix,
+      rollbackAssurance: assurance,
+    });
+    const envelope = buildAgent17CommandEnvelope({
+      ops: opsWithPlan,
+      executionPacing: pacing,
+      stabilizationIndex: stabilization,
+    });
+    const convergence = buildAgent17ConvergenceIndex({
+      commandEnvelope: envelope,
+      stabilizationIndex: stabilization,
+      strategicAlignment: alignment,
+    });
+    const directive = buildAgent17MissionDirective({
+      intentQueue,
+      commandEnvelope: envelope,
+      convergenceIndex: convergence,
+    });
+    const synthesis = buildAgent17DirectiveSynthesis({
+      missionDirective: directive,
+      convergenceIndex: convergence,
+      intentQueue,
+    });
+    const closure = buildAgent17ExecutionClosure({
+      directiveSynthesis: synthesis,
+      executionPacing: pacing,
+      missionDirective: directive,
+    });
+
+    const cadenceClean = buildAgent17CadenceLattice({
+      executionClosure: closure,
+      directiveSynthesis: synthesis,
+      executionPacing: pacing,
+    });
+    push(
+      'cad_index_bounded',
+      'Cadence lattice bounded with band',
+      cadenceClean.cadenceIndex >= 0 &&
+        cadenceClean.cadenceIndex <= 100 &&
+        (cadenceClean.band === 'flowing' ||
+          cadenceClean.band === 'steady' ||
+          cadenceClean.band === 'stalled'),
+      `${cadenceClean.cadenceIndex}/${cadenceClean.band}`
+    );
+
+    push(
+      'cad_factors',
+      'Cadence lattice exposes weighted factors',
+      cadenceClean.factors.length >= 4 &&
+        cadenceClean.factors.every(f => f.weight > 0),
+      `factors=${cadenceClean.factors.length}`
+    );
+
+    const readinessClean = buildAgent17ReadinessGate({
+      cadenceLattice: cadenceClean,
+      handoffReadiness: handoff,
+      coordinationBrief: brief,
+    });
+    push(
+      'cad_readiness_signals',
+      'Readiness gate exposes signals',
+      readinessClean.signals.length >= 5 &&
+        readinessClean.readinessScore >= 0 &&
+        readinessClean.readinessScore <= 100,
+      `signals=${readinessClean.signals.length} score=${readinessClean.readinessScore}`
+    );
+
+    push(
+      'cad_readiness_go',
+      'Healthy ops yields go or caution readiness',
+      readinessClean.band === 'go' || readinessClean.band === 'caution',
+      readinessClean.band
+    );
+
+    const breachOps = {
+      ...opsWithPlan,
+      delegatedProjects: [
+        {
+          id: 'dp1',
+          planId: 'p1',
+          title: 'Breach project',
+          delegateKind: 'team_os' as const,
+          delegateTargetId: 'team',
+          status: 'active' as const,
+          authorityCeiling: 'delegated' as const,
+          assignedTurn: 1,
+          assignedDay: 1,
+          lastVerifiedFingerprint: '',
+          notes: '',
+        },
+      ],
+    };
+    const advisorySettings = {
+      ...settings,
+      aiCommunicationAutonomyLevel: 'advisory' as const,
+    };
+    const auditBreach = buildAgent17GovernanceAudit(breachOps, advisorySettings, policy);
+    const matrixUrgent = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: auditBreach,
+      handoffReadiness: handoff,
+    });
+    const assuranceBreach = buildAgent17RollbackAssurance(
+      breachOps,
+      assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+      auditBreach
+    );
+    const stabilizationVolatile = buildAgent17StabilizationIndex({
+      escalationMatrix: matrixUrgent,
+      rollbackAssurance: assuranceBreach,
+    });
+    const envelopeSaturated = buildAgent17CommandEnvelope({
+      ops: breachOps,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      stabilizationIndex: stabilizationVolatile,
+    });
+    const convergenceDiverging = buildAgent17ConvergenceIndex({
+      commandEnvelope: envelopeSaturated,
+      stabilizationIndex: stabilizationVolatile,
+      strategicAlignment: alignment,
+    });
+    const directiveHeld = buildAgent17MissionDirective({
+      intentQueue,
+      commandEnvelope: envelopeSaturated,
+      convergenceIndex: convergenceDiverging,
+    });
+    const synthesisLocked = buildAgent17DirectiveSynthesis({
+      missionDirective: directiveHeld,
+      convergenceIndex: convergenceDiverging,
+      intentQueue,
+    });
+    const closureSealed = buildAgent17ExecutionClosure({
+      directiveSynthesis: synthesisLocked,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      missionDirective: directiveHeld,
+    });
+    const cadenceStalled = buildAgent17CadenceLattice({
+      executionClosure: closureSealed,
+      directiveSynthesis: synthesisLocked,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+    });
+    push(
+      'cad_stalled_blocks',
+      'Governance breach yields stalled cadence or blocks run',
+      cadenceStalled.band === 'stalled' || cadenceLatticeBlocksRun(cadenceStalled),
+      `${cadenceStalled.band} idx=${cadenceStalled.cadenceIndex}`
+    );
+
+    const readinessStop = buildAgent17ReadinessGate({
+      cadenceLattice: cadenceStalled,
+      handoffReadiness: handoff,
+      coordinationBrief: brief,
+    });
+    push(
+      'cad_stop_run',
+      'Stop readiness blocks run clearance',
+      readinessStop.band === 'stop' ||
+        readinessGateBlocksRun(readinessStop) ||
+        !readinessStop.runAllowed,
+      `${readinessStop.band} run=${readinessStop.runAllowed}`
+    );
+
+    push(
+      'cad_escalation_link',
+      'Urgent escalation propagates to cadence factors',
+      escalationMatrixBlocksAutomation(matrixUrgent) ||
+        governanceAuditBlocksAutomation(auditBreach) ||
+        rollbackAssuranceNeedsRestore(assuranceBreach) ||
+        stabilizationIndexBlocksAutomation(stabilizationVolatile) ||
+        commandEnvelopeNeedsThrottle(envelopeSaturated) ||
+        convergenceIndexBlocksDirective(convergenceDiverging) ||
+        directiveSynthesisBlocksAdvance(synthesisLocked),
+      matrixUrgent.band
+    );
+
+    const evalRes = evaluateAcc17CommandCenterOperations(state, settings, 'player', ops);
+    const depth = evalRes.snapshot.planningDepth;
+    push(
+      'cad_evaluator_depth',
+      'Evaluator attaches cadence lattice and readiness gate',
+      !!depth?.cadenceLattice?.headline &&
+        !!depth?.readinessGate?.headline &&
+        (depth.readinessGate.signals?.length ?? 0) >= 5,
+      `${depth?.cadenceLattice?.band}/${depth?.readinessGate?.band}`
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    push('cad_throw', 'Cadence harness did not throw', false, msg);
+  }
+
+  const passedCount = testResults.filter(t => t.status === 'passed').length;
+  const failedCount = testResults.filter(t => t.status === 'failed').length;
+  const overallStatus: 'passed' | 'failed' = failedCount === 0 ? 'passed' : 'failed';
+  return {
+    timestamp: Date.now(),
+    totalTests: testResults.length,
+    passedCount,
+    failedCount,
+    executionTimeMs: Date.now() - start,
+    overallStatus,
+    success: overallStatus === 'passed',
+    testResults,
+    summary: `Agent 17 Cadence Depth Tests: ${passedCount}/${testResults.length} Passed`,
   };
 }
 

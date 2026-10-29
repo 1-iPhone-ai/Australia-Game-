@@ -317,6 +317,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Locked synthesis or sealed closure yields executionClosureBlocksAdvance.',
     severity: 'major',
   },
+  {
+    id: 'G17-046',
+    title: 'Cadence lattice on planning depth',
+    category: 'telemetry',
+    acceptance: 'cadenceLattice reports cadenceIndex 0–100 with flowing/steady/stalled band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-047',
+    title: 'Readiness gate signals complete',
+    category: 'telemetry',
+    acceptance: 'readinessGate exposes ≥5 readiness signals and readinessScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-048',
+    title: 'Stalled cadence stops readiness run',
+    category: 'integration',
+    acceptance: 'Stalled cadence or stop band yields readinessGateBlocksRun.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

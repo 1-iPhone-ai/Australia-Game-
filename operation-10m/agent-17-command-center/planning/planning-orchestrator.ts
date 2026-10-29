@@ -37,6 +37,8 @@ import { buildAgent17ConvergenceIndex } from './convergence-index.ts';
 import { buildAgent17MissionDirective } from './mission-directive.ts';
 import { buildAgent17DirectiveSynthesis } from './directive-synthesis.ts';
 import { buildAgent17ExecutionClosure } from './execution-closure.ts';
+import { buildAgent17CadenceLattice } from './cadence-lattice.ts';
+import { buildAgent17ReadinessGate } from './readiness-gate.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -211,6 +213,16 @@ export function buildAgent17PlanningDepthSnapshot(
     executionPacing,
     missionDirective,
   });
+  const cadenceLattice = buildAgent17CadenceLattice({
+    executionClosure,
+    directiveSynthesis,
+    executionPacing,
+  });
+  const readinessGate = buildAgent17ReadinessGate({
+    cadenceLattice,
+    handoffReadiness,
+    coordinationBrief,
+  });
   return {
     ...core,
     intentQueue,
@@ -230,6 +242,8 @@ export function buildAgent17PlanningDepthSnapshot(
     missionDirective,
     directiveSynthesis,
     executionClosure,
+    cadenceLattice,
+    readinessGate,
   };
 }
 

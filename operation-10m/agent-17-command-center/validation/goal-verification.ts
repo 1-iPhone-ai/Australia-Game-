@@ -62,6 +62,14 @@ import {
   executionClosureBlocksAdvance,
 } from '../planning/execution-closure.ts';
 import {
+  buildAgent17CadenceLattice,
+  cadenceLatticeBlocksRun,
+} from '../planning/cadence-lattice.ts';
+import {
+  buildAgent17ReadinessGate,
+  readinessGateBlocksRun,
+} from '../planning/readiness-gate.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -710,6 +718,55 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const cadenceLattice = depthEval.snapshot.planningDepth?.cadenceLattice;
+  goalResults.push(
+    result(
+      'G17-046',
+      !!cadenceLattice &&
+        cadenceLattice.cadenceIndex >= 0 &&
+        cadenceLattice.cadenceIndex <= 100 &&
+        (cadenceLattice.band === 'flowing' ||
+          cadenceLattice.band === 'steady' ||
+          cadenceLattice.band === 'stalled'),
+      `${cadenceLattice?.cadenceIndex}/${cadenceLattice?.band}`
+    )
+  );
+
+  const readinessGate = depthEval.snapshot.planningDepth?.readinessGate;
+  goalResults.push(
+    result(
+      'G17-047',
+      !!readinessGate &&
+        readinessGate.signals.length >= 5 &&
+        readinessGate.readinessScore >= 0 &&
+        readinessGate.readinessScore <= 100,
+      `signals=${readinessGate?.signals.length} score=${readinessGate?.readinessScore}`
+    )
+  );
+
+  const stalledCadence = buildAgent17CadenceLattice({
+    executionClosure: sealedClosure,
+    directiveSynthesis: lockedSynthesis,
+    executionPacing: buildAgent17ExecutionPacing(
+      breachOps,
+      baseState,
+      assessAgent17PlanHealth(breachOps.activePlan, baseState, 'player'),
+      buildAgent17VerificationPolicy(breachOps, baseState, 'player')
+    ),
+  });
+  const stopReadiness = buildAgent17ReadinessGate({
+    cadenceLattice: stalledCadence,
+    handoffReadiness: handoff!,
+    coordinationBrief: depthEval.snapshot.planningDepth!.coordinationBrief,
+  });
+  goalResults.push(
+    result(
+      'G17-048',
+      cadenceLatticeBlocksRun(stalledCadence) || readinessGateBlocksRun(stopReadiness),
+      `${stalledCadence.band}/${stopReadiness.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -785,6 +842,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-043',
     'G17-044',
     'G17-045',
+    'G17-046',
+    'G17-047',
+    'G17-048',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
