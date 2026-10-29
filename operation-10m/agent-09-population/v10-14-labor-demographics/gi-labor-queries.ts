@@ -123,7 +123,11 @@ export type LaborGiQueryTopic =
   | 'convergence_safety_coupling'
   | 'safety_harmony'
   | 'subject_unification_readiness'
-  | 'workforce_unification';
+  | 'workforce_unification'
+  | 'unification_upskilling_coupling'
+  | 'upskilling_synthesis'
+  | 'subject_synthesis_readiness'
+  | 'workforce_synthesis';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -248,6 +252,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_unification_readiness';
   }
   if (/\b(workforce unification|unification index labor)/.test(q)) return 'workforce_unification';
+  if (/\b(unification upskilling|unification-upskilling coupling)/.test(q)) return 'unification_upskilling_coupling';
+  if (/\b(upskilling synthesis|upskilling pipeline synthesis)/.test(q)) return 'upskilling_synthesis';
+  if (/\b(subject synthesis readiness|synthesis readiness subject)/.test(q)) return 'subject_synthesis_readiness';
+  if (/\b(workforce synthesis|synthesis index labor)/.test(q)) return 'workforce_synthesis';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1226,6 +1234,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Unification band ${state.nationalWorkforceUnificationIndex?.band ?? 'unknown'}; unification drag ${Math.round(state.nationalWorkforceUnificationIndex?.unificationDrag ?? 0)}.`,
         inference: state.nationalWorkforceUnificationIndex?.stewardNote || state.summary,
         projection: 'Workforce unification synthesizes safety coupling, safety harmony, and subject unification.'
+      };
+    case 'unification_upskilling_coupling':
+      return {
+        topic,
+        headline: state.unificationUpskillingCouplingBrief?.summary || 'Unification-upskilling coupling unavailable.',
+        fact: `Coupling band ${state.unificationUpskillingCouplingBrief?.band ?? 'unknown'}; unification drag ${Math.round(state.unificationUpskillingCouplingBrief?.unificationDrag ?? 0)}.`,
+        inference: state.unificationUpskillingCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce unification with upskilling programs — wave 35 / O10-201 depth.'
+      };
+    case 'upskilling_synthesis':
+      return {
+        topic,
+        headline: state.upskillingSynthesisOutlook?.summary || 'Upskilling synthesis unavailable.',
+        fact: `Synthesis band ${state.upskillingSynthesisOutlook?.band ?? 'unknown'}; harmony drag ${Math.round(state.upskillingSynthesisOutlook?.harmonyDrag ?? 0)}.`,
+        inference: state.upskillingSynthesisOutlook?.stewardNote || state.outlook,
+        projection: 'Synthesis blends upskilling programs with safety harmony — bounded indices only.'
+      };
+    case 'subject_synthesis_readiness':
+      return {
+        topic,
+        headline: state.subjectSynthesisReadinessBrief?.summary || 'Subject synthesis readiness unavailable.',
+        fact: `Synthesis band ${state.subjectSynthesisReadinessBrief?.band ?? 'unknown'}; synthesis drag ${Math.round(state.subjectSynthesisReadinessBrief?.synthesisDrag ?? 0)}.`,
+        inference: state.subjectSynthesisReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject synthesis readiness gates subject unification against workforce unification for O10-201 wave 35.'
+      };
+    case 'workforce_synthesis':
+      return {
+        topic,
+        headline: state.nationalWorkforceSynthesisIndex?.summary || 'Workforce synthesis unavailable.',
+        fact: `Synthesis band ${state.nationalWorkforceSynthesisIndex?.band ?? 'unknown'}; synthesis drag ${Math.round(state.nationalWorkforceSynthesisIndex?.synthesisDrag ?? 0)}.`,
+        inference: state.nationalWorkforceSynthesisIndex?.stewardNote || state.summary,
+        projection: 'Workforce synthesis synthesizes upskilling coupling, upskilling synthesis, and subject synthesis.'
       };
     default:
       return {

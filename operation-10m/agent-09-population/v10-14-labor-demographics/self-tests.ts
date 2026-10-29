@@ -190,6 +190,10 @@ import { computeNationalConvergenceSafetyCouplingBrief } from './convergence-saf
 import { computeNationalSafetyHarmonyOutlook } from './safety-harmony-outlook';
 import { computeNationalSubjectUnificationReadinessBrief } from './subject-unification-readiness-brief';
 import { computeNationalWorkforceUnificationIndex } from './national-workforce-unification-index';
+import { computeNationalUnificationUpskillingCouplingBrief } from './unification-upskilling-coupling-brief';
+import { computeNationalUpskillingSynthesisOutlook } from './upskilling-synthesis-outlook';
+import { computeNationalSubjectSynthesisReadinessBrief } from './subject-synthesis-readiness-brief';
+import { computeNationalWorkforceSynthesisIndex } from './national-workforce-synthesis-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -2108,6 +2112,62 @@ export function runV1014LaborDemographicsSelfTests(): {
     'unification steward note'
   );
   check('R3416', safetyEaseForRegion('NSW', 'technology') > 0, 'safety ease for region');
+
+  check('R3501', Boolean(r1.state.unificationUpskillingCouplingBrief?.band), 'unification upskilling on state');
+  check('R3502', (r1.state.unificationUpskillingCouplingBrief?.unificationDrag ?? 0) >= 0, 'unification upskilling drag');
+  check('R3503', Boolean(r1.state.upskillingSynthesisOutlook?.band), 'upskilling synthesis on state');
+  check('R3504', (r1.state.upskillingSynthesisOutlook?.harmonyDrag ?? 0) >= 0, 'upskilling synthesis harmony drag');
+  check('R3505', Boolean(r1.state.subjectSynthesisReadinessBrief?.band), 'subject synthesis on state');
+  check('R3506', Boolean(r1.state.nationalWorkforceSynthesisIndex?.band), 'workforce synthesis on state');
+  check(
+    'R3507',
+    detectLaborDemographicsQuery('unification upskilling coupling') === 'unification_upskilling_coupling',
+    'GI unification upskilling detect'
+  );
+  check(
+    'R3508',
+    detectLaborDemographicsQuery('upskilling synthesis') === 'upskilling_synthesis',
+    'GI upskilling synthesis detect'
+  );
+  check(
+    'R3509',
+    detectLaborDemographicsQuery('subject synthesis readiness') === 'subject_synthesis_readiness',
+    'GI subject synthesis detect'
+  );
+  check(
+    'R3510',
+    detectLaborDemographicsQuery('workforce synthesis') === 'workforce_synthesis',
+    'GI workforce synthesis detect'
+  );
+  check(
+    'R3511',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_synthesis').headline.length > 5,
+    'GI workforce synthesis answer'
+  );
+  const unificationUpskillingOnly = computeNationalUnificationUpskillingCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceUnificationIndex
+  );
+  check('R3512', unificationUpskillingOnly.summary.length > 10, 'unification upskilling standalone summary');
+  const upskillingSynthesisOnly = computeNationalUpskillingSynthesisOutlook(r1.state, r1.state.safetyHarmonyOutlook);
+  check('R3513', upskillingSynthesisOnly.band.length > 3, 'upskilling synthesis band string');
+  const subjectSynthesisOnly = computeNationalSubjectSynthesisReadinessBrief(
+    r1.state,
+    r1.state.subjectUnificationReadinessBrief,
+    r1.state.nationalWorkforceUnificationIndex
+  );
+  check('R3514', subjectSynthesisOnly.synthesisDrag >= 0, 'subject synthesis drag');
+  check(
+    'R3515',
+    computeNationalWorkforceSynthesisIndex(
+      rHhBad.state,
+      rHhBad.state.unificationUpskillingCouplingBrief,
+      rHhBad.state.upskillingSynthesisOutlook,
+      rHhBad.state.subjectSynthesisReadinessBrief
+    ).stewardNote.length > 8,
+    'synthesis steward note'
+  );
+  check('R3516', upskillingUpliftForRegion('NSW', 'technology') > 0, 'upskilling uplift for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

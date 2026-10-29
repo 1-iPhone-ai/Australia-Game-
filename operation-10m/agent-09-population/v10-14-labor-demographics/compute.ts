@@ -146,6 +146,10 @@ import { computeNationalConvergenceSafetyCouplingBrief } from './convergence-saf
 import { computeNationalSafetyHarmonyOutlook } from './safety-harmony-outlook';
 import { computeNationalSubjectUnificationReadinessBrief } from './subject-unification-readiness-brief';
 import { computeNationalWorkforceUnificationIndex } from './national-workforce-unification-index';
+import { computeNationalUnificationUpskillingCouplingBrief } from './unification-upskilling-coupling-brief';
+import { computeNationalUpskillingSynthesisOutlook } from './upskilling-synthesis-outlook';
+import { computeNationalSubjectSynthesisReadinessBrief } from './subject-synthesis-readiness-brief';
+import { computeNationalWorkforceSynthesisIndex } from './national-workforce-synthesis-index';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -988,6 +992,25 @@ export function computeNationalLaborDemographics(
     state.safetyHarmonyOutlook,
     state.subjectUnificationReadinessBrief
   );
+  state.unificationUpskillingCouplingBrief = computeNationalUnificationUpskillingCouplingBrief(
+    state,
+    state.nationalWorkforceUnificationIndex
+  );
+  state.upskillingSynthesisOutlook = computeNationalUpskillingSynthesisOutlook(
+    state,
+    state.safetyHarmonyOutlook
+  );
+  state.subjectSynthesisReadinessBrief = computeNationalSubjectSynthesisReadinessBrief(
+    state,
+    state.subjectUnificationReadinessBrief,
+    state.nationalWorkforceUnificationIndex
+  );
+  state.nationalWorkforceSynthesisIndex = computeNationalWorkforceSynthesisIndex(
+    state,
+    state.unificationUpskillingCouplingBrief,
+    state.upskillingSynthesisOutlook,
+    state.subjectSynthesisReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -1726,6 +1749,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceUnificationIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.unificationUpskillingCouplingBrief?.band === 'decoupled' ||
+      state.unificationUpskillingCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.unificationUpskillingCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.upskillingSynthesisOutlook?.band === 'ebbing' ||
+      state.upskillingSynthesisOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.upskillingSynthesisOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectSynthesisReadinessBrief?.band === 'below_synthesis' ||
+      state.subjectSynthesisReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectSynthesisReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceSynthesisIndex?.band === 'fragile' ||
+      state.nationalWorkforceSynthesisIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceSynthesisIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);

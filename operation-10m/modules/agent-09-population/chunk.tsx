@@ -309,6 +309,10 @@ export interface NationalLaborDemographicsState {
   safetyHarmonyOutlook?: NationalSafetyHarmonyOutlook;
   subjectUnificationReadinessBrief?: NationalSubjectUnificationReadinessBrief;
   nationalWorkforceUnificationIndex?: NationalWorkforceUnificationIndex;
+  unificationUpskillingCouplingBrief?: NationalUnificationUpskillingCouplingBrief;
+  upskillingSynthesisOutlook?: NationalUpskillingSynthesisOutlook;
+  subjectSynthesisReadinessBrief?: NationalSubjectSynthesisReadinessBrief;
+  nationalWorkforceSynthesisIndex?: NationalWorkforceSynthesisIndex;
 }
 
 export type MigrationShockKind =
@@ -1653,6 +1657,54 @@ export interface NationalWorkforceUnificationIndex {
   stewardNote: string;
 }
 
+export type UnificationUpskillingCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalUnificationUpskillingCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: UnificationUpskillingCouplingBand;
+  unificationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type UpskillingSynthesisBand = 'ebbing' | 'patchy' | 'rising' | 'synthesis';
+
+export interface NationalUpskillingSynthesisOutlook {
+  turn: number;
+  synthesisIndex: number;
+  band: UpskillingSynthesisBand;
+  harmonyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectSynthesisReadinessBand =
+  | 'below_synthesis'
+  | 'approaching'
+  | 'synthesis_ready'
+  | 'unification_locked';
+
+export interface NationalSubjectSynthesisReadinessBrief {
+  turn: number;
+  synthesisIndex: number;
+  band: SubjectSynthesisReadinessBand;
+  synthesisDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceSynthesisBand = 'fragile' | 'thin' | 'elevated' | 'synthesis';
+
+export interface NationalWorkforceSynthesisIndex {
+  turn: number;
+  synthesisIndex: number;
+  band: WorkforceSynthesisBand;
+  synthesisDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -2839,7 +2891,11 @@ export type LaborGiQueryTopic =
   | 'convergence_safety_coupling'
   | 'safety_harmony'
   | 'subject_unification_readiness'
-  | 'workforce_unification';
+  | 'workforce_unification'
+  | 'unification_upskilling_coupling'
+  | 'upskilling_synthesis'
+  | 'subject_synthesis_readiness'
+  | 'workforce_synthesis';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -2964,6 +3020,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_unification_readiness';
   }
   if (/\b(workforce unification|unification index labor)/.test(q)) return 'workforce_unification';
+  if (/\b(unification upskilling|unification-upskilling coupling)/.test(q)) return 'unification_upskilling_coupling';
+  if (/\b(upskilling synthesis|upskilling pipeline synthesis)/.test(q)) return 'upskilling_synthesis';
+  if (/\b(subject synthesis readiness|synthesis readiness subject)/.test(q)) return 'subject_synthesis_readiness';
+  if (/\b(workforce synthesis|synthesis index labor)/.test(q)) return 'workforce_synthesis';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -3943,6 +4003,38 @@ export function answerLaborDemographicsQuestion(
         inference: state.nationalWorkforceUnificationIndex?.stewardNote || state.summary,
         projection: 'Workforce unification synthesizes safety coupling, safety harmony, and subject unification.'
       };
+    case 'unification_upskilling_coupling':
+      return {
+        topic,
+        headline: state.unificationUpskillingCouplingBrief?.summary || 'Unification-upskilling coupling unavailable.',
+        fact: `Coupling band ${state.unificationUpskillingCouplingBrief?.band ?? 'unknown'}; unification drag ${Math.round(state.unificationUpskillingCouplingBrief?.unificationDrag ?? 0)}.`,
+        inference: state.unificationUpskillingCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce unification with upskilling programs — wave 35 / O10-201 depth.'
+      };
+    case 'upskilling_synthesis':
+      return {
+        topic,
+        headline: state.upskillingSynthesisOutlook?.summary || 'Upskilling synthesis unavailable.',
+        fact: `Synthesis band ${state.upskillingSynthesisOutlook?.band ?? 'unknown'}; harmony drag ${Math.round(state.upskillingSynthesisOutlook?.harmonyDrag ?? 0)}.`,
+        inference: state.upskillingSynthesisOutlook?.stewardNote || state.outlook,
+        projection: 'Synthesis blends upskilling programs with safety harmony — bounded indices only.'
+      };
+    case 'subject_synthesis_readiness':
+      return {
+        topic,
+        headline: state.subjectSynthesisReadinessBrief?.summary || 'Subject synthesis readiness unavailable.',
+        fact: `Synthesis band ${state.subjectSynthesisReadinessBrief?.band ?? 'unknown'}; synthesis drag ${Math.round(state.subjectSynthesisReadinessBrief?.synthesisDrag ?? 0)}.`,
+        inference: state.subjectSynthesisReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject synthesis readiness gates subject unification against workforce unification for O10-201 wave 35.'
+      };
+    case 'workforce_synthesis':
+      return {
+        topic,
+        headline: state.nationalWorkforceSynthesisIndex?.summary || 'Workforce synthesis unavailable.',
+        fact: `Synthesis band ${state.nationalWorkforceSynthesisIndex?.band ?? 'unknown'}; synthesis drag ${Math.round(state.nationalWorkforceSynthesisIndex?.synthesisDrag ?? 0)}.`,
+        inference: state.nationalWorkforceSynthesisIndex?.stewardNote || state.summary,
+        projection: 'Workforce synthesis synthesizes upskilling coupling, upskilling synthesis, and subject synthesis.'
+      };
     default:
       return {
         topic: 'national_summary',
@@ -4907,6 +4999,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceUnificationIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceUnificationIndex.stewardNote);
+  }
+  if (
+    state.unificationUpskillingCouplingBrief?.band === 'decoupled' ||
+    state.unificationUpskillingCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.unificationUpskillingCouplingBrief.stewardNote);
+  }
+  if (
+    state.upskillingSynthesisOutlook?.band === 'ebbing' ||
+    state.upskillingSynthesisOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.upskillingSynthesisOutlook.stewardNote);
+  }
+  if (
+    state.subjectSynthesisReadinessBrief?.band === 'below_synthesis' ||
+    state.subjectSynthesisReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectSynthesisReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceSynthesisIndex?.band === 'fragile' ||
+    state.nationalWorkforceSynthesisIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceSynthesisIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -14144,6 +14260,278 @@ export function computeNationalWorkforceUnificationIndex(
 }
 
 
+// --- source: unification-upskilling-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalUnificationUpskillingCouplingBrief,
+  type NationalWorkforceUnificationIndex,
+  type UnificationUpskillingCouplingBand
+} from './types';
+
+function couplingBand(index: number): UnificationUpskillingCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-35 / wave-35 unification-upskilling coupling — unification × upskilling (O10-201). */
+export function computeNationalUnificationUpskillingCouplingBrief(
+  state: NationalLaborDemographicsState,
+  unification: NationalWorkforceUnificationIndex | null | undefined
+): NationalUnificationUpskillingCouplingBrief {
+  if (!state.enabled || !unification) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      unificationDrag: 0,
+      summary: 'Unification-upskilling coupling idle — workforce unification unavailable.',
+      stewardNote: 'Compute workforce unification before upskilling coupling guidance.'
+    };
+  }
+
+  let upskillingLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    upskillingLift += upskillingUpliftForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  upskillingLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const unificationDrag = v1014laborClamp(
+    unification.unificationDrag * 0.48 + (unification.band === 'fragile' || unification.band === 'thin' ? 11 : 3)
+  );
+  const unificationLift =
+    unification.band === 'elevated' || unification.band === 'unification'
+      ? unification.unificationIndex * 0.24
+      : unification.unificationIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + upskillingLift * 21 + unificationLift - unificationDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained unification-upskilling link — deploy upskilling programs before wave-35 synthesis commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard upskilling synthesis spikes that drain unification buffers.'
+        : 'Amplified coupling — pair upskilling packs with subject synthesis readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    unificationDrag,
+    summary: `Unification-upskilling coupling ${band} (index ${Math.round(couplingIndex)}); unification drag ${Math.round(unificationDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: upskilling-synthesis-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalSafetyHarmonyOutlook,
+  type NationalUpskillingSynthesisOutlook,
+  type UpskillingSynthesisBand
+} from './types';
+
+function synthesisBand(index: number): UpskillingSynthesisBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'synthesis';
+}
+
+export function computeNationalUpskillingSynthesisOutlook(
+  state: NationalLaborDemographicsState,
+  safetyHarmony: NationalSafetyHarmonyOutlook | null | undefined
+): NationalUpskillingSynthesisOutlook {
+  if (!state.enabled || !safetyHarmony) {
+    return {
+      turn: state.turn,
+      synthesisIndex: 50,
+      band: 'patchy',
+      harmonyDrag: 0,
+      summary: 'Upskilling synthesis idle — safety harmony unavailable.',
+      stewardNote: 'Compute safety harmony before upskilling synthesis guidance.'
+    };
+  }
+
+  let upskillingLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    upskillingLift += upskillingUpliftForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  upskillingLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const harmonyDrag = v1014laborClamp(
+    safetyHarmony.resonanceDrag * 0.46 +
+      (safetyHarmony.band === 'ebbing' || safetyHarmony.band === 'patchy' ? 10 : 3)
+  );
+  const harmonyLift =
+    safetyHarmony.band === 'rising' || safetyHarmony.band === 'harmony'
+      ? safetyHarmony.harmonyIndex * 0.2
+      : safetyHarmony.harmonyIndex * 0.1;
+
+  const synthesisIndex = v1014laborClamp(24 + upskillingLift * 22 + harmonyLift - harmonyDrag);
+  const band = synthesisBand(synthesisIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy upskilling synthesis — deploy upskilling programs before subject synthesis assembly.'
+      : band === 'synthesis'
+        ? 'Synthesis band — verify unification-upskilling coupling before auto workforce pushes.'
+        : 'Rising synthesis — align with upskilling velocity outlook checks.';
+
+  return {
+    turn: state.turn,
+    synthesisIndex,
+    band,
+    harmonyDrag,
+    summary: `National upskilling synthesis ${band} (index ${Math.round(synthesisIndex)}); harmony drag ${Math.round(harmonyDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-synthesis-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectSynthesisReadinessBrief,
+  type NationalSubjectUnificationReadinessBrief,
+  type NationalWorkforceUnificationIndex,
+  type SubjectSynthesisReadinessBand
+} from './types';
+
+function synthesisBand(index: number): SubjectSynthesisReadinessBand {
+  if (index <= 34) return 'below_synthesis';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'synthesis_ready';
+  return 'unification_locked';
+}
+
+/** Round-35 / wave-35 subject synthesis readiness — unification × workforce unification (O10-201). */
+export function computeNationalSubjectSynthesisReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectUnification: NationalSubjectUnificationReadinessBrief | null | undefined,
+  workforceUnification: NationalWorkforceUnificationIndex | null | undefined
+): NationalSubjectSynthesisReadinessBrief {
+  if (!state.enabled || !subjectUnification || !workforceUnification) {
+    return {
+      turn: state.turn,
+      synthesisIndex: 50,
+      band: 'approaching',
+      synthesisDrag: 0,
+      summary: 'Subject synthesis readiness idle — subject unification or workforce unification unavailable.',
+      stewardNote: 'Compute subject unification and workforce unification before synthesis guidance.'
+    };
+  }
+
+  const synthesisDrag = v1014laborClamp(
+    subjectUnification.unificationDrag * 0.38 +
+      workforceUnification.unificationDrag * 0.38 +
+      (subjectUnification.band === 'below_unification' || workforceUnification.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectUnification.band === 'unification_ready' || subjectUnification.band === 'convergence_locked'
+      ? subjectUnification.unificationIndex * 0.27
+      : subjectUnification.unificationIndex * 0.14;
+  const workforceLift =
+    workforceUnification.band === 'elevated' || workforceUnification.band === 'unification'
+      ? workforceUnification.unificationIndex * 0.25
+      : workforceUnification.unificationIndex * 0.12;
+
+  const synthesisIndex = v1014laborClamp(20 + subjectLift + workforceLift - synthesisDrag);
+  const band = synthesisBand(synthesisIndex);
+
+  const stewardNote =
+    band === 'below_synthesis' || band === 'approaching'
+      ? 'Approaching synthesis — hold O10-201 wave-35 scale until unification-upskilling syncs.'
+      : band === 'unification_locked'
+        ? 'Unification-locked synthesis — still monitor upskilling synthesis during corridor peaks.'
+        : 'Synthesis-ready — pair with workforce synthesis index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    synthesisIndex,
+    band,
+    synthesisDrag,
+    summary: `Subject synthesis readiness ${band} (index ${Math.round(synthesisIndex)}); synthesis drag ${Math.round(synthesisDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-synthesis-index.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectSynthesisReadinessBrief,
+  type NationalUnificationUpskillingCouplingBrief,
+  type NationalUpskillingSynthesisOutlook,
+  type NationalWorkforceSynthesisIndex,
+  type WorkforceSynthesisBand
+} from './types';
+
+function synthesisBand(index: number): WorkforceSynthesisBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'synthesis';
+}
+
+export function computeNationalWorkforceSynthesisIndex(
+  state: NationalLaborDemographicsState,
+  upskillingCoupling: NationalUnificationUpskillingCouplingBrief | null | undefined,
+  upskillingSynthesis: NationalUpskillingSynthesisOutlook | null | undefined,
+  subjectSynthesis: NationalSubjectSynthesisReadinessBrief | null | undefined
+): NationalWorkforceSynthesisIndex {
+  if (!state.enabled || !upskillingCoupling || !upskillingSynthesis || !subjectSynthesis) {
+    return {
+      turn: state.turn,
+      synthesisIndex: 50,
+      band: 'thin',
+      synthesisDrag: 0,
+      summary: 'Workforce synthesis idle — upskilling coupling, upskilling synthesis, or subject synthesis unavailable.',
+      stewardNote: 'Compute O10-201 wave-35 depth stack before synthesis guidance.'
+    };
+  }
+
+  const synthesisDrag = v1014laborClamp(
+    subjectSynthesis.synthesisDrag * 0.35 +
+      upskillingCoupling.unificationDrag * 0.3 +
+      upskillingSynthesis.harmonyDrag * 0.25 +
+      (subjectSynthesis.band === 'below_synthesis' || upskillingCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const upskillingLift =
+    upskillingCoupling.band === 'amplified' || upskillingCoupling.band === 'elevated'
+      ? upskillingCoupling.couplingIndex * 0.2
+      : upskillingCoupling.couplingIndex * 0.1;
+  const outlookLift =
+    upskillingSynthesis.band === 'rising' || upskillingSynthesis.band === 'synthesis'
+      ? upskillingSynthesis.synthesisIndex * 0.18
+      : upskillingSynthesis.synthesisIndex * 0.09;
+  const subjectLift =
+    subjectSynthesis.band === 'synthesis_ready' || subjectSynthesis.band === 'unification_locked'
+      ? subjectSynthesis.synthesisIndex * 0.22
+      : subjectSynthesis.synthesisIndex * 0.11;
+
+  const synthesisIndex = v1014laborClamp(18 + upskillingLift + outlookLift + subjectLift - synthesisDrag);
+  const band = synthesisBand(synthesisIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce synthesis — sequence unification-upskilling, upskilling synthesis, and subject synthesis before post-1f7d25b tranche.'
+      : band === 'synthesis'
+        ? 'Synthesis band — avoid corridor overload that breaks subject synthesis bands.'
+        : 'Elevated synthesis — refresh subject synthesis checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    synthesisIndex,
+    band,
+    synthesisDrag,
+    summary: `National workforce synthesis ${band} (index ${Math.round(synthesisIndex)}); synthesis drag ${Math.round(synthesisDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -15157,6 +15545,25 @@ export function computeNationalLaborDemographics(
     state.safetyHarmonyOutlook,
     state.subjectUnificationReadinessBrief
   );
+  state.unificationUpskillingCouplingBrief = computeNationalUnificationUpskillingCouplingBrief(
+    state,
+    state.nationalWorkforceUnificationIndex
+  );
+  state.upskillingSynthesisOutlook = computeNationalUpskillingSynthesisOutlook(
+    state,
+    state.safetyHarmonyOutlook
+  );
+  state.subjectSynthesisReadinessBrief = computeNationalSubjectSynthesisReadinessBrief(
+    state,
+    state.subjectUnificationReadinessBrief,
+    state.nationalWorkforceUnificationIndex
+  );
+  state.nationalWorkforceSynthesisIndex = computeNationalWorkforceSynthesisIndex(
+    state,
+    state.unificationUpskillingCouplingBrief,
+    state.upskillingSynthesisOutlook,
+    state.subjectSynthesisReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -15895,6 +16302,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceUnificationIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.unificationUpskillingCouplingBrief?.band === 'decoupled' ||
+      state.unificationUpskillingCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.unificationUpskillingCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.upskillingSynthesisOutlook?.band === 'ebbing' ||
+      state.upskillingSynthesisOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.upskillingSynthesisOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectSynthesisReadinessBrief?.band === 'below_synthesis' ||
+      state.subjectSynthesisReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectSynthesisReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceSynthesisIndex?.band === 'fragile' ||
+      state.nationalWorkforceSynthesisIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceSynthesisIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -17882,6 +18317,62 @@ export function runV1014LaborDemographicsSelfTests(): {
     'unification steward note'
   );
   check('R3416', safetyEaseForRegion('NSW', 'technology') > 0, 'safety ease for region');
+
+  check('R3501', Boolean(r1.state.unificationUpskillingCouplingBrief?.band), 'unification upskilling on state');
+  check('R3502', (r1.state.unificationUpskillingCouplingBrief?.unificationDrag ?? 0) >= 0, 'unification upskilling drag');
+  check('R3503', Boolean(r1.state.upskillingSynthesisOutlook?.band), 'upskilling synthesis on state');
+  check('R3504', (r1.state.upskillingSynthesisOutlook?.harmonyDrag ?? 0) >= 0, 'upskilling synthesis harmony drag');
+  check('R3505', Boolean(r1.state.subjectSynthesisReadinessBrief?.band), 'subject synthesis on state');
+  check('R3506', Boolean(r1.state.nationalWorkforceSynthesisIndex?.band), 'workforce synthesis on state');
+  check(
+    'R3507',
+    detectLaborDemographicsQuery('unification upskilling coupling') === 'unification_upskilling_coupling',
+    'GI unification upskilling detect'
+  );
+  check(
+    'R3508',
+    detectLaborDemographicsQuery('upskilling synthesis') === 'upskilling_synthesis',
+    'GI upskilling synthesis detect'
+  );
+  check(
+    'R3509',
+    detectLaborDemographicsQuery('subject synthesis readiness') === 'subject_synthesis_readiness',
+    'GI subject synthesis detect'
+  );
+  check(
+    'R3510',
+    detectLaborDemographicsQuery('workforce synthesis') === 'workforce_synthesis',
+    'GI workforce synthesis detect'
+  );
+  check(
+    'R3511',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_synthesis').headline.length > 5,
+    'GI workforce synthesis answer'
+  );
+  const unificationUpskillingOnly = computeNationalUnificationUpskillingCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceUnificationIndex
+  );
+  check('R3512', unificationUpskillingOnly.summary.length > 10, 'unification upskilling standalone summary');
+  const upskillingSynthesisOnly = computeNationalUpskillingSynthesisOutlook(r1.state, r1.state.safetyHarmonyOutlook);
+  check('R3513', upskillingSynthesisOnly.band.length > 3, 'upskilling synthesis band string');
+  const subjectSynthesisOnly = computeNationalSubjectSynthesisReadinessBrief(
+    r1.state,
+    r1.state.subjectUnificationReadinessBrief,
+    r1.state.nationalWorkforceUnificationIndex
+  );
+  check('R3514', subjectSynthesisOnly.synthesisDrag >= 0, 'subject synthesis drag');
+  check(
+    'R3515',
+    computeNationalWorkforceSynthesisIndex(
+      rHhBad.state,
+      rHhBad.state.unificationUpskillingCouplingBrief,
+      rHhBad.state.upskillingSynthesisOutlook,
+      rHhBad.state.subjectSynthesisReadinessBrief
+    ).stewardNote.length > 8,
+    'synthesis steward note'
+  );
+  check('R3516', upskillingUpliftForRegion('NSW', 'technology') > 0, 'upskilling uplift for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
