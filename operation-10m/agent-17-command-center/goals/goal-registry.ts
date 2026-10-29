@@ -212,6 +212,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Closed verification gate yields blocked handoff or verify_gate blocker.',
     severity: 'major',
   },
+  {
+    id: 'G17-031',
+    title: 'Command posture on planning depth',
+    category: 'telemetry',
+    acceptance: 'commandPosture reports postureIndex 0–100 with commanding/contested/degraded band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-032',
+    title: 'Governance audit findings complete',
+    category: 'validation',
+    acceptance: 'governanceAudit exposes ≥4 findings and auditScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-033',
+    title: 'Governance breach blocks automation',
+    category: 'integration',
+    acceptance: 'Critical delegation breaches yield breach band or governanceAuditBlocksAutomation.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

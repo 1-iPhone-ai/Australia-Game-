@@ -27,6 +27,8 @@ import { buildAgent17ExecutionPacing } from './execution-pacing.ts';
 import { buildAgent17ResilienceScorecard } from './resilience-scorecard.ts';
 import { buildAgent17StrategicAlignment } from './strategic-alignment.ts';
 import { buildAgent17HandoffReadiness } from './handoff-readiness.ts';
+import { buildAgent17CommandPosture } from './command-posture.ts';
+import { buildAgent17GovernanceAudit } from './governance-audit.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -159,6 +161,13 @@ export function buildAgent17PlanningDepthSnapshot(
     resilienceScorecard,
     strategicAlignment,
   });
+  const commandPosture = buildAgent17CommandPosture({
+    planHealth,
+    handoffReadiness,
+    resilienceScorecard,
+    strategicAlignment,
+  });
+  const governanceAudit = buildAgent17GovernanceAudit(ops, settings, verificationPolicy);
   return {
     ...core,
     intentQueue,
@@ -168,6 +177,8 @@ export function buildAgent17PlanningDepthSnapshot(
     resilienceScorecard,
     strategicAlignment,
     handoffReadiness,
+    commandPosture,
+    governanceAudit,
   };
 }
 

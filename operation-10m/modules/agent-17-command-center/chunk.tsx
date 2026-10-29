@@ -191,6 +191,8 @@ export interface Agent17PlanningDepthSnapshot {
   resilienceScorecard: Agent17ResilienceScorecard;
   strategicAlignment: Agent17StrategicAlignmentSnapshot;
   handoffReadiness: Agent17HandoffReadinessSnapshot;
+  commandPosture: Agent17CommandPostureSnapshot;
+  governanceAudit: Agent17GovernanceAuditSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -278,6 +280,32 @@ export interface Agent17HandoffReadinessSnapshot {
   readyForTeamOs: boolean;
   checks: Agent17HandoffReadinessCheck[];
   blockers: string[];
+  headline: string;
+}
+
+export interface Agent17CommandPostureSnapshot {
+  postureIndex: number;
+  band: 'commanding' | 'contested' | 'degraded';
+  handoffContribution: number;
+  resilienceContribution: number;
+  planHealthContribution: number;
+  alignmentContribution: number;
+  headline: string;
+}
+
+export interface Agent17GovernanceAuditFinding {
+  id: string;
+  category: 'verification' | 'delegation' | 'rollback' | 'policy';
+  severity: 'info' | 'warn' | 'critical';
+  passed: boolean;
+  detail: string;
+}
+
+export interface Agent17GovernanceAuditSnapshot {
+  auditScore: number;
+  band: 'compliant' | 'review' | 'breach';
+  findings: Agent17GovernanceAuditFinding[];
+  openCriticalCount: number;
   headline: string;
 }
 
@@ -2579,6 +2607,186 @@ export function handoffReadinessBlocked(snapshot: Agent17HandoffReadinessSnapsho
 }
 
 
+// --- source: planning/command-posture.ts ---
+  Agent17CommandPostureSnapshot,
+  Agent17HandoffReadinessSnapshot,
+  Agent17PlanHealthBand,
+  Agent17ResilienceScorecard,
+  Agent17StrategicAlignmentSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17CommandPostureInputs {
+  planHealth: Agent17PlanHealthBand;
+  handoffReadiness: Agent17HandoffReadinessSnapshot;
+  resilienceScorecard: Agent17ResilienceScorecard;
+  strategicAlignment: Agent17StrategicAlignmentSnapshot;
+}
+
+function scorePlanHealthContribution(health: Agent17PlanHealthBand): number {
+  return Math.max(0, Math.min(100, health.score));
+}
+
+export function buildAgent17CommandPosture(
+  inputs: Agent17CommandPostureInputs
+): Agent17CommandPostureSnapshot {
+  const handoffContribution = inputs.handoffReadiness.readinessScore;
+  const resilienceContribution = inputs.resilienceScorecard.compositeIndex;
+  const planHealthContribution = scorePlanHealthContribution(inputs.planHealth);
+  const alignmentContribution = inputs.strategicAlignment.alignmentIndex;
+
+  const postureIndex = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        handoffContribution * 0.3 +
+          resilienceContribution * 0.25 +
+          planHealthContribution * 0.25 +
+          alignmentContribution * 0.2
+      )
+    )
+  );
+
+  const degradedSignals =
+    handoffReadinessBlocked(inputs.handoffReadiness) ||
+    resilienceScorecardNeedsIntervention(inputs.resilienceScorecard) ||
+    strategicAlignmentNeedsReconcile(inputs.strategicAlignment) ||
+    inputs.planHealth.band === 'critical';
+
+  const band: Agent17CommandPostureSnapshot['band'] =
+    postureIndex >= 72 && !degradedSignals
+      ? 'commanding'
+      : postureIndex >= 45
+        ? 'contested'
+        : 'degraded';
+
+  const headline = `Command ${band} (${postureIndex}/100) · handoff ${inputs.handoffReadiness.band}`;
+
+  return {
+    postureIndex,
+    band,
+    handoffContribution,
+    resilienceContribution,
+    planHealthContribution,
+    alignmentContribution,
+    headline,
+  };
+}
+
+export function commandPostureNeedsEscalation(snapshot: Agent17CommandPostureSnapshot): boolean {
+  return snapshot.band === 'degraded' || snapshot.postureIndex < 40;
+}
+
+
+// --- source: planning/governance-audit.ts ---
+  Acc17CommandCenterOpsState,
+  Agent17GovernanceAuditSnapshot,
+  Agent17SettingsSlice,
+  Agent17VerificationPolicySnapshot,
+} from '../types/command-center-types.ts';
+
+const MAX_VERIFICATION_LOG = 64;
+
+export function buildAgent17GovernanceAudit(
+  ops: Acc17CommandCenterOpsState,
+  settings: Agent17SettingsSlice,
+  verificationPolicy: Agent17VerificationPolicySnapshot
+): Agent17GovernanceAuditSnapshot {
+  const findings: Agent17GovernanceAuditSnapshot['findings'] = [];
+  const enabled = settings.commandCenterSettings?.enabled !== false && ops.enabled;
+
+  findings.push({
+    id: 'cc_enabled',
+    category: 'policy',
+    severity: 'info',
+    passed: enabled,
+    detail: enabled ? 'Command center enabled' : 'Command center disabled',
+  });
+
+  const verifyOk =
+    verificationPolicy.allowVerification || verificationPolicy.blockingRuleIds.length === 0;
+  findings.push({
+    id: 'verify_policy',
+    category: 'verification',
+    severity: verifyOk ? 'info' : 'warn',
+    passed: verifyOk,
+    detail: verifyOk
+      ? 'Verification policy allows progress'
+      : `Blocked rules: ${verificationPolicy.blockingRuleIds.join(',')}`,
+  });
+
+  const logLen = ops.verificationLog.length;
+  const logBounded = logLen <= MAX_VERIFICATION_LOG;
+  findings.push({
+    id: 'verify_log_bound',
+    category: 'verification',
+    severity: logBounded ? 'info' : 'warn',
+    passed: logBounded,
+    detail: `Verification log entries: ${logLen}`,
+  });
+
+  const staleDelegations = ops.delegatedProjects.filter(
+    p => p.status === 'active' && !p.lastVerifiedFingerprint
+  ).length;
+  findings.push({
+    id: 'delegation_fingerprint',
+    category: 'delegation',
+    severity: staleDelegations > 2 ? 'critical' : staleDelegations > 0 ? 'warn' : 'info',
+    passed: staleDelegations === 0,
+    detail: `Active delegations missing fingerprint: ${staleDelegations}`,
+  });
+
+  const authorityBreaches = ops.delegatedProjects.filter(
+    p =>
+      p.status === 'active' &&
+      settings.aiCommunicationAutonomyLevel === 'advisory' &&
+      p.authorityCeiling === 'delegated'
+  ).length;
+  findings.push({
+    id: 'authority_ceiling',
+    category: 'delegation',
+    severity: authorityBreaches > 0 ? 'critical' : 'info',
+    passed: authorityBreaches === 0,
+    detail: `Delegated ceiling breaches under advisory autonomy: ${authorityBreaches}`,
+  });
+
+  const failedSteps = ops.activePlan?.steps.filter(s => s.status === 'failed').length ?? 0;
+  findings.push({
+    id: 'plan_integrity',
+    category: 'rollback',
+    severity: failedSteps > 0 ? 'warn' : 'info',
+    passed: failedSteps === 0,
+    detail: `Failed plan steps: ${failedSteps}`,
+  });
+
+  const passedWeight = findings.filter(f => f.passed).reduce((n, f) => {
+    const w = f.severity === 'critical' ? 25 : f.severity === 'warn' ? 15 : 10;
+    return n + w;
+  }, 0);
+  const totalWeight = findings.reduce((n, f) => {
+    const w = f.severity === 'critical' ? 25 : f.severity === 'warn' ? 15 : 10;
+    return n + w;
+  }, 0);
+  const auditScore = Math.round((passedWeight / Math.max(1, totalWeight)) * 100);
+
+  const openCriticalCount = findings.filter(f => !f.passed && f.severity === 'critical').length;
+  const band: Agent17GovernanceAuditSnapshot['band'] =
+    openCriticalCount > 0 ? 'breach' : auditScore >= 80 ? 'compliant' : 'review';
+
+  return {
+    auditScore,
+    band,
+    findings,
+    openCriticalCount,
+    headline: `Governance ${band} (${auditScore}/100) · ${findings.length} findings`,
+  };
+}
+
+export function governanceAuditBlocksAutomation(snapshot: Agent17GovernanceAuditSnapshot): boolean {
+  return snapshot.band === 'breach' || snapshot.openCriticalCount > 0;
+}
+
+
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -2726,6 +2934,13 @@ export function buildAgent17PlanningDepthSnapshot(
     resilienceScorecard,
     strategicAlignment,
   });
+  const commandPosture = buildAgent17CommandPosture({
+    planHealth,
+    handoffReadiness,
+    resilienceScorecard,
+    strategicAlignment,
+  });
+  const governanceAudit = buildAgent17GovernanceAudit(ops, settings, verificationPolicy);
   return {
     ...core,
     intentQueue,
@@ -2735,6 +2950,8 @@ export function buildAgent17PlanningDepthSnapshot(
     resilienceScorecard,
     strategicAlignment,
     handoffReadiness,
+    commandPosture,
+    governanceAudit,
   };
 }
 
@@ -3237,6 +3454,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Closed verification gate yields blocked handoff or verify_gate blocker.',
     severity: 'major',
   },
+  {
+    id: 'G17-031',
+    title: 'Command posture on planning depth',
+    category: 'telemetry',
+    acceptance: 'commandPosture reports postureIndex 0–100 with commanding/contested/degraded band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-032',
+    title: 'Governance audit findings complete',
+    category: 'validation',
+    acceptance: 'governanceAudit exposes ≥4 findings and auditScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-033',
+    title: 'Governance breach blocks automation',
+    category: 'integration',
+    acceptance: 'Critical delegation breaches yield breach band or governanceAuditBlocksAutomation.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -3669,6 +3907,63 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const posture = depthEval.snapshot.planningDepth?.commandPosture;
+  goalResults.push(
+    result(
+      'G17-031',
+      !!posture &&
+        posture.postureIndex >= 0 &&
+        posture.postureIndex <= 100 &&
+        (posture.band === 'commanding' ||
+          posture.band === 'contested' ||
+          posture.band === 'degraded'),
+      `${posture?.postureIndex}/${posture?.band}`
+    )
+  );
+
+  const govAudit = depthEval.snapshot.planningDepth?.governanceAudit;
+  goalResults.push(
+    result(
+      'G17-032',
+      !!govAudit &&
+        govAudit.findings.length >= 4 &&
+        govAudit.auditScore >= 0 &&
+        govAudit.auditScore <= 100,
+      `findings=${govAudit?.findings.length} score=${govAudit?.auditScore}`
+    )
+  );
+
+  const breachOps: Acc17CommandCenterOpsState = {
+    ...depthEval.ops,
+    delegatedProjects: [
+      {
+        id: 'g17-breach',
+        planId: 'plan',
+        title: 'Advisory breach',
+        delegateKind: 'team_os',
+        delegateTargetId: 'team',
+        status: 'active',
+        authorityCeiling: 'delegated',
+        assignedTurn: 1,
+        assignedDay: 1,
+        lastVerifiedFingerprint: '',
+        notes: '',
+      },
+    ],
+  };
+  const breachAudit = buildAgent17GovernanceAudit(
+    breachOps,
+    { ...settings, aiCommunicationAutonomyLevel: 'advisory' },
+    buildAgent17VerificationPolicy(breachOps, baseState, 'player')
+  );
+  goalResults.push(
+    result(
+      'G17-033',
+      breachAudit.band === 'breach' || governanceAuditBlocksAutomation(breachAudit),
+      `${breachAudit.band} critical=${breachAudit.openCriticalCount}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -3729,6 +4024,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-028',
     'G17-029',
     'G17-030',
+    'G17-031',
+    'G17-032',
+    'G17-033',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
@@ -4835,6 +5133,258 @@ export function runAgent17ContinuityDepthTests(): Agent17DevTestReport {
 }
 
 
+// --- source: harness/run-governance-depth-tests.ts ---
+  createDefaultAcc17CommandCenterOpsState,
+  acc17CreateMultiStepPlanFromObjective,
+  defaultObjectiveResolver,
+} from '../planning/ops-state.ts';
+  buildAgent17CommandPosture,
+  commandPostureNeedsEscalation,
+} from '../planning/command-posture.ts';
+  buildAgent17GovernanceAudit,
+  governanceAuditBlocksAutomation,
+} from '../planning/governance-audit.ts';
+  rankAgent17TemplateCandidates,
+  summarizeAgent17CatalogDepth,
+} from '../planning/template-selector.ts';
+
+export function runAgent17GovernanceDepthTests(): Agent17DevTestReport {
+  const start = Date.now();
+  const testResults: Agent17DevTestReport['testResults'] = [];
+  const push = (id: string, name: string, ok: boolean, detail?: string) => {
+    testResults.push({
+      id,
+      name,
+      status: ok ? 'passed' : 'failed',
+      durationMs: 0,
+      errorMessage: ok ? undefined : detail,
+    });
+  };
+
+  try {
+    const settings = {
+      commandCenterSettings: { enabled: true },
+      aiCommunicationAutonomyLevel: 'assisted' as const,
+    };
+    const actor = {
+      id: 'player',
+      money: 120,
+      netWorth: 2400,
+      currentRegion: 'QLD',
+      currentSupplies: 6,
+    };
+    const state: Agent17GameStateSlice = {
+      turnCounter: 22,
+      day: 22,
+      player: actor,
+      actorsById: { player: actor },
+      playerTrackedObjective: {
+        title: 'Expand trade network supply chain',
+        sourceType: 'contract',
+      },
+      gi3Strategy: { headline: 'Expand trade network resilience' },
+      strategyPlannerState: { activePlan: { title: 'Trade network supply expansion' } },
+      lastExecutedAction: { type: 'trade' },
+    };
+    const ops = createDefaultAcc17CommandCenterOpsState();
+    const plan = acc17CreateMultiStepPlanFromObjective(
+      state,
+      settings,
+      'player',
+      (s, st, id) => defaultObjectiveResolver(s, st, id)
+    );
+    const opsWithPlan = {
+      ...ops,
+      activePlan: plan ? { ...plan, title: plan.title || 'Trade supply chain plan' } : plan,
+    };
+    const health = assessAgent17PlanHealth(opsWithPlan.activePlan, state, 'player');
+    const intentQueue = buildAgent17IntentQueue(opsWithPlan, state, settings, 'player', health);
+    const alignment = buildAgent17StrategicAlignment(
+      opsWithPlan,
+      state,
+      settings,
+      'player',
+      intentQueue
+    );
+    const policy = buildAgent17VerificationPolicy(
+      { ...opsWithPlan, lastContextFingerprint: 'other_fp' },
+      state,
+      'player'
+    );
+    const pacing = buildAgent17ExecutionPacing(opsWithPlan, state, health, policy);
+    const scorecard = buildAgent17ResilienceScorecard(
+      opsWithPlan,
+      state,
+      'player',
+      health,
+      policy
+    );
+    const routing = rankAgent17TemplateCandidates(state, settings, 'player');
+    const delegationAnalytics = buildAgent17DelegationAnalytics(opsWithPlan, settings);
+    const core = {
+      turn: state.turnCounter || 1,
+      actorId: 'player',
+      planHealth: health,
+      suggestion: buildAgent17PlanningSuggestion(
+        opsWithPlan,
+        state,
+        settings,
+        'player',
+        'copilot'
+      ),
+      templateRouting: routing,
+      delegationAnalytics,
+      delegationLadder: buildAgent17DelegationLadder(delegationAnalytics, settings, 'copilot'),
+      planLedger: summarizeAgent17PlanLedger(opsWithPlan, state),
+      catalogDepth: summarizeAgent17CatalogDepth(),
+    };
+    const brief = buildAgent17CoordinationBrief(
+      core,
+      intentQueue,
+      policy,
+      opsWithPlan,
+      state,
+      settings
+    );
+    const handoff = buildAgent17HandoffReadiness({
+      coordinationBrief: brief,
+      verificationPolicy: policy,
+      executionPacing: pacing,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const posture = buildAgent17CommandPosture({
+      planHealth: health,
+      handoffReadiness: handoff,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+
+    push(
+      'gov_posture_bounded',
+      'Command posture index bounded with band',
+      posture.postureIndex >= 0 &&
+        posture.postureIndex <= 100 &&
+        (posture.band === 'commanding' ||
+          posture.band === 'contested' ||
+          posture.band === 'degraded'),
+      `${posture.postureIndex}/${posture.band}`
+    );
+
+    push(
+      'gov_posture_contributions',
+      'Posture exposes weighted contributions',
+      posture.handoffContribution >= 0 &&
+        posture.resilienceContribution >= 0 &&
+        posture.alignmentContribution >= 0,
+      `h=${posture.handoffContribution} r=${posture.resilienceContribution}`
+    );
+
+    const auditClean = buildAgent17GovernanceAudit(opsWithPlan, settings, policy);
+    push(
+      'gov_audit_findings',
+      'Governance audit exposes findings',
+      auditClean.findings.length >= 4 &&
+        auditClean.auditScore >= 0 &&
+        auditClean.auditScore <= 100,
+      `findings=${auditClean.findings.length} score=${auditClean.auditScore}`
+    );
+
+    push(
+      'gov_audit_band',
+      'Clean ops yields compliant or review band',
+      auditClean.band === 'compliant' || auditClean.band === 'review',
+      auditClean.band
+    );
+
+    const breachOps = {
+      ...opsWithPlan,
+      delegatedProjects: [
+        {
+          id: 'dp1',
+          planId: 'p1',
+          title: 'Breach project',
+          delegateKind: 'team_os' as const,
+          delegateTargetId: 'team',
+          status: 'active' as const,
+          authorityCeiling: 'delegated' as const,
+          assignedTurn: 1,
+          assignedDay: 1,
+          lastVerifiedFingerprint: '',
+          notes: '',
+        },
+      ],
+    };
+    const advisorySettings = {
+      ...settings,
+      aiCommunicationAutonomyLevel: 'advisory' as const,
+    };
+    const auditBreach = buildAgent17GovernanceAudit(breachOps, advisorySettings, policy);
+    push(
+      'gov_breach_blocks',
+      'Authority breach triggers governance breach',
+      auditBreach.band === 'breach' || governanceAuditBlocksAutomation(auditBreach),
+      `${auditBreach.band} critical=${auditBreach.openCriticalCount}`
+    );
+
+    const divergentState: Agent17GameStateSlice = {
+      ...state,
+      gi3Strategy: { headline: 'Retreat mining operations entirely' },
+    };
+    const alignDrift = buildAgent17StrategicAlignment(
+      opsWithPlan,
+      divergentState,
+      settings,
+      'player',
+      buildAgent17IntentQueue(opsWithPlan, divergentState, settings, 'player', health)
+    );
+    const postureDrift = buildAgent17CommandPosture({
+      planHealth: health,
+      handoffReadiness: handoff,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignDrift,
+    });
+    push(
+      'gov_posture_escalation',
+      'Degraded alignment can trigger escalation',
+      alignDrift.band !== 'aligned' ||
+        commandPostureNeedsEscalation(postureDrift) ||
+        postureDrift.band !== 'commanding',
+      `${alignDrift.band}/${postureDrift.band}`
+    );
+
+    const evalRes = evaluateAcc17CommandCenterOperations(state, settings, 'player', ops);
+    const depth = evalRes.snapshot.planningDepth;
+    push(
+      'gov_evaluator_depth',
+      'Evaluator attaches command posture and governance audit',
+      !!depth?.commandPosture?.headline &&
+        !!depth?.governanceAudit?.headline &&
+        (depth.governanceAudit.findings?.length ?? 0) >= 4,
+      `${depth?.commandPosture?.band}/${depth?.governanceAudit?.band}`
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    push('gov_throw', 'Governance harness did not throw', false, msg);
+  }
+
+  const passedCount = testResults.filter(t => t.status === 'passed').length;
+  const failedCount = testResults.filter(t => t.status === 'failed').length;
+  const overallStatus: 'passed' | 'failed' = failedCount === 0 ? 'passed' : 'failed';
+  return {
+    timestamp: Date.now(),
+    totalTests: testResults.length,
+    passedCount,
+    failedCount,
+    executionTimeMs: Date.now() - start,
+    overallStatus,
+    success: overallStatus === 'passed',
+    testResults,
+    summary: `Agent 17 Governance Depth Tests: ${passedCount}/${testResults.length} Passed`,
+  };
+}
+
+
 export function runAgent17Op10mModuleSelfTests(): {
   acc17: ReturnType<typeof runAgent17Acc17DevTests>;
   recovery: ReturnType<typeof runAgent17RecoveryPathTests>;
@@ -4843,6 +5393,7 @@ export function runAgent17Op10mModuleSelfTests(): {
   coordination: ReturnType<typeof runAgent17CoordinationDepthTests>;
   execution: ReturnType<typeof runAgent17ExecutionDepthTests>;
   continuity: ReturnType<typeof runAgent17ContinuityDepthTests>;
+  governance: ReturnType<typeof runAgent17GovernanceDepthTests>;
   success: boolean;
 } {
   const acc17 = runAgent17Acc17DevTests();
@@ -4852,6 +5403,7 @@ export function runAgent17Op10mModuleSelfTests(): {
   const coordination = runAgent17CoordinationDepthTests();
   const execution = runAgent17ExecutionDepthTests();
   const continuity = runAgent17ContinuityDepthTests();
+  const governance = runAgent17GovernanceDepthTests();
   return {
     acc17,
     recovery,
@@ -4860,6 +5412,7 @@ export function runAgent17Op10mModuleSelfTests(): {
     coordination,
     execution,
     continuity,
+    governance,
     success:
       acc17.success &&
       recovery.success &&
@@ -4867,7 +5420,8 @@ export function runAgent17Op10mModuleSelfTests(): {
       delegation.success &&
       coordination.success &&
       execution.success &&
-      continuity.success,
+      continuity.success &&
+      governance.success,
   };
 }
 

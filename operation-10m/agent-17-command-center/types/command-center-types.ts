@@ -187,6 +187,8 @@ export interface Agent17PlanningDepthSnapshot {
   resilienceScorecard: Agent17ResilienceScorecard;
   strategicAlignment: Agent17StrategicAlignmentSnapshot;
   handoffReadiness: Agent17HandoffReadinessSnapshot;
+  commandPosture: Agent17CommandPostureSnapshot;
+  governanceAudit: Agent17GovernanceAuditSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -274,6 +276,32 @@ export interface Agent17HandoffReadinessSnapshot {
   readyForTeamOs: boolean;
   checks: Agent17HandoffReadinessCheck[];
   blockers: string[];
+  headline: string;
+}
+
+export interface Agent17CommandPostureSnapshot {
+  postureIndex: number;
+  band: 'commanding' | 'contested' | 'degraded';
+  handoffContribution: number;
+  resilienceContribution: number;
+  planHealthContribution: number;
+  alignmentContribution: number;
+  headline: string;
+}
+
+export interface Agent17GovernanceAuditFinding {
+  id: string;
+  category: 'verification' | 'delegation' | 'rollback' | 'policy';
+  severity: 'info' | 'warn' | 'critical';
+  passed: boolean;
+  detail: string;
+}
+
+export interface Agent17GovernanceAuditSnapshot {
+  auditScore: number;
+  band: 'compliant' | 'review' | 'breach';
+  findings: Agent17GovernanceAuditFinding[];
+  openCriticalCount: number;
   headline: string;
 }
 

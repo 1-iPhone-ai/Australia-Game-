@@ -30,7 +30,8 @@ import { coordinationBriefReadyForGi } from '../planning/coordination-brief.ts';
 import { assessAgent17PlanHealth } from '../planning/plan-health.ts';
 import { buildAgent17ExecutionPacing } from '../planning/execution-pacing.ts';
 import { buildAgent17ResilienceScorecard } from '../planning/resilience-scorecard.ts';
-import { buildAgent17HandoffReadiness } from '../planning/handoff-readiness.ts';
+import { buildAgent17HandoffReadiness, handoffReadinessBlocked } from '../planning/handoff-readiness.ts';
+import { buildAgent17GovernanceAudit, governanceAuditBlocksAutomation } from '../planning/governance-audit.ts';
 import {
   Agent17RollbackController,
   createAgent17RollbackController,
@@ -438,6 +439,63 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const posture = depthEval.snapshot.planningDepth?.commandPosture;
+  goalResults.push(
+    result(
+      'G17-031',
+      !!posture &&
+        posture.postureIndex >= 0 &&
+        posture.postureIndex <= 100 &&
+        (posture.band === 'commanding' ||
+          posture.band === 'contested' ||
+          posture.band === 'degraded'),
+      `${posture?.postureIndex}/${posture?.band}`
+    )
+  );
+
+  const govAudit = depthEval.snapshot.planningDepth?.governanceAudit;
+  goalResults.push(
+    result(
+      'G17-032',
+      !!govAudit &&
+        govAudit.findings.length >= 4 &&
+        govAudit.auditScore >= 0 &&
+        govAudit.auditScore <= 100,
+      `findings=${govAudit?.findings.length} score=${govAudit?.auditScore}`
+    )
+  );
+
+  const breachOps: Acc17CommandCenterOpsState = {
+    ...depthEval.ops,
+    delegatedProjects: [
+      {
+        id: 'g17-breach',
+        planId: 'plan',
+        title: 'Advisory breach',
+        delegateKind: 'team_os',
+        delegateTargetId: 'team',
+        status: 'active',
+        authorityCeiling: 'delegated',
+        assignedTurn: 1,
+        assignedDay: 1,
+        lastVerifiedFingerprint: '',
+        notes: '',
+      },
+    ],
+  };
+  const breachAudit = buildAgent17GovernanceAudit(
+    breachOps,
+    { ...settings, aiCommunicationAutonomyLevel: 'advisory' },
+    buildAgent17VerificationPolicy(breachOps, baseState, 'player')
+  );
+  goalResults.push(
+    result(
+      'G17-033',
+      breachAudit.band === 'breach' || governanceAuditBlocksAutomation(breachAudit),
+      `${breachAudit.band} critical=${breachAudit.openCriticalCount}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -498,6 +556,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-028',
     'G17-029',
     'G17-030',
+    'G17-031',
+    'G17-032',
+    'G17-033',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
