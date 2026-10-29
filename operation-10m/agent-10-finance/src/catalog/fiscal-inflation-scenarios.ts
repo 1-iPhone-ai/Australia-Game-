@@ -1747,6 +1747,48 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'macro', 'corporate', 'round47'],
   },
+  {
+    id: 'research_breakthrough_supply_latch_stack',
+    label: 'Research breakthrough supply-side latch stack',
+    description: 'Innovation latch failing under supply-side stress.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.52,
+      publicStability: 27,
+    },
+    tags: ['inflation', 'research', 'round48'],
+  },
+  {
+    id: 'trade_import_exchange_pipeline_surge_stress',
+    label: 'Trade import exchange pipeline surge stress',
+    description: 'Import pipeline surge under exchange depreciation.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.49,
+      publicStability: 23,
+    },
+    tags: ['inflation', 'trade', 'round48'],
+  },
+  {
+    id: 'research_trade_wave48_fusion_stress',
+    label: 'Research & trade wave 48 fusion stress',
+    description: 'Breakthrough latch colliding with import pipeline surge.',
+    patch: {
+      inflationSettingMultiplier: 1.59,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 13,
+    },
+    tags: ['inflation', 'research', 'trade', 'round48'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

@@ -88,11 +88,13 @@ import type { FiscalConsolidatedInflationPressureLatchBand } from '../inflation/
 import type { HouseholdWageInflationStressSurgeBand } from '../inflation/household-wage-inflation-stress-surge.js';
 import type { MacroOutputGapInflationPressureLatchBand } from '../inflation/macro-output-gap-inflation-pressure-latch.js';
 import type { CorporateCapacityMarkupInflationSurgeBand } from '../inflation/corporate-capacity-markup-inflation-surge.js';
+import type { ResearchBreakthroughSupplySideInflationLatchBand } from '../inflation/research-breakthrough-supply-side-inflation-latch.js';
+import type { TradeImportExchangeInflationPipelineSurgeBand } from '../inflation/trade-import-exchange-inflation-pipeline-surge.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r47';
+  schemaVersion: '10.14.agent10.r48';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -182,6 +184,8 @@ export interface Agent21InflationForecastBundle {
   terminalHouseholdWageInflationStressSurge: HouseholdWageInflationStressSurgeBand;
   terminalMacroOutputGapInflationPressureLatch: MacroOutputGapInflationPressureLatchBand;
   terminalCorporateCapacityMarkupInflationSurge: CorporateCapacityMarkupInflationSurgeBand;
+  terminalResearchBreakthroughSupplySideInflationLatch: ResearchBreakthroughSupplySideInflationLatchBand;
+  terminalTradeImportExchangeInflationPipelineSurge: TradeImportExchangeInflationPipelineSurgeBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -210,7 +214,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r47',
+    schemaVersion: '10.14.agent10.r48',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -302,6 +306,10 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalHouseholdWageInflationStressSurge: lastPoint?.householdWageInflationStressSurgeBand ?? 'contained',
     terminalMacroOutputGapInflationPressureLatch: lastPoint?.macroOutputGapInflationPressureLatchBand ?? 'subdued',
     terminalCorporateCapacityMarkupInflationSurge: lastPoint?.corporateCapacityMarkupInflationSurgeBand ?? 'contained',
+    terminalResearchBreakthroughSupplySideInflationLatch:
+      lastPoint?.researchBreakthroughSupplySideInflationLatchBand ?? 'neutral',
+    terminalTradeImportExchangeInflationPipelineSurge:
+      lastPoint?.tradeImportExchangeInflationPipelineSurgeBand ?? 'anchored',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

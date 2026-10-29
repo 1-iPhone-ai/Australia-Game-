@@ -344,6 +344,14 @@ import {
   assessCorporateCapacityMarkupInflationSurge,
   type CorporateCapacityMarkupInflationSurgeBand,
 } from '../inflation/corporate-capacity-markup-inflation-surge.js';
+import {
+  assessResearchBreakthroughSupplySideInflationLatch,
+  type ResearchBreakthroughSupplySideInflationLatchBand,
+} from '../inflation/research-breakthrough-supply-side-inflation-latch.js';
+import {
+  assessTradeImportExchangeInflationPipelineSurge,
+  type TradeImportExchangeInflationPipelineSurgeBand,
+} from '../inflation/trade-import-exchange-inflation-pipeline-surge.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -438,6 +446,8 @@ export interface InflationForecastPoint {
   householdWageInflationStressSurgeBand: HouseholdWageInflationStressSurgeBand;
   macroOutputGapInflationPressureLatchBand: MacroOutputGapInflationPressureLatchBand;
   corporateCapacityMarkupInflationSurgeBand: CorporateCapacityMarkupInflationSurgeBand;
+  researchBreakthroughSupplySideInflationLatchBand: ResearchBreakthroughSupplySideInflationLatchBand;
+  tradeImportExchangeInflationPipelineSurgeBand: TradeImportExchangeInflationPipelineSurgeBand;
 }
 
 export interface InflationForecastPath {
@@ -1286,6 +1296,24 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const researchBreakthroughLatch = assessResearchBreakthroughSupplySideInflationLatch({
+      productivityGainBand: inputs.highInflationScenario ? 'flat' : inputs.householdInflationScenarioActive ? 'moderate' : 'strong',
+      supplySideReliefActive: !inputs.householdInflationScenarioActive,
+      wave48ResearchBreakthroughLatch: inputs.householdInflationScenarioActive,
+      researchSupplySideFailureBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'critical' : inputs.fiscalPressure === 'critical' ? 'building' : 'contained',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const tradeImportPipelineSurge = assessTradeImportExchangeInflationPipelineSurge({
+      tradeOpennessBand: inputs.highInflationScenario ? 'open' : 'mixed',
+      exchangeRatePressure: inputs.creditShockActive ? 'sharp_depreciation' : inputs.householdInflationScenarioActive ? 'depreciation' : 'stable',
+      wave48TradeImportPipelineLatch: inputs.creditShockActive,
+      importExchangePipelineSurgeBand:
+        inputs.fiscalPressure === 'critical' ? 'ruptured' : inputs.systemicLiquidityBand === 'critical' ? 'stressed' : 'stable',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -1380,6 +1408,8 @@ export function projectInflationForecastPath(
       householdWageInflationStressSurgeBand: householdWageStress.surgeBand,
       macroOutputGapInflationPressureLatchBand: macroOutputGapLatch.latchBand,
       corporateCapacityMarkupInflationSurgeBand: corporateCapacitySurge.surgeBand,
+      researchBreakthroughSupplySideInflationLatchBand: researchBreakthroughLatch.latchBand,
+      tradeImportExchangeInflationPipelineSurgeBand: tradeImportPipelineSurge.surgeBand,
     });
   }
 

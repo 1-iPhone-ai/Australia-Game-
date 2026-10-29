@@ -11,6 +11,10 @@ export interface Agent03ResearchSnapshot {
   techTreeInflationLatch?: boolean;
   /** Round 26: supply-side inflation offset band. */
   supplySideOffsetBand?: 'weak' | 'building' | 'strong';
+  /** Round 48: research breakthrough supply-side inflation latch. */
+  wave48ResearchBreakthroughLatch?: boolean;
+  /** Round 48: research supply-side failure band. */
+  researchSupplySideFailureBand?: 'contained' | 'building' | 'critical';
 }
 
 export function mergeAgent03IntoMacroFinancialInputs(
@@ -34,10 +38,19 @@ export function mergeAgent03IntoMacroFinancialInputs(
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier - 0.04, 0.85, 1.45);
   }
 
+  let highInflationScenario = base.highInflationScenario;
+  if (snapshot.wave48ResearchBreakthroughLatch && snapshot.researchSupplySideFailureBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.researchSupplySideFailureBand === 'building' && snapshot.productivityGainBand === 'flat') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
   return {
     ...base,
     turn: Math.max(base.turn, snapshot.turn),
     inflationSettingMultiplier,
+    highInflationScenario,
   };
 }
 
