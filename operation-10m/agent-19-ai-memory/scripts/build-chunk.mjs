@@ -268,7 +268,12 @@ const FILES = [
   'session-convergence-export-bundle.ts',
   'nexus-convergence-bridge.ts',
   'match-explainability-lattice-gate.ts',
-  'convergence-recovery-orchestrator.ts',
+  'convergence-recovery-orchestrator.ts',  'match-explainability-projection-bundle.ts',
+  'session-projection-export-bundle.ts',
+  'lattice-projection-bridge.ts',
+  'match-explainability-resonance-gate.ts',
+  'projection-recovery-orchestrator.ts',
+
   'crest-recovery-orchestrator.ts',
   'influence-audit.ts',
   'eval/run-suite.ts',

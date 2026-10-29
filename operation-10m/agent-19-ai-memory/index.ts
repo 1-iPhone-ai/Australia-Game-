@@ -253,6 +253,12 @@ export * from './session-convergence-export-bundle.ts';
 export * from './nexus-convergence-bridge.ts';
 export * from './match-explainability-lattice-gate.ts';
 export * from './convergence-recovery-orchestrator.ts';
+export * from './match-explainability-projection-bundle.ts';
+export * from './session-projection-export-bundle.ts';
+export * from './lattice-projection-bridge.ts';
+export * from './match-explainability-resonance-gate.ts';
+export * from './projection-recovery-orchestrator.ts';
+
 export * from './crest-recovery-orchestrator.ts';
 export * from './influence-audit.ts';
 export { runAgent19MemoryEvalSuite } from './eval/run-suite.ts';

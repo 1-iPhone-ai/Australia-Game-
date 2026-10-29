@@ -14191,6 +14191,289 @@ export function convergenceRecoveryOrchestratorWithinCap(report: ConvergenceReco
 }
 
 
+// --- source: match-explainability-projection-bundle.ts ---
+  auditMatchExplainabilityLatticeGate,
+  matchExplainabilityLatticeAllowed,
+} from './match-explainability-lattice-gate.ts';
+  buildMatchExplainabilityProjectionBundle,
+  matchExplainabilityProjectionReady,
+} from './match-explainability-convergence-bundle.ts';
+  buildSessionProjectionExportBundle,
+  sessionProjectionExportShipped,
+} from './session-convergence-export-bundle.ts';
+
+export const AGENT19_CONVERGENCE_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityProjectionBundle {
+  projectionReady: boolean;
+  projectionAllowed: boolean;
+  convergenceReady: boolean;
+  convergenceExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type ProjectionParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Projection bundle: projection gate and convergence export must both be green. */
+export function buildMatchExplainabilityProjectionBundle(
+  packs: TurnExplainabilityPack[],
+  params: ProjectionParams,
+): MatchExplainabilityProjectionBundle {
+  const projection = auditMatchExplainabilityLatticeGate(packs, params);
+  const convergence = buildMatchExplainabilityProjectionBundle(packs, params);
+  const convergenceExport = buildSessionProjectionExportBundle(packs, params);
+  const projectionAllowed = matchExplainabilityLatticeAllowed(projection);
+  const convergenceReady = matchExplainabilityProjectionReady(convergence);
+  const convergenceExportShipped = sessionProjectionExportShipped(convergenceExport);
+  const projectionReady = projectionAllowed && convergenceReady && convergenceExportShipped;
+  const narrativeLines = [
+    `Match explainability projection bundle: ${projectionReady ? 'READY' : 'PENDING'} (gate ${projectionAllowed ? 'ok' : 'fail'}, convergence ${convergenceReady ? 'ok' : 'fail'}).`,
+    ...projection.narrativeLines.slice(0, 2),
+    ...convergence.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_CONVERGENCE_NARRATIVE_CAP);
+  return {
+    projectionReady,
+    projectionAllowed,
+    convergenceReady,
+    convergenceExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityProjectionReady(bundle: MatchExplainabilityProjectionBundle): boolean {
+  return bundle.projectionReady;
+}
+
+
+// --- source: session-projection-export-bundle.ts ---
+  buildSessionNexusExportBundle,
+  type SessionNexusExportBundle,
+} from './session-nexus-export-bundle.ts';
+  buildMatchExplainabilityProjectionBundle,
+  matchExplainabilityProjectionReady,
+} from './match-explainability-projection-bundle.ts';
+
+export interface SessionProjectionExportBundle extends SessionNexusExportBundle {
+  projectionReady: boolean;
+  projectionSchema: string;
+}
+
+/** Projection export wraps nexus export when projection bundle is ready. */
+export function buildSessionProjectionExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionProjectionExportBundle {
+  const base = buildSessionNexusExportBundle(packs, params);
+  const projection = buildMatchExplainabilityProjectionBundle(packs, params);
+  const projectionReady = matchExplainabilityProjectionReady(projection);
+  const exports = projectionReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    projectionReady,
+    projectionSchema: 'agent19.projection.v1',
+    releaseReady: projectionReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Projection export: ${projectionReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionProjectionExportShipped(bundle: SessionProjectionExportBundle): boolean {
+  return bundle.projectionReady && bundle.exports.length > 0 && bundle.projectionSchema === 'agent19.projection.v1';
+}
+
+
+// --- source: lattice-projection-bridge.ts ---
+  buildMatchExplainabilityProjectionBundle,
+  matchExplainabilityProjectionReady,
+} from './match-explainability-projection-bundle.ts';
+  buildMatchExplainabilityConvergenceBundle,
+  matchExplainabilityConvergenceReady,
+} from './match-explainability-projection-bundle.ts';
+
+export interface LatticeProjectionBridgeReport {
+  aligned: boolean;
+  projectionReady: boolean;
+  convergenceReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Convergence-ready should match convergence-ready when projection export stack passes. */
+export function auditLatticeProjectionBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): LatticeProjectionBridgeReport {
+  const projection = buildMatchExplainabilityProjectionBundle(packs, params);
+  const convergence = buildMatchExplainabilityConvergenceBundle(packs, params);
+  const projectionReady = matchExplainabilityProjectionReady(projection);
+  const convergenceReady = matchExplainabilityConvergenceReady(convergence);
+  const aligned = projectionReady === convergenceReady;
+  const narrativeLines = [
+    `Lattice/projection bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (projection ${projectionReady ? 'ok' : 'fail'}, convergence ${convergenceReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, projectionReady, convergenceReady, narrativeLines };
+}
+
+export function latticeProjectionBridgeHealthy(report: LatticeProjectionBridgeReport): boolean {
+  return report.projectionReady && report.convergenceReady && report.aligned;
+}
+
+
+// --- source: match-explainability-resonance-gate.ts ---
+  buildMatchExplainabilityProjectionBundle,
+  matchExplainabilityProjectionReady,
+} from './match-explainability-projection-bundle.ts';
+  buildSessionProjectionExportBundle,
+  sessionProjectionExportShipped,
+} from './session-projection-export-bundle.ts';
+
+export interface MatchExplainabilityResonanceGateReport {
+  resonanceAllowed: boolean;
+  projectionReady: boolean;
+  projectionExportShipped: boolean;
+  nexusProjectionHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Resonance gate: projection bundle + projection export + nexus/projection bridge. */
+export function auditMatchExplainabilityResonanceGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityResonanceGateReport {
+  const projection = buildMatchExplainabilityProjectionBundle(packs, params);
+  const projectionExport = buildSessionProjectionExportBundle(packs, params);
+  const bridge = auditResonanceProjectionBridge(packs, params);
+  const projectionReady = matchExplainabilityProjectionReady(projection);
+  const projectionExportShipped = sessionProjectionExportShipped(projectionExport);
+  const nexusProjectionHealthy = resonanceProjectionBridgeHealthy(bridge);
+  const resonanceAllowed = projectionReady && projectionExportShipped && nexusProjectionHealthy;
+  const narrativeLines = [
+    `Match explainability resonance: ${resonanceAllowed ? 'ALLOWED' : 'DENIED'} (projection ${projectionReady ? 'ok' : 'fail'}, export ${projectionExportShipped ? 'ok' : 'fail'}).`,
+    ...projection.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    resonanceAllowed,
+    projectionReady,
+    projectionExportShipped,
+    nexusProjectionHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityResonanceAllowed(report: MatchExplainabilityResonanceGateReport): boolean {
+  return report.resonanceAllowed;
+}
+
+
+// --- source: projection-recovery-orchestrator.ts ---
+  auditMatchExplainabilityResonanceGate,
+  matchExplainabilityResonanceAllowed,
+} from './match-explainability-resonance-gate.ts';
+
+export const AGENT19_PROJECTION_RECOVERY_CAP = 10;
+
+export interface ProjectionRecoveryOrchestratorReport {
+  projectionBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when projection gate blocks resonance rollout. */
+export function buildProjectionRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): ProjectionRecoveryOrchestratorReport {
+  const projection = auditMatchExplainabilityResonanceGate(packs, params);
+  const projectionBlocked = !matchExplainabilityResonanceAllowed(projection);
+  const steps: string[] = [];
+  if (projectionBlocked) {
+    if (!projection.latticeReady) {
+      steps.push('Restore lattice bundle: vertex and lattice export must pass.');
+    }
+    if (!projection.latticeExportShipped) {
+      steps.push('Emit session lattice export before projection clearance.');
+    }
+    if (!projection.vertexLatticeHealthy) {
+      steps.push('Reconcile vertex/lattice bridge before projection.');
+    }
+    steps.push(...buildProjectionRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const lattice = auditMatchExplainabilityLatticeGate(packs, params);
+    if (!lattice.latticeReady) {
+      steps.push('Re-run lattice readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Projection gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_PROJECTION_RECOVERY_CAP);
+  return {
+    projectionBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Projection recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function projectionRecoveryOrchestratorWithinCap(report: ProjectionRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_PROJECTION_RECOVERY_CAP;
+}
+
+
 // --- source: crest-recovery-orchestrator.ts ---
   auditMatchExplainabilityCrestGate,
   matchExplainabilityCrestAllowed,
