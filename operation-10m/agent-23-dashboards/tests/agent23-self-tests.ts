@@ -50,6 +50,12 @@ import { nrDashBuildNationalNetworkUtilSpread } from '../core/national-network-u
 import { nrDashBuildResilienceUtilizationGap } from '../core/resilience-utilization-gap.ts';
 import { nrDashBuildLinkStressDispersion } from '../core/link-stress-dispersion.ts';
 import { nrDashBuildMomentumDeltaSpread } from '../core/momentum-delta-spread.ts';
+import { nrDashBuildConstraintConcentration } from '../core/constraint-concentration.ts';
+import { nrDashBuildBottleneckNetworkSpan } from '../core/bottleneck-network-span.ts';
+import { nrDashBuildDependencyImportanceSpread } from '../core/dependency-importance-spread.ts';
+import { nrDashBuildMapPulseConcentration } from '../core/map-pulse-concentration.ts';
+import { nrDashBuildEconomyResilienceDrift } from '../core/economy-resilience-drift.ts';
+import { nrDashBuildOwnedRiskExposureShare } from '../core/owned-risk-exposure-share.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -503,6 +509,39 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
     const spread = nrDashBuildMomentumDeltaSpread(snap)!;
     return spread.sampleSize === 8 && spread.meanAbsDelta === 0.15 && spread.stdDev === 0;
+  });
+
+  check('a23_constraint_conc', 'Primary constraint concentration is uniform freight fixture', () => {
+    const conc = nrDashBuildConstraintConcentration(createAgent23NsFixture())!;
+    return conc.regionCount === 8 && conc.dominantNetwork === 'freight' && conc.concentrationIndex === 1;
+  });
+
+  check('a23_bottleneck_span', 'Bottleneck network span counts freight on fixture', () => {
+    const span = nrDashBuildBottleneckNetworkSpan(createAgent23NsFixture())!;
+    return span.bottleneckCount === 1 && span.distinctNetworks === 1 && span.networks[0] === 'freight';
+  });
+
+  check('a23_dep_importance_spread', 'Dependency importance spread spans three edges', () => {
+    const spread = nrDashBuildDependencyImportanceSpread(createAgent23NsFixture())!;
+    return spread.edgeCount === 3 && spread.stdDev > 0 && spread.maxWeight === 1.5;
+  });
+
+  check('a23_pulse_conc', 'Map pulse concentration peaks on NSW fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const conc = nrDashBuildMapPulseConcentration(snap)!;
+    return conc.regionCount === 8 && conc.topRegionId === 'NSW' && conc.concentrationIndex > 0.12;
+  });
+
+  check('a23_econ_resilience_drift', 'Economy resilience drift covers merged NS rows', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const drift = nrDashBuildEconomyResilienceDrift(snap)!;
+    return drift.rows.length === 8 && drift.meanAbsDrift === 0.2;
+  });
+
+  check('a23_owned_risk_share', 'Owned risk exposure share tracks NSW player row', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { NSW: 'you' })!;
+    const share = nrDashBuildOwnedRiskExposureShare(snap)!;
+    return share.ownedRegionCount === 1 && share.ownedShare === 0.3;
   });
 
   return results;
