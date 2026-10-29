@@ -10,7 +10,7 @@ O10-185: full-chunks sync latch lattice + integration baseline merge. Wave **27*
 |--------|----------------------------|----------------|
 | Chain count | 8840 | **9160** (+320 tranche28 scale-wave-full-chunks-sync-latch lattice) |
 | `chunk.tsx` lines | 1,093,793 | **1,132,976** |
-| Tests (`npm run test:agent05`) | 180/180 | *(verify post-push)* |
+| Tests (`npm run test:agent05`) | 180/180 | **186/186** (66 suites) |
 
 ## Manifest SHA
 
@@ -40,4 +40,4 @@ No V9.4 edits. No promote.
 
 ## Base / commit
 
-Round 26 base: **`b237bce2`**. Round 27 HEAD: *(see git after push)*.
+Round 26 base: **`b237bce2`**. Round 27 HEAD: **`dbf9a5fb`**. On origin (push-first).
