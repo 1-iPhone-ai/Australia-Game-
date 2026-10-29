@@ -118,6 +118,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   assuranceStrainIndex: number;
   evidenceIntegrityScore: number;
   governanceConfidenceScore: number;
+  attestationStrainIndex: number;
+  attestationIntegrityScore: number;
+  governanceReliabilityScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -1312,6 +1315,62 @@ export function buildGuardianDepthAssuranceReport(snapshot: GuardianCoPilotMonit
   return lines.slice(0, 3);
 }
 
+export function computeAttestationStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceConfidenceScore < 50) load += Math.min(25, 50 - snapshot.governanceConfidenceScore);
+  if (snapshot.governanceConfidenceScore < 35) load += 10;
+  if (snapshot.evidenceIntegrityScore < 45) load += 20;
+  if (snapshot.evidenceIntegrityScore < 35) load += 10;
+  if (snapshot.assuranceStrainIndex >= 55) load += 20;
+  if (snapshot.assuranceStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeAttestationIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.attestationStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.attestationStrainIndex * 0.35));
+  if (snapshot.evidenceIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.evidenceIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceConfidenceScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceReliabilityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.attestationStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.attestationStrainIndex * 0.32));
+  if (snapshot.attestationIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.attestationIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceStabilityScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthAttestationReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.attestationStrainIndex >= 55) {
+    lines.push(
+      `Attestation strain ${snapshot.attestationStrainIndex} — stacked attestation review may exceed operator attestation capacity`
+    );
+  }
+  if (snapshot.attestationIntegrityScore < 45) {
+    lines.push(
+      `Attestation integrity ${snapshot.attestationIntegrityScore} — align Co-Pilot attestations with Guardian attestation posture`
+    );
+  }
+  if (snapshot.governanceReliabilityScore < 40) {
+    lines.push(
+      `Governance reliability ${snapshot.governanceReliabilityScore} — little reliability to sustain attestation oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -1473,9 +1532,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withAssuranceStrain: GuardianCoPilotMonitorSnapshot = { ...withStability, assuranceStrainIndex };
   const evidenceIntegrityScore = computeEvidenceIntegrityScore(withAssuranceStrain);
   const withEvidence: GuardianCoPilotMonitorSnapshot = { ...withAssuranceStrain, evidenceIntegrityScore };
-  return {
+  const withConfidence: GuardianCoPilotMonitorSnapshot = {
     ...withEvidence,
     governanceConfidenceScore: computeGovernanceConfidenceScore(withEvidence),
+    attestationStrainIndex: 0,
+    attestationIntegrityScore: 100,
+    governanceReliabilityScore: 100,
+  };
+  const attestationStrainIndex = computeAttestationStrainIndex(withConfidence);
+  const withAttestationStrain: GuardianCoPilotMonitorSnapshot = { ...withConfidence, attestationStrainIndex };
+  const attestationIntegrityScore = computeAttestationIntegrityScore(withAttestationStrain);
+  const withAttestation: GuardianCoPilotMonitorSnapshot = { ...withAttestationStrain, attestationIntegrityScore };
+  return {
+    ...withAttestation,
+    governanceReliabilityScore: computeGovernanceReliabilityScore(withAttestation),
   };
 }
 
@@ -2002,6 +2072,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceConfidenceScore(snap) < 35;
+  });
+  ok('gd_attestation_strain', () => {
+    const snap = {
+      governanceConfidenceScore: 30,
+      evidenceIntegrityScore: 32,
+      assuranceStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAttestationStrainIndex(snap) >= 70;
+  });
+  ok('gd_attestation_integrity', () => {
+    const snap = {
+      attestationStrainIndex: 72,
+      evidenceIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceConfidenceScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAttestationIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_reliability', () => {
+    const snap = {
+      attestationStrainIndex: 78,
+      attestationIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceStabilityScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceReliabilityScore(snap) < 35;
   });
   return out;
 }
@@ -4308,6 +4412,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_16: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_16_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_16.length;
 
 
+// --- source: monitor-rules-scale-wave-17.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_17: AdvisoryMonitorRule[] = [
+  {
+    id: 'attestation_strain_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Attestation Strain High',
+    detailTemplate: 'Attestation strain is in the high band — reduce overlapping warn-only attestation review demands',
+    evidenceFields: ['attestationStrainIndex', 'governanceConfidenceScore', 'attestationIntegrityScore'],
+    evaluate: s => s.attestationStrainIndex >= 70,
+  },
+  {
+    id: 'attestation_strain_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Attestation Strain Elevated',
+    detailTemplate: 'Attestation strain is elevated — expect slower attestation review across turns',
+    evidenceFields: ['attestationStrainIndex', 'assuranceStrainIndex'],
+    evaluate: s => s.attestationStrainIndex >= 45 && s.attestationStrainIndex < 70,
+  },
+  {
+    id: 'attestation_integrity_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Attestation Integrity Low',
+    detailTemplate: 'Attestation integrity is critically low — defer stacked autonomous actions',
+    evidenceFields: ['attestationIntegrityScore', 'attestationStrainIndex', 'evidenceIntegrityScore'],
+    evaluate: s => s.attestationIntegrityScore < 35,
+  },
+  {
+    id: 'attestation_integrity_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Attestation While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate attestation integrity',
+    evidenceFields: ['attestationIntegrityScore', 'copilotAutonomousActive', 'attestationStrainIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.attestationIntegrityScore >= 35 && s.attestationIntegrityScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_reliability_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Reliability Low',
+    detailTemplate: 'Little governance reliability remains for warn-only attestation oversight across turns',
+    evidenceFields: ['governanceReliabilityScore', 'attestationStrainIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governanceReliabilityScore < 35,
+  },
+  {
+    id: 'governance_reliability_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Reliability While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance reliability',
+    evidenceFields: ['governanceReliabilityScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governanceReliabilityScore >= 35 && s.governanceReliabilityScore < 55,
+  },
+  {
+    id: 'attestation_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Attestation Envelope Pressured',
+    detailTemplate: 'Attestation strain and low attestation integrity align in the pressured envelope band',
+    evidenceFields: ['attestationStrainIndex', 'attestationIntegrityScore', 'governanceReliabilityScore'],
+    evaluate: s => s.attestationStrainIndex >= 55 && s.attestationIntegrityScore < 50,
+  },
+  {
+    id: 'rival_attestation_strain',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Attestation Strain',
+    detailTemplate: 'Rival victory progress plus elevated attestation strain',
+    evidenceFields: ['rivalVictoryProgressPct', 'attestationStrainIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.attestationStrainIndex >= 50,
+  },
+  {
+    id: 'team_plan_attestation_strain',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Attestation Strain',
+    detailTemplate: 'Pending team plan while attestation strain is elevated',
+    evidenceFields: ['teamPlanPending', 'attestationStrainIndex', 'governanceReliabilityScore'],
+    evaluate: s => s.teamPlanPending && s.attestationStrainIndex >= 55,
+  },
+  {
+    id: 'guardian_attestation_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Attestation Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance reliability',
+    evidenceFields: ['guardianRiskBand', 'governanceReliabilityScore', 'attestationStrainIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governanceReliabilityScore < 40,
+  },
+  {
+    id: 'copilot_attestation_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Attestation Strain',
+    detailTemplate: 'Autonomous Co-Pilot while attestation strain is high',
+    evidenceFields: ['copilotAutonomousActive', 'attestationStrainIndex', 'attestationIntegrityScore'],
+    evaluate: s => s.copilotAutonomousActive && s.attestationStrainIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_reliability',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Reliability',
+    detailTemplate: 'Expiring contracts while governance reliability is low',
+    evidenceFields: ['expiringContractCount', 'governanceReliabilityScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governanceReliabilityScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_17_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_17.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -4553,6 +4790,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_14,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_15,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_16,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_17,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -4917,6 +5155,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     assuranceStrainIndex: 0,
     evidenceIntegrityScore: 100,
     governanceConfidenceScore: 100,
+    attestationStrainIndex: 0,
+    attestationIntegrityScore: 100,
+    governanceReliabilityScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -6265,6 +6506,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['assurance_envelope_pressured', 'guardian_assurance_envelope_critical'],
     notes: 'Pressured assurance envelope with critical Guardian band',
   },
+  {
+    id: 'sc_attestation_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 4,
+      minCashReserve: 500,
+      debt: 1820,
+      maxSpendPerAction: 9920,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['attestation_strain_high', 'attestation_integrity_low'],
+    notes: 'High attestation strain with critical attestation integrity',
+  },
+  {
+    id: 'sc_governance_reliability_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 15,
+      minCashReserve: 500,
+      debt: 1160,
+      maxSpendPerAction: 7420,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_reliability_low', 'contracts_governance_reliability'],
+    notes: 'Low governance reliability with expiring contracts',
+  },
+  {
+    id: 'sc_attestation_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 9,
+      minCashReserve: 500,
+      debt: 1080,
+      maxSpendPerAction: 7840,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['attestation_envelope_pressured', 'guardian_attestation_envelope_critical'],
+    notes: 'Pressured attestation envelope with critical Guardian band',
+  },
 ];
 
 
@@ -6440,8 +6749,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 16 scale wave brings monitor catalog to 226+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 226;
+  check(results, 'a16_expansion_count', 'Round 17 scale wave brings monitor catalog to 238+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 238;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -6954,6 +7263,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthAssuranceReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round17_metrics', 'Round 17 attestation envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.attestationStrainIndex >= 40 &&
+      snap.attestationIntegrityScore <= 100 &&
+      snap.governanceReliabilityScore <= 100
+    );
+  });
+
+  check(results, 'a16_attestation_report', 'Guardian depth attestation report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthAttestationReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 
