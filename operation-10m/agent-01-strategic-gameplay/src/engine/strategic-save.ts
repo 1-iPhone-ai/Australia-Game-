@@ -276,6 +276,11 @@ export interface StrategicGameplaySaveV53 extends Omit<StrategicGameplaySaveV52,
   coalitionMatriarchSovereigntyStreakDays: number;
 }
 
+export interface StrategicGameplaySaveV54 extends Omit<StrategicGameplaySaveV53, 'version'> {
+  version: 54;
+  coalitionMatriarchSupremacyStreakDays: number;
+}
+
 export type StrategicGameplaySaveBlob =
   | StrategicGameplaySaveV1
   | StrategicGameplaySaveV2
@@ -329,13 +334,14 @@ export type StrategicGameplaySaveBlob =
   | StrategicGameplaySaveV50
   | StrategicGameplaySaveV51
   | StrategicGameplaySaveV52
-  | StrategicGameplaySaveV53;
+  | StrategicGameplaySaveV53
+  | StrategicGameplaySaveV54;
 
 export function serializeStrategicGameplayState(
   state: StrategicGameplayState,
-): StrategicGameplaySaveV53 {
+): StrategicGameplaySaveV54 {
   return {
-    version: 53,
+    version: 54,
     day: state.day,
     completedActionIds: [...state.completedActionIds],
     pendingDelayed: state.pendingDelayed.map((p) => ({ ...p, effects: { ...p.effects } })),
@@ -399,8 +405,10 @@ export function serializeStrategicGameplayState(
     coalitionMatriarchDeificationStreakDays: state.coalitionMatriarchDeificationStreakDays ?? 0,
     coalitionMatriarchOmnipotenceStreakDays: state.coalitionMatriarchOmnipotenceStreakDays ?? 0,
     coalitionMatriarchSovereigntyStreakDays: state.coalitionMatriarchSovereigntyStreakDays ?? 0,
+    coalitionMatriarchSupremacyStreakDays: state.coalitionMatriarchSupremacyStreakDays ?? 0,
   };
 }
+
 
 
 export function deserializeStrategicGameplayState(
@@ -3387,10 +3395,78 @@ export function deserializeStrategicGameplayState(
     save.version !== 50 &&
     save.version !== 51 &&
     save.version !== 52 &&
-    save.version !== 53
+    save.version !== 53 &&
+    save.version !== 54
   ) {
     throw new Error(`Unsupported strategic save version: ${(save as { version: number }).version}`);
   }
+  if (save.version === 54) {
+    return {
+    day: save.day,
+    completedActionIds: [...save.completedActionIds],
+    pendingDelayed: save.pendingDelayed.slice(),
+    journal: save.journal.slice(),
+    priorityMomentum: { ...save.priorityMomentum },
+    actionCooldowns: { ...save.actionCooldowns },
+    activeChoice: save.activeChoice ? { ...save.activeChoice } : null,
+    mandateProgress: { ...save.mandateProgress },
+    stakeholderSentiment: { ...save.stakeholderSentiment },
+    lastAlignedActionDay: save.lastAlignedActionDay,
+    coalitionCrisisStreakDays: save.coalitionCrisisStreakDays,
+    coalitionRecoveryStreakDays: save.coalitionRecoveryStreakDays,
+    coalitionVolatilityEvents: save.coalitionVolatilityEvents,
+    coalitionStabilizationStreakDays: save.coalitionStabilizationStreakDays,
+    coalitionLockInStreakDays: save.coalitionLockInStreakDays,
+    crossModuleSyncStreakDays: save.crossModuleSyncStreakDays,
+    integratedCoalitionMaturityStreakDays: save.integratedCoalitionMaturityStreakDays,
+    coalitionStewardshipStreakDays: save.coalitionStewardshipStreakDays,
+    coalitionAnchoredGovernanceStreakDays: save.coalitionAnchoredGovernanceStreakDays,
+    coalitionInstitutionalPermanenceStreakDays: save.coalitionInstitutionalPermanenceStreakDays,
+    coalitionGenerationalContinuityStreakDays: save.coalitionGenerationalContinuityStreakDays,
+    coalitionCivilizationalEnduranceStreakDays: save.coalitionCivilizationalEnduranceStreakDays,
+    coalitionTranscendentLegacyStreakDays: save.coalitionTranscendentLegacyStreakDays,
+    coalitionSovereignContinuumStreakDays: save.coalitionSovereignContinuumStreakDays,
+    coalitionEternalAscendanceStreakDays: save.coalitionEternalAscendanceStreakDays,
+    coalitionInfinitePersistenceStreakDays: save.coalitionInfinitePersistenceStreakDays,
+    coalitionPrimordialContinuityStreakDays: save.coalitionPrimordialContinuityStreakDays,
+    coalitionAbsoluteSanctityStreakDays: save.coalitionAbsoluteSanctityStreakDays,
+    coalitionUniversalImmortalityStreakDays: save.coalitionUniversalImmortalityStreakDays,
+    coalitionCosmicPerpetuityStreakDays: save.coalitionCosmicPerpetuityStreakDays,
+    coalitionGalacticInfinityStreakDays: save.coalitionGalacticInfinityStreakDays,
+    coalitionStellarTranscendenceStreakDays: save.coalitionStellarTranscendenceStreakDays,
+    coalitionQuantumOmnipresenceStreakDays: save.coalitionQuantumOmnipresenceStreakDays,
+    coalitionMultiversalPersistenceStreakDays: save.coalitionMultiversalPersistenceStreakDays,
+    coalitionMetaversalContinuityStreakDays: save.coalitionMetaversalContinuityStreakDays,
+    coalitionOmniversalSynthesisStreakDays: save.coalitionOmniversalSynthesisStreakDays,
+    coalitionHyperversalHarmonizationStreakDays: save.coalitionHyperversalHarmonizationStreakDays,
+    coalitionTranscendentOmniumStreakDays: save.coalitionTranscendentOmniumStreakDays,
+    coalitionSupremeConvergenceStreakDays: save.coalitionSupremeConvergenceStreakDays,
+    coalitionApexTranscendenceStreakDays: save.coalitionApexTranscendenceStreakDays,
+    coalitionZenithPerpetuityStreakDays: save.coalitionZenithPerpetuityStreakDays,
+    coalitionParagonInfinityStreakDays: save.coalitionParagonInfinityStreakDays,
+    coalitionParamountAscendancyStreakDays: save.coalitionParamountAscendancyStreakDays,
+    coalitionImperialPerpetuityStreakDays: save.coalitionImperialPerpetuityStreakDays,
+    coalitionCustodialEternityStreakDays: save.coalitionCustodialEternityStreakDays,
+    coalitionVanguardSynthesisStreakDays: save.coalitionVanguardSynthesisStreakDays,
+    coalitionSentinelAscendancyStreakDays: save.coalitionSentinelAscendancyStreakDays,
+    coalitionOraclePerpetuityStreakDays: save.coalitionOraclePerpetuityStreakDays,
+    coalitionArchonEternityStreakDays: save.coalitionArchonEternityStreakDays,
+    coalitionExarchAscendancyStreakDays: save.coalitionExarchAscendancyStreakDays,
+    coalitionPrimarchPerpetuityStreakDays: save.coalitionPrimarchPerpetuityStreakDays,
+    coalitionPatriarchEternityStreakDays: save.coalitionPatriarchEternityStreakDays,
+    coalitionMatriarchAscendancyStreakDays: save.coalitionMatriarchAscendancyStreakDays,
+    coalitionMatriarchPerpetuityStreakDays: save.coalitionMatriarchPerpetuityStreakDays,
+    coalitionMatriarchEternityStreakDays: save.coalitionMatriarchEternityStreakDays,
+    coalitionMatriarchInfinityStreakDays: save.coalitionMatriarchInfinityStreakDays,
+    coalitionMatriarchTranscendenceStreakDays: save.coalitionMatriarchTranscendenceStreakDays,
+    coalitionMatriarchApotheosisStreakDays: save.coalitionMatriarchApotheosisStreakDays,
+    coalitionMatriarchDeificationStreakDays: (save as StrategicGameplaySaveV54).coalitionMatriarchDeificationStreakDays,
+    coalitionMatriarchOmnipotenceStreakDays: (save as StrategicGameplaySaveV54).coalitionMatriarchOmnipotenceStreakDays,
+    coalitionMatriarchSovereigntyStreakDays: (save as StrategicGameplaySaveV54).coalitionMatriarchSovereigntyStreakDays,
+    coalitionMatriarchSupremacyStreakDays: (save as StrategicGameplaySaveV54).coalitionMatriarchSupremacyStreakDays,
+  };
+  }
+
   if (save.version === 53) {
     return {
     day: save.day,

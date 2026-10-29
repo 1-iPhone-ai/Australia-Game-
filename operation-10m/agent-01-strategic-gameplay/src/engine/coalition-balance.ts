@@ -534,3 +534,14 @@ export function matriarchSovereigntyRankingBonus(
   if (streak >= action.minCoalitionMatriarchSovereigntyStreakDays) return 48;
   return 2;
 }
+
+
+export function matriarchSupremacyRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionMatriarchSupremacyStreakDays === undefined) return 0;
+  const streak = state.coalitionMatriarchSupremacyStreakDays ?? 0;
+  if (streak >= action.minCoalitionMatriarchSupremacyStreakDays) return 48;
+  return 2;
+}

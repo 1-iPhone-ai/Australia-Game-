@@ -166,6 +166,8 @@ export interface StrategicActionDefinition {
   minCoalitionMatriarchOmnipotenceStreakDays?: number;
   /** Action requires matriarch sovereignty streak after matriarch omnipotence. */
   minCoalitionMatriarchSovereigntyStreakDays?: number;
+  /** Action requires matriarch supremacy streak after matriarch sovereignty. */
+  minCoalitionMatriarchSupremacyStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -256,7 +258,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_matriarch_apotheosis_streak'; minDays: number }
   | { kind: 'min_coalition_matriarch_deification_streak'; minDays: number }
   | { kind: 'min_coalition_matriarch_omnipotence_streak'; minDays: number }
-  | { kind: 'min_coalition_matriarch_sovereignty_streak'; minDays: number };
+  | { kind: 'min_coalition_matriarch_sovereignty_streak'; minDays: number }
+  | { kind: 'min_coalition_matriarch_supremacy_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -394,6 +397,7 @@ export interface StrategicGameplayState {
   coalitionMatriarchDeificationStreakDays?: number;
   coalitionMatriarchOmnipotenceStreakDays?: number;
   coalitionMatriarchSovereigntyStreakDays?: number;
+  coalitionMatriarchSupremacyStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;

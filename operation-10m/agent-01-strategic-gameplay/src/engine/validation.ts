@@ -75,6 +75,7 @@ import { coalitionMatriarchApotheosisStreakIssues } from './coalition-matriarch-
 import { coalitionMatriarchDeificationStreakIssues } from './coalition-matriarch-deification-gates.ts';
 import { coalitionMatriarchOmnipotenceStreakIssues } from './coalition-matriarch-omnipotence-gates.ts';
 import { coalitionMatriarchSovereigntyStreakIssues } from './coalition-matriarch-sovereignty-gates.ts';
+import { coalitionMatriarchSupremacyStreakIssues } from './coalition-matriarch-supremacy-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -373,6 +374,7 @@ export function validateAction(
     issues.push(...coalitionMatriarchDeificationStreakIssues(action, state));
     issues.push(...coalitionMatriarchOmnipotenceStreakIssues(action, state));
     issues.push(...coalitionMatriarchSovereigntyStreakIssues(action, state));
+    issues.push(...coalitionMatriarchSupremacyStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

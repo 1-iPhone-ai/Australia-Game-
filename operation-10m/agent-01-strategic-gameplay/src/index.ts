@@ -676,6 +676,15 @@ export {
   resetCoalitionMatriarchSovereigntyStreak,
 } from './engine/coalition-matriarch-sovereignty.ts';
 
+export { coalitionMatriarchSupremacyStreakIssues } from './engine/coalition-matriarch-supremacy-gates.ts';
+export {
+  MATRIARCH_COALITION_SUPREMACY_THRESHOLD,
+  advanceCoalitionMatriarchSupremacyStreak,
+  applyMatriarchSupremacyMandateBonus,
+  isMatriarchCoalitionSupremacy,
+  resetCoalitionMatriarchSupremacyStreak,
+} from './engine/coalition-matriarch-supremacy.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '5.15.0';
+export const AGENT_01_MODULE_VERSION = '5.16.0';

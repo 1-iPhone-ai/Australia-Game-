@@ -190,6 +190,10 @@ import {
   advanceCoalitionMatriarchSovereigntyStreak,
   applyMatriarchSovereigntyMandateBonus,
 } from './coalition-matriarch-sovereignty.ts';
+import {
+  advanceCoalitionMatriarchSupremacyStreak,
+  applyMatriarchSupremacyMandateBonus,
+} from './coalition-matriarch-supremacy.ts';
 import { advanceCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 import type { StakeholderGroupId, StakeholderSentiment } from '../types/coalition-mandate.ts';
@@ -339,6 +343,8 @@ export function advanceStrategicGameplayCalendar(
   next = applyMatriarchOmnipotenceMandateBonus(next, daysAdvanced);
   next = advanceCoalitionMatriarchSovereigntyStreak(next, daysAdvanced);
   next = applyMatriarchSovereigntyMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionMatriarchSupremacyStreak(next, daysAdvanced);
+  next = applyMatriarchSupremacyMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 
