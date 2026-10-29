@@ -50,6 +50,9 @@ import { combineDualTeamFrictionAlignmentGap } from './friction-alignment-gap-in
 import { combineDualTeamCouplingAmplificationFusion } from './coupling-amplification-fusion-index.ts';
 import { combineDualTeamGapChurnResonance } from './gap-churn-resonance-index.ts';
 import { combineDualTeamStackFrictionConvergence } from './stack-friction-convergence-index.ts';
+import { combineDualTeamFusionResonanceCoupling } from './fusion-resonance-coupling-index.ts';
+import { combineDualTeamConvergenceFusionStack } from './convergence-fusion-stack-index.ts';
+import { combineDualTeamResonanceAuditCascade } from './resonance-audit-cascade-index.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -117,6 +120,9 @@ export interface DualTeamMultiAgentResult {
   couplingAmplificationFusionCombined: number;
   gapChurnResonanceCombined: number;
   stackFrictionConvergenceCombined: number;
+  fusionResonanceCouplingCombined: number;
+  convergenceFusionStackCombined: number;
+  resonanceAuditCascadeCombined: number;
 }
 
 /**
@@ -200,6 +206,9 @@ export function evaluateDualTeamMultiAgentLayers(
       couplingAmplificationFusionCombined: friendly.state.meta.couplingAmplificationFusionIndex ?? 0,
       gapChurnResonanceCombined: friendly.state.meta.gapChurnResonanceIndex ?? 0,
       stackFrictionConvergenceCombined: friendly.state.meta.stackFrictionConvergenceIndex ?? 0,
+      fusionResonanceCouplingCombined: friendly.state.meta.fusionResonanceCouplingIndex ?? 0,
+      convergenceFusionStackCombined: friendly.state.meta.convergenceFusionStackIndex ?? 0,
+      resonanceAuditCascadeCombined: friendly.state.meta.resonanceAuditCascadeIndex ?? 0,
     };
   }
 
@@ -483,6 +492,18 @@ export function evaluateDualTeamMultiAgentLayers(
     stackFrictionConvergenceCombined: combineDualTeamStackFrictionConvergence(
       friendly.state.meta.stackFrictionConvergenceIndex ?? 0,
       enemy.state.meta.stackFrictionConvergenceIndex ?? 0,
+    ),
+    fusionResonanceCouplingCombined: combineDualTeamFusionResonanceCoupling(
+      friendly.state.meta.fusionResonanceCouplingIndex ?? 0,
+      enemy.state.meta.fusionResonanceCouplingIndex ?? 0,
+    ),
+    convergenceFusionStackCombined: combineDualTeamConvergenceFusionStack(
+      friendly.state.meta.convergenceFusionStackIndex ?? 0,
+      enemy.state.meta.convergenceFusionStackIndex ?? 0,
+    ),
+    resonanceAuditCascadeCombined: combineDualTeamResonanceAuditCascade(
+      friendly.state.meta.resonanceAuditCascadeIndex ?? 0,
+      enemy.state.meta.resonanceAuditCascadeIndex ?? 0,
     ),
   };
 }

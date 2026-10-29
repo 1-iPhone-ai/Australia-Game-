@@ -316,6 +316,9 @@ export interface TeamMultiAgentCoordinationMeta {
   couplingAmplificationFusionIndex?: number;
   gapChurnResonanceIndex?: number;
   stackFrictionConvergenceIndex?: number;
+  fusionResonanceCouplingIndex?: number;
+  convergenceFusionStackIndex?: number;
+  resonanceAuditCascadeIndex?: number;
 }
 
 export const AGENT18_LIMITS = {
@@ -4346,6 +4349,138 @@ export function combineDualTeamStackFrictionConvergence(
 }
 
 
+// --- source: fusion-resonance-coupling-index.ts ---
+export interface FusionResonanceCouplingReport {
+  couplingIndex: number;
+  notes: string[];
+}
+
+/**
+ * Coupling–amplification fusion coupled with gap–churn resonance stress.
+ */
+export function computeFusionResonanceCouplingIndex(
+  couplingAmplificationFusionIndex: number,
+  gapChurnResonanceIndex: number,
+  persistenceChurnIndex: number,
+): FusionResonanceCouplingReport {
+  const notes: string[] = [];
+  if (couplingAmplificationFusionIndex >= 44 && gapChurnResonanceIndex >= 42) {
+    notes.push('Fusion and gap–churn resonance both elevated');
+  }
+  if (persistenceChurnIndex >= 40 && couplingAmplificationFusionIndex >= 46) {
+    notes.push('Persistence churn reinforcing fusion–resonance coupling');
+  }
+
+  const couplingIndex = Math.round(
+    Math.min(
+      100,
+      couplingAmplificationFusionIndex * 0.38 +
+        gapChurnResonanceIndex * 0.36 +
+        persistenceChurnIndex * 0.18 +
+        (couplingAmplificationFusionIndex >= 48 && gapChurnResonanceIndex >= 44 ? 14 : 0),
+    ),
+  );
+
+  return { couplingIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamFusionResonanceCoupling(
+  friendly: number,
+  enemy: number | null,
+): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: convergence-fusion-stack-index.ts ---
+export interface ConvergenceFusionStackReport {
+  stackIndex: number;
+  notes: string[];
+}
+
+/**
+ * Stack–friction convergence stacked with coupling–amplification fusion under escalation.
+ */
+export function computeConvergenceFusionStackIndex(
+  stackFrictionConvergenceIndex: number,
+  couplingAmplificationFusionIndex: number,
+  coordinationEscalationTier: number,
+): ConvergenceFusionStackReport {
+  const notes: string[] = [];
+  if (stackFrictionConvergenceIndex >= 44 && couplingAmplificationFusionIndex >= 44) {
+    notes.push('Convergence and fusion both elevated');
+  }
+  if (coordinationEscalationTier >= 2 && stackFrictionConvergenceIndex >= 46) {
+    notes.push('Stack–friction convergence under active escalation');
+  }
+
+  const stackIndex = Math.round(
+    Math.min(
+      100,
+      stackFrictionConvergenceIndex * 0.37 +
+        couplingAmplificationFusionIndex * 0.37 +
+        coordinationEscalationTier * 7 +
+        (stackFrictionConvergenceIndex >= 48 && couplingAmplificationFusionIndex >= 46 ? 15 : 0),
+    ),
+  );
+
+  return { stackIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamConvergenceFusionStack(
+  friendly: number,
+  enemy: number | null,
+): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: resonance-audit-cascade-index.ts ---
+export interface ResonanceAuditCascadeReport {
+  cascadeIndex: number;
+  notes: string[];
+}
+
+/**
+ * Gap–churn resonance cascading with audit–stack amplification pressure.
+ */
+export function computeResonanceAuditCascadeIndex(
+  gapChurnResonanceIndex: number,
+  auditStackAmplificationIndex: number,
+  auditPressureIndex: number,
+): ResonanceAuditCascadeReport {
+  const notes: string[] = [];
+  if (gapChurnResonanceIndex >= 42 && auditStackAmplificationIndex >= 42) {
+    notes.push('Resonance and audit amplification both elevated');
+  }
+  if (auditPressureIndex >= 40 && gapChurnResonanceIndex >= 44) {
+    notes.push('Audit pressure cascading through gap–churn resonance');
+  }
+
+  const cascadeIndex = Math.round(
+    Math.min(
+      100,
+      gapChurnResonanceIndex * 0.35 +
+        auditStackAmplificationIndex * 0.36 +
+        auditPressureIndex * 0.22 +
+        (gapChurnResonanceIndex >= 46 && auditStackAmplificationIndex >= 44 ? 14 : 0),
+    ),
+  );
+
+  return { cascadeIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamResonanceAuditCascade(
+  friendly: number,
+  enemy: number | null,
+): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
 // --- source: coordination-audit.ts ---
   AGENT18_LIMITS,
   CoordinationAuditFinding,
@@ -5072,6 +5207,42 @@ export function auditTeamMultiAgentLayer(
     });
   }
 
+  if (
+    typeof state.meta.fusionResonanceCouplingIndex === 'number' &&
+    state.meta.fusionResonanceCouplingIndex >= 48
+  ) {
+    push({
+      severity: 'warning',
+      message: `Fusion–resonance coupling (${state.meta.fusionResonanceCouplingIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.convergenceFusionStackIndex === 'number' &&
+    state.meta.convergenceFusionStackIndex >= 47
+  ) {
+    push({
+      severity: 'warning',
+      message: `Convergence–fusion stack (${state.meta.convergenceFusionStackIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.resonanceAuditCascadeIndex === 'number' &&
+    state.meta.resonanceAuditCascadeIndex >= 46
+  ) {
+    push({
+      severity: 'warning',
+      message: `Resonance–audit cascade (${state.meta.resonanceAuditCascadeIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
   state.coordination.leases.forEach(lease => {
     if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
       push({
@@ -5627,6 +5798,18 @@ export function sanitizeTeamMultiAgentCoordinationState(
         typeof metaRaw.stackFrictionConvergenceIndex === 'number'
           ? metaRaw.stackFrictionConvergenceIndex
           : undefined,
+      fusionResonanceCouplingIndex:
+        typeof metaRaw.fusionResonanceCouplingIndex === 'number'
+          ? metaRaw.fusionResonanceCouplingIndex
+          : undefined,
+      convergenceFusionStackIndex:
+        typeof metaRaw.convergenceFusionStackIndex === 'number'
+          ? metaRaw.convergenceFusionStackIndex
+          : undefined,
+      resonanceAuditCascadeIndex:
+        typeof metaRaw.resonanceAuditCascadeIndex === 'number'
+          ? metaRaw.resonanceAuditCascadeIndex
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -6131,6 +6314,24 @@ export function evaluateTeamMultiAgentLayer(
     state.meta.coordinationCompositeScore ?? 100,
   );
   stackFrictionConvergence.notes.forEach(n => diagnostics.push(n));
+  const fusionResonanceCoupling = computeFusionResonanceCouplingIndex(
+    couplingAmplificationFusion.fusionIndex,
+    gapChurnResonance.resonanceIndex,
+    persistenceChurn.churnIndex,
+  );
+  fusionResonanceCoupling.notes.forEach(n => diagnostics.push(n));
+  const convergenceFusionStack = computeConvergenceFusionStackIndex(
+    stackFrictionConvergence.convergenceIndex,
+    couplingAmplificationFusion.fusionIndex,
+    state.meta.coordinationEscalationTier ?? 0,
+  );
+  convergenceFusionStack.notes.forEach(n => diagnostics.push(n));
+  const resonanceAuditCascade = computeResonanceAuditCascadeIndex(
+    gapChurnResonance.resonanceIndex,
+    state.meta.auditStackAmplificationIndex ?? 0,
+    state.meta.auditPressureIndex ?? 0,
+  );
+  resonanceAuditCascade.notes.forEach(n => diagnostics.push(n));
   state = {
     ...state,
     diagnostics,
@@ -6139,6 +6340,9 @@ export function evaluateTeamMultiAgentLayer(
       frictionAlignmentGapIndex: frictionAlignmentGap.gapIndex,
       gapChurnResonanceIndex: gapChurnResonance.resonanceIndex,
       stackFrictionConvergenceIndex: stackFrictionConvergence.convergenceIndex,
+      fusionResonanceCouplingIndex: fusionResonanceCoupling.couplingIndex,
+      convergenceFusionStackIndex: convergenceFusionStack.stackIndex,
+      resonanceAuditCascadeIndex: resonanceAuditCascade.cascadeIndex,
     },
   };
 
@@ -6226,6 +6430,9 @@ export interface DualTeamMultiAgentResult {
   couplingAmplificationFusionCombined: number;
   gapChurnResonanceCombined: number;
   stackFrictionConvergenceCombined: number;
+  fusionResonanceCouplingCombined: number;
+  convergenceFusionStackCombined: number;
+  resonanceAuditCascadeCombined: number;
 }
 
 /**
@@ -6309,6 +6516,9 @@ export function evaluateDualTeamMultiAgentLayers(
       couplingAmplificationFusionCombined: friendly.state.meta.couplingAmplificationFusionIndex ?? 0,
       gapChurnResonanceCombined: friendly.state.meta.gapChurnResonanceIndex ?? 0,
       stackFrictionConvergenceCombined: friendly.state.meta.stackFrictionConvergenceIndex ?? 0,
+      fusionResonanceCouplingCombined: friendly.state.meta.fusionResonanceCouplingIndex ?? 0,
+      convergenceFusionStackCombined: friendly.state.meta.convergenceFusionStackIndex ?? 0,
+      resonanceAuditCascadeCombined: friendly.state.meta.resonanceAuditCascadeIndex ?? 0,
     };
   }
 
@@ -6592,6 +6802,18 @@ export function evaluateDualTeamMultiAgentLayers(
     stackFrictionConvergenceCombined: combineDualTeamStackFrictionConvergence(
       friendly.state.meta.stackFrictionConvergenceIndex ?? 0,
       enemy.state.meta.stackFrictionConvergenceIndex ?? 0,
+    ),
+    fusionResonanceCouplingCombined: combineDualTeamFusionResonanceCoupling(
+      friendly.state.meta.fusionResonanceCouplingIndex ?? 0,
+      enemy.state.meta.fusionResonanceCouplingIndex ?? 0,
+    ),
+    convergenceFusionStackCombined: combineDualTeamConvergenceFusionStack(
+      friendly.state.meta.convergenceFusionStackIndex ?? 0,
+      enemy.state.meta.convergenceFusionStackIndex ?? 0,
+    ),
+    resonanceAuditCascadeCombined: combineDualTeamResonanceAuditCascade(
+      friendly.state.meta.resonanceAuditCascadeIndex ?? 0,
+      enemy.state.meta.resonanceAuditCascadeIndex ?? 0,
     ),
   };
 }
@@ -9012,6 +9234,56 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.couplingAmplificationFusionCombined === 'number' &&
       typeof dual.gapChurnResonanceCombined === 'number' &&
       typeof dual.stackFrictionConvergenceCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_fusion_resonance_coupling', 'Fusion–resonance coupling: fusion plus resonance scores high', () => {
+    const report = computeFusionResonanceCouplingIndex(50, 48, 40);
+    return report.couplingIndex >= 48;
+  });
+
+  check(results, 'a18_convergence_fusion_stack', 'Convergence–fusion stack: convergence plus fusion scores high', () => {
+    const report = computeConvergenceFusionStackIndex(48, 50, 3);
+    return report.stackIndex >= 47;
+  });
+
+  check(results, 'a18_resonance_audit_cascade', 'Resonance–audit cascade: resonance plus audit amplification scores high', () => {
+    const report = computeResonanceAuditCascadeIndex(46, 48, 42);
+    return report.cascadeIndex >= 46;
+  });
+
+  check(results, 'a18_eval_round22_meta', 'Layer: round-22 meta exposes fusion coupling, convergence stack, audit cascade', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.fusionResonanceCouplingIndex === 'number' &&
+      typeof m.convergenceFusionStackIndex === 'number' &&
+      typeof m.resonanceAuditCascadeIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_fusion_resonance_coupling', 'Audit: fusion–resonance coupling surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, fusionResonanceCouplingIndex: 72 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /Fusion–resonance coupling/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round22_combined', 'Dual team: round-22 combined coupling, stack, cascade exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.fusionResonanceCouplingCombined === 'number' &&
+      typeof dual.convergenceFusionStackCombined === 'number' &&
+      typeof dual.resonanceAuditCascadeCombined === 'number'
     );
   });
 

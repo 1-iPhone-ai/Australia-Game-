@@ -312,6 +312,9 @@ export interface TeamMultiAgentCoordinationMeta {
   couplingAmplificationFusionIndex?: number;
   gapChurnResonanceIndex?: number;
   stackFrictionConvergenceIndex?: number;
+  fusionResonanceCouplingIndex?: number;
+  convergenceFusionStackIndex?: number;
+  resonanceAuditCascadeIndex?: number;
 }
 
 export const AGENT18_LIMITS = {
