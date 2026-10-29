@@ -60,6 +60,12 @@ import { nrDashBuildDependencyImportanceSpread } from '../core/dependency-import
 import { nrDashBuildMapPulseConcentration } from '../core/map-pulse-concentration.ts';
 import { nrDashTopEconomyResilienceDrift, nrDashBuildEconomyResilienceDrift } from '../core/economy-resilience-drift.ts';
 import { nrDashBuildOwnedRiskExposureShare } from '../core/owned-risk-exposure-share.ts';
+import { nrDashBuildCorridorStressConcentration } from '../core/corridor-stress-concentration.ts';
+import { nrDashBuildDevelopmentTierDiversity } from '../core/development-tier-diversity.ts';
+import { nrDashBuildRegionalHeadroomSpread } from '../core/regional-headroom-spread.ts';
+import { nrDashBuildNationalNeedsPressure } from '../core/national-needs-pressure.ts';
+import { nrDashBuildDependencyConsumerLoad } from '../core/dependency-consumer-load.ts';
+import { nrDashBuildActivityWeightSpread } from '../core/activity-weight-spread.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -144,6 +150,15 @@ export const NrDashOverviewTab: React.FC<{
         </div>
       ) : null;
     })()}
+    {(() => {
+      const pressure = nrDashBuildNationalNeedsPressure(snap);
+      return pressure ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-needs-pressure">
+          National needs pressure {pressure.pressureIndex} · {pressure.totalOpenNeeds} open needs vs resilience{' '}
+          {pressure.nationalResilience}
+        </div>
+      ) : null;
+    })()}
     <div className="grid md:grid-cols-3 gap-3 text-sm">
       <div className="rounded-lg border border-slate-600/50 p-3">
         <div className="text-xs opacity-70">National resilience</div>
@@ -191,6 +206,14 @@ export const NrDashRegionsTab: React.FC<{
 }> = ({ snap, nsState, focusRegionId, onFocusRegion }) => (
   <div className="space-y-2" data-testid="nr-dash-tab-regions">
     <NrDashProvenanceStrip items={snap.provenance.filter(p => p.source === 'living_regions')} />
+    {(() => {
+      const tiers = nrDashBuildDevelopmentTierDiversity(snap);
+      return tiers ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dev-tier-diversity">
+          Development tier diversity {tiers.diversityIndex} · {tiers.distinctTiers} tiers · dominant {tiers.dominantTier ?? '—'}
+        </div>
+      ) : null;
+    })()}
     <NrDashRegionsDepthStrip
       spread={nrDashBuildResilienceSpread(snap)}
       outliers={nrDashTopParityOutliers(snap, 3)}
@@ -236,6 +259,14 @@ export const NrDashRegionsTab: React.FC<{
       return spread ? (
         <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dep-importance-spread">
           Dependency importance spread σ {spread.stdDev} · μ weight {spread.meanWeight} ({spread.edgeCount} edges)
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const load = nrDashBuildDependencyConsumerLoad(nsState);
+      return load ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dep-consumer-load">
+          Dependency consumer load σ {load.stdDev} · μ {load.meanEdgesPerConsumer} edges/consumer ({load.edgeCount} edges)
         </div>
       ) : null;
     })()}
@@ -325,6 +356,7 @@ export const NrDashNetworksTab: React.FC<{
   const resilienceUtilGap = nrDashBuildResilienceUtilizationGap(ns);
   const constraintConc = nrDashBuildConstraintConcentration(ns);
   const bottleneckSpan = nrDashBuildBottleneckNetworkSpan(ns);
+  const regionalHeadroom = nrDashBuildRegionalHeadroomSpread(ns);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
       <NrDashUtilAlignmentStrip drift={utilDrift} />
@@ -364,6 +396,12 @@ export const NrDashNetworksTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-bottleneck-network-span">
           Bottleneck network span {bottleneckSpan.distinctNetworks}/{bottleneckSpan.bottleneckCount} ·{' '}
           {bottleneckSpan.networks.join(', ') || '—'}
+        </div>
+      )}
+      {regionalHeadroom && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-regional-headroom-spread">
+          Regional headroom spread σ {regionalHeadroom.stdDev} · μ {regionalHeadroom.meanHeadroom}
+          {regionalHeadroom.tightestRegionId ? ` · tightest ${regionalHeadroom.tightestRegionId}` : ''}
         </div>
       )}
       {bottleneckConc && (
@@ -428,6 +466,7 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
   const acceleration = nrDashBuildTrendAcceleration(snap);
   const historyVol = nrDashBuildMomentumHistoryVolatility(snap);
   const deltaSpread = nrDashBuildMomentumDeltaSpread(snap);
+  const activitySpread = nrDashBuildActivityWeightSpread(snap);
   return (
     <div data-testid="nr-dash-tab-trends">
       <NrDashProvenanceStrip items={snap.provenance} />
@@ -455,6 +494,15 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
           <div>
             μ |Δ| {deltaSpread.meanAbsDelta} · σ {deltaSpread.stdDev}
             {deltaSpread.outlierRegionId ? ` · mover ${deltaSpread.outlierRegionId}` : ''}
+          </div>
+        </div>
+      )}
+      {activitySpread && (
+        <div className="text-xs mb-3 rounded border border-slate-600/50 p-2" data-testid="nr-dash-activity-weight-spread">
+          <div className="font-semibold mb-1">Momentum activity weight spread</div>
+          <div>
+            μ {activitySpread.meanWeight} · σ {activitySpread.stdDev}
+            {activitySpread.outlierRegionId ? ` · outlier ${activitySpread.outlierRegionId}` : ''}
           </div>
         </div>
       )}
@@ -529,6 +577,15 @@ export const NrDashMapTab: React.FC<{
       <NrDashProvenanceStrip items={snap.provenance} />
       <RegionPositionMap nodes={nodes} links={links} focusRegionId={focusRegionId} onSelect={onFocusRegion} />
       <NrDashCorridorStressStrip corridors={nrDashTopCorridorStress(nsState, 4)} />
+      {(() => {
+        const conc = nrDashBuildCorridorStressConcentration(nsState);
+        return conc ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-corridor-stress-concentration">
+            Corridor stress concentration {conc.concentrationIndex} · top {conc.topCorridorKey ?? '—'} (
+            {Math.round(conc.topCorridorShare * 100)}%)
+          </p>
+        ) : null;
+      })()}
       <NrDashBorderStressStrip rows={nrDashTopBorderStress(nsState, 3)} />
       <NrDashMapHubStrip hubs={hubRows} primaryHubId={primaryHub} />
       {peripheralGap && peripheralGap.peripheralLinkCount > 0 && (

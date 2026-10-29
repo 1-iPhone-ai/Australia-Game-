@@ -56,6 +56,12 @@ import { nrDashBuildDependencyImportanceSpread } from '../core/dependency-import
 import { nrDashBuildMapPulseConcentration } from '../core/map-pulse-concentration.ts';
 import { nrDashBuildEconomyResilienceDrift } from '../core/economy-resilience-drift.ts';
 import { nrDashBuildOwnedRiskExposureShare } from '../core/owned-risk-exposure-share.ts';
+import { nrDashBuildCorridorStressConcentration } from '../core/corridor-stress-concentration.ts';
+import { nrDashBuildDevelopmentTierDiversity } from '../core/development-tier-diversity.ts';
+import { nrDashBuildRegionalHeadroomSpread } from '../core/regional-headroom-spread.ts';
+import { nrDashBuildNationalNeedsPressure } from '../core/national-needs-pressure.ts';
+import { nrDashBuildDependencyConsumerLoad } from '../core/dependency-consumer-load.ts';
+import { nrDashBuildActivityWeightSpread } from '../core/activity-weight-spread.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -542,6 +548,39 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { NSW: 'you' })!;
     const share = nrDashBuildOwnedRiskExposureShare(snap)!;
     return share.ownedRegionCount === 1 && share.ownedShare === 0.3;
+  });
+
+  check('a23_corridor_stress_conc', 'Corridor stress concentration ranks NSW corridors', () => {
+    const conc = nrDashBuildCorridorStressConcentration(createAgent23NsFixture())!;
+    return conc.corridorCount >= 8 && conc.concentrationIndex > 0 && (conc.topCorridorKey ?? '').includes('NSW');
+  });
+
+  check('a23_dev_tier_diversity', 'Development tier diversity splits fixture tiers', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const tiers = nrDashBuildDevelopmentTierDiversity(snap)!;
+    return tiers.distinctTiers === 2 && tiers.diversityIndex === 0.5;
+  });
+
+  check('a23_regional_headroom_spread', 'Regional headroom spread marks NSW tightest', () => {
+    const spread = nrDashBuildRegionalHeadroomSpread(createAgent23NsFixture())!;
+    return spread.regionCount === 8 && spread.stdDev > 0 && spread.tightestRegionId === 'NSW';
+  });
+
+  check('a23_national_needs_pressure', 'National needs pressure uses merged resilience', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const pressure = nrDashBuildNationalNeedsPressure(snap)!;
+    return pressure.totalOpenNeeds === 8 && pressure.nationalResilience === 58 && pressure.pressureIndex === 1.379;
+  });
+
+  check('a23_dep_consumer_load', 'Dependency consumer load covers three consumers', () => {
+    const load = nrDashBuildDependencyConsumerLoad(createAgent23NsFixture())!;
+    return load.edgeCount === 3 && load.meanEdgesPerConsumer === 1 && load.stdDev === 0;
+  });
+
+  check('a23_activity_weight_spread', 'Activity weight spread covers eight map nodes', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const spread = nrDashBuildActivityWeightSpread(snap)!;
+    return spread.regionCount === 8 && spread.meanWeight > 0 && spread.outlierRegionId === 'NSW';
   });
 
   return results;
