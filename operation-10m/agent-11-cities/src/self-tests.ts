@@ -111,6 +111,9 @@ import { op10mA11ComputeSettlementExistentialContinuityFracture } from './settle
 import { op10mA11ComputeRegionalCollapseHorizonConvergence } from './regional-collapse-horizon-convergence.ts';
 import { op10mA11ComputeInterregionalVoidTotalizationSurge } from './interregional-void-totalization-surge.ts';
 import { op10mA11ComputeSettlementExistentialTerminusLock } from './settlement-existential-terminus-lock.ts';
+import { op10mA11ComputeRegionalAbsoluteCollapseHorizonLock } from './regional-absolute-collapse-horizon-lock.ts';
+import { op10mA11ComputeInterregionalVoidFinalizationCascade } from './interregional-void-finalization-cascade.ts';
+import { op10mA11ComputeSettlementExistentialObliterationThreshold } from './settlement-existential-obliteration-threshold.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -437,7 +440,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.22',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.23',
     composite.state.schemaVersion,
   );
 
@@ -579,7 +582,10 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastExistentialContinuityFractureIndex === composite.state.nationalExistentialContinuityFractureIndex &&
       composite.persisted.lastCollapseHorizonConvergenceIndex === composite.state.nationalCollapseHorizonConvergenceIndex &&
       composite.persisted.lastVoidTotalizationSurgeIndex === composite.state.nationalVoidTotalizationSurgeIndex &&
-      composite.persisted.lastExistentialTerminusLockIndex === composite.state.nationalExistentialTerminusLockIndex,
+      composite.persisted.lastExistentialTerminusLockIndex === composite.state.nationalExistentialTerminusLockIndex &&
+      composite.persisted.lastAbsoluteCollapseHorizonLockIndex === composite.state.nationalAbsoluteCollapseHorizonLockIndex &&
+      composite.persisted.lastVoidFinalizationCascadeIndex === composite.state.nationalVoidFinalizationCascadeIndex &&
+      composite.persisted.lastExistentialObliterationThresholdIndex === composite.state.nationalExistentialObliterationThresholdIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -2146,6 +2152,90 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_203',
     composite.state.existentialTerminusLock.every((t) => t.narrative.includes('existential terminus lock')),
     composite.state.existentialTerminusLock[0]?.band ?? 'none',
+  );
+
+  const absoluteCollapseHorizonLock = op10mA11ComputeRegionalAbsoluteCollapseHorizonLock({
+    collapseHorizonConvergence: composite.state.collapseHorizonConvergence,
+    voidTotalizationSurge: composite.state.voidTotalizationSurge,
+    existentialTerminusLock: composite.state.existentialTerminusLock,
+  });
+  push(
+    out,
+    'a11_204',
+    composite.state.absoluteCollapseHorizonLock.length === 8 &&
+      composite.state.nationalAbsoluteCollapseHorizonLockIndex === absoluteCollapseHorizonLock.nationalIndex,
+    `absolute horizon lock ${composite.state.nationalAbsoluteCollapseHorizonLockIndex}`,
+  );
+
+  const voidFinalizationCascade = op10mA11ComputeInterregionalVoidFinalizationCascade({
+    voidTotalizationSurge: composite.state.voidTotalizationSurge,
+    collapseHorizonConvergence: composite.state.collapseHorizonConvergence,
+    voidExpansionVelocity: composite.state.voidExpansionVelocity,
+  });
+  push(
+    out,
+    'a11_205',
+    composite.state.voidFinalizationCascade.length === 8 &&
+      composite.state.nationalVoidFinalizationCascadeIndex === voidFinalizationCascade.nationalIndex,
+    `void finalization ${composite.state.nationalVoidFinalizationCascadeIndex}`,
+  );
+
+  const existentialObliterationThreshold = op10mA11ComputeSettlementExistentialObliterationThreshold({
+    existentialTerminusLock: composite.state.existentialTerminusLock,
+    collapseHorizonConvergence: composite.state.collapseHorizonConvergence,
+    existentialContinuityFracture: composite.state.existentialContinuityFracture,
+  });
+  push(
+    out,
+    'a11_206',
+    composite.state.existentialObliterationThreshold.length === 8 &&
+      composite.state.nationalExistentialObliterationThresholdIndex === existentialObliterationThreshold.nationalIndex,
+    `obliteration threshold ${composite.state.nationalExistentialObliterationThresholdIndex}`,
+  );
+
+  push(
+    out,
+    'a11_207',
+    composite.state.absoluteCollapseHorizonLock.every((a) => a.narrative.includes('absolute collapse horizon lock')),
+    composite.state.absoluteCollapseHorizonLock[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_208',
+    composite.derived.some((d) => d.kind === 'absolute_collapse_horizon_lock') ||
+      composite.state.absoluteCollapseHorizonLock.some((a) => a.band === 'sealed' || a.band === 'absolute'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_209',
+    composite.derived.some((d) => d.kind === 'void_finalization_cascade') ||
+      composite.state.voidFinalizationCascade.some((v) => v.band === 'finalizing' || v.band === 'complete'),
+    composite.state.voidFinalizationCascade[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_210',
+    composite.persisted.lastVoidFinalizationCascadeIndex === composite.state.nationalVoidFinalizationCascadeIndex,
+    `persisted finalization ${composite.persisted.lastVoidFinalizationCascadeIndex}`,
+  );
+
+  push(
+    out,
+    'a11_211',
+    composite.derived.some((d) => d.kind === 'existential_obliteration_threshold') ||
+      composite.state.existentialObliterationThreshold.some((o) => o.band === 'breached' || o.band === 'obliterated'),
+    composite.state.existentialObliterationThreshold[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_212',
+    composite.state.existentialObliterationThreshold.every((o) => o.narrative.includes('existential obliteration threshold')),
+    composite.state.existentialObliterationThreshold[0]?.band ?? 'none',
   );
 
   return out;
