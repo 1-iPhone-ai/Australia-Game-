@@ -12274,6 +12274,289 @@ export function apexRecoveryOrchestratorWithinCap(report: ApexRecoveryOrchestrat
 }
 
 
+// --- source: match-explainability-zenith-bundle.ts ---
+  auditMatchExplainabilityZenithGate,
+  matchExplainabilityZenithAllowed,
+} from './match-explainability-zenith-gate.ts';
+  buildMatchExplainabilityApexBundle,
+  matchExplainabilityApexReady,
+} from './match-explainability-apex-bundle.ts';
+  buildSessionApexExportBundle,
+  sessionApexExportShipped,
+} from './session-apex-export-bundle.ts';
+
+export const AGENT19_ZENITH_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityZenithBundle {
+  zenithReady: boolean;
+  zenithAllowed: boolean;
+  apexReady: boolean;
+  apexExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type ZenithParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Zenith bundle: zenith gate and apex export must both be green. */
+export function buildMatchExplainabilityZenithBundle(
+  packs: TurnExplainabilityPack[],
+  params: ZenithParams,
+): MatchExplainabilityZenithBundle {
+  const zenith = auditMatchExplainabilityZenithGate(packs, params);
+  const apex = buildMatchExplainabilityApexBundle(packs, params);
+  const apexExport = buildSessionApexExportBundle(packs, params);
+  const zenithAllowed = matchExplainabilityZenithAllowed(zenith);
+  const apexReady = matchExplainabilityApexReady(apex);
+  const apexExportShipped = sessionApexExportShipped(apexExport);
+  const zenithReady = zenithAllowed && apexReady && apexExportShipped;
+  const narrativeLines = [
+    `Match explainability zenith bundle: ${zenithReady ? 'READY' : 'PENDING'} (gate ${zenithAllowed ? 'ok' : 'fail'}, apex ${apexReady ? 'ok' : 'fail'}).`,
+    ...zenith.narrativeLines.slice(0, 2),
+    ...apex.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_ZENITH_NARRATIVE_CAP);
+  return {
+    zenithReady,
+    zenithAllowed,
+    apexReady,
+    apexExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityZenithReady(bundle: MatchExplainabilityZenithBundle): boolean {
+  return bundle.zenithReady;
+}
+
+
+// --- source: session-zenith-export-bundle.ts ---
+  buildSessionApexExportBundle,
+  type SessionApexExportBundle,
+} from './session-apex-export-bundle.ts';
+  buildMatchExplainabilityZenithBundle,
+  matchExplainabilityZenithReady,
+} from './match-explainability-zenith-bundle.ts';
+
+export interface SessionZenithExportBundle extends SessionApexExportBundle {
+  zenithReady: boolean;
+  zenithSchema: string;
+}
+
+/** Zenith export wraps apex export when zenith bundle is ready. */
+export function buildSessionZenithExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionZenithExportBundle {
+  const base = buildSessionApexExportBundle(packs, params);
+  const zenith = buildMatchExplainabilityZenithBundle(packs, params);
+  const zenithReady = matchExplainabilityZenithReady(zenith);
+  const exports = zenithReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    zenithReady,
+    zenithSchema: 'agent19.zenith.v1',
+    releaseReady: zenithReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Zenith export: ${zenithReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionZenithExportShipped(bundle: SessionZenithExportBundle): boolean {
+  return bundle.zenithReady && bundle.exports.length > 0 && bundle.zenithSchema === 'agent19.zenith.v1';
+}
+
+
+// --- source: apex-zenith-bridge.ts ---
+  buildMatchExplainabilityZenithBundle,
+  matchExplainabilityZenithReady,
+} from './match-explainability-zenith-bundle.ts';
+  buildMatchExplainabilityApexBundle,
+  matchExplainabilityApexReady,
+} from './match-explainability-apex-bundle.ts';
+
+export interface ApexZenithBridgeReport {
+  aligned: boolean;
+  zenithReady: boolean;
+  apexReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Zenith-ready should match apex-ready when apex export stack passes. */
+export function auditApexZenithBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): ApexZenithBridgeReport {
+  const zenith = buildMatchExplainabilityZenithBundle(packs, params);
+  const apex = buildMatchExplainabilityApexBundle(packs, params);
+  const zenithReady = matchExplainabilityZenithReady(zenith);
+  const apexReady = matchExplainabilityApexReady(apex);
+  const aligned = zenithReady === apexReady;
+  const narrativeLines = [
+    `Apex/zenith bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (zenith ${zenithReady ? 'ok' : 'fail'}, apex ${apexReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, zenithReady, apexReady, narrativeLines };
+}
+
+export function apexZenithBridgeHealthy(report: ApexZenithBridgeReport): boolean {
+  return report.zenithReady && report.apexReady && report.aligned;
+}
+
+
+// --- source: match-explainability-summit-gate.ts ---
+  buildMatchExplainabilityZenithBundle,
+  matchExplainabilityZenithReady,
+} from './match-explainability-zenith-bundle.ts';
+  buildSessionZenithExportBundle,
+  sessionZenithExportShipped,
+} from './session-zenith-export-bundle.ts';
+
+export interface MatchExplainabilitySummitGateReport {
+  summitAllowed: boolean;
+  zenithReady: boolean;
+  zenithExportShipped: boolean;
+  apexZenithHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Summit gate: zenith bundle + zenith export + apex/zenith bridge. */
+export function auditMatchExplainabilitySummitGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilitySummitGateReport {
+  const zenith = buildMatchExplainabilityZenithBundle(packs, params);
+  const zenithExport = buildSessionZenithExportBundle(packs, params);
+  const bridge = auditApexZenithBridge(packs, params);
+  const zenithReady = matchExplainabilityZenithReady(zenith);
+  const zenithExportShipped = sessionZenithExportShipped(zenithExport);
+  const apexZenithHealthy = apexZenithBridgeHealthy(bridge);
+  const summitAllowed = zenithReady && zenithExportShipped && apexZenithHealthy;
+  const narrativeLines = [
+    `Match explainability summit: ${summitAllowed ? 'ALLOWED' : 'DENIED'} (zenith ${zenithReady ? 'ok' : 'fail'}, export ${zenithExportShipped ? 'ok' : 'fail'}).`,
+    ...zenith.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    summitAllowed,
+    zenithReady,
+    zenithExportShipped,
+    apexZenithHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilitySummitAllowed(report: MatchExplainabilitySummitGateReport): boolean {
+  return report.summitAllowed;
+}
+
+
+// --- source: zenith-recovery-orchestrator.ts ---
+  auditMatchExplainabilityZenithGate,
+  matchExplainabilityZenithAllowed,
+} from './match-explainability-zenith-gate.ts';
+
+export const AGENT19_ZENITH_RECOVERY_CAP = 10;
+
+export interface ZenithRecoveryOrchestratorReport {
+  zenithBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when zenith gate blocks summit rollout. */
+export function buildZenithRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): ZenithRecoveryOrchestratorReport {
+  const zenith = auditMatchExplainabilityZenithGate(packs, params);
+  const zenithBlocked = !matchExplainabilityZenithAllowed(zenith);
+  const steps: string[] = [];
+  if (zenithBlocked) {
+    if (!zenith.apexReady) {
+      steps.push('Restore apex bundle: pinnacle and apex export must pass.');
+    }
+    if (!zenith.apexExportShipped) {
+      steps.push('Emit session apex export before zenith clearance.');
+    }
+    if (!zenith.pinnacleApexHealthy) {
+      steps.push('Reconcile pinnacle/apex bridge before zenith.');
+    }
+    steps.push(...buildApexRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const apex = buildMatchExplainabilityApexBundle(packs, params);
+    if (!apex.apexReady) {
+      steps.push('Re-run apex readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Zenith gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_ZENITH_RECOVERY_CAP);
+  return {
+    zenithBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Zenith recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function zenithRecoveryOrchestratorWithinCap(report: ZenithRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_ZENITH_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
