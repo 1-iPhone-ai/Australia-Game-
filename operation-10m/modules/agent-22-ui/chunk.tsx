@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: ad13f9c097565d28
+// content-sha256-prefix: 612e6f24c386499c
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -4286,7 +4286,8 @@ export function evaluateShowAllOverrideSafety(input: {
   signals: ProgressionSignalSnapshot;
   policy: EvolvingUiAccessPolicy;
 }): ShowAllOverrideSafetyAssessment {
-  const overrideActive = Boolean(input.persisted.showAllPanelsOverride ?? input.policy.showAllPanelsOverride);
+  const overrideActive =
+    input.persisted.showAllPanelsOverride === true || input.policy.showAllPanelsOverride === true;
   const coverage = computeProgressionCoverage(input.signals, input.policy);
   const riskyPhase = ['save_load', 'main_menu', 'setup'].includes(input.phase);
   const suppressedCategoriesDuringPhase = ['economy', 'strategic', 'regional'].filter(cat =>

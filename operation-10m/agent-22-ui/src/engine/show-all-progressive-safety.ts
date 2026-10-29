@@ -18,7 +18,8 @@ export function evaluateShowAllOverrideSafety(input: {
   signals: ProgressionSignalSnapshot;
   policy: EvolvingUiAccessPolicy;
 }): ShowAllOverrideSafetyAssessment {
-  const overrideActive = Boolean(input.persisted.showAllPanelsOverride ?? input.policy.showAllPanelsOverride);
+  const overrideActive =
+    input.persisted.showAllPanelsOverride === true || input.policy.showAllPanelsOverride === true;
   const coverage = computeProgressionCoverage(input.signals, input.policy);
   const riskyPhase = ['save_load', 'main_menu', 'setup'].includes(input.phase);
   const suppressedCategoriesDuringPhase = ['economy', 'strategic', 'regional'].filter(cat =>
