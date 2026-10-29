@@ -683,6 +683,20 @@ import {
   bilateralLaunchedClearedForwardArcHandoffGateWorldEvent,
 } from './bilateral-launched-cleared-forward-arc-handoff-gate.ts';
 import {
+  computeLaunchedClearedForwardArcHandoffContinuitySnapshot,
+  launchedClearedForwardArcHandoffContinuityDomesticStress,
+  launchedClearedForwardArcHandoffContinuityExportScale,
+  launchedClearedForwardArcHandoffContinuityGiNotes,
+  launchedClearedForwardArcHandoffContinuityWorldEvent,
+} from './launched-cleared-forward-arc-handoff-continuity.ts';
+import {
+  computeBilateralSettledLaunchedClearedForwardArcReadinessGateSnapshot,
+  bilateralSettledLaunchedClearedForwardArcReadinessGateDomesticStressRelief,
+  bilateralSettledLaunchedClearedForwardArcReadinessGateExportScale,
+  bilateralSettledLaunchedClearedForwardArcReadinessGateGiNotes,
+  bilateralSettledLaunchedClearedForwardArcReadinessGateWorldEvent,
+} from './bilateral-settled-launched-cleared-forward-arc-readiness-gate.ts';
+import {
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -1937,6 +1951,38 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   );
   if (launchedClearedForwardArcHandoffEvent) worldEvents.push(launchedClearedForwardArcHandoffEvent);
 
+  const launchedClearedForwardArcHandoffContinuityStep = computeLaunchedClearedForwardArcHandoffContinuitySnapshot({
+    bilateralLaunchedClearedForwardArcHandoffGate,
+    sustainedClearedForwardArcContinuity,
+    persisted,
+  });
+  persisted = launchedClearedForwardArcHandoffContinuityStep.persisted;
+  const launchedClearedForwardArcHandoffContinuity = launchedClearedForwardArcHandoffContinuityStep.snapshot;
+  const launchedClearedForwardArcHandoffContinuityEvent = launchedClearedForwardArcHandoffContinuityWorldEvent(
+    launchedClearedForwardArcHandoffContinuity,
+    turn,
+  );
+  if (launchedClearedForwardArcHandoffContinuityEvent) {
+    worldEvents.push(launchedClearedForwardArcHandoffContinuityEvent);
+  }
+
+  const settledLaunchedClearedForwardArcReadinessStep =
+    computeBilateralSettledLaunchedClearedForwardArcReadinessGateSnapshot({
+      launchedClearedForwardArcHandoffContinuity,
+      bilateralLaunchedClearedForwardArcHandoffGate,
+      persisted,
+    });
+  persisted = settledLaunchedClearedForwardArcReadinessStep.persisted;
+  const bilateralSettledLaunchedClearedForwardArcReadinessGate = settledLaunchedClearedForwardArcReadinessStep.snapshot;
+  const settledLaunchedClearedForwardArcReadinessEvent =
+    bilateralSettledLaunchedClearedForwardArcReadinessGateWorldEvent(
+      bilateralSettledLaunchedClearedForwardArcReadinessGate,
+      turn,
+    );
+  if (settledLaunchedClearedForwardArcReadinessEvent) {
+    worldEvents.push(settledLaunchedClearedForwardArcReadinessEvent);
+  }
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -2026,6 +2072,10 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         bilateralClearedForwardArcReadinessGateExportScale(bilateralClearedForwardArcReadinessGate) *
         sustainedClearedForwardArcContinuityExportScale(sustainedClearedForwardArcContinuity) *
         bilateralLaunchedClearedForwardArcHandoffGateExportScale(bilateralLaunchedClearedForwardArcHandoffGate) *
+        launchedClearedForwardArcHandoffContinuityExportScale(launchedClearedForwardArcHandoffContinuity) *
+        bilateralSettledLaunchedClearedForwardArcReadinessGateExportScale(
+          bilateralSettledLaunchedClearedForwardArcReadinessGate,
+        ) *
         10,
     ) / 10;
 
@@ -2123,6 +2173,10 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       bilateralSustainedForwardArcHandoffGateDomesticStressRelief(bilateralSustainedForwardArcHandoffGate) +
       bilateralClearedForwardArcReadinessGateDomesticStressRelief(bilateralClearedForwardArcReadinessGate) +
       bilateralLaunchedClearedForwardArcHandoffGateDomesticStressRelief(bilateralLaunchedClearedForwardArcHandoffGate) +
+      launchedClearedForwardArcHandoffContinuityDomesticStress(launchedClearedForwardArcHandoffContinuity) +
+      bilateralSettledLaunchedClearedForwardArcReadinessGateDomesticStressRelief(
+        bilateralSettledLaunchedClearedForwardArcReadinessGate,
+      ) +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
@@ -2277,6 +2331,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.bilateralClearedForwardArcReadinessGateSmoothing,
     persisted.sustainedClearedForwardArcContinuitySmoothing,
     persisted.bilateralLaunchedClearedForwardArcHandoffGateSmoothing,
+    persisted.launchedClearedForwardArcHandoffContinuitySmoothing,
+    persisted.bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -2419,6 +2475,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     bilateralClearedForwardArcReadinessGate,
     sustainedClearedForwardArcContinuity,
     bilateralLaunchedClearedForwardArcHandoffGate,
+    launchedClearedForwardArcHandoffContinuity,
+    bilateralSettledLaunchedClearedForwardArcReadinessGate,
     inputHash,
   };
 
@@ -2541,6 +2599,12 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...sustainedClearedForwardArcContinuityGiNotes(state.sustainedClearedForwardArcContinuity));
   lines.push(
     ...bilateralLaunchedClearedForwardArcHandoffGateGiNotes(state.bilateralLaunchedClearedForwardArcHandoffGate),
+  );
+  lines.push(...launchedClearedForwardArcHandoffContinuityGiNotes(state.launchedClearedForwardArcHandoffContinuity));
+  lines.push(
+    ...bilateralSettledLaunchedClearedForwardArcReadinessGateGiNotes(
+      state.bilateralSettledLaunchedClearedForwardArcReadinessGate,
+    ),
   );
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);

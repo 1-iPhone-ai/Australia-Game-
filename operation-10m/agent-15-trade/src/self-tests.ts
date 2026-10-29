@@ -459,6 +459,16 @@ import {
   createEmptyBilateralLaunchedClearedForwardArcHandoffGateSnapshot,
   bilateralLaunchedClearedForwardArcHandoffGateExportScale,
 } from './bilateral-launched-cleared-forward-arc-handoff-gate.ts';
+import {
+  computeLaunchedClearedForwardArcHandoffContinuitySnapshot,
+  createEmptyLaunchedClearedForwardArcHandoffContinuitySnapshot,
+  launchedClearedForwardArcHandoffContinuityExportScale,
+} from './launched-cleared-forward-arc-handoff-continuity.ts';
+import {
+  computeBilateralSettledLaunchedClearedForwardArcReadinessGateSnapshot,
+  createEmptyBilateralSettledLaunchedClearedForwardArcReadinessGateSnapshot,
+  bilateralSettledLaunchedClearedForwardArcReadinessGateExportScale,
+} from './bilateral-settled-launched-cleared-forward-arc-readiness-gate.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -3091,6 +3101,67 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
       bilateralLaunchedClearedForwardArcHandoffGateExportScale(cleared) >=
         bilateralLaunchedClearedForwardArcHandoffGateExportScale(blocked),
       'expected launched cleared forward arc handoff scale lift',
+    );
+  });
+
+  ok('launched cleared forward arc handoff continuity improves when launched handoff gate is cleared', () => {
+    const handoff = {
+      ...createEmptyBilateralLaunchedClearedForwardArcHandoffGateSnapshot(),
+      score: 0.95,
+      band: 'cleared' as const,
+    };
+    const arc = {
+      ...createEmptySustainedClearedForwardArcContinuitySnapshot(),
+      score: 0.94,
+      band: 'anchored' as const,
+    };
+    const settled = computeLaunchedClearedForwardArcHandoffContinuitySnapshot({
+      bilateralLaunchedClearedForwardArcHandoffGate: handoff,
+      sustainedClearedForwardArcContinuity: arc,
+      persisted: { ...createEmptyGTELPersisted(), launchedClearedForwardArcHandoffContinuitySmoothing: 0.99 },
+    }).snapshot;
+    const broken = computeLaunchedClearedForwardArcHandoffContinuitySnapshot({
+      bilateralLaunchedClearedForwardArcHandoffGate: { ...handoff, score: 0.11, band: 'blocked' },
+      sustainedClearedForwardArcContinuity: { ...arc, score: 0.1, band: 'severed' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(settled.score > broken.score, 'expected launched handoff continuity when gate cleared');
+    gtelAssert(
+      launchedClearedForwardArcHandoffContinuityExportScale(settled) >=
+        launchedClearedForwardArcHandoffContinuityExportScale(broken),
+      'expected launched cleared handoff continuity scale lift',
+    );
+  });
+
+  ok('settled launched cleared forward arc readiness gate improves when handoff continuity is settled', () => {
+    const continuity = {
+      ...createEmptyLaunchedClearedForwardArcHandoffContinuitySnapshot(),
+      score: 0.96,
+      band: 'settled' as const,
+    };
+    const handoff = {
+      ...createEmptyBilateralLaunchedClearedForwardArcHandoffGateSnapshot(),
+      score: 0.93,
+      band: 'cleared' as const,
+    };
+    const ready = computeBilateralSettledLaunchedClearedForwardArcReadinessGateSnapshot({
+      launchedClearedForwardArcHandoffContinuity: continuity,
+      bilateralLaunchedClearedForwardArcHandoffGate: handoff,
+      persisted: {
+        ...createEmptyGTELPersisted(),
+        bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing: 0.99,
+      },
+    }).snapshot;
+    const withheld = computeBilateralSettledLaunchedClearedForwardArcReadinessGateSnapshot({
+      launchedClearedForwardArcHandoffContinuity: { ...continuity, score: 0.11, band: 'broken' },
+      bilateralLaunchedClearedForwardArcHandoffGate: { ...handoff, score: 0.09, band: 'blocked' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(ready.score > withheld.score, 'expected settled launched readiness when continuity settled');
+    gtelAssert(
+      bilateralSettledLaunchedClearedForwardArcReadinessGateExportScale(ready) >=
+        bilateralSettledLaunchedClearedForwardArcReadinessGateExportScale(withheld),
+      'expected settled launched cleared forward arc readiness scale lift',
     );
   });
 

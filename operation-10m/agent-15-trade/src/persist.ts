@@ -96,6 +96,8 @@ import { sanitizeClearedForwardArcHandoffContinuitySmoothing } from './cleared-f
 import { sanitizeBilateralClearedForwardArcReadinessGateSmoothing } from './bilateral-cleared-forward-arc-readiness-gate.ts';
 import { sanitizeSustainedClearedForwardArcContinuitySmoothing } from './sustained-cleared-forward-arc-continuity.ts';
 import { sanitizeBilateralLaunchedClearedForwardArcHandoffGateSmoothing } from './bilateral-launched-cleared-forward-arc-handoff-gate.ts';
+import { sanitizeLaunchedClearedForwardArcHandoffContinuitySmoothing } from './launched-cleared-forward-arc-handoff-continuity.ts';
+import { sanitizeBilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing } from './bilateral-settled-launched-cleared-forward-arc-readiness-gate.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -210,6 +212,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     bilateralClearedForwardArcReadinessGateSmoothing: 0.52,
     sustainedClearedForwardArcContinuitySmoothing: 0.52,
     bilateralLaunchedClearedForwardArcHandoffGateSmoothing: 0.52,
+    launchedClearedForwardArcHandoffContinuitySmoothing: 0.52,
+    bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing: 0.52,
   };
 }
 
@@ -590,6 +594,12 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   base.bilateralLaunchedClearedForwardArcHandoffGateSmoothing =
     sanitizeBilateralLaunchedClearedForwardArcHandoffGateSmoothing(
       r.bilateralLaunchedClearedForwardArcHandoffGateSmoothing,
+    );
+  base.launchedClearedForwardArcHandoffContinuitySmoothing =
+    sanitizeLaunchedClearedForwardArcHandoffContinuitySmoothing(r.launchedClearedForwardArcHandoffContinuitySmoothing);
+  base.bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing =
+    sanitizeBilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing(
+      r.bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing,
     );
   return base;
 }

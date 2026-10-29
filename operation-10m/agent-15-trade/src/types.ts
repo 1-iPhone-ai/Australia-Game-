@@ -244,6 +244,8 @@ export interface GTELPersisted {
   bilateralClearedForwardArcReadinessGateSmoothing?: number;
   sustainedClearedForwardArcContinuitySmoothing?: number;
   bilateralLaunchedClearedForwardArcHandoffGateSmoothing?: number;
+  launchedClearedForwardArcHandoffContinuitySmoothing?: number;
+  bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -357,6 +359,8 @@ export interface GTELState {
   bilateralClearedForwardArcReadinessGate: GTELBilateralClearedForwardArcReadinessGateSnapshot;
   sustainedClearedForwardArcContinuity: GTELSustainedClearedForwardArcContinuitySnapshot;
   bilateralLaunchedClearedForwardArcHandoffGate: GTELBilateralLaunchedClearedForwardArcHandoffGateSnapshot;
+  launchedClearedForwardArcHandoffContinuity: GTELLaunchedClearedForwardArcHandoffContinuitySnapshot;
+  bilateralSettledLaunchedClearedForwardArcReadinessGate: GTELBilateralSettledLaunchedClearedForwardArcReadinessGateSnapshot;
   inputHash: string;
 }
 
@@ -1481,6 +1485,27 @@ export interface GTELBilateralLaunchedClearedForwardArcHandoffGateSnapshot {
   band: GTELBilateralLaunchedClearedForwardArcHandoffGateBand;
   continuityFeed: number;
   readinessAnchor: number;
+  summary: string;
+}
+
+export type GTELLaunchedClearedForwardArcHandoffContinuityBand = 'settled' | 'holding' | 'unsettled' | 'broken';
+
+export interface GTELLaunchedClearedForwardArcHandoffContinuitySnapshot {
+  score: number;
+  band: GTELLaunchedClearedForwardArcHandoffContinuityBand;
+  handoffGateFeed: number;
+  sustainedClearedArcAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralSettledLaunchedClearedForwardArcReadinessGateBand =
+  'ready' | 'arming' | 'pending' | 'withheld';
+
+export interface GTELBilateralSettledLaunchedClearedForwardArcReadinessGateSnapshot {
+  score: number;
+  band: GTELBilateralSettledLaunchedClearedForwardArcReadinessGateBand;
+  handoffContinuityFeed: number;
+  gateAnchor: number;
   summary: string;
 }
 
