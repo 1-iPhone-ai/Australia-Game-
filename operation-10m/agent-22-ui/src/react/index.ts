@@ -18,3 +18,5 @@ export { ModalFocusRestoreStrip } from './ModalFocusRestoreStrip.js';
 export { MotionTimingChromeRoot } from './MotionTimingChromeRoot.js';
 export { PacedAnnouncementStatusStrip } from './PacedAnnouncementStatusStrip.js';
 export { KeyboardShortcutConflictBanner } from './KeyboardShortcutConflictBanner.js';
+export { SessionResumeCoachStrip } from './SessionResumeCoachStrip.js';
+export { DeferredAnnouncementFlushBanner } from './DeferredAnnouncementFlushBanner.js';

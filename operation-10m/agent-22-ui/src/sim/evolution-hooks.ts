@@ -14,6 +14,11 @@ import {
   buildPacedAnnouncementSchedule,
   mergePacingDeferredIntoPersisted,
 } from '../engine/paced-announcement-scheduler.js';
+import {
+  appendToAnnouncementPacingQueue,
+  flushDeferredAnnouncementQueue,
+  mergeAnnouncementPacingQueueIntoPersisted,
+} from '../engine/deferred-announcement-flush.js';
 
 /** Persisted slice proposed for `gameSettings.evolvingUi` (assembly-owned). */
 export interface EvolvingUiPersistedState {
@@ -34,6 +39,8 @@ export interface EvolvingUiPersistedState {
   announcementDedupLedger?: Record<string, number>;
   /** coach lines waiting for staggered live-region delivery */
   announcementPacingDeferredCount?: number;
+  /** deferred coach copy awaiting flush on later ticks */
+  announcementPacingQueue?: string[];
 }
 
 export interface DayAdvanceUiEvolutionResult {
@@ -41,6 +48,7 @@ export interface DayAdvanceUiEvolutionResult {
   newlyUnlockedPanelIds: string[];
   coachAnnouncements: string[];
   deferredCoachAnnouncementCount: number;
+  flushedDeferredAnnouncementCount: number;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -114,6 +122,15 @@ export function tickEvolvingUiOnDayAdvance(
     lastCoachPanelId: newlyUnlockedPanelIds[0] ?? persisted.lastCoachPanelId ?? null,
   };
 
+  const density = resolveUiDensityProfile({
+    interfaceLevel: nextSignals.interfaceLevel,
+    preferredTier: persisted.preferredDensity ?? null,
+    textScaleMultiplier: DEFAULT_ACCESSIBILITY_SNAPSHOT.textScaleMultiplier,
+  });
+
+  const priorQueue = persisted.announcementPacingQueue ?? [];
+  const flush = flushDeferredAnnouncementQueue(priorQueue, DEFAULT_ACCESSIBILITY_SNAPSHOT, density);
+
   const deduped = filterDedupedAnnouncements(
     coachAnnouncements,
     nextSignals.gameDay,
@@ -125,27 +142,27 @@ export function tickEvolvingUiOnDayAdvance(
     deduped.ledger
   );
 
-  const density = resolveUiDensityProfile({
-    interfaceLevel: nextSignals.interfaceLevel,
-    preferredTier: persisted.preferredDensity ?? null,
-    textScaleMultiplier: DEFAULT_ACCESSIBILITY_SNAPSHOT.textScaleMultiplier,
-  });
   const pacing = buildPacedAnnouncementSchedule(
     deduped.freshAnnouncements,
     DEFAULT_ACCESSIBILITY_SNAPSHOT,
     density
   );
 
-  const updatedPersistedWithPacing = mergePacingDeferredIntoPersisted(
-    updatedPersistedWithDedup,
-    pacing.deferredCount
+  const combinedQueue = appendToAnnouncementPacingQueue(flush.remainingQueue, pacing.deferredAnnouncements);
+
+  const updatedPersistedWithPacing = mergeAnnouncementPacingQueueIntoPersisted(
+    mergePacingDeferredIntoPersisted(updatedPersistedWithDedup, combinedQueue.length),
+    combinedQueue
   );
+
+  const immediateCoach = [...flush.flushedAnnouncements, ...pacing.immediateAnnouncements];
 
   return {
     gameDay: nextSignals.gameDay,
     newlyUnlockedPanelIds,
-    coachAnnouncements: pacing.immediateAnnouncements,
-    deferredCoachAnnouncementCount: pacing.deferredCount,
+    coachAnnouncements: immediateCoach,
+    deferredCoachAnnouncementCount: combinedQueue.length,
+    flushedDeferredAnnouncementCount: flush.flushedAnnouncements.length,
     updatedPersisted: updatedPersistedWithPacing,
     visiblePanelCount,
   };

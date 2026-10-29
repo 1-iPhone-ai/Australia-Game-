@@ -29,6 +29,11 @@ export function SimulationUiEvolutionBridge({
           Staggered {result.deferredCoachAnnouncementCount} coach announcements
         </div>
       ) : null}
+      {result.flushedDeferredAnnouncementCount > 0 ? (
+        <div data-testid="sim-ui-evolution-flush-count">
+          Flushed {result.flushedDeferredAnnouncementCount} queued coach announcements
+        </div>
+      ) : null}
       {result.coachAnnouncements.slice(0, 3).map((line, i) => (
         <div key={i}>{line}</div>
       ))}

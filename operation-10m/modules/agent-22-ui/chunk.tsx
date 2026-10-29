@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 17636dd38dc974c6
+// content-sha256-prefix: abc8bb9145ba52d1
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -855,6 +855,8 @@ export interface EvolvingUiPersistedState {
   announcementDedupLedger?: Record<string, number>;
   /** coach lines waiting for staggered live-region delivery */
   announcementPacingDeferredCount?: number;
+  /** deferred coach copy awaiting flush on later ticks */
+  announcementPacingQueue?: string[];
 }
 
 export interface DayAdvanceUiEvolutionResult {
@@ -862,6 +864,7 @@ export interface DayAdvanceUiEvolutionResult {
   newlyUnlockedPanelIds: string[];
   coachAnnouncements: string[];
   deferredCoachAnnouncementCount: number;
+  flushedDeferredAnnouncementCount: number;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -935,6 +938,15 @@ export function tickEvolvingUiOnDayAdvance(
     lastCoachPanelId: newlyUnlockedPanelIds[0] ?? persisted.lastCoachPanelId ?? null,
   };
 
+  const density = resolveUiDensityProfile({
+    interfaceLevel: nextSignals.interfaceLevel,
+    preferredTier: persisted.preferredDensity ?? null,
+    textScaleMultiplier: DEFAULT_ACCESSIBILITY_SNAPSHOT.textScaleMultiplier,
+  });
+
+  const priorQueue = persisted.announcementPacingQueue ?? [];
+  const flush = flushDeferredAnnouncementQueue(priorQueue, DEFAULT_ACCESSIBILITY_SNAPSHOT, density);
+
   const deduped = filterDedupedAnnouncements(
     coachAnnouncements,
     nextSignals.gameDay,
@@ -946,27 +958,27 @@ export function tickEvolvingUiOnDayAdvance(
     deduped.ledger
   );
 
-  const density = resolveUiDensityProfile({
-    interfaceLevel: nextSignals.interfaceLevel,
-    preferredTier: persisted.preferredDensity ?? null,
-    textScaleMultiplier: DEFAULT_ACCESSIBILITY_SNAPSHOT.textScaleMultiplier,
-  });
   const pacing = buildPacedAnnouncementSchedule(
     deduped.freshAnnouncements,
     DEFAULT_ACCESSIBILITY_SNAPSHOT,
     density
   );
 
-  const updatedPersistedWithPacing = mergePacingDeferredIntoPersisted(
-    updatedPersistedWithDedup,
-    pacing.deferredCount
+  const combinedQueue = appendToAnnouncementPacingQueue(flush.remainingQueue, pacing.deferredAnnouncements);
+
+  const updatedPersistedWithPacing = mergeAnnouncementPacingQueueIntoPersisted(
+    mergePacingDeferredIntoPersisted(updatedPersistedWithDedup, combinedQueue.length),
+    combinedQueue
   );
+
+  const immediateCoach = [...flush.flushedAnnouncements, ...pacing.immediateAnnouncements];
 
   return {
     gameDay: nextSignals.gameDay,
     newlyUnlockedPanelIds,
-    coachAnnouncements: pacing.immediateAnnouncements,
-    deferredCoachAnnouncementCount: pacing.deferredCount,
+    coachAnnouncements: immediateCoach,
+    deferredCoachAnnouncementCount: combinedQueue.length,
+    flushedDeferredAnnouncementCount: flush.flushedAnnouncements.length,
     updatedPersisted: updatedPersistedWithPacing,
     visiblePanelCount,
   };
@@ -2915,6 +2927,167 @@ export function liveRegionQueueSummaryCopy(queue: QueuedLiveRegionMessage[]): st
   return `${queue.length} screen reader messages queued.`;
 }
 
+// --- source: engine/deferred-announcement-flush.ts ---
+export interface DeferredAnnouncementFlushResult {
+  flushedAnnouncements: string[];
+  remainingQueue: string[];
+  remainingCount: number;
+}
+
+export function flushDeferredAnnouncementQueue(
+  queue: string[],
+  accessibility: AccessibilitySettingsSnapshot,
+  density: UiDensityProfile
+): DeferredAnnouncementFlushResult {
+  if (!queue.length) {
+    return { flushedAnnouncements: [], remainingQueue: [], remainingCount: 0 };
+  }
+
+  const schedule = buildPacedAnnouncementSchedule(queue, accessibility, density);
+  return {
+    flushedAnnouncements: schedule.immediateAnnouncements,
+    remainingQueue: schedule.deferredAnnouncements,
+    remainingCount: schedule.deferredAnnouncements.length,
+  };
+}
+
+export function mergeAnnouncementPacingQueueIntoPersisted<
+  T extends { announcementPacingQueue?: string[]; announcementPacingDeferredCount?: number },
+>(persisted: T, queue: string[]): T {
+  return {
+    ...persisted,
+    announcementPacingQueue: [...queue],
+    announcementPacingDeferredCount: queue.length,
+  };
+}
+
+export function deferredFlushStatusCopy(flushedCount: number, remainingCount: number): string | null {
+  if (flushedCount <= 0 && remainingCount <= 0) return null;
+  if (flushedCount > 0 && remainingCount > 0) {
+    return `Delivered ${flushedCount} queued coach announcements; ${remainingCount} still waiting.`;
+  }
+  if (flushedCount > 0) {
+    return `Delivered ${flushedCount} queued coach announcements.`;
+  }
+  return `${remainingCount} coach announcements remain in the delivery queue.`;
+}
+
+export function appendToAnnouncementPacingQueue(queue: string[], lines: string[]): string[] {
+  if (!lines.length) return queue;
+  return [...queue, ...lines];
+}
+
+// --- source: engine/session-resume-coach.ts ---
+export interface SessionResumeCoachPlan {
+  shouldShow: boolean;
+  navTarget: string | null;
+  panelLabel: string | null;
+  focusSelector: string | null;
+  coachCopy: string | null;
+}
+
+export function buildSessionResumeCoachPlan(input: {
+  memory?: SessionUiMemory;
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  accessibility: AccessibilitySettingsSnapshot;
+  phaseAllowsResume?: boolean;
+}): SessionResumeCoachPlan {
+  const memory = input.memory ?? createDefaultSessionUiMemory();
+  const navTarget = suggestResumeNavTarget(memory, input.signals, input.policy);
+  const phaseOk = input.phaseAllowsResume ?? true;
+
+  if (!phaseOk || !navTarget || !input.accessibility.keyboardNavigationHints) {
+    return {
+      shouldShow: false,
+      navTarget: null,
+      panelLabel: null,
+      focusSelector: null,
+      coachCopy: null,
+    };
+  }
+
+  const panel = Object.values(EVOLVING_UI_PANEL_BY_ID).find(p => p.navTarget === navTarget);
+  const panelLabel = panel?.label ?? navTarget;
+  const focusSelector = navSelectorForTarget(navTarget);
+
+  return {
+    shouldShow: true,
+    navTarget,
+    panelLabel,
+    focusSelector,
+    coachCopy: `Resume where you left off — return to ${panelLabel}.`,
+  };
+}
+
+export function sessionResumeSkipLinkLabel(plan: SessionResumeCoachPlan): string | null {
+  if (!plan.shouldShow || !plan.panelLabel) return null;
+  return `Skip to ${plan.panelLabel}`;
+}
+
+// --- source: engine/memory-weighted-quick-actions.ts ---
+const RECENT_BOOST = 15;
+
+export function rankContextualQuickActionsWithMemory(
+  actions: ContextualQuickAction[],
+  memory: SessionUiMemory
+): ContextualQuickAction[] {
+  const recentNav = new Set<string>();
+  if (memory.lastNavTarget) recentNav.add(memory.lastNavTarget);
+  for (const panelId of memory.recentPanelIds) {
+    const panel = EVOLVING_UI_PANEL_BY_ID[panelId];
+    if (panel?.navTarget) recentNav.add(panel.navTarget);
+  }
+
+  return [...actions].sort((a, b) => {
+    const aBoost = recentNav.has(a.navTarget) ? RECENT_BOOST : 0;
+    const bBoost = recentNav.has(b.navTarget) ? RECENT_BOOST : 0;
+    const aScore = a.priority - aBoost;
+    const bScore = b.priority - bBoost;
+    if (aScore !== bScore) return aScore - bScore;
+    return a.label.localeCompare(b.label);
+  });
+}
+
+export function memoryQuickActionCoachCopy(boostedNavTarget: string | null): string | null {
+  if (!boostedNavTarget) return null;
+  return `Pinned ${boostedNavTarget} quick action from your recent session.`;
+}
+
+// --- source: engine/accessible-chrome-shell.ts ---
+export interface AccessibleChromeShellProfile {
+  density: UiDensityProfile;
+  style: Record<string, string>;
+  dataAttributes: Record<string, string>;
+}
+
+export function resolveAccessibleChromeShellProfile(input: {
+  accessibility: AccessibilitySettingsSnapshot;
+  interfaceLevel: InterfaceExperienceLevel;
+  preferredDensityTier?: 'compact' | 'comfortable' | 'spacious' | null;
+}): AccessibleChromeShellProfile {
+  const density = resolveUiDensityProfile({
+    interfaceLevel: input.interfaceLevel,
+    textScaleMultiplier: input.accessibility.textScaleMultiplier,
+    preferredTier: input.preferredDensityTier,
+  });
+  const motion = resolveMotionTimingProfile(input.accessibility, density);
+  const touch = resolveTouchTargetProfile(density.tier, input.accessibility);
+
+  const style = {
+    ...motionTimingCssVars(motion),
+    ...touchTargetCssVars(touch),
+    ...mergeHighContrastChromeStyle(input.accessibility),
+  };
+
+  const dataAttributes = {
+    ...motion.dataAttributes,
+    ...touch.dataAttributes,
+  };
+
+  return { density, style, dataAttributes };
+}
+
 // --- source: engine/legacy-access.ts ---
 /** Mirrors V9.4 resolveIntentNavToUiPatch targets (standalone copy for module tests). */
 export function resolveIntentNavToUiPatch(target: string): Record<string, boolean | string> {
@@ -4168,6 +4341,159 @@ export function runAgent22Round9SelfTests(): {
   return { passed: results.length - failed, failed, results };
 }
 
+// --- source: engine/round10-self-tests.ts ---
+export function runAgent22Round10SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r10_flush_delivers_batch',
+    'flush delivers first paced batch from queue',
+    (() => {
+      const density = resolveUiDensityProfile({ interfaceLevel: 'guided' });
+      const flush = flushDeferredAnnouncementQueue(
+        ['one', 'two', 'three', 'four'],
+        DEFAULT_ACCESSIBILITY_SNAPSHOT,
+        density
+      );
+      return flush.flushedAnnouncements.length >= 1 && flush.remainingCount >= 1;
+    })()
+  );
+
+  check(
+    'r10_flush_copy',
+    'flush status copy mentions delivered count',
+    Boolean(deferredFlushStatusCopy(2, 1)?.includes('Delivered'))
+  );
+
+  check(
+    'r10_queue_persist',
+    'merge queue into persisted slice',
+    (() => {
+      const merged = mergeAnnouncementPacingQueueIntoPersisted(createDefaultEvolvingUiPersistedState(), ['a', 'b']);
+      return merged.announcementPacingQueue?.length === 2 && merged.announcementPacingDeferredCount === 2;
+    })()
+  );
+
+  check(
+    'r10_tick_flushes_prior_queue',
+    'day advance exposes flushed deferred count',
+    (() => {
+      const persisted = mergeAnnouncementPacingQueueIntoPersisted(createDefaultEvolvingUiPersistedState(), [
+        'queued coach line one',
+        'queued coach line two',
+        'queued coach line three',
+      ]);
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'guided' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        persisted
+      );
+      return r.flushedDeferredAnnouncementCount >= 1;
+    })()
+  );
+
+  check(
+    'r10_append_queue',
+    'append extends pacing queue',
+    appendToAnnouncementPacingQueue(['a'], ['b']).length === 2
+  );
+
+  check(
+    'r10_resume_plan',
+    'session resume plan suggests last nav target',
+    (() => {
+      const memory = recordNavSelection(createDefaultSessionUiMemory(), 'map');
+      const plan = buildSessionResumeCoachPlan({
+        memory,
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        accessibility: DEFAULT_ACCESSIBILITY_SNAPSHOT,
+      });
+      return plan.shouldShow && plan.navTarget === 'map';
+    })()
+  );
+
+  check(
+    'r10_resume_skip_label',
+    'resume skip link references panel label',
+    (() => {
+      const plan = buildSessionResumeCoachPlan({
+        memory: recordNavSelection(createDefaultSessionUiMemory(), 'map'),
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        accessibility: DEFAULT_ACCESSIBILITY_SNAPSHOT,
+      });
+      return Boolean(sessionResumeSkipLinkLabel(plan)?.includes('Skip'));
+    })()
+  );
+
+  check(
+    'r10_memory_rank_boost',
+    'memory ranking promotes recent nav action',
+    (() => {
+      const base = listContextualQuickActions('human_turn', 5);
+      const memory = recordNavSelection(createDefaultSessionUiMemory(), 'map');
+      const ranked = rankContextualQuickActionsWithMemory(base, memory);
+      return ranked[0]?.navTarget === 'map';
+    })()
+  );
+
+  check(
+    'r10_memory_coach_copy',
+    'memory quick action copy mentions pin',
+    Boolean(memoryQuickActionCoachCopy('map')?.includes('Pinned'))
+  );
+
+  check(
+    'r10_accessible_shell_vars',
+    'accessible chrome shell merges motion and touch vars',
+    (() => {
+      const shell = resolveAccessibleChromeShellProfile({
+        accessibility: DEFAULT_ACCESSIBILITY_SNAPSHOT,
+        interfaceLevel: 'guided',
+      });
+      return (
+        Boolean(shell.style['--evolving-ui-transition-ms']) &&
+        Boolean(shell.style['--evolving-ui-touch-min-px'])
+      );
+    })()
+  );
+
+  check(
+    'r10_touch_meets_minimum',
+    'touch profile meets scaled minimum',
+    (() => {
+      const profile = resolveTouchTargetProfile('spacious', DEFAULT_ACCESSIBILITY_SNAPSHOT);
+      return meetsMinimumTouchTarget(profile, profile.minHeightPx);
+    })()
+  );
+
+  check(
+    'r10_resume_hidden_without_hints',
+    'resume coach hidden when keyboard hints off',
+    (() => {
+      const plan = buildSessionResumeCoachPlan({
+        memory: recordNavSelection(createDefaultSessionUiMemory(), 'map'),
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, keyboardNavigationHints: false },
+      });
+      return !plan.shouldShow;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
+}
+
 // --- source: a11y/aria-builders.ts ---
 const RING_CLASSES: Record<FocusRingStyle, string> = {
   emerald: 'focus-visible:ring-emerald-400',
@@ -4811,6 +5137,11 @@ export function SimulationUiEvolutionBridge({
           Staggered {result.deferredCoachAnnouncementCount} coach announcements
         </div>
       ) : null}
+      {result.flushedDeferredAnnouncementCount > 0 ? (
+        <div data-testid="sim-ui-evolution-flush-count">
+          Flushed {result.flushedDeferredAnnouncementCount} queued coach announcements
+        </div>
+      ) : null}
       {result.coachAnnouncements.slice(0, 3).map((line, i) => (
         <div key={i}>{line}</div>
       ))}
@@ -4822,11 +5153,18 @@ export function SimulationUiEvolutionBridge({
 export interface ContextualQuickActionRailProps {
   phase: V94StandardizedGamePhase;
   gameDay: number;
+  sessionMemory?: SessionUiMemory;
   onNavigate?: (navTarget: string, patch: Record<string, boolean | string>) => void;
 }
 
-export function ContextualQuickActionRail({ phase, gameDay, onNavigate }: ContextualQuickActionRailProps): React.ReactElement {
-  const actions = listContextualQuickActions(phase, gameDay);
+export function ContextualQuickActionRail({
+  phase,
+  gameDay,
+  sessionMemory,
+  onNavigate,
+}: ContextualQuickActionRailProps): React.ReactElement {
+  const base = listContextualQuickActions(phase, gameDay);
+  const actions = sessionMemory ? rankContextualQuickActionsWithMemory(base, sessionMemory) : base;
   return (
     <div data-testid="contextual-quick-action-rail" role="toolbar" aria-label="Contextual quick actions" className="flex flex-wrap gap-1">
       {actions.map(a => (
@@ -5379,22 +5717,18 @@ export function MotionTimingChromeRoot({
   preferredDensityTier,
   children,
 }: MotionTimingChromeRootProps): React.ReactElement {
-  const density = resolveUiDensityProfile({
+  const shell = resolveAccessibleChromeShellProfile({
+    accessibility,
     interfaceLevel,
-    textScaleMultiplier: accessibility.textScaleMultiplier,
-    preferredTier: preferredDensityTier,
+    preferredDensityTier,
   });
-  const motion = resolveMotionTimingProfile(accessibility, density);
-  const style = {
-    ...motionTimingCssVars(motion),
-    ...mergeHighContrastChromeStyle(accessibility),
-  };
 
   return (
     <div
       data-testid="motion-timing-chrome-root"
-      style={style}
-      {...motion.dataAttributes}
+      style={shell.style}
+      {...shell.dataAttributes}
+      data-ui-density={shell.density.tier}
     >
       {children}
     </div>
@@ -5455,8 +5789,97 @@ export function KeyboardShortcutConflictBanner({
   );
 }
 
+// --- source: react/SessionResumeCoachStrip.tsx ---
+export interface SessionResumeCoachStripProps {
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  accessibility: AccessibilitySettingsSnapshot;
+  memory?: SessionUiMemory;
+  phaseAllowsResume?: boolean;
+  onResume?: (navTarget: string) => void;
+}
+
+export function SessionResumeCoachStrip({
+  signals,
+  policy,
+  accessibility,
+  memory,
+  phaseAllowsResume,
+  onResume,
+}: SessionResumeCoachStripProps): React.ReactElement | null {
+  const plan = buildSessionResumeCoachPlan({
+    memory,
+    signals,
+    policy,
+    accessibility,
+    phaseAllowsResume,
+  });
+
+  if (!plan.shouldShow || !plan.navTarget || !plan.coachCopy) return null;
+
+  const focusClass = buildFocusRingClassName({
+    highContrast: accessibility.highContrastFocusRings,
+    style: accessibility.focusRingStyle,
+  });
+  const skipLabel = sessionResumeSkipLinkLabel(plan);
+
+  return (
+    <div
+      data-testid="session-resume-coach-strip"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-emerald-500/30 rounded p-2 space-y-1"
+    >
+      <p>{plan.coachCopy}</p>
+      {skipLabel ? (
+        <a
+          href={`#${plan.focusSelector?.replace(/^\[#?/, '').replace(/\]$/, '') ?? plan.navTarget}`}
+          className={`underline ${focusClass}`}
+          data-testid="session-resume-skip-link"
+          onClick={e => {
+            if (onResume) {
+              e.preventDefault();
+              onResume(plan.navTarget!);
+            }
+          }}
+        >
+          {skipLabel}
+        </a>
+      ) : null}
+    </div>
+  );
+}
+
+// --- source: react/DeferredAnnouncementFlushBanner.tsx ---
+export interface DeferredAnnouncementFlushBannerProps {
+  flushedCount: number;
+  remainingCount: number;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function DeferredAnnouncementFlushBanner({
+  flushedCount,
+  remainingCount,
+  accessibility,
+}: DeferredAnnouncementFlushBannerProps): React.ReactElement | null {
+  const copy = deferredFlushStatusCopy(flushedCount, remainingCount);
+  if (!copy) return null;
+
+  return (
+    <div
+      data-testid="deferred-announcement-flush-banner"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-indigo-500/30 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {copy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.9.0';
+export const AGENT_22_MODULE_VERSION = '1.10.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -5542,6 +5965,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round9 = runAgent22Round9SelfTests();
   for (const r of round9.results) {
     check(`agent22_round9_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round10 = runAgent22Round10SelfTests();
+  for (const r of round10.results) {
+    check(`agent22_round10_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;
