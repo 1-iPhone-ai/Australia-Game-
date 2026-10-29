@@ -1380,7 +1380,7 @@ tests.push(
       scaleWaveMaturitySnapshot: null,
     };
     const core = migrateResearchProgressSave(v17);
-    assert(core?.schemaVersion === 'op10m-agent03-v21');
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
     assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v17'));
     assert(Array.isArray(core?.nationalIntegrationBandLog));
     assert(core?.nationalIntegrationSnapshot === null);
@@ -1449,7 +1449,7 @@ tests.push(
       nationalIntegrationSnapshot: null,
     };
     const core = migrateResearchProgressSave(v18);
-    assert(core?.schemaVersion === 'op10m-agent03-v21');
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
     assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v18'));
     assert(Array.isArray(core?.scaleWaveProjectionBandLog));
     assert(core?.scaleWaveProjectionSnapshot === null);
@@ -1520,7 +1520,7 @@ tests.push(
       scaleWaveProjectionSnapshot: null,
     };
     const core = migrateResearchProgressSave(v19);
-    assert(core?.schemaVersion === 'op10m-agent03-v21');
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
     assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v19'));
     assert(Array.isArray(core?.trancheProjectionBandLog));
     assert(core?.trancheProjectionSnapshot === null);
@@ -1593,13 +1593,89 @@ tests.push(
       trancheProjectionSnapshot: null,
     };
     const core = migrateResearchProgressSave(v20);
-    assert(core?.schemaVersion === 'op10m-agent03-v21');
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
     assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v20'));
     assert(Array.isArray(core?.integrationGateBandLog));
     assert(core?.integrationGateSnapshot === null);
     const state = computeResearchProgress(baseInputs({ turn: 39 }), core);
     assert(typeof state.integrationGateSnapshot?.digest === 'string');
     assert(Array.isArray(state.integrationGateBandLog));
+  })
+);
+
+tests.push(
+  test('save_v21_migrates_to_v22_with_dry_run_handoff_fields', () => {
+    const v21 = {
+      schemaVersion: 'op10m-agent03-v21',
+      turn: 40,
+      revision: 3,
+      unlockedNodes: [],
+      institutionUpgrades: [],
+      unlockSeq: 0,
+      branchEmphasis: [],
+      emphasisRevision: 1,
+      migrationLog: [{ fromVersion: 'op10m-agent03-v20', toVersion: 'op10m-agent03-v21', turn: 39 }],
+      saveKind: 'manual',
+      updatedAtTurn: 40,
+      sessionId: 'v21',
+      persistRevision: 21,
+      unlockEventLog: [],
+      lastReconciledAtTurn: 40,
+      emphasisChangeLog: [],
+      institutionTierSnapshot: { capturedAtTurn: 40, tiers: {}, digest: 'abc', nationalIntegrationCount: 0, strategicOrAboveCount: 0 },
+      readinessMilestoneLog: [],
+      readinessBranchSnapshot: null,
+      integrationRiskLog: [],
+      integrationRiskSnapshot: null,
+      scaleWaveSnapshot: null,
+      synergyThresholdLog: [],
+      synergySnapshot: null,
+      commercializationMilestoneLog: [],
+      commercializationSnapshot: null,
+      diffusionIntegrationLog: [],
+      diffusionIntegrationSnapshot: null,
+      portfolioBalanceLog: [],
+      portfolioBalanceSnapshot: null,
+      diffusionForecastBandLog: [],
+      diffusionForecastSnapshot: null,
+      horizonConvergenceBandLog: [],
+      horizonConvergenceSnapshot: null,
+      researchExecutionBandLog: [],
+      researchExecutionSnapshot: null,
+      strategicDeliveryBandLog: [],
+      strategicDeliverySnapshot: null,
+      scaleWaveMaturityBandLog: [],
+      scaleWaveMaturitySnapshot: null,
+      nationalIntegrationBandLog: [],
+      nationalIntegrationSnapshot: null,
+      scaleWaveProjectionBandLog: [],
+      scaleWaveProjectionSnapshot: null,
+      trancheProjectionBandLog: [],
+      trancheProjectionSnapshot: null,
+      integrationGateBandLog: [],
+      integrationGateSnapshot: null,
+    };
+    const core = migrateResearchProgressSave(v21);
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v21'));
+    assert(Array.isArray(core?.dryRunHandoffBandLog));
+    assert(core?.dryRunHandoffSnapshot === null);
+    const state = computeResearchProgress(baseInputs({ turn: 41 }), core);
+    assert(typeof state.dryRunHandoffSnapshot?.digest === 'string');
+    assert(Array.isArray(state.dryRunHandoffBandLog));
+  })
+);
+
+tests.push(
+  test('merged_integration_baseline_outlook_derived', () => {
+    const inputs = baseInputs({ turn: 22 });
+    const state = computeResearchProgress(inputs, null);
+    const outlook = state.mergedIntegrationBaselineOutlook;
+    assert(outlook != null);
+    assert(outlook?.waveOrdinal === 22);
+    assert(outlook?.integrationBaselineShaHint === '634656bb');
+    assert(outlook?.projectedFunctionalHint === 1_401_419);
+    assert(detectForeignSaveFields({ mergedIntegrationBaselineOutlook: outlook }).includes('mergedIntegrationBaselineOutlook'));
   })
 );
 

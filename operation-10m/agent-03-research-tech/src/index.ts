@@ -64,4 +64,7 @@ export * from './scale-wave-integration-gate-outlook.ts';
 export * from './scale-wave-integration-gate-band-log.ts';
 export * from './scale-wave-integration-gate-snapshot.ts';
 export * from './tranche-dry-run-handoff-outlook.ts';
+export * from './tranche-dry-run-handoff-band-log.ts';
+export * from './tranche-dry-run-handoff-snapshot.ts';
+export * from './merged-integration-baseline-outlook.ts';
 export * from './compute.ts';
