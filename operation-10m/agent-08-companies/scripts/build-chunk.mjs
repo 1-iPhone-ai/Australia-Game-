@@ -66,6 +66,7 @@ const FILES = [
   'production-transition-veneration.ts',
   'production-transition-enshrinement.ts',
   'production-transition-immortalization.ts',
+  'production-transition-transcendence.ts',
   'chunk-exports.ts',
 ];
 
