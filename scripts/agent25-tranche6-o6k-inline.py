@@ -23,6 +23,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     intercity_logistics_paths,
     research_pipeline_paths,
     maritime_trade_paths,
+    intermodal_freight_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -41,6 +42,7 @@ FFED_MARKER = "export function runV1018FfedTurn"
 ICLOG_MARKER = "export function runV1017IclogTurn"
 RPIPE_MARKER = "export function runV1020RpipeTurn"
 MTRD_MARKER = "export function runV1019MtrdTurn"
+IMFD_MARKER = "export function runV1021ImfdTurn"
 
 TRADE_SECTION = (
     "// ============================================================================\n"
@@ -118,6 +120,13 @@ MTRD_SECTION = (
     "// ============================================================================\n"
     "// SECTION 20BN: V10.19 MARITIME TRADE — SHIPPING LANES, PORT GRAPH & ENERGY COUPLING (O6K-41)\n"
     "// Renumbered from shard 20BM (canonical 20BM = research pipeline, push #15)\n"
+    "// ============================================================================\n"
+)
+
+IMFD_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20BP: V10.21 INTERMODAL FREIGHT — CORRIDOR HANDOFFS, DWELL HUBS & CROSS-STACK BRIDGES (O6K-45)\n"
+    "// Renumbered from shard 20BO (canonical 20BO = T6 mega4 wave-5 lattice, push #17)\n"
     "// ============================================================================\n"
 )
 
@@ -1444,6 +1453,161 @@ def push_mtrd(text: str) -> str:
     return text
 
 
+IMFD_HELPERS = """
+function V1021_IMFD_readPersistedFromGameState(gs: any): V1021ImfdPersisted | null {
+  const raw = (gs?.save?.meta?.v1021 as any)?.intermodal_freight;
+  return raw ? sanitizeV1021ImfdPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1021_IMFD_applyToGameState(gs: any, out: V1021ImfdTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1021 = { ...(meta.v1021 || {}) };
+  v1021.intermodal_freight = out.persisted;
+  meta.v1021 = v1021;
+  save.meta = meta;
+  return { ...gs, save, v1021IntermodalFreight: out.state };
+}
+
+export function buildV1021ImfdTurnInputFromGameState(gs: any, turn: number): V1021ImfdTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 10210;
+  const inp = buildV1021ImfdTurnInputFromGameStateStub(turn, seed);
+  const trade = gs?.v1014TradeDepth ?? null;
+  const energy = gs?.energyDepth ?? null;
+  const supply = gs?.v1014SupplyChain ?? null;
+  const workforce = gs?.v1014WorkforceMigration ?? gs?.workforceHumanCapital ?? null;
+  const maritime = gs?.v1019MaritimeTrade ?? null;
+  const iclog = gs?.v1017IntercityLogistics ?? null;
+  return {
+    ...inp,
+    supply20bb: {
+      ...inp.supply20bb,
+      turn,
+      bottleneckPressure: Number(supply?.bottleneckPressure ?? inp.supply20bb.bottleneckPressure),
+      handoffStackIndex: Number(supply?.handoffStackIndex ?? inp.supply20bb.handoffStackIndex),
+    },
+    trade20ba: {
+      ...inp.trade20ba,
+      turn,
+      sanctionsPressure: Number(trade?.sanctionsPressure ?? inp.trade20ba.sanctionsPressure),
+      exportLaneStability: Number(trade?.exportLaneStability ?? inp.trade20ba.exportLaneStability),
+      importDependencyRatio: Number(trade?.importDependencyRatio ?? inp.trade20ba.importDependencyRatio),
+    },
+    energy20bc: {
+      ...inp.energy20bc,
+      turn,
+      gridStability: Number(energy?.gridStability ?? inp.energy20bc.gridStability),
+      reserveMarginPct: Number(energy?.reserveMarginPct ?? inp.energy20bc.reserveMarginPct),
+      carbonStress: Number(energy?.carbonStress ?? inp.energy20bc.carbonStress),
+    },
+    workforce20bf: {
+      ...inp.workforce20bf,
+      turn,
+      specialistGap: Number(workforce?.specialistGap ?? inp.workforce20bf.specialistGap),
+      nationalReadiness: Number(workforce?.nationalReadiness ?? inp.workforce20bf.nationalReadiness),
+      mismatchIndex: Number(workforce?.mismatchIndex ?? inp.workforce20bf.mismatchIndex),
+    },
+    maritime20bn: {
+      ...inp.maritime20bn,
+      turn,
+      berthUtilizationScore: Number(maritime?.berthUtilizationScore ?? inp.maritime20bn.berthUtilizationScore),
+      craneAutomationCoverage: Number(
+        maritime?.craneAutomationCoverage ?? inp.maritime20bn.craneAutomationCoverage,
+      ),
+      handoffReadiness: Number(maritime?.handoffReadiness ?? inp.maritime20bn.handoffReadiness),
+    },
+    iclog20bk: {
+      ...inp.iclog20bk,
+      turn,
+      iclogBackpressure: Number(iclog?.iclogBackpressure ?? inp.iclog20bk.iclogBackpressure),
+      corridorLoadFactor: Number(iclog?.corridorLoadFactor ?? inp.iclog20bk.corridorLoadFactor),
+      dwellBacklogTurns: Number(iclog?.dwellBacklogTurns ?? inp.iclog20bk.dwellBacklogTurns),
+    },
+    persisted: null,
+  };
+}
+"""
+
+IMFD_DAY_HOOK = """
+      if (typeof runV1021ImfdTurn === 'function') {
+        try {
+          const imfdIn = buildV1021ImfdTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          imfdIn.persisted = V1021_IMFD_readPersistedFromGameState(mergedGameState);
+          const imfdOut = runV1021ImfdTurn(imfdIn);
+          mergedGameState = V1021_IMFD_applyToGameState(mergedGameState, imfdOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_imfd_day_hook(text: str) -> str:
+    marker = "runV1021ImfdTurn(imfdIn)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:38000] if "executeAgent02SingleDayBoundary" in text else ""
+    if marker in day_slice:
+        print("skip imfd day hook (present)")
+        return text
+    mega4_tail = """      if (typeof runV1019T6Mega4DepthTurn === 'function') {
+        try {
+          const m4In = buildV1019T6Mega4DepthTurnInputFromGameState(
+            mergedGameState,
+            passCtx.turnCounter,
+            settings?.t6Mega4DepthEnabled !== false,
+          );
+          m4In.persisted = V1019_T6MEGA4_readPersistedFromGameState(mergedGameState);
+          const m4Out = runV1019T6Mega4DepthTurn(m4In);
+          mergedGameState = V1019_T6MEGA4_applyToGameState(mergedGameState, m4Out);
+        } catch (_) { /* isolated */ }
+      }"""
+    if mega4_tail not in text:
+        raise SystemExit("T6 mega4 day hook anchor missing for imfd hook")
+    return text.replace(mega4_tail, mega4_tail + IMFD_DAY_HOOK, 1)
+
+
+def wire_imfd_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState && typeof sanitizeV1019T6Mega4DepthPersisted === 'function') {"
+    patch = (
+        "  if (migrated.gameState && typeof sanitizeV1021ImfdPersisted === 'function') {\n"
+        "    const imfdRaw = (migrated.gameState as any)?.save?.meta?.v1021?.intermodal_freight;\n"
+        "    if (imfdRaw) {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1021 = { ...(meta.v1021 || {}) };\n"
+        "      v1021.intermodal_freight = sanitizeV1021ImfdPersisted(imfdRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1021 = v1021;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1021.intermodal_freight = sanitizeV1021ImfdPersisted" in text:
+        print("skip imfd §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("T6 mega4 §6 anchor missing for imfd migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
+def push_imfd(text: str) -> str:
+    block = IMFD_SECTION + bundle_local_files(intermodal_freight_paths()) + IMFD_HELPERS
+    text = insert_before(text, block, IMFD_MARKER, "T6 push #18 v1021-intermodal-freight (PR #345)")
+    text = wire_imfd_day_hook(text)
+    text = wire_imfd_migration(text)
+    lab = """  { id: 'v1021_intermodal_freight', label: 'V10.21 Intermodal freight (20BP corridors & handoff stacks)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1021ImfdSelfTestsForLab() },
+"""
+    mega4_lab = (
+        "  { id: 'v1019_t6_mega4_depth', label: 'V10.19 T6 mega4 wave-5 lattice (20BO / 20BA–20BN)', "
+        "tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV1019T6Mega4DepthSelfTestsForLab() },"
+    )
+    if "{ id: 'v1021_intermodal_freight'" not in text:
+        if mega4_lab in text:
+            text = text.replace(mega4_lab, mega4_lab + "\n" + lab.strip(), 1)
+            print("registered LAB v1021_intermodal_freight")
+        else:
+            text = wire_lab(text, lab, "v1021_intermodal_freight")
+            print("registered LAB v1021_intermodal_freight (fallback)")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -1458,7 +1622,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -1487,6 +1651,8 @@ def main() -> None:
         text = push_rpipe(text)
     elif args.push == 16:
         text = push_mtrd(text)
+    elif args.push == 18:
+        text = push_imfd(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")

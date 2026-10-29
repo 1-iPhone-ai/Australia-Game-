@@ -301,6 +301,49 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  createEmptyV1019MtrdPersisted,\n  v1019MtrdInputHash,\n  sanitizeV1019MtrdPersisted,\n} from '../engine/maritime-trade-orchestrator';",
             "  v1019MtrdInputHash,\n} from '../engine/maritime-trade-orchestrator';\nimport {\n  createEmptyV1019MtrdPersisted,\n  sanitizeV1019MtrdPersisted,\n} from '../persistence/migrations';",
         )
+    if "v1021-intermodal-freight" in name.replace("\\", "/"):
+        src = src.replace("SECTION 20BO", "SECTION 20BP")
+        src = src.replace("SECTION 20BL", "SECTION 20BP")
+        src = src.replace("SECTION 20BM", "SECTION 20BP")
+    if "intermodal-freight/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1021ImfdClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1021ImfdClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1021_IMFD_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1021_IMFD_MIG_REGIONS", src)
+    if "intermodal-freight-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1021ImfdPersisted, sanitizeV1021ImfdPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1021_IMFD_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1021_IMFD_ORCH_REGIONS.forEach", src)
+    if "intermodal-freight-utils.ts" in name:
+        src = re.sub(
+            r"export function V1021_IMFD_handoffStackGraphHash",
+            "export function V1021_IMFD_utilHandoffStackGraphHash",
+            src,
+        )
+    if "v1021-intermodal-freight/handoff-stacks/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"V1021_IMFD_handoffStackGraphHash as imfdPgHashCore",
+            "V1021_IMFD_utilHandoffStackGraphHash as imfdPgHashCore",
+            src,
+        )
+    if "run-v1021-imfd-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1021ImfdSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1021ImfdSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1021ImfdBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1021ImfdBaseInput(", src)
+        src = src.replace(
+            "  runV1021ImfdTurn,\n  createEmptyV1021ImfdPersisted,\n  v1021ImfdInputHash,\n  sanitizeV1021ImfdPersisted,\n} from '../engine/intermodal-freight-orchestrator';",
+            "  runV1021ImfdTurn,\n  v1021ImfdInputHash,\n} from '../engine/intermodal-freight-orchestrator';\nimport {\n  createEmptyV1021ImfdPersisted,\n  sanitizeV1021ImfdPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1021ImfdPersisted,\n  v1021ImfdInputHash,\n  sanitizeV1021ImfdPersisted,\n} from '../engine/intermodal-freight-orchestrator';",
+            "  v1021ImfdInputHash,\n} from '../engine/intermodal-freight-orchestrator';\nimport {\n  createEmptyV1021ImfdPersisted,\n  sanitizeV1021ImfdPersisted,\n} from '../persistence/migrations';",
+        )
     return src
 
 
@@ -723,6 +766,49 @@ def maritime_trade_paths() -> list[str]:
         if "/adapters/" in s:
             return (8, s)
         if "maritime-trade-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def intermodal_freight_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1021-intermodal-freight"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/handoff-stacks/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/corridor-scenarios/" in s:
+            return (3, s)
+        if "/generated/handoff-stacks/" in s:
+            return (4, s)
+        if "corridor-registry" in s or "handoff-stack-bundle" in s:
+            return (5, s)
+        if "/dwell-hubs/" in s:
+            return (6, s)
+        if "intermodal-freight-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "intermodal-freight-orchestrator" in s:
             return (9, s)
         if "/self-tests/" in s:
             return (10, s)
