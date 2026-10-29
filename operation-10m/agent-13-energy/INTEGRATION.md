@@ -140,3 +140,4 @@ Output: `chunk.tsx` wrapped with `// OP10M_MODULE_BEGIN agent-13-energy` … `//
 - Merge baseline: **`c4bbec67`** (O10-241 projection @ **3,054,213**)
 - Module depth: `continental-sovereign-net-zero-export-continuity-orchestration-ledger.ts` stacks round-54 federated net-zero export / climate resilience export federation
 - Agent 25 handoff: `agent25-wave55-projection-handoff-brief.ts`
+- Verification: `npm run test:agent-13` → **646/646** (259 manifest + 115 supplements + 272 core)
