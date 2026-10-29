@@ -46,6 +46,7 @@ import { computeResearchScaleWaveSealHandoffIntegrationOutlook } from './scale-w
 import { computeResearchScaleWaveSealHandoffIntegrationSealOutlook } from './scale-wave-seal-handoff-integration-seal-outlook.ts';
 import { computeResearchScaleWaveSealHandoffIntegrationSealContinuityOutlook } from './scale-wave-seal-handoff-integration-seal-continuity-outlook.ts';
 import { computeResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffOutlook } from './scale-wave-seal-handoff-integration-seal-continuity-handoff-outlook.ts';
+import { computeResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationOutlook } from './scale-wave-seal-handoff-integration-seal-continuity-handoff-integration-outlook.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
 import {
@@ -498,6 +499,16 @@ export function computeResearchProgress(
       sealHandoffIntegrationSealSnapshot: coreBase.sealHandoffIntegrationSealSnapshot ?? null,
     });
 
+  const scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationOutlook =
+    computeResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationOutlook(inputs, {
+      scaleWaveSealHandoffIntegrationSealContinuityHandoffOutlook,
+      scaleWaveSealHandoffIntegrationSealContinuityOutlook,
+      sealHandoffIntegrationSealContinuityHandoffSnapshot:
+        coreBase.sealHandoffIntegrationSealContinuityHandoffSnapshot ?? null,
+      sealHandoffIntegrationSealContinuitySnapshot:
+        coreBase.sealHandoffIntegrationSealContinuitySnapshot ?? null,
+    });
+
   const computed: ResearchProgressState = {
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: coreBase.revision,
@@ -544,6 +555,7 @@ export function computeResearchProgress(
     scaleWaveSealHandoffIntegrationSealOutlook,
     scaleWaveSealHandoffIntegrationSealContinuityOutlook,
     scaleWaveSealHandoffIntegrationSealContinuityHandoffOutlook,
+    scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationOutlook,
     unlockSeq: coreBase.unlockSeq,
     branchEmphasis: coreBase.branchEmphasis,
   };
