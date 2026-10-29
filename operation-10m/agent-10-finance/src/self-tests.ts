@@ -69,6 +69,22 @@ import {
   mergeAgent09IntoMacroFinancialInputs,
   agent09HouseholdBridgeIntegrationNote,
 } from './integration/agent09-household-bridge.js';
+import {
+  assessImportPricePassThrough,
+  importPassThroughInflationScoreAdjustment,
+} from './inflation/import-price-pass-through.js';
+import {
+  assessTermPremiumInflationSignal,
+  termPremiumTighteningBias,
+} from './rates/term-premium-inflation-signal.js';
+import {
+  mergeAgent15IntoMacroFinancialInputs,
+  agent15TradeBridgeIntegrationNote,
+} from './integration/agent15-trade-bridge.js';
+import {
+  mergeAgent08IntoMacroFinancialInputs,
+  agent08CorporateBridgeIntegrationNote,
+} from './integration/agent08-corporate-bridge.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -467,7 +483,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r6');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r7');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -552,6 +568,95 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'credit_inflation_vicious_loop');
       return inp?.creditShockActive === true && inp.householdInflationScenarioActive === true;
+    })(),
+  );
+
+  // --- Round 7 scale wave ---
+  {
+    const imp = assessImportPricePassThrough({
+      tradeOpennessBand: 'open',
+      exchangeRatePressure: 'sharp_depreciation',
+      commodityImportShare: 0.5,
+      inflationBand: 'high',
+      turn: 3,
+    });
+    check('a10_r7_01', 'import pass-through strong or surge', imp.passThroughBand === 'strong' || imp.passThroughBand === 'surge');
+    check('a10_r7_02', 'import score adj', importPassThroughInflationScoreAdjustment(imp.passThroughBand) >= 4);
+  }
+  {
+    const term = assessTermPremiumInflationSignal({
+      inflationBand: 'scenario_runaway',
+      fiscalPressure: 'critical',
+      sovereignDebtPressure: 'critical',
+      highInflationScenario: true,
+    });
+    check('a10_r7_03', 'term premium stress', term.signalBand === 'stress' || term.signalBand === 'unanchored');
+    check('a10_r7_04', 'term tightening bias', termPremiumTighteningBias(term) > 0);
+  }
+  {
+    const merged15 = mergeAgent15IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      tradeOpennessBand: 'open',
+      exchangeRatePressure: 'sharp_depreciation',
+      commodityImportShare: 0.42,
+    });
+    check('a10_r7_05', 'agent15 trade merge', merged15.highInflationScenario === true);
+    check('a10_r7_06', 'agent15 bridge note', agent15TradeBridgeIntegrationNote().includes('Agent 15'));
+  }
+  {
+    const merged08 = mergeAgent08IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      pricingPowerBand: 'dominant',
+      marginCompression: 'none',
+      passThroughIntent: 'full',
+    });
+    check('a10_r7_07', 'agent08 corporate merge', (merged08.inflationSettingMultiplier ?? 1) > 1.05);
+    check('a10_r7_08', 'agent08 bridge note', agent08CorporateBridgeIntegrationNote().includes('Agent 08'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r7_09',
+      'forecast import and term fields',
+      path.points.every((p) => !!p.importPassThroughBand && !!p.termPremiumSignalBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r7_10',
+      'agent21 r7 fields',
+      bundle.schemaVersion === '10.14.agent10.r7' &&
+        bundle.terminalImportPassThrough !== undefined &&
+        bundle.terminalTermPremiumSignal !== undefined,
+    );
+  }
+  check(
+    'a10_r7_11',
+    'round7 preset import shock',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'import_shock_pass_through');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.2;
+    })(),
+  );
+  check(
+    'a10_r7_12',
+    'round7 preset term premium',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'term_premium_fiscal_stress');
+      return inp?.fiscalPressure === 'critical' && inp.sovereignDebtPressure === 'critical';
+    })(),
+  );
+  check(
+    'a10_r7_13',
+    'round7 preset corporate pricing',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'corporate_pricing_power_spike');
+      return (inp?.inflationSettingMultiplier ?? 1) > 1.3;
     })(),
   );
 

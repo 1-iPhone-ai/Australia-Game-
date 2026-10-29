@@ -1,0 +1,44 @@
+import type { MacroFinancialSystemInputs } from '../definitions/types.js';
+import { finClamp } from '../compute/math.js';
+
+/** Read-only trade snapshot from Agent 15 (contract only). */
+export interface Agent15TradeSnapshot {
+  turn: number;
+  tradeOpennessBand: 'closed' | 'mixed' | 'open';
+  exchangeRatePressure: 'appreciation' | 'stable' | 'depreciation' | 'sharp_depreciation';
+  commodityImportShare: number;
+}
+
+export function mergeAgent15IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent15TradeSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (
+    snapshot.exchangeRatePressure === 'sharp_depreciation' ||
+    snapshot.exchangeRatePressure === 'depreciation'
+  ) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.08, 0.85, 1.45);
+  }
+  if (snapshot.tradeOpennessBand === 'open' && snapshot.commodityImportShare > 0.35) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  }
+
+  let highInflationScenario = base.highInflationScenario;
+  if (snapshot.exchangeRatePressure === 'sharp_depreciation' && snapshot.tradeOpennessBand === 'open') {
+    highInflationScenario = true;
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    highInflationScenario,
+  };
+}
+
+export function agent15TradeBridgeIntegrationNote(): string {
+  return 'Agent 15 trade snapshot adjusts import-side inflation multiplier flags; macro CPI only.';
+}

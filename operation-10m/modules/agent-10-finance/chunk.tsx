@@ -1451,6 +1451,65 @@ export function realRateGapTighteningBias(gap: RealRateGapAssessment): number {
 }
 
 
+// --- source: rates/term-premium-inflation-signal.ts ---
+
+export type TermPremiumSignalBand = 'anchored' | 'creeping' | 'unanchored' | 'stress';
+
+export interface TermPremiumInflationSignal {
+  signalBand: TermPremiumSignalBand;
+  premiumBps: number;
+  narrative: string;
+}
+
+/** Long-end term premium as inflation-expectations stress metaphor (deterministic). */
+export function assessTermPremiumInflationSignal(input: {
+  inflationBand: InflationConditionsBand;
+  fiscalPressure: FiscalPressureBand;
+  sovereignDebtPressure: SovereignDebtPressureBand;
+  highInflationScenario: boolean;
+}): TermPremiumInflationSignal {
+  let premiumBps = 45;
+  if (input.inflationBand === 'elevated') premiumBps += 35;
+  if (input.inflationBand === 'high') premiumBps += 75;
+  if (input.inflationBand === 'scenario_runaway') premiumBps += 120;
+
+  if (input.fiscalPressure === 'strained') premiumBps += 25;
+  if (input.fiscalPressure === 'critical') premiumBps += 55;
+
+  if (input.sovereignDebtPressure === 'elevated') premiumBps += 30;
+  if (input.sovereignDebtPressure === 'high' || input.sovereignDebtPressure === 'critical') {
+    premiumBps += 50;
+  }
+
+  if (input.highInflationScenario) premiumBps += 20;
+
+  premiumBps = finClamp(premiumBps, 15, 420);
+
+  let signalBand: TermPremiumSignalBand = 'anchored';
+  if (premiumBps >= 280) signalBand = 'stress';
+  else if (premiumBps >= 175) signalBand = 'unanchored';
+  else if (premiumBps >= 95) signalBand = 'creeping';
+
+  const narrative =
+    signalBand === 'stress'
+      ? 'Term premium elevated — long-run inflation expectations under stress in metadata.'
+      : signalBand === 'unanchored'
+        ? 'Term premium creeping up — fiscal and inflation mix unanchoring long rates.'
+        : signalBand === 'creeping'
+          ? 'Mild term premium drift — monitor fiscal and CPI bands.'
+          : 'Term premium consistent with anchored inflation expectations.';
+
+  return { signalBand, premiumBps: finRound(premiumBps, 0), narrative };
+}
+
+export function termPremiumTighteningBias(signal: TermPremiumInflationSignal): number {
+  if (signal.signalBand === 'stress') return 0.22;
+  if (signal.signalBand === 'unanchored') return 0.12;
+  if (signal.signalBand === 'creeping') return 0.05;
+  return 0;
+}
+
+
 // --- source: fiscal/fiscal-dominance.ts ---
 
 export type FiscalDominanceBand = 'contained' | 'elevated' | 'dominant';
@@ -1686,6 +1745,74 @@ export function estimateDisinflationSacrifice(
       : 'Moderate sacrifice ratio — anchoring achievable with coordinated policy.';
 
   return { sacrificeRatio, outputCostBand, turnsToAnchor, narrative };
+}
+
+
+// --- source: inflation/import-price-pass-through.ts ---
+
+export type ImportPassThroughBand = 'muted' | 'moderate' | 'strong' | 'surge';
+
+export interface ImportPricePassThroughAssessment {
+  passThroughBand: ImportPassThroughBand;
+  inflationScoreNudge: number;
+  importCostIndex: number;
+  narrative: string;
+}
+
+/** Trade-weighted import price channel into macro CPI metadata (no commodity resourcePrices). */
+export function assessImportPricePassThrough(input: {
+  tradeOpennessBand: 'closed' | 'mixed' | 'open';
+  exchangeRatePressure: 'appreciation' | 'stable' | 'depreciation' | 'sharp_depreciation';
+  commodityImportShare: number;
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): ImportPricePassThroughAssessment {
+  const share = finClamp(input.commodityImportShare, 0, 1);
+  let pressureScore = 0;
+  if (input.exchangeRatePressure === 'sharp_depreciation') pressureScore += 0.55;
+  else if (input.exchangeRatePressure === 'depreciation') pressureScore += 0.32;
+  else if (input.exchangeRatePressure === 'appreciation') pressureScore -= 0.18;
+
+  if (input.tradeOpennessBand === 'open') pressureScore += 0.22;
+  else if (input.tradeOpennessBand === 'mixed') pressureScore += 0.1;
+
+  pressureScore += share * 0.35;
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressureScore += 0.12;
+  }
+
+  pressureScore = finClamp(pressureScore + input.turn * 0.008, -0.2, 1.1);
+  const importCostIndex = finRound(100 + pressureScore * 18, 1);
+
+  let passThroughBand: ImportPassThroughBand = 'muted';
+  if (pressureScore >= 0.72) passThroughBand = 'surge';
+  else if (pressureScore >= 0.45) passThroughBand = 'strong';
+  else if (pressureScore >= 0.2) passThroughBand = 'moderate';
+
+  const inflationScoreNudge =
+    passThroughBand === 'surge'
+      ? 0.14
+      : passThroughBand === 'strong'
+        ? 0.09
+        : passThroughBand === 'moderate'
+          ? 0.04
+          : 0;
+
+  const narrative =
+    passThroughBand === 'surge' || passThroughBand === 'strong'
+      ? 'Import prices are feeding through to macro CPI pressure in the trade channel.'
+      : passThroughBand === 'moderate'
+        ? 'Moderate import pass-through — watch exchange and openness.'
+        : 'Import pass-through muted relative to domestic drivers.';
+
+  return { passThroughBand, inflationScoreNudge, importCostIndex, narrative };
+}
+
+export function importPassThroughInflationScoreAdjustment(band: ImportPassThroughBand): number {
+  if (band === 'surge') return 6;
+  if (band === 'strong') return 4;
+  if (band === 'moderate') return 2;
+  return 0;
 }
 
 
@@ -2090,6 +2217,42 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       inflationSettingMultiplier: 1.24,
     },
     tags: ['inflation', 'credit', 'round6'],
+  },
+  {
+    id: 'import_shock_pass_through',
+    label: 'Import shock pass-through',
+    description: 'Open economy with sharp FX depreciation — import CPI channel.',
+    patch: {
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.28,
+      householdAffordability: 'strained',
+    },
+    tags: ['inflation', 'trade', 'round7'],
+  },
+  {
+    id: 'term_premium_fiscal_stress',
+    label: 'Term premium fiscal stress',
+    description: 'Critical fiscal and sovereign debt — long-rate inflation signal.',
+    patch: {
+      fiscalPressure: 'critical',
+      sovereignDebtPressure: 'critical',
+      fiscalSustainability: 'vulnerable',
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.18,
+    },
+    tags: ['inflation', 'rates', 'round7'],
+  },
+  {
+    id: 'corporate_pricing_power_spike',
+    label: 'Corporate pricing power spike',
+    description: 'Strong corporate pass-through intent with elevated inflation multiplier.',
+    patch: {
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.35,
+      actorCreditStressIndex: 0.52,
+      publicStability: 48,
+    },
+    tags: ['inflation', 'corporate', 'round7'],
   },
 ] as const;
 
@@ -2993,6 +3156,96 @@ export function agent09HouseholdBridgeIntegrationNote(): string {
 }
 
 
+// --- source: integration/agent15-trade-bridge.ts ---
+
+/** Read-only trade snapshot from Agent 15 (contract only). */
+export interface Agent15TradeSnapshot {
+  turn: number;
+  tradeOpennessBand: 'closed' | 'mixed' | 'open';
+  exchangeRatePressure: 'appreciation' | 'stable' | 'depreciation' | 'sharp_depreciation';
+  commodityImportShare: number;
+}
+
+export function mergeAgent15IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent15TradeSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (
+    snapshot.exchangeRatePressure === 'sharp_depreciation' ||
+    snapshot.exchangeRatePressure === 'depreciation'
+  ) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.08, 0.85, 1.45);
+  }
+  if (snapshot.tradeOpennessBand === 'open' && snapshot.commodityImportShare > 0.35) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  }
+
+  let highInflationScenario = base.highInflationScenario;
+  if (snapshot.exchangeRatePressure === 'sharp_depreciation' && snapshot.tradeOpennessBand === 'open') {
+    highInflationScenario = true;
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    highInflationScenario,
+  };
+}
+
+export function agent15TradeBridgeIntegrationNote(): string {
+  return 'Agent 15 trade snapshot adjusts import-side inflation multiplier flags; macro CPI only.';
+}
+
+
+// --- source: integration/agent08-corporate-bridge.ts ---
+
+/** Read-only corporate sector snapshot from Agent 08 (contract only). */
+export interface Agent08CorporateSnapshot {
+  turn: number;
+  pricingPowerBand: 'weak' | 'moderate' | 'strong' | 'dominant';
+  marginCompression: 'none' | 'mild' | 'severe';
+  passThroughIntent: 'absorb' | 'partial' | 'full';
+}
+
+export function mergeAgent08IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent08CorporateSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.pricingPowerBand === 'dominant' || snapshot.pricingPowerBand === 'strong') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.07, 0.85, 1.45);
+  }
+  if (snapshot.passThroughIntent === 'full' && snapshot.marginCompression !== 'severe') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  }
+  if (snapshot.marginCompression === 'severe' && snapshot.pricingPowerBand === 'weak') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier - 0.04, 0.85, 1.45);
+  }
+
+  let actorCreditStressIndex = base.actorCreditStressIndex ?? 0.35;
+  if (snapshot.marginCompression === 'severe') {
+    actorCreditStressIndex = finClamp(actorCreditStressIndex + 0.05, 0, 1);
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    actorCreditStressIndex,
+  };
+}
+
+export function agent08CorporateBridgeIntegrationNote(): string {
+  return 'Agent 08 corporate snapshot adjusts pricing-power inflation flags; no company equity writes.';
+}
+
+
 // --- source: integration/inflation-forecast.ts ---
   stepInflationRegimeTracker,
   createInitialInflationRegimeTracker,
@@ -3002,6 +3255,12 @@ export function agent09HouseholdBridgeIntegrationNote(): string {
   stepInflationMomentum,
   type InflationMomentumSnapshot,
 } from '../inflation/inflation-momentum.js';
+  assessImportPricePassThrough,
+  type ImportPassThroughBand,
+} from '../inflation/import-price-pass-through.js';
+  assessTermPremiumInflationSignal,
+  type TermPremiumSignalBand,
+} from '../rates/term-premium-inflation-signal.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -3014,6 +3273,8 @@ export interface InflationForecastPoint {
   regime: InflationRegimeLabel;
   momentumScore: number;
   momentumDirection: InflationMomentumSnapshot['direction'];
+  importPassThroughBand: ImportPassThroughBand;
+  termPremiumSignalBand: TermPremiumSignalBand;
 }
 
 export interface InflationForecastPath {
@@ -3061,6 +3322,19 @@ export function projectInflationForecastPath(
     const regimeSnap = regimeState.history[regimeState.history.length - 1];
     const mom = stepInflationMomentum(momentumState, t, r.state.inflation);
     momentumState = mom.state;
+    const importPass = assessImportPricePassThrough({
+      tradeOpennessBand: 'mixed',
+      exchangeRatePressure: inputs.highInflationScenario ? 'depreciation' : 'stable',
+      commodityImportShare: 0.3,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const termPrem = assessTermPremiumInflationSignal({
+      inflationBand: r.state.inflation,
+      fiscalPressure: inputs.fiscalPressure,
+      sovereignDebtPressure: inputs.sovereignDebtPressure,
+      highInflationScenario: inputs.highInflationScenario,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -3073,6 +3347,8 @@ export function projectInflationForecastPath(
       regime: regimeSnap?.regime ?? 'anchored_soft',
       momentumScore: mom.snapshot.momentumScore,
       momentumDirection: mom.snapshot.direction,
+      importPassThroughBand: importPass.passThroughBand,
+      termPremiumSignalBand: termPrem.signalBand,
     });
   }
 
@@ -3178,7 +3454,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r6';
+  schemaVersion: '10.14.agent10.r7';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -3186,6 +3462,8 @@ export interface Agent21InflationForecastBundle {
   terminalMomentumDirection: InflationMomentumSnapshot['direction'];
   realRateGapBand: RealRateGapAssessment['gapBand'];
   creditInflationFeedback: CreditInflationFeedbackAssessment['feedbackLoop'];
+  terminalImportPassThrough: ImportPassThroughBand;
+  terminalTermPremiumSignal: TermPremiumSignalBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -3214,7 +3492,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r6',
+    schemaVersion: '10.14.agent10.r7',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -3222,6 +3500,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalMomentumDirection: input.momentum?.direction ?? lastPoint?.momentumDirection ?? 'stable',
     realRateGapBand: input.realRateGap?.gapBand ?? 'neutral',
     creditInflationFeedback: input.creditFeedback?.feedbackLoop ?? 'neutral',
+    terminalImportPassThrough: lastPoint?.importPassThroughBand ?? 'muted',
+    terminalTermPremiumSignal: lastPoint?.termPremiumSignalBand ?? 'anchored',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -3307,6 +3587,18 @@ export function effectiveTierLoanRate(
   mergeAgent09IntoMacroFinancialInputs,
   agent09HouseholdBridgeIntegrationNote,
 } from './integration/agent09-household-bridge.js';
+  assessImportPricePassThrough,
+  importPassThroughInflationScoreAdjustment,
+} from './inflation/import-price-pass-through.js';
+  assessTermPremiumInflationSignal,
+  termPremiumTighteningBias,
+} from './rates/term-premium-inflation-signal.js';
+  mergeAgent15IntoMacroFinancialInputs,
+  agent15TradeBridgeIntegrationNote,
+} from './integration/agent15-trade-bridge.js';
+  mergeAgent08IntoMacroFinancialInputs,
+  agent08CorporateBridgeIntegrationNote,
+} from './integration/agent08-corporate-bridge.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -3705,7 +3997,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r6');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r7');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -3790,6 +4082,95 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'credit_inflation_vicious_loop');
       return inp?.creditShockActive === true && inp.householdInflationScenarioActive === true;
+    })(),
+  );
+
+  // --- Round 7 scale wave ---
+  {
+    const imp = assessImportPricePassThrough({
+      tradeOpennessBand: 'open',
+      exchangeRatePressure: 'sharp_depreciation',
+      commodityImportShare: 0.5,
+      inflationBand: 'high',
+      turn: 3,
+    });
+    check('a10_r7_01', 'import pass-through strong or surge', imp.passThroughBand === 'strong' || imp.passThroughBand === 'surge');
+    check('a10_r7_02', 'import score adj', importPassThroughInflationScoreAdjustment(imp.passThroughBand) >= 4);
+  }
+  {
+    const term = assessTermPremiumInflationSignal({
+      inflationBand: 'scenario_runaway',
+      fiscalPressure: 'critical',
+      sovereignDebtPressure: 'critical',
+      highInflationScenario: true,
+    });
+    check('a10_r7_03', 'term premium stress', term.signalBand === 'stress' || term.signalBand === 'unanchored');
+    check('a10_r7_04', 'term tightening bias', termPremiumTighteningBias(term) > 0);
+  }
+  {
+    const merged15 = mergeAgent15IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      tradeOpennessBand: 'open',
+      exchangeRatePressure: 'sharp_depreciation',
+      commodityImportShare: 0.42,
+    });
+    check('a10_r7_05', 'agent15 trade merge', merged15.highInflationScenario === true);
+    check('a10_r7_06', 'agent15 bridge note', agent15TradeBridgeIntegrationNote().includes('Agent 15'));
+  }
+  {
+    const merged08 = mergeAgent08IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      pricingPowerBand: 'dominant',
+      marginCompression: 'none',
+      passThroughIntent: 'full',
+    });
+    check('a10_r7_07', 'agent08 corporate merge', (merged08.inflationSettingMultiplier ?? 1) > 1.05);
+    check('a10_r7_08', 'agent08 bridge note', agent08CorporateBridgeIntegrationNote().includes('Agent 08'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r7_09',
+      'forecast import and term fields',
+      path.points.every((p) => !!p.importPassThroughBand && !!p.termPremiumSignalBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r7_10',
+      'agent21 r7 fields',
+      bundle.schemaVersion === '10.14.agent10.r7' &&
+        bundle.terminalImportPassThrough !== undefined &&
+        bundle.terminalTermPremiumSignal !== undefined,
+    );
+  }
+  check(
+    'a10_r7_11',
+    'round7 preset import shock',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'import_shock_pass_through');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.2;
+    })(),
+  );
+  check(
+    'a10_r7_12',
+    'round7 preset term premium',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'term_premium_fiscal_stress');
+      return inp?.fiscalPressure === 'critical' && inp.sovereignDebtPressure === 'critical';
+    })(),
+  );
+  check(
+    'a10_r7_13',
+    'round7 preset corporate pricing',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'corporate_pricing_power_spike');
+      return (inp?.inflationSettingMultiplier ?? 1) > 1.3;
     })(),
   );
 
@@ -4019,6 +4400,63 @@ export function InflationMomentumPanel(props: InflationMomentumPanelProps) {
           {props.agent09 ? 'Agent09 household' : ''}
         </p>
       )}
+    </div>
+  );
+}
+
+
+// --- source: react/ImportInflationPanel.tsx ---
+  assessImportPricePassThrough,
+  importPassThroughInflationScoreAdjustment,
+} from '../inflation/import-price-pass-through.js';
+
+export interface ImportInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent15?: Agent15TradeSnapshot | null;
+  agent08?: Agent08CorporateSnapshot | null;
+}
+
+export function ImportInflationPanel(props: ImportInflationPanelProps) {
+  const trade = props.agent15 ?? {
+    turn: props.inputs.turn,
+    tradeOpennessBand: 'mixed' as const,
+    exchangeRatePressure: 'stable' as const,
+    commodityImportShare: 0.28,
+  };
+
+  const imports = assessImportPricePassThrough({
+    tradeOpennessBand: trade.tradeOpennessBand,
+    exchangeRatePressure: trade.exchangeRatePressure,
+    commodityImportShare: trade.commodityImportShare,
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const term = assessTermPremiumInflationSignal({
+    inflationBand: props.state.inflation,
+    fiscalPressure: props.inputs.fiscalPressure,
+    sovereignDebtPressure: props.inputs.sovereignDebtPressure,
+    highInflationScenario: props.inputs.highInflationScenario,
+  });
+
+  const corpNote =
+    props.agent08?.pricingPowerBand === 'dominant' || props.agent08?.passThroughIntent === 'full'
+      ? 'Corporate pass-through elevated'
+      : 'Corporate pass-through moderate';
+
+  return (
+    <div className="op10m-import-inflation" data-testid="import-inflation-panel">
+      <h4>Import & term premium (round 7)</h4>
+      <p>
+        Import pass-through {imports.passThroughBand} · index {imports.importCostIndex.toFixed(0)} · score adj{' '}
+        {importPassThroughInflationScoreAdjustment(imports.passThroughBand)}
+      </p>
+      <p>
+        Term premium {term.premiumBps} bps · {term.signalBand}
+      </p>
+      <p>{imports.narrative}</p>
+      <p data-testid="import-inflation-corp">{corpNote}</p>
     </div>
   );
 }

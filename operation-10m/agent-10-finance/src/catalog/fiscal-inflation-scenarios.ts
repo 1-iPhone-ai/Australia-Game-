@@ -164,6 +164,42 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'credit', 'round6'],
   },
+  {
+    id: 'import_shock_pass_through',
+    label: 'Import shock pass-through',
+    description: 'Open economy with sharp FX depreciation — import CPI channel.',
+    patch: {
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.28,
+      householdAffordability: 'strained',
+    },
+    tags: ['inflation', 'trade', 'round7'],
+  },
+  {
+    id: 'term_premium_fiscal_stress',
+    label: 'Term premium fiscal stress',
+    description: 'Critical fiscal and sovereign debt — long-rate inflation signal.',
+    patch: {
+      fiscalPressure: 'critical',
+      sovereignDebtPressure: 'critical',
+      fiscalSustainability: 'vulnerable',
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.18,
+    },
+    tags: ['inflation', 'rates', 'round7'],
+  },
+  {
+    id: 'corporate_pricing_power_spike',
+    label: 'Corporate pricing power spike',
+    description: 'Strong corporate pass-through intent with elevated inflation multiplier.',
+    patch: {
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.35,
+      actorCreditStressIndex: 0.52,
+      publicStability: 48,
+    },
+    tags: ['inflation', 'corporate', 'round7'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

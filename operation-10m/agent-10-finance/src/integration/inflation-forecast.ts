@@ -15,6 +15,14 @@ import {
   stepInflationMomentum,
   type InflationMomentumSnapshot,
 } from '../inflation/inflation-momentum.js';
+import {
+  assessImportPricePassThrough,
+  type ImportPassThroughBand,
+} from '../inflation/import-price-pass-through.js';
+import {
+  assessTermPremiumInflationSignal,
+  type TermPremiumSignalBand,
+} from '../rates/term-premium-inflation-signal.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -27,6 +35,8 @@ export interface InflationForecastPoint {
   regime: InflationRegimeLabel;
   momentumScore: number;
   momentumDirection: InflationMomentumSnapshot['direction'];
+  importPassThroughBand: ImportPassThroughBand;
+  termPremiumSignalBand: TermPremiumSignalBand;
 }
 
 export interface InflationForecastPath {
@@ -74,6 +84,19 @@ export function projectInflationForecastPath(
     const regimeSnap = regimeState.history[regimeState.history.length - 1];
     const mom = stepInflationMomentum(momentumState, t, r.state.inflation);
     momentumState = mom.state;
+    const importPass = assessImportPricePassThrough({
+      tradeOpennessBand: 'mixed',
+      exchangeRatePressure: inputs.highInflationScenario ? 'depreciation' : 'stable',
+      commodityImportShare: 0.3,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const termPrem = assessTermPremiumInflationSignal({
+      inflationBand: r.state.inflation,
+      fiscalPressure: inputs.fiscalPressure,
+      sovereignDebtPressure: inputs.sovereignDebtPressure,
+      highInflationScenario: inputs.highInflationScenario,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -86,6 +109,8 @@ export function projectInflationForecastPath(
       regime: regimeSnap?.regime ?? 'anchored_soft',
       momentumScore: mom.snapshot.momentumScore,
       momentumDirection: mom.snapshot.direction,
+      importPassThroughBand: importPass.passThroughBand,
+      termPremiumSignalBand: termPrem.signalBand,
     });
   }
 

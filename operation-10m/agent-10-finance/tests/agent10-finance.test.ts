@@ -57,6 +57,10 @@ import { estimateDisinflationSacrifice } from '../src/inflation/disinflation-sac
 import { assessCreditInflationFeedback } from '../src/credit/credit-inflation-feedback.js';
 import { mergeAgent07IntoMacroFinancialInputs } from '../src/integration/agent07-fiscal-bridge.js';
 import { mergeAgent09IntoMacroFinancialInputs } from '../src/integration/agent09-household-bridge.js';
+import { assessImportPricePassThrough } from '../src/inflation/import-price-pass-through.js';
+import { assessTermPremiumInflationSignal } from '../src/rates/term-premium-inflation-signal.js';
+import { mergeAgent15IntoMacroFinancialInputs } from '../src/integration/agent15-trade-bridge.js';
+import { mergeAgent08IntoMacroFinancialInputs } from '../src/integration/agent08-corporate-bridge.js';
 
 describe('Agent 10 glossary & boundaries', () => {
   it('defines coherent finance terms', () => {
@@ -422,11 +426,80 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r6');
+    assert.equal(b.schemaVersion, '10.14.agent10.r7');
   });
 
   it('round-6 scenario preset credit vicious loop', () => {
     const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'credit_inflation_vicious_loop');
     assert.ok(inp?.creditShockActive && inp.fiscalPressure === 'critical');
+  });
+
+  it('round-7 import price pass-through', () => {
+    const a = assessImportPricePassThrough({
+      tradeOpennessBand: 'open',
+      exchangeRatePressure: 'depreciation',
+      commodityImportShare: 0.4,
+      inflationBand: 'elevated',
+      turn: 2,
+    });
+    assert.ok(a.passThroughBand === 'moderate' || a.passThroughBand === 'strong');
+  });
+
+  it('round-7 term premium signal', () => {
+    const t = assessTermPremiumInflationSignal({
+      inflationBand: 'high',
+      fiscalPressure: 'critical',
+      sovereignDebtPressure: 'high',
+      highInflationScenario: true,
+    });
+    assert.ok(t.premiumBps > 100);
+  });
+
+  it('round-7 agent15 trade bridge', () => {
+    const m = mergeAgent15IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      tradeOpennessBand: 'open',
+      exchangeRatePressure: 'depreciation',
+      commodityImportShare: 0.5,
+    });
+    assert.ok((m.inflationSettingMultiplier ?? 1) > 1);
+  });
+
+  it('round-7 agent08 corporate bridge', () => {
+    const m = mergeAgent08IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      pricingPowerBand: 'strong',
+      marginCompression: 'mild',
+      passThroughIntent: 'partial',
+    });
+    assert.ok((m.inflationSettingMultiplier ?? 1) > 1);
+  });
+
+  it('round-7 forecast import and term on path', () => {
+    const p = projectInflationForecastPath(3);
+    assert.ok(p.points.every((pt) => pt.importPassThroughBand && pt.termPremiumSignalBand));
+  });
+
+  it('round-7 agent21 bundle r7', () => {
+    const path = projectInflationForecastPath(2);
+    const b = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('high', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(80),
+    });
+    assert.equal(b.schemaVersion, '10.14.agent10.r7');
+    assert.ok(b.terminalImportPassThrough);
+  });
+
+  it('round-7 scenario preset import shock', () => {
+    const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'import_shock_pass_through');
+    assert.ok(inp?.highInflationScenario);
+  });
+
+  it('round-7 scenario preset corporate pricing', () => {
+    const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'corporate_pricing_power_spike');
+    assert.ok((inp?.inflationSettingMultiplier ?? 0) > 1.3);
   });
 });

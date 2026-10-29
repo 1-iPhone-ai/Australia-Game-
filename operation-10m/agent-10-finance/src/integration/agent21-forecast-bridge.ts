@@ -6,11 +6,13 @@ import type { InflationTargetBreach } from '../rates/inflation-target-breach.js'
 import type { InflationMomentumSnapshot } from '../inflation/inflation-momentum.js';
 import type { RealRateGapAssessment } from '../rates/real-rate-gap.js';
 import type { CreditInflationFeedbackAssessment } from '../credit/credit-inflation-feedback.js';
+import type { ImportPassThroughBand } from '../inflation/import-price-pass-through.js';
+import type { TermPremiumSignalBand } from '../rates/term-premium-inflation-signal.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r6';
+  schemaVersion: '10.14.agent10.r7';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -18,6 +20,8 @@ export interface Agent21InflationForecastBundle {
   terminalMomentumDirection: InflationMomentumSnapshot['direction'];
   realRateGapBand: RealRateGapAssessment['gapBand'];
   creditInflationFeedback: CreditInflationFeedbackAssessment['feedbackLoop'];
+  terminalImportPassThrough: ImportPassThroughBand;
+  terminalTermPremiumSignal: TermPremiumSignalBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -46,7 +50,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r6',
+    schemaVersion: '10.14.agent10.r7',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -54,6 +58,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalMomentumDirection: input.momentum?.direction ?? lastPoint?.momentumDirection ?? 'stable',
     realRateGapBand: input.realRateGap?.gapBand ?? 'neutral',
     creditInflationFeedback: input.creditFeedback?.feedbackLoop ?? 'neutral',
+    terminalImportPassThrough: lastPoint?.importPassThroughBand ?? 'muted',
+    terminalTermPremiumSignal: lastPoint?.termPremiumSignalBand ?? 'anchored',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

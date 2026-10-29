@@ -35,10 +35,12 @@ const FILES = [
   'rates/monetary-reaction.ts',
   'rates/inflation-target-breach.ts',
   'rates/real-rate-gap.ts',
+  'rates/term-premium-inflation-signal.ts',
   'fiscal/fiscal-dominance.ts',
   'credit/credit-inflation-feedback.ts',
   'inflation/inflation-momentum.ts',
   'inflation/disinflation-sacrifice.ts',
+  'inflation/import-price-pass-through.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -51,6 +53,8 @@ const FILES = [
   'integration/agent06-macro-bridge.ts',
   'integration/agent07-fiscal-bridge.ts',
   'integration/agent09-household-bridge.ts',
+  'integration/agent15-trade-bridge.ts',
+  'integration/agent08-corporate-bridge.ts',
   'integration/inflation-forecast.ts',
   'integration/inflation-regime-tracker.ts',
   'integration/agent21-forecast-bridge.ts',
@@ -61,6 +65,7 @@ const FILES = [
   'react/InflationDiagnosticsPanel.tsx',
   'react/InflationRegimePanel.tsx',
   'react/InflationMomentumPanel.tsx',
+  'react/ImportInflationPanel.tsx',
 ];
 
 function stripModulePreamble(source) {
