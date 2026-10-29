@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 71206b1b4f5aa9b6
+// content-sha256-prefix: 1f6e7fed11721248
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -847,6 +847,7 @@ export interface EvolvingUiPersistedState {
   lastNavTarget?: string | null;
   preferredDensity?: 'compact' | 'comfortable' | 'spacious' | null;
   focusSessionSnoozedUntilDay?: number;
+  cognitiveLoadCoachSnoozedUntilDay?: number;
 }
 
 export interface DayAdvanceUiEvolutionResult {
@@ -1920,6 +1921,219 @@ export function deriveResponsiveLayoutHints(input: {
   };
 }
 
+// --- source: engine/motion-timing-profile.ts ---
+export interface MotionTimingProfile {
+  policy: MotionPolicy;
+  /** Recommended max CSS transition duration for chrome surfaces. */
+  transitionDurationMs: number;
+  /** Delay between staggered unlock / coach announcements. */
+  staggerStepMs: number;
+  /** Host may map to `data-*` hooks for global stylesheets. */
+  dataAttributes: Record<string, string>;
+}
+
+const DENSITY_TRANSITION_MS: Record<UiDensityProfile['tier'], number> = {
+  compact: 120,
+  comfortable: 180,
+  spacious: 220,
+};
+
+const DENSITY_STAGGER_MS: Record<UiDensityProfile['tier'], number> = {
+  compact: 80,
+  spacious: 140,
+  comfortable: 110,
+};
+
+export function resolveMotionTimingProfile(
+  accessibility: AccessibilitySettingsSnapshot,
+  density: UiDensityProfile
+): MotionTimingProfile {
+  const policy = deriveMotionPolicy(accessibility);
+  const baseTransition = DENSITY_TRANSITION_MS[density.tier];
+  const baseStagger = DENSITY_STAGGER_MS[density.tier];
+
+  const transitionDurationMs = policy.allowTransitions
+    ? baseTransition
+    : 0;
+  const staggerStepMs = policy.allowTransformAnimations ? baseStagger : 0;
+
+  const scale = accessibility.textScaleMultiplier >= 1.15 ? 1.1 : 1;
+
+  return {
+    policy,
+    transitionDurationMs: Math.round(transitionDurationMs * scale),
+    staggerStepMs: Math.round(staggerStepMs * scale),
+    dataAttributes: {
+      'data-motion-reduced': policy.allowTransitions ? 'false' : 'true',
+      'data-ui-density': density.tier,
+      'data-motion-transition-ms': String(Math.round(transitionDurationMs * scale)),
+    },
+  };
+}
+
+export function motionTimingCssVars(profile: MotionTimingProfile): Record<string, string> {
+  return {
+    '--evolving-ui-transition-ms': String(profile.transitionDurationMs),
+    '--evolving-ui-stagger-ms': String(profile.staggerStepMs),
+  };
+}
+
+// --- source: engine/announcement-pacing-policy.ts ---
+export interface PacedAnnouncementBatch {
+  items: string[];
+  delayMs: number;
+  politeness: 'polite' | 'assertive';
+}
+
+export interface AnnouncementPacingOptions {
+  reducedMotion: boolean;
+  announceVerbosity: ScreenReaderAnnounceVerbosity;
+  motionTiming?: Pick<MotionTimingProfile, 'staggerStepMs'>;
+  /** When true, first batch may use assertive politeness for safety-critical copy. */
+  allowAssertiveLead?: boolean;
+}
+
+const DEFAULT_BATCH_SIZE = 2;
+
+export function paceUnlockAnnouncements(
+  announcements: string[],
+  options: AnnouncementPacingOptions
+): PacedAnnouncementBatch[] {
+  if (!announcements.length) return [];
+  if (options.announceVerbosity === 'off') return [];
+
+  const stagger = options.motionTiming?.staggerStepMs ?? (options.reducedMotion ? 0 : 110);
+  const batchSize =
+    options.announceVerbosity === 'minimal' ? 1 : options.announceVerbosity === 'assertive' ? 3 : DEFAULT_BATCH_SIZE;
+
+  const batches: PacedAnnouncementBatch[] = [];
+  let delayMs = 0;
+  for (let i = 0; i < announcements.length; i += batchSize) {
+    const slice = announcements.slice(i, i + batchSize);
+    const politeness: 'polite' | 'assertive' =
+      i === 0 && options.allowAssertiveLead && options.announceVerbosity === 'assertive'
+        ? 'assertive'
+        : 'polite';
+    batches.push({ items: slice, delayMs, politeness });
+    delayMs += stagger * Math.max(1, slice.length);
+  }
+  return batches;
+}
+
+export function countDeferredAnnouncements(
+  totalAnnouncements: number,
+  options: AnnouncementPacingOptions
+): number {
+  if (options.announceVerbosity === 'off') return totalAnnouncements;
+  const batches = paceUnlockAnnouncements(
+    Array.from({ length: totalAnnouncements }, (_, i) => `placeholder-${i}`),
+    options
+  );
+  const scheduled = batches.reduce((sum, b) => sum + b.items.length, 0);
+  return Math.max(0, totalAnnouncements - scheduled);
+}
+
+export function flattenPacedAnnouncements(batches: PacedAnnouncementBatch[]): string[] {
+  return batches.flatMap(b => b.items);
+}
+
+// --- source: engine/cognitive-load-governor.ts ---
+export type CognitiveLoadBand = 'light' | 'moderate' | 'heavy';
+
+export interface CognitiveLoadAssessment {
+  band: CognitiveLoadBand;
+  score: number;
+  visibleNonEssentialPanels: number;
+  activeNotificationLanes: number;
+  recommendDeferCoach: boolean;
+  recommendCollapseQuickActions: boolean;
+  coachCopy: string;
+}
+
+export interface CognitiveLoadContext {
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  onboardingEnabled?: boolean;
+  focusSessionActive?: boolean;
+  pendingCoachAnnouncements?: number;
+}
+
+function bandFromScore(score: number): CognitiveLoadBand {
+  if (score >= 72) return 'heavy';
+  if (score >= 42) return 'moderate';
+  return 'light';
+}
+
+export function assessCognitiveLoad(ctx: CognitiveLoadContext): CognitiveLoadAssessment {
+  const { signals, policy } = ctx;
+  const onboardingEnabled = ctx.onboardingEnabled !== false;
+
+  let visibleNonEssentialPanels = 0;
+  for (const id of Object.keys(EVOLVING_UI_PANEL_BY_ID)) {
+    const panel = EVOLVING_UI_PANEL_BY_ID[id];
+    if (!panel || panel.essential) continue;
+    if (resolveEvolvingPanelVisibility(id, signals, policy).state === 'visible') {
+      visibleNonEssentialPanels++;
+    }
+  }
+
+  const suppressedLanes = listSuppressedNotificationCategories(signals, onboardingEnabled);
+  const activeNotificationLanes = NOTIFICATION_LANE_PROGRESSION.length - suppressedLanes.length;
+
+  const density = resolveUiDensityProfile({
+    interfaceLevel: signals.interfaceLevel,
+    layoutPreset: signals.layoutPreset as never,
+  });
+
+  let score = visibleNonEssentialPanels * 6 + activeNotificationLanes * 5;
+  if (density.tier === 'compact') score += 8;
+  if (signals.interfaceLevel === 'simple' || signals.interfaceLevel === 'guided') score += 6;
+  if (ctx.focusSessionActive) score -= 10;
+  score += (ctx.pendingCoachAnnouncements ?? 0) * 4;
+
+  if (signals.gameDay <= 2) score = Math.round(score * 0.6);
+  if (signals.interfaceLevel === 'simple' && signals.gameDay <= 4) {
+    score = Math.min(score, 36);
+  }
+
+  score = Math.max(0, Math.min(100, score));
+
+  const band = bandFromScore(score);
+  const recommendDeferCoach = band === 'heavy' && (ctx.pendingCoachAnnouncements ?? 0) > 1;
+  const recommendCollapseQuickActions = band !== 'light' && visibleNonEssentialPanels >= 6;
+
+  let coachCopy = '';
+  if (band === 'heavy') {
+    coachCopy = 'Interface load is high — consider snoozing coaching or switching to spacious density.';
+  } else if (band === 'moderate') {
+    coachCopy = 'Several panels and notification lanes are active; focus mode can tuck away advanced chrome.';
+  }
+
+  return {
+    band,
+    score,
+    visibleNonEssentialPanels,
+    activeNotificationLanes,
+    recommendDeferCoach,
+    recommendCollapseQuickActions,
+    coachCopy,
+  };
+}
+
+export function shouldShowCognitiveLoadCoach(
+  assessment: CognitiveLoadAssessment,
+  gameDay: number,
+  snoozedUntilDay?: number
+): boolean {
+  if (assessment.band === 'light') return false;
+  if (snoozedUntilDay != null && gameDay < snoozedUntilDay) return false;
+  return Boolean(assessment.coachCopy);
+}
+
+export function snoozeCognitiveLoadCoachUntilDay(currentDay: number, snoozeDays = 2): number {
+  return Math.max(1, currentDay + snoozeDays);
+}
+
 // --- source: engine/legacy-access.ts ---
 /** Mirrors V9.4 resolveIntentNavToUiPatch targets (standalone copy for module tests). */
 export function resolveIntentNavToUiPatch(target: string): Record<string, boolean | string> {
@@ -2395,6 +2609,173 @@ export function runAgent22Round4SelfTests(): {
     'r4_eligible_density',
     'simple cannot select compact',
     !listEligibleDensityTiers('simple').includes('compact')
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
+}
+
+// --- source: engine/round5-self-tests.ts ---
+export function runAgent22Round5SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r5_motion_reduced_zero',
+    'reduced motion zeroes transition duration',
+    (() => {
+      const density = resolveUiDensityProfile({ interfaceLevel: 'guided' });
+      const profile = resolveMotionTimingProfile(
+        { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, reducedMotion: true },
+        density
+      );
+      return profile.transitionDurationMs === 0 && profile.dataAttributes['data-motion-reduced'] === 'true';
+    })()
+  );
+
+  check(
+    'r5_motion_spacious_slower',
+    'spacious density allows longer transitions than compact',
+    (() => {
+      const a11y = { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, reducedMotion: false };
+      const compact = resolveMotionTimingProfile(
+        a11y,
+        resolveUiDensityProfile({ interfaceLevel: 'expert', preferredTier: 'compact' })
+      );
+      const spacious = resolveMotionTimingProfile(
+        a11y,
+        resolveUiDensityProfile({ interfaceLevel: 'simple', preferredTier: 'spacious' })
+      );
+      return spacious.transitionDurationMs > compact.transitionDurationMs;
+    })()
+  );
+
+  check(
+    'r5_motion_css_vars',
+    'motionTimingCssVars exposes stagger and transition',
+    (() => {
+      const vars = motionTimingCssVars(
+        resolveMotionTimingProfile(
+          DEFAULT_ACCESSIBILITY_SNAPSHOT,
+          resolveUiDensityProfile({ interfaceLevel: 'guided' })
+        )
+      );
+      return Number(vars['--evolving-ui-transition-ms']) > 0 && Number(vars['--evolving-ui-stagger-ms']) >= 0;
+    })()
+  );
+
+  check(
+    'r5_pace_batches',
+    'announcement pacing splits long unlock lists',
+    (() => {
+      const batches = paceUnlockAnnouncements(
+        ['a', 'b', 'c', 'd'],
+        { reducedMotion: false, announceVerbosity: 'polite' }
+      );
+      return batches.length >= 2 && flattenPacedAnnouncements(batches).length === 4;
+    })()
+  );
+
+  check(
+    'r5_pace_off',
+    'verbosity off schedules nothing',
+    paceUnlockAnnouncements(['x'], { reducedMotion: false, announceVerbosity: 'off' }).length === 0
+  );
+
+  check(
+    'r5_pace_minimal',
+    'minimal verbosity uses single-item batches',
+    (() => {
+      const batches = paceUnlockAnnouncements(['one', 'two'], {
+        reducedMotion: false,
+        announceVerbosity: 'minimal',
+      });
+      return batches.length === 2 && batches.every(b => b.items.length === 1);
+    })()
+  );
+
+  check(
+    'r5_cognitive_early_guided',
+    'early guided turn tends toward moderate/heavy load when many lanes active',
+    (() => {
+      const assessment = assessCognitiveLoad({
+        signals: { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        pendingCoachAnnouncements: 3,
+      });
+      return assessment.score >= 30 && assessment.activeNotificationLanes >= 3;
+    })()
+  );
+
+  check(
+    'r5_cognitive_focus_relief',
+    'focus session flag lowers score',
+    (() => {
+      const base = assessCognitiveLoad({
+        signals: { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+      });
+      const focused = assessCognitiveLoad({
+        signals: { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        focusSessionActive: true,
+      });
+      return focused.score <= base.score;
+    })()
+  );
+
+  check(
+    'r5_cognitive_coach_heavy',
+    'heavy band recommends deferring coach when backlog',
+    (() => {
+      const assessment = assessCognitiveLoad({
+        signals: { gameDay: 8, turnCount: 8, interfaceLevel: 'advanced' },
+        policy: { ...DEFAULT_EVOLVING_UI_ACCESS_POLICY, showAllPanelsOverride: true },
+        pendingCoachAnnouncements: 4,
+      });
+      return assessment.band === 'heavy' && assessment.recommendDeferCoach;
+    })()
+  );
+
+  check(
+    'r5_coach_snooze',
+    'snoozed coach hidden until day',
+    (() => {
+      const assessment = assessCognitiveLoad({
+        signals: { gameDay: 3, turnCount: 3, interfaceLevel: 'guided' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        pendingCoachAnnouncements: 2,
+      });
+      return (
+        shouldShowCognitiveLoadCoach(assessment, 3, snoozeCognitiveLoadCoachUntilDay(3)) === false &&
+        shouldShowCognitiveLoadCoach(assessment, 6, 5) === true
+      );
+    })()
+  );
+
+  check(
+    'r5_snooze_day_math',
+    'snoozeCognitiveLoadCoachUntilDay advances calendar',
+    snoozeCognitiveLoadCoachUntilDay(2, 3) === 5
+  );
+
+  check(
+    'r5_pace_stagger_motion',
+    'pacing honors motion timing stagger',
+    (() => {
+      const batches = paceUnlockAnnouncements(['a', 'b', 'c'], {
+        reducedMotion: false,
+        announceVerbosity: 'polite',
+        motionTiming: { staggerStepMs: 200 },
+      });
+      return batches.length >= 2 && (batches[1]?.delayMs ?? 0) >= 200;
+    })()
   );
 
   const failed = results.filter(r => !r.passed).length;
@@ -3222,8 +3603,89 @@ export function FocusSessionBanner({
   );
 }
 
+// --- source: react/CognitiveLoadCoachBanner.tsx ---
+export interface CognitiveLoadCoachBannerProps {
+  phase: V94StandardizedGamePhase;
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  accessibility: AccessibilitySettingsSnapshot;
+  cognitiveLoadCoachSnoozedUntilDay?: number;
+  focusSessionSnoozedUntilDay?: number;
+  pendingCoachAnnouncements?: number;
+  onboardingEnabled?: boolean;
+  onSnooze?: (untilDay: number) => void;
+}
+
+export function CognitiveLoadCoachBanner({
+  phase,
+  signals,
+  policy,
+  accessibility,
+  cognitiveLoadCoachSnoozedUntilDay,
+  focusSessionSnoozedUntilDay,
+  pendingCoachAnnouncements = 0,
+  onboardingEnabled = true,
+  onSnooze,
+}: CognitiveLoadCoachBannerProps): React.ReactElement | null {
+  const focusSessionActive = shouldActivateFocusSession({
+    phase,
+    signals,
+    policy,
+    focusSessionSnoozedUntilDay,
+  });
+
+  const assessment = assessCognitiveLoad({
+    signals,
+    policy,
+    onboardingEnabled,
+    focusSessionActive,
+    pendingCoachAnnouncements,
+  });
+
+  if (
+    !shouldShowCognitiveLoadCoach(assessment, signals.gameDay, cognitiveLoadCoachSnoozedUntilDay)
+  ) {
+    return null;
+  }
+
+  const focusClass = buildFocusRingClassName({
+    highContrast: accessibility.highContrastFocusRings,
+    style: accessibility.focusRingStyle,
+  });
+
+  return (
+    <div
+      data-testid="cognitive-load-coach-banner"
+      data-load-band={assessment.band}
+      role="status"
+      aria-live="polite"
+      className="text-sm border border-sky-500/40 rounded p-2"
+    >
+      <p>{assessment.coachCopy}</p>
+      {assessment.recommendDeferCoach ? (
+        <p className="text-xs opacity-80" data-testid="cognitive-load-defer-hint">
+          Unlock coaching will wait until the interface catches up.
+        </p>
+      ) : null}
+      {assessment.recommendCollapseQuickActions ? (
+        <p className="text-xs opacity-80" data-testid="cognitive-load-quick-actions-hint">
+          Quick actions may collapse while load is {assessment.band}.
+        </p>
+      ) : null}
+      <button
+        type="button"
+        className={focusClass}
+        data-testid="cognitive-load-snooze"
+        onClick={() => onSnooze?.(snoozeCognitiveLoadCoachUntilDay(signals.gameDay))}
+      >
+        Snooze load coach
+      </button>
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.4.0';
+export const AGENT_22_MODULE_VERSION = '1.5.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -3284,6 +3746,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round4 = runAgent22Round4SelfTests();
   for (const r of round4.results) {
     check(`agent22_round4_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round5 = runAgent22Round5SelfTests();
+  for (const r of round5.results) {
+    check(`agent22_round5_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;

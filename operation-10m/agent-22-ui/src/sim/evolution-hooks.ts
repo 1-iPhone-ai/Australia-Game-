@@ -16,6 +16,7 @@ export interface EvolvingUiPersistedState {
   lastNavTarget?: string | null;
   preferredDensity?: 'compact' | 'comfortable' | 'spacious' | null;
   focusSessionSnoozedUntilDay?: number;
+  cognitiveLoadCoachSnoozedUntilDay?: number;
 }
 
 export interface DayAdvanceUiEvolutionResult {
