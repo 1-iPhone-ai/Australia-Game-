@@ -1,0 +1,31 @@
+import type { V1020RpipeGrantStackEdge } from '../../types/core.ts';
+
+/** Commercialization stack graph shard 066 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_066: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.477, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.484, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.491, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.498, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.505, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.512, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.519, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.526, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.533, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.435, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.442, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.449, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.456, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.463, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.47, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.477, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.484, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.491, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.498, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.505, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.512, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.519, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.526, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.533, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.435, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.442, lagTurns: 6, nodeId: 'lab_transfer_18' },
+];

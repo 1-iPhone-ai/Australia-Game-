@@ -218,6 +218,47 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  createEmptyV1016NresPersisted,\n  v1016NresInputHash,\n  sanitizeV1016NresPersisted,",
             "  createEmptyV1016NresPersisted,\n  v1016NresInputHash,",
         )
+    if "v1020-research-pipeline" in name.replace("\\", "/"):
+        src = src.replace("SECTION 20BL", "SECTION 20BM")
+    if "research-pipeline/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1020RpipeClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1020RpipeClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1020_RPIPE_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1020_RPIPE_MIG_REGIONS", src)
+    if "research-pipeline-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1020RpipePersisted, sanitizeV1020RpipePersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1020_RPIPE_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1020_RPIPE_ORCH_REGIONS.forEach", src)
+    if "research-pipeline-utils.ts" in name:
+        src = re.sub(
+            r"export function V1020_RPIPE_commercializationStackGraphHash",
+            "export function V1020_RPIPE_utilCommercializationStackGraphHash",
+            src,
+        )
+    if "v1020-research-pipeline/commercialization-stacks/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"return nresPgHashCore\(edges\)",
+            "return V1020_RPIPE_utilCommercializationStackGraphHash(edges)",
+            src,
+        )
+    if "run-v1020-rpipe-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1020RpipeSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1020RpipeSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1020RpipeBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1020RpipeBaseInput(", src)
+        src = src.replace(
+            "  runV1020RpipeTurn,\n  createEmptyV1020RpipePersisted,\n  v1020RpipeInputHash,\n  sanitizeV1020RpipePersisted,\n} from '../engine/research-pipeline-orchestrator';",
+            "  runV1020RpipeTurn,\n  v1020RpipeInputHash,\n} from '../engine/research-pipeline-orchestrator';\nimport {\n  createEmptyV1020RpipePersisted,\n  sanitizeV1020RpipePersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1020RpipePersisted,\n  v1020RpipeInputHash,\n  sanitizeV1020RpipePersisted,\n} from '../engine/research-pipeline-orchestrator';",
+            "  v1020RpipeInputHash,\n} from '../engine/research-pipeline-orchestrator';\nimport {\n  createEmptyV1020RpipePersisted,\n  sanitizeV1020RpipePersisted,\n} from '../persistence/migrations';",
+        )
     return src
 
 
@@ -554,6 +595,49 @@ def intercity_logistics_paths() -> list[str]:
         if "/adapters/" in s:
             return (8, s)
         if "intercity-logistics-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def research_pipeline_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1020-research-pipeline"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/commercialization-stacks/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/pipeline-scenarios/" in s:
+            return (3, s)
+        if "/generated/commercialization-stacks/" in s:
+            return (4, s)
+        if "pipeline-registry" in s or "commercialization-stack-bundle" in s:
+            return (5, s)
+        if "/lab-transfers/" in s:
+            return (6, s)
+        if "research-pipeline-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "research-pipeline-orchestrator" in s:
             return (9, s)
         if "/self-tests/" in s:
             return (10, s)

@@ -21,6 +21,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     national_resilience_paths,
     fiscal_federalism_paths,
     intercity_logistics_paths,
+    research_pipeline_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -37,6 +38,7 @@ WORKFORCE_MARKER = "export function runV1014WorkforceMigrationTurn"
 NRES_MARKER = "export function runV1016NresTurn"
 FFED_MARKER = "export function runV1018FfedTurn"
 ICLOG_MARKER = "export function runV1017IclogTurn"
+RPIPE_MARKER = "export function runV1020RpipeTurn"
 
 TRADE_SECTION = (
     "// ============================================================================\n"
@@ -100,6 +102,13 @@ ICLOG_SECTION = (
     "// ============================================================================\n"
     "// SECTION 20BK: V10.17 INTERCITY LOGISTICS — FREIGHT ROUTES & CORRIDOR HUBS (O6K-36)\n"
     "// Renumbered from shard 20BI (canonical 20BI = mega2, 20BJ = fiscal federalism)\n"
+    "// ============================================================================\n"
+)
+
+RPIPE_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20BM: V10.20 RESEARCH PIPELINE — COMMERCIALIZATION, LAB TRANSFER & SCENARIOS (O6K-42)\n"
+    "// Renumbered from shard 20BL (canonical 20BL = T6 mega3 wave-4, push #14)\n"
     "// ============================================================================\n"
 )
 
@@ -1170,6 +1179,148 @@ def push_iclog(text: str) -> str:
     return text
 
 
+RPIPE_HELPERS = """
+function V1020_RPIPE_readPersistedFromGameState(gs: any): V1020RpipePersisted | null {
+  const raw = (gs?.save?.meta?.v1020 as any)?.research_pipeline;
+  return raw ? sanitizeV1020RpipePersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1020_RPIPE_applyToGameState(gs: any, out: V1020RpipeTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1020 = { ...(meta.v1020 || {}) };
+  v1020.research_pipeline = out.persisted;
+  meta.v1020 = v1020;
+  save.meta = meta;
+  return { ...gs, save, v1020ResearchPipeline: out.state };
+}
+
+export function buildV1020RpipeTurnInputFromGameState(gs: any, turn: number): V1020RpipeTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 10200;
+  const inp = buildV1020RpipeTurnInputFromGameStateStub(turn, seed);
+  const supply = gs?.v1014SupplyChain ?? null;
+  const trade = gs?.v1014TradeDepth ?? null;
+  const energy = gs?.energyDepth ?? null;
+  const workforce = gs?.v1014WorkforceV2 ?? gs?.v1014Workforce ?? null;
+  const ai = gs?.v1014AiFidelity ?? null;
+  const ffed = gs?.v1018FiscalFederalism ?? null;
+  return {
+    ...inp,
+    supply20bb: {
+      ...inp.supply20bb,
+      turn,
+      bottleneckPressure: Number(supply?.bottleneckPressure ?? inp.supply20bb.bottleneckPressure),
+      regionalStockDays: supply?.regionalStockDays ?? inp.supply20bb.regionalStockDays,
+    },
+    trade20ba: {
+      ...inp.trade20ba,
+      turn,
+      sanctionsPressure: Number(trade?.sanctionsPressure ?? inp.trade20ba.sanctionsPressure),
+      exportLaneStability: Number(trade?.exportLaneStability ?? inp.trade20ba.exportLaneStability),
+    },
+    energy20bc: {
+      ...inp.energy20bc,
+      turn,
+      gridStability: Number(energy?.gridStability ?? inp.energy20bc.gridStability),
+    },
+    workforce20bf: {
+      ...inp.workforce20bf,
+      turn,
+      nationalReadiness: Number(workforce?.nationalResilienceScore ?? workforce?.nationalReadiness ?? inp.workforce20bf.nationalReadiness),
+    },
+    aiFidelity20be: {
+      ...inp.aiFidelity20be,
+      turn,
+      planVerifyScore: Number(ai?.planVerifyScore ?? ai?.aggregateScore ?? inp.aiFidelity20be.planVerifyScore),
+      commercializationReadiness: Number(ai?.commercializationReadiness ?? inp.aiFidelity20be.commercializationReadiness),
+    },
+    fiscalFederalism20bj: {
+      ...inp.fiscalFederalism20bj,
+      turn,
+      transferPressure: Number(ffed?.supplyTransferPressure ?? ffed?.fiscalFederalismScore ?? inp.fiscalFederalism20bj.transferPressure),
+      labTransferBacklog: Number(ffed?.labTransferBacklog ?? inp.fiscalFederalism20bj.labTransferBacklog),
+    },
+    persisted: null,
+  };
+}
+"""
+
+RPIPE_DAY_HOOK = """
+      if (typeof runV1020RpipeTurn === 'function') {
+        try {
+          const rpipeIn = buildV1020RpipeTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          rpipeIn.persisted = V1020_RPIPE_readPersistedFromGameState(mergedGameState);
+          const rpipeOut = runV1020RpipeTurn(rpipeIn);
+          mergedGameState = V1020_RPIPE_applyToGameState(mergedGameState, rpipeOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_rpipe_day_hook(text: str) -> str:
+    marker = "runV1020RpipeTurn(rpipeIn)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:32000] if "executeAgent02SingleDayBoundary" in text else ""
+    if marker in day_slice:
+        print("skip rpipe day hook (present)")
+        return text
+    mega3_tail = """      if (typeof runV1018T6Mega3DepthTurn === 'function') {
+        try {
+          const m3In = buildV1018T6Mega3DepthTurnInputFromGameState(
+            mergedGameState,
+            passCtx.turnCounter,
+            settings?.t6Mega3DepthEnabled !== false,
+          );
+          m3In.persisted = V1018_T6MEGA3_readPersistedFromGameState(mergedGameState);
+          const m3Out = runV1018T6Mega3DepthTurn(m3In);
+          mergedGameState = V1018_T6MEGA3_applyToGameState(mergedGameState, m3Out);
+        } catch (_) { /* isolated */ }
+      }"""
+    if mega3_tail not in text:
+        raise SystemExit("T6 mega3 day hook anchor missing for rpipe hook")
+    return text.replace(mega3_tail, mega3_tail + RPIPE_DAY_HOOK, 1)
+
+
+def wire_rpipe_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState && typeof sanitizeV1018T6Mega3DepthPersisted === 'function') {"
+    patch = (
+        "  if (migrated.gameState && typeof sanitizeV1020RpipePersisted === 'function') {\n"
+        "    const rpipeRaw = (migrated.gameState as any)?.save?.meta?.v1020?.research_pipeline;\n"
+        "    if (rpipeRaw) {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1020 = { ...(meta.v1020 || {}) };\n"
+        "      v1020.research_pipeline = sanitizeV1020RpipePersisted(rpipeRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1020 = v1020;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1020.research_pipeline = sanitizeV1020RpipePersisted" in text:
+        print("skip rpipe §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("T6 mega3 §6 anchor missing for rpipe migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
+def push_rpipe(text: str) -> str:
+    block = RPIPE_SECTION + bundle_local_files(research_pipeline_paths()) + RPIPE_HELPERS
+    text = insert_before(text, block, RPIPE_MARKER, "T6 push #15 v1020-research-pipeline (PR #344)")
+    text = wire_rpipe_day_hook(text)
+    text = wire_rpipe_migration(text)
+    lab = """  { id: 'v1020_research_pipeline', label: 'V10.20 Research pipeline (20BM commercialization & lab transfer)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1020RpipeSelfTestsForLab() },
+"""
+    anchor_lab = "  { id: 'v1018_t6_mega3_depth',"
+    if "{ id: 'v1020_research_pipeline'" not in text:
+        if anchor_lab in text:
+            text = text.replace(anchor_lab, lab + anchor_lab, 1)
+        else:
+            text = wire_lab(text, lab, "v1020_research_pipeline")
+        print("registered LAB v1020_research_pipeline")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -1184,7 +1335,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -1209,6 +1360,8 @@ def main() -> None:
         text = push_ffed(text)
     elif args.push == 13:
         text = push_iclog(text)
+    elif args.push == 15:
+        text = push_rpipe(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")

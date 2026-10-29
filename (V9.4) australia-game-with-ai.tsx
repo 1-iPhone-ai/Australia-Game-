@@ -76074,6 +76074,15 @@ export function executeAgent02SingleDayBoundary(
           mergedGameState = V1018_T6MEGA3_applyToGameState(mergedGameState, m3Out);
         } catch (_) { /* isolated */ }
       }
+      if (typeof runV1020RpipeTurn === 'function') {
+        try {
+          const rpipeIn = buildV1020RpipeTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          rpipeIn.persisted = V1020_RPIPE_readPersistedFromGameState(mergedGameState);
+          const rpipeOut = runV1020RpipeTurn(rpipeIn);
+          mergedGameState = V1020_RPIPE_applyToGameState(mergedGameState, rpipeOut);
+        } catch (_) { /* isolated */ }
+      }
+
 
 
 
@@ -118878,6 +118887,18 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   // V1015 / V10.1 supply depth (Operation 600K T6): null-default on old saves.
   if (migrated.gameState) migrated.gameState.v1015Orchestrator = sanitizeV1015OrchestratorPersisted(migrated.gameState.v1015Orchestrator);
   if (migrated.gameState) migrated.gameState.v1014SupplyChain = sanitizeV1014SupplyChainPersisted(migrated.gameState.v1014SupplyChain);
+  if (migrated.gameState && typeof sanitizeV1020RpipePersisted === 'function') {
+    const rpipeRaw = (migrated.gameState as any)?.save?.meta?.v1020?.research_pipeline;
+    if (rpipeRaw) {
+      const save = { ...((migrated.gameState as any).save || {}) };
+      const meta = { ...(save.meta || {}) };
+      const v1020 = { ...(meta.v1020 || {}) };
+      v1020.research_pipeline = sanitizeV1020RpipePersisted(rpipeRaw, Number((migrated.gameState as any).turnCounter || 0));
+      meta.v1020 = v1020;
+      save.meta = meta;
+      migrated.gameState = { ...(migrated.gameState as any), save };
+    }
+  }
   if (migrated.gameState && typeof sanitizeV1018T6Mega3DepthPersisted === 'function') {
     const m3Raw = (migrated.gameState as any)?.save?.meta?.v1018?.t6_mega3_depth;
     if (m3Raw) {
@@ -194618,6 +194639,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1014_ai_fidelity', label: 'V10.14 AI fidelity (T6-8 plan/act/verify + UI gates)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014AiFidelitySelfTestsForLab() },
   { id: 'v1014_t6_mega_depth', label: 'V10.14 T6 cross-domain mega depth (20BG coherence mesh)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014T6MegaDepthSelfTestsForLab() },
   { id: 'v1014_workforce_v2', label: 'V10.14 Workforce migration v2 (20BF / 20AC part 4)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014WorkforceMigrationSelfTestsForLab() },
+  { id: 'v1020_research_pipeline', label: 'V10.20 Research pipeline (20BM commercialization & lab transfer)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1020RpipeSelfTestsForLab() },
   { id: 'v1018_t6_mega3_depth', label: 'V10.18 T6 mega3 wave-4 lattice (20BL / 20BA–20BK)', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV1018T6Mega3DepthSelfTestsForLab() },
   { id: 'v1017_intercity_logistics', label: 'V10.17 Intercity logistics (20BK freight routes & hubs)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1017IclogSelfTestsForLab() },
   { id: 'v1018_fiscal_federalism', label: 'V10.18 Fiscal federalism (20BJ transfers & grant stacks)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1018FfedSelfTestsForLab() },
@@ -798969,6 +798991,27120 @@ function V1018_T6MEGA3_applyToGameState(gs: any, out: V1018T6Mega3TurnResult): a
   meta.v1018 = v1018;
   save.meta = meta;
   return { ...gs, save, v1018T6Mega3Depth: out.state };
+}
+
+
+// ============================================================================
+// Agent 25 tranche 6 — T6 push #15 v1020-research-pipeline (PR #344)
+// ============================================================================
+// ============================================================================
+// SECTION 20BM: V10.20 RESEARCH PIPELINE — COMMERCIALIZATION, LAB TRANSFER & SCENARIOS (O6K-42)
+// Renumbered from shard 20BL (canonical 20BL = T6 mega3 wave-4, push #14)
+// ============================================================================
+/**
+ * V1020_RPIPE — research pipeline, state–federal transfer & lab_transfer (SECTION 20BM / O6K-42).
+ * Cross-wire: V1014 supply (20BB), trade (20BA), energy (20BC), workforce (20BF).
+ */
+
+export const V1020_RPIPE_SCHEMA_VERSION = '10.20.research_pipeline.1' as const;
+
+export type V1020RpipeRegionId = 'NSW' | 'VIC' | 'QLD' | 'WA' | 'SA' | 'TAS' | 'NT' | 'ACT';
+
+export type V1020RpipeSystemDomain =
+  | 'freight'
+  | 'energy'
+  | 'water'
+  | 'digital'
+  | 'trade'
+  | 'pharma'
+  | 'food'
+  | 'industrial'
+  | 'telecom'
+  | 'finance';
+
+export type V1020RpipeComplianceBand = 'robust' | 'stable' | 'strained' | 'fragile' | 'critical';
+
+export type V1020RpipeTransferBand = 'latent' | 'emerging' | 'active' | 'critical' | 'recovering';
+
+export interface V1020RpipeV1014SupplySlice {
+  turn: number;
+  bottleneckPressure: number;
+  regionalStockDays: Partial<Record<V1020RpipeRegionId, number>>;
+  commercializationStackIndex: number;
+}
+
+export interface V1020RpipeV1014TradeSlice {
+  turn: number;
+  sanctionsPressure: number;
+  importDependencyRatio: number;
+  exportLaneStability: number;
+}
+
+export interface V1020RpipeV1014EnergySlice {
+  turn: number;
+  gridStability: number;
+  reserveMarginPct: number;
+  carbonStress: number;
+}
+
+export interface V1020RpipeV1014WorkforceSlice {
+  turn: number;
+  specialistGap: number;
+  nationalReadiness: number;
+  mismatchIndex: number;
+}
+
+/** AI fidelity / commercialization slice (SECTION 20BE). */
+export interface V1020RpipeV1014AiFidelitySlice {
+  turn: number;
+  planVerifyScore: number;
+  automationCoverage: number;
+  commercializationReadiness: number;
+}
+
+/** Fiscal federalism lab-transfer slice (SECTION 20BJ). */
+export interface V1020RpipeV1014FiscalFederalismSlice {
+  turn: number;
+  transferPressure: number;
+  grantStackLoad: number;
+  labTransferBacklog: number;
+}
+
+export interface V1020RpipeGrantStackEdge {
+  fromSystem: V1020RpipeSystemDomain;
+  toSystem: V1020RpipeSystemDomain;
+  weight: number;
+  lagTurns: number;
+  nodeId: string;
+}
+
+export interface V1020RpipeTransferSnapshot {
+  scenarioId: string;
+  regionId: V1020RpipeRegionId;
+  systemDomain: V1020RpipeSystemDomain;
+  transferBand: V1020RpipeTransferBand;
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  complianceBand: V1020RpipeComplianceBand;
+}
+
+export interface V1020RpipePersisted {
+  schemaVersion: typeof V1020_RPIPE_SCHEMA_VERSION;
+  revision: number;
+  lastProcessedTurn: number | null;
+  pipelineSnapshots: Record<string, V1020RpipeTransferSnapshot>;
+  commercializationStackGraphRevision: number;
+  regionalCompliance: Partial<
+    Record<
+      V1020RpipeRegionId,
+      {
+        bufferIndex: number;
+        rerouteStress: number;
+        compositeCompliance: number;
+        exposedSystems: number;
+      }
+    >
+  >;
+  historyTail: Array<{ turn: number; inputHash: string; aggregateSeverity: number }>;
+  aiReadCache: Record<string, string>;
+}
+
+export interface V1020RpipeTurnInput {
+  turn: number;
+  seed: number;
+  supply20bb: V1020RpipeV1014SupplySlice;
+  trade20ba: V1020RpipeV1014TradeSlice;
+  energy20bc: V1020RpipeV1014EnergySlice;
+  workforce20bf: V1020RpipeV1014WorkforceSlice;
+  aiFidelity20be: V1020RpipeV1014AiFidelitySlice;
+  fiscalFederalism20bj: V1020RpipeV1014FiscalFederalismSlice;
+  researchHeadroom: number;
+  pipelinePolicyFocus: number;
+  activeTransferScenarioIds: string[];
+  activeLabTransferNodeIds: string[];
+  persisted: V1020RpipePersisted | null;
+}
+
+export interface V1020RpipeRuntimeState {
+  turn: number;
+  aggregateSeverityIndex: number;
+  aggregateComplianceScore: number;
+  fiscalFederalismScore: number;
+  supplyTransferPressure: number;
+  commercializationStackGraphHash: string;
+  inputHash: string;
+  briefing: string;
+}
+
+export interface V1020RpipeSupplyBridge {
+  bottleneckDelta: number;
+  stockDaysDelta: Partial<Record<V1020RpipeRegionId, number>>;
+  commercializationDelta?: number;
+  labTransferDelta?: number;
+}
+
+export interface V1020RpipeTradeBridge {
+  laneStabilityDelta: number;
+  importStressContribution: number;
+}
+
+export interface V1020RpipeEnergyBridge {
+  gridDrag: number;
+  reserveContribution: number;
+}
+
+export interface V1020RpipeWorkforceBridge {
+  readinessDelta: number;
+  mismatchContribution: number;
+}
+
+export interface V1020RpipeTurnResult {
+  state: V1020RpipeRuntimeState;
+  persisted: V1020RpipePersisted;
+  worldEvents: Array<{ id: string; turn: number; kind: string; title: string; summary: string }>;
+}
+
+export interface V1020RpipeSelfTestResult {
+  id: string;
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+/**
+ * §6 persistence keys — V1020 research pipeline (O6K-42).
+ */
+export const V1020_RPIPE_SAVE_META_KEY = 'save.meta.v1020.research_pipeline' as const;
+export const V1020_RPIPE_LAB_SUITE_ID = 'v1020_research_pipeline' as const;
+
+export const V1020_RPIPE_PERSISTENCE_PATHS = {
+  root: V1020_RPIPE_SAVE_META_KEY,
+  pipelineSnapshots: `${V1020_RPIPE_SAVE_META_KEY}.pipeline_snapshots`,
+  commercializationStack: `${V1020_RPIPE_SAVE_META_KEY}.commercialization_stack_graph`,
+  regional: `${V1020_RPIPE_SAVE_META_KEY}.regional_lab_transfer`,
+  history: `${V1020_RPIPE_SAVE_META_KEY}.history`,
+  aiCache: `${V1020_RPIPE_SAVE_META_KEY}.ai_read_cache`,
+} as const;
+
+
+const V1020_RPIPE_MIG_REGIONS: V1020RpipeRegionId[] = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'];
+
+export function createEmptyV1020RpipePersisted(): V1020RpipePersisted {
+  const regionalCompliance: V1020RpipePersisted['regionalCompliance'] = {};
+  V1020_RPIPE_MIG_REGIONS.forEach((r, i) => {
+    regionalCompliance[r] = {
+      bufferIndex: 44 + (i % 6),
+      rerouteStress: 36 + (i % 8),
+      compositeCompliance: 54 + (i % 5),
+      exposedSystems: 2 + (i % 4),
+    };
+  });
+  return {
+    schemaVersion: V1020_RPIPE_SCHEMA_VERSION,
+    revision: 0,
+    lastProcessedTurn: null,
+    pipelineSnapshots: {},
+    commercializationStackGraphRevision: 0,
+    regionalCompliance,
+    historyTail: [],
+    aiReadCache: {},
+  };
+}
+
+function v1020RpipeClampNum(n: number, lo: number, hi: number): number {
+  if (!Number.isFinite(n)) return lo;
+  return Math.min(hi, Math.max(lo, n));
+}
+
+export function sanitizeV1020RpipePersisted(raw: unknown, turn: number): V1020RpipePersisted {
+  const base = createEmptyV1020RpipePersisted();
+  if (!raw || typeof raw !== 'object') return base;
+  const o = raw as Partial<V1020RpipePersisted>;
+  const schema =
+    o.schemaVersion === V1020_RPIPE_SCHEMA_VERSION ? o.schemaVersion : V1020_RPIPE_SCHEMA_VERSION;
+  return {
+    schemaVersion: schema,
+    revision: v1020RpipeClampNum(Number(o.revision ?? 0), 0, 1_000_000),
+    lastProcessedTurn: o.lastProcessedTurn == null ? null : v1020RpipeClampNum(Number(o.lastProcessedTurn), 0, 1_000_000),
+    pipelineSnapshots: o.pipelineSnapshots && typeof o.pipelineSnapshots === 'object' ? { ...o.pipelineSnapshots } : {},
+    commercializationStackGraphRevision: v1020RpipeClampNum(Number(o.commercializationStackGraphRevision ?? 0), 0, 1_000_000),
+    regionalCompliance: { ...base.regionalCompliance, ...(o.regionalCompliance ?? {}) },
+    historyTail: Array.isArray(o.historyTail)
+      ? o.historyTail.slice(-12).map((h) => ({
+          turn: v1020RpipeClampNum(Number((h as { turn?: number }).turn ?? turn), 0, 1_000_000),
+          inputHash: String((h as { inputHash?: string }).inputHash ?? ''),
+          aggregateSeverity: v1020RpipeClampNum(Number((h as { aggregateSeverity?: number }).aggregateSeverity ?? 0), 0, 100),
+        }))
+      : [],
+    aiReadCache: o.aiReadCache && typeof o.aiReadCache === 'object' ? { ...o.aiReadCache } : {},
+  };
+}
+
+
+export function V1020_RPIPE_mergeCommercializationStackEdges(
+  base: readonly V1020RpipeGrantStackEdge[],
+  extra: readonly V1020RpipeGrantStackEdge[],
+): V1020RpipeGrantStackEdge[] {
+  return [...base, ...extra];
+}
+
+export function V1020_RPIPE_commercializationStackPressure(
+  edges: readonly V1020RpipeGrantStackEdge[],
+  turn: number,
+  seedSeverity: number,
+): number {
+  let acc = 0;
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i];
+    acc += e.weight * (1 + ((turn + e.lagTurns) % 5)) * 0.015;
+  }
+  return V1020_RPIPE_clamp(acc * 0.4 + seedSeverity * 0.01, 0, 1);
+}
+
+export function V1020_RPIPE_commercializationStackGraphHash(edges: readonly V1020RpipeGrantStackEdge[]): string {
+  return V1020_RPIPE_utilCommercializationStackGraphHash(edges);
+}
+
+
+/** Generated pipeline scenario 000 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_000_META = {
+  id: 'pipeline_000',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'freight' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 41,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_000_COEF = {
+  k0: 28.7000,
+  k1: 32.8000,
+  k2: 36.9000,
+  k3: 41.0000,
+  k4: 45.1000,
+  k5: 49.2000,
+  k6: 53.3000,
+  k7: 57.4000,
+  k8: 61.5000,
+  k9: 65.6000,
+  k10: 69.7000,
+  k11: 73.8000,
+  k12: 77.9000,
+  k13: 82.0000,
+  k14: 86.1000,
+  k15: 90.2000,
+  k16: 94.3000,
+  k17: 98.4000,
+  k18: 3.4000,
+  k19: 7.5000,
+  k20: 11.6000,
+  k21: 15.7000,
+  k22: 19.8000,
+  k23: 23.9000,
+  k24: 28.0000,
+  k25: 32.1000,
+  k26: 36.2000,
+  k27: 40.3000,
+  k28: 44.4000,
+  k29: 48.5000,
+  k30: 52.6000,
+  k31: 56.7000,
+  k32: 60.8000,
+  k33: 64.9000,
+  k34: 69.0000,
+  k35: 73.1000,
+  k36: 77.2000,
+  k37: 81.3000,
+  k38: 85.4000,
+  k39: 89.5000,
+  k40: 93.6000,
+  k41: 97.7000,
+  k42: 2.7000,
+  k43: 6.8000,
+  k44: 10.9000,
+  k45: 15.0000,
+  k46: 19.1000,
+  k47: 23.2000,
+  k48: 27.3000,
+  k49: 31.4000,
+  k50: 35.5000,
+  k51: 39.6000,
+  k52: 43.7000,
+  k53: 47.8000,
+  k54: 51.9000,
+  k55: 56.0000,
+  k56: 60.1000,
+  k57: 64.2000,
+  k58: 68.3000,
+  k59: 72.4000,
+  k60: 76.5000,
+  k61: 80.6000,
+  k62: 84.7000,
+  k63: 88.8000,
+  k64: 92.9000,
+  k65: 97.0000,
+  k66: 2.0000,
+  k67: 6.1000,
+  k68: 10.2000,
+  k69: 14.3000,
+  k70: 18.4000,
+  k71: 22.5000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_000_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_000_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_000_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_000_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_000_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_000_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_000_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_000_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_000_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_000_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_000_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_000_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 001 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_001_META = {
+  id: 'pipeline_001',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'energy' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 918,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_001_COEF = {
+  k0: 48.0000,
+  k1: 40.7000,
+  k2: 33.4000,
+  k3: 26.1000,
+  k4: 18.8000,
+  k5: 11.5000,
+  k6: 4.2000,
+  k7: 96.0000,
+  k8: 88.7000,
+  k9: 81.4000,
+  k10: 74.1000,
+  k11: 66.8000,
+  k12: 59.5000,
+  k13: 52.2000,
+  k14: 44.9000,
+  k15: 37.6000,
+  k16: 30.3000,
+  k17: 23.0000,
+  k18: 15.7000,
+  k19: 8.4000,
+  k20: 1.1000,
+  k21: 92.9000,
+  k22: 85.6000,
+  k23: 78.3000,
+  k24: 71.0000,
+  k25: 63.7000,
+  k26: 56.4000,
+  k27: 49.1000,
+  k28: 41.8000,
+  k29: 34.5000,
+  k30: 27.2000,
+  k31: 19.9000,
+  k32: 12.6000,
+  k33: 5.3000,
+  k34: 97.1000,
+  k35: 89.8000,
+  k36: 82.5000,
+  k37: 75.2000,
+  k38: 67.9000,
+  k39: 60.6000,
+  k40: 53.3000,
+  k41: 46.0000,
+  k42: 38.7000,
+  k43: 31.4000,
+  k44: 24.1000,
+  k45: 16.8000,
+  k46: 9.5000,
+  k47: 2.2000,
+  k48: 94.0000,
+  k49: 86.7000,
+  k50: 79.4000,
+  k51: 72.1000,
+  k52: 64.8000,
+  k53: 57.5000,
+  k54: 50.2000,
+  k55: 42.9000,
+  k56: 35.6000,
+  k57: 28.3000,
+  k58: 21.0000,
+  k59: 13.7000,
+  k60: 6.4000,
+  k61: 98.2000,
+  k62: 90.9000,
+  k63: 83.6000,
+  k64: 76.3000,
+  k65: 69.0000,
+  k66: 61.7000,
+  k67: 54.4000,
+  k68: 47.1000,
+  k69: 39.8000,
+  k70: 32.5000,
+  k71: 25.2000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_001_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_001_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_001_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_001_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_001_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_001_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_001_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_001_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_001_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_001_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_001_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_001_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 002 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_002_META = {
+  id: 'pipeline_002',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'water' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 1795,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_002_COEF = {
+  k0: 67.3000,
+  k1: 48.6000,
+  k2: 29.9000,
+  k3: 11.2000,
+  k4: 91.6000,
+  k5: 72.9000,
+  k6: 54.2000,
+  k7: 35.5000,
+  k8: 16.8000,
+  k9: 97.2000,
+  k10: 78.5000,
+  k11: 59.8000,
+  k12: 41.1000,
+  k13: 22.4000,
+  k14: 3.7000,
+  k15: 84.1000,
+  k16: 65.4000,
+  k17: 46.7000,
+  k18: 28.0000,
+  k19: 9.3000,
+  k20: 89.7000,
+  k21: 71.0000,
+  k22: 52.3000,
+  k23: 33.6000,
+  k24: 14.9000,
+  k25: 95.3000,
+  k26: 76.6000,
+  k27: 57.9000,
+  k28: 39.2000,
+  k29: 20.5000,
+  k30: 1.8000,
+  k31: 82.2000,
+  k32: 63.5000,
+  k33: 44.8000,
+  k34: 26.1000,
+  k35: 7.4000,
+  k36: 87.8000,
+  k37: 69.1000,
+  k38: 50.4000,
+  k39: 31.7000,
+  k40: 13.0000,
+  k41: 93.4000,
+  k42: 74.7000,
+  k43: 56.0000,
+  k44: 37.3000,
+  k45: 18.6000,
+  k46: 99.0000,
+  k47: 80.3000,
+  k48: 61.6000,
+  k49: 42.9000,
+  k50: 24.2000,
+  k51: 5.5000,
+  k52: 85.9000,
+  k53: 67.2000,
+  k54: 48.5000,
+  k55: 29.8000,
+  k56: 11.1000,
+  k57: 91.5000,
+  k58: 72.8000,
+  k59: 54.1000,
+  k60: 35.4000,
+  k61: 16.7000,
+  k62: 97.1000,
+  k63: 78.4000,
+  k64: 59.7000,
+  k65: 41.0000,
+  k66: 22.3000,
+  k67: 3.6000,
+  k68: 84.0000,
+  k69: 65.3000,
+  k70: 46.6000,
+  k71: 27.9000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_002_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_002_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_002_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_002_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_002_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_002_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_002_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_002_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_002_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_002_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_002_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_002_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 003 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_003_META = {
+  id: 'pipeline_003',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'digital' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 2672,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_003_COEF = {
+  k0: 86.6000,
+  k1: 56.5000,
+  k2: 26.4000,
+  k3: 95.4000,
+  k4: 65.3000,
+  k5: 35.2000,
+  k6: 5.1000,
+  k7: 74.1000,
+  k8: 44.0000,
+  k9: 13.9000,
+  k10: 82.9000,
+  k11: 52.8000,
+  k12: 22.7000,
+  k13: 91.7000,
+  k14: 61.6000,
+  k15: 31.5000,
+  k16: 1.4000,
+  k17: 70.4000,
+  k18: 40.3000,
+  k19: 10.2000,
+  k20: 79.2000,
+  k21: 49.1000,
+  k22: 19.0000,
+  k23: 88.0000,
+  k24: 57.9000,
+  k25: 27.8000,
+  k26: 96.8000,
+  k27: 66.7000,
+  k28: 36.6000,
+  k29: 6.5000,
+  k30: 75.5000,
+  k31: 45.4000,
+  k32: 15.3000,
+  k33: 84.3000,
+  k34: 54.2000,
+  k35: 24.1000,
+  k36: 93.1000,
+  k37: 63.0000,
+  k38: 32.9000,
+  k39: 2.8000,
+  k40: 71.8000,
+  k41: 41.7000,
+  k42: 11.6000,
+  k43: 80.6000,
+  k44: 50.5000,
+  k45: 20.4000,
+  k46: 89.4000,
+  k47: 59.3000,
+  k48: 29.2000,
+  k49: 98.2000,
+  k50: 68.1000,
+  k51: 38.0000,
+  k52: 7.9000,
+  k53: 76.9000,
+  k54: 46.8000,
+  k55: 16.7000,
+  k56: 85.7000,
+  k57: 55.6000,
+  k58: 25.5000,
+  k59: 94.5000,
+  k60: 64.4000,
+  k61: 34.3000,
+  k62: 4.2000,
+  k63: 73.2000,
+  k64: 43.1000,
+  k65: 13.0000,
+  k66: 82.0000,
+  k67: 51.9000,
+  k68: 21.8000,
+  k69: 90.8000,
+  k70: 60.7000,
+  k71: 30.6000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_003_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_003_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_003_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_003_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_003_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_003_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_003_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_003_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_003_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_003_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_003_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_003_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 004 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_004_META = {
+  id: 'pipeline_004',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'trade' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 3549,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_004_COEF = {
+  k0: 6.8000,
+  k1: 64.4000,
+  k2: 22.9000,
+  k3: 80.5000,
+  k4: 39.0000,
+  k5: 96.6000,
+  k6: 55.1000,
+  k7: 13.6000,
+  k8: 71.2000,
+  k9: 29.7000,
+  k10: 87.3000,
+  k11: 45.8000,
+  k12: 4.3000,
+  k13: 61.9000,
+  k14: 20.4000,
+  k15: 78.0000,
+  k16: 36.5000,
+  k17: 94.1000,
+  k18: 52.6000,
+  k19: 11.1000,
+  k20: 68.7000,
+  k21: 27.2000,
+  k22: 84.8000,
+  k23: 43.3000,
+  k24: 1.8000,
+  k25: 59.4000,
+  k26: 17.9000,
+  k27: 75.5000,
+  k28: 34.0000,
+  k29: 91.6000,
+  k30: 50.1000,
+  k31: 8.6000,
+  k32: 66.2000,
+  k33: 24.7000,
+  k34: 82.3000,
+  k35: 40.8000,
+  k36: 98.4000,
+  k37: 56.9000,
+  k38: 15.4000,
+  k39: 73.0000,
+  k40: 31.5000,
+  k41: 89.1000,
+  k42: 47.6000,
+  k43: 6.1000,
+  k44: 63.7000,
+  k45: 22.2000,
+  k46: 79.8000,
+  k47: 38.3000,
+  k48: 95.9000,
+  k49: 54.4000,
+  k50: 12.9000,
+  k51: 70.5000,
+  k52: 29.0000,
+  k53: 86.6000,
+  k54: 45.1000,
+  k55: 3.6000,
+  k56: 61.2000,
+  k57: 19.7000,
+  k58: 77.3000,
+  k59: 35.8000,
+  k60: 93.4000,
+  k61: 51.9000,
+  k62: 10.4000,
+  k63: 68.0000,
+  k64: 26.5000,
+  k65: 84.1000,
+  k66: 42.6000,
+  k67: 1.1000,
+  k68: 58.7000,
+  k69: 17.2000,
+  k70: 74.8000,
+  k71: 33.3000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_004_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_004_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_004_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_004_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_004_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_004_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_004_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_004_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_004_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_004_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_004_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_004_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 005 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_005_META = {
+  id: 'pipeline_005',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'pharma' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 4426,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_005_COEF = {
+  k0: 26.1000,
+  k1: 72.3000,
+  k2: 19.4000,
+  k3: 65.6000,
+  k4: 12.7000,
+  k5: 58.9000,
+  k6: 6.0000,
+  k7: 52.2000,
+  k8: 98.4000,
+  k9: 45.5000,
+  k10: 91.7000,
+  k11: 38.8000,
+  k12: 85.0000,
+  k13: 32.1000,
+  k14: 78.3000,
+  k15: 25.4000,
+  k16: 71.6000,
+  k17: 18.7000,
+  k18: 64.9000,
+  k19: 12.0000,
+  k20: 58.2000,
+  k21: 5.3000,
+  k22: 51.5000,
+  k23: 97.7000,
+  k24: 44.8000,
+  k25: 91.0000,
+  k26: 38.1000,
+  k27: 84.3000,
+  k28: 31.4000,
+  k29: 77.6000,
+  k30: 24.7000,
+  k31: 70.9000,
+  k32: 18.0000,
+  k33: 64.2000,
+  k34: 11.3000,
+  k35: 57.5000,
+  k36: 4.6000,
+  k37: 50.8000,
+  k38: 97.0000,
+  k39: 44.1000,
+  k40: 90.3000,
+  k41: 37.4000,
+  k42: 83.6000,
+  k43: 30.7000,
+  k44: 76.9000,
+  k45: 24.0000,
+  k46: 70.2000,
+  k47: 17.3000,
+  k48: 63.5000,
+  k49: 10.6000,
+  k50: 56.8000,
+  k51: 3.9000,
+  k52: 50.1000,
+  k53: 96.3000,
+  k54: 43.4000,
+  k55: 89.6000,
+  k56: 36.7000,
+  k57: 82.9000,
+  k58: 30.0000,
+  k59: 76.2000,
+  k60: 23.3000,
+  k61: 69.5000,
+  k62: 16.6000,
+  k63: 62.8000,
+  k64: 9.9000,
+  k65: 56.1000,
+  k66: 3.2000,
+  k67: 49.4000,
+  k68: 95.6000,
+  k69: 42.7000,
+  k70: 88.9000,
+  k71: 36.0000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_005_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_005_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_005_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_005_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_005_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_005_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_005_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_005_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_005_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_005_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_005_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_005_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 006 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_006_META = {
+  id: 'pipeline_006',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'food' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 5303,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_006_COEF = {
+  k0: 45.4000,
+  k1: 80.2000,
+  k2: 15.9000,
+  k3: 50.7000,
+  k4: 85.5000,
+  k5: 21.2000,
+  k6: 56.0000,
+  k7: 90.8000,
+  k8: 26.5000,
+  k9: 61.3000,
+  k10: 96.1000,
+  k11: 31.8000,
+  k12: 66.6000,
+  k13: 2.3000,
+  k14: 37.1000,
+  k15: 71.9000,
+  k16: 7.6000,
+  k17: 42.4000,
+  k18: 77.2000,
+  k19: 12.9000,
+  k20: 47.7000,
+  k21: 82.5000,
+  k22: 18.2000,
+  k23: 53.0000,
+  k24: 87.8000,
+  k25: 23.5000,
+  k26: 58.3000,
+  k27: 93.1000,
+  k28: 28.8000,
+  k29: 63.6000,
+  k30: 98.4000,
+  k31: 34.1000,
+  k32: 68.9000,
+  k33: 4.6000,
+  k34: 39.4000,
+  k35: 74.2000,
+  k36: 9.9000,
+  k37: 44.7000,
+  k38: 79.5000,
+  k39: 15.2000,
+  k40: 50.0000,
+  k41: 84.8000,
+  k42: 20.5000,
+  k43: 55.3000,
+  k44: 90.1000,
+  k45: 25.8000,
+  k46: 60.6000,
+  k47: 95.4000,
+  k48: 31.1000,
+  k49: 65.9000,
+  k50: 1.6000,
+  k51: 36.4000,
+  k52: 71.2000,
+  k53: 6.9000,
+  k54: 41.7000,
+  k55: 76.5000,
+  k56: 12.2000,
+  k57: 47.0000,
+  k58: 81.8000,
+  k59: 17.5000,
+  k60: 52.3000,
+  k61: 87.1000,
+  k62: 22.8000,
+  k63: 57.6000,
+  k64: 92.4000,
+  k65: 28.1000,
+  k66: 62.9000,
+  k67: 97.7000,
+  k68: 33.4000,
+  k69: 68.2000,
+  k70: 3.9000,
+  k71: 38.7000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_006_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_006_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_006_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_006_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_006_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_006_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_006_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_006_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_006_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_006_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_006_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_006_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 007 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_007_META = {
+  id: 'pipeline_007',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'industrial' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 6180,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_007_COEF = {
+  k0: 64.7000,
+  k1: 88.1000,
+  k2: 12.4000,
+  k3: 35.8000,
+  k4: 59.2000,
+  k5: 82.6000,
+  k6: 6.9000,
+  k7: 30.3000,
+  k8: 53.7000,
+  k9: 77.1000,
+  k10: 1.4000,
+  k11: 24.8000,
+  k12: 48.2000,
+  k13: 71.6000,
+  k14: 95.0000,
+  k15: 19.3000,
+  k16: 42.7000,
+  k17: 66.1000,
+  k18: 89.5000,
+  k19: 13.8000,
+  k20: 37.2000,
+  k21: 60.6000,
+  k22: 84.0000,
+  k23: 8.3000,
+  k24: 31.7000,
+  k25: 55.1000,
+  k26: 78.5000,
+  k27: 2.8000,
+  k28: 26.2000,
+  k29: 49.6000,
+  k30: 73.0000,
+  k31: 96.4000,
+  k32: 20.7000,
+  k33: 44.1000,
+  k34: 67.5000,
+  k35: 90.9000,
+  k36: 15.2000,
+  k37: 38.6000,
+  k38: 62.0000,
+  k39: 85.4000,
+  k40: 9.7000,
+  k41: 33.1000,
+  k42: 56.5000,
+  k43: 79.9000,
+  k44: 4.2000,
+  k45: 27.6000,
+  k46: 51.0000,
+  k47: 74.4000,
+  k48: 97.8000,
+  k49: 22.1000,
+  k50: 45.5000,
+  k51: 68.9000,
+  k52: 92.3000,
+  k53: 16.6000,
+  k54: 40.0000,
+  k55: 63.4000,
+  k56: 86.8000,
+  k57: 11.1000,
+  k58: 34.5000,
+  k59: 57.9000,
+  k60: 81.3000,
+  k61: 5.6000,
+  k62: 29.0000,
+  k63: 52.4000,
+  k64: 75.8000,
+  k65: 0.1000,
+  k66: 23.5000,
+  k67: 46.9000,
+  k68: 70.3000,
+  k69: 93.7000,
+  k70: 18.0000,
+  k71: 41.4000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_007_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_007_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_007_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_007_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_007_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_007_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_007_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_007_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_007_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_007_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_007_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_007_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 008 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_008_META = {
+  id: 'pipeline_008',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'telecom' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 7057,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_008_COEF = {
+  k0: 84.0000,
+  k1: 96.0000,
+  k2: 8.9000,
+  k3: 20.9000,
+  k4: 32.9000,
+  k5: 44.9000,
+  k6: 56.9000,
+  k7: 68.9000,
+  k8: 80.9000,
+  k9: 92.9000,
+  k10: 5.8000,
+  k11: 17.8000,
+  k12: 29.8000,
+  k13: 41.8000,
+  k14: 53.8000,
+  k15: 65.8000,
+  k16: 77.8000,
+  k17: 89.8000,
+  k18: 2.7000,
+  k19: 14.7000,
+  k20: 26.7000,
+  k21: 38.7000,
+  k22: 50.7000,
+  k23: 62.7000,
+  k24: 74.7000,
+  k25: 86.7000,
+  k26: 98.7000,
+  k27: 11.6000,
+  k28: 23.6000,
+  k29: 35.6000,
+  k30: 47.6000,
+  k31: 59.6000,
+  k32: 71.6000,
+  k33: 83.6000,
+  k34: 95.6000,
+  k35: 8.5000,
+  k36: 20.5000,
+  k37: 32.5000,
+  k38: 44.5000,
+  k39: 56.5000,
+  k40: 68.5000,
+  k41: 80.5000,
+  k42: 92.5000,
+  k43: 5.4000,
+  k44: 17.4000,
+  k45: 29.4000,
+  k46: 41.4000,
+  k47: 53.4000,
+  k48: 65.4000,
+  k49: 77.4000,
+  k50: 89.4000,
+  k51: 2.3000,
+  k52: 14.3000,
+  k53: 26.3000,
+  k54: 38.3000,
+  k55: 50.3000,
+  k56: 62.3000,
+  k57: 74.3000,
+  k58: 86.3000,
+  k59: 98.3000,
+  k60: 11.2000,
+  k61: 23.2000,
+  k62: 35.2000,
+  k63: 47.2000,
+  k64: 59.2000,
+  k65: 71.2000,
+  k66: 83.2000,
+  k67: 95.2000,
+  k68: 8.1000,
+  k69: 20.1000,
+  k70: 32.1000,
+  k71: 44.1000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_008_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_008_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_008_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_008_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_008_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_008_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_008_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_008_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_008_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_008_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_008_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_008_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 009 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_009_META = {
+  id: 'pipeline_009',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'finance' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 7934,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_009_COEF = {
+  k0: 4.2000,
+  k1: 4.8000,
+  k2: 5.4000,
+  k3: 6.0000,
+  k4: 6.6000,
+  k5: 7.2000,
+  k6: 7.8000,
+  k7: 8.4000,
+  k8: 9.0000,
+  k9: 9.6000,
+  k10: 10.2000,
+  k11: 10.8000,
+  k12: 11.4000,
+  k13: 12.0000,
+  k14: 12.6000,
+  k15: 13.2000,
+  k16: 13.8000,
+  k17: 14.4000,
+  k18: 15.0000,
+  k19: 15.6000,
+  k20: 16.2000,
+  k21: 16.8000,
+  k22: 17.4000,
+  k23: 18.0000,
+  k24: 18.6000,
+  k25: 19.2000,
+  k26: 19.8000,
+  k27: 20.4000,
+  k28: 21.0000,
+  k29: 21.6000,
+  k30: 22.2000,
+  k31: 22.8000,
+  k32: 23.4000,
+  k33: 24.0000,
+  k34: 24.6000,
+  k35: 25.2000,
+  k36: 25.8000,
+  k37: 26.4000,
+  k38: 27.0000,
+  k39: 27.6000,
+  k40: 28.2000,
+  k41: 28.8000,
+  k42: 29.4000,
+  k43: 30.0000,
+  k44: 30.6000,
+  k45: 31.2000,
+  k46: 31.8000,
+  k47: 32.4000,
+  k48: 33.0000,
+  k49: 33.6000,
+  k50: 34.2000,
+  k51: 34.8000,
+  k52: 35.4000,
+  k53: 36.0000,
+  k54: 36.6000,
+  k55: 37.2000,
+  k56: 37.8000,
+  k57: 38.4000,
+  k58: 39.0000,
+  k59: 39.6000,
+  k60: 40.2000,
+  k61: 40.8000,
+  k62: 41.4000,
+  k63: 42.0000,
+  k64: 42.6000,
+  k65: 43.2000,
+  k66: 43.8000,
+  k67: 44.4000,
+  k68: 45.0000,
+  k69: 45.6000,
+  k70: 46.2000,
+  k71: 46.8000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_009_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_009_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_009_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_009_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_009_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_009_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_009_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_009_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_009_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_009_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_009_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_009_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 010 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_010_META = {
+  id: 'pipeline_010',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'freight' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 8811,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_010_COEF = {
+  k0: 23.5000,
+  k1: 12.7000,
+  k2: 1.9000,
+  k3: 90.2000,
+  k4: 79.4000,
+  k5: 68.6000,
+  k6: 57.8000,
+  k7: 47.0000,
+  k8: 36.2000,
+  k9: 25.4000,
+  k10: 14.6000,
+  k11: 3.8000,
+  k12: 92.1000,
+  k13: 81.3000,
+  k14: 70.5000,
+  k15: 59.7000,
+  k16: 48.9000,
+  k17: 38.1000,
+  k18: 27.3000,
+  k19: 16.5000,
+  k20: 5.7000,
+  k21: 94.0000,
+  k22: 83.2000,
+  k23: 72.4000,
+  k24: 61.6000,
+  k25: 50.8000,
+  k26: 40.0000,
+  k27: 29.2000,
+  k28: 18.4000,
+  k29: 7.6000,
+  k30: 95.9000,
+  k31: 85.1000,
+  k32: 74.3000,
+  k33: 63.5000,
+  k34: 52.7000,
+  k35: 41.9000,
+  k36: 31.1000,
+  k37: 20.3000,
+  k38: 9.5000,
+  k39: 97.8000,
+  k40: 87.0000,
+  k41: 76.2000,
+  k42: 65.4000,
+  k43: 54.6000,
+  k44: 43.8000,
+  k45: 33.0000,
+  k46: 22.2000,
+  k47: 11.4000,
+  k48: 0.6000,
+  k49: 88.9000,
+  k50: 78.1000,
+  k51: 67.3000,
+  k52: 56.5000,
+  k53: 45.7000,
+  k54: 34.9000,
+  k55: 24.1000,
+  k56: 13.3000,
+  k57: 2.5000,
+  k58: 90.8000,
+  k59: 80.0000,
+  k60: 69.2000,
+  k61: 58.4000,
+  k62: 47.6000,
+  k63: 36.8000,
+  k64: 26.0000,
+  k65: 15.2000,
+  k66: 4.4000,
+  k67: 92.7000,
+  k68: 81.9000,
+  k69: 71.1000,
+  k70: 60.3000,
+  k71: 49.5000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_010_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_010_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_010_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_010_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_010_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_010_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_010_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_010_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_010_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_010_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_010_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_010_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 011 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_011_META = {
+  id: 'pipeline_011',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'energy' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 9688,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_011_COEF = {
+  k0: 42.8000,
+  k1: 20.6000,
+  k2: 97.5000,
+  k3: 75.3000,
+  k4: 53.1000,
+  k5: 30.9000,
+  k6: 8.7000,
+  k7: 85.6000,
+  k8: 63.4000,
+  k9: 41.2000,
+  k10: 19.0000,
+  k11: 95.9000,
+  k12: 73.7000,
+  k13: 51.5000,
+  k14: 29.3000,
+  k15: 7.1000,
+  k16: 84.0000,
+  k17: 61.8000,
+  k18: 39.6000,
+  k19: 17.4000,
+  k20: 94.3000,
+  k21: 72.1000,
+  k22: 49.9000,
+  k23: 27.7000,
+  k24: 5.5000,
+  k25: 82.4000,
+  k26: 60.2000,
+  k27: 38.0000,
+  k28: 15.8000,
+  k29: 92.7000,
+  k30: 70.5000,
+  k31: 48.3000,
+  k32: 26.1000,
+  k33: 3.9000,
+  k34: 80.8000,
+  k35: 58.6000,
+  k36: 36.4000,
+  k37: 14.2000,
+  k38: 91.1000,
+  k39: 68.9000,
+  k40: 46.7000,
+  k41: 24.5000,
+  k42: 2.3000,
+  k43: 79.2000,
+  k44: 57.0000,
+  k45: 34.8000,
+  k46: 12.6000,
+  k47: 89.5000,
+  k48: 67.3000,
+  k49: 45.1000,
+  k50: 22.9000,
+  k51: 0.7000,
+  k52: 77.6000,
+  k53: 55.4000,
+  k54: 33.2000,
+  k55: 11.0000,
+  k56: 87.9000,
+  k57: 65.7000,
+  k58: 43.5000,
+  k59: 21.3000,
+  k60: 98.2000,
+  k61: 76.0000,
+  k62: 53.8000,
+  k63: 31.6000,
+  k64: 9.4000,
+  k65: 86.3000,
+  k66: 64.1000,
+  k67: 41.9000,
+  k68: 19.7000,
+  k69: 96.6000,
+  k70: 74.4000,
+  k71: 52.2000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_011_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_011_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_011_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_011_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_011_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_011_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_011_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_011_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_011_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_011_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_011_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_011_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 012 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_012_META = {
+  id: 'pipeline_012',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'water' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 10565,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_012_COEF = {
+  k0: 62.1000,
+  k1: 28.5000,
+  k2: 94.0000,
+  k3: 60.4000,
+  k4: 26.8000,
+  k5: 92.3000,
+  k6: 58.7000,
+  k7: 25.1000,
+  k8: 90.6000,
+  k9: 57.0000,
+  k10: 23.4000,
+  k11: 88.9000,
+  k12: 55.3000,
+  k13: 21.7000,
+  k14: 87.2000,
+  k15: 53.6000,
+  k16: 20.0000,
+  k17: 85.5000,
+  k18: 51.9000,
+  k19: 18.3000,
+  k20: 83.8000,
+  k21: 50.2000,
+  k22: 16.6000,
+  k23: 82.1000,
+  k24: 48.5000,
+  k25: 14.9000,
+  k26: 80.4000,
+  k27: 46.8000,
+  k28: 13.2000,
+  k29: 78.7000,
+  k30: 45.1000,
+  k31: 11.5000,
+  k32: 77.0000,
+  k33: 43.4000,
+  k34: 9.8000,
+  k35: 75.3000,
+  k36: 41.7000,
+  k37: 8.1000,
+  k38: 73.6000,
+  k39: 40.0000,
+  k40: 6.4000,
+  k41: 71.9000,
+  k42: 38.3000,
+  k43: 4.7000,
+  k44: 70.2000,
+  k45: 36.6000,
+  k46: 3.0000,
+  k47: 68.5000,
+  k48: 34.9000,
+  k49: 1.3000,
+  k50: 66.8000,
+  k51: 33.2000,
+  k52: 98.7000,
+  k53: 65.1000,
+  k54: 31.5000,
+  k55: 97.0000,
+  k56: 63.4000,
+  k57: 29.8000,
+  k58: 95.3000,
+  k59: 61.7000,
+  k60: 28.1000,
+  k61: 93.6000,
+  k62: 60.0000,
+  k63: 26.4000,
+  k64: 91.9000,
+  k65: 58.3000,
+  k66: 24.7000,
+  k67: 90.2000,
+  k68: 56.6000,
+  k69: 23.0000,
+  k70: 88.5000,
+  k71: 54.9000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_012_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_012_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_012_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_012_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_012_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_012_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_012_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_012_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_012_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_012_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_012_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_012_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 013 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_013_META = {
+  id: 'pipeline_013',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'digital' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 11442,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_013_COEF = {
+  k0: 81.4000,
+  k1: 36.4000,
+  k2: 90.5000,
+  k3: 45.5000,
+  k4: 0.5000,
+  k5: 54.6000,
+  k6: 9.6000,
+  k7: 63.7000,
+  k8: 18.7000,
+  k9: 72.8000,
+  k10: 27.8000,
+  k11: 81.9000,
+  k12: 36.9000,
+  k13: 91.0000,
+  k14: 46.0000,
+  k15: 1.0000,
+  k16: 55.1000,
+  k17: 10.1000,
+  k18: 64.2000,
+  k19: 19.2000,
+  k20: 73.3000,
+  k21: 28.3000,
+  k22: 82.4000,
+  k23: 37.4000,
+  k24: 91.5000,
+  k25: 46.5000,
+  k26: 1.5000,
+  k27: 55.6000,
+  k28: 10.6000,
+  k29: 64.7000,
+  k30: 19.7000,
+  k31: 73.8000,
+  k32: 28.8000,
+  k33: 82.9000,
+  k34: 37.9000,
+  k35: 92.0000,
+  k36: 47.0000,
+  k37: 2.0000,
+  k38: 56.1000,
+  k39: 11.1000,
+  k40: 65.2000,
+  k41: 20.2000,
+  k42: 74.3000,
+  k43: 29.3000,
+  k44: 83.4000,
+  k45: 38.4000,
+  k46: 92.5000,
+  k47: 47.5000,
+  k48: 2.5000,
+  k49: 56.6000,
+  k50: 11.6000,
+  k51: 65.7000,
+  k52: 20.7000,
+  k53: 74.8000,
+  k54: 29.8000,
+  k55: 83.9000,
+  k56: 38.9000,
+  k57: 93.0000,
+  k58: 48.0000,
+  k59: 3.0000,
+  k60: 57.1000,
+  k61: 12.1000,
+  k62: 66.2000,
+  k63: 21.2000,
+  k64: 75.3000,
+  k65: 30.3000,
+  k66: 84.4000,
+  k67: 39.4000,
+  k68: 93.5000,
+  k69: 48.5000,
+  k70: 3.5000,
+  k71: 57.6000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_013_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_013_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_013_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_013_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_013_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_013_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_013_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_013_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_013_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_013_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_013_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_013_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 014 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_014_META = {
+  id: 'pipeline_014',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'trade' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 12319,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_014_COEF = {
+  k0: 1.6000,
+  k1: 44.3000,
+  k2: 87.0000,
+  k3: 30.6000,
+  k4: 73.3000,
+  k5: 16.9000,
+  k6: 59.6000,
+  k7: 3.2000,
+  k8: 45.9000,
+  k9: 88.6000,
+  k10: 32.2000,
+  k11: 74.9000,
+  k12: 18.5000,
+  k13: 61.2000,
+  k14: 4.8000,
+  k15: 47.5000,
+  k16: 90.2000,
+  k17: 33.8000,
+  k18: 76.5000,
+  k19: 20.1000,
+  k20: 62.8000,
+  k21: 6.4000,
+  k22: 49.1000,
+  k23: 91.8000,
+  k24: 35.4000,
+  k25: 78.1000,
+  k26: 21.7000,
+  k27: 64.4000,
+  k28: 8.0000,
+  k29: 50.7000,
+  k30: 93.4000,
+  k31: 37.0000,
+  k32: 79.7000,
+  k33: 23.3000,
+  k34: 66.0000,
+  k35: 9.6000,
+  k36: 52.3000,
+  k37: 95.0000,
+  k38: 38.6000,
+  k39: 81.3000,
+  k40: 24.9000,
+  k41: 67.6000,
+  k42: 11.2000,
+  k43: 53.9000,
+  k44: 96.6000,
+  k45: 40.2000,
+  k46: 82.9000,
+  k47: 26.5000,
+  k48: 69.2000,
+  k49: 12.8000,
+  k50: 55.5000,
+  k51: 98.2000,
+  k52: 41.8000,
+  k53: 84.5000,
+  k54: 28.1000,
+  k55: 70.8000,
+  k56: 14.4000,
+  k57: 57.1000,
+  k58: 0.7000,
+  k59: 43.4000,
+  k60: 86.1000,
+  k61: 29.7000,
+  k62: 72.4000,
+  k63: 16.0000,
+  k64: 58.7000,
+  k65: 2.3000,
+  k66: 45.0000,
+  k67: 87.7000,
+  k68: 31.3000,
+  k69: 74.0000,
+  k70: 17.6000,
+  k71: 60.3000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_014_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_014_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_014_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_014_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_014_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_014_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_014_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_014_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_014_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_014_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_014_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_014_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 015 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_015_META = {
+  id: 'pipeline_015',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'pharma' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 13196,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_015_COEF = {
+  k0: 20.9000,
+  k1: 52.2000,
+  k2: 83.5000,
+  k3: 15.7000,
+  k4: 47.0000,
+  k5: 78.3000,
+  k6: 10.5000,
+  k7: 41.8000,
+  k8: 73.1000,
+  k9: 5.3000,
+  k10: 36.6000,
+  k11: 67.9000,
+  k12: 0.1000,
+  k13: 31.4000,
+  k14: 62.7000,
+  k15: 94.0000,
+  k16: 26.2000,
+  k17: 57.5000,
+  k18: 88.8000,
+  k19: 21.0000,
+  k20: 52.3000,
+  k21: 83.6000,
+  k22: 15.8000,
+  k23: 47.1000,
+  k24: 78.4000,
+  k25: 10.6000,
+  k26: 41.9000,
+  k27: 73.2000,
+  k28: 5.4000,
+  k29: 36.7000,
+  k30: 68.0000,
+  k31: 0.2000,
+  k32: 31.5000,
+  k33: 62.8000,
+  k34: 94.1000,
+  k35: 26.3000,
+  k36: 57.6000,
+  k37: 88.9000,
+  k38: 21.1000,
+  k39: 52.4000,
+  k40: 83.7000,
+  k41: 15.9000,
+  k42: 47.2000,
+  k43: 78.5000,
+  k44: 10.7000,
+  k45: 42.0000,
+  k46: 73.3000,
+  k47: 5.5000,
+  k48: 36.8000,
+  k49: 68.1000,
+  k50: 0.3000,
+  k51: 31.6000,
+  k52: 62.9000,
+  k53: 94.2000,
+  k54: 26.4000,
+  k55: 57.7000,
+  k56: 89.0000,
+  k57: 21.2000,
+  k58: 52.5000,
+  k59: 83.8000,
+  k60: 16.0000,
+  k61: 47.3000,
+  k62: 78.6000,
+  k63: 10.8000,
+  k64: 42.1000,
+  k65: 73.4000,
+  k66: 5.6000,
+  k67: 36.9000,
+  k68: 68.2000,
+  k69: 0.4000,
+  k70: 31.7000,
+  k71: 63.0000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_015_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_015_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_015_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_015_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_015_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_015_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_015_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_015_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_015_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_015_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_015_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_015_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 016 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_016_META = {
+  id: 'pipeline_016',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'food' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 14073,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_016_COEF = {
+  k0: 40.2000,
+  k1: 60.1000,
+  k2: 80.0000,
+  k3: 0.8000,
+  k4: 20.7000,
+  k5: 40.6000,
+  k6: 60.5000,
+  k7: 80.4000,
+  k8: 1.2000,
+  k9: 21.1000,
+  k10: 41.0000,
+  k11: 60.9000,
+  k12: 80.8000,
+  k13: 1.6000,
+  k14: 21.5000,
+  k15: 41.4000,
+  k16: 61.3000,
+  k17: 81.2000,
+  k18: 2.0000,
+  k19: 21.9000,
+  k20: 41.8000,
+  k21: 61.7000,
+  k22: 81.6000,
+  k23: 2.4000,
+  k24: 22.3000,
+  k25: 42.2000,
+  k26: 62.1000,
+  k27: 82.0000,
+  k28: 2.8000,
+  k29: 22.7000,
+  k30: 42.6000,
+  k31: 62.5000,
+  k32: 82.4000,
+  k33: 3.2000,
+  k34: 23.1000,
+  k35: 43.0000,
+  k36: 62.9000,
+  k37: 82.8000,
+  k38: 3.6000,
+  k39: 23.5000,
+  k40: 43.4000,
+  k41: 63.3000,
+  k42: 83.2000,
+  k43: 4.0000,
+  k44: 23.9000,
+  k45: 43.8000,
+  k46: 63.7000,
+  k47: 83.6000,
+  k48: 4.4000,
+  k49: 24.3000,
+  k50: 44.2000,
+  k51: 64.1000,
+  k52: 84.0000,
+  k53: 4.8000,
+  k54: 24.7000,
+  k55: 44.6000,
+  k56: 64.5000,
+  k57: 84.4000,
+  k58: 5.2000,
+  k59: 25.1000,
+  k60: 45.0000,
+  k61: 64.9000,
+  k62: 84.8000,
+  k63: 5.6000,
+  k64: 25.5000,
+  k65: 45.4000,
+  k66: 65.3000,
+  k67: 85.2000,
+  k68: 6.0000,
+  k69: 25.9000,
+  k70: 45.8000,
+  k71: 65.7000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_016_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_016_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_016_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_016_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_016_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_016_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_016_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_016_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_016_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_016_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_016_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_016_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 017 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_017_META = {
+  id: 'pipeline_017',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'industrial' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 14950,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_017_COEF = {
+  k0: 59.5000,
+  k1: 68.0000,
+  k2: 76.5000,
+  k3: 85.0000,
+  k4: 93.5000,
+  k5: 2.9000,
+  k6: 11.4000,
+  k7: 19.9000,
+  k8: 28.4000,
+  k9: 36.9000,
+  k10: 45.4000,
+  k11: 53.9000,
+  k12: 62.4000,
+  k13: 70.9000,
+  k14: 79.4000,
+  k15: 87.9000,
+  k16: 96.4000,
+  k17: 5.8000,
+  k18: 14.3000,
+  k19: 22.8000,
+  k20: 31.3000,
+  k21: 39.8000,
+  k22: 48.3000,
+  k23: 56.8000,
+  k24: 65.3000,
+  k25: 73.8000,
+  k26: 82.3000,
+  k27: 90.8000,
+  k28: 0.2000,
+  k29: 8.7000,
+  k30: 17.2000,
+  k31: 25.7000,
+  k32: 34.2000,
+  k33: 42.7000,
+  k34: 51.2000,
+  k35: 59.7000,
+  k36: 68.2000,
+  k37: 76.7000,
+  k38: 85.2000,
+  k39: 93.7000,
+  k40: 3.1000,
+  k41: 11.6000,
+  k42: 20.1000,
+  k43: 28.6000,
+  k44: 37.1000,
+  k45: 45.6000,
+  k46: 54.1000,
+  k47: 62.6000,
+  k48: 71.1000,
+  k49: 79.6000,
+  k50: 88.1000,
+  k51: 96.6000,
+  k52: 6.0000,
+  k53: 14.5000,
+  k54: 23.0000,
+  k55: 31.5000,
+  k56: 40.0000,
+  k57: 48.5000,
+  k58: 57.0000,
+  k59: 65.5000,
+  k60: 74.0000,
+  k61: 82.5000,
+  k62: 91.0000,
+  k63: 0.4000,
+  k64: 8.9000,
+  k65: 17.4000,
+  k66: 25.9000,
+  k67: 34.4000,
+  k68: 42.9000,
+  k69: 51.4000,
+  k70: 59.9000,
+  k71: 68.4000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_017_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_017_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_017_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_017_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_017_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_017_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_017_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_017_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_017_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_017_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_017_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_017_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 018 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_018_META = {
+  id: 'pipeline_018',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'telecom' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 15827,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_018_COEF = {
+  k0: 78.8000,
+  k1: 75.9000,
+  k2: 73.0000,
+  k3: 70.1000,
+  k4: 67.2000,
+  k5: 64.3000,
+  k6: 61.4000,
+  k7: 58.5000,
+  k8: 55.6000,
+  k9: 52.7000,
+  k10: 49.8000,
+  k11: 46.9000,
+  k12: 44.0000,
+  k13: 41.1000,
+  k14: 38.2000,
+  k15: 35.3000,
+  k16: 32.4000,
+  k17: 29.5000,
+  k18: 26.6000,
+  k19: 23.7000,
+  k20: 20.8000,
+  k21: 17.9000,
+  k22: 15.0000,
+  k23: 12.1000,
+  k24: 9.2000,
+  k25: 6.3000,
+  k26: 3.4000,
+  k27: 0.5000,
+  k28: 96.7000,
+  k29: 93.8000,
+  k30: 90.9000,
+  k31: 88.0000,
+  k32: 85.1000,
+  k33: 82.2000,
+  k34: 79.3000,
+  k35: 76.4000,
+  k36: 73.5000,
+  k37: 70.6000,
+  k38: 67.7000,
+  k39: 64.8000,
+  k40: 61.9000,
+  k41: 59.0000,
+  k42: 56.1000,
+  k43: 53.2000,
+  k44: 50.3000,
+  k45: 47.4000,
+  k46: 44.5000,
+  k47: 41.6000,
+  k48: 38.7000,
+  k49: 35.8000,
+  k50: 32.9000,
+  k51: 30.0000,
+  k52: 27.1000,
+  k53: 24.2000,
+  k54: 21.3000,
+  k55: 18.4000,
+  k56: 15.5000,
+  k57: 12.6000,
+  k58: 9.7000,
+  k59: 6.8000,
+  k60: 3.9000,
+  k61: 1.0000,
+  k62: 97.2000,
+  k63: 94.3000,
+  k64: 91.4000,
+  k65: 88.5000,
+  k66: 85.6000,
+  k67: 82.7000,
+  k68: 79.8000,
+  k69: 76.9000,
+  k70: 74.0000,
+  k71: 71.1000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_018_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_018_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_018_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_018_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_018_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_018_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_018_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_018_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_018_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_018_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_018_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_018_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 019 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_019_META = {
+  id: 'pipeline_019',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'finance' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 16704,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_019_COEF = {
+  k0: 98.1000,
+  k1: 83.8000,
+  k2: 69.5000,
+  k3: 55.2000,
+  k4: 40.9000,
+  k5: 26.6000,
+  k6: 12.3000,
+  k7: 97.1000,
+  k8: 82.8000,
+  k9: 68.5000,
+  k10: 54.2000,
+  k11: 39.9000,
+  k12: 25.6000,
+  k13: 11.3000,
+  k14: 96.1000,
+  k15: 81.8000,
+  k16: 67.5000,
+  k17: 53.2000,
+  k18: 38.9000,
+  k19: 24.6000,
+  k20: 10.3000,
+  k21: 95.1000,
+  k22: 80.8000,
+  k23: 66.5000,
+  k24: 52.2000,
+  k25: 37.9000,
+  k26: 23.6000,
+  k27: 9.3000,
+  k28: 94.1000,
+  k29: 79.8000,
+  k30: 65.5000,
+  k31: 51.2000,
+  k32: 36.9000,
+  k33: 22.6000,
+  k34: 8.3000,
+  k35: 93.1000,
+  k36: 78.8000,
+  k37: 64.5000,
+  k38: 50.2000,
+  k39: 35.9000,
+  k40: 21.6000,
+  k41: 7.3000,
+  k42: 92.1000,
+  k43: 77.8000,
+  k44: 63.5000,
+  k45: 49.2000,
+  k46: 34.9000,
+  k47: 20.6000,
+  k48: 6.3000,
+  k49: 91.1000,
+  k50: 76.8000,
+  k51: 62.5000,
+  k52: 48.2000,
+  k53: 33.9000,
+  k54: 19.6000,
+  k55: 5.3000,
+  k56: 90.1000,
+  k57: 75.8000,
+  k58: 61.5000,
+  k59: 47.2000,
+  k60: 32.9000,
+  k61: 18.6000,
+  k62: 4.3000,
+  k63: 89.1000,
+  k64: 74.8000,
+  k65: 60.5000,
+  k66: 46.2000,
+  k67: 31.9000,
+  k68: 17.6000,
+  k69: 3.3000,
+  k70: 88.1000,
+  k71: 73.8000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_019_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_019_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_019_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_019_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_019_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_019_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_019_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_019_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_019_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_019_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_019_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_019_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 020 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_020_META = {
+  id: 'pipeline_020',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'freight' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 17581,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_020_COEF = {
+  k0: 18.3000,
+  k1: 91.7000,
+  k2: 66.0000,
+  k3: 40.3000,
+  k4: 14.6000,
+  k5: 88.0000,
+  k6: 62.3000,
+  k7: 36.6000,
+  k8: 10.9000,
+  k9: 84.3000,
+  k10: 58.6000,
+  k11: 32.9000,
+  k12: 7.2000,
+  k13: 80.6000,
+  k14: 54.9000,
+  k15: 29.2000,
+  k16: 3.5000,
+  k17: 76.9000,
+  k18: 51.2000,
+  k19: 25.5000,
+  k20: 98.9000,
+  k21: 73.2000,
+  k22: 47.5000,
+  k23: 21.8000,
+  k24: 95.2000,
+  k25: 69.5000,
+  k26: 43.8000,
+  k27: 18.1000,
+  k28: 91.5000,
+  k29: 65.8000,
+  k30: 40.1000,
+  k31: 14.4000,
+  k32: 87.8000,
+  k33: 62.1000,
+  k34: 36.4000,
+  k35: 10.7000,
+  k36: 84.1000,
+  k37: 58.4000,
+  k38: 32.7000,
+  k39: 7.0000,
+  k40: 80.4000,
+  k41: 54.7000,
+  k42: 29.0000,
+  k43: 3.3000,
+  k44: 76.7000,
+  k45: 51.0000,
+  k46: 25.3000,
+  k47: 98.7000,
+  k48: 73.0000,
+  k49: 47.3000,
+  k50: 21.6000,
+  k51: 95.0000,
+  k52: 69.3000,
+  k53: 43.6000,
+  k54: 17.9000,
+  k55: 91.3000,
+  k56: 65.6000,
+  k57: 39.9000,
+  k58: 14.2000,
+  k59: 87.6000,
+  k60: 61.9000,
+  k61: 36.2000,
+  k62: 10.5000,
+  k63: 83.9000,
+  k64: 58.2000,
+  k65: 32.5000,
+  k66: 6.8000,
+  k67: 80.2000,
+  k68: 54.5000,
+  k69: 28.8000,
+  k70: 3.1000,
+  k71: 76.5000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_020_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_020_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_020_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_020_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_020_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_020_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_020_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_020_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_020_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_020_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_020_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_020_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 021 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_021_META = {
+  id: 'pipeline_021',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'energy' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 18458,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_021_COEF = {
+  k0: 37.6000,
+  k1: 0.5000,
+  k2: 62.5000,
+  k3: 25.4000,
+  k4: 87.4000,
+  k5: 50.3000,
+  k6: 13.2000,
+  k7: 75.2000,
+  k8: 38.1000,
+  k9: 1.0000,
+  k10: 63.0000,
+  k11: 25.9000,
+  k12: 87.9000,
+  k13: 50.8000,
+  k14: 13.7000,
+  k15: 75.7000,
+  k16: 38.6000,
+  k17: 1.5000,
+  k18: 63.5000,
+  k19: 26.4000,
+  k20: 88.4000,
+  k21: 51.3000,
+  k22: 14.2000,
+  k23: 76.2000,
+  k24: 39.1000,
+  k25: 2.0000,
+  k26: 64.0000,
+  k27: 26.9000,
+  k28: 88.9000,
+  k29: 51.8000,
+  k30: 14.7000,
+  k31: 76.7000,
+  k32: 39.6000,
+  k33: 2.5000,
+  k34: 64.5000,
+  k35: 27.4000,
+  k36: 89.4000,
+  k37: 52.3000,
+  k38: 15.2000,
+  k39: 77.2000,
+  k40: 40.1000,
+  k41: 3.0000,
+  k42: 65.0000,
+  k43: 27.9000,
+  k44: 89.9000,
+  k45: 52.8000,
+  k46: 15.7000,
+  k47: 77.7000,
+  k48: 40.6000,
+  k49: 3.5000,
+  k50: 65.5000,
+  k51: 28.4000,
+  k52: 90.4000,
+  k53: 53.3000,
+  k54: 16.2000,
+  k55: 78.2000,
+  k56: 41.1000,
+  k57: 4.0000,
+  k58: 66.0000,
+  k59: 28.9000,
+  k60: 90.9000,
+  k61: 53.8000,
+  k62: 16.7000,
+  k63: 78.7000,
+  k64: 41.6000,
+  k65: 4.5000,
+  k66: 66.5000,
+  k67: 29.4000,
+  k68: 91.4000,
+  k69: 54.3000,
+  k70: 17.2000,
+  k71: 79.2000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_021_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_021_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_021_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_021_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_021_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_021_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_021_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_021_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_021_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_021_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_021_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_021_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 022 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_022_META = {
+  id: 'pipeline_022',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'water' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 19335,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_022_COEF = {
+  k0: 56.9000,
+  k1: 8.4000,
+  k2: 59.0000,
+  k3: 10.5000,
+  k4: 61.1000,
+  k5: 12.6000,
+  k6: 63.2000,
+  k7: 14.7000,
+  k8: 65.3000,
+  k9: 16.8000,
+  k10: 67.4000,
+  k11: 18.9000,
+  k12: 69.5000,
+  k13: 21.0000,
+  k14: 71.6000,
+  k15: 23.1000,
+  k16: 73.7000,
+  k17: 25.2000,
+  k18: 75.8000,
+  k19: 27.3000,
+  k20: 77.9000,
+  k21: 29.4000,
+  k22: 80.0000,
+  k23: 31.5000,
+  k24: 82.1000,
+  k25: 33.6000,
+  k26: 84.2000,
+  k27: 35.7000,
+  k28: 86.3000,
+  k29: 37.8000,
+  k30: 88.4000,
+  k31: 39.9000,
+  k32: 90.5000,
+  k33: 42.0000,
+  k34: 92.6000,
+  k35: 44.1000,
+  k36: 94.7000,
+  k37: 46.2000,
+  k38: 96.8000,
+  k39: 48.3000,
+  k40: 98.9000,
+  k41: 50.4000,
+  k42: 1.9000,
+  k43: 52.5000,
+  k44: 4.0000,
+  k45: 54.6000,
+  k46: 6.1000,
+  k47: 56.7000,
+  k48: 8.2000,
+  k49: 58.8000,
+  k50: 10.3000,
+  k51: 60.9000,
+  k52: 12.4000,
+  k53: 63.0000,
+  k54: 14.5000,
+  k55: 65.1000,
+  k56: 16.6000,
+  k57: 67.2000,
+  k58: 18.7000,
+  k59: 69.3000,
+  k60: 20.8000,
+  k61: 71.4000,
+  k62: 22.9000,
+  k63: 73.5000,
+  k64: 25.0000,
+  k65: 75.6000,
+  k66: 27.1000,
+  k67: 77.7000,
+  k68: 29.2000,
+  k69: 79.8000,
+  k70: 31.3000,
+  k71: 81.9000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_022_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_022_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_022_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_022_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_022_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_022_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_022_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_022_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_022_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_022_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_022_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_022_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 023 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_023_META = {
+  id: 'pipeline_023',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'digital' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 20212,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_023_COEF = {
+  k0: 76.2000,
+  k1: 16.3000,
+  k2: 55.5000,
+  k3: 94.7000,
+  k4: 34.8000,
+  k5: 74.0000,
+  k6: 14.1000,
+  k7: 53.3000,
+  k8: 92.5000,
+  k9: 32.6000,
+  k10: 71.8000,
+  k11: 11.9000,
+  k12: 51.1000,
+  k13: 90.3000,
+  k14: 30.4000,
+  k15: 69.6000,
+  k16: 9.7000,
+  k17: 48.9000,
+  k18: 88.1000,
+  k19: 28.2000,
+  k20: 67.4000,
+  k21: 7.5000,
+  k22: 46.7000,
+  k23: 85.9000,
+  k24: 26.0000,
+  k25: 65.2000,
+  k26: 5.3000,
+  k27: 44.5000,
+  k28: 83.7000,
+  k29: 23.8000,
+  k30: 63.0000,
+  k31: 3.1000,
+  k32: 42.3000,
+  k33: 81.5000,
+  k34: 21.6000,
+  k35: 60.8000,
+  k36: 0.9000,
+  k37: 40.1000,
+  k38: 79.3000,
+  k39: 19.4000,
+  k40: 58.6000,
+  k41: 97.8000,
+  k42: 37.9000,
+  k43: 77.1000,
+  k44: 17.2000,
+  k45: 56.4000,
+  k46: 95.6000,
+  k47: 35.7000,
+  k48: 74.9000,
+  k49: 15.0000,
+  k50: 54.2000,
+  k51: 93.4000,
+  k52: 33.5000,
+  k53: 72.7000,
+  k54: 12.8000,
+  k55: 52.0000,
+  k56: 91.2000,
+  k57: 31.3000,
+  k58: 70.5000,
+  k59: 10.6000,
+  k60: 49.8000,
+  k61: 89.0000,
+  k62: 29.1000,
+  k63: 68.3000,
+  k64: 8.4000,
+  k65: 47.6000,
+  k66: 86.8000,
+  k67: 26.9000,
+  k68: 66.1000,
+  k69: 6.2000,
+  k70: 45.4000,
+  k71: 84.6000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_023_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_023_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_023_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_023_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_023_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_023_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_023_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_023_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_023_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_023_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_023_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_023_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 024 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_024_META = {
+  id: 'pipeline_024',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'trade' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 21089,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_024_COEF = {
+  k0: 95.5000,
+  k1: 24.2000,
+  k2: 52.0000,
+  k3: 79.8000,
+  k4: 8.5000,
+  k5: 36.3000,
+  k6: 64.1000,
+  k7: 91.9000,
+  k8: 20.6000,
+  k9: 48.4000,
+  k10: 76.2000,
+  k11: 4.9000,
+  k12: 32.7000,
+  k13: 60.5000,
+  k14: 88.3000,
+  k15: 17.0000,
+  k16: 44.8000,
+  k17: 72.6000,
+  k18: 1.3000,
+  k19: 29.1000,
+  k20: 56.9000,
+  k21: 84.7000,
+  k22: 13.4000,
+  k23: 41.2000,
+  k24: 69.0000,
+  k25: 96.8000,
+  k26: 25.5000,
+  k27: 53.3000,
+  k28: 81.1000,
+  k29: 9.8000,
+  k30: 37.6000,
+  k31: 65.4000,
+  k32: 93.2000,
+  k33: 21.9000,
+  k34: 49.7000,
+  k35: 77.5000,
+  k36: 6.2000,
+  k37: 34.0000,
+  k38: 61.8000,
+  k39: 89.6000,
+  k40: 18.3000,
+  k41: 46.1000,
+  k42: 73.9000,
+  k43: 2.6000,
+  k44: 30.4000,
+  k45: 58.2000,
+  k46: 86.0000,
+  k47: 14.7000,
+  k48: 42.5000,
+  k49: 70.3000,
+  k50: 98.1000,
+  k51: 26.8000,
+  k52: 54.6000,
+  k53: 82.4000,
+  k54: 11.1000,
+  k55: 38.9000,
+  k56: 66.7000,
+  k57: 94.5000,
+  k58: 23.2000,
+  k59: 51.0000,
+  k60: 78.8000,
+  k61: 7.5000,
+  k62: 35.3000,
+  k63: 63.1000,
+  k64: 90.9000,
+  k65: 19.6000,
+  k66: 47.4000,
+  k67: 75.2000,
+  k68: 3.9000,
+  k69: 31.7000,
+  k70: 59.5000,
+  k71: 87.3000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_024_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_024_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_024_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_024_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_024_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_024_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_024_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_024_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_024_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_024_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_024_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_024_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 025 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_025_META = {
+  id: 'pipeline_025',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'pharma' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 21966,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_025_COEF = {
+  k0: 15.7000,
+  k1: 32.1000,
+  k2: 48.5000,
+  k3: 64.9000,
+  k4: 81.3000,
+  k5: 97.7000,
+  k6: 15.0000,
+  k7: 31.4000,
+  k8: 47.8000,
+  k9: 64.2000,
+  k10: 80.6000,
+  k11: 97.0000,
+  k12: 14.3000,
+  k13: 30.7000,
+  k14: 47.1000,
+  k15: 63.5000,
+  k16: 79.9000,
+  k17: 96.3000,
+  k18: 13.6000,
+  k19: 30.0000,
+  k20: 46.4000,
+  k21: 62.8000,
+  k22: 79.2000,
+  k23: 95.6000,
+  k24: 12.9000,
+  k25: 29.3000,
+  k26: 45.7000,
+  k27: 62.1000,
+  k28: 78.5000,
+  k29: 94.9000,
+  k30: 12.2000,
+  k31: 28.6000,
+  k32: 45.0000,
+  k33: 61.4000,
+  k34: 77.8000,
+  k35: 94.2000,
+  k36: 11.5000,
+  k37: 27.9000,
+  k38: 44.3000,
+  k39: 60.7000,
+  k40: 77.1000,
+  k41: 93.5000,
+  k42: 10.8000,
+  k43: 27.2000,
+  k44: 43.6000,
+  k45: 60.0000,
+  k46: 76.4000,
+  k47: 92.8000,
+  k48: 10.1000,
+  k49: 26.5000,
+  k50: 42.9000,
+  k51: 59.3000,
+  k52: 75.7000,
+  k53: 92.1000,
+  k54: 9.4000,
+  k55: 25.8000,
+  k56: 42.2000,
+  k57: 58.6000,
+  k58: 75.0000,
+  k59: 91.4000,
+  k60: 8.7000,
+  k61: 25.1000,
+  k62: 41.5000,
+  k63: 57.9000,
+  k64: 74.3000,
+  k65: 90.7000,
+  k66: 8.0000,
+  k67: 24.4000,
+  k68: 40.8000,
+  k69: 57.2000,
+  k70: 73.6000,
+  k71: 90.0000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_025_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_025_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_025_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_025_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_025_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_025_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_025_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_025_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_025_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_025_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_025_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_025_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 026 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_026_META = {
+  id: 'pipeline_026',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'food' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 22843,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_026_COEF = {
+  k0: 35.0000,
+  k1: 40.0000,
+  k2: 45.0000,
+  k3: 50.0000,
+  k4: 55.0000,
+  k5: 60.0000,
+  k6: 65.0000,
+  k7: 70.0000,
+  k8: 75.0000,
+  k9: 80.0000,
+  k10: 85.0000,
+  k11: 90.0000,
+  k12: 95.0000,
+  k13: 0.9000,
+  k14: 5.9000,
+  k15: 10.9000,
+  k16: 15.9000,
+  k17: 20.9000,
+  k18: 25.9000,
+  k19: 30.9000,
+  k20: 35.9000,
+  k21: 40.9000,
+  k22: 45.9000,
+  k23: 50.9000,
+  k24: 55.9000,
+  k25: 60.9000,
+  k26: 65.9000,
+  k27: 70.9000,
+  k28: 75.9000,
+  k29: 80.9000,
+  k30: 85.9000,
+  k31: 90.9000,
+  k32: 95.9000,
+  k33: 1.8000,
+  k34: 6.8000,
+  k35: 11.8000,
+  k36: 16.8000,
+  k37: 21.8000,
+  k38: 26.8000,
+  k39: 31.8000,
+  k40: 36.8000,
+  k41: 41.8000,
+  k42: 46.8000,
+  k43: 51.8000,
+  k44: 56.8000,
+  k45: 61.8000,
+  k46: 66.8000,
+  k47: 71.8000,
+  k48: 76.8000,
+  k49: 81.8000,
+  k50: 86.8000,
+  k51: 91.8000,
+  k52: 96.8000,
+  k53: 2.7000,
+  k54: 7.7000,
+  k55: 12.7000,
+  k56: 17.7000,
+  k57: 22.7000,
+  k58: 27.7000,
+  k59: 32.7000,
+  k60: 37.7000,
+  k61: 42.7000,
+  k62: 47.7000,
+  k63: 52.7000,
+  k64: 57.7000,
+  k65: 62.7000,
+  k66: 67.7000,
+  k67: 72.7000,
+  k68: 77.7000,
+  k69: 82.7000,
+  k70: 87.7000,
+  k71: 92.7000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_026_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_026_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_026_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_026_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_026_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_026_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_026_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_026_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_026_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_026_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_026_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_026_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 027 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_027_META = {
+  id: 'pipeline_027',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'industrial' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 23720,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_027_COEF = {
+  k0: 54.3000,
+  k1: 47.9000,
+  k2: 41.5000,
+  k3: 35.1000,
+  k4: 28.7000,
+  k5: 22.3000,
+  k6: 15.9000,
+  k7: 9.5000,
+  k8: 3.1000,
+  k9: 95.8000,
+  k10: 89.4000,
+  k11: 83.0000,
+  k12: 76.6000,
+  k13: 70.2000,
+  k14: 63.8000,
+  k15: 57.4000,
+  k16: 51.0000,
+  k17: 44.6000,
+  k18: 38.2000,
+  k19: 31.8000,
+  k20: 25.4000,
+  k21: 19.0000,
+  k22: 12.6000,
+  k23: 6.2000,
+  k24: 98.9000,
+  k25: 92.5000,
+  k26: 86.1000,
+  k27: 79.7000,
+  k28: 73.3000,
+  k29: 66.9000,
+  k30: 60.5000,
+  k31: 54.1000,
+  k32: 47.7000,
+  k33: 41.3000,
+  k34: 34.9000,
+  k35: 28.5000,
+  k36: 22.1000,
+  k37: 15.7000,
+  k38: 9.3000,
+  k39: 2.9000,
+  k40: 95.6000,
+  k41: 89.2000,
+  k42: 82.8000,
+  k43: 76.4000,
+  k44: 70.0000,
+  k45: 63.6000,
+  k46: 57.2000,
+  k47: 50.8000,
+  k48: 44.4000,
+  k49: 38.0000,
+  k50: 31.6000,
+  k51: 25.2000,
+  k52: 18.8000,
+  k53: 12.4000,
+  k54: 6.0000,
+  k55: 98.7000,
+  k56: 92.3000,
+  k57: 85.9000,
+  k58: 79.5000,
+  k59: 73.1000,
+  k60: 66.7000,
+  k61: 60.3000,
+  k62: 53.9000,
+  k63: 47.5000,
+  k64: 41.1000,
+  k65: 34.7000,
+  k66: 28.3000,
+  k67: 21.9000,
+  k68: 15.5000,
+  k69: 9.1000,
+  k70: 2.7000,
+  k71: 95.4000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_027_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_027_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_027_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_027_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_027_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_027_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_027_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_027_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_027_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_027_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_027_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_027_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 028 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_028_META = {
+  id: 'pipeline_028',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'telecom' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 24597,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_028_COEF = {
+  k0: 73.6000,
+  k1: 55.8000,
+  k2: 38.0000,
+  k3: 20.2000,
+  k4: 2.4000,
+  k5: 83.7000,
+  k6: 65.9000,
+  k7: 48.1000,
+  k8: 30.3000,
+  k9: 12.5000,
+  k10: 93.8000,
+  k11: 76.0000,
+  k12: 58.2000,
+  k13: 40.4000,
+  k14: 22.6000,
+  k15: 4.8000,
+  k16: 86.1000,
+  k17: 68.3000,
+  k18: 50.5000,
+  k19: 32.7000,
+  k20: 14.9000,
+  k21: 96.2000,
+  k22: 78.4000,
+  k23: 60.6000,
+  k24: 42.8000,
+  k25: 25.0000,
+  k26: 7.2000,
+  k27: 88.5000,
+  k28: 70.7000,
+  k29: 52.9000,
+  k30: 35.1000,
+  k31: 17.3000,
+  k32: 98.6000,
+  k33: 80.8000,
+  k34: 63.0000,
+  k35: 45.2000,
+  k36: 27.4000,
+  k37: 9.6000,
+  k38: 90.9000,
+  k39: 73.1000,
+  k40: 55.3000,
+  k41: 37.5000,
+  k42: 19.7000,
+  k43: 1.9000,
+  k44: 83.2000,
+  k45: 65.4000,
+  k46: 47.6000,
+  k47: 29.8000,
+  k48: 12.0000,
+  k49: 93.3000,
+  k50: 75.5000,
+  k51: 57.7000,
+  k52: 39.9000,
+  k53: 22.1000,
+  k54: 4.3000,
+  k55: 85.6000,
+  k56: 67.8000,
+  k57: 50.0000,
+  k58: 32.2000,
+  k59: 14.4000,
+  k60: 95.7000,
+  k61: 77.9000,
+  k62: 60.1000,
+  k63: 42.3000,
+  k64: 24.5000,
+  k65: 6.7000,
+  k66: 88.0000,
+  k67: 70.2000,
+  k68: 52.4000,
+  k69: 34.6000,
+  k70: 16.8000,
+  k71: 98.1000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_028_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_028_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_028_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_028_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_028_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_028_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_028_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_028_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_028_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_028_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_028_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_028_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 029 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_029_META = {
+  id: 'pipeline_029',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'finance' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 25474,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_029_COEF = {
+  k0: 92.9000,
+  k1: 63.7000,
+  k2: 34.5000,
+  k3: 5.3000,
+  k4: 75.2000,
+  k5: 46.0000,
+  k6: 16.8000,
+  k7: 86.7000,
+  k8: 57.5000,
+  k9: 28.3000,
+  k10: 98.2000,
+  k11: 69.0000,
+  k12: 39.8000,
+  k13: 10.6000,
+  k14: 80.5000,
+  k15: 51.3000,
+  k16: 22.1000,
+  k17: 92.0000,
+  k18: 62.8000,
+  k19: 33.6000,
+  k20: 4.4000,
+  k21: 74.3000,
+  k22: 45.1000,
+  k23: 15.9000,
+  k24: 85.8000,
+  k25: 56.6000,
+  k26: 27.4000,
+  k27: 97.3000,
+  k28: 68.1000,
+  k29: 38.9000,
+  k30: 9.7000,
+  k31: 79.6000,
+  k32: 50.4000,
+  k33: 21.2000,
+  k34: 91.1000,
+  k35: 61.9000,
+  k36: 32.7000,
+  k37: 3.5000,
+  k38: 73.4000,
+  k39: 44.2000,
+  k40: 15.0000,
+  k41: 84.9000,
+  k42: 55.7000,
+  k43: 26.5000,
+  k44: 96.4000,
+  k45: 67.2000,
+  k46: 38.0000,
+  k47: 8.8000,
+  k48: 78.7000,
+  k49: 49.5000,
+  k50: 20.3000,
+  k51: 90.2000,
+  k52: 61.0000,
+  k53: 31.8000,
+  k54: 2.6000,
+  k55: 72.5000,
+  k56: 43.3000,
+  k57: 14.1000,
+  k58: 84.0000,
+  k59: 54.8000,
+  k60: 25.6000,
+  k61: 95.5000,
+  k62: 66.3000,
+  k63: 37.1000,
+  k64: 7.9000,
+  k65: 77.8000,
+  k66: 48.6000,
+  k67: 19.4000,
+  k68: 89.3000,
+  k69: 60.1000,
+  k70: 30.9000,
+  k71: 1.7000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_029_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_029_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_029_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_029_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_029_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_029_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_029_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_029_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_029_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_029_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_029_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_029_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 030 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_030_META = {
+  id: 'pipeline_030',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'freight' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 26351,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_030_COEF = {
+  k0: 13.1000,
+  k1: 71.6000,
+  k2: 31.0000,
+  k3: 89.5000,
+  k4: 48.9000,
+  k5: 8.3000,
+  k6: 66.8000,
+  k7: 26.2000,
+  k8: 84.7000,
+  k9: 44.1000,
+  k10: 3.5000,
+  k11: 62.0000,
+  k12: 21.4000,
+  k13: 79.9000,
+  k14: 39.3000,
+  k15: 97.8000,
+  k16: 57.2000,
+  k17: 16.6000,
+  k18: 75.1000,
+  k19: 34.5000,
+  k20: 93.0000,
+  k21: 52.4000,
+  k22: 11.8000,
+  k23: 70.3000,
+  k24: 29.7000,
+  k25: 88.2000,
+  k26: 47.6000,
+  k27: 7.0000,
+  k28: 65.5000,
+  k29: 24.9000,
+  k30: 83.4000,
+  k31: 42.8000,
+  k32: 2.2000,
+  k33: 60.7000,
+  k34: 20.1000,
+  k35: 78.6000,
+  k36: 38.0000,
+  k37: 96.5000,
+  k38: 55.9000,
+  k39: 15.3000,
+  k40: 73.8000,
+  k41: 33.2000,
+  k42: 91.7000,
+  k43: 51.1000,
+  k44: 10.5000,
+  k45: 69.0000,
+  k46: 28.4000,
+  k47: 86.9000,
+  k48: 46.3000,
+  k49: 5.7000,
+  k50: 64.2000,
+  k51: 23.6000,
+  k52: 82.1000,
+  k53: 41.5000,
+  k54: 0.9000,
+  k55: 59.4000,
+  k56: 18.8000,
+  k57: 77.3000,
+  k58: 36.7000,
+  k59: 95.2000,
+  k60: 54.6000,
+  k61: 14.0000,
+  k62: 72.5000,
+  k63: 31.9000,
+  k64: 90.4000,
+  k65: 49.8000,
+  k66: 9.2000,
+  k67: 67.7000,
+  k68: 27.1000,
+  k69: 85.6000,
+  k70: 45.0000,
+  k71: 4.4000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_030_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_030_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_030_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_030_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_030_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_030_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_030_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_030_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_030_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_030_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_030_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_030_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 031 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_031_META = {
+  id: 'pipeline_031',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'energy' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 27228,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_031_COEF = {
+  k0: 32.4000,
+  k1: 79.5000,
+  k2: 27.5000,
+  k3: 74.6000,
+  k4: 22.6000,
+  k5: 69.7000,
+  k6: 17.7000,
+  k7: 64.8000,
+  k8: 12.8000,
+  k9: 59.9000,
+  k10: 7.9000,
+  k11: 55.0000,
+  k12: 3.0000,
+  k13: 50.1000,
+  k14: 97.2000,
+  k15: 45.2000,
+  k16: 92.3000,
+  k17: 40.3000,
+  k18: 87.4000,
+  k19: 35.4000,
+  k20: 82.5000,
+  k21: 30.5000,
+  k22: 77.6000,
+  k23: 25.6000,
+  k24: 72.7000,
+  k25: 20.7000,
+  k26: 67.8000,
+  k27: 15.8000,
+  k28: 62.9000,
+  k29: 10.9000,
+  k30: 58.0000,
+  k31: 6.0000,
+  k32: 53.1000,
+  k33: 1.1000,
+  k34: 48.2000,
+  k35: 95.3000,
+  k36: 43.3000,
+  k37: 90.4000,
+  k38: 38.4000,
+  k39: 85.5000,
+  k40: 33.5000,
+  k41: 80.6000,
+  k42: 28.6000,
+  k43: 75.7000,
+  k44: 23.7000,
+  k45: 70.8000,
+  k46: 18.8000,
+  k47: 65.9000,
+  k48: 13.9000,
+  k49: 61.0000,
+  k50: 9.0000,
+  k51: 56.1000,
+  k52: 4.1000,
+  k53: 51.2000,
+  k54: 98.3000,
+  k55: 46.3000,
+  k56: 93.4000,
+  k57: 41.4000,
+  k58: 88.5000,
+  k59: 36.5000,
+  k60: 83.6000,
+  k61: 31.6000,
+  k62: 78.7000,
+  k63: 26.7000,
+  k64: 73.8000,
+  k65: 21.8000,
+  k66: 68.9000,
+  k67: 16.9000,
+  k68: 64.0000,
+  k69: 12.0000,
+  k70: 59.1000,
+  k71: 7.1000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_031_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_031_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_031_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_031_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_031_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_031_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_031_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_031_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_031_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_031_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_031_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_031_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 032 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_032_META = {
+  id: 'pipeline_032',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'water' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 28105,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_032_COEF = {
+  k0: 51.7000,
+  k1: 87.4000,
+  k2: 24.0000,
+  k3: 59.7000,
+  k4: 95.4000,
+  k5: 32.0000,
+  k6: 67.7000,
+  k7: 4.3000,
+  k8: 40.0000,
+  k9: 75.7000,
+  k10: 12.3000,
+  k11: 48.0000,
+  k12: 83.7000,
+  k13: 20.3000,
+  k14: 56.0000,
+  k15: 91.7000,
+  k16: 28.3000,
+  k17: 64.0000,
+  k18: 0.6000,
+  k19: 36.3000,
+  k20: 72.0000,
+  k21: 8.6000,
+  k22: 44.3000,
+  k23: 80.0000,
+  k24: 16.6000,
+  k25: 52.3000,
+  k26: 88.0000,
+  k27: 24.6000,
+  k28: 60.3000,
+  k29: 96.0000,
+  k30: 32.6000,
+  k31: 68.3000,
+  k32: 4.9000,
+  k33: 40.6000,
+  k34: 76.3000,
+  k35: 12.9000,
+  k36: 48.6000,
+  k37: 84.3000,
+  k38: 20.9000,
+  k39: 56.6000,
+  k40: 92.3000,
+  k41: 28.9000,
+  k42: 64.6000,
+  k43: 1.2000,
+  k44: 36.9000,
+  k45: 72.6000,
+  k46: 9.2000,
+  k47: 44.9000,
+  k48: 80.6000,
+  k49: 17.2000,
+  k50: 52.9000,
+  k51: 88.6000,
+  k52: 25.2000,
+  k53: 60.9000,
+  k54: 96.6000,
+  k55: 33.2000,
+  k56: 68.9000,
+  k57: 5.5000,
+  k58: 41.2000,
+  k59: 76.9000,
+  k60: 13.5000,
+  k61: 49.2000,
+  k62: 84.9000,
+  k63: 21.5000,
+  k64: 57.2000,
+  k65: 92.9000,
+  k66: 29.5000,
+  k67: 65.2000,
+  k68: 1.8000,
+  k69: 37.5000,
+  k70: 73.2000,
+  k71: 9.8000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_032_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_032_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_032_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_032_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_032_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_032_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_032_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_032_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_032_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_032_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_032_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_032_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 033 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_033_META = {
+  id: 'pipeline_033',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'digital' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 28982,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_033_COEF = {
+  k0: 71.0000,
+  k1: 95.3000,
+  k2: 20.5000,
+  k3: 44.8000,
+  k4: 69.1000,
+  k5: 93.4000,
+  k6: 18.6000,
+  k7: 42.9000,
+  k8: 67.2000,
+  k9: 91.5000,
+  k10: 16.7000,
+  k11: 41.0000,
+  k12: 65.3000,
+  k13: 89.6000,
+  k14: 14.8000,
+  k15: 39.1000,
+  k16: 63.4000,
+  k17: 87.7000,
+  k18: 12.9000,
+  k19: 37.2000,
+  k20: 61.5000,
+  k21: 85.8000,
+  k22: 11.0000,
+  k23: 35.3000,
+  k24: 59.6000,
+  k25: 83.9000,
+  k26: 9.1000,
+  k27: 33.4000,
+  k28: 57.7000,
+  k29: 82.0000,
+  k30: 7.2000,
+  k31: 31.5000,
+  k32: 55.8000,
+  k33: 80.1000,
+  k34: 5.3000,
+  k35: 29.6000,
+  k36: 53.9000,
+  k37: 78.2000,
+  k38: 3.4000,
+  k39: 27.7000,
+  k40: 52.0000,
+  k41: 76.3000,
+  k42: 1.5000,
+  k43: 25.8000,
+  k44: 50.1000,
+  k45: 74.4000,
+  k46: 98.7000,
+  k47: 23.9000,
+  k48: 48.2000,
+  k49: 72.5000,
+  k50: 96.8000,
+  k51: 22.0000,
+  k52: 46.3000,
+  k53: 70.6000,
+  k54: 94.9000,
+  k55: 20.1000,
+  k56: 44.4000,
+  k57: 68.7000,
+  k58: 93.0000,
+  k59: 18.2000,
+  k60: 42.5000,
+  k61: 66.8000,
+  k62: 91.1000,
+  k63: 16.3000,
+  k64: 40.6000,
+  k65: 64.9000,
+  k66: 89.2000,
+  k67: 14.4000,
+  k68: 38.7000,
+  k69: 63.0000,
+  k70: 87.3000,
+  k71: 12.5000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_033_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_033_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_033_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_033_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_033_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_033_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_033_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_033_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_033_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_033_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_033_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_033_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 034 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_034_META = {
+  id: 'pipeline_034',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'trade' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 29859,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_034_COEF = {
+  k0: 90.3000,
+  k1: 4.1000,
+  k2: 17.0000,
+  k3: 29.9000,
+  k4: 42.8000,
+  k5: 55.7000,
+  k6: 68.6000,
+  k7: 81.5000,
+  k8: 94.4000,
+  k9: 8.2000,
+  k10: 21.1000,
+  k11: 34.0000,
+  k12: 46.9000,
+  k13: 59.8000,
+  k14: 72.7000,
+  k15: 85.6000,
+  k16: 98.5000,
+  k17: 12.3000,
+  k18: 25.2000,
+  k19: 38.1000,
+  k20: 51.0000,
+  k21: 63.9000,
+  k22: 76.8000,
+  k23: 89.7000,
+  k24: 3.5000,
+  k25: 16.4000,
+  k26: 29.3000,
+  k27: 42.2000,
+  k28: 55.1000,
+  k29: 68.0000,
+  k30: 80.9000,
+  k31: 93.8000,
+  k32: 7.6000,
+  k33: 20.5000,
+  k34: 33.4000,
+  k35: 46.3000,
+  k36: 59.2000,
+  k37: 72.1000,
+  k38: 85.0000,
+  k39: 97.9000,
+  k40: 11.7000,
+  k41: 24.6000,
+  k42: 37.5000,
+  k43: 50.4000,
+  k44: 63.3000,
+  k45: 76.2000,
+  k46: 89.1000,
+  k47: 2.9000,
+  k48: 15.8000,
+  k49: 28.7000,
+  k50: 41.6000,
+  k51: 54.5000,
+  k52: 67.4000,
+  k53: 80.3000,
+  k54: 93.2000,
+  k55: 7.0000,
+  k56: 19.9000,
+  k57: 32.8000,
+  k58: 45.7000,
+  k59: 58.6000,
+  k60: 71.5000,
+  k61: 84.4000,
+  k62: 97.3000,
+  k63: 11.1000,
+  k64: 24.0000,
+  k65: 36.9000,
+  k66: 49.8000,
+  k67: 62.7000,
+  k68: 75.6000,
+  k69: 88.5000,
+  k70: 2.3000,
+  k71: 15.2000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_034_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_034_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_034_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_034_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_034_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_034_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_034_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_034_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_034_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_034_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_034_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_034_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 035 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_035_META = {
+  id: 'pipeline_035',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'pharma' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 30736,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_035_COEF = {
+  k0: 10.5000,
+  k1: 12.0000,
+  k2: 13.5000,
+  k3: 15.0000,
+  k4: 16.5000,
+  k5: 18.0000,
+  k6: 19.5000,
+  k7: 21.0000,
+  k8: 22.5000,
+  k9: 24.0000,
+  k10: 25.5000,
+  k11: 27.0000,
+  k12: 28.5000,
+  k13: 30.0000,
+  k14: 31.5000,
+  k15: 33.0000,
+  k16: 34.5000,
+  k17: 36.0000,
+  k18: 37.5000,
+  k19: 39.0000,
+  k20: 40.5000,
+  k21: 42.0000,
+  k22: 43.5000,
+  k23: 45.0000,
+  k24: 46.5000,
+  k25: 48.0000,
+  k26: 49.5000,
+  k27: 51.0000,
+  k28: 52.5000,
+  k29: 54.0000,
+  k30: 55.5000,
+  k31: 57.0000,
+  k32: 58.5000,
+  k33: 60.0000,
+  k34: 61.5000,
+  k35: 63.0000,
+  k36: 64.5000,
+  k37: 66.0000,
+  k38: 67.5000,
+  k39: 69.0000,
+  k40: 70.5000,
+  k41: 72.0000,
+  k42: 73.5000,
+  k43: 75.0000,
+  k44: 76.5000,
+  k45: 78.0000,
+  k46: 79.5000,
+  k47: 81.0000,
+  k48: 82.5000,
+  k49: 84.0000,
+  k50: 85.5000,
+  k51: 87.0000,
+  k52: 88.5000,
+  k53: 90.0000,
+  k54: 91.5000,
+  k55: 93.0000,
+  k56: 94.5000,
+  k57: 96.0000,
+  k58: 97.5000,
+  k59: 99.0000,
+  k60: 1.4000,
+  k61: 2.9000,
+  k62: 4.4000,
+  k63: 5.9000,
+  k64: 7.4000,
+  k65: 8.9000,
+  k66: 10.4000,
+  k67: 11.9000,
+  k68: 13.4000,
+  k69: 14.9000,
+  k70: 16.4000,
+  k71: 17.9000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_035_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_035_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_035_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_035_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_035_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_035_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_035_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_035_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_035_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_035_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_035_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_035_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 036 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_036_META = {
+  id: 'pipeline_036',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'food' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 31613,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_036_COEF = {
+  k0: 29.8000,
+  k1: 19.9000,
+  k2: 10.0000,
+  k3: 0.1000,
+  k4: 89.3000,
+  k5: 79.4000,
+  k6: 69.5000,
+  k7: 59.6000,
+  k8: 49.7000,
+  k9: 39.8000,
+  k10: 29.9000,
+  k11: 20.0000,
+  k12: 10.1000,
+  k13: 0.2000,
+  k14: 89.4000,
+  k15: 79.5000,
+  k16: 69.6000,
+  k17: 59.7000,
+  k18: 49.8000,
+  k19: 39.9000,
+  k20: 30.0000,
+  k21: 20.1000,
+  k22: 10.2000,
+  k23: 0.3000,
+  k24: 89.5000,
+  k25: 79.6000,
+  k26: 69.7000,
+  k27: 59.8000,
+  k28: 49.9000,
+  k29: 40.0000,
+  k30: 30.1000,
+  k31: 20.2000,
+  k32: 10.3000,
+  k33: 0.4000,
+  k34: 89.6000,
+  k35: 79.7000,
+  k36: 69.8000,
+  k37: 59.9000,
+  k38: 50.0000,
+  k39: 40.1000,
+  k40: 30.2000,
+  k41: 20.3000,
+  k42: 10.4000,
+  k43: 0.5000,
+  k44: 89.7000,
+  k45: 79.8000,
+  k46: 69.9000,
+  k47: 60.0000,
+  k48: 50.1000,
+  k49: 40.2000,
+  k50: 30.3000,
+  k51: 20.4000,
+  k52: 10.5000,
+  k53: 0.6000,
+  k54: 89.8000,
+  k55: 79.9000,
+  k56: 70.0000,
+  k57: 60.1000,
+  k58: 50.2000,
+  k59: 40.3000,
+  k60: 30.4000,
+  k61: 20.5000,
+  k62: 10.6000,
+  k63: 0.7000,
+  k64: 89.9000,
+  k65: 80.0000,
+  k66: 70.1000,
+  k67: 60.2000,
+  k68: 50.3000,
+  k69: 40.4000,
+  k70: 30.5000,
+  k71: 20.6000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_036_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_036_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_036_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_036_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_036_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_036_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_036_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_036_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_036_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_036_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_036_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_036_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 037 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_037_META = {
+  id: 'pipeline_037',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'industrial' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 32490,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_037_COEF = {
+  k0: 49.1000,
+  k1: 27.8000,
+  k2: 6.5000,
+  k3: 84.3000,
+  k4: 63.0000,
+  k5: 41.7000,
+  k6: 20.4000,
+  k7: 98.2000,
+  k8: 76.9000,
+  k9: 55.6000,
+  k10: 34.3000,
+  k11: 13.0000,
+  k12: 90.8000,
+  k13: 69.5000,
+  k14: 48.2000,
+  k15: 26.9000,
+  k16: 5.6000,
+  k17: 83.4000,
+  k18: 62.1000,
+  k19: 40.8000,
+  k20: 19.5000,
+  k21: 97.3000,
+  k22: 76.0000,
+  k23: 54.7000,
+  k24: 33.4000,
+  k25: 12.1000,
+  k26: 89.9000,
+  k27: 68.6000,
+  k28: 47.3000,
+  k29: 26.0000,
+  k30: 4.7000,
+  k31: 82.5000,
+  k32: 61.2000,
+  k33: 39.9000,
+  k34: 18.6000,
+  k35: 96.4000,
+  k36: 75.1000,
+  k37: 53.8000,
+  k38: 32.5000,
+  k39: 11.2000,
+  k40: 89.0000,
+  k41: 67.7000,
+  k42: 46.4000,
+  k43: 25.1000,
+  k44: 3.8000,
+  k45: 81.6000,
+  k46: 60.3000,
+  k47: 39.0000,
+  k48: 17.7000,
+  k49: 95.5000,
+  k50: 74.2000,
+  k51: 52.9000,
+  k52: 31.6000,
+  k53: 10.3000,
+  k54: 88.1000,
+  k55: 66.8000,
+  k56: 45.5000,
+  k57: 24.2000,
+  k58: 2.9000,
+  k59: 80.7000,
+  k60: 59.4000,
+  k61: 38.1000,
+  k62: 16.8000,
+  k63: 94.6000,
+  k64: 73.3000,
+  k65: 52.0000,
+  k66: 30.7000,
+  k67: 9.4000,
+  k68: 87.2000,
+  k69: 65.9000,
+  k70: 44.6000,
+  k71: 23.3000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_037_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_037_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_037_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_037_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_037_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_037_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_037_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_037_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_037_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_037_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_037_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_037_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 038 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_038_META = {
+  id: 'pipeline_038',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'telecom' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 33367,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_038_COEF = {
+  k0: 68.4000,
+  k1: 35.7000,
+  k2: 3.0000,
+  k3: 69.4000,
+  k4: 36.7000,
+  k5: 4.0000,
+  k6: 70.4000,
+  k7: 37.7000,
+  k8: 5.0000,
+  k9: 71.4000,
+  k10: 38.7000,
+  k11: 6.0000,
+  k12: 72.4000,
+  k13: 39.7000,
+  k14: 7.0000,
+  k15: 73.4000,
+  k16: 40.7000,
+  k17: 8.0000,
+  k18: 74.4000,
+  k19: 41.7000,
+  k20: 9.0000,
+  k21: 75.4000,
+  k22: 42.7000,
+  k23: 10.0000,
+  k24: 76.4000,
+  k25: 43.7000,
+  k26: 11.0000,
+  k27: 77.4000,
+  k28: 44.7000,
+  k29: 12.0000,
+  k30: 78.4000,
+  k31: 45.7000,
+  k32: 13.0000,
+  k33: 79.4000,
+  k34: 46.7000,
+  k35: 14.0000,
+  k36: 80.4000,
+  k37: 47.7000,
+  k38: 15.0000,
+  k39: 81.4000,
+  k40: 48.7000,
+  k41: 16.0000,
+  k42: 82.4000,
+  k43: 49.7000,
+  k44: 17.0000,
+  k45: 83.4000,
+  k46: 50.7000,
+  k47: 18.0000,
+  k48: 84.4000,
+  k49: 51.7000,
+  k50: 19.0000,
+  k51: 85.4000,
+  k52: 52.7000,
+  k53: 20.0000,
+  k54: 86.4000,
+  k55: 53.7000,
+  k56: 21.0000,
+  k57: 87.4000,
+  k58: 54.7000,
+  k59: 22.0000,
+  k60: 88.4000,
+  k61: 55.7000,
+  k62: 23.0000,
+  k63: 89.4000,
+  k64: 56.7000,
+  k65: 24.0000,
+  k66: 90.4000,
+  k67: 57.7000,
+  k68: 25.0000,
+  k69: 91.4000,
+  k70: 58.7000,
+  k71: 26.0000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_038_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_038_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_038_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_038_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_038_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_038_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_038_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_038_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_038_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_038_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_038_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_038_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 039 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_039_META = {
+  id: 'pipeline_039',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'finance' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 34244,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_039_COEF = {
+  k0: 87.7000,
+  k1: 43.6000,
+  k2: 98.6000,
+  k3: 54.5000,
+  k4: 10.4000,
+  k5: 65.4000,
+  k6: 21.3000,
+  k7: 76.3000,
+  k8: 32.2000,
+  k9: 87.2000,
+  k10: 43.1000,
+  k11: 98.1000,
+  k12: 54.0000,
+  k13: 9.9000,
+  k14: 64.9000,
+  k15: 20.8000,
+  k16: 75.8000,
+  k17: 31.7000,
+  k18: 86.7000,
+  k19: 42.6000,
+  k20: 97.6000,
+  k21: 53.5000,
+  k22: 9.4000,
+  k23: 64.4000,
+  k24: 20.3000,
+  k25: 75.3000,
+  k26: 31.2000,
+  k27: 86.2000,
+  k28: 42.1000,
+  k29: 97.1000,
+  k30: 53.0000,
+  k31: 8.9000,
+  k32: 63.9000,
+  k33: 19.8000,
+  k34: 74.8000,
+  k35: 30.7000,
+  k36: 85.7000,
+  k37: 41.6000,
+  k38: 96.6000,
+  k39: 52.5000,
+  k40: 8.4000,
+  k41: 63.4000,
+  k42: 19.3000,
+  k43: 74.3000,
+  k44: 30.2000,
+  k45: 85.2000,
+  k46: 41.1000,
+  k47: 96.1000,
+  k48: 52.0000,
+  k49: 7.9000,
+  k50: 62.9000,
+  k51: 18.8000,
+  k52: 73.8000,
+  k53: 29.7000,
+  k54: 84.7000,
+  k55: 40.6000,
+  k56: 95.6000,
+  k57: 51.5000,
+  k58: 7.4000,
+  k59: 62.4000,
+  k60: 18.3000,
+  k61: 73.3000,
+  k62: 29.2000,
+  k63: 84.2000,
+  k64: 40.1000,
+  k65: 95.1000,
+  k66: 51.0000,
+  k67: 6.9000,
+  k68: 61.9000,
+  k69: 17.8000,
+  k70: 72.8000,
+  k71: 28.7000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_039_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_039_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_039_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_039_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_039_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_039_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_039_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_039_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_039_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_039_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_039_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_039_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 040 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_040_META = {
+  id: 'pipeline_040',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'freight' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 35121,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_040_COEF = {
+  k0: 7.9000,
+  k1: 51.5000,
+  k2: 95.1000,
+  k3: 39.6000,
+  k4: 83.2000,
+  k5: 27.7000,
+  k6: 71.3000,
+  k7: 15.8000,
+  k8: 59.4000,
+  k9: 3.9000,
+  k10: 47.5000,
+  k11: 91.1000,
+  k12: 35.6000,
+  k13: 79.2000,
+  k14: 23.7000,
+  k15: 67.3000,
+  k16: 11.8000,
+  k17: 55.4000,
+  k18: 99.0000,
+  k19: 43.5000,
+  k20: 87.1000,
+  k21: 31.6000,
+  k22: 75.2000,
+  k23: 19.7000,
+  k24: 63.3000,
+  k25: 7.8000,
+  k26: 51.4000,
+  k27: 95.0000,
+  k28: 39.5000,
+  k29: 83.1000,
+  k30: 27.6000,
+  k31: 71.2000,
+  k32: 15.7000,
+  k33: 59.3000,
+  k34: 3.8000,
+  k35: 47.4000,
+  k36: 91.0000,
+  k37: 35.5000,
+  k38: 79.1000,
+  k39: 23.6000,
+  k40: 67.2000,
+  k41: 11.7000,
+  k42: 55.3000,
+  k43: 98.9000,
+  k44: 43.4000,
+  k45: 87.0000,
+  k46: 31.5000,
+  k47: 75.1000,
+  k48: 19.6000,
+  k49: 63.2000,
+  k50: 7.7000,
+  k51: 51.3000,
+  k52: 94.9000,
+  k53: 39.4000,
+  k54: 83.0000,
+  k55: 27.5000,
+  k56: 71.1000,
+  k57: 15.6000,
+  k58: 59.2000,
+  k59: 3.7000,
+  k60: 47.3000,
+  k61: 90.9000,
+  k62: 35.4000,
+  k63: 79.0000,
+  k64: 23.5000,
+  k65: 67.1000,
+  k66: 11.6000,
+  k67: 55.2000,
+  k68: 98.8000,
+  k69: 43.3000,
+  k70: 86.9000,
+  k71: 31.4000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_040_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_040_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_040_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_040_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_040_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_040_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_040_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_040_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_040_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_040_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_040_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_040_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 041 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_041_META = {
+  id: 'pipeline_041',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'energy' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 35998,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_041_COEF = {
+  k0: 27.2000,
+  k1: 59.4000,
+  k2: 91.6000,
+  k3: 24.7000,
+  k4: 56.9000,
+  k5: 89.1000,
+  k6: 22.2000,
+  k7: 54.4000,
+  k8: 86.6000,
+  k9: 19.7000,
+  k10: 51.9000,
+  k11: 84.1000,
+  k12: 17.2000,
+  k13: 49.4000,
+  k14: 81.6000,
+  k15: 14.7000,
+  k16: 46.9000,
+  k17: 79.1000,
+  k18: 12.2000,
+  k19: 44.4000,
+  k20: 76.6000,
+  k21: 9.7000,
+  k22: 41.9000,
+  k23: 74.1000,
+  k24: 7.2000,
+  k25: 39.4000,
+  k26: 71.6000,
+  k27: 4.7000,
+  k28: 36.9000,
+  k29: 69.1000,
+  k30: 2.2000,
+  k31: 34.4000,
+  k32: 66.6000,
+  k33: 98.8000,
+  k34: 31.9000,
+  k35: 64.1000,
+  k36: 96.3000,
+  k37: 29.4000,
+  k38: 61.6000,
+  k39: 93.8000,
+  k40: 26.9000,
+  k41: 59.1000,
+  k42: 91.3000,
+  k43: 24.4000,
+  k44: 56.6000,
+  k45: 88.8000,
+  k46: 21.9000,
+  k47: 54.1000,
+  k48: 86.3000,
+  k49: 19.4000,
+  k50: 51.6000,
+  k51: 83.8000,
+  k52: 16.9000,
+  k53: 49.1000,
+  k54: 81.3000,
+  k55: 14.4000,
+  k56: 46.6000,
+  k57: 78.8000,
+  k58: 11.9000,
+  k59: 44.1000,
+  k60: 76.3000,
+  k61: 9.4000,
+  k62: 41.6000,
+  k63: 73.8000,
+  k64: 6.9000,
+  k65: 39.1000,
+  k66: 71.3000,
+  k67: 4.4000,
+  k68: 36.6000,
+  k69: 68.8000,
+  k70: 1.9000,
+  k71: 34.1000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_041_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_041_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_041_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_041_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_041_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_041_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_041_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_041_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_041_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_041_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_041_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_041_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 042 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_042_META = {
+  id: 'pipeline_042',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'water' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 36875,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_042_COEF = {
+  k0: 46.5000,
+  k1: 67.3000,
+  k2: 88.1000,
+  k3: 9.8000,
+  k4: 30.6000,
+  k5: 51.4000,
+  k6: 72.2000,
+  k7: 93.0000,
+  k8: 14.7000,
+  k9: 35.5000,
+  k10: 56.3000,
+  k11: 77.1000,
+  k12: 97.9000,
+  k13: 19.6000,
+  k14: 40.4000,
+  k15: 61.2000,
+  k16: 82.0000,
+  k17: 3.7000,
+  k18: 24.5000,
+  k19: 45.3000,
+  k20: 66.1000,
+  k21: 86.9000,
+  k22: 8.6000,
+  k23: 29.4000,
+  k24: 50.2000,
+  k25: 71.0000,
+  k26: 91.8000,
+  k27: 13.5000,
+  k28: 34.3000,
+  k29: 55.1000,
+  k30: 75.9000,
+  k31: 96.7000,
+  k32: 18.4000,
+  k33: 39.2000,
+  k34: 60.0000,
+  k35: 80.8000,
+  k36: 2.5000,
+  k37: 23.3000,
+  k38: 44.1000,
+  k39: 64.9000,
+  k40: 85.7000,
+  k41: 7.4000,
+  k42: 28.2000,
+  k43: 49.0000,
+  k44: 69.8000,
+  k45: 90.6000,
+  k46: 12.3000,
+  k47: 33.1000,
+  k48: 53.9000,
+  k49: 74.7000,
+  k50: 95.5000,
+  k51: 17.2000,
+  k52: 38.0000,
+  k53: 58.8000,
+  k54: 79.6000,
+  k55: 1.3000,
+  k56: 22.1000,
+  k57: 42.9000,
+  k58: 63.7000,
+  k59: 84.5000,
+  k60: 6.2000,
+  k61: 27.0000,
+  k62: 47.8000,
+  k63: 68.6000,
+  k64: 89.4000,
+  k65: 11.1000,
+  k66: 31.9000,
+  k67: 52.7000,
+  k68: 73.5000,
+  k69: 94.3000,
+  k70: 16.0000,
+  k71: 36.8000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_042_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_042_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_042_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_042_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_042_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_042_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_042_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_042_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_042_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_042_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_042_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_042_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 043 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_043_META = {
+  id: 'pipeline_043',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'digital' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 37752,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_043_COEF = {
+  k0: 65.8000,
+  k1: 75.2000,
+  k2: 84.6000,
+  k3: 94.0000,
+  k4: 4.3000,
+  k5: 13.7000,
+  k6: 23.1000,
+  k7: 32.5000,
+  k8: 41.9000,
+  k9: 51.3000,
+  k10: 60.7000,
+  k11: 70.1000,
+  k12: 79.5000,
+  k13: 88.9000,
+  k14: 98.3000,
+  k15: 8.6000,
+  k16: 18.0000,
+  k17: 27.4000,
+  k18: 36.8000,
+  k19: 46.2000,
+  k20: 55.6000,
+  k21: 65.0000,
+  k22: 74.4000,
+  k23: 83.8000,
+  k24: 93.2000,
+  k25: 3.5000,
+  k26: 12.9000,
+  k27: 22.3000,
+  k28: 31.7000,
+  k29: 41.1000,
+  k30: 50.5000,
+  k31: 59.9000,
+  k32: 69.3000,
+  k33: 78.7000,
+  k34: 88.1000,
+  k35: 97.5000,
+  k36: 7.8000,
+  k37: 17.2000,
+  k38: 26.6000,
+  k39: 36.0000,
+  k40: 45.4000,
+  k41: 54.8000,
+  k42: 64.2000,
+  k43: 73.6000,
+  k44: 83.0000,
+  k45: 92.4000,
+  k46: 2.7000,
+  k47: 12.1000,
+  k48: 21.5000,
+  k49: 30.9000,
+  k50: 40.3000,
+  k51: 49.7000,
+  k52: 59.1000,
+  k53: 68.5000,
+  k54: 77.9000,
+  k55: 87.3000,
+  k56: 96.7000,
+  k57: 7.0000,
+  k58: 16.4000,
+  k59: 25.8000,
+  k60: 35.2000,
+  k61: 44.6000,
+  k62: 54.0000,
+  k63: 63.4000,
+  k64: 72.8000,
+  k65: 82.2000,
+  k66: 91.6000,
+  k67: 1.9000,
+  k68: 11.3000,
+  k69: 20.7000,
+  k70: 30.1000,
+  k71: 39.5000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_043_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_043_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_043_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_043_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_043_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_043_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_043_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_043_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_043_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_043_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_043_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_043_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 044 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_044_META = {
+  id: 'pipeline_044',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'trade' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 38629,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_044_COEF = {
+  k0: 85.1000,
+  k1: 83.1000,
+  k2: 81.1000,
+  k3: 79.1000,
+  k4: 77.1000,
+  k5: 75.1000,
+  k6: 73.1000,
+  k7: 71.1000,
+  k8: 69.1000,
+  k9: 67.1000,
+  k10: 65.1000,
+  k11: 63.1000,
+  k12: 61.1000,
+  k13: 59.1000,
+  k14: 57.1000,
+  k15: 55.1000,
+  k16: 53.1000,
+  k17: 51.1000,
+  k18: 49.1000,
+  k19: 47.1000,
+  k20: 45.1000,
+  k21: 43.1000,
+  k22: 41.1000,
+  k23: 39.1000,
+  k24: 37.1000,
+  k25: 35.1000,
+  k26: 33.1000,
+  k27: 31.1000,
+  k28: 29.1000,
+  k29: 27.1000,
+  k30: 25.1000,
+  k31: 23.1000,
+  k32: 21.1000,
+  k33: 19.1000,
+  k34: 17.1000,
+  k35: 15.1000,
+  k36: 13.1000,
+  k37: 11.1000,
+  k38: 9.1000,
+  k39: 7.1000,
+  k40: 5.1000,
+  k41: 3.1000,
+  k42: 1.1000,
+  k43: 98.2000,
+  k44: 96.2000,
+  k45: 94.2000,
+  k46: 92.2000,
+  k47: 90.2000,
+  k48: 88.2000,
+  k49: 86.2000,
+  k50: 84.2000,
+  k51: 82.2000,
+  k52: 80.2000,
+  k53: 78.2000,
+  k54: 76.2000,
+  k55: 74.2000,
+  k56: 72.2000,
+  k57: 70.2000,
+  k58: 68.2000,
+  k59: 66.2000,
+  k60: 64.2000,
+  k61: 62.2000,
+  k62: 60.2000,
+  k63: 58.2000,
+  k64: 56.2000,
+  k65: 54.2000,
+  k66: 52.2000,
+  k67: 50.2000,
+  k68: 48.2000,
+  k69: 46.2000,
+  k70: 44.2000,
+  k71: 42.2000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_044_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_044_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_044_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_044_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_044_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_044_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_044_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_044_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_044_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_044_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_044_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_044_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 045 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_045_META = {
+  id: 'pipeline_045',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'pharma' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 39506,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_045_COEF = {
+  k0: 5.3000,
+  k1: 91.0000,
+  k2: 77.6000,
+  k3: 64.2000,
+  k4: 50.8000,
+  k5: 37.4000,
+  k6: 24.0000,
+  k7: 10.6000,
+  k8: 96.3000,
+  k9: 82.9000,
+  k10: 69.5000,
+  k11: 56.1000,
+  k12: 42.7000,
+  k13: 29.3000,
+  k14: 15.9000,
+  k15: 2.5000,
+  k16: 88.2000,
+  k17: 74.8000,
+  k18: 61.4000,
+  k19: 48.0000,
+  k20: 34.6000,
+  k21: 21.2000,
+  k22: 7.8000,
+  k23: 93.5000,
+  k24: 80.1000,
+  k25: 66.7000,
+  k26: 53.3000,
+  k27: 39.9000,
+  k28: 26.5000,
+  k29: 13.1000,
+  k30: 98.8000,
+  k31: 85.4000,
+  k32: 72.0000,
+  k33: 58.6000,
+  k34: 45.2000,
+  k35: 31.8000,
+  k36: 18.4000,
+  k37: 5.0000,
+  k38: 90.7000,
+  k39: 77.3000,
+  k40: 63.9000,
+  k41: 50.5000,
+  k42: 37.1000,
+  k43: 23.7000,
+  k44: 10.3000,
+  k45: 96.0000,
+  k46: 82.6000,
+  k47: 69.2000,
+  k48: 55.8000,
+  k49: 42.4000,
+  k50: 29.0000,
+  k51: 15.6000,
+  k52: 2.2000,
+  k53: 87.9000,
+  k54: 74.5000,
+  k55: 61.1000,
+  k56: 47.7000,
+  k57: 34.3000,
+  k58: 20.9000,
+  k59: 7.5000,
+  k60: 93.2000,
+  k61: 79.8000,
+  k62: 66.4000,
+  k63: 53.0000,
+  k64: 39.6000,
+  k65: 26.2000,
+  k66: 12.8000,
+  k67: 98.5000,
+  k68: 85.1000,
+  k69: 71.7000,
+  k70: 58.3000,
+  k71: 44.9000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_045_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_045_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_045_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_045_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_045_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_045_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_045_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_045_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_045_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_045_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_045_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_045_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 046 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_046_META = {
+  id: 'pipeline_046',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'food' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 40383,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_046_COEF = {
+  k0: 24.6000,
+  k1: 98.9000,
+  k2: 74.1000,
+  k3: 49.3000,
+  k4: 24.5000,
+  k5: 98.8000,
+  k6: 74.0000,
+  k7: 49.2000,
+  k8: 24.4000,
+  k9: 98.7000,
+  k10: 73.9000,
+  k11: 49.1000,
+  k12: 24.3000,
+  k13: 98.6000,
+  k14: 73.8000,
+  k15: 49.0000,
+  k16: 24.2000,
+  k17: 98.5000,
+  k18: 73.7000,
+  k19: 48.9000,
+  k20: 24.1000,
+  k21: 98.4000,
+  k22: 73.6000,
+  k23: 48.8000,
+  k24: 24.0000,
+  k25: 98.3000,
+  k26: 73.5000,
+  k27: 48.7000,
+  k28: 23.9000,
+  k29: 98.2000,
+  k30: 73.4000,
+  k31: 48.6000,
+  k32: 23.8000,
+  k33: 98.1000,
+  k34: 73.3000,
+  k35: 48.5000,
+  k36: 23.7000,
+  k37: 98.0000,
+  k38: 73.2000,
+  k39: 48.4000,
+  k40: 23.6000,
+  k41: 97.9000,
+  k42: 73.1000,
+  k43: 48.3000,
+  k44: 23.5000,
+  k45: 97.8000,
+  k46: 73.0000,
+  k47: 48.2000,
+  k48: 23.4000,
+  k49: 97.7000,
+  k50: 72.9000,
+  k51: 48.1000,
+  k52: 23.3000,
+  k53: 97.6000,
+  k54: 72.8000,
+  k55: 48.0000,
+  k56: 23.2000,
+  k57: 97.5000,
+  k58: 72.7000,
+  k59: 47.9000,
+  k60: 23.1000,
+  k61: 97.4000,
+  k62: 72.6000,
+  k63: 47.8000,
+  k64: 23.0000,
+  k65: 97.3000,
+  k66: 72.5000,
+  k67: 47.7000,
+  k68: 22.9000,
+  k69: 97.2000,
+  k70: 72.4000,
+  k71: 47.6000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_046_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_046_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_046_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_046_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_046_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_046_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_046_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_046_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_046_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_046_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_046_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_046_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 047 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_047_META = {
+  id: 'pipeline_047',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'industrial' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 41260,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_047_COEF = {
+  k0: 43.9000,
+  k1: 7.7000,
+  k2: 70.6000,
+  k3: 34.4000,
+  k4: 97.3000,
+  k5: 61.1000,
+  k6: 24.9000,
+  k7: 87.8000,
+  k8: 51.6000,
+  k9: 15.4000,
+  k10: 78.3000,
+  k11: 42.1000,
+  k12: 5.9000,
+  k13: 68.8000,
+  k14: 32.6000,
+  k15: 95.5000,
+  k16: 59.3000,
+  k17: 23.1000,
+  k18: 86.0000,
+  k19: 49.8000,
+  k20: 13.6000,
+  k21: 76.5000,
+  k22: 40.3000,
+  k23: 4.1000,
+  k24: 67.0000,
+  k25: 30.8000,
+  k26: 93.7000,
+  k27: 57.5000,
+  k28: 21.3000,
+  k29: 84.2000,
+  k30: 48.0000,
+  k31: 11.8000,
+  k32: 74.7000,
+  k33: 38.5000,
+  k34: 2.3000,
+  k35: 65.2000,
+  k36: 29.0000,
+  k37: 91.9000,
+  k38: 55.7000,
+  k39: 19.5000,
+  k40: 82.4000,
+  k41: 46.2000,
+  k42: 10.0000,
+  k43: 72.9000,
+  k44: 36.7000,
+  k45: 0.5000,
+  k46: 63.4000,
+  k47: 27.2000,
+  k48: 90.1000,
+  k49: 53.9000,
+  k50: 17.7000,
+  k51: 80.6000,
+  k52: 44.4000,
+  k53: 8.2000,
+  k54: 71.1000,
+  k55: 34.9000,
+  k56: 97.8000,
+  k57: 61.6000,
+  k58: 25.4000,
+  k59: 88.3000,
+  k60: 52.1000,
+  k61: 15.9000,
+  k62: 78.8000,
+  k63: 42.6000,
+  k64: 6.4000,
+  k65: 69.3000,
+  k66: 33.1000,
+  k67: 96.0000,
+  k68: 59.8000,
+  k69: 23.6000,
+  k70: 86.5000,
+  k71: 50.3000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_047_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_047_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_047_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_047_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_047_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_047_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_047_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_047_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_047_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_047_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_047_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_047_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 048 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_048_META = {
+  id: 'pipeline_048',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'telecom' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 42137,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_048_COEF = {
+  k0: 63.2000,
+  k1: 15.6000,
+  k2: 67.1000,
+  k3: 19.5000,
+  k4: 71.0000,
+  k5: 23.4000,
+  k6: 74.9000,
+  k7: 27.3000,
+  k8: 78.8000,
+  k9: 31.2000,
+  k10: 82.7000,
+  k11: 35.1000,
+  k12: 86.6000,
+  k13: 39.0000,
+  k14: 90.5000,
+  k15: 42.9000,
+  k16: 94.4000,
+  k17: 46.8000,
+  k18: 98.3000,
+  k19: 50.7000,
+  k20: 3.1000,
+  k21: 54.6000,
+  k22: 7.0000,
+  k23: 58.5000,
+  k24: 10.9000,
+  k25: 62.4000,
+  k26: 14.8000,
+  k27: 66.3000,
+  k28: 18.7000,
+  k29: 70.2000,
+  k30: 22.6000,
+  k31: 74.1000,
+  k32: 26.5000,
+  k33: 78.0000,
+  k34: 30.4000,
+  k35: 81.9000,
+  k36: 34.3000,
+  k37: 85.8000,
+  k38: 38.2000,
+  k39: 89.7000,
+  k40: 42.1000,
+  k41: 93.6000,
+  k42: 46.0000,
+  k43: 97.5000,
+  k44: 49.9000,
+  k45: 2.3000,
+  k46: 53.8000,
+  k47: 6.2000,
+  k48: 57.7000,
+  k49: 10.1000,
+  k50: 61.6000,
+  k51: 14.0000,
+  k52: 65.5000,
+  k53: 17.9000,
+  k54: 69.4000,
+  k55: 21.8000,
+  k56: 73.3000,
+  k57: 25.7000,
+  k58: 77.2000,
+  k59: 29.6000,
+  k60: 81.1000,
+  k61: 33.5000,
+  k62: 85.0000,
+  k63: 37.4000,
+  k64: 88.9000,
+  k65: 41.3000,
+  k66: 92.8000,
+  k67: 45.2000,
+  k68: 96.7000,
+  k69: 49.1000,
+  k70: 1.5000,
+  k71: 53.0000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_048_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_048_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_048_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_048_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_048_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_048_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_048_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_048_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_048_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_048_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_048_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_048_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 049 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_049_META = {
+  id: 'pipeline_049',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'finance' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 43014,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_049_COEF = {
+  k0: 82.5000,
+  k1: 23.5000,
+  k2: 63.6000,
+  k3: 4.6000,
+  k4: 44.7000,
+  k5: 84.8000,
+  k6: 25.8000,
+  k7: 65.9000,
+  k8: 6.9000,
+  k9: 47.0000,
+  k10: 87.1000,
+  k11: 28.1000,
+  k12: 68.2000,
+  k13: 9.2000,
+  k14: 49.3000,
+  k15: 89.4000,
+  k16: 30.4000,
+  k17: 70.5000,
+  k18: 11.5000,
+  k19: 51.6000,
+  k20: 91.7000,
+  k21: 32.7000,
+  k22: 72.8000,
+  k23: 13.8000,
+  k24: 53.9000,
+  k25: 94.0000,
+  k26: 35.0000,
+  k27: 75.1000,
+  k28: 16.1000,
+  k29: 56.2000,
+  k30: 96.3000,
+  k31: 37.3000,
+  k32: 77.4000,
+  k33: 18.4000,
+  k34: 58.5000,
+  k35: 98.6000,
+  k36: 39.6000,
+  k37: 79.7000,
+  k38: 20.7000,
+  k39: 60.8000,
+  k40: 1.8000,
+  k41: 41.9000,
+  k42: 82.0000,
+  k43: 23.0000,
+  k44: 63.1000,
+  k45: 4.1000,
+  k46: 44.2000,
+  k47: 84.3000,
+  k48: 25.3000,
+  k49: 65.4000,
+  k50: 6.4000,
+  k51: 46.5000,
+  k52: 86.6000,
+  k53: 27.6000,
+  k54: 67.7000,
+  k55: 8.7000,
+  k56: 48.8000,
+  k57: 88.9000,
+  k58: 29.9000,
+  k59: 70.0000,
+  k60: 11.0000,
+  k61: 51.1000,
+  k62: 91.2000,
+  k63: 32.2000,
+  k64: 72.3000,
+  k65: 13.3000,
+  k66: 53.4000,
+  k67: 93.5000,
+  k68: 34.5000,
+  k69: 74.6000,
+  k70: 15.6000,
+  k71: 55.7000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_049_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_049_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_049_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_049_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_049_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_049_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_049_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_049_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_049_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_049_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_049_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_049_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 050 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_050_META = {
+  id: 'pipeline_050',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'freight' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 43891,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_050_COEF = {
+  k0: 2.7000,
+  k1: 31.4000,
+  k2: 60.1000,
+  k3: 88.8000,
+  k4: 18.4000,
+  k5: 47.1000,
+  k6: 75.8000,
+  k7: 5.4000,
+  k8: 34.1000,
+  k9: 62.8000,
+  k10: 91.5000,
+  k11: 21.1000,
+  k12: 49.8000,
+  k13: 78.5000,
+  k14: 8.1000,
+  k15: 36.8000,
+  k16: 65.5000,
+  k17: 94.2000,
+  k18: 23.8000,
+  k19: 52.5000,
+  k20: 81.2000,
+  k21: 10.8000,
+  k22: 39.5000,
+  k23: 68.2000,
+  k24: 96.9000,
+  k25: 26.5000,
+  k26: 55.2000,
+  k27: 83.9000,
+  k28: 13.5000,
+  k29: 42.2000,
+  k30: 70.9000,
+  k31: 0.5000,
+  k32: 29.2000,
+  k33: 57.9000,
+  k34: 86.6000,
+  k35: 16.2000,
+  k36: 44.9000,
+  k37: 73.6000,
+  k38: 3.2000,
+  k39: 31.9000,
+  k40: 60.6000,
+  k41: 89.3000,
+  k42: 18.9000,
+  k43: 47.6000,
+  k44: 76.3000,
+  k45: 5.9000,
+  k46: 34.6000,
+  k47: 63.3000,
+  k48: 92.0000,
+  k49: 21.6000,
+  k50: 50.3000,
+  k51: 79.0000,
+  k52: 8.6000,
+  k53: 37.3000,
+  k54: 66.0000,
+  k55: 94.7000,
+  k56: 24.3000,
+  k57: 53.0000,
+  k58: 81.7000,
+  k59: 11.3000,
+  k60: 40.0000,
+  k61: 68.7000,
+  k62: 97.4000,
+  k63: 27.0000,
+  k64: 55.7000,
+  k65: 84.4000,
+  k66: 14.0000,
+  k67: 42.7000,
+  k68: 71.4000,
+  k69: 1.0000,
+  k70: 29.7000,
+  k71: 58.4000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_050_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_050_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_050_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_050_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_050_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_050_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_050_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_050_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_050_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_050_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_050_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_050_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 051 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_051_META = {
+  id: 'pipeline_051',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'energy' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 44768,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_051_COEF = {
+  k0: 22.0000,
+  k1: 39.3000,
+  k2: 56.6000,
+  k3: 73.9000,
+  k4: 91.2000,
+  k5: 9.4000,
+  k6: 26.7000,
+  k7: 44.0000,
+  k8: 61.3000,
+  k9: 78.6000,
+  k10: 95.9000,
+  k11: 14.1000,
+  k12: 31.4000,
+  k13: 48.7000,
+  k14: 66.0000,
+  k15: 83.3000,
+  k16: 1.5000,
+  k17: 18.8000,
+  k18: 36.1000,
+  k19: 53.4000,
+  k20: 70.7000,
+  k21: 88.0000,
+  k22: 6.2000,
+  k23: 23.5000,
+  k24: 40.8000,
+  k25: 58.1000,
+  k26: 75.4000,
+  k27: 92.7000,
+  k28: 10.9000,
+  k29: 28.2000,
+  k30: 45.5000,
+  k31: 62.8000,
+  k32: 80.1000,
+  k33: 97.4000,
+  k34: 15.6000,
+  k35: 32.9000,
+  k36: 50.2000,
+  k37: 67.5000,
+  k38: 84.8000,
+  k39: 3.0000,
+  k40: 20.3000,
+  k41: 37.6000,
+  k42: 54.9000,
+  k43: 72.2000,
+  k44: 89.5000,
+  k45: 7.7000,
+  k46: 25.0000,
+  k47: 42.3000,
+  k48: 59.6000,
+  k49: 76.9000,
+  k50: 94.2000,
+  k51: 12.4000,
+  k52: 29.7000,
+  k53: 47.0000,
+  k54: 64.3000,
+  k55: 81.6000,
+  k56: 98.9000,
+  k57: 17.1000,
+  k58: 34.4000,
+  k59: 51.7000,
+  k60: 69.0000,
+  k61: 86.3000,
+  k62: 4.5000,
+  k63: 21.8000,
+  k64: 39.1000,
+  k65: 56.4000,
+  k66: 73.7000,
+  k67: 91.0000,
+  k68: 9.2000,
+  k69: 26.5000,
+  k70: 43.8000,
+  k71: 61.1000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_051_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_051_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_051_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_051_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_051_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_051_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_051_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_051_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_051_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_051_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_051_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_051_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 052 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_052_META = {
+  id: 'pipeline_052',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'water' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 45645,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_052_COEF = {
+  k0: 41.3000,
+  k1: 47.2000,
+  k2: 53.1000,
+  k3: 59.0000,
+  k4: 64.9000,
+  k5: 70.8000,
+  k6: 76.7000,
+  k7: 82.6000,
+  k8: 88.5000,
+  k9: 94.4000,
+  k10: 1.2000,
+  k11: 7.1000,
+  k12: 13.0000,
+  k13: 18.9000,
+  k14: 24.8000,
+  k15: 30.7000,
+  k16: 36.6000,
+  k17: 42.5000,
+  k18: 48.4000,
+  k19: 54.3000,
+  k20: 60.2000,
+  k21: 66.1000,
+  k22: 72.0000,
+  k23: 77.9000,
+  k24: 83.8000,
+  k25: 89.7000,
+  k26: 95.6000,
+  k27: 2.4000,
+  k28: 8.3000,
+  k29: 14.2000,
+  k30: 20.1000,
+  k31: 26.0000,
+  k32: 31.9000,
+  k33: 37.8000,
+  k34: 43.7000,
+  k35: 49.6000,
+  k36: 55.5000,
+  k37: 61.4000,
+  k38: 67.3000,
+  k39: 73.2000,
+  k40: 79.1000,
+  k41: 85.0000,
+  k42: 90.9000,
+  k43: 96.8000,
+  k44: 3.6000,
+  k45: 9.5000,
+  k46: 15.4000,
+  k47: 21.3000,
+  k48: 27.2000,
+  k49: 33.1000,
+  k50: 39.0000,
+  k51: 44.9000,
+  k52: 50.8000,
+  k53: 56.7000,
+  k54: 62.6000,
+  k55: 68.5000,
+  k56: 74.4000,
+  k57: 80.3000,
+  k58: 86.2000,
+  k59: 92.1000,
+  k60: 98.0000,
+  k61: 4.8000,
+  k62: 10.7000,
+  k63: 16.6000,
+  k64: 22.5000,
+  k65: 28.4000,
+  k66: 34.3000,
+  k67: 40.2000,
+  k68: 46.1000,
+  k69: 52.0000,
+  k70: 57.9000,
+  k71: 63.8000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_052_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_052_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_052_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_052_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_052_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_052_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_052_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_052_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_052_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_052_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_052_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_052_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 053 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_053_META = {
+  id: 'pipeline_053',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'digital' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 46522,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_053_COEF = {
+  k0: 60.6000,
+  k1: 55.1000,
+  k2: 49.6000,
+  k3: 44.1000,
+  k4: 38.6000,
+  k5: 33.1000,
+  k6: 27.6000,
+  k7: 22.1000,
+  k8: 16.6000,
+  k9: 11.1000,
+  k10: 5.6000,
+  k11: 0.1000,
+  k12: 93.7000,
+  k13: 88.2000,
+  k14: 82.7000,
+  k15: 77.2000,
+  k16: 71.7000,
+  k17: 66.2000,
+  k18: 60.7000,
+  k19: 55.2000,
+  k20: 49.7000,
+  k21: 44.2000,
+  k22: 38.7000,
+  k23: 33.2000,
+  k24: 27.7000,
+  k25: 22.2000,
+  k26: 16.7000,
+  k27: 11.2000,
+  k28: 5.7000,
+  k29: 0.2000,
+  k30: 93.8000,
+  k31: 88.3000,
+  k32: 82.8000,
+  k33: 77.3000,
+  k34: 71.8000,
+  k35: 66.3000,
+  k36: 60.8000,
+  k37: 55.3000,
+  k38: 49.8000,
+  k39: 44.3000,
+  k40: 38.8000,
+  k41: 33.3000,
+  k42: 27.8000,
+  k43: 22.3000,
+  k44: 16.8000,
+  k45: 11.3000,
+  k46: 5.8000,
+  k47: 0.3000,
+  k48: 93.9000,
+  k49: 88.4000,
+  k50: 82.9000,
+  k51: 77.4000,
+  k52: 71.9000,
+  k53: 66.4000,
+  k54: 60.9000,
+  k55: 55.4000,
+  k56: 49.9000,
+  k57: 44.4000,
+  k58: 38.9000,
+  k59: 33.4000,
+  k60: 27.9000,
+  k61: 22.4000,
+  k62: 16.9000,
+  k63: 11.4000,
+  k64: 5.9000,
+  k65: 0.4000,
+  k66: 94.0000,
+  k67: 88.5000,
+  k68: 83.0000,
+  k69: 77.5000,
+  k70: 72.0000,
+  k71: 66.5000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_053_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_053_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_053_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_053_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_053_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_053_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_053_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_053_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_053_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_053_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_053_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_053_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 054 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_054_META = {
+  id: 'pipeline_054',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'trade' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 47399,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_054_COEF = {
+  k0: 79.9000,
+  k1: 63.0000,
+  k2: 46.1000,
+  k3: 29.2000,
+  k4: 12.3000,
+  k5: 94.5000,
+  k6: 77.6000,
+  k7: 60.7000,
+  k8: 43.8000,
+  k9: 26.9000,
+  k10: 10.0000,
+  k11: 92.2000,
+  k12: 75.3000,
+  k13: 58.4000,
+  k14: 41.5000,
+  k15: 24.6000,
+  k16: 7.7000,
+  k17: 89.9000,
+  k18: 73.0000,
+  k19: 56.1000,
+  k20: 39.2000,
+  k21: 22.3000,
+  k22: 5.4000,
+  k23: 87.6000,
+  k24: 70.7000,
+  k25: 53.8000,
+  k26: 36.9000,
+  k27: 20.0000,
+  k28: 3.1000,
+  k29: 85.3000,
+  k30: 68.4000,
+  k31: 51.5000,
+  k32: 34.6000,
+  k33: 17.7000,
+  k34: 0.8000,
+  k35: 83.0000,
+  k36: 66.1000,
+  k37: 49.2000,
+  k38: 32.3000,
+  k39: 15.4000,
+  k40: 97.6000,
+  k41: 80.7000,
+  k42: 63.8000,
+  k43: 46.9000,
+  k44: 30.0000,
+  k45: 13.1000,
+  k46: 95.3000,
+  k47: 78.4000,
+  k48: 61.5000,
+  k49: 44.6000,
+  k50: 27.7000,
+  k51: 10.8000,
+  k52: 93.0000,
+  k53: 76.1000,
+  k54: 59.2000,
+  k55: 42.3000,
+  k56: 25.4000,
+  k57: 8.5000,
+  k58: 90.7000,
+  k59: 73.8000,
+  k60: 56.9000,
+  k61: 40.0000,
+  k62: 23.1000,
+  k63: 6.2000,
+  k64: 88.4000,
+  k65: 71.5000,
+  k66: 54.6000,
+  k67: 37.7000,
+  k68: 20.8000,
+  k69: 3.9000,
+  k70: 86.1000,
+  k71: 69.2000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_054_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_054_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_054_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_054_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_054_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_054_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_054_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_054_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_054_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_054_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_054_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_054_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 055 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_055_META = {
+  id: 'pipeline_055',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'pharma' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 48276,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_055_COEF = {
+  k0: 0.1000,
+  k1: 70.9000,
+  k2: 42.6000,
+  k3: 14.3000,
+  k4: 85.1000,
+  k5: 56.8000,
+  k6: 28.5000,
+  k7: 0.2000,
+  k8: 71.0000,
+  k9: 42.7000,
+  k10: 14.4000,
+  k11: 85.2000,
+  k12: 56.9000,
+  k13: 28.6000,
+  k14: 0.3000,
+  k15: 71.1000,
+  k16: 42.8000,
+  k17: 14.5000,
+  k18: 85.3000,
+  k19: 57.0000,
+  k20: 28.7000,
+  k21: 0.4000,
+  k22: 71.2000,
+  k23: 42.9000,
+  k24: 14.6000,
+  k25: 85.4000,
+  k26: 57.1000,
+  k27: 28.8000,
+  k28: 0.5000,
+  k29: 71.3000,
+  k30: 43.0000,
+  k31: 14.7000,
+  k32: 85.5000,
+  k33: 57.2000,
+  k34: 28.9000,
+  k35: 0.6000,
+  k36: 71.4000,
+  k37: 43.1000,
+  k38: 14.8000,
+  k39: 85.6000,
+  k40: 57.3000,
+  k41: 29.0000,
+  k42: 0.7000,
+  k43: 71.5000,
+  k44: 43.2000,
+  k45: 14.9000,
+  k46: 85.7000,
+  k47: 57.4000,
+  k48: 29.1000,
+  k49: 0.8000,
+  k50: 71.6000,
+  k51: 43.3000,
+  k52: 15.0000,
+  k53: 85.8000,
+  k54: 57.5000,
+  k55: 29.2000,
+  k56: 0.9000,
+  k57: 71.7000,
+  k58: 43.4000,
+  k59: 15.1000,
+  k60: 85.9000,
+  k61: 57.6000,
+  k62: 29.3000,
+  k63: 1.0000,
+  k64: 71.8000,
+  k65: 43.5000,
+  k66: 15.2000,
+  k67: 86.0000,
+  k68: 57.7000,
+  k69: 29.4000,
+  k70: 1.1000,
+  k71: 71.9000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_055_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_055_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_055_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_055_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_055_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_055_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_055_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_055_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_055_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_055_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_055_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_055_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 056 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_056_META = {
+  id: 'pipeline_056',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'food' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 49153,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_056_COEF = {
+  k0: 19.4000,
+  k1: 78.8000,
+  k2: 39.1000,
+  k3: 98.5000,
+  k4: 58.8000,
+  k5: 19.1000,
+  k6: 78.5000,
+  k7: 38.8000,
+  k8: 98.2000,
+  k9: 58.5000,
+  k10: 18.8000,
+  k11: 78.2000,
+  k12: 38.5000,
+  k13: 97.9000,
+  k14: 58.2000,
+  k15: 18.5000,
+  k16: 77.9000,
+  k17: 38.2000,
+  k18: 97.6000,
+  k19: 57.9000,
+  k20: 18.2000,
+  k21: 77.6000,
+  k22: 37.9000,
+  k23: 97.3000,
+  k24: 57.6000,
+  k25: 17.9000,
+  k26: 77.3000,
+  k27: 37.6000,
+  k28: 97.0000,
+  k29: 57.3000,
+  k30: 17.6000,
+  k31: 77.0000,
+  k32: 37.3000,
+  k33: 96.7000,
+  k34: 57.0000,
+  k35: 17.3000,
+  k36: 76.7000,
+  k37: 37.0000,
+  k38: 96.4000,
+  k39: 56.7000,
+  k40: 17.0000,
+  k41: 76.4000,
+  k42: 36.7000,
+  k43: 96.1000,
+  k44: 56.4000,
+  k45: 16.7000,
+  k46: 76.1000,
+  k47: 36.4000,
+  k48: 95.8000,
+  k49: 56.1000,
+  k50: 16.4000,
+  k51: 75.8000,
+  k52: 36.1000,
+  k53: 95.5000,
+  k54: 55.8000,
+  k55: 16.1000,
+  k56: 75.5000,
+  k57: 35.8000,
+  k58: 95.2000,
+  k59: 55.5000,
+  k60: 15.8000,
+  k61: 75.2000,
+  k62: 35.5000,
+  k63: 94.9000,
+  k64: 55.2000,
+  k65: 15.5000,
+  k66: 74.9000,
+  k67: 35.2000,
+  k68: 94.6000,
+  k69: 54.9000,
+  k70: 15.2000,
+  k71: 74.6000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_056_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_056_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_056_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_056_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_056_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_056_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_056_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_056_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_056_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_056_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_056_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_056_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 057 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_057_META = {
+  id: 'pipeline_057',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'industrial' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 50030,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_057_COEF = {
+  k0: 38.7000,
+  k1: 86.7000,
+  k2: 35.6000,
+  k3: 83.6000,
+  k4: 32.5000,
+  k5: 80.5000,
+  k6: 29.4000,
+  k7: 77.4000,
+  k8: 26.3000,
+  k9: 74.3000,
+  k10: 23.2000,
+  k11: 71.2000,
+  k12: 20.1000,
+  k13: 68.1000,
+  k14: 17.0000,
+  k15: 65.0000,
+  k16: 13.9000,
+  k17: 61.9000,
+  k18: 10.8000,
+  k19: 58.8000,
+  k20: 7.7000,
+  k21: 55.7000,
+  k22: 4.6000,
+  k23: 52.6000,
+  k24: 1.5000,
+  k25: 49.5000,
+  k26: 97.5000,
+  k27: 46.4000,
+  k28: 94.4000,
+  k29: 43.3000,
+  k30: 91.3000,
+  k31: 40.2000,
+  k32: 88.2000,
+  k33: 37.1000,
+  k34: 85.1000,
+  k35: 34.0000,
+  k36: 82.0000,
+  k37: 30.9000,
+  k38: 78.9000,
+  k39: 27.8000,
+  k40: 75.8000,
+  k41: 24.7000,
+  k42: 72.7000,
+  k43: 21.6000,
+  k44: 69.6000,
+  k45: 18.5000,
+  k46: 66.5000,
+  k47: 15.4000,
+  k48: 63.4000,
+  k49: 12.3000,
+  k50: 60.3000,
+  k51: 9.2000,
+  k52: 57.2000,
+  k53: 6.1000,
+  k54: 54.1000,
+  k55: 3.0000,
+  k56: 51.0000,
+  k57: 99.0000,
+  k58: 47.9000,
+  k59: 95.9000,
+  k60: 44.8000,
+  k61: 92.8000,
+  k62: 41.7000,
+  k63: 89.7000,
+  k64: 38.6000,
+  k65: 86.6000,
+  k66: 35.5000,
+  k67: 83.5000,
+  k68: 32.4000,
+  k69: 80.4000,
+  k70: 29.3000,
+  k71: 77.3000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_057_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_057_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_057_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_057_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_057_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_057_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_057_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_057_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_057_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_057_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_057_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_057_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 058 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_058_META = {
+  id: 'pipeline_058',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'telecom' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 50907,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_058_COEF = {
+  k0: 58.0000,
+  k1: 94.6000,
+  k2: 32.1000,
+  k3: 68.7000,
+  k4: 6.2000,
+  k5: 42.8000,
+  k6: 79.4000,
+  k7: 16.9000,
+  k8: 53.5000,
+  k9: 90.1000,
+  k10: 27.6000,
+  k11: 64.2000,
+  k12: 1.7000,
+  k13: 38.3000,
+  k14: 74.9000,
+  k15: 12.4000,
+  k16: 49.0000,
+  k17: 85.6000,
+  k18: 23.1000,
+  k19: 59.7000,
+  k20: 96.3000,
+  k21: 33.8000,
+  k22: 70.4000,
+  k23: 7.9000,
+  k24: 44.5000,
+  k25: 81.1000,
+  k26: 18.6000,
+  k27: 55.2000,
+  k28: 91.8000,
+  k29: 29.3000,
+  k30: 65.9000,
+  k31: 3.4000,
+  k32: 40.0000,
+  k33: 76.6000,
+  k34: 14.1000,
+  k35: 50.7000,
+  k36: 87.3000,
+  k37: 24.8000,
+  k38: 61.4000,
+  k39: 98.0000,
+  k40: 35.5000,
+  k41: 72.1000,
+  k42: 9.6000,
+  k43: 46.2000,
+  k44: 82.8000,
+  k45: 20.3000,
+  k46: 56.9000,
+  k47: 93.5000,
+  k48: 31.0000,
+  k49: 67.6000,
+  k50: 5.1000,
+  k51: 41.7000,
+  k52: 78.3000,
+  k53: 15.8000,
+  k54: 52.4000,
+  k55: 89.0000,
+  k56: 26.5000,
+  k57: 63.1000,
+  k58: 0.6000,
+  k59: 37.2000,
+  k60: 73.8000,
+  k61: 11.3000,
+  k62: 47.9000,
+  k63: 84.5000,
+  k64: 22.0000,
+  k65: 58.6000,
+  k66: 95.2000,
+  k67: 32.7000,
+  k68: 69.3000,
+  k69: 6.8000,
+  k70: 43.4000,
+  k71: 80.0000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_058_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_058_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_058_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_058_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_058_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_058_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_058_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_058_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_058_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_058_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_058_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_058_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 059 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_059_META = {
+  id: 'pipeline_059',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'finance' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 51784,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_059_COEF = {
+  k0: 77.3000,
+  k1: 3.4000,
+  k2: 28.6000,
+  k3: 53.8000,
+  k4: 79.0000,
+  k5: 5.1000,
+  k6: 30.3000,
+  k7: 55.5000,
+  k8: 80.7000,
+  k9: 6.8000,
+  k10: 32.0000,
+  k11: 57.2000,
+  k12: 82.4000,
+  k13: 8.5000,
+  k14: 33.7000,
+  k15: 58.9000,
+  k16: 84.1000,
+  k17: 10.2000,
+  k18: 35.4000,
+  k19: 60.6000,
+  k20: 85.8000,
+  k21: 11.9000,
+  k22: 37.1000,
+  k23: 62.3000,
+  k24: 87.5000,
+  k25: 13.6000,
+  k26: 38.8000,
+  k27: 64.0000,
+  k28: 89.2000,
+  k29: 15.3000,
+  k30: 40.5000,
+  k31: 65.7000,
+  k32: 90.9000,
+  k33: 17.0000,
+  k34: 42.2000,
+  k35: 67.4000,
+  k36: 92.6000,
+  k37: 18.7000,
+  k38: 43.9000,
+  k39: 69.1000,
+  k40: 94.3000,
+  k41: 20.4000,
+  k42: 45.6000,
+  k43: 70.8000,
+  k44: 96.0000,
+  k45: 22.1000,
+  k46: 47.3000,
+  k47: 72.5000,
+  k48: 97.7000,
+  k49: 23.8000,
+  k50: 49.0000,
+  k51: 74.2000,
+  k52: 0.3000,
+  k53: 25.5000,
+  k54: 50.7000,
+  k55: 75.9000,
+  k56: 2.0000,
+  k57: 27.2000,
+  k58: 52.4000,
+  k59: 77.6000,
+  k60: 3.7000,
+  k61: 28.9000,
+  k62: 54.1000,
+  k63: 79.3000,
+  k64: 5.4000,
+  k65: 30.6000,
+  k66: 55.8000,
+  k67: 81.0000,
+  k68: 7.1000,
+  k69: 32.3000,
+  k70: 57.5000,
+  k71: 82.7000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_059_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_059_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_059_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_059_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_059_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_059_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_059_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_059_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_059_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_059_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_059_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_059_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 060 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_060_META = {
+  id: 'pipeline_060',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'freight' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 52661,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_060_COEF = {
+  k0: 96.6000,
+  k1: 11.3000,
+  k2: 25.1000,
+  k3: 38.9000,
+  k4: 52.7000,
+  k5: 66.5000,
+  k6: 80.3000,
+  k7: 94.1000,
+  k8: 8.8000,
+  k9: 22.6000,
+  k10: 36.4000,
+  k11: 50.2000,
+  k12: 64.0000,
+  k13: 77.8000,
+  k14: 91.6000,
+  k15: 6.3000,
+  k16: 20.1000,
+  k17: 33.9000,
+  k18: 47.7000,
+  k19: 61.5000,
+  k20: 75.3000,
+  k21: 89.1000,
+  k22: 3.8000,
+  k23: 17.6000,
+  k24: 31.4000,
+  k25: 45.2000,
+  k26: 59.0000,
+  k27: 72.8000,
+  k28: 86.6000,
+  k29: 1.3000,
+  k30: 15.1000,
+  k31: 28.9000,
+  k32: 42.7000,
+  k33: 56.5000,
+  k34: 70.3000,
+  k35: 84.1000,
+  k36: 97.9000,
+  k37: 12.6000,
+  k38: 26.4000,
+  k39: 40.2000,
+  k40: 54.0000,
+  k41: 67.8000,
+  k42: 81.6000,
+  k43: 95.4000,
+  k44: 10.1000,
+  k45: 23.9000,
+  k46: 37.7000,
+  k47: 51.5000,
+  k48: 65.3000,
+  k49: 79.1000,
+  k50: 92.9000,
+  k51: 7.6000,
+  k52: 21.4000,
+  k53: 35.2000,
+  k54: 49.0000,
+  k55: 62.8000,
+  k56: 76.6000,
+  k57: 90.4000,
+  k58: 5.1000,
+  k59: 18.9000,
+  k60: 32.7000,
+  k61: 46.5000,
+  k62: 60.3000,
+  k63: 74.1000,
+  k64: 87.9000,
+  k65: 2.6000,
+  k66: 16.4000,
+  k67: 30.2000,
+  k68: 44.0000,
+  k69: 57.8000,
+  k70: 71.6000,
+  k71: 85.4000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_060_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_060_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_060_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_060_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_060_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_060_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_060_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_060_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_060_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_060_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_060_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_060_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 061 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_061_META = {
+  id: 'pipeline_061',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'energy' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 53538,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_061_COEF = {
+  k0: 16.8000,
+  k1: 19.2000,
+  k2: 21.6000,
+  k3: 24.0000,
+  k4: 26.4000,
+  k5: 28.8000,
+  k6: 31.2000,
+  k7: 33.6000,
+  k8: 36.0000,
+  k9: 38.4000,
+  k10: 40.8000,
+  k11: 43.2000,
+  k12: 45.6000,
+  k13: 48.0000,
+  k14: 50.4000,
+  k15: 52.8000,
+  k16: 55.2000,
+  k17: 57.6000,
+  k18: 60.0000,
+  k19: 62.4000,
+  k20: 64.8000,
+  k21: 67.2000,
+  k22: 69.6000,
+  k23: 72.0000,
+  k24: 74.4000,
+  k25: 76.8000,
+  k26: 79.2000,
+  k27: 81.6000,
+  k28: 84.0000,
+  k29: 86.4000,
+  k30: 88.8000,
+  k31: 91.2000,
+  k32: 93.6000,
+  k33: 96.0000,
+  k34: 98.4000,
+  k35: 1.7000,
+  k36: 4.1000,
+  k37: 6.5000,
+  k38: 8.9000,
+  k39: 11.3000,
+  k40: 13.7000,
+  k41: 16.1000,
+  k42: 18.5000,
+  k43: 20.9000,
+  k44: 23.3000,
+  k45: 25.7000,
+  k46: 28.1000,
+  k47: 30.5000,
+  k48: 32.9000,
+  k49: 35.3000,
+  k50: 37.7000,
+  k51: 40.1000,
+  k52: 42.5000,
+  k53: 44.9000,
+  k54: 47.3000,
+  k55: 49.7000,
+  k56: 52.1000,
+  k57: 54.5000,
+  k58: 56.9000,
+  k59: 59.3000,
+  k60: 61.7000,
+  k61: 64.1000,
+  k62: 66.5000,
+  k63: 68.9000,
+  k64: 71.3000,
+  k65: 73.7000,
+  k66: 76.1000,
+  k67: 78.5000,
+  k68: 80.9000,
+  k69: 83.3000,
+  k70: 85.7000,
+  k71: 88.1000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_061_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_061_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_061_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_061_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_061_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_061_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_061_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_061_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_061_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_061_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_061_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_061_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 062 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_062_META = {
+  id: 'pipeline_062',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'water' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 54415,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_062_COEF = {
+  k0: 36.1000,
+  k1: 27.1000,
+  k2: 18.1000,
+  k3: 9.1000,
+  k4: 0.1000,
+  k5: 90.2000,
+  k6: 81.2000,
+  k7: 72.2000,
+  k8: 63.2000,
+  k9: 54.2000,
+  k10: 45.2000,
+  k11: 36.2000,
+  k12: 27.2000,
+  k13: 18.2000,
+  k14: 9.2000,
+  k15: 0.2000,
+  k16: 90.3000,
+  k17: 81.3000,
+  k18: 72.3000,
+  k19: 63.3000,
+  k20: 54.3000,
+  k21: 45.3000,
+  k22: 36.3000,
+  k23: 27.3000,
+  k24: 18.3000,
+  k25: 9.3000,
+  k26: 0.3000,
+  k27: 90.4000,
+  k28: 81.4000,
+  k29: 72.4000,
+  k30: 63.4000,
+  k31: 54.4000,
+  k32: 45.4000,
+  k33: 36.4000,
+  k34: 27.4000,
+  k35: 18.4000,
+  k36: 9.4000,
+  k37: 0.4000,
+  k38: 90.5000,
+  k39: 81.5000,
+  k40: 72.5000,
+  k41: 63.5000,
+  k42: 54.5000,
+  k43: 45.5000,
+  k44: 36.5000,
+  k45: 27.5000,
+  k46: 18.5000,
+  k47: 9.5000,
+  k48: 0.5000,
+  k49: 90.6000,
+  k50: 81.6000,
+  k51: 72.6000,
+  k52: 63.6000,
+  k53: 54.6000,
+  k54: 45.6000,
+  k55: 36.6000,
+  k56: 27.6000,
+  k57: 18.6000,
+  k58: 9.6000,
+  k59: 0.6000,
+  k60: 90.7000,
+  k61: 81.7000,
+  k62: 72.7000,
+  k63: 63.7000,
+  k64: 54.7000,
+  k65: 45.7000,
+  k66: 36.7000,
+  k67: 27.7000,
+  k68: 18.7000,
+  k69: 9.7000,
+  k70: 0.7000,
+  k71: 90.8000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_062_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_062_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_062_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_062_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_062_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_062_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_062_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_062_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_062_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_062_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_062_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_062_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 063 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_063_META = {
+  id: 'pipeline_063',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'digital' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 55292,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_063_COEF = {
+  k0: 55.4000,
+  k1: 35.0000,
+  k2: 14.6000,
+  k3: 93.3000,
+  k4: 72.9000,
+  k5: 52.5000,
+  k6: 32.1000,
+  k7: 11.7000,
+  k8: 90.4000,
+  k9: 70.0000,
+  k10: 49.6000,
+  k11: 29.2000,
+  k12: 8.8000,
+  k13: 87.5000,
+  k14: 67.1000,
+  k15: 46.7000,
+  k16: 26.3000,
+  k17: 5.9000,
+  k18: 84.6000,
+  k19: 64.2000,
+  k20: 43.8000,
+  k21: 23.4000,
+  k22: 3.0000,
+  k23: 81.7000,
+  k24: 61.3000,
+  k25: 40.9000,
+  k26: 20.5000,
+  k27: 0.1000,
+  k28: 78.8000,
+  k29: 58.4000,
+  k30: 38.0000,
+  k31: 17.6000,
+  k32: 96.3000,
+  k33: 75.9000,
+  k34: 55.5000,
+  k35: 35.1000,
+  k36: 14.7000,
+  k37: 93.4000,
+  k38: 73.0000,
+  k39: 52.6000,
+  k40: 32.2000,
+  k41: 11.8000,
+  k42: 90.5000,
+  k43: 70.1000,
+  k44: 49.7000,
+  k45: 29.3000,
+  k46: 8.9000,
+  k47: 87.6000,
+  k48: 67.2000,
+  k49: 46.8000,
+  k50: 26.4000,
+  k51: 6.0000,
+  k52: 84.7000,
+  k53: 64.3000,
+  k54: 43.9000,
+  k55: 23.5000,
+  k56: 3.1000,
+  k57: 81.8000,
+  k58: 61.4000,
+  k59: 41.0000,
+  k60: 20.6000,
+  k61: 0.2000,
+  k62: 78.9000,
+  k63: 58.5000,
+  k64: 38.1000,
+  k65: 17.7000,
+  k66: 96.4000,
+  k67: 76.0000,
+  k68: 55.6000,
+  k69: 35.2000,
+  k70: 14.8000,
+  k71: 93.5000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_063_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_063_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_063_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_063_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_063_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_063_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_063_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_063_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_063_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_063_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_063_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_063_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 064 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_064_META = {
+  id: 'pipeline_064',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'trade' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 56169,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_064_COEF = {
+  k0: 74.7000,
+  k1: 42.9000,
+  k2: 11.1000,
+  k3: 78.4000,
+  k4: 46.6000,
+  k5: 14.8000,
+  k6: 82.1000,
+  k7: 50.3000,
+  k8: 18.5000,
+  k9: 85.8000,
+  k10: 54.0000,
+  k11: 22.2000,
+  k12: 89.5000,
+  k13: 57.7000,
+  k14: 25.9000,
+  k15: 93.2000,
+  k16: 61.4000,
+  k17: 29.6000,
+  k18: 96.9000,
+  k19: 65.1000,
+  k20: 33.3000,
+  k21: 1.5000,
+  k22: 68.8000,
+  k23: 37.0000,
+  k24: 5.2000,
+  k25: 72.5000,
+  k26: 40.7000,
+  k27: 8.9000,
+  k28: 76.2000,
+  k29: 44.4000,
+  k30: 12.6000,
+  k31: 79.9000,
+  k32: 48.1000,
+  k33: 16.3000,
+  k34: 83.6000,
+  k35: 51.8000,
+  k36: 20.0000,
+  k37: 87.3000,
+  k38: 55.5000,
+  k39: 23.7000,
+  k40: 91.0000,
+  k41: 59.2000,
+  k42: 27.4000,
+  k43: 94.7000,
+  k44: 62.9000,
+  k45: 31.1000,
+  k46: 98.4000,
+  k47: 66.6000,
+  k48: 34.8000,
+  k49: 3.0000,
+  k50: 70.3000,
+  k51: 38.5000,
+  k52: 6.7000,
+  k53: 74.0000,
+  k54: 42.2000,
+  k55: 10.4000,
+  k56: 77.7000,
+  k57: 45.9000,
+  k58: 14.1000,
+  k59: 81.4000,
+  k60: 49.6000,
+  k61: 17.8000,
+  k62: 85.1000,
+  k63: 53.3000,
+  k64: 21.5000,
+  k65: 88.8000,
+  k66: 57.0000,
+  k67: 25.2000,
+  k68: 92.5000,
+  k69: 60.7000,
+  k70: 28.9000,
+  k71: 96.2000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_064_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_064_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_064_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_064_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_064_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_064_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_064_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_064_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_064_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_064_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_064_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_064_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 065 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_065_META = {
+  id: 'pipeline_065',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'pharma' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 57046,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_065_COEF = {
+  k0: 94.0000,
+  k1: 50.8000,
+  k2: 7.6000,
+  k3: 63.5000,
+  k4: 20.3000,
+  k5: 76.2000,
+  k6: 33.0000,
+  k7: 88.9000,
+  k8: 45.7000,
+  k9: 2.5000,
+  k10: 58.4000,
+  k11: 15.2000,
+  k12: 71.1000,
+  k13: 27.9000,
+  k14: 83.8000,
+  k15: 40.6000,
+  k16: 96.5000,
+  k17: 53.3000,
+  k18: 10.1000,
+  k19: 66.0000,
+  k20: 22.8000,
+  k21: 78.7000,
+  k22: 35.5000,
+  k23: 91.4000,
+  k24: 48.2000,
+  k25: 5.0000,
+  k26: 60.9000,
+  k27: 17.7000,
+  k28: 73.6000,
+  k29: 30.4000,
+  k30: 86.3000,
+  k31: 43.1000,
+  k32: 99.0000,
+  k33: 55.8000,
+  k34: 12.6000,
+  k35: 68.5000,
+  k36: 25.3000,
+  k37: 81.2000,
+  k38: 38.0000,
+  k39: 93.9000,
+  k40: 50.7000,
+  k41: 7.5000,
+  k42: 63.4000,
+  k43: 20.2000,
+  k44: 76.1000,
+  k45: 32.9000,
+  k46: 88.8000,
+  k47: 45.6000,
+  k48: 2.4000,
+  k49: 58.3000,
+  k50: 15.1000,
+  k51: 71.0000,
+  k52: 27.8000,
+  k53: 83.7000,
+  k54: 40.5000,
+  k55: 96.4000,
+  k56: 53.2000,
+  k57: 10.0000,
+  k58: 65.9000,
+  k59: 22.7000,
+  k60: 78.6000,
+  k61: 35.4000,
+  k62: 91.3000,
+  k63: 48.1000,
+  k64: 4.9000,
+  k65: 60.8000,
+  k66: 17.6000,
+  k67: 73.5000,
+  k68: 30.3000,
+  k69: 86.2000,
+  k70: 43.0000,
+  k71: 98.9000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_065_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_065_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_065_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_065_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_065_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_065_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_065_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_065_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_065_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_065_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_065_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_065_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 066 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_066_META = {
+  id: 'pipeline_066',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'food' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 57923,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_066_COEF = {
+  k0: 14.2000,
+  k1: 58.7000,
+  k2: 4.1000,
+  k3: 48.6000,
+  k4: 93.1000,
+  k5: 38.5000,
+  k6: 83.0000,
+  k7: 28.4000,
+  k8: 72.9000,
+  k9: 18.3000,
+  k10: 62.8000,
+  k11: 8.2000,
+  k12: 52.7000,
+  k13: 97.2000,
+  k14: 42.6000,
+  k15: 87.1000,
+  k16: 32.5000,
+  k17: 77.0000,
+  k18: 22.4000,
+  k19: 66.9000,
+  k20: 12.3000,
+  k21: 56.8000,
+  k22: 2.2000,
+  k23: 46.7000,
+  k24: 91.2000,
+  k25: 36.6000,
+  k26: 81.1000,
+  k27: 26.5000,
+  k28: 71.0000,
+  k29: 16.4000,
+  k30: 60.9000,
+  k31: 6.3000,
+  k32: 50.8000,
+  k33: 95.3000,
+  k34: 40.7000,
+  k35: 85.2000,
+  k36: 30.6000,
+  k37: 75.1000,
+  k38: 20.5000,
+  k39: 65.0000,
+  k40: 10.4000,
+  k41: 54.9000,
+  k42: 0.3000,
+  k43: 44.8000,
+  k44: 89.3000,
+  k45: 34.7000,
+  k46: 79.2000,
+  k47: 24.6000,
+  k48: 69.1000,
+  k49: 14.5000,
+  k50: 59.0000,
+  k51: 4.4000,
+  k52: 48.9000,
+  k53: 93.4000,
+  k54: 38.8000,
+  k55: 83.3000,
+  k56: 28.7000,
+  k57: 73.2000,
+  k58: 18.6000,
+  k59: 63.1000,
+  k60: 8.5000,
+  k61: 53.0000,
+  k62: 97.5000,
+  k63: 42.9000,
+  k64: 87.4000,
+  k65: 32.8000,
+  k66: 77.3000,
+  k67: 22.7000,
+  k68: 67.2000,
+  k69: 12.6000,
+  k70: 57.1000,
+  k71: 2.5000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_066_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_066_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_066_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_066_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_066_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_066_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_066_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_066_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_066_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_066_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_066_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_066_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 067 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_067_META = {
+  id: 'pipeline_067',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'industrial' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 58800,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_067_COEF = {
+  k0: 33.5000,
+  k1: 66.6000,
+  k2: 0.6000,
+  k3: 33.7000,
+  k4: 66.8000,
+  k5: 0.8000,
+  k6: 33.9000,
+  k7: 67.0000,
+  k8: 1.0000,
+  k9: 34.1000,
+  k10: 67.2000,
+  k11: 1.2000,
+  k12: 34.3000,
+  k13: 67.4000,
+  k14: 1.4000,
+  k15: 34.5000,
+  k16: 67.6000,
+  k17: 1.6000,
+  k18: 34.7000,
+  k19: 67.8000,
+  k20: 1.8000,
+  k21: 34.9000,
+  k22: 68.0000,
+  k23: 2.0000,
+  k24: 35.1000,
+  k25: 68.2000,
+  k26: 2.2000,
+  k27: 35.3000,
+  k28: 68.4000,
+  k29: 2.4000,
+  k30: 35.5000,
+  k31: 68.6000,
+  k32: 2.6000,
+  k33: 35.7000,
+  k34: 68.8000,
+  k35: 2.8000,
+  k36: 35.9000,
+  k37: 69.0000,
+  k38: 3.0000,
+  k39: 36.1000,
+  k40: 69.2000,
+  k41: 3.2000,
+  k42: 36.3000,
+  k43: 69.4000,
+  k44: 3.4000,
+  k45: 36.5000,
+  k46: 69.6000,
+  k47: 3.6000,
+  k48: 36.7000,
+  k49: 69.8000,
+  k50: 3.8000,
+  k51: 36.9000,
+  k52: 70.0000,
+  k53: 4.0000,
+  k54: 37.1000,
+  k55: 70.2000,
+  k56: 4.2000,
+  k57: 37.3000,
+  k58: 70.4000,
+  k59: 4.4000,
+  k60: 37.5000,
+  k61: 70.6000,
+  k62: 4.6000,
+  k63: 37.7000,
+  k64: 70.8000,
+  k65: 4.8000,
+  k66: 37.9000,
+  k67: 71.0000,
+  k68: 5.0000,
+  k69: 38.1000,
+  k70: 71.2000,
+  k71: 5.2000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_067_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_067_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_067_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_067_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_067_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_067_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_067_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_067_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_067_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_067_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_067_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_067_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 068 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_068_META = {
+  id: 'pipeline_068',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'telecom' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 59677,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_068_COEF = {
+  k0: 52.8000,
+  k1: 74.5000,
+  k2: 96.2000,
+  k3: 18.8000,
+  k4: 40.5000,
+  k5: 62.2000,
+  k6: 83.9000,
+  k7: 6.5000,
+  k8: 28.2000,
+  k9: 49.9000,
+  k10: 71.6000,
+  k11: 93.3000,
+  k12: 15.9000,
+  k13: 37.6000,
+  k14: 59.3000,
+  k15: 81.0000,
+  k16: 3.6000,
+  k17: 25.3000,
+  k18: 47.0000,
+  k19: 68.7000,
+  k20: 90.4000,
+  k21: 13.0000,
+  k22: 34.7000,
+  k23: 56.4000,
+  k24: 78.1000,
+  k25: 0.7000,
+  k26: 22.4000,
+  k27: 44.1000,
+  k28: 65.8000,
+  k29: 87.5000,
+  k30: 10.1000,
+  k31: 31.8000,
+  k32: 53.5000,
+  k33: 75.2000,
+  k34: 96.9000,
+  k35: 19.5000,
+  k36: 41.2000,
+  k37: 62.9000,
+  k38: 84.6000,
+  k39: 7.2000,
+  k40: 28.9000,
+  k41: 50.6000,
+  k42: 72.3000,
+  k43: 94.0000,
+  k44: 16.6000,
+  k45: 38.3000,
+  k46: 60.0000,
+  k47: 81.7000,
+  k48: 4.3000,
+  k49: 26.0000,
+  k50: 47.7000,
+  k51: 69.4000,
+  k52: 91.1000,
+  k53: 13.7000,
+  k54: 35.4000,
+  k55: 57.1000,
+  k56: 78.8000,
+  k57: 1.4000,
+  k58: 23.1000,
+  k59: 44.8000,
+  k60: 66.5000,
+  k61: 88.2000,
+  k62: 10.8000,
+  k63: 32.5000,
+  k64: 54.2000,
+  k65: 75.9000,
+  k66: 97.6000,
+  k67: 20.2000,
+  k68: 41.9000,
+  k69: 63.6000,
+  k70: 85.3000,
+  k71: 7.9000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_068_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_068_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_068_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_068_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_068_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_068_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_068_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_068_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_068_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_068_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_068_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_068_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 069 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_069_META = {
+  id: 'pipeline_069',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'finance' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 60554,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_069_COEF = {
+  k0: 72.1000,
+  k1: 82.4000,
+  k2: 92.7000,
+  k3: 3.9000,
+  k4: 14.2000,
+  k5: 24.5000,
+  k6: 34.8000,
+  k7: 45.1000,
+  k8: 55.4000,
+  k9: 65.7000,
+  k10: 76.0000,
+  k11: 86.3000,
+  k12: 96.6000,
+  k13: 7.8000,
+  k14: 18.1000,
+  k15: 28.4000,
+  k16: 38.7000,
+  k17: 49.0000,
+  k18: 59.3000,
+  k19: 69.6000,
+  k20: 79.9000,
+  k21: 90.2000,
+  k22: 1.4000,
+  k23: 11.7000,
+  k24: 22.0000,
+  k25: 32.3000,
+  k26: 42.6000,
+  k27: 52.9000,
+  k28: 63.2000,
+  k29: 73.5000,
+  k30: 83.8000,
+  k31: 94.1000,
+  k32: 5.3000,
+  k33: 15.6000,
+  k34: 25.9000,
+  k35: 36.2000,
+  k36: 46.5000,
+  k37: 56.8000,
+  k38: 67.1000,
+  k39: 77.4000,
+  k40: 87.7000,
+  k41: 98.0000,
+  k42: 9.2000,
+  k43: 19.5000,
+  k44: 29.8000,
+  k45: 40.1000,
+  k46: 50.4000,
+  k47: 60.7000,
+  k48: 71.0000,
+  k49: 81.3000,
+  k50: 91.6000,
+  k51: 2.8000,
+  k52: 13.1000,
+  k53: 23.4000,
+  k54: 33.7000,
+  k55: 44.0000,
+  k56: 54.3000,
+  k57: 64.6000,
+  k58: 74.9000,
+  k59: 85.2000,
+  k60: 95.5000,
+  k61: 6.7000,
+  k62: 17.0000,
+  k63: 27.3000,
+  k64: 37.6000,
+  k65: 47.9000,
+  k66: 58.2000,
+  k67: 68.5000,
+  k68: 78.8000,
+  k69: 89.1000,
+  k70: 0.3000,
+  k71: 10.6000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_069_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_069_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_069_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_069_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_069_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_069_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_069_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_069_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_069_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_069_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_069_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_069_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 070 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_070_META = {
+  id: 'pipeline_070',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'freight' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 61431,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_070_COEF = {
+  k0: 91.4000,
+  k1: 90.3000,
+  k2: 89.2000,
+  k3: 88.1000,
+  k4: 87.0000,
+  k5: 85.9000,
+  k6: 84.8000,
+  k7: 83.7000,
+  k8: 82.6000,
+  k9: 81.5000,
+  k10: 80.4000,
+  k11: 79.3000,
+  k12: 78.2000,
+  k13: 77.1000,
+  k14: 76.0000,
+  k15: 74.9000,
+  k16: 73.8000,
+  k17: 72.7000,
+  k18: 71.6000,
+  k19: 70.5000,
+  k20: 69.4000,
+  k21: 68.3000,
+  k22: 67.2000,
+  k23: 66.1000,
+  k24: 65.0000,
+  k25: 63.9000,
+  k26: 62.8000,
+  k27: 61.7000,
+  k28: 60.6000,
+  k29: 59.5000,
+  k30: 58.4000,
+  k31: 57.3000,
+  k32: 56.2000,
+  k33: 55.1000,
+  k34: 54.0000,
+  k35: 52.9000,
+  k36: 51.8000,
+  k37: 50.7000,
+  k38: 49.6000,
+  k39: 48.5000,
+  k40: 47.4000,
+  k41: 46.3000,
+  k42: 45.2000,
+  k43: 44.1000,
+  k44: 43.0000,
+  k45: 41.9000,
+  k46: 40.8000,
+  k47: 39.7000,
+  k48: 38.6000,
+  k49: 37.5000,
+  k50: 36.4000,
+  k51: 35.3000,
+  k52: 34.2000,
+  k53: 33.1000,
+  k54: 32.0000,
+  k55: 30.9000,
+  k56: 29.8000,
+  k57: 28.7000,
+  k58: 27.6000,
+  k59: 26.5000,
+  k60: 25.4000,
+  k61: 24.3000,
+  k62: 23.2000,
+  k63: 22.1000,
+  k64: 21.0000,
+  k65: 19.9000,
+  k66: 18.8000,
+  k67: 17.7000,
+  k68: 16.6000,
+  k69: 15.5000,
+  k70: 14.4000,
+  k71: 13.3000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_070_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_070_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_070_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_070_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_070_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_070_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_070_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_070_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_070_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_070_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_070_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_070_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 071 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_071_META = {
+  id: 'pipeline_071',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'energy' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 62308,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_071_COEF = {
+  k0: 11.6000,
+  k1: 98.2000,
+  k2: 85.7000,
+  k3: 73.2000,
+  k4: 60.7000,
+  k5: 48.2000,
+  k6: 35.7000,
+  k7: 23.2000,
+  k8: 10.7000,
+  k9: 97.3000,
+  k10: 84.8000,
+  k11: 72.3000,
+  k12: 59.8000,
+  k13: 47.3000,
+  k14: 34.8000,
+  k15: 22.3000,
+  k16: 9.8000,
+  k17: 96.4000,
+  k18: 83.9000,
+  k19: 71.4000,
+  k20: 58.9000,
+  k21: 46.4000,
+  k22: 33.9000,
+  k23: 21.4000,
+  k24: 8.9000,
+  k25: 95.5000,
+  k26: 83.0000,
+  k27: 70.5000,
+  k28: 58.0000,
+  k29: 45.5000,
+  k30: 33.0000,
+  k31: 20.5000,
+  k32: 8.0000,
+  k33: 94.6000,
+  k34: 82.1000,
+  k35: 69.6000,
+  k36: 57.1000,
+  k37: 44.6000,
+  k38: 32.1000,
+  k39: 19.6000,
+  k40: 7.1000,
+  k41: 93.7000,
+  k42: 81.2000,
+  k43: 68.7000,
+  k44: 56.2000,
+  k45: 43.7000,
+  k46: 31.2000,
+  k47: 18.7000,
+  k48: 6.2000,
+  k49: 92.8000,
+  k50: 80.3000,
+  k51: 67.8000,
+  k52: 55.3000,
+  k53: 42.8000,
+  k54: 30.3000,
+  k55: 17.8000,
+  k56: 5.3000,
+  k57: 91.9000,
+  k58: 79.4000,
+  k59: 66.9000,
+  k60: 54.4000,
+  k61: 41.9000,
+  k62: 29.4000,
+  k63: 16.9000,
+  k64: 4.4000,
+  k65: 91.0000,
+  k66: 78.5000,
+  k67: 66.0000,
+  k68: 53.5000,
+  k69: 41.0000,
+  k70: 28.5000,
+  k71: 16.0000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_071_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_071_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_071_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_071_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_071_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_071_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_071_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_071_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_071_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_071_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_071_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_071_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 072 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_072_META = {
+  id: 'pipeline_072',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'water' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 63185,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_072_COEF = {
+  k0: 30.9000,
+  k1: 7.0000,
+  k2: 82.2000,
+  k3: 58.3000,
+  k4: 34.4000,
+  k5: 10.5000,
+  k6: 85.7000,
+  k7: 61.8000,
+  k8: 37.9000,
+  k9: 14.0000,
+  k10: 89.2000,
+  k11: 65.3000,
+  k12: 41.4000,
+  k13: 17.5000,
+  k14: 92.7000,
+  k15: 68.8000,
+  k16: 44.9000,
+  k17: 21.0000,
+  k18: 96.2000,
+  k19: 72.3000,
+  k20: 48.4000,
+  k21: 24.5000,
+  k22: 0.6000,
+  k23: 75.8000,
+  k24: 51.9000,
+  k25: 28.0000,
+  k26: 4.1000,
+  k27: 79.3000,
+  k28: 55.4000,
+  k29: 31.5000,
+  k30: 7.6000,
+  k31: 82.8000,
+  k32: 58.9000,
+  k33: 35.0000,
+  k34: 11.1000,
+  k35: 86.3000,
+  k36: 62.4000,
+  k37: 38.5000,
+  k38: 14.6000,
+  k39: 89.8000,
+  k40: 65.9000,
+  k41: 42.0000,
+  k42: 18.1000,
+  k43: 93.3000,
+  k44: 69.4000,
+  k45: 45.5000,
+  k46: 21.6000,
+  k47: 96.8000,
+  k48: 72.9000,
+  k49: 49.0000,
+  k50: 25.1000,
+  k51: 1.2000,
+  k52: 76.4000,
+  k53: 52.5000,
+  k54: 28.6000,
+  k55: 4.7000,
+  k56: 79.9000,
+  k57: 56.0000,
+  k58: 32.1000,
+  k59: 8.2000,
+  k60: 83.4000,
+  k61: 59.5000,
+  k62: 35.6000,
+  k63: 11.7000,
+  k64: 86.9000,
+  k65: 63.0000,
+  k66: 39.1000,
+  k67: 15.2000,
+  k68: 90.4000,
+  k69: 66.5000,
+  k70: 42.6000,
+  k71: 18.7000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_072_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_072_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_072_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_072_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_072_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_072_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_072_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_072_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_072_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_072_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_072_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_072_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 073 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_073_META = {
+  id: 'pipeline_073',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'digital' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 64062,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_073_COEF = {
+  k0: 50.2000,
+  k1: 14.9000,
+  k2: 78.7000,
+  k3: 43.4000,
+  k4: 8.1000,
+  k5: 71.9000,
+  k6: 36.6000,
+  k7: 1.3000,
+  k8: 65.1000,
+  k9: 29.8000,
+  k10: 93.6000,
+  k11: 58.3000,
+  k12: 23.0000,
+  k13: 86.8000,
+  k14: 51.5000,
+  k15: 16.2000,
+  k16: 80.0000,
+  k17: 44.7000,
+  k18: 9.4000,
+  k19: 73.2000,
+  k20: 37.9000,
+  k21: 2.6000,
+  k22: 66.4000,
+  k23: 31.1000,
+  k24: 94.9000,
+  k25: 59.6000,
+  k26: 24.3000,
+  k27: 88.1000,
+  k28: 52.8000,
+  k29: 17.5000,
+  k30: 81.3000,
+  k31: 46.0000,
+  k32: 10.7000,
+  k33: 74.5000,
+  k34: 39.2000,
+  k35: 3.9000,
+  k36: 67.7000,
+  k37: 32.4000,
+  k38: 96.2000,
+  k39: 60.9000,
+  k40: 25.6000,
+  k41: 89.4000,
+  k42: 54.1000,
+  k43: 18.8000,
+  k44: 82.6000,
+  k45: 47.3000,
+  k46: 12.0000,
+  k47: 75.8000,
+  k48: 40.5000,
+  k49: 5.2000,
+  k50: 69.0000,
+  k51: 33.7000,
+  k52: 97.5000,
+  k53: 62.2000,
+  k54: 26.9000,
+  k55: 90.7000,
+  k56: 55.4000,
+  k57: 20.1000,
+  k58: 83.9000,
+  k59: 48.6000,
+  k60: 13.3000,
+  k61: 77.1000,
+  k62: 41.8000,
+  k63: 6.5000,
+  k64: 70.3000,
+  k65: 35.0000,
+  k66: 98.8000,
+  k67: 63.5000,
+  k68: 28.2000,
+  k69: 92.0000,
+  k70: 56.7000,
+  k71: 21.4000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_073_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_073_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_073_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_073_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_073_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_073_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_073_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_073_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_073_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_073_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_073_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_073_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 074 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_074_META = {
+  id: 'pipeline_074',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'trade' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 64939,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_074_COEF = {
+  k0: 69.5000,
+  k1: 22.8000,
+  k2: 75.2000,
+  k3: 28.5000,
+  k4: 80.9000,
+  k5: 34.2000,
+  k6: 86.6000,
+  k7: 39.9000,
+  k8: 92.3000,
+  k9: 45.6000,
+  k10: 98.0000,
+  k11: 51.3000,
+  k12: 4.6000,
+  k13: 57.0000,
+  k14: 10.3000,
+  k15: 62.7000,
+  k16: 16.0000,
+  k17: 68.4000,
+  k18: 21.7000,
+  k19: 74.1000,
+  k20: 27.4000,
+  k21: 79.8000,
+  k22: 33.1000,
+  k23: 85.5000,
+  k24: 38.8000,
+  k25: 91.2000,
+  k26: 44.5000,
+  k27: 96.9000,
+  k28: 50.2000,
+  k29: 3.5000,
+  k30: 55.9000,
+  k31: 9.2000,
+  k32: 61.6000,
+  k33: 14.9000,
+  k34: 67.3000,
+  k35: 20.6000,
+  k36: 73.0000,
+  k37: 26.3000,
+  k38: 78.7000,
+  k39: 32.0000,
+  k40: 84.4000,
+  k41: 37.7000,
+  k42: 90.1000,
+  k43: 43.4000,
+  k44: 95.8000,
+  k45: 49.1000,
+  k46: 2.4000,
+  k47: 54.8000,
+  k48: 8.1000,
+  k49: 60.5000,
+  k50: 13.8000,
+  k51: 66.2000,
+  k52: 19.5000,
+  k53: 71.9000,
+  k54: 25.2000,
+  k55: 77.6000,
+  k56: 30.9000,
+  k57: 83.3000,
+  k58: 36.6000,
+  k59: 89.0000,
+  k60: 42.3000,
+  k61: 94.7000,
+  k62: 48.0000,
+  k63: 1.3000,
+  k64: 53.7000,
+  k65: 7.0000,
+  k66: 59.4000,
+  k67: 12.7000,
+  k68: 65.1000,
+  k69: 18.4000,
+  k70: 70.8000,
+  k71: 24.1000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_074_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_074_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_074_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_074_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_074_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_074_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_074_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_074_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_074_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_074_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_074_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_074_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 075 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_075_META = {
+  id: 'pipeline_075',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'pharma' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 65816,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_075_COEF = {
+  k0: 88.8000,
+  k1: 30.7000,
+  k2: 71.7000,
+  k3: 13.6000,
+  k4: 54.6000,
+  k5: 95.6000,
+  k6: 37.5000,
+  k7: 78.5000,
+  k8: 20.4000,
+  k9: 61.4000,
+  k10: 3.3000,
+  k11: 44.3000,
+  k12: 85.3000,
+  k13: 27.2000,
+  k14: 68.2000,
+  k15: 10.1000,
+  k16: 51.1000,
+  k17: 92.1000,
+  k18: 34.0000,
+  k19: 75.0000,
+  k20: 16.9000,
+  k21: 57.9000,
+  k22: 98.9000,
+  k23: 40.8000,
+  k24: 81.8000,
+  k25: 23.7000,
+  k26: 64.7000,
+  k27: 6.6000,
+  k28: 47.6000,
+  k29: 88.6000,
+  k30: 30.5000,
+  k31: 71.5000,
+  k32: 13.4000,
+  k33: 54.4000,
+  k34: 95.4000,
+  k35: 37.3000,
+  k36: 78.3000,
+  k37: 20.2000,
+  k38: 61.2000,
+  k39: 3.1000,
+  k40: 44.1000,
+  k41: 85.1000,
+  k42: 27.0000,
+  k43: 68.0000,
+  k44: 9.9000,
+  k45: 50.9000,
+  k46: 91.9000,
+  k47: 33.8000,
+  k48: 74.8000,
+  k49: 16.7000,
+  k50: 57.7000,
+  k51: 98.7000,
+  k52: 40.6000,
+  k53: 81.6000,
+  k54: 23.5000,
+  k55: 64.5000,
+  k56: 6.4000,
+  k57: 47.4000,
+  k58: 88.4000,
+  k59: 30.3000,
+  k60: 71.3000,
+  k61: 13.2000,
+  k62: 54.2000,
+  k63: 95.2000,
+  k64: 37.1000,
+  k65: 78.1000,
+  k66: 20.0000,
+  k67: 61.0000,
+  k68: 2.9000,
+  k69: 43.9000,
+  k70: 84.9000,
+  k71: 26.8000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_075_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_075_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_075_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_075_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_075_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_075_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_075_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_075_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_075_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_075_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_075_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_075_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 076 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_076_META = {
+  id: 'pipeline_076',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'food' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 66693,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_076_COEF = {
+  k0: 9.0000,
+  k1: 38.6000,
+  k2: 68.2000,
+  k3: 97.8000,
+  k4: 28.3000,
+  k5: 57.9000,
+  k6: 87.5000,
+  k7: 18.0000,
+  k8: 47.6000,
+  k9: 77.2000,
+  k10: 7.7000,
+  k11: 37.3000,
+  k12: 66.9000,
+  k13: 96.5000,
+  k14: 27.0000,
+  k15: 56.6000,
+  k16: 86.2000,
+  k17: 16.7000,
+  k18: 46.3000,
+  k19: 75.9000,
+  k20: 6.4000,
+  k21: 36.0000,
+  k22: 65.6000,
+  k23: 95.2000,
+  k24: 25.7000,
+  k25: 55.3000,
+  k26: 84.9000,
+  k27: 15.4000,
+  k28: 45.0000,
+  k29: 74.6000,
+  k30: 5.1000,
+  k31: 34.7000,
+  k32: 64.3000,
+  k33: 93.9000,
+  k34: 24.4000,
+  k35: 54.0000,
+  k36: 83.6000,
+  k37: 14.1000,
+  k38: 43.7000,
+  k39: 73.3000,
+  k40: 3.8000,
+  k41: 33.4000,
+  k42: 63.0000,
+  k43: 92.6000,
+  k44: 23.1000,
+  k45: 52.7000,
+  k46: 82.3000,
+  k47: 12.8000,
+  k48: 42.4000,
+  k49: 72.0000,
+  k50: 2.5000,
+  k51: 32.1000,
+  k52: 61.7000,
+  k53: 91.3000,
+  k54: 21.8000,
+  k55: 51.4000,
+  k56: 81.0000,
+  k57: 11.5000,
+  k58: 41.1000,
+  k59: 70.7000,
+  k60: 1.2000,
+  k61: 30.8000,
+  k62: 60.4000,
+  k63: 90.0000,
+  k64: 20.5000,
+  k65: 50.1000,
+  k66: 79.7000,
+  k67: 10.2000,
+  k68: 39.8000,
+  k69: 69.4000,
+  k70: 99.0000,
+  k71: 29.5000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_076_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_076_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_076_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_076_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_076_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_076_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_076_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_076_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_076_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_076_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_076_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_076_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 077 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_077_META = {
+  id: 'pipeline_077',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'industrial' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 67570,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_077_COEF = {
+  k0: 28.3000,
+  k1: 46.5000,
+  k2: 64.7000,
+  k3: 82.9000,
+  k4: 2.0000,
+  k5: 20.2000,
+  k6: 38.4000,
+  k7: 56.6000,
+  k8: 74.8000,
+  k9: 93.0000,
+  k10: 12.1000,
+  k11: 30.3000,
+  k12: 48.5000,
+  k13: 66.7000,
+  k14: 84.9000,
+  k15: 4.0000,
+  k16: 22.2000,
+  k17: 40.4000,
+  k18: 58.6000,
+  k19: 76.8000,
+  k20: 95.0000,
+  k21: 14.1000,
+  k22: 32.3000,
+  k23: 50.5000,
+  k24: 68.7000,
+  k25: 86.9000,
+  k26: 6.0000,
+  k27: 24.2000,
+  k28: 42.4000,
+  k29: 60.6000,
+  k30: 78.8000,
+  k31: 97.0000,
+  k32: 16.1000,
+  k33: 34.3000,
+  k34: 52.5000,
+  k35: 70.7000,
+  k36: 88.9000,
+  k37: 8.0000,
+  k38: 26.2000,
+  k39: 44.4000,
+  k40: 62.6000,
+  k41: 80.8000,
+  k42: 99.0000,
+  k43: 18.1000,
+  k44: 36.3000,
+  k45: 54.5000,
+  k46: 72.7000,
+  k47: 90.9000,
+  k48: 10.0000,
+  k49: 28.2000,
+  k50: 46.4000,
+  k51: 64.6000,
+  k52: 82.8000,
+  k53: 1.9000,
+  k54: 20.1000,
+  k55: 38.3000,
+  k56: 56.5000,
+  k57: 74.7000,
+  k58: 92.9000,
+  k59: 12.0000,
+  k60: 30.2000,
+  k61: 48.4000,
+  k62: 66.6000,
+  k63: 84.8000,
+  k64: 3.9000,
+  k65: 22.1000,
+  k66: 40.3000,
+  k67: 58.5000,
+  k68: 76.7000,
+  k69: 94.9000,
+  k70: 14.0000,
+  k71: 32.2000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_077_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_077_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_077_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_077_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_077_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_077_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_077_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_077_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_077_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_077_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_077_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_077_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 078 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_078_META = {
+  id: 'pipeline_078',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'telecom' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 68447,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_078_COEF = {
+  k0: 47.6000,
+  k1: 54.4000,
+  k2: 61.2000,
+  k3: 68.0000,
+  k4: 74.8000,
+  k5: 81.6000,
+  k6: 88.4000,
+  k7: 95.2000,
+  k8: 2.9000,
+  k9: 9.7000,
+  k10: 16.5000,
+  k11: 23.3000,
+  k12: 30.1000,
+  k13: 36.9000,
+  k14: 43.7000,
+  k15: 50.5000,
+  k16: 57.3000,
+  k17: 64.1000,
+  k18: 70.9000,
+  k19: 77.7000,
+  k20: 84.5000,
+  k21: 91.3000,
+  k22: 98.1000,
+  k23: 5.8000,
+  k24: 12.6000,
+  k25: 19.4000,
+  k26: 26.2000,
+  k27: 33.0000,
+  k28: 39.8000,
+  k29: 46.6000,
+  k30: 53.4000,
+  k31: 60.2000,
+  k32: 67.0000,
+  k33: 73.8000,
+  k34: 80.6000,
+  k35: 87.4000,
+  k36: 94.2000,
+  k37: 1.9000,
+  k38: 8.7000,
+  k39: 15.5000,
+  k40: 22.3000,
+  k41: 29.1000,
+  k42: 35.9000,
+  k43: 42.7000,
+  k44: 49.5000,
+  k45: 56.3000,
+  k46: 63.1000,
+  k47: 69.9000,
+  k48: 76.7000,
+  k49: 83.5000,
+  k50: 90.3000,
+  k51: 97.1000,
+  k52: 4.8000,
+  k53: 11.6000,
+  k54: 18.4000,
+  k55: 25.2000,
+  k56: 32.0000,
+  k57: 38.8000,
+  k58: 45.6000,
+  k59: 52.4000,
+  k60: 59.2000,
+  k61: 66.0000,
+  k62: 72.8000,
+  k63: 79.6000,
+  k64: 86.4000,
+  k65: 93.2000,
+  k66: 0.9000,
+  k67: 7.7000,
+  k68: 14.5000,
+  k69: 21.3000,
+  k70: 28.1000,
+  k71: 34.9000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_078_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_078_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_078_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_078_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_078_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_078_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_078_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_078_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_078_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_078_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_078_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_078_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 079 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_079_META = {
+  id: 'pipeline_079',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'finance' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 69324,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_079_COEF = {
+  k0: 66.9000,
+  k1: 62.3000,
+  k2: 57.7000,
+  k3: 53.1000,
+  k4: 48.5000,
+  k5: 43.9000,
+  k6: 39.3000,
+  k7: 34.7000,
+  k8: 30.1000,
+  k9: 25.5000,
+  k10: 20.9000,
+  k11: 16.3000,
+  k12: 11.7000,
+  k13: 7.1000,
+  k14: 2.5000,
+  k15: 97.0000,
+  k16: 92.4000,
+  k17: 87.8000,
+  k18: 83.2000,
+  k19: 78.6000,
+  k20: 74.0000,
+  k21: 69.4000,
+  k22: 64.8000,
+  k23: 60.2000,
+  k24: 55.6000,
+  k25: 51.0000,
+  k26: 46.4000,
+  k27: 41.8000,
+  k28: 37.2000,
+  k29: 32.6000,
+  k30: 28.0000,
+  k31: 23.4000,
+  k32: 18.8000,
+  k33: 14.2000,
+  k34: 9.6000,
+  k35: 5.0000,
+  k36: 0.4000,
+  k37: 94.9000,
+  k38: 90.3000,
+  k39: 85.7000,
+  k40: 81.1000,
+  k41: 76.5000,
+  k42: 71.9000,
+  k43: 67.3000,
+  k44: 62.7000,
+  k45: 58.1000,
+  k46: 53.5000,
+  k47: 48.9000,
+  k48: 44.3000,
+  k49: 39.7000,
+  k50: 35.1000,
+  k51: 30.5000,
+  k52: 25.9000,
+  k53: 21.3000,
+  k54: 16.7000,
+  k55: 12.1000,
+  k56: 7.5000,
+  k57: 2.9000,
+  k58: 97.4000,
+  k59: 92.8000,
+  k60: 88.2000,
+  k61: 83.6000,
+  k62: 79.0000,
+  k63: 74.4000,
+  k64: 69.8000,
+  k65: 65.2000,
+  k66: 60.6000,
+  k67: 56.0000,
+  k68: 51.4000,
+  k69: 46.8000,
+  k70: 42.2000,
+  k71: 37.6000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_079_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_079_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_079_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_079_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_079_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_079_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_079_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_079_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_079_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_079_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_079_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_079_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 080 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_080_META = {
+  id: 'pipeline_080',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'freight' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 70201,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_080_COEF = {
+  k0: 86.2000,
+  k1: 70.2000,
+  k2: 54.2000,
+  k3: 38.2000,
+  k4: 22.2000,
+  k5: 6.2000,
+  k6: 89.3000,
+  k7: 73.3000,
+  k8: 57.3000,
+  k9: 41.3000,
+  k10: 25.3000,
+  k11: 9.3000,
+  k12: 92.4000,
+  k13: 76.4000,
+  k14: 60.4000,
+  k15: 44.4000,
+  k16: 28.4000,
+  k17: 12.4000,
+  k18: 95.5000,
+  k19: 79.5000,
+  k20: 63.5000,
+  k21: 47.5000,
+  k22: 31.5000,
+  k23: 15.5000,
+  k24: 98.6000,
+  k25: 82.6000,
+  k26: 66.6000,
+  k27: 50.6000,
+  k28: 34.6000,
+  k29: 18.6000,
+  k30: 2.6000,
+  k31: 85.7000,
+  k32: 69.7000,
+  k33: 53.7000,
+  k34: 37.7000,
+  k35: 21.7000,
+  k36: 5.7000,
+  k37: 88.8000,
+  k38: 72.8000,
+  k39: 56.8000,
+  k40: 40.8000,
+  k41: 24.8000,
+  k42: 8.8000,
+  k43: 91.9000,
+  k44: 75.9000,
+  k45: 59.9000,
+  k46: 43.9000,
+  k47: 27.9000,
+  k48: 11.9000,
+  k49: 95.0000,
+  k50: 79.0000,
+  k51: 63.0000,
+  k52: 47.0000,
+  k53: 31.0000,
+  k54: 15.0000,
+  k55: 98.1000,
+  k56: 82.1000,
+  k57: 66.1000,
+  k58: 50.1000,
+  k59: 34.1000,
+  k60: 18.1000,
+  k61: 2.1000,
+  k62: 85.2000,
+  k63: 69.2000,
+  k64: 53.2000,
+  k65: 37.2000,
+  k66: 21.2000,
+  k67: 5.2000,
+  k68: 88.3000,
+  k69: 72.3000,
+  k70: 56.3000,
+  k71: 40.3000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_080_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_080_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_080_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_080_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_080_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_080_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_080_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_080_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_080_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_080_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_080_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_080_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 081 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_081_META = {
+  id: 'pipeline_081',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'energy' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 71078,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_081_COEF = {
+  k0: 6.4000,
+  k1: 78.1000,
+  k2: 50.7000,
+  k3: 23.3000,
+  k4: 95.0000,
+  k5: 67.6000,
+  k6: 40.2000,
+  k7: 12.8000,
+  k8: 84.5000,
+  k9: 57.1000,
+  k10: 29.7000,
+  k11: 2.3000,
+  k12: 74.0000,
+  k13: 46.6000,
+  k14: 19.2000,
+  k15: 90.9000,
+  k16: 63.5000,
+  k17: 36.1000,
+  k18: 8.7000,
+  k19: 80.4000,
+  k20: 53.0000,
+  k21: 25.6000,
+  k22: 97.3000,
+  k23: 69.9000,
+  k24: 42.5000,
+  k25: 15.1000,
+  k26: 86.8000,
+  k27: 59.4000,
+  k28: 32.0000,
+  k29: 4.6000,
+  k30: 76.3000,
+  k31: 48.9000,
+  k32: 21.5000,
+  k33: 93.2000,
+  k34: 65.8000,
+  k35: 38.4000,
+  k36: 11.0000,
+  k37: 82.7000,
+  k38: 55.3000,
+  k39: 27.9000,
+  k40: 0.5000,
+  k41: 72.2000,
+  k42: 44.8000,
+  k43: 17.4000,
+  k44: 89.1000,
+  k45: 61.7000,
+  k46: 34.3000,
+  k47: 6.9000,
+  k48: 78.6000,
+  k49: 51.2000,
+  k50: 23.8000,
+  k51: 95.5000,
+  k52: 68.1000,
+  k53: 40.7000,
+  k54: 13.3000,
+  k55: 85.0000,
+  k56: 57.6000,
+  k57: 30.2000,
+  k58: 2.8000,
+  k59: 74.5000,
+  k60: 47.1000,
+  k61: 19.7000,
+  k62: 91.4000,
+  k63: 64.0000,
+  k64: 36.6000,
+  k65: 9.2000,
+  k66: 80.9000,
+  k67: 53.5000,
+  k68: 26.1000,
+  k69: 97.8000,
+  k70: 70.4000,
+  k71: 43.0000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_081_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_081_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_081_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_081_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_081_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_081_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_081_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_081_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_081_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_081_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_081_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_081_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 082 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_082_META = {
+  id: 'pipeline_082',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'water' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 71955,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_082_COEF = {
+  k0: 25.7000,
+  k1: 86.0000,
+  k2: 47.2000,
+  k3: 8.4000,
+  k4: 68.7000,
+  k5: 29.9000,
+  k6: 90.2000,
+  k7: 51.4000,
+  k8: 12.6000,
+  k9: 72.9000,
+  k10: 34.1000,
+  k11: 94.4000,
+  k12: 55.6000,
+  k13: 16.8000,
+  k14: 77.1000,
+  k15: 38.3000,
+  k16: 98.6000,
+  k17: 59.8000,
+  k18: 21.0000,
+  k19: 81.3000,
+  k20: 42.5000,
+  k21: 3.7000,
+  k22: 64.0000,
+  k23: 25.2000,
+  k24: 85.5000,
+  k25: 46.7000,
+  k26: 7.9000,
+  k27: 68.2000,
+  k28: 29.4000,
+  k29: 89.7000,
+  k30: 50.9000,
+  k31: 12.1000,
+  k32: 72.4000,
+  k33: 33.6000,
+  k34: 93.9000,
+  k35: 55.1000,
+  k36: 16.3000,
+  k37: 76.6000,
+  k38: 37.8000,
+  k39: 98.1000,
+  k40: 59.3000,
+  k41: 20.5000,
+  k42: 80.8000,
+  k43: 42.0000,
+  k44: 3.2000,
+  k45: 63.5000,
+  k46: 24.7000,
+  k47: 85.0000,
+  k48: 46.2000,
+  k49: 7.4000,
+  k50: 67.7000,
+  k51: 28.9000,
+  k52: 89.2000,
+  k53: 50.4000,
+  k54: 11.6000,
+  k55: 71.9000,
+  k56: 33.1000,
+  k57: 93.4000,
+  k58: 54.6000,
+  k59: 15.8000,
+  k60: 76.1000,
+  k61: 37.3000,
+  k62: 97.6000,
+  k63: 58.8000,
+  k64: 20.0000,
+  k65: 80.3000,
+  k66: 41.5000,
+  k67: 2.7000,
+  k68: 63.0000,
+  k69: 24.2000,
+  k70: 84.5000,
+  k71: 45.7000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_082_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_082_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_082_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_082_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_082_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_082_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_082_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_082_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_082_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_082_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_082_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_082_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 083 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_083_META = {
+  id: 'pipeline_083',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'digital' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 72832,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_083_COEF = {
+  k0: 45.0000,
+  k1: 93.9000,
+  k2: 43.7000,
+  k3: 92.6000,
+  k4: 42.4000,
+  k5: 91.3000,
+  k6: 41.1000,
+  k7: 90.0000,
+  k8: 39.8000,
+  k9: 88.7000,
+  k10: 38.5000,
+  k11: 87.4000,
+  k12: 37.2000,
+  k13: 86.1000,
+  k14: 35.9000,
+  k15: 84.8000,
+  k16: 34.6000,
+  k17: 83.5000,
+  k18: 33.3000,
+  k19: 82.2000,
+  k20: 32.0000,
+  k21: 80.9000,
+  k22: 30.7000,
+  k23: 79.6000,
+  k24: 29.4000,
+  k25: 78.3000,
+  k26: 28.1000,
+  k27: 77.0000,
+  k28: 26.8000,
+  k29: 75.7000,
+  k30: 25.5000,
+  k31: 74.4000,
+  k32: 24.2000,
+  k33: 73.1000,
+  k34: 22.9000,
+  k35: 71.8000,
+  k36: 21.6000,
+  k37: 70.5000,
+  k38: 20.3000,
+  k39: 69.2000,
+  k40: 19.0000,
+  k41: 67.9000,
+  k42: 17.7000,
+  k43: 66.6000,
+  k44: 16.4000,
+  k45: 65.3000,
+  k46: 15.1000,
+  k47: 64.0000,
+  k48: 13.8000,
+  k49: 62.7000,
+  k50: 12.5000,
+  k51: 61.4000,
+  k52: 11.2000,
+  k53: 60.1000,
+  k54: 9.9000,
+  k55: 58.8000,
+  k56: 8.6000,
+  k57: 57.5000,
+  k58: 7.3000,
+  k59: 56.2000,
+  k60: 6.0000,
+  k61: 54.9000,
+  k62: 4.7000,
+  k63: 53.6000,
+  k64: 3.4000,
+  k65: 52.3000,
+  k66: 2.1000,
+  k67: 51.0000,
+  k68: 0.8000,
+  k69: 49.7000,
+  k70: 98.6000,
+  k71: 48.4000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_083_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_083_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_083_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_083_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_083_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_083_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_083_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_083_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_083_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_083_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_083_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_083_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 084 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_084_META = {
+  id: 'pipeline_084',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'trade' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 73709,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_084_COEF = {
+  k0: 64.3000,
+  k1: 2.7000,
+  k2: 40.2000,
+  k3: 77.7000,
+  k4: 16.1000,
+  k5: 53.6000,
+  k6: 91.1000,
+  k7: 29.5000,
+  k8: 67.0000,
+  k9: 5.4000,
+  k10: 42.9000,
+  k11: 80.4000,
+  k12: 18.8000,
+  k13: 56.3000,
+  k14: 93.8000,
+  k15: 32.2000,
+  k16: 69.7000,
+  k17: 8.1000,
+  k18: 45.6000,
+  k19: 83.1000,
+  k20: 21.5000,
+  k21: 59.0000,
+  k22: 96.5000,
+  k23: 34.9000,
+  k24: 72.4000,
+  k25: 10.8000,
+  k26: 48.3000,
+  k27: 85.8000,
+  k28: 24.2000,
+  k29: 61.7000,
+  k30: 0.1000,
+  k31: 37.6000,
+  k32: 75.1000,
+  k33: 13.5000,
+  k34: 51.0000,
+  k35: 88.5000,
+  k36: 26.9000,
+  k37: 64.4000,
+  k38: 2.8000,
+  k39: 40.3000,
+  k40: 77.8000,
+  k41: 16.2000,
+  k42: 53.7000,
+  k43: 91.2000,
+  k44: 29.6000,
+  k45: 67.1000,
+  k46: 5.5000,
+  k47: 43.0000,
+  k48: 80.5000,
+  k49: 18.9000,
+  k50: 56.4000,
+  k51: 93.9000,
+  k52: 32.3000,
+  k53: 69.8000,
+  k54: 8.2000,
+  k55: 45.7000,
+  k56: 83.2000,
+  k57: 21.6000,
+  k58: 59.1000,
+  k59: 96.6000,
+  k60: 35.0000,
+  k61: 72.5000,
+  k62: 10.9000,
+  k63: 48.4000,
+  k64: 85.9000,
+  k65: 24.3000,
+  k66: 61.8000,
+  k67: 0.2000,
+  k68: 37.7000,
+  k69: 75.2000,
+  k70: 13.6000,
+  k71: 51.1000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_084_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_084_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_084_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_084_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_084_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_084_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_084_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_084_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_084_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_084_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_084_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_084_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 085 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_085_META = {
+  id: 'pipeline_085',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'pharma' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 74586,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_085_COEF = {
+  k0: 83.6000,
+  k1: 10.6000,
+  k2: 36.7000,
+  k3: 62.8000,
+  k4: 88.9000,
+  k5: 15.9000,
+  k6: 42.0000,
+  k7: 68.1000,
+  k8: 94.2000,
+  k9: 21.2000,
+  k10: 47.3000,
+  k11: 73.4000,
+  k12: 0.4000,
+  k13: 26.5000,
+  k14: 52.6000,
+  k15: 78.7000,
+  k16: 5.7000,
+  k17: 31.8000,
+  k18: 57.9000,
+  k19: 84.0000,
+  k20: 11.0000,
+  k21: 37.1000,
+  k22: 63.2000,
+  k23: 89.3000,
+  k24: 16.3000,
+  k25: 42.4000,
+  k26: 68.5000,
+  k27: 94.6000,
+  k28: 21.6000,
+  k29: 47.7000,
+  k30: 73.8000,
+  k31: 0.8000,
+  k32: 26.9000,
+  k33: 53.0000,
+  k34: 79.1000,
+  k35: 6.1000,
+  k36: 32.2000,
+  k37: 58.3000,
+  k38: 84.4000,
+  k39: 11.4000,
+  k40: 37.5000,
+  k41: 63.6000,
+  k42: 89.7000,
+  k43: 16.7000,
+  k44: 42.8000,
+  k45: 68.9000,
+  k46: 95.0000,
+  k47: 22.0000,
+  k48: 48.1000,
+  k49: 74.2000,
+  k50: 1.2000,
+  k51: 27.3000,
+  k52: 53.4000,
+  k53: 79.5000,
+  k54: 6.5000,
+  k55: 32.6000,
+  k56: 58.7000,
+  k57: 84.8000,
+  k58: 11.8000,
+  k59: 37.9000,
+  k60: 64.0000,
+  k61: 90.1000,
+  k62: 17.1000,
+  k63: 43.2000,
+  k64: 69.3000,
+  k65: 95.4000,
+  k66: 22.4000,
+  k67: 48.5000,
+  k68: 74.6000,
+  k69: 1.6000,
+  k70: 27.7000,
+  k71: 53.8000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_085_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_085_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_085_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_085_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_085_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_085_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_085_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_085_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_085_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_085_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_085_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_085_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 086 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_086_META = {
+  id: 'pipeline_086',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'food' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 75463,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_086_COEF = {
+  k0: 3.8000,
+  k1: 18.5000,
+  k2: 33.2000,
+  k3: 47.9000,
+  k4: 62.6000,
+  k5: 77.3000,
+  k6: 92.0000,
+  k7: 7.6000,
+  k8: 22.3000,
+  k9: 37.0000,
+  k10: 51.7000,
+  k11: 66.4000,
+  k12: 81.1000,
+  k13: 95.8000,
+  k14: 11.4000,
+  k15: 26.1000,
+  k16: 40.8000,
+  k17: 55.5000,
+  k18: 70.2000,
+  k19: 84.9000,
+  k20: 0.5000,
+  k21: 15.2000,
+  k22: 29.9000,
+  k23: 44.6000,
+  k24: 59.3000,
+  k25: 74.0000,
+  k26: 88.7000,
+  k27: 4.3000,
+  k28: 19.0000,
+  k29: 33.7000,
+  k30: 48.4000,
+  k31: 63.1000,
+  k32: 77.8000,
+  k33: 92.5000,
+  k34: 8.1000,
+  k35: 22.8000,
+  k36: 37.5000,
+  k37: 52.2000,
+  k38: 66.9000,
+  k39: 81.6000,
+  k40: 96.3000,
+  k41: 11.9000,
+  k42: 26.6000,
+  k43: 41.3000,
+  k44: 56.0000,
+  k45: 70.7000,
+  k46: 85.4000,
+  k47: 1.0000,
+  k48: 15.7000,
+  k49: 30.4000,
+  k50: 45.1000,
+  k51: 59.8000,
+  k52: 74.5000,
+  k53: 89.2000,
+  k54: 4.8000,
+  k55: 19.5000,
+  k56: 34.2000,
+  k57: 48.9000,
+  k58: 63.6000,
+  k59: 78.3000,
+  k60: 93.0000,
+  k61: 8.6000,
+  k62: 23.3000,
+  k63: 38.0000,
+  k64: 52.7000,
+  k65: 67.4000,
+  k66: 82.1000,
+  k67: 96.8000,
+  k68: 12.4000,
+  k69: 27.1000,
+  k70: 41.8000,
+  k71: 56.5000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_086_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_086_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_086_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_086_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_086_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_086_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_086_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_086_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_086_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_086_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_086_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_086_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 087 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_087_META = {
+  id: 'pipeline_087',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'industrial' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 76340,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_087_COEF = {
+  k0: 23.1000,
+  k1: 26.4000,
+  k2: 29.7000,
+  k3: 33.0000,
+  k4: 36.3000,
+  k5: 39.6000,
+  k6: 42.9000,
+  k7: 46.2000,
+  k8: 49.5000,
+  k9: 52.8000,
+  k10: 56.1000,
+  k11: 59.4000,
+  k12: 62.7000,
+  k13: 66.0000,
+  k14: 69.3000,
+  k15: 72.6000,
+  k16: 75.9000,
+  k17: 79.2000,
+  k18: 82.5000,
+  k19: 85.8000,
+  k20: 89.1000,
+  k21: 92.4000,
+  k22: 95.7000,
+  k23: 99.0000,
+  k24: 3.2000,
+  k25: 6.5000,
+  k26: 9.8000,
+  k27: 13.1000,
+  k28: 16.4000,
+  k29: 19.7000,
+  k30: 23.0000,
+  k31: 26.3000,
+  k32: 29.6000,
+  k33: 32.9000,
+  k34: 36.2000,
+  k35: 39.5000,
+  k36: 42.8000,
+  k37: 46.1000,
+  k38: 49.4000,
+  k39: 52.7000,
+  k40: 56.0000,
+  k41: 59.3000,
+  k42: 62.6000,
+  k43: 65.9000,
+  k44: 69.2000,
+  k45: 72.5000,
+  k46: 75.8000,
+  k47: 79.1000,
+  k48: 82.4000,
+  k49: 85.7000,
+  k50: 89.0000,
+  k51: 92.3000,
+  k52: 95.6000,
+  k53: 98.9000,
+  k54: 3.1000,
+  k55: 6.4000,
+  k56: 9.7000,
+  k57: 13.0000,
+  k58: 16.3000,
+  k59: 19.6000,
+  k60: 22.9000,
+  k61: 26.2000,
+  k62: 29.5000,
+  k63: 32.8000,
+  k64: 36.1000,
+  k65: 39.4000,
+  k66: 42.7000,
+  k67: 46.0000,
+  k68: 49.3000,
+  k69: 52.6000,
+  k70: 55.9000,
+  k71: 59.2000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_087_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_087_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_087_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_087_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_087_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_087_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_087_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_087_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_087_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_087_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_087_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_087_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 088 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_088_META = {
+  id: 'pipeline_088',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'telecom' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 77217,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_088_COEF = {
+  k0: 42.4000,
+  k1: 34.3000,
+  k2: 26.2000,
+  k3: 18.1000,
+  k4: 10.0000,
+  k5: 1.9000,
+  k6: 92.9000,
+  k7: 84.8000,
+  k8: 76.7000,
+  k9: 68.6000,
+  k10: 60.5000,
+  k11: 52.4000,
+  k12: 44.3000,
+  k13: 36.2000,
+  k14: 28.1000,
+  k15: 20.0000,
+  k16: 11.9000,
+  k17: 3.8000,
+  k18: 94.8000,
+  k19: 86.7000,
+  k20: 78.6000,
+  k21: 70.5000,
+  k22: 62.4000,
+  k23: 54.3000,
+  k24: 46.2000,
+  k25: 38.1000,
+  k26: 30.0000,
+  k27: 21.9000,
+  k28: 13.8000,
+  k29: 5.7000,
+  k30: 96.7000,
+  k31: 88.6000,
+  k32: 80.5000,
+  k33: 72.4000,
+  k34: 64.3000,
+  k35: 56.2000,
+  k36: 48.1000,
+  k37: 40.0000,
+  k38: 31.9000,
+  k39: 23.8000,
+  k40: 15.7000,
+  k41: 7.6000,
+  k42: 98.6000,
+  k43: 90.5000,
+  k44: 82.4000,
+  k45: 74.3000,
+  k46: 66.2000,
+  k47: 58.1000,
+  k48: 50.0000,
+  k49: 41.9000,
+  k50: 33.8000,
+  k51: 25.7000,
+  k52: 17.6000,
+  k53: 9.5000,
+  k54: 1.4000,
+  k55: 92.4000,
+  k56: 84.3000,
+  k57: 76.2000,
+  k58: 68.1000,
+  k59: 60.0000,
+  k60: 51.9000,
+  k61: 43.8000,
+  k62: 35.7000,
+  k63: 27.6000,
+  k64: 19.5000,
+  k65: 11.4000,
+  k66: 3.3000,
+  k67: 94.3000,
+  k68: 86.2000,
+  k69: 78.1000,
+  k70: 70.0000,
+  k71: 61.9000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_088_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_088_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_088_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_088_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_088_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_088_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_088_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_088_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_088_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_088_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_088_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_088_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 089 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_089_META = {
+  id: 'pipeline_089',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'finance' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 78094,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_089_COEF = {
+  k0: 61.7000,
+  k1: 42.2000,
+  k2: 22.7000,
+  k3: 3.2000,
+  k4: 82.8000,
+  k5: 63.3000,
+  k6: 43.8000,
+  k7: 24.3000,
+  k8: 4.8000,
+  k9: 84.4000,
+  k10: 64.9000,
+  k11: 45.4000,
+  k12: 25.9000,
+  k13: 6.4000,
+  k14: 86.0000,
+  k15: 66.5000,
+  k16: 47.0000,
+  k17: 27.5000,
+  k18: 8.0000,
+  k19: 87.6000,
+  k20: 68.1000,
+  k21: 48.6000,
+  k22: 29.1000,
+  k23: 9.6000,
+  k24: 89.2000,
+  k25: 69.7000,
+  k26: 50.2000,
+  k27: 30.7000,
+  k28: 11.2000,
+  k29: 90.8000,
+  k30: 71.3000,
+  k31: 51.8000,
+  k32: 32.3000,
+  k33: 12.8000,
+  k34: 92.4000,
+  k35: 72.9000,
+  k36: 53.4000,
+  k37: 33.9000,
+  k38: 14.4000,
+  k39: 94.0000,
+  k40: 74.5000,
+  k41: 55.0000,
+  k42: 35.5000,
+  k43: 16.0000,
+  k44: 95.6000,
+  k45: 76.1000,
+  k46: 56.6000,
+  k47: 37.1000,
+  k48: 17.6000,
+  k49: 97.2000,
+  k50: 77.7000,
+  k51: 58.2000,
+  k52: 38.7000,
+  k53: 19.2000,
+  k54: 98.8000,
+  k55: 79.3000,
+  k56: 59.8000,
+  k57: 40.3000,
+  k58: 20.8000,
+  k59: 1.3000,
+  k60: 80.9000,
+  k61: 61.4000,
+  k62: 41.9000,
+  k63: 22.4000,
+  k64: 2.9000,
+  k65: 82.5000,
+  k66: 63.0000,
+  k67: 43.5000,
+  k68: 24.0000,
+  k69: 4.5000,
+  k70: 84.1000,
+  k71: 64.6000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_089_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_089_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_089_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_089_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_089_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_089_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_089_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_089_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_089_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_089_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_089_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_089_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 090 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_090_META = {
+  id: 'pipeline_090',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'freight' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 78971,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_090_COEF = {
+  k0: 81.0000,
+  k1: 50.1000,
+  k2: 19.2000,
+  k3: 87.4000,
+  k4: 56.5000,
+  k5: 25.6000,
+  k6: 93.8000,
+  k7: 62.9000,
+  k8: 32.0000,
+  k9: 1.1000,
+  k10: 69.3000,
+  k11: 38.4000,
+  k12: 7.5000,
+  k13: 75.7000,
+  k14: 44.8000,
+  k15: 13.9000,
+  k16: 82.1000,
+  k17: 51.2000,
+  k18: 20.3000,
+  k19: 88.5000,
+  k20: 57.6000,
+  k21: 26.7000,
+  k22: 94.9000,
+  k23: 64.0000,
+  k24: 33.1000,
+  k25: 2.2000,
+  k26: 70.4000,
+  k27: 39.5000,
+  k28: 8.6000,
+  k29: 76.8000,
+  k30: 45.9000,
+  k31: 15.0000,
+  k32: 83.2000,
+  k33: 52.3000,
+  k34: 21.4000,
+  k35: 89.6000,
+  k36: 58.7000,
+  k37: 27.8000,
+  k38: 96.0000,
+  k39: 65.1000,
+  k40: 34.2000,
+  k41: 3.3000,
+  k42: 71.5000,
+  k43: 40.6000,
+  k44: 9.7000,
+  k45: 77.9000,
+  k46: 47.0000,
+  k47: 16.1000,
+  k48: 84.3000,
+  k49: 53.4000,
+  k50: 22.5000,
+  k51: 90.7000,
+  k52: 59.8000,
+  k53: 28.9000,
+  k54: 97.1000,
+  k55: 66.2000,
+  k56: 35.3000,
+  k57: 4.4000,
+  k58: 72.6000,
+  k59: 41.7000,
+  k60: 10.8000,
+  k61: 79.0000,
+  k62: 48.1000,
+  k63: 17.2000,
+  k64: 85.4000,
+  k65: 54.5000,
+  k66: 23.6000,
+  k67: 91.8000,
+  k68: 60.9000,
+  k69: 30.0000,
+  k70: 98.2000,
+  k71: 67.3000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_090_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_090_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_090_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_090_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_090_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_090_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_090_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_090_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_090_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_090_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_090_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_090_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 091 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_091_META = {
+  id: 'pipeline_091',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'energy' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 79848,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_091_COEF = {
+  k0: 1.2000,
+  k1: 58.0000,
+  k2: 15.7000,
+  k3: 72.5000,
+  k4: 30.2000,
+  k5: 87.0000,
+  k6: 44.7000,
+  k7: 2.4000,
+  k8: 59.2000,
+  k9: 16.9000,
+  k10: 73.7000,
+  k11: 31.4000,
+  k12: 88.2000,
+  k13: 45.9000,
+  k14: 3.6000,
+  k15: 60.4000,
+  k16: 18.1000,
+  k17: 74.9000,
+  k18: 32.6000,
+  k19: 89.4000,
+  k20: 47.1000,
+  k21: 4.8000,
+  k22: 61.6000,
+  k23: 19.3000,
+  k24: 76.1000,
+  k25: 33.8000,
+  k26: 90.6000,
+  k27: 48.3000,
+  k28: 6.0000,
+  k29: 62.8000,
+  k30: 20.5000,
+  k31: 77.3000,
+  k32: 35.0000,
+  k33: 91.8000,
+  k34: 49.5000,
+  k35: 7.2000,
+  k36: 64.0000,
+  k37: 21.7000,
+  k38: 78.5000,
+  k39: 36.2000,
+  k40: 93.0000,
+  k41: 50.7000,
+  k42: 8.4000,
+  k43: 65.2000,
+  k44: 22.9000,
+  k45: 79.7000,
+  k46: 37.4000,
+  k47: 94.2000,
+  k48: 51.9000,
+  k49: 9.6000,
+  k50: 66.4000,
+  k51: 24.1000,
+  k52: 80.9000,
+  k53: 38.6000,
+  k54: 95.4000,
+  k55: 53.1000,
+  k56: 10.8000,
+  k57: 67.6000,
+  k58: 25.3000,
+  k59: 82.1000,
+  k60: 39.8000,
+  k61: 96.6000,
+  k62: 54.3000,
+  k63: 12.0000,
+  k64: 68.8000,
+  k65: 26.5000,
+  k66: 83.3000,
+  k67: 41.0000,
+  k68: 97.8000,
+  k69: 55.5000,
+  k70: 13.2000,
+  k71: 70.0000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_091_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_091_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_091_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_091_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_091_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_091_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_091_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_091_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_091_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_091_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_091_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_091_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 092 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_092_META = {
+  id: 'pipeline_092',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'water' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 80725,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_092_COEF = {
+  k0: 20.5000,
+  k1: 65.9000,
+  k2: 12.2000,
+  k3: 57.6000,
+  k4: 3.9000,
+  k5: 49.3000,
+  k6: 94.7000,
+  k7: 41.0000,
+  k8: 86.4000,
+  k9: 32.7000,
+  k10: 78.1000,
+  k11: 24.4000,
+  k12: 69.8000,
+  k13: 16.1000,
+  k14: 61.5000,
+  k15: 7.8000,
+  k16: 53.2000,
+  k17: 98.6000,
+  k18: 44.9000,
+  k19: 90.3000,
+  k20: 36.6000,
+  k21: 82.0000,
+  k22: 28.3000,
+  k23: 73.7000,
+  k24: 20.0000,
+  k25: 65.4000,
+  k26: 11.7000,
+  k27: 57.1000,
+  k28: 3.4000,
+  k29: 48.8000,
+  k30: 94.2000,
+  k31: 40.5000,
+  k32: 85.9000,
+  k33: 32.2000,
+  k34: 77.6000,
+  k35: 23.9000,
+  k36: 69.3000,
+  k37: 15.6000,
+  k38: 61.0000,
+  k39: 7.3000,
+  k40: 52.7000,
+  k41: 98.1000,
+  k42: 44.4000,
+  k43: 89.8000,
+  k44: 36.1000,
+  k45: 81.5000,
+  k46: 27.8000,
+  k47: 73.2000,
+  k48: 19.5000,
+  k49: 64.9000,
+  k50: 11.2000,
+  k51: 56.6000,
+  k52: 2.9000,
+  k53: 48.3000,
+  k54: 93.7000,
+  k55: 40.0000,
+  k56: 85.4000,
+  k57: 31.7000,
+  k58: 77.1000,
+  k59: 23.4000,
+  k60: 68.8000,
+  k61: 15.1000,
+  k62: 60.5000,
+  k63: 6.8000,
+  k64: 52.2000,
+  k65: 97.6000,
+  k66: 43.9000,
+  k67: 89.3000,
+  k68: 35.6000,
+  k69: 81.0000,
+  k70: 27.3000,
+  k71: 72.7000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_092_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_092_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_092_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_092_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_092_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_092_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_092_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_092_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_092_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_092_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_092_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_092_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 093 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_093_META = {
+  id: 'pipeline_093',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'digital' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 81602,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_093_COEF = {
+  k0: 39.8000,
+  k1: 73.8000,
+  k2: 8.7000,
+  k3: 42.7000,
+  k4: 76.7000,
+  k5: 11.6000,
+  k6: 45.6000,
+  k7: 79.6000,
+  k8: 14.5000,
+  k9: 48.5000,
+  k10: 82.5000,
+  k11: 17.4000,
+  k12: 51.4000,
+  k13: 85.4000,
+  k14: 20.3000,
+  k15: 54.3000,
+  k16: 88.3000,
+  k17: 23.2000,
+  k18: 57.2000,
+  k19: 91.2000,
+  k20: 26.1000,
+  k21: 60.1000,
+  k22: 94.1000,
+  k23: 29.0000,
+  k24: 63.0000,
+  k25: 97.0000,
+  k26: 31.9000,
+  k27: 65.9000,
+  k28: 0.8000,
+  k29: 34.8000,
+  k30: 68.8000,
+  k31: 3.7000,
+  k32: 37.7000,
+  k33: 71.7000,
+  k34: 6.6000,
+  k35: 40.6000,
+  k36: 74.6000,
+  k37: 9.5000,
+  k38: 43.5000,
+  k39: 77.5000,
+  k40: 12.4000,
+  k41: 46.4000,
+  k42: 80.4000,
+  k43: 15.3000,
+  k44: 49.3000,
+  k45: 83.3000,
+  k46: 18.2000,
+  k47: 52.2000,
+  k48: 86.2000,
+  k49: 21.1000,
+  k50: 55.1000,
+  k51: 89.1000,
+  k52: 24.0000,
+  k53: 58.0000,
+  k54: 92.0000,
+  k55: 26.9000,
+  k56: 60.9000,
+  k57: 94.9000,
+  k58: 29.8000,
+  k59: 63.8000,
+  k60: 97.8000,
+  k61: 32.7000,
+  k62: 66.7000,
+  k63: 1.6000,
+  k64: 35.6000,
+  k65: 69.6000,
+  k66: 4.5000,
+  k67: 38.5000,
+  k68: 72.5000,
+  k69: 7.4000,
+  k70: 41.4000,
+  k71: 75.4000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_093_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_093_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_093_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_093_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_093_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_093_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_093_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_093_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_093_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_093_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_093_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_093_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 094 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_094_META = {
+  id: 'pipeline_094',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'trade' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 82479,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_094_COEF = {
+  k0: 59.1000,
+  k1: 81.7000,
+  k2: 5.2000,
+  k3: 27.8000,
+  k4: 50.4000,
+  k5: 73.0000,
+  k6: 95.6000,
+  k7: 19.1000,
+  k8: 41.7000,
+  k9: 64.3000,
+  k10: 86.9000,
+  k11: 10.4000,
+  k12: 33.0000,
+  k13: 55.6000,
+  k14: 78.2000,
+  k15: 1.7000,
+  k16: 24.3000,
+  k17: 46.9000,
+  k18: 69.5000,
+  k19: 92.1000,
+  k20: 15.6000,
+  k21: 38.2000,
+  k22: 60.8000,
+  k23: 83.4000,
+  k24: 6.9000,
+  k25: 29.5000,
+  k26: 52.1000,
+  k27: 74.7000,
+  k28: 97.3000,
+  k29: 20.8000,
+  k30: 43.4000,
+  k31: 66.0000,
+  k32: 88.6000,
+  k33: 12.1000,
+  k34: 34.7000,
+  k35: 57.3000,
+  k36: 79.9000,
+  k37: 3.4000,
+  k38: 26.0000,
+  k39: 48.6000,
+  k40: 71.2000,
+  k41: 93.8000,
+  k42: 17.3000,
+  k43: 39.9000,
+  k44: 62.5000,
+  k45: 85.1000,
+  k46: 8.6000,
+  k47: 31.2000,
+  k48: 53.8000,
+  k49: 76.4000,
+  k50: 99.0000,
+  k51: 22.5000,
+  k52: 45.1000,
+  k53: 67.7000,
+  k54: 90.3000,
+  k55: 13.8000,
+  k56: 36.4000,
+  k57: 59.0000,
+  k58: 81.6000,
+  k59: 5.1000,
+  k60: 27.7000,
+  k61: 50.3000,
+  k62: 72.9000,
+  k63: 95.5000,
+  k64: 19.0000,
+  k65: 41.6000,
+  k66: 64.2000,
+  k67: 86.8000,
+  k68: 10.3000,
+  k69: 32.9000,
+  k70: 55.5000,
+  k71: 78.1000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_094_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_094_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_094_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_094_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_094_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_094_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_094_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_094_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_094_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_094_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_094_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_094_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 095 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_095_META = {
+  id: 'pipeline_095',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'pharma' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 83356,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_095_COEF = {
+  k0: 78.4000,
+  k1: 89.6000,
+  k2: 1.7000,
+  k3: 12.9000,
+  k4: 24.1000,
+  k5: 35.3000,
+  k6: 46.5000,
+  k7: 57.7000,
+  k8: 68.9000,
+  k9: 80.1000,
+  k10: 91.3000,
+  k11: 3.4000,
+  k12: 14.6000,
+  k13: 25.8000,
+  k14: 37.0000,
+  k15: 48.2000,
+  k16: 59.4000,
+  k17: 70.6000,
+  k18: 81.8000,
+  k19: 93.0000,
+  k20: 5.1000,
+  k21: 16.3000,
+  k22: 27.5000,
+  k23: 38.7000,
+  k24: 49.9000,
+  k25: 61.1000,
+  k26: 72.3000,
+  k27: 83.5000,
+  k28: 94.7000,
+  k29: 6.8000,
+  k30: 18.0000,
+  k31: 29.2000,
+  k32: 40.4000,
+  k33: 51.6000,
+  k34: 62.8000,
+  k35: 74.0000,
+  k36: 85.2000,
+  k37: 96.4000,
+  k38: 8.5000,
+  k39: 19.7000,
+  k40: 30.9000,
+  k41: 42.1000,
+  k42: 53.3000,
+  k43: 64.5000,
+  k44: 75.7000,
+  k45: 86.9000,
+  k46: 98.1000,
+  k47: 10.2000,
+  k48: 21.4000,
+  k49: 32.6000,
+  k50: 43.8000,
+  k51: 55.0000,
+  k52: 66.2000,
+  k53: 77.4000,
+  k54: 88.6000,
+  k55: 0.7000,
+  k56: 11.9000,
+  k57: 23.1000,
+  k58: 34.3000,
+  k59: 45.5000,
+  k60: 56.7000,
+  k61: 67.9000,
+  k62: 79.1000,
+  k63: 90.3000,
+  k64: 2.4000,
+  k65: 13.6000,
+  k66: 24.8000,
+  k67: 36.0000,
+  k68: 47.2000,
+  k69: 58.4000,
+  k70: 69.6000,
+  k71: 80.8000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_095_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_095_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_095_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_095_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_095_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_095_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_095_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_095_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_095_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_095_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_095_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_095_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 096 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_096_META = {
+  id: 'pipeline_096',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'food' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 84233,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_096_COEF = {
+  k0: 97.7000,
+  k1: 97.5000,
+  k2: 97.3000,
+  k3: 97.1000,
+  k4: 96.9000,
+  k5: 96.7000,
+  k6: 96.5000,
+  k7: 96.3000,
+  k8: 96.1000,
+  k9: 95.9000,
+  k10: 95.7000,
+  k11: 95.5000,
+  k12: 95.3000,
+  k13: 95.1000,
+  k14: 94.9000,
+  k15: 94.7000,
+  k16: 94.5000,
+  k17: 94.3000,
+  k18: 94.1000,
+  k19: 93.9000,
+  k20: 93.7000,
+  k21: 93.5000,
+  k22: 93.3000,
+  k23: 93.1000,
+  k24: 92.9000,
+  k25: 92.7000,
+  k26: 92.5000,
+  k27: 92.3000,
+  k28: 92.1000,
+  k29: 91.9000,
+  k30: 91.7000,
+  k31: 91.5000,
+  k32: 91.3000,
+  k33: 91.1000,
+  k34: 90.9000,
+  k35: 90.7000,
+  k36: 90.5000,
+  k37: 90.3000,
+  k38: 90.1000,
+  k39: 89.9000,
+  k40: 89.7000,
+  k41: 89.5000,
+  k42: 89.3000,
+  k43: 89.1000,
+  k44: 88.9000,
+  k45: 88.7000,
+  k46: 88.5000,
+  k47: 88.3000,
+  k48: 88.1000,
+  k49: 87.9000,
+  k50: 87.7000,
+  k51: 87.5000,
+  k52: 87.3000,
+  k53: 87.1000,
+  k54: 86.9000,
+  k55: 86.7000,
+  k56: 86.5000,
+  k57: 86.3000,
+  k58: 86.1000,
+  k59: 85.9000,
+  k60: 85.7000,
+  k61: 85.5000,
+  k62: 85.3000,
+  k63: 85.1000,
+  k64: 84.9000,
+  k65: 84.7000,
+  k66: 84.5000,
+  k67: 84.3000,
+  k68: 84.1000,
+  k69: 83.9000,
+  k70: 83.7000,
+  k71: 83.5000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_096_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_096_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_096_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_096_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_096_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_096_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_096_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_096_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_096_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_096_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_096_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_096_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 097 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_097_META = {
+  id: 'pipeline_097',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'industrial' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 85110,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_097_COEF = {
+  k0: 17.9000,
+  k1: 6.3000,
+  k2: 93.8000,
+  k3: 82.2000,
+  k4: 70.6000,
+  k5: 59.0000,
+  k6: 47.4000,
+  k7: 35.8000,
+  k8: 24.2000,
+  k9: 12.6000,
+  k10: 1.0000,
+  k11: 88.5000,
+  k12: 76.9000,
+  k13: 65.3000,
+  k14: 53.7000,
+  k15: 42.1000,
+  k16: 30.5000,
+  k17: 18.9000,
+  k18: 7.3000,
+  k19: 94.8000,
+  k20: 83.2000,
+  k21: 71.6000,
+  k22: 60.0000,
+  k23: 48.4000,
+  k24: 36.8000,
+  k25: 25.2000,
+  k26: 13.6000,
+  k27: 2.0000,
+  k28: 89.5000,
+  k29: 77.9000,
+  k30: 66.3000,
+  k31: 54.7000,
+  k32: 43.1000,
+  k33: 31.5000,
+  k34: 19.9000,
+  k35: 8.3000,
+  k36: 95.8000,
+  k37: 84.2000,
+  k38: 72.6000,
+  k39: 61.0000,
+  k40: 49.4000,
+  k41: 37.8000,
+  k42: 26.2000,
+  k43: 14.6000,
+  k44: 3.0000,
+  k45: 90.5000,
+  k46: 78.9000,
+  k47: 67.3000,
+  k48: 55.7000,
+  k49: 44.1000,
+  k50: 32.5000,
+  k51: 20.9000,
+  k52: 9.3000,
+  k53: 96.8000,
+  k54: 85.2000,
+  k55: 73.6000,
+  k56: 62.0000,
+  k57: 50.4000,
+  k58: 38.8000,
+  k59: 27.2000,
+  k60: 15.6000,
+  k61: 4.0000,
+  k62: 91.5000,
+  k63: 79.9000,
+  k64: 68.3000,
+  k65: 56.7000,
+  k66: 45.1000,
+  k67: 33.5000,
+  k68: 21.9000,
+  k69: 10.3000,
+  k70: 97.8000,
+  k71: 86.2000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_097_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_097_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_097_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_097_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_097_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_097_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_097_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_097_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_097_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_097_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_097_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_097_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 098 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_098_META = {
+  id: 'pipeline_098',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'telecom' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 85987,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_098_COEF = {
+  k0: 37.2000,
+  k1: 14.2000,
+  k2: 90.3000,
+  k3: 67.3000,
+  k4: 44.3000,
+  k5: 21.3000,
+  k6: 97.4000,
+  k7: 74.4000,
+  k8: 51.4000,
+  k9: 28.4000,
+  k10: 5.4000,
+  k11: 81.5000,
+  k12: 58.5000,
+  k13: 35.5000,
+  k14: 12.5000,
+  k15: 88.6000,
+  k16: 65.6000,
+  k17: 42.6000,
+  k18: 19.6000,
+  k19: 95.7000,
+  k20: 72.7000,
+  k21: 49.7000,
+  k22: 26.7000,
+  k23: 3.7000,
+  k24: 79.8000,
+  k25: 56.8000,
+  k26: 33.8000,
+  k27: 10.8000,
+  k28: 86.9000,
+  k29: 63.9000,
+  k30: 40.9000,
+  k31: 17.9000,
+  k32: 94.0000,
+  k33: 71.0000,
+  k34: 48.0000,
+  k35: 25.0000,
+  k36: 2.0000,
+  k37: 78.1000,
+  k38: 55.1000,
+  k39: 32.1000,
+  k40: 9.1000,
+  k41: 85.2000,
+  k42: 62.2000,
+  k43: 39.2000,
+  k44: 16.2000,
+  k45: 92.3000,
+  k46: 69.3000,
+  k47: 46.3000,
+  k48: 23.3000,
+  k49: 0.3000,
+  k50: 76.4000,
+  k51: 53.4000,
+  k52: 30.4000,
+  k53: 7.4000,
+  k54: 83.5000,
+  k55: 60.5000,
+  k56: 37.5000,
+  k57: 14.5000,
+  k58: 90.6000,
+  k59: 67.6000,
+  k60: 44.6000,
+  k61: 21.6000,
+  k62: 97.7000,
+  k63: 74.7000,
+  k64: 51.7000,
+  k65: 28.7000,
+  k66: 5.7000,
+  k67: 81.8000,
+  k68: 58.8000,
+  k69: 35.8000,
+  k70: 12.8000,
+  k71: 88.9000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_098_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_098_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_098_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_098_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_098_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_098_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_098_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_098_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_098_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_098_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_098_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_098_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 099 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_099_META = {
+  id: 'pipeline_099',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'finance' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 86864,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_099_COEF = {
+  k0: 56.5000,
+  k1: 22.1000,
+  k2: 86.8000,
+  k3: 52.4000,
+  k4: 18.0000,
+  k5: 82.7000,
+  k6: 48.3000,
+  k7: 13.9000,
+  k8: 78.6000,
+  k9: 44.2000,
+  k10: 9.8000,
+  k11: 74.5000,
+  k12: 40.1000,
+  k13: 5.7000,
+  k14: 70.4000,
+  k15: 36.0000,
+  k16: 1.6000,
+  k17: 66.3000,
+  k18: 31.9000,
+  k19: 96.6000,
+  k20: 62.2000,
+  k21: 27.8000,
+  k22: 92.5000,
+  k23: 58.1000,
+  k24: 23.7000,
+  k25: 88.4000,
+  k26: 54.0000,
+  k27: 19.6000,
+  k28: 84.3000,
+  k29: 49.9000,
+  k30: 15.5000,
+  k31: 80.2000,
+  k32: 45.8000,
+  k33: 11.4000,
+  k34: 76.1000,
+  k35: 41.7000,
+  k36: 7.3000,
+  k37: 72.0000,
+  k38: 37.6000,
+  k39: 3.2000,
+  k40: 67.9000,
+  k41: 33.5000,
+  k42: 98.2000,
+  k43: 63.8000,
+  k44: 29.4000,
+  k45: 94.1000,
+  k46: 59.7000,
+  k47: 25.3000,
+  k48: 90.0000,
+  k49: 55.6000,
+  k50: 21.2000,
+  k51: 85.9000,
+  k52: 51.5000,
+  k53: 17.1000,
+  k54: 81.8000,
+  k55: 47.4000,
+  k56: 13.0000,
+  k57: 77.7000,
+  k58: 43.3000,
+  k59: 8.9000,
+  k60: 73.6000,
+  k61: 39.2000,
+  k62: 4.8000,
+  k63: 69.5000,
+  k64: 35.1000,
+  k65: 0.7000,
+  k66: 65.4000,
+  k67: 31.0000,
+  k68: 95.7000,
+  k69: 61.3000,
+  k70: 26.9000,
+  k71: 91.6000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_099_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_099_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_099_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_099_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_099_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_099_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_099_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_099_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_099_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_099_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_099_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_099_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 100 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_100_META = {
+  id: 'pipeline_100',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'freight' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 87741,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_100_COEF = {
+  k0: 75.8000,
+  k1: 30.0000,
+  k2: 83.3000,
+  k3: 37.5000,
+  k4: 90.8000,
+  k5: 45.0000,
+  k6: 98.3000,
+  k7: 52.5000,
+  k8: 6.7000,
+  k9: 60.0000,
+  k10: 14.2000,
+  k11: 67.5000,
+  k12: 21.7000,
+  k13: 75.0000,
+  k14: 29.2000,
+  k15: 82.5000,
+  k16: 36.7000,
+  k17: 90.0000,
+  k18: 44.2000,
+  k19: 97.5000,
+  k20: 51.7000,
+  k21: 5.9000,
+  k22: 59.2000,
+  k23: 13.4000,
+  k24: 66.7000,
+  k25: 20.9000,
+  k26: 74.2000,
+  k27: 28.4000,
+  k28: 81.7000,
+  k29: 35.9000,
+  k30: 89.2000,
+  k31: 43.4000,
+  k32: 96.7000,
+  k33: 50.9000,
+  k34: 5.1000,
+  k35: 58.4000,
+  k36: 12.6000,
+  k37: 65.9000,
+  k38: 20.1000,
+  k39: 73.4000,
+  k40: 27.6000,
+  k41: 80.9000,
+  k42: 35.1000,
+  k43: 88.4000,
+  k44: 42.6000,
+  k45: 95.9000,
+  k46: 50.1000,
+  k47: 4.3000,
+  k48: 57.6000,
+  k49: 11.8000,
+  k50: 65.1000,
+  k51: 19.3000,
+  k52: 72.6000,
+  k53: 26.8000,
+  k54: 80.1000,
+  k55: 34.3000,
+  k56: 87.6000,
+  k57: 41.8000,
+  k58: 95.1000,
+  k59: 49.3000,
+  k60: 3.5000,
+  k61: 56.8000,
+  k62: 11.0000,
+  k63: 64.3000,
+  k64: 18.5000,
+  k65: 71.8000,
+  k66: 26.0000,
+  k67: 79.3000,
+  k68: 33.5000,
+  k69: 86.8000,
+  k70: 41.0000,
+  k71: 94.3000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_100_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_100_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_100_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_100_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_100_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_100_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_100_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_100_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_100_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_100_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_100_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_100_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 101 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_101_META = {
+  id: 'pipeline_101',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'energy' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 88618,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_101_COEF = {
+  k0: 95.1000,
+  k1: 37.9000,
+  k2: 79.8000,
+  k3: 22.6000,
+  k4: 64.5000,
+  k5: 7.3000,
+  k6: 49.2000,
+  k7: 91.1000,
+  k8: 33.9000,
+  k9: 75.8000,
+  k10: 18.6000,
+  k11: 60.5000,
+  k12: 3.3000,
+  k13: 45.2000,
+  k14: 87.1000,
+  k15: 29.9000,
+  k16: 71.8000,
+  k17: 14.6000,
+  k18: 56.5000,
+  k19: 98.4000,
+  k20: 41.2000,
+  k21: 83.1000,
+  k22: 25.9000,
+  k23: 67.8000,
+  k24: 10.6000,
+  k25: 52.5000,
+  k26: 94.4000,
+  k27: 37.2000,
+  k28: 79.1000,
+  k29: 21.9000,
+  k30: 63.8000,
+  k31: 6.6000,
+  k32: 48.5000,
+  k33: 90.4000,
+  k34: 33.2000,
+  k35: 75.1000,
+  k36: 17.9000,
+  k37: 59.8000,
+  k38: 2.6000,
+  k39: 44.5000,
+  k40: 86.4000,
+  k41: 29.2000,
+  k42: 71.1000,
+  k43: 13.9000,
+  k44: 55.8000,
+  k45: 97.7000,
+  k46: 40.5000,
+  k47: 82.4000,
+  k48: 25.2000,
+  k49: 67.1000,
+  k50: 9.9000,
+  k51: 51.8000,
+  k52: 93.7000,
+  k53: 36.5000,
+  k54: 78.4000,
+  k55: 21.2000,
+  k56: 63.1000,
+  k57: 5.9000,
+  k58: 47.8000,
+  k59: 89.7000,
+  k60: 32.5000,
+  k61: 74.4000,
+  k62: 17.2000,
+  k63: 59.1000,
+  k64: 1.9000,
+  k65: 43.8000,
+  k66: 85.7000,
+  k67: 28.5000,
+  k68: 70.4000,
+  k69: 13.2000,
+  k70: 55.1000,
+  k71: 97.0000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_101_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_101_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_101_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_101_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_101_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_101_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_101_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_101_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_101_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_101_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_101_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_101_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 102 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_102_META = {
+  id: 'pipeline_102',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'water' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 89495,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_102_COEF = {
+  k0: 15.3000,
+  k1: 45.8000,
+  k2: 76.3000,
+  k3: 7.7000,
+  k4: 38.2000,
+  k5: 68.7000,
+  k6: 0.1000,
+  k7: 30.6000,
+  k8: 61.1000,
+  k9: 91.6000,
+  k10: 23.0000,
+  k11: 53.5000,
+  k12: 84.0000,
+  k13: 15.4000,
+  k14: 45.9000,
+  k15: 76.4000,
+  k16: 7.8000,
+  k17: 38.3000,
+  k18: 68.8000,
+  k19: 0.2000,
+  k20: 30.7000,
+  k21: 61.2000,
+  k22: 91.7000,
+  k23: 23.1000,
+  k24: 53.6000,
+  k25: 84.1000,
+  k26: 15.5000,
+  k27: 46.0000,
+  k28: 76.5000,
+  k29: 7.9000,
+  k30: 38.4000,
+  k31: 68.9000,
+  k32: 0.3000,
+  k33: 30.8000,
+  k34: 61.3000,
+  k35: 91.8000,
+  k36: 23.2000,
+  k37: 53.7000,
+  k38: 84.2000,
+  k39: 15.6000,
+  k40: 46.1000,
+  k41: 76.6000,
+  k42: 8.0000,
+  k43: 38.5000,
+  k44: 69.0000,
+  k45: 0.4000,
+  k46: 30.9000,
+  k47: 61.4000,
+  k48: 91.9000,
+  k49: 23.3000,
+  k50: 53.8000,
+  k51: 84.3000,
+  k52: 15.7000,
+  k53: 46.2000,
+  k54: 76.7000,
+  k55: 8.1000,
+  k56: 38.6000,
+  k57: 69.1000,
+  k58: 0.5000,
+  k59: 31.0000,
+  k60: 61.5000,
+  k61: 92.0000,
+  k62: 23.4000,
+  k63: 53.9000,
+  k64: 84.4000,
+  k65: 15.8000,
+  k66: 46.3000,
+  k67: 76.8000,
+  k68: 8.2000,
+  k69: 38.7000,
+  k70: 69.2000,
+  k71: 0.6000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_102_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_102_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_102_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_102_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_102_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_102_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_102_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_102_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_102_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_102_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_102_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_102_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 103 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_103_META = {
+  id: 'pipeline_103',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'digital' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 90372,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_103_COEF = {
+  k0: 34.6000,
+  k1: 53.7000,
+  k2: 72.8000,
+  k3: 91.9000,
+  k4: 11.9000,
+  k5: 31.0000,
+  k6: 50.1000,
+  k7: 69.2000,
+  k8: 88.3000,
+  k9: 8.3000,
+  k10: 27.4000,
+  k11: 46.5000,
+  k12: 65.6000,
+  k13: 84.7000,
+  k14: 4.7000,
+  k15: 23.8000,
+  k16: 42.9000,
+  k17: 62.0000,
+  k18: 81.1000,
+  k19: 1.1000,
+  k20: 20.2000,
+  k21: 39.3000,
+  k22: 58.4000,
+  k23: 77.5000,
+  k24: 96.6000,
+  k25: 16.6000,
+  k26: 35.7000,
+  k27: 54.8000,
+  k28: 73.9000,
+  k29: 93.0000,
+  k30: 13.0000,
+  k31: 32.1000,
+  k32: 51.2000,
+  k33: 70.3000,
+  k34: 89.4000,
+  k35: 9.4000,
+  k36: 28.5000,
+  k37: 47.6000,
+  k38: 66.7000,
+  k39: 85.8000,
+  k40: 5.8000,
+  k41: 24.9000,
+  k42: 44.0000,
+  k43: 63.1000,
+  k44: 82.2000,
+  k45: 2.2000,
+  k46: 21.3000,
+  k47: 40.4000,
+  k48: 59.5000,
+  k49: 78.6000,
+  k50: 97.7000,
+  k51: 17.7000,
+  k52: 36.8000,
+  k53: 55.9000,
+  k54: 75.0000,
+  k55: 94.1000,
+  k56: 14.1000,
+  k57: 33.2000,
+  k58: 52.3000,
+  k59: 71.4000,
+  k60: 90.5000,
+  k61: 10.5000,
+  k62: 29.6000,
+  k63: 48.7000,
+  k64: 67.8000,
+  k65: 86.9000,
+  k66: 6.9000,
+  k67: 26.0000,
+  k68: 45.1000,
+  k69: 64.2000,
+  k70: 83.3000,
+  k71: 3.3000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_103_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_103_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_103_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_103_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_103_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_103_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_103_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_103_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_103_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_103_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_103_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_103_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 104 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_104_META = {
+  id: 'pipeline_104',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'trade' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 91249,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_104_COEF = {
+  k0: 53.9000,
+  k1: 61.6000,
+  k2: 69.3000,
+  k3: 77.0000,
+  k4: 84.7000,
+  k5: 92.4000,
+  k6: 1.0000,
+  k7: 8.7000,
+  k8: 16.4000,
+  k9: 24.1000,
+  k10: 31.8000,
+  k11: 39.5000,
+  k12: 47.2000,
+  k13: 54.9000,
+  k14: 62.6000,
+  k15: 70.3000,
+  k16: 78.0000,
+  k17: 85.7000,
+  k18: 93.4000,
+  k19: 2.0000,
+  k20: 9.7000,
+  k21: 17.4000,
+  k22: 25.1000,
+  k23: 32.8000,
+  k24: 40.5000,
+  k25: 48.2000,
+  k26: 55.9000,
+  k27: 63.6000,
+  k28: 71.3000,
+  k29: 79.0000,
+  k30: 86.7000,
+  k31: 94.4000,
+  k32: 3.0000,
+  k33: 10.7000,
+  k34: 18.4000,
+  k35: 26.1000,
+  k36: 33.8000,
+  k37: 41.5000,
+  k38: 49.2000,
+  k39: 56.9000,
+  k40: 64.6000,
+  k41: 72.3000,
+  k42: 80.0000,
+  k43: 87.7000,
+  k44: 95.4000,
+  k45: 4.0000,
+  k46: 11.7000,
+  k47: 19.4000,
+  k48: 27.1000,
+  k49: 34.8000,
+  k50: 42.5000,
+  k51: 50.2000,
+  k52: 57.9000,
+  k53: 65.6000,
+  k54: 73.3000,
+  k55: 81.0000,
+  k56: 88.7000,
+  k57: 96.4000,
+  k58: 5.0000,
+  k59: 12.7000,
+  k60: 20.4000,
+  k61: 28.1000,
+  k62: 35.8000,
+  k63: 43.5000,
+  k64: 51.2000,
+  k65: 58.9000,
+  k66: 66.6000,
+  k67: 74.3000,
+  k68: 82.0000,
+  k69: 89.7000,
+  k70: 97.4000,
+  k71: 6.0000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_104_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_104_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_104_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_104_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_104_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_104_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_104_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_104_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_104_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_104_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_104_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_104_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 105 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_105_META = {
+  id: 'pipeline_105',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'pharma' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 92126,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_105_COEF = {
+  k0: 73.2000,
+  k1: 69.5000,
+  k2: 65.8000,
+  k3: 62.1000,
+  k4: 58.4000,
+  k5: 54.7000,
+  k6: 51.0000,
+  k7: 47.3000,
+  k8: 43.6000,
+  k9: 39.9000,
+  k10: 36.2000,
+  k11: 32.5000,
+  k12: 28.8000,
+  k13: 25.1000,
+  k14: 21.4000,
+  k15: 17.7000,
+  k16: 14.0000,
+  k17: 10.3000,
+  k18: 6.6000,
+  k19: 2.9000,
+  k20: 98.3000,
+  k21: 94.6000,
+  k22: 90.9000,
+  k23: 87.2000,
+  k24: 83.5000,
+  k25: 79.8000,
+  k26: 76.1000,
+  k27: 72.4000,
+  k28: 68.7000,
+  k29: 65.0000,
+  k30: 61.3000,
+  k31: 57.6000,
+  k32: 53.9000,
+  k33: 50.2000,
+  k34: 46.5000,
+  k35: 42.8000,
+  k36: 39.1000,
+  k37: 35.4000,
+  k38: 31.7000,
+  k39: 28.0000,
+  k40: 24.3000,
+  k41: 20.6000,
+  k42: 16.9000,
+  k43: 13.2000,
+  k44: 9.5000,
+  k45: 5.8000,
+  k46: 2.1000,
+  k47: 97.5000,
+  k48: 93.8000,
+  k49: 90.1000,
+  k50: 86.4000,
+  k51: 82.7000,
+  k52: 79.0000,
+  k53: 75.3000,
+  k54: 71.6000,
+  k55: 67.9000,
+  k56: 64.2000,
+  k57: 60.5000,
+  k58: 56.8000,
+  k59: 53.1000,
+  k60: 49.4000,
+  k61: 45.7000,
+  k62: 42.0000,
+  k63: 38.3000,
+  k64: 34.6000,
+  k65: 30.9000,
+  k66: 27.2000,
+  k67: 23.5000,
+  k68: 19.8000,
+  k69: 16.1000,
+  k70: 12.4000,
+  k71: 8.7000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_105_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_105_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_105_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_105_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_105_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_105_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_105_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_105_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_105_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_105_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_105_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_105_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 106 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_106_META = {
+  id: 'pipeline_106',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'food' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 93003,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_106_COEF = {
+  k0: 92.5000,
+  k1: 77.4000,
+  k2: 62.3000,
+  k3: 47.2000,
+  k4: 32.1000,
+  k5: 17.0000,
+  k6: 1.9000,
+  k7: 85.9000,
+  k8: 70.8000,
+  k9: 55.7000,
+  k10: 40.6000,
+  k11: 25.5000,
+  k12: 10.4000,
+  k13: 94.4000,
+  k14: 79.3000,
+  k15: 64.2000,
+  k16: 49.1000,
+  k17: 34.0000,
+  k18: 18.9000,
+  k19: 3.8000,
+  k20: 87.8000,
+  k21: 72.7000,
+  k22: 57.6000,
+  k23: 42.5000,
+  k24: 27.4000,
+  k25: 12.3000,
+  k26: 96.3000,
+  k27: 81.2000,
+  k28: 66.1000,
+  k29: 51.0000,
+  k30: 35.9000,
+  k31: 20.8000,
+  k32: 5.7000,
+  k33: 89.7000,
+  k34: 74.6000,
+  k35: 59.5000,
+  k36: 44.4000,
+  k37: 29.3000,
+  k38: 14.2000,
+  k39: 98.2000,
+  k40: 83.1000,
+  k41: 68.0000,
+  k42: 52.9000,
+  k43: 37.8000,
+  k44: 22.7000,
+  k45: 7.6000,
+  k46: 91.6000,
+  k47: 76.5000,
+  k48: 61.4000,
+  k49: 46.3000,
+  k50: 31.2000,
+  k51: 16.1000,
+  k52: 1.0000,
+  k53: 85.0000,
+  k54: 69.9000,
+  k55: 54.8000,
+  k56: 39.7000,
+  k57: 24.6000,
+  k58: 9.5000,
+  k59: 93.5000,
+  k60: 78.4000,
+  k61: 63.3000,
+  k62: 48.2000,
+  k63: 33.1000,
+  k64: 18.0000,
+  k65: 2.9000,
+  k66: 86.9000,
+  k67: 71.8000,
+  k68: 56.7000,
+  k69: 41.6000,
+  k70: 26.5000,
+  k71: 11.4000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_106_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_106_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_106_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_106_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_106_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_106_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_106_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_106_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_106_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_106_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_106_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_106_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 107 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_107_META = {
+  id: 'pipeline_107',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'industrial' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 93880,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_107_COEF = {
+  k0: 12.7000,
+  k1: 85.3000,
+  k2: 58.8000,
+  k3: 32.3000,
+  k4: 5.8000,
+  k5: 78.4000,
+  k6: 51.9000,
+  k7: 25.4000,
+  k8: 98.0000,
+  k9: 71.5000,
+  k10: 45.0000,
+  k11: 18.5000,
+  k12: 91.1000,
+  k13: 64.6000,
+  k14: 38.1000,
+  k15: 11.6000,
+  k16: 84.2000,
+  k17: 57.7000,
+  k18: 31.2000,
+  k19: 4.7000,
+  k20: 77.3000,
+  k21: 50.8000,
+  k22: 24.3000,
+  k23: 96.9000,
+  k24: 70.4000,
+  k25: 43.9000,
+  k26: 17.4000,
+  k27: 90.0000,
+  k28: 63.5000,
+  k29: 37.0000,
+  k30: 10.5000,
+  k31: 83.1000,
+  k32: 56.6000,
+  k33: 30.1000,
+  k34: 3.6000,
+  k35: 76.2000,
+  k36: 49.7000,
+  k37: 23.2000,
+  k38: 95.8000,
+  k39: 69.3000,
+  k40: 42.8000,
+  k41: 16.3000,
+  k42: 88.9000,
+  k43: 62.4000,
+  k44: 35.9000,
+  k45: 9.4000,
+  k46: 82.0000,
+  k47: 55.5000,
+  k48: 29.0000,
+  k49: 2.5000,
+  k50: 75.1000,
+  k51: 48.6000,
+  k52: 22.1000,
+  k53: 94.7000,
+  k54: 68.2000,
+  k55: 41.7000,
+  k56: 15.2000,
+  k57: 87.8000,
+  k58: 61.3000,
+  k59: 34.8000,
+  k60: 8.3000,
+  k61: 80.9000,
+  k62: 54.4000,
+  k63: 27.9000,
+  k64: 1.4000,
+  k65: 74.0000,
+  k66: 47.5000,
+  k67: 21.0000,
+  k68: 93.6000,
+  k69: 67.1000,
+  k70: 40.6000,
+  k71: 14.1000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_107_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_107_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_107_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_107_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_107_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_107_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_107_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_107_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_107_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_107_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_107_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_107_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 108 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_108_META = {
+  id: 'pipeline_108',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'telecom' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 94757,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_108_COEF = {
+  k0: 32.0000,
+  k1: 93.2000,
+  k2: 55.3000,
+  k3: 17.4000,
+  k4: 78.6000,
+  k5: 40.7000,
+  k6: 2.8000,
+  k7: 64.0000,
+  k8: 26.1000,
+  k9: 87.3000,
+  k10: 49.4000,
+  k11: 11.5000,
+  k12: 72.7000,
+  k13: 34.8000,
+  k14: 96.0000,
+  k15: 58.1000,
+  k16: 20.2000,
+  k17: 81.4000,
+  k18: 43.5000,
+  k19: 5.6000,
+  k20: 66.8000,
+  k21: 28.9000,
+  k22: 90.1000,
+  k23: 52.2000,
+  k24: 14.3000,
+  k25: 75.5000,
+  k26: 37.6000,
+  k27: 98.8000,
+  k28: 60.9000,
+  k29: 23.0000,
+  k30: 84.2000,
+  k31: 46.3000,
+  k32: 8.4000,
+  k33: 69.6000,
+  k34: 31.7000,
+  k35: 92.9000,
+  k36: 55.0000,
+  k37: 17.1000,
+  k38: 78.3000,
+  k39: 40.4000,
+  k40: 2.5000,
+  k41: 63.7000,
+  k42: 25.8000,
+  k43: 87.0000,
+  k44: 49.1000,
+  k45: 11.2000,
+  k46: 72.4000,
+  k47: 34.5000,
+  k48: 95.7000,
+  k49: 57.8000,
+  k50: 19.9000,
+  k51: 81.1000,
+  k52: 43.2000,
+  k53: 5.3000,
+  k54: 66.5000,
+  k55: 28.6000,
+  k56: 89.8000,
+  k57: 51.9000,
+  k58: 14.0000,
+  k59: 75.2000,
+  k60: 37.3000,
+  k61: 98.5000,
+  k62: 60.6000,
+  k63: 22.7000,
+  k64: 83.9000,
+  k65: 46.0000,
+  k66: 8.1000,
+  k67: 69.3000,
+  k68: 31.4000,
+  k69: 92.6000,
+  k70: 54.7000,
+  k71: 16.8000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_108_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_108_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_108_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_108_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_108_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_108_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_108_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_108_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_108_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_108_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_108_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_108_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 109 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_109_META = {
+  id: 'pipeline_109',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'finance' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 95634,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_109_COEF = {
+  k0: 51.3000,
+  k1: 2.0000,
+  k2: 51.8000,
+  k3: 2.5000,
+  k4: 52.3000,
+  k5: 3.0000,
+  k6: 52.8000,
+  k7: 3.5000,
+  k8: 53.3000,
+  k9: 4.0000,
+  k10: 53.8000,
+  k11: 4.5000,
+  k12: 54.3000,
+  k13: 5.0000,
+  k14: 54.8000,
+  k15: 5.5000,
+  k16: 55.3000,
+  k17: 6.0000,
+  k18: 55.8000,
+  k19: 6.5000,
+  k20: 56.3000,
+  k21: 7.0000,
+  k22: 56.8000,
+  k23: 7.5000,
+  k24: 57.3000,
+  k25: 8.0000,
+  k26: 57.8000,
+  k27: 8.5000,
+  k28: 58.3000,
+  k29: 9.0000,
+  k30: 58.8000,
+  k31: 9.5000,
+  k32: 59.3000,
+  k33: 10.0000,
+  k34: 59.8000,
+  k35: 10.5000,
+  k36: 60.3000,
+  k37: 11.0000,
+  k38: 60.8000,
+  k39: 11.5000,
+  k40: 61.3000,
+  k41: 12.0000,
+  k42: 61.8000,
+  k43: 12.5000,
+  k44: 62.3000,
+  k45: 13.0000,
+  k46: 62.8000,
+  k47: 13.5000,
+  k48: 63.3000,
+  k49: 14.0000,
+  k50: 63.8000,
+  k51: 14.5000,
+  k52: 64.3000,
+  k53: 15.0000,
+  k54: 64.8000,
+  k55: 15.5000,
+  k56: 65.3000,
+  k57: 16.0000,
+  k58: 65.8000,
+  k59: 16.5000,
+  k60: 66.3000,
+  k61: 17.0000,
+  k62: 66.8000,
+  k63: 17.5000,
+  k64: 67.3000,
+  k65: 18.0000,
+  k66: 67.8000,
+  k67: 18.5000,
+  k68: 68.3000,
+  k69: 19.0000,
+  k70: 68.8000,
+  k71: 19.5000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_109_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_109_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_109_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_109_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_109_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_109_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_109_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_109_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_109_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_109_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_109_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_109_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 110 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_110_META = {
+  id: 'pipeline_110',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'freight' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 96511,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_110_COEF = {
+  k0: 70.6000,
+  k1: 9.9000,
+  k2: 48.3000,
+  k3: 86.7000,
+  k4: 26.0000,
+  k5: 64.4000,
+  k6: 3.7000,
+  k7: 42.1000,
+  k8: 80.5000,
+  k9: 19.8000,
+  k10: 58.2000,
+  k11: 96.6000,
+  k12: 35.9000,
+  k13: 74.3000,
+  k14: 13.6000,
+  k15: 52.0000,
+  k16: 90.4000,
+  k17: 29.7000,
+  k18: 68.1000,
+  k19: 7.4000,
+  k20: 45.8000,
+  k21: 84.2000,
+  k22: 23.5000,
+  k23: 61.9000,
+  k24: 1.2000,
+  k25: 39.6000,
+  k26: 78.0000,
+  k27: 17.3000,
+  k28: 55.7000,
+  k29: 94.1000,
+  k30: 33.4000,
+  k31: 71.8000,
+  k32: 11.1000,
+  k33: 49.5000,
+  k34: 87.9000,
+  k35: 27.2000,
+  k36: 65.6000,
+  k37: 4.9000,
+  k38: 43.3000,
+  k39: 81.7000,
+  k40: 21.0000,
+  k41: 59.4000,
+  k42: 97.8000,
+  k43: 37.1000,
+  k44: 75.5000,
+  k45: 14.8000,
+  k46: 53.2000,
+  k47: 91.6000,
+  k48: 30.9000,
+  k49: 69.3000,
+  k50: 8.6000,
+  k51: 47.0000,
+  k52: 85.4000,
+  k53: 24.7000,
+  k54: 63.1000,
+  k55: 2.4000,
+  k56: 40.8000,
+  k57: 79.2000,
+  k58: 18.5000,
+  k59: 56.9000,
+  k60: 95.3000,
+  k61: 34.6000,
+  k62: 73.0000,
+  k63: 12.3000,
+  k64: 50.7000,
+  k65: 89.1000,
+  k66: 28.4000,
+  k67: 66.8000,
+  k68: 6.1000,
+  k69: 44.5000,
+  k70: 82.9000,
+  k71: 22.2000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_110_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_110_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_110_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_110_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_110_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_110_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_110_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_110_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_110_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_110_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_110_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_110_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 111 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_111_META = {
+  id: 'pipeline_111',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'energy' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 97388,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_111_COEF = {
+  k0: 89.9000,
+  k1: 17.8000,
+  k2: 44.8000,
+  k3: 71.8000,
+  k4: 98.8000,
+  k5: 26.7000,
+  k6: 53.7000,
+  k7: 80.7000,
+  k8: 8.6000,
+  k9: 35.6000,
+  k10: 62.6000,
+  k11: 89.6000,
+  k12: 17.5000,
+  k13: 44.5000,
+  k14: 71.5000,
+  k15: 98.5000,
+  k16: 26.4000,
+  k17: 53.4000,
+  k18: 80.4000,
+  k19: 8.3000,
+  k20: 35.3000,
+  k21: 62.3000,
+  k22: 89.3000,
+  k23: 17.2000,
+  k24: 44.2000,
+  k25: 71.2000,
+  k26: 98.2000,
+  k27: 26.1000,
+  k28: 53.1000,
+  k29: 80.1000,
+  k30: 8.0000,
+  k31: 35.0000,
+  k32: 62.0000,
+  k33: 89.0000,
+  k34: 16.9000,
+  k35: 43.9000,
+  k36: 70.9000,
+  k37: 97.9000,
+  k38: 25.8000,
+  k39: 52.8000,
+  k40: 79.8000,
+  k41: 7.7000,
+  k42: 34.7000,
+  k43: 61.7000,
+  k44: 88.7000,
+  k45: 16.6000,
+  k46: 43.6000,
+  k47: 70.6000,
+  k48: 97.6000,
+  k49: 25.5000,
+  k50: 52.5000,
+  k51: 79.5000,
+  k52: 7.4000,
+  k53: 34.4000,
+  k54: 61.4000,
+  k55: 88.4000,
+  k56: 16.3000,
+  k57: 43.3000,
+  k58: 70.3000,
+  k59: 97.3000,
+  k60: 25.2000,
+  k61: 52.2000,
+  k62: 79.2000,
+  k63: 7.1000,
+  k64: 34.1000,
+  k65: 61.1000,
+  k66: 88.1000,
+  k67: 16.0000,
+  k68: 43.0000,
+  k69: 70.0000,
+  k70: 97.0000,
+  k71: 24.9000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_111_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_111_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_111_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_111_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_111_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_111_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_111_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_111_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_111_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_111_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_111_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_111_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 112 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_112_META = {
+  id: 'pipeline_112',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'water' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 98265,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_112_COEF = {
+  k0: 10.1000,
+  k1: 25.7000,
+  k2: 41.3000,
+  k3: 56.9000,
+  k4: 72.5000,
+  k5: 88.1000,
+  k6: 4.6000,
+  k7: 20.2000,
+  k8: 35.8000,
+  k9: 51.4000,
+  k10: 67.0000,
+  k11: 82.6000,
+  k12: 98.2000,
+  k13: 14.7000,
+  k14: 30.3000,
+  k15: 45.9000,
+  k16: 61.5000,
+  k17: 77.1000,
+  k18: 92.7000,
+  k19: 9.2000,
+  k20: 24.8000,
+  k21: 40.4000,
+  k22: 56.0000,
+  k23: 71.6000,
+  k24: 87.2000,
+  k25: 3.7000,
+  k26: 19.3000,
+  k27: 34.9000,
+  k28: 50.5000,
+  k29: 66.1000,
+  k30: 81.7000,
+  k31: 97.3000,
+  k32: 13.8000,
+  k33: 29.4000,
+  k34: 45.0000,
+  k35: 60.6000,
+  k36: 76.2000,
+  k37: 91.8000,
+  k38: 8.3000,
+  k39: 23.9000,
+  k40: 39.5000,
+  k41: 55.1000,
+  k42: 70.7000,
+  k43: 86.3000,
+  k44: 2.8000,
+  k45: 18.4000,
+  k46: 34.0000,
+  k47: 49.6000,
+  k48: 65.2000,
+  k49: 80.8000,
+  k50: 96.4000,
+  k51: 12.9000,
+  k52: 28.5000,
+  k53: 44.1000,
+  k54: 59.7000,
+  k55: 75.3000,
+  k56: 90.9000,
+  k57: 7.4000,
+  k58: 23.0000,
+  k59: 38.6000,
+  k60: 54.2000,
+  k61: 69.8000,
+  k62: 85.4000,
+  k63: 1.9000,
+  k64: 17.5000,
+  k65: 33.1000,
+  k66: 48.7000,
+  k67: 64.3000,
+  k68: 79.9000,
+  k69: 95.5000,
+  k70: 12.0000,
+  k71: 27.6000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_112_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_112_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_112_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_112_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_112_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_112_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_112_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_112_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_112_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_112_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_112_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_112_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 113 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_113_META = {
+  id: 'pipeline_113',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'digital' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 99142,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_113_COEF = {
+  k0: 29.4000,
+  k1: 33.6000,
+  k2: 37.8000,
+  k3: 42.0000,
+  k4: 46.2000,
+  k5: 50.4000,
+  k6: 54.6000,
+  k7: 58.8000,
+  k8: 63.0000,
+  k9: 67.2000,
+  k10: 71.4000,
+  k11: 75.6000,
+  k12: 79.8000,
+  k13: 84.0000,
+  k14: 88.2000,
+  k15: 92.4000,
+  k16: 96.6000,
+  k17: 1.7000,
+  k18: 5.9000,
+  k19: 10.1000,
+  k20: 14.3000,
+  k21: 18.5000,
+  k22: 22.7000,
+  k23: 26.9000,
+  k24: 31.1000,
+  k25: 35.3000,
+  k26: 39.5000,
+  k27: 43.7000,
+  k28: 47.9000,
+  k29: 52.1000,
+  k30: 56.3000,
+  k31: 60.5000,
+  k32: 64.7000,
+  k33: 68.9000,
+  k34: 73.1000,
+  k35: 77.3000,
+  k36: 81.5000,
+  k37: 85.7000,
+  k38: 89.9000,
+  k39: 94.1000,
+  k40: 98.3000,
+  k41: 3.4000,
+  k42: 7.6000,
+  k43: 11.8000,
+  k44: 16.0000,
+  k45: 20.2000,
+  k46: 24.4000,
+  k47: 28.6000,
+  k48: 32.8000,
+  k49: 37.0000,
+  k50: 41.2000,
+  k51: 45.4000,
+  k52: 49.6000,
+  k53: 53.8000,
+  k54: 58.0000,
+  k55: 62.2000,
+  k56: 66.4000,
+  k57: 70.6000,
+  k58: 74.8000,
+  k59: 79.0000,
+  k60: 83.2000,
+  k61: 87.4000,
+  k62: 91.6000,
+  k63: 95.8000,
+  k64: 0.9000,
+  k65: 5.1000,
+  k66: 9.3000,
+  k67: 13.5000,
+  k68: 17.7000,
+  k69: 21.9000,
+  k70: 26.1000,
+  k71: 30.3000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_113_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_113_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_113_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_113_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_113_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_113_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_113_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_113_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_113_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_113_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_113_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_113_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 114 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_114_META = {
+  id: 'pipeline_114',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'trade' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 100019,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_114_COEF = {
+  k0: 48.7000,
+  k1: 41.5000,
+  k2: 34.3000,
+  k3: 27.1000,
+  k4: 19.9000,
+  k5: 12.7000,
+  k6: 5.5000,
+  k7: 97.4000,
+  k8: 90.2000,
+  k9: 83.0000,
+  k10: 75.8000,
+  k11: 68.6000,
+  k12: 61.4000,
+  k13: 54.2000,
+  k14: 47.0000,
+  k15: 39.8000,
+  k16: 32.6000,
+  k17: 25.4000,
+  k18: 18.2000,
+  k19: 11.0000,
+  k20: 3.8000,
+  k21: 95.7000,
+  k22: 88.5000,
+  k23: 81.3000,
+  k24: 74.1000,
+  k25: 66.9000,
+  k26: 59.7000,
+  k27: 52.5000,
+  k28: 45.3000,
+  k29: 38.1000,
+  k30: 30.9000,
+  k31: 23.7000,
+  k32: 16.5000,
+  k33: 9.3000,
+  k34: 2.1000,
+  k35: 94.0000,
+  k36: 86.8000,
+  k37: 79.6000,
+  k38: 72.4000,
+  k39: 65.2000,
+  k40: 58.0000,
+  k41: 50.8000,
+  k42: 43.6000,
+  k43: 36.4000,
+  k44: 29.2000,
+  k45: 22.0000,
+  k46: 14.8000,
+  k47: 7.6000,
+  k48: 0.4000,
+  k49: 92.3000,
+  k50: 85.1000,
+  k51: 77.9000,
+  k52: 70.7000,
+  k53: 63.5000,
+  k54: 56.3000,
+  k55: 49.1000,
+  k56: 41.9000,
+  k57: 34.7000,
+  k58: 27.5000,
+  k59: 20.3000,
+  k60: 13.1000,
+  k61: 5.9000,
+  k62: 97.8000,
+  k63: 90.6000,
+  k64: 83.4000,
+  k65: 76.2000,
+  k66: 69.0000,
+  k67: 61.8000,
+  k68: 54.6000,
+  k69: 47.4000,
+  k70: 40.2000,
+  k71: 33.0000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_114_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_114_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_114_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_114_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_114_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_114_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_114_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_114_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_114_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_114_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_114_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_114_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 115 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_115_META = {
+  id: 'pipeline_115',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'pharma' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 100896,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_115_COEF = {
+  k0: 68.0000,
+  k1: 49.4000,
+  k2: 30.8000,
+  k3: 12.2000,
+  k4: 92.7000,
+  k5: 74.1000,
+  k6: 55.5000,
+  k7: 36.9000,
+  k8: 18.3000,
+  k9: 98.8000,
+  k10: 80.2000,
+  k11: 61.6000,
+  k12: 43.0000,
+  k13: 24.4000,
+  k14: 5.8000,
+  k15: 86.3000,
+  k16: 67.7000,
+  k17: 49.1000,
+  k18: 30.5000,
+  k19: 11.9000,
+  k20: 92.4000,
+  k21: 73.8000,
+  k22: 55.2000,
+  k23: 36.6000,
+  k24: 18.0000,
+  k25: 98.5000,
+  k26: 79.9000,
+  k27: 61.3000,
+  k28: 42.7000,
+  k29: 24.1000,
+  k30: 5.5000,
+  k31: 86.0000,
+  k32: 67.4000,
+  k33: 48.8000,
+  k34: 30.2000,
+  k35: 11.6000,
+  k36: 92.1000,
+  k37: 73.5000,
+  k38: 54.9000,
+  k39: 36.3000,
+  k40: 17.7000,
+  k41: 98.2000,
+  k42: 79.6000,
+  k43: 61.0000,
+  k44: 42.4000,
+  k45: 23.8000,
+  k46: 5.2000,
+  k47: 85.7000,
+  k48: 67.1000,
+  k49: 48.5000,
+  k50: 29.9000,
+  k51: 11.3000,
+  k52: 91.8000,
+  k53: 73.2000,
+  k54: 54.6000,
+  k55: 36.0000,
+  k56: 17.4000,
+  k57: 97.9000,
+  k58: 79.3000,
+  k59: 60.7000,
+  k60: 42.1000,
+  k61: 23.5000,
+  k62: 4.9000,
+  k63: 85.4000,
+  k64: 66.8000,
+  k65: 48.2000,
+  k66: 29.6000,
+  k67: 11.0000,
+  k68: 91.5000,
+  k69: 72.9000,
+  k70: 54.3000,
+  k71: 35.7000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_115_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_115_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_115_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_115_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_115_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_115_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_115_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_115_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_115_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_115_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_115_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_115_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 116 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_116_META = {
+  id: 'pipeline_116',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'food' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 101773,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_116_COEF = {
+  k0: 87.3000,
+  k1: 57.3000,
+  k2: 27.3000,
+  k3: 96.4000,
+  k4: 66.4000,
+  k5: 36.4000,
+  k6: 6.4000,
+  k7: 75.5000,
+  k8: 45.5000,
+  k9: 15.5000,
+  k10: 84.6000,
+  k11: 54.6000,
+  k12: 24.6000,
+  k13: 93.7000,
+  k14: 63.7000,
+  k15: 33.7000,
+  k16: 3.7000,
+  k17: 72.8000,
+  k18: 42.8000,
+  k19: 12.8000,
+  k20: 81.9000,
+  k21: 51.9000,
+  k22: 21.9000,
+  k23: 91.0000,
+  k24: 61.0000,
+  k25: 31.0000,
+  k26: 1.0000,
+  k27: 70.1000,
+  k28: 40.1000,
+  k29: 10.1000,
+  k30: 79.2000,
+  k31: 49.2000,
+  k32: 19.2000,
+  k33: 88.3000,
+  k34: 58.3000,
+  k35: 28.3000,
+  k36: 97.4000,
+  k37: 67.4000,
+  k38: 37.4000,
+  k39: 7.4000,
+  k40: 76.5000,
+  k41: 46.5000,
+  k42: 16.5000,
+  k43: 85.6000,
+  k44: 55.6000,
+  k45: 25.6000,
+  k46: 94.7000,
+  k47: 64.7000,
+  k48: 34.7000,
+  k49: 4.7000,
+  k50: 73.8000,
+  k51: 43.8000,
+  k52: 13.8000,
+  k53: 82.9000,
+  k54: 52.9000,
+  k55: 22.9000,
+  k56: 92.0000,
+  k57: 62.0000,
+  k58: 32.0000,
+  k59: 2.0000,
+  k60: 71.1000,
+  k61: 41.1000,
+  k62: 11.1000,
+  k63: 80.2000,
+  k64: 50.2000,
+  k65: 20.2000,
+  k66: 89.3000,
+  k67: 59.3000,
+  k68: 29.3000,
+  k69: 98.4000,
+  k70: 68.4000,
+  k71: 38.4000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_116_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_116_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_116_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_116_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_116_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_116_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_116_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_116_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_116_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_116_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_116_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_116_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 117 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_117_META = {
+  id: 'pipeline_117',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'industrial' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 102650,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_117_COEF = {
+  k0: 7.5000,
+  k1: 65.2000,
+  k2: 23.8000,
+  k3: 81.5000,
+  k4: 40.1000,
+  k5: 97.8000,
+  k6: 56.4000,
+  k7: 15.0000,
+  k8: 72.7000,
+  k9: 31.3000,
+  k10: 89.0000,
+  k11: 47.6000,
+  k12: 6.2000,
+  k13: 63.9000,
+  k14: 22.5000,
+  k15: 80.2000,
+  k16: 38.8000,
+  k17: 96.5000,
+  k18: 55.1000,
+  k19: 13.7000,
+  k20: 71.4000,
+  k21: 30.0000,
+  k22: 87.7000,
+  k23: 46.3000,
+  k24: 4.9000,
+  k25: 62.6000,
+  k26: 21.2000,
+  k27: 78.9000,
+  k28: 37.5000,
+  k29: 95.2000,
+  k30: 53.8000,
+  k31: 12.4000,
+  k32: 70.1000,
+  k33: 28.7000,
+  k34: 86.4000,
+  k35: 45.0000,
+  k36: 3.6000,
+  k37: 61.3000,
+  k38: 19.9000,
+  k39: 77.6000,
+  k40: 36.2000,
+  k41: 93.9000,
+  k42: 52.5000,
+  k43: 11.1000,
+  k44: 68.8000,
+  k45: 27.4000,
+  k46: 85.1000,
+  k47: 43.7000,
+  k48: 2.3000,
+  k49: 60.0000,
+  k50: 18.6000,
+  k51: 76.3000,
+  k52: 34.9000,
+  k53: 92.6000,
+  k54: 51.2000,
+  k55: 9.8000,
+  k56: 67.5000,
+  k57: 26.1000,
+  k58: 83.8000,
+  k59: 42.4000,
+  k60: 1.0000,
+  k61: 58.7000,
+  k62: 17.3000,
+  k63: 75.0000,
+  k64: 33.6000,
+  k65: 91.3000,
+  k66: 49.9000,
+  k67: 8.5000,
+  k68: 66.2000,
+  k69: 24.8000,
+  k70: 82.5000,
+  k71: 41.1000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_117_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_117_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_117_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_117_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_117_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_117_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_117_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_117_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_117_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_117_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_117_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_117_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 118 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_118_META = {
+  id: 'pipeline_118',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'telecom' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 103527,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_118_COEF = {
+  k0: 26.8000,
+  k1: 73.1000,
+  k2: 20.3000,
+  k3: 66.6000,
+  k4: 13.8000,
+  k5: 60.1000,
+  k6: 7.3000,
+  k7: 53.6000,
+  k8: 0.8000,
+  k9: 47.1000,
+  k10: 93.4000,
+  k11: 40.6000,
+  k12: 86.9000,
+  k13: 34.1000,
+  k14: 80.4000,
+  k15: 27.6000,
+  k16: 73.9000,
+  k17: 21.1000,
+  k18: 67.4000,
+  k19: 14.6000,
+  k20: 60.9000,
+  k21: 8.1000,
+  k22: 54.4000,
+  k23: 1.6000,
+  k24: 47.9000,
+  k25: 94.2000,
+  k26: 41.4000,
+  k27: 87.7000,
+  k28: 34.9000,
+  k29: 81.2000,
+  k30: 28.4000,
+  k31: 74.7000,
+  k32: 21.9000,
+  k33: 68.2000,
+  k34: 15.4000,
+  k35: 61.7000,
+  k36: 8.9000,
+  k37: 55.2000,
+  k38: 2.4000,
+  k39: 48.7000,
+  k40: 95.0000,
+  k41: 42.2000,
+  k42: 88.5000,
+  k43: 35.7000,
+  k44: 82.0000,
+  k45: 29.2000,
+  k46: 75.5000,
+  k47: 22.7000,
+  k48: 69.0000,
+  k49: 16.2000,
+  k50: 62.5000,
+  k51: 9.7000,
+  k52: 56.0000,
+  k53: 3.2000,
+  k54: 49.5000,
+  k55: 95.8000,
+  k56: 43.0000,
+  k57: 89.3000,
+  k58: 36.5000,
+  k59: 82.8000,
+  k60: 30.0000,
+  k61: 76.3000,
+  k62: 23.5000,
+  k63: 69.8000,
+  k64: 17.0000,
+  k65: 63.3000,
+  k66: 10.5000,
+  k67: 56.8000,
+  k68: 4.0000,
+  k69: 50.3000,
+  k70: 96.6000,
+  k71: 43.8000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_118_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_118_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_118_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_118_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_118_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_118_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_118_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_118_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_118_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_118_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_118_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_118_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 119 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_119_META = {
+  id: 'pipeline_119',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'finance' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 104404,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_119_COEF = {
+  k0: 46.1000,
+  k1: 81.0000,
+  k2: 16.8000,
+  k3: 51.7000,
+  k4: 86.6000,
+  k5: 22.4000,
+  k6: 57.3000,
+  k7: 92.2000,
+  k8: 28.0000,
+  k9: 62.9000,
+  k10: 97.8000,
+  k11: 33.6000,
+  k12: 68.5000,
+  k13: 4.3000,
+  k14: 39.2000,
+  k15: 74.1000,
+  k16: 9.9000,
+  k17: 44.8000,
+  k18: 79.7000,
+  k19: 15.5000,
+  k20: 50.4000,
+  k21: 85.3000,
+  k22: 21.1000,
+  k23: 56.0000,
+  k24: 90.9000,
+  k25: 26.7000,
+  k26: 61.6000,
+  k27: 96.5000,
+  k28: 32.3000,
+  k29: 67.2000,
+  k30: 3.0000,
+  k31: 37.9000,
+  k32: 72.8000,
+  k33: 8.6000,
+  k34: 43.5000,
+  k35: 78.4000,
+  k36: 14.2000,
+  k37: 49.1000,
+  k38: 84.0000,
+  k39: 19.8000,
+  k40: 54.7000,
+  k41: 89.6000,
+  k42: 25.4000,
+  k43: 60.3000,
+  k44: 95.2000,
+  k45: 31.0000,
+  k46: 65.9000,
+  k47: 1.7000,
+  k48: 36.6000,
+  k49: 71.5000,
+  k50: 7.3000,
+  k51: 42.2000,
+  k52: 77.1000,
+  k53: 12.9000,
+  k54: 47.8000,
+  k55: 82.7000,
+  k56: 18.5000,
+  k57: 53.4000,
+  k58: 88.3000,
+  k59: 24.1000,
+  k60: 59.0000,
+  k61: 93.9000,
+  k62: 29.7000,
+  k63: 64.6000,
+  k64: 0.4000,
+  k65: 35.3000,
+  k66: 70.2000,
+  k67: 6.0000,
+  k68: 40.9000,
+  k69: 75.8000,
+  k70: 11.6000,
+  k71: 46.5000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_119_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_119_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_119_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_119_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_119_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_119_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_119_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_119_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_119_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_119_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_119_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_119_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 120 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_120_META = {
+  id: 'pipeline_120',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'freight' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 105281,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_120_COEF = {
+  k0: 65.4000,
+  k1: 88.9000,
+  k2: 13.3000,
+  k3: 36.8000,
+  k4: 60.3000,
+  k5: 83.8000,
+  k6: 8.2000,
+  k7: 31.7000,
+  k8: 55.2000,
+  k9: 78.7000,
+  k10: 3.1000,
+  k11: 26.6000,
+  k12: 50.1000,
+  k13: 73.6000,
+  k14: 97.1000,
+  k15: 21.5000,
+  k16: 45.0000,
+  k17: 68.5000,
+  k18: 92.0000,
+  k19: 16.4000,
+  k20: 39.9000,
+  k21: 63.4000,
+  k22: 86.9000,
+  k23: 11.3000,
+  k24: 34.8000,
+  k25: 58.3000,
+  k26: 81.8000,
+  k27: 6.2000,
+  k28: 29.7000,
+  k29: 53.2000,
+  k30: 76.7000,
+  k31: 1.1000,
+  k32: 24.6000,
+  k33: 48.1000,
+  k34: 71.6000,
+  k35: 95.1000,
+  k36: 19.5000,
+  k37: 43.0000,
+  k38: 66.5000,
+  k39: 90.0000,
+  k40: 14.4000,
+  k41: 37.9000,
+  k42: 61.4000,
+  k43: 84.9000,
+  k44: 9.3000,
+  k45: 32.8000,
+  k46: 56.3000,
+  k47: 79.8000,
+  k48: 4.2000,
+  k49: 27.7000,
+  k50: 51.2000,
+  k51: 74.7000,
+  k52: 98.2000,
+  k53: 22.6000,
+  k54: 46.1000,
+  k55: 69.6000,
+  k56: 93.1000,
+  k57: 17.5000,
+  k58: 41.0000,
+  k59: 64.5000,
+  k60: 88.0000,
+  k61: 12.4000,
+  k62: 35.9000,
+  k63: 59.4000,
+  k64: 82.9000,
+  k65: 7.3000,
+  k66: 30.8000,
+  k67: 54.3000,
+  k68: 77.8000,
+  k69: 2.2000,
+  k70: 25.7000,
+  k71: 49.2000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_120_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_120_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_120_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_120_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_120_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_120_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_120_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_120_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_120_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_120_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_120_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_120_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 121 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_121_META = {
+  id: 'pipeline_121',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'energy' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 106158,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_121_COEF = {
+  k0: 84.7000,
+  k1: 96.8000,
+  k2: 9.8000,
+  k3: 21.9000,
+  k4: 34.0000,
+  k5: 46.1000,
+  k6: 58.2000,
+  k7: 70.3000,
+  k8: 82.4000,
+  k9: 94.5000,
+  k10: 7.5000,
+  k11: 19.6000,
+  k12: 31.7000,
+  k13: 43.8000,
+  k14: 55.9000,
+  k15: 68.0000,
+  k16: 80.1000,
+  k17: 92.2000,
+  k18: 5.2000,
+  k19: 17.3000,
+  k20: 29.4000,
+  k21: 41.5000,
+  k22: 53.6000,
+  k23: 65.7000,
+  k24: 77.8000,
+  k25: 89.9000,
+  k26: 2.9000,
+  k27: 15.0000,
+  k28: 27.1000,
+  k29: 39.2000,
+  k30: 51.3000,
+  k31: 63.4000,
+  k32: 75.5000,
+  k33: 87.6000,
+  k34: 0.6000,
+  k35: 12.7000,
+  k36: 24.8000,
+  k37: 36.9000,
+  k38: 49.0000,
+  k39: 61.1000,
+  k40: 73.2000,
+  k41: 85.3000,
+  k42: 97.4000,
+  k43: 10.4000,
+  k44: 22.5000,
+  k45: 34.6000,
+  k46: 46.7000,
+  k47: 58.8000,
+  k48: 70.9000,
+  k49: 83.0000,
+  k50: 95.1000,
+  k51: 8.1000,
+  k52: 20.2000,
+  k53: 32.3000,
+  k54: 44.4000,
+  k55: 56.5000,
+  k56: 68.6000,
+  k57: 80.7000,
+  k58: 92.8000,
+  k59: 5.8000,
+  k60: 17.9000,
+  k61: 30.0000,
+  k62: 42.1000,
+  k63: 54.2000,
+  k64: 66.3000,
+  k65: 78.4000,
+  k66: 90.5000,
+  k67: 3.5000,
+  k68: 15.6000,
+  k69: 27.7000,
+  k70: 39.8000,
+  k71: 51.9000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_121_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_121_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_121_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_121_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_121_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_121_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_121_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_121_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_121_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_121_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_121_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_121_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 122 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_122_META = {
+  id: 'pipeline_122',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'water' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 107035,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_122_COEF = {
+  k0: 4.9000,
+  k1: 5.6000,
+  k2: 6.3000,
+  k3: 7.0000,
+  k4: 7.7000,
+  k5: 8.4000,
+  k6: 9.1000,
+  k7: 9.8000,
+  k8: 10.5000,
+  k9: 11.2000,
+  k10: 11.9000,
+  k11: 12.6000,
+  k12: 13.3000,
+  k13: 14.0000,
+  k14: 14.7000,
+  k15: 15.4000,
+  k16: 16.1000,
+  k17: 16.8000,
+  k18: 17.5000,
+  k19: 18.2000,
+  k20: 18.9000,
+  k21: 19.6000,
+  k22: 20.3000,
+  k23: 21.0000,
+  k24: 21.7000,
+  k25: 22.4000,
+  k26: 23.1000,
+  k27: 23.8000,
+  k28: 24.5000,
+  k29: 25.2000,
+  k30: 25.9000,
+  k31: 26.6000,
+  k32: 27.3000,
+  k33: 28.0000,
+  k34: 28.7000,
+  k35: 29.4000,
+  k36: 30.1000,
+  k37: 30.8000,
+  k38: 31.5000,
+  k39: 32.2000,
+  k40: 32.9000,
+  k41: 33.6000,
+  k42: 34.3000,
+  k43: 35.0000,
+  k44: 35.7000,
+  k45: 36.4000,
+  k46: 37.1000,
+  k47: 37.8000,
+  k48: 38.5000,
+  k49: 39.2000,
+  k50: 39.9000,
+  k51: 40.6000,
+  k52: 41.3000,
+  k53: 42.0000,
+  k54: 42.7000,
+  k55: 43.4000,
+  k56: 44.1000,
+  k57: 44.8000,
+  k58: 45.5000,
+  k59: 46.2000,
+  k60: 46.9000,
+  k61: 47.6000,
+  k62: 48.3000,
+  k63: 49.0000,
+  k64: 49.7000,
+  k65: 50.4000,
+  k66: 51.1000,
+  k67: 51.8000,
+  k68: 52.5000,
+  k69: 53.2000,
+  k70: 53.9000,
+  k71: 54.6000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_122_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_122_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_122_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_122_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_122_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_122_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_122_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_122_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_122_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_122_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_122_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_122_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 123 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_123_META = {
+  id: 'pipeline_123',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'digital' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 107912,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_123_COEF = {
+  k0: 24.2000,
+  k1: 13.5000,
+  k2: 2.8000,
+  k3: 91.2000,
+  k4: 80.5000,
+  k5: 69.8000,
+  k6: 59.1000,
+  k7: 48.4000,
+  k8: 37.7000,
+  k9: 27.0000,
+  k10: 16.3000,
+  k11: 5.6000,
+  k12: 94.0000,
+  k13: 83.3000,
+  k14: 72.6000,
+  k15: 61.9000,
+  k16: 51.2000,
+  k17: 40.5000,
+  k18: 29.8000,
+  k19: 19.1000,
+  k20: 8.4000,
+  k21: 96.8000,
+  k22: 86.1000,
+  k23: 75.4000,
+  k24: 64.7000,
+  k25: 54.0000,
+  k26: 43.3000,
+  k27: 32.6000,
+  k28: 21.9000,
+  k29: 11.2000,
+  k30: 0.5000,
+  k31: 88.9000,
+  k32: 78.2000,
+  k33: 67.5000,
+  k34: 56.8000,
+  k35: 46.1000,
+  k36: 35.4000,
+  k37: 24.7000,
+  k38: 14.0000,
+  k39: 3.3000,
+  k40: 91.7000,
+  k41: 81.0000,
+  k42: 70.3000,
+  k43: 59.6000,
+  k44: 48.9000,
+  k45: 38.2000,
+  k46: 27.5000,
+  k47: 16.8000,
+  k48: 6.1000,
+  k49: 94.5000,
+  k50: 83.8000,
+  k51: 73.1000,
+  k52: 62.4000,
+  k53: 51.7000,
+  k54: 41.0000,
+  k55: 30.3000,
+  k56: 19.6000,
+  k57: 8.9000,
+  k58: 97.3000,
+  k59: 86.6000,
+  k60: 75.9000,
+  k61: 65.2000,
+  k62: 54.5000,
+  k63: 43.8000,
+  k64: 33.1000,
+  k65: 22.4000,
+  k66: 11.7000,
+  k67: 1.0000,
+  k68: 89.4000,
+  k69: 78.7000,
+  k70: 68.0000,
+  k71: 57.3000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_123_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_123_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_123_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_123_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_123_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_123_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_123_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_123_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_123_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_123_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_123_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_123_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 124 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_124_META = {
+  id: 'pipeline_124',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'trade' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 108789,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_124_COEF = {
+  k0: 43.5000,
+  k1: 21.4000,
+  k2: 98.4000,
+  k3: 76.3000,
+  k4: 54.2000,
+  k5: 32.1000,
+  k6: 10.0000,
+  k7: 87.0000,
+  k8: 64.9000,
+  k9: 42.8000,
+  k10: 20.7000,
+  k11: 97.7000,
+  k12: 75.6000,
+  k13: 53.5000,
+  k14: 31.4000,
+  k15: 9.3000,
+  k16: 86.3000,
+  k17: 64.2000,
+  k18: 42.1000,
+  k19: 20.0000,
+  k20: 97.0000,
+  k21: 74.9000,
+  k22: 52.8000,
+  k23: 30.7000,
+  k24: 8.6000,
+  k25: 85.6000,
+  k26: 63.5000,
+  k27: 41.4000,
+  k28: 19.3000,
+  k29: 96.3000,
+  k30: 74.2000,
+  k31: 52.1000,
+  k32: 30.0000,
+  k33: 7.9000,
+  k34: 84.9000,
+  k35: 62.8000,
+  k36: 40.7000,
+  k37: 18.6000,
+  k38: 95.6000,
+  k39: 73.5000,
+  k40: 51.4000,
+  k41: 29.3000,
+  k42: 7.2000,
+  k43: 84.2000,
+  k44: 62.1000,
+  k45: 40.0000,
+  k46: 17.9000,
+  k47: 94.9000,
+  k48: 72.8000,
+  k49: 50.7000,
+  k50: 28.6000,
+  k51: 6.5000,
+  k52: 83.5000,
+  k53: 61.4000,
+  k54: 39.3000,
+  k55: 17.2000,
+  k56: 94.2000,
+  k57: 72.1000,
+  k58: 50.0000,
+  k59: 27.9000,
+  k60: 5.8000,
+  k61: 82.8000,
+  k62: 60.7000,
+  k63: 38.6000,
+  k64: 16.5000,
+  k65: 93.5000,
+  k66: 71.4000,
+  k67: 49.3000,
+  k68: 27.2000,
+  k69: 5.1000,
+  k70: 82.1000,
+  k71: 60.0000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_124_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_124_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_124_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_124_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_124_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_124_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_124_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_124_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_124_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_124_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_124_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_124_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 125 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_125_META = {
+  id: 'pipeline_125',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'pharma' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 109666,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_125_COEF = {
+  k0: 62.8000,
+  k1: 29.3000,
+  k2: 94.9000,
+  k3: 61.4000,
+  k4: 27.9000,
+  k5: 93.5000,
+  k6: 60.0000,
+  k7: 26.5000,
+  k8: 92.1000,
+  k9: 58.6000,
+  k10: 25.1000,
+  k11: 90.7000,
+  k12: 57.2000,
+  k13: 23.7000,
+  k14: 89.3000,
+  k15: 55.8000,
+  k16: 22.3000,
+  k17: 87.9000,
+  k18: 54.4000,
+  k19: 20.9000,
+  k20: 86.5000,
+  k21: 53.0000,
+  k22: 19.5000,
+  k23: 85.1000,
+  k24: 51.6000,
+  k25: 18.1000,
+  k26: 83.7000,
+  k27: 50.2000,
+  k28: 16.7000,
+  k29: 82.3000,
+  k30: 48.8000,
+  k31: 15.3000,
+  k32: 80.9000,
+  k33: 47.4000,
+  k34: 13.9000,
+  k35: 79.5000,
+  k36: 46.0000,
+  k37: 12.5000,
+  k38: 78.1000,
+  k39: 44.6000,
+  k40: 11.1000,
+  k41: 76.7000,
+  k42: 43.2000,
+  k43: 9.7000,
+  k44: 75.3000,
+  k45: 41.8000,
+  k46: 8.3000,
+  k47: 73.9000,
+  k48: 40.4000,
+  k49: 6.9000,
+  k50: 72.5000,
+  k51: 39.0000,
+  k52: 5.5000,
+  k53: 71.1000,
+  k54: 37.6000,
+  k55: 4.1000,
+  k56: 69.7000,
+  k57: 36.2000,
+  k58: 2.7000,
+  k59: 68.3000,
+  k60: 34.8000,
+  k61: 1.3000,
+  k62: 66.9000,
+  k63: 33.4000,
+  k64: 99.0000,
+  k65: 65.5000,
+  k66: 32.0000,
+  k67: 97.6000,
+  k68: 64.1000,
+  k69: 30.6000,
+  k70: 96.2000,
+  k71: 62.7000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_125_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_125_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_125_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_125_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_125_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_125_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_125_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_125_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_125_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_125_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_125_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_125_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 126 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_126_META = {
+  id: 'pipeline_126',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'food' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 110543,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_126_COEF = {
+  k0: 82.1000,
+  k1: 37.2000,
+  k2: 91.4000,
+  k3: 46.5000,
+  k4: 1.6000,
+  k5: 55.8000,
+  k6: 10.9000,
+  k7: 65.1000,
+  k8: 20.2000,
+  k9: 74.4000,
+  k10: 29.5000,
+  k11: 83.7000,
+  k12: 38.8000,
+  k13: 93.0000,
+  k14: 48.1000,
+  k15: 3.2000,
+  k16: 57.4000,
+  k17: 12.5000,
+  k18: 66.7000,
+  k19: 21.8000,
+  k20: 76.0000,
+  k21: 31.1000,
+  k22: 85.3000,
+  k23: 40.4000,
+  k24: 94.6000,
+  k25: 49.7000,
+  k26: 4.8000,
+  k27: 59.0000,
+  k28: 14.1000,
+  k29: 68.3000,
+  k30: 23.4000,
+  k31: 77.6000,
+  k32: 32.7000,
+  k33: 86.9000,
+  k34: 42.0000,
+  k35: 96.2000,
+  k36: 51.3000,
+  k37: 6.4000,
+  k38: 60.6000,
+  k39: 15.7000,
+  k40: 69.9000,
+  k41: 25.0000,
+  k42: 79.2000,
+  k43: 34.3000,
+  k44: 88.5000,
+  k45: 43.6000,
+  k46: 97.8000,
+  k47: 52.9000,
+  k48: 8.0000,
+  k49: 62.2000,
+  k50: 17.3000,
+  k51: 71.5000,
+  k52: 26.6000,
+  k53: 80.8000,
+  k54: 35.9000,
+  k55: 90.1000,
+  k56: 45.2000,
+  k57: 0.3000,
+  k58: 54.5000,
+  k59: 9.6000,
+  k60: 63.8000,
+  k61: 18.9000,
+  k62: 73.1000,
+  k63: 28.2000,
+  k64: 82.4000,
+  k65: 37.5000,
+  k66: 91.7000,
+  k67: 46.8000,
+  k68: 1.9000,
+  k69: 56.1000,
+  k70: 11.2000,
+  k71: 65.4000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_126_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_126_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_126_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_126_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_126_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_126_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_126_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_126_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_126_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_126_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_126_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_126_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 127 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_127_META = {
+  id: 'pipeline_127',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'industrial' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 111420,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_127_COEF = {
+  k0: 2.3000,
+  k1: 45.1000,
+  k2: 87.9000,
+  k3: 31.6000,
+  k4: 74.4000,
+  k5: 18.1000,
+  k6: 60.9000,
+  k7: 4.6000,
+  k8: 47.4000,
+  k9: 90.2000,
+  k10: 33.9000,
+  k11: 76.7000,
+  k12: 20.4000,
+  k13: 63.2000,
+  k14: 6.9000,
+  k15: 49.7000,
+  k16: 92.5000,
+  k17: 36.2000,
+  k18: 79.0000,
+  k19: 22.7000,
+  k20: 65.5000,
+  k21: 9.2000,
+  k22: 52.0000,
+  k23: 94.8000,
+  k24: 38.5000,
+  k25: 81.3000,
+  k26: 25.0000,
+  k27: 67.8000,
+  k28: 11.5000,
+  k29: 54.3000,
+  k30: 97.1000,
+  k31: 40.8000,
+  k32: 83.6000,
+  k33: 27.3000,
+  k34: 70.1000,
+  k35: 13.8000,
+  k36: 56.6000,
+  k37: 0.3000,
+  k38: 43.1000,
+  k39: 85.9000,
+  k40: 29.6000,
+  k41: 72.4000,
+  k42: 16.1000,
+  k43: 58.9000,
+  k44: 2.6000,
+  k45: 45.4000,
+  k46: 88.2000,
+  k47: 31.9000,
+  k48: 74.7000,
+  k49: 18.4000,
+  k50: 61.2000,
+  k51: 4.9000,
+  k52: 47.7000,
+  k53: 90.5000,
+  k54: 34.2000,
+  k55: 77.0000,
+  k56: 20.7000,
+  k57: 63.5000,
+  k58: 7.2000,
+  k59: 50.0000,
+  k60: 92.8000,
+  k61: 36.5000,
+  k62: 79.3000,
+  k63: 23.0000,
+  k64: 65.8000,
+  k65: 9.5000,
+  k66: 52.3000,
+  k67: 95.1000,
+  k68: 38.8000,
+  k69: 81.6000,
+  k70: 25.3000,
+  k71: 68.1000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_127_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_127_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_127_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_127_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_127_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_127_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_127_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_127_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_127_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_127_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_127_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_127_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 128 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_128_META = {
+  id: 'pipeline_128',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'telecom' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 112297,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_128_COEF = {
+  k0: 21.6000,
+  k1: 53.0000,
+  k2: 84.4000,
+  k3: 16.7000,
+  k4: 48.1000,
+  k5: 79.5000,
+  k6: 11.8000,
+  k7: 43.2000,
+  k8: 74.6000,
+  k9: 6.9000,
+  k10: 38.3000,
+  k11: 69.7000,
+  k12: 2.0000,
+  k13: 33.4000,
+  k14: 64.8000,
+  k15: 96.2000,
+  k16: 28.5000,
+  k17: 59.9000,
+  k18: 91.3000,
+  k19: 23.6000,
+  k20: 55.0000,
+  k21: 86.4000,
+  k22: 18.7000,
+  k23: 50.1000,
+  k24: 81.5000,
+  k25: 13.8000,
+  k26: 45.2000,
+  k27: 76.6000,
+  k28: 8.9000,
+  k29: 40.3000,
+  k30: 71.7000,
+  k31: 4.0000,
+  k32: 35.4000,
+  k33: 66.8000,
+  k34: 98.2000,
+  k35: 30.5000,
+  k36: 61.9000,
+  k37: 93.3000,
+  k38: 25.6000,
+  k39: 57.0000,
+  k40: 88.4000,
+  k41: 20.7000,
+  k42: 52.1000,
+  k43: 83.5000,
+  k44: 15.8000,
+  k45: 47.2000,
+  k46: 78.6000,
+  k47: 10.9000,
+  k48: 42.3000,
+  k49: 73.7000,
+  k50: 6.0000,
+  k51: 37.4000,
+  k52: 68.8000,
+  k53: 1.1000,
+  k54: 32.5000,
+  k55: 63.9000,
+  k56: 95.3000,
+  k57: 27.6000,
+  k58: 59.0000,
+  k59: 90.4000,
+  k60: 22.7000,
+  k61: 54.1000,
+  k62: 85.5000,
+  k63: 17.8000,
+  k64: 49.2000,
+  k65: 80.6000,
+  k66: 12.9000,
+  k67: 44.3000,
+  k68: 75.7000,
+  k69: 8.0000,
+  k70: 39.4000,
+  k71: 70.8000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_128_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_128_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_128_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_128_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_128_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_128_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_128_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_128_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_128_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_128_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_128_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_128_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 129 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_129_META = {
+  id: 'pipeline_129',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'finance' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 113174,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_129_COEF = {
+  k0: 40.9000,
+  k1: 60.9000,
+  k2: 80.9000,
+  k3: 1.8000,
+  k4: 21.8000,
+  k5: 41.8000,
+  k6: 61.8000,
+  k7: 81.8000,
+  k8: 2.7000,
+  k9: 22.7000,
+  k10: 42.7000,
+  k11: 62.7000,
+  k12: 82.7000,
+  k13: 3.6000,
+  k14: 23.6000,
+  k15: 43.6000,
+  k16: 63.6000,
+  k17: 83.6000,
+  k18: 4.5000,
+  k19: 24.5000,
+  k20: 44.5000,
+  k21: 64.5000,
+  k22: 84.5000,
+  k23: 5.4000,
+  k24: 25.4000,
+  k25: 45.4000,
+  k26: 65.4000,
+  k27: 85.4000,
+  k28: 6.3000,
+  k29: 26.3000,
+  k30: 46.3000,
+  k31: 66.3000,
+  k32: 86.3000,
+  k33: 7.2000,
+  k34: 27.2000,
+  k35: 47.2000,
+  k36: 67.2000,
+  k37: 87.2000,
+  k38: 8.1000,
+  k39: 28.1000,
+  k40: 48.1000,
+  k41: 68.1000,
+  k42: 88.1000,
+  k43: 9.0000,
+  k44: 29.0000,
+  k45: 49.0000,
+  k46: 69.0000,
+  k47: 89.0000,
+  k48: 9.9000,
+  k49: 29.9000,
+  k50: 49.9000,
+  k51: 69.9000,
+  k52: 89.9000,
+  k53: 10.8000,
+  k54: 30.8000,
+  k55: 50.8000,
+  k56: 70.8000,
+  k57: 90.8000,
+  k58: 11.7000,
+  k59: 31.7000,
+  k60: 51.7000,
+  k61: 71.7000,
+  k62: 91.7000,
+  k63: 12.6000,
+  k64: 32.6000,
+  k65: 52.6000,
+  k66: 72.6000,
+  k67: 92.6000,
+  k68: 13.5000,
+  k69: 33.5000,
+  k70: 53.5000,
+  k71: 73.5000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_129_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_129_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_129_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_129_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_129_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_129_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_129_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_129_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_129_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_129_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_129_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_129_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 130 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_130_META = {
+  id: 'pipeline_130',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'freight' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 114051,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_130_COEF = {
+  k0: 60.2000,
+  k1: 68.8000,
+  k2: 77.4000,
+  k3: 86.0000,
+  k4: 94.6000,
+  k5: 4.1000,
+  k6: 12.7000,
+  k7: 21.3000,
+  k8: 29.9000,
+  k9: 38.5000,
+  k10: 47.1000,
+  k11: 55.7000,
+  k12: 64.3000,
+  k13: 72.9000,
+  k14: 81.5000,
+  k15: 90.1000,
+  k16: 98.7000,
+  k17: 8.2000,
+  k18: 16.8000,
+  k19: 25.4000,
+  k20: 34.0000,
+  k21: 42.6000,
+  k22: 51.2000,
+  k23: 59.8000,
+  k24: 68.4000,
+  k25: 77.0000,
+  k26: 85.6000,
+  k27: 94.2000,
+  k28: 3.7000,
+  k29: 12.3000,
+  k30: 20.9000,
+  k31: 29.5000,
+  k32: 38.1000,
+  k33: 46.7000,
+  k34: 55.3000,
+  k35: 63.9000,
+  k36: 72.5000,
+  k37: 81.1000,
+  k38: 89.7000,
+  k39: 98.3000,
+  k40: 7.8000,
+  k41: 16.4000,
+  k42: 25.0000,
+  k43: 33.6000,
+  k44: 42.2000,
+  k45: 50.8000,
+  k46: 59.4000,
+  k47: 68.0000,
+  k48: 76.6000,
+  k49: 85.2000,
+  k50: 93.8000,
+  k51: 3.3000,
+  k52: 11.9000,
+  k53: 20.5000,
+  k54: 29.1000,
+  k55: 37.7000,
+  k56: 46.3000,
+  k57: 54.9000,
+  k58: 63.5000,
+  k59: 72.1000,
+  k60: 80.7000,
+  k61: 89.3000,
+  k62: 97.9000,
+  k63: 7.4000,
+  k64: 16.0000,
+  k65: 24.6000,
+  k66: 33.2000,
+  k67: 41.8000,
+  k68: 50.4000,
+  k69: 59.0000,
+  k70: 67.6000,
+  k71: 76.2000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_130_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_130_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_130_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_130_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_130_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_130_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_130_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_130_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_130_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_130_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_130_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_130_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 131 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_131_META = {
+  id: 'pipeline_131',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'energy' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 114928,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_131_COEF = {
+  k0: 79.5000,
+  k1: 76.7000,
+  k2: 73.9000,
+  k3: 71.1000,
+  k4: 68.3000,
+  k5: 65.5000,
+  k6: 62.7000,
+  k7: 59.9000,
+  k8: 57.1000,
+  k9: 54.3000,
+  k10: 51.5000,
+  k11: 48.7000,
+  k12: 45.9000,
+  k13: 43.1000,
+  k14: 40.3000,
+  k15: 37.5000,
+  k16: 34.7000,
+  k17: 31.9000,
+  k18: 29.1000,
+  k19: 26.3000,
+  k20: 23.5000,
+  k21: 20.7000,
+  k22: 17.9000,
+  k23: 15.1000,
+  k24: 12.3000,
+  k25: 9.5000,
+  k26: 6.7000,
+  k27: 3.9000,
+  k28: 1.1000,
+  k29: 97.4000,
+  k30: 94.6000,
+  k31: 91.8000,
+  k32: 89.0000,
+  k33: 86.2000,
+  k34: 83.4000,
+  k35: 80.6000,
+  k36: 77.8000,
+  k37: 75.0000,
+  k38: 72.2000,
+  k39: 69.4000,
+  k40: 66.6000,
+  k41: 63.8000,
+  k42: 61.0000,
+  k43: 58.2000,
+  k44: 55.4000,
+  k45: 52.6000,
+  k46: 49.8000,
+  k47: 47.0000,
+  k48: 44.2000,
+  k49: 41.4000,
+  k50: 38.6000,
+  k51: 35.8000,
+  k52: 33.0000,
+  k53: 30.2000,
+  k54: 27.4000,
+  k55: 24.6000,
+  k56: 21.8000,
+  k57: 19.0000,
+  k58: 16.2000,
+  k59: 13.4000,
+  k60: 10.6000,
+  k61: 7.8000,
+  k62: 5.0000,
+  k63: 2.2000,
+  k64: 98.5000,
+  k65: 95.7000,
+  k66: 92.9000,
+  k67: 90.1000,
+  k68: 87.3000,
+  k69: 84.5000,
+  k70: 81.7000,
+  k71: 78.9000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_131_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_131_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_131_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_131_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_131_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_131_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_131_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_131_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_131_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_131_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_131_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_131_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 132 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_132_META = {
+  id: 'pipeline_132',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'water' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 115805,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_132_COEF = {
+  k0: 98.8000,
+  k1: 84.6000,
+  k2: 70.4000,
+  k3: 56.2000,
+  k4: 42.0000,
+  k5: 27.8000,
+  k6: 13.6000,
+  k7: 98.5000,
+  k8: 84.3000,
+  k9: 70.1000,
+  k10: 55.9000,
+  k11: 41.7000,
+  k12: 27.5000,
+  k13: 13.3000,
+  k14: 98.2000,
+  k15: 84.0000,
+  k16: 69.8000,
+  k17: 55.6000,
+  k18: 41.4000,
+  k19: 27.2000,
+  k20: 13.0000,
+  k21: 97.9000,
+  k22: 83.7000,
+  k23: 69.5000,
+  k24: 55.3000,
+  k25: 41.1000,
+  k26: 26.9000,
+  k27: 12.7000,
+  k28: 97.6000,
+  k29: 83.4000,
+  k30: 69.2000,
+  k31: 55.0000,
+  k32: 40.8000,
+  k33: 26.6000,
+  k34: 12.4000,
+  k35: 97.3000,
+  k36: 83.1000,
+  k37: 68.9000,
+  k38: 54.7000,
+  k39: 40.5000,
+  k40: 26.3000,
+  k41: 12.1000,
+  k42: 97.0000,
+  k43: 82.8000,
+  k44: 68.6000,
+  k45: 54.4000,
+  k46: 40.2000,
+  k47: 26.0000,
+  k48: 11.8000,
+  k49: 96.7000,
+  k50: 82.5000,
+  k51: 68.3000,
+  k52: 54.1000,
+  k53: 39.9000,
+  k54: 25.7000,
+  k55: 11.5000,
+  k56: 96.4000,
+  k57: 82.2000,
+  k58: 68.0000,
+  k59: 53.8000,
+  k60: 39.6000,
+  k61: 25.4000,
+  k62: 11.2000,
+  k63: 96.1000,
+  k64: 81.9000,
+  k65: 67.7000,
+  k66: 53.5000,
+  k67: 39.3000,
+  k68: 25.1000,
+  k69: 10.9000,
+  k70: 95.8000,
+  k71: 81.6000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_132_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_132_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_132_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_132_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_132_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_132_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_132_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_132_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_132_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_132_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_132_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_132_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 133 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_133_META = {
+  id: 'pipeline_133',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'digital' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 116682,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_133_COEF = {
+  k0: 19.0000,
+  k1: 92.5000,
+  k2: 66.9000,
+  k3: 41.3000,
+  k4: 15.7000,
+  k5: 89.2000,
+  k6: 63.6000,
+  k7: 38.0000,
+  k8: 12.4000,
+  k9: 85.9000,
+  k10: 60.3000,
+  k11: 34.7000,
+  k12: 9.1000,
+  k13: 82.6000,
+  k14: 57.0000,
+  k15: 31.4000,
+  k16: 5.8000,
+  k17: 79.3000,
+  k18: 53.7000,
+  k19: 28.1000,
+  k20: 2.5000,
+  k21: 76.0000,
+  k22: 50.4000,
+  k23: 24.8000,
+  k24: 98.3000,
+  k25: 72.7000,
+  k26: 47.1000,
+  k27: 21.5000,
+  k28: 95.0000,
+  k29: 69.4000,
+  k30: 43.8000,
+  k31: 18.2000,
+  k32: 91.7000,
+  k33: 66.1000,
+  k34: 40.5000,
+  k35: 14.9000,
+  k36: 88.4000,
+  k37: 62.8000,
+  k38: 37.2000,
+  k39: 11.6000,
+  k40: 85.1000,
+  k41: 59.5000,
+  k42: 33.9000,
+  k43: 8.3000,
+  k44: 81.8000,
+  k45: 56.2000,
+  k46: 30.6000,
+  k47: 5.0000,
+  k48: 78.5000,
+  k49: 52.9000,
+  k50: 27.3000,
+  k51: 1.7000,
+  k52: 75.2000,
+  k53: 49.6000,
+  k54: 24.0000,
+  k55: 97.5000,
+  k56: 71.9000,
+  k57: 46.3000,
+  k58: 20.7000,
+  k59: 94.2000,
+  k60: 68.6000,
+  k61: 43.0000,
+  k62: 17.4000,
+  k63: 90.9000,
+  k64: 65.3000,
+  k65: 39.7000,
+  k66: 14.1000,
+  k67: 87.6000,
+  k68: 62.0000,
+  k69: 36.4000,
+  k70: 10.8000,
+  k71: 84.3000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_133_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_133_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_133_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_133_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_133_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_133_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_133_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_133_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_133_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_133_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_133_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_133_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 134 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_134_META = {
+  id: 'pipeline_134',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'trade' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 117559,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_134_COEF = {
+  k0: 38.3000,
+  k1: 1.3000,
+  k2: 63.4000,
+  k3: 26.4000,
+  k4: 88.5000,
+  k5: 51.5000,
+  k6: 14.5000,
+  k7: 76.6000,
+  k8: 39.6000,
+  k9: 2.6000,
+  k10: 64.7000,
+  k11: 27.7000,
+  k12: 89.8000,
+  k13: 52.8000,
+  k14: 15.8000,
+  k15: 77.9000,
+  k16: 40.9000,
+  k17: 3.9000,
+  k18: 66.0000,
+  k19: 29.0000,
+  k20: 91.1000,
+  k21: 54.1000,
+  k22: 17.1000,
+  k23: 79.2000,
+  k24: 42.2000,
+  k25: 5.2000,
+  k26: 67.3000,
+  k27: 30.3000,
+  k28: 92.4000,
+  k29: 55.4000,
+  k30: 18.4000,
+  k31: 80.5000,
+  k32: 43.5000,
+  k33: 6.5000,
+  k34: 68.6000,
+  k35: 31.6000,
+  k36: 93.7000,
+  k37: 56.7000,
+  k38: 19.7000,
+  k39: 81.8000,
+  k40: 44.8000,
+  k41: 7.8000,
+  k42: 69.9000,
+  k43: 32.9000,
+  k44: 95.0000,
+  k45: 58.0000,
+  k46: 21.0000,
+  k47: 83.1000,
+  k48: 46.1000,
+  k49: 9.1000,
+  k50: 71.2000,
+  k51: 34.2000,
+  k52: 96.3000,
+  k53: 59.3000,
+  k54: 22.3000,
+  k55: 84.4000,
+  k56: 47.4000,
+  k57: 10.4000,
+  k58: 72.5000,
+  k59: 35.5000,
+  k60: 97.6000,
+  k61: 60.6000,
+  k62: 23.6000,
+  k63: 85.7000,
+  k64: 48.7000,
+  k65: 11.7000,
+  k66: 73.8000,
+  k67: 36.8000,
+  k68: 98.9000,
+  k69: 61.9000,
+  k70: 24.9000,
+  k71: 87.0000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_134_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_134_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_134_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_134_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_134_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_134_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_134_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_134_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_134_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_134_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_134_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_134_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 135 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_135_META = {
+  id: 'pipeline_135',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'pharma' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 118436,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_135_COEF = {
+  k0: 57.6000,
+  k1: 9.2000,
+  k2: 59.9000,
+  k3: 11.5000,
+  k4: 62.2000,
+  k5: 13.8000,
+  k6: 64.5000,
+  k7: 16.1000,
+  k8: 66.8000,
+  k9: 18.4000,
+  k10: 69.1000,
+  k11: 20.7000,
+  k12: 71.4000,
+  k13: 23.0000,
+  k14: 73.7000,
+  k15: 25.3000,
+  k16: 76.0000,
+  k17: 27.6000,
+  k18: 78.3000,
+  k19: 29.9000,
+  k20: 80.6000,
+  k21: 32.2000,
+  k22: 82.9000,
+  k23: 34.5000,
+  k24: 85.2000,
+  k25: 36.8000,
+  k26: 87.5000,
+  k27: 39.1000,
+  k28: 89.8000,
+  k29: 41.4000,
+  k30: 92.1000,
+  k31: 43.7000,
+  k32: 94.4000,
+  k33: 46.0000,
+  k34: 96.7000,
+  k35: 48.3000,
+  k36: 99.0000,
+  k37: 50.6000,
+  k38: 2.2000,
+  k39: 52.9000,
+  k40: 4.5000,
+  k41: 55.2000,
+  k42: 6.8000,
+  k43: 57.5000,
+  k44: 9.1000,
+  k45: 59.8000,
+  k46: 11.4000,
+  k47: 62.1000,
+  k48: 13.7000,
+  k49: 64.4000,
+  k50: 16.0000,
+  k51: 66.7000,
+  k52: 18.3000,
+  k53: 69.0000,
+  k54: 20.6000,
+  k55: 71.3000,
+  k56: 22.9000,
+  k57: 73.6000,
+  k58: 25.2000,
+  k59: 75.9000,
+  k60: 27.5000,
+  k61: 78.2000,
+  k62: 29.8000,
+  k63: 80.5000,
+  k64: 32.1000,
+  k65: 82.8000,
+  k66: 34.4000,
+  k67: 85.1000,
+  k68: 36.7000,
+  k69: 87.4000,
+  k70: 39.0000,
+  k71: 89.7000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_135_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_135_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_135_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_135_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_135_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_135_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_135_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_135_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_135_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_135_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_135_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_135_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 136 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_136_META = {
+  id: 'pipeline_136',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'food' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 119313,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_136_COEF = {
+  k0: 76.9000,
+  k1: 17.1000,
+  k2: 56.4000,
+  k3: 95.7000,
+  k4: 35.9000,
+  k5: 75.2000,
+  k6: 15.4000,
+  k7: 54.7000,
+  k8: 94.0000,
+  k9: 34.2000,
+  k10: 73.5000,
+  k11: 13.7000,
+  k12: 53.0000,
+  k13: 92.3000,
+  k14: 32.5000,
+  k15: 71.8000,
+  k16: 12.0000,
+  k17: 51.3000,
+  k18: 90.6000,
+  k19: 30.8000,
+  k20: 70.1000,
+  k21: 10.3000,
+  k22: 49.6000,
+  k23: 88.9000,
+  k24: 29.1000,
+  k25: 68.4000,
+  k26: 8.6000,
+  k27: 47.9000,
+  k28: 87.2000,
+  k29: 27.4000,
+  k30: 66.7000,
+  k31: 6.9000,
+  k32: 46.2000,
+  k33: 85.5000,
+  k34: 25.7000,
+  k35: 65.0000,
+  k36: 5.2000,
+  k37: 44.5000,
+  k38: 83.8000,
+  k39: 24.0000,
+  k40: 63.3000,
+  k41: 3.5000,
+  k42: 42.8000,
+  k43: 82.1000,
+  k44: 22.3000,
+  k45: 61.6000,
+  k46: 1.8000,
+  k47: 41.1000,
+  k48: 80.4000,
+  k49: 20.6000,
+  k50: 59.9000,
+  k51: 0.1000,
+  k52: 39.4000,
+  k53: 78.7000,
+  k54: 18.9000,
+  k55: 58.2000,
+  k56: 97.5000,
+  k57: 37.7000,
+  k58: 77.0000,
+  k59: 17.2000,
+  k60: 56.5000,
+  k61: 95.8000,
+  k62: 36.0000,
+  k63: 75.3000,
+  k64: 15.5000,
+  k65: 54.8000,
+  k66: 94.1000,
+  k67: 34.3000,
+  k68: 73.6000,
+  k69: 13.8000,
+  k70: 53.1000,
+  k71: 92.4000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_136_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_136_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_136_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_136_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_136_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_136_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_136_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_136_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_136_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_136_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_136_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_136_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 137 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_137_META = {
+  id: 'pipeline_137',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'industrial' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 120190,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_137_COEF = {
+  k0: 96.2000,
+  k1: 25.0000,
+  k2: 52.9000,
+  k3: 80.8000,
+  k4: 9.6000,
+  k5: 37.5000,
+  k6: 65.4000,
+  k7: 93.3000,
+  k8: 22.1000,
+  k9: 50.0000,
+  k10: 77.9000,
+  k11: 6.7000,
+  k12: 34.6000,
+  k13: 62.5000,
+  k14: 90.4000,
+  k15: 19.2000,
+  k16: 47.1000,
+  k17: 75.0000,
+  k18: 3.8000,
+  k19: 31.7000,
+  k20: 59.6000,
+  k21: 87.5000,
+  k22: 16.3000,
+  k23: 44.2000,
+  k24: 72.1000,
+  k25: 0.9000,
+  k26: 28.8000,
+  k27: 56.7000,
+  k28: 84.6000,
+  k29: 13.4000,
+  k30: 41.3000,
+  k31: 69.2000,
+  k32: 97.1000,
+  k33: 25.9000,
+  k34: 53.8000,
+  k35: 81.7000,
+  k36: 10.5000,
+  k37: 38.4000,
+  k38: 66.3000,
+  k39: 94.2000,
+  k40: 23.0000,
+  k41: 50.9000,
+  k42: 78.8000,
+  k43: 7.6000,
+  k44: 35.5000,
+  k45: 63.4000,
+  k46: 91.3000,
+  k47: 20.1000,
+  k48: 48.0000,
+  k49: 75.9000,
+  k50: 4.7000,
+  k51: 32.6000,
+  k52: 60.5000,
+  k53: 88.4000,
+  k54: 17.2000,
+  k55: 45.1000,
+  k56: 73.0000,
+  k57: 1.8000,
+  k58: 29.7000,
+  k59: 57.6000,
+  k60: 85.5000,
+  k61: 14.3000,
+  k62: 42.2000,
+  k63: 70.1000,
+  k64: 98.0000,
+  k65: 26.8000,
+  k66: 54.7000,
+  k67: 82.6000,
+  k68: 11.4000,
+  k69: 39.3000,
+  k70: 67.2000,
+  k71: 95.1000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_137_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_137_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_137_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_137_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_137_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_137_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_137_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_137_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_137_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_137_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_137_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_137_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 138 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_138_META = {
+  id: 'pipeline_138',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'telecom' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 121067,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_138_COEF = {
+  k0: 16.4000,
+  k1: 32.9000,
+  k2: 49.4000,
+  k3: 65.9000,
+  k4: 82.4000,
+  k5: 98.9000,
+  k6: 16.3000,
+  k7: 32.8000,
+  k8: 49.3000,
+  k9: 65.8000,
+  k10: 82.3000,
+  k11: 98.8000,
+  k12: 16.2000,
+  k13: 32.7000,
+  k14: 49.2000,
+  k15: 65.7000,
+  k16: 82.2000,
+  k17: 98.7000,
+  k18: 16.1000,
+  k19: 32.6000,
+  k20: 49.1000,
+  k21: 65.6000,
+  k22: 82.1000,
+  k23: 98.6000,
+  k24: 16.0000,
+  k25: 32.5000,
+  k26: 49.0000,
+  k27: 65.5000,
+  k28: 82.0000,
+  k29: 98.5000,
+  k30: 15.9000,
+  k31: 32.4000,
+  k32: 48.9000,
+  k33: 65.4000,
+  k34: 81.9000,
+  k35: 98.4000,
+  k36: 15.8000,
+  k37: 32.3000,
+  k38: 48.8000,
+  k39: 65.3000,
+  k40: 81.8000,
+  k41: 98.3000,
+  k42: 15.7000,
+  k43: 32.2000,
+  k44: 48.7000,
+  k45: 65.2000,
+  k46: 81.7000,
+  k47: 98.2000,
+  k48: 15.6000,
+  k49: 32.1000,
+  k50: 48.6000,
+  k51: 65.1000,
+  k52: 81.6000,
+  k53: 98.1000,
+  k54: 15.5000,
+  k55: 32.0000,
+  k56: 48.5000,
+  k57: 65.0000,
+  k58: 81.5000,
+  k59: 98.0000,
+  k60: 15.4000,
+  k61: 31.9000,
+  k62: 48.4000,
+  k63: 64.9000,
+  k64: 81.4000,
+  k65: 97.9000,
+  k66: 15.3000,
+  k67: 31.8000,
+  k68: 48.3000,
+  k69: 64.8000,
+  k70: 81.3000,
+  k71: 97.8000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_138_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_138_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_138_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_138_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_138_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_138_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_138_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_138_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_138_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_138_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_138_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_138_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 139 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_139_META = {
+  id: 'pipeline_139',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'finance' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 121944,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_139_COEF = {
+  k0: 35.7000,
+  k1: 40.8000,
+  k2: 45.9000,
+  k3: 51.0000,
+  k4: 56.1000,
+  k5: 61.2000,
+  k6: 66.3000,
+  k7: 71.4000,
+  k8: 76.5000,
+  k9: 81.6000,
+  k10: 86.7000,
+  k11: 91.8000,
+  k12: 96.9000,
+  k13: 2.9000,
+  k14: 8.0000,
+  k15: 13.1000,
+  k16: 18.2000,
+  k17: 23.3000,
+  k18: 28.4000,
+  k19: 33.5000,
+  k20: 38.6000,
+  k21: 43.7000,
+  k22: 48.8000,
+  k23: 53.9000,
+  k24: 59.0000,
+  k25: 64.1000,
+  k26: 69.2000,
+  k27: 74.3000,
+  k28: 79.4000,
+  k29: 84.5000,
+  k30: 89.6000,
+  k31: 94.7000,
+  k32: 0.7000,
+  k33: 5.8000,
+  k34: 10.9000,
+  k35: 16.0000,
+  k36: 21.1000,
+  k37: 26.2000,
+  k38: 31.3000,
+  k39: 36.4000,
+  k40: 41.5000,
+  k41: 46.6000,
+  k42: 51.7000,
+  k43: 56.8000,
+  k44: 61.9000,
+  k45: 67.0000,
+  k46: 72.1000,
+  k47: 77.2000,
+  k48: 82.3000,
+  k49: 87.4000,
+  k50: 92.5000,
+  k51: 97.6000,
+  k52: 3.6000,
+  k53: 8.7000,
+  k54: 13.8000,
+  k55: 18.9000,
+  k56: 24.0000,
+  k57: 29.1000,
+  k58: 34.2000,
+  k59: 39.3000,
+  k60: 44.4000,
+  k61: 49.5000,
+  k62: 54.6000,
+  k63: 59.7000,
+  k64: 64.8000,
+  k65: 69.9000,
+  k66: 75.0000,
+  k67: 80.1000,
+  k68: 85.2000,
+  k69: 90.3000,
+  k70: 95.4000,
+  k71: 1.4000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_139_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_139_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_139_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_139_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_139_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_139_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_139_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_139_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_139_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_139_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_139_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_139_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 140 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_140_META = {
+  id: 'pipeline_140',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'freight' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 122821,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_140_COEF = {
+  k0: 55.0000,
+  k1: 48.7000,
+  k2: 42.4000,
+  k3: 36.1000,
+  k4: 29.8000,
+  k5: 23.5000,
+  k6: 17.2000,
+  k7: 10.9000,
+  k8: 4.6000,
+  k9: 97.4000,
+  k10: 91.1000,
+  k11: 84.8000,
+  k12: 78.5000,
+  k13: 72.2000,
+  k14: 65.9000,
+  k15: 59.6000,
+  k16: 53.3000,
+  k17: 47.0000,
+  k18: 40.7000,
+  k19: 34.4000,
+  k20: 28.1000,
+  k21: 21.8000,
+  k22: 15.5000,
+  k23: 9.2000,
+  k24: 2.9000,
+  k25: 95.7000,
+  k26: 89.4000,
+  k27: 83.1000,
+  k28: 76.8000,
+  k29: 70.5000,
+  k30: 64.2000,
+  k31: 57.9000,
+  k32: 51.6000,
+  k33: 45.3000,
+  k34: 39.0000,
+  k35: 32.7000,
+  k36: 26.4000,
+  k37: 20.1000,
+  k38: 13.8000,
+  k39: 7.5000,
+  k40: 1.2000,
+  k41: 94.0000,
+  k42: 87.7000,
+  k43: 81.4000,
+  k44: 75.1000,
+  k45: 68.8000,
+  k46: 62.5000,
+  k47: 56.2000,
+  k48: 49.9000,
+  k49: 43.6000,
+  k50: 37.3000,
+  k51: 31.0000,
+  k52: 24.7000,
+  k53: 18.4000,
+  k54: 12.1000,
+  k55: 5.8000,
+  k56: 98.6000,
+  k57: 92.3000,
+  k58: 86.0000,
+  k59: 79.7000,
+  k60: 73.4000,
+  k61: 67.1000,
+  k62: 60.8000,
+  k63: 54.5000,
+  k64: 48.2000,
+  k65: 41.9000,
+  k66: 35.6000,
+  k67: 29.3000,
+  k68: 23.0000,
+  k69: 16.7000,
+  k70: 10.4000,
+  k71: 4.1000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_140_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_140_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_140_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_140_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_140_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_140_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_140_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_140_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_140_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_140_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_140_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_140_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 141 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_141_META = {
+  id: 'pipeline_141',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'energy' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 123698,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_141_COEF = {
+  k0: 74.3000,
+  k1: 56.6000,
+  k2: 38.9000,
+  k3: 21.2000,
+  k4: 3.5000,
+  k5: 84.9000,
+  k6: 67.2000,
+  k7: 49.5000,
+  k8: 31.8000,
+  k9: 14.1000,
+  k10: 95.5000,
+  k11: 77.8000,
+  k12: 60.1000,
+  k13: 42.4000,
+  k14: 24.7000,
+  k15: 7.0000,
+  k16: 88.4000,
+  k17: 70.7000,
+  k18: 53.0000,
+  k19: 35.3000,
+  k20: 17.6000,
+  k21: 99.0000,
+  k22: 81.3000,
+  k23: 63.6000,
+  k24: 45.9000,
+  k25: 28.2000,
+  k26: 10.5000,
+  k27: 91.9000,
+  k28: 74.2000,
+  k29: 56.5000,
+  k30: 38.8000,
+  k31: 21.1000,
+  k32: 3.4000,
+  k33: 84.8000,
+  k34: 67.1000,
+  k35: 49.4000,
+  k36: 31.7000,
+  k37: 14.0000,
+  k38: 95.4000,
+  k39: 77.7000,
+  k40: 60.0000,
+  k41: 42.3000,
+  k42: 24.6000,
+  k43: 6.9000,
+  k44: 88.3000,
+  k45: 70.6000,
+  k46: 52.9000,
+  k47: 35.2000,
+  k48: 17.5000,
+  k49: 98.9000,
+  k50: 81.2000,
+  k51: 63.5000,
+  k52: 45.8000,
+  k53: 28.1000,
+  k54: 10.4000,
+  k55: 91.8000,
+  k56: 74.1000,
+  k57: 56.4000,
+  k58: 38.7000,
+  k59: 21.0000,
+  k60: 3.3000,
+  k61: 84.7000,
+  k62: 67.0000,
+  k63: 49.3000,
+  k64: 31.6000,
+  k65: 13.9000,
+  k66: 95.3000,
+  k67: 77.6000,
+  k68: 59.9000,
+  k69: 42.2000,
+  k70: 24.5000,
+  k71: 6.8000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_141_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_141_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_141_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_141_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_141_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_141_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_141_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_141_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_141_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_141_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_141_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_141_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 142 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_142_META = {
+  id: 'pipeline_142',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'water' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 124575,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_142_COEF = {
+  k0: 93.6000,
+  k1: 64.5000,
+  k2: 35.4000,
+  k3: 6.3000,
+  k4: 76.3000,
+  k5: 47.2000,
+  k6: 18.1000,
+  k7: 88.1000,
+  k8: 59.0000,
+  k9: 29.9000,
+  k10: 0.8000,
+  k11: 70.8000,
+  k12: 41.7000,
+  k13: 12.6000,
+  k14: 82.6000,
+  k15: 53.5000,
+  k16: 24.4000,
+  k17: 94.4000,
+  k18: 65.3000,
+  k19: 36.2000,
+  k20: 7.1000,
+  k21: 77.1000,
+  k22: 48.0000,
+  k23: 18.9000,
+  k24: 88.9000,
+  k25: 59.8000,
+  k26: 30.7000,
+  k27: 1.6000,
+  k28: 71.6000,
+  k29: 42.5000,
+  k30: 13.4000,
+  k31: 83.4000,
+  k32: 54.3000,
+  k33: 25.2000,
+  k34: 95.2000,
+  k35: 66.1000,
+  k36: 37.0000,
+  k37: 7.9000,
+  k38: 77.9000,
+  k39: 48.8000,
+  k40: 19.7000,
+  k41: 89.7000,
+  k42: 60.6000,
+  k43: 31.5000,
+  k44: 2.4000,
+  k45: 72.4000,
+  k46: 43.3000,
+  k47: 14.2000,
+  k48: 84.2000,
+  k49: 55.1000,
+  k50: 26.0000,
+  k51: 96.0000,
+  k52: 66.9000,
+  k53: 37.8000,
+  k54: 8.7000,
+  k55: 78.7000,
+  k56: 49.6000,
+  k57: 20.5000,
+  k58: 90.5000,
+  k59: 61.4000,
+  k60: 32.3000,
+  k61: 3.2000,
+  k62: 73.2000,
+  k63: 44.1000,
+  k64: 15.0000,
+  k65: 85.0000,
+  k66: 55.9000,
+  k67: 26.8000,
+  k68: 96.8000,
+  k69: 67.7000,
+  k70: 38.6000,
+  k71: 9.5000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_142_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_142_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_142_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_142_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_142_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_142_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_142_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_142_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_142_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_142_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_142_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_142_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 143 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_143_META = {
+  id: 'pipeline_143',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'digital' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 125452,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_143_COEF = {
+  k0: 13.8000,
+  k1: 72.4000,
+  k2: 31.9000,
+  k3: 90.5000,
+  k4: 50.0000,
+  k5: 9.5000,
+  k6: 68.1000,
+  k7: 27.6000,
+  k8: 86.2000,
+  k9: 45.7000,
+  k10: 5.2000,
+  k11: 63.8000,
+  k12: 23.3000,
+  k13: 81.9000,
+  k14: 41.4000,
+  k15: 0.9000,
+  k16: 59.5000,
+  k17: 19.0000,
+  k18: 77.6000,
+  k19: 37.1000,
+  k20: 95.7000,
+  k21: 55.2000,
+  k22: 14.7000,
+  k23: 73.3000,
+  k24: 32.8000,
+  k25: 91.4000,
+  k26: 50.9000,
+  k27: 10.4000,
+  k28: 69.0000,
+  k29: 28.5000,
+  k30: 87.1000,
+  k31: 46.6000,
+  k32: 6.1000,
+  k33: 64.7000,
+  k34: 24.2000,
+  k35: 82.8000,
+  k36: 42.3000,
+  k37: 1.8000,
+  k38: 60.4000,
+  k39: 19.9000,
+  k40: 78.5000,
+  k41: 38.0000,
+  k42: 96.6000,
+  k43: 56.1000,
+  k44: 15.6000,
+  k45: 74.2000,
+  k46: 33.7000,
+  k47: 92.3000,
+  k48: 51.8000,
+  k49: 11.3000,
+  k50: 69.9000,
+  k51: 29.4000,
+  k52: 88.0000,
+  k53: 47.5000,
+  k54: 7.0000,
+  k55: 65.6000,
+  k56: 25.1000,
+  k57: 83.7000,
+  k58: 43.2000,
+  k59: 2.7000,
+  k60: 61.3000,
+  k61: 20.8000,
+  k62: 79.4000,
+  k63: 38.9000,
+  k64: 97.5000,
+  k65: 57.0000,
+  k66: 16.5000,
+  k67: 75.1000,
+  k68: 34.6000,
+  k69: 93.2000,
+  k70: 52.7000,
+  k71: 12.2000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_143_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_143_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_143_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_143_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_143_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_143_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_143_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_143_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_143_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_143_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_143_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_143_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 144 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_144_META = {
+  id: 'pipeline_144',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'trade' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 126329,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_144_COEF = {
+  k0: 33.1000,
+  k1: 80.3000,
+  k2: 28.4000,
+  k3: 75.6000,
+  k4: 23.7000,
+  k5: 70.9000,
+  k6: 19.0000,
+  k7: 66.2000,
+  k8: 14.3000,
+  k9: 61.5000,
+  k10: 9.6000,
+  k11: 56.8000,
+  k12: 4.9000,
+  k13: 52.1000,
+  k14: 0.2000,
+  k15: 47.4000,
+  k16: 94.6000,
+  k17: 42.7000,
+  k18: 89.9000,
+  k19: 38.0000,
+  k20: 85.2000,
+  k21: 33.3000,
+  k22: 80.5000,
+  k23: 28.6000,
+  k24: 75.8000,
+  k25: 23.9000,
+  k26: 71.1000,
+  k27: 19.2000,
+  k28: 66.4000,
+  k29: 14.5000,
+  k30: 61.7000,
+  k31: 9.8000,
+  k32: 57.0000,
+  k33: 5.1000,
+  k34: 52.3000,
+  k35: 0.4000,
+  k36: 47.6000,
+  k37: 94.8000,
+  k38: 42.9000,
+  k39: 90.1000,
+  k40: 38.2000,
+  k41: 85.4000,
+  k42: 33.5000,
+  k43: 80.7000,
+  k44: 28.8000,
+  k45: 76.0000,
+  k46: 24.1000,
+  k47: 71.3000,
+  k48: 19.4000,
+  k49: 66.6000,
+  k50: 14.7000,
+  k51: 61.9000,
+  k52: 10.0000,
+  k53: 57.2000,
+  k54: 5.3000,
+  k55: 52.5000,
+  k56: 0.6000,
+  k57: 47.8000,
+  k58: 95.0000,
+  k59: 43.1000,
+  k60: 90.3000,
+  k61: 38.4000,
+  k62: 85.6000,
+  k63: 33.7000,
+  k64: 80.9000,
+  k65: 29.0000,
+  k66: 76.2000,
+  k67: 24.3000,
+  k68: 71.5000,
+  k69: 19.6000,
+  k70: 66.8000,
+  k71: 14.9000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_144_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_144_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_144_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_144_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_144_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_144_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_144_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_144_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_144_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_144_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_144_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_144_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 145 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_145_META = {
+  id: 'pipeline_145',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'pharma' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 127206,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_145_COEF = {
+  k0: 52.4000,
+  k1: 88.2000,
+  k2: 24.9000,
+  k3: 60.7000,
+  k4: 96.5000,
+  k5: 33.2000,
+  k6: 69.0000,
+  k7: 5.7000,
+  k8: 41.5000,
+  k9: 77.3000,
+  k10: 14.0000,
+  k11: 49.8000,
+  k12: 85.6000,
+  k13: 22.3000,
+  k14: 58.1000,
+  k15: 93.9000,
+  k16: 30.6000,
+  k17: 66.4000,
+  k18: 3.1000,
+  k19: 38.9000,
+  k20: 74.7000,
+  k21: 11.4000,
+  k22: 47.2000,
+  k23: 83.0000,
+  k24: 19.7000,
+  k25: 55.5000,
+  k26: 91.3000,
+  k27: 28.0000,
+  k28: 63.8000,
+  k29: 0.5000,
+  k30: 36.3000,
+  k31: 72.1000,
+  k32: 8.8000,
+  k33: 44.6000,
+  k34: 80.4000,
+  k35: 17.1000,
+  k36: 52.9000,
+  k37: 88.7000,
+  k38: 25.4000,
+  k39: 61.2000,
+  k40: 97.0000,
+  k41: 33.7000,
+  k42: 69.5000,
+  k43: 6.2000,
+  k44: 42.0000,
+  k45: 77.8000,
+  k46: 14.5000,
+  k47: 50.3000,
+  k48: 86.1000,
+  k49: 22.8000,
+  k50: 58.6000,
+  k51: 94.4000,
+  k52: 31.1000,
+  k53: 66.9000,
+  k54: 3.6000,
+  k55: 39.4000,
+  k56: 75.2000,
+  k57: 11.9000,
+  k58: 47.7000,
+  k59: 83.5000,
+  k60: 20.2000,
+  k61: 56.0000,
+  k62: 91.8000,
+  k63: 28.5000,
+  k64: 64.3000,
+  k65: 1.0000,
+  k66: 36.8000,
+  k67: 72.6000,
+  k68: 9.3000,
+  k69: 45.1000,
+  k70: 80.9000,
+  k71: 17.6000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_145_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_145_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_145_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_145_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_145_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_145_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_145_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_145_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_145_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_145_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_145_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_145_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 146 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_146_META = {
+  id: 'pipeline_146',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'food' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 128083,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_146_COEF = {
+  k0: 71.7000,
+  k1: 96.1000,
+  k2: 21.4000,
+  k3: 45.8000,
+  k4: 70.2000,
+  k5: 94.6000,
+  k6: 19.9000,
+  k7: 44.3000,
+  k8: 68.7000,
+  k9: 93.1000,
+  k10: 18.4000,
+  k11: 42.8000,
+  k12: 67.2000,
+  k13: 91.6000,
+  k14: 16.9000,
+  k15: 41.3000,
+  k16: 65.7000,
+  k17: 90.1000,
+  k18: 15.4000,
+  k19: 39.8000,
+  k20: 64.2000,
+  k21: 88.6000,
+  k22: 13.9000,
+  k23: 38.3000,
+  k24: 62.7000,
+  k25: 87.1000,
+  k26: 12.4000,
+  k27: 36.8000,
+  k28: 61.2000,
+  k29: 85.6000,
+  k30: 10.9000,
+  k31: 35.3000,
+  k32: 59.7000,
+  k33: 84.1000,
+  k34: 9.4000,
+  k35: 33.8000,
+  k36: 58.2000,
+  k37: 82.6000,
+  k38: 7.9000,
+  k39: 32.3000,
+  k40: 56.7000,
+  k41: 81.1000,
+  k42: 6.4000,
+  k43: 30.8000,
+  k44: 55.2000,
+  k45: 79.6000,
+  k46: 4.9000,
+  k47: 29.3000,
+  k48: 53.7000,
+  k49: 78.1000,
+  k50: 3.4000,
+  k51: 27.8000,
+  k52: 52.2000,
+  k53: 76.6000,
+  k54: 1.9000,
+  k55: 26.3000,
+  k56: 50.7000,
+  k57: 75.1000,
+  k58: 0.4000,
+  k59: 24.8000,
+  k60: 49.2000,
+  k61: 73.6000,
+  k62: 98.0000,
+  k63: 23.3000,
+  k64: 47.7000,
+  k65: 72.1000,
+  k66: 96.5000,
+  k67: 21.8000,
+  k68: 46.2000,
+  k69: 70.6000,
+  k70: 95.0000,
+  k71: 20.3000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_146_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_146_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_146_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_146_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_146_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_146_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_146_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_146_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_146_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_146_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_146_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_146_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 147 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_147_META = {
+  id: 'pipeline_147',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'industrial' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 128960,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_147_COEF = {
+  k0: 91.0000,
+  k1: 4.9000,
+  k2: 17.9000,
+  k3: 30.9000,
+  k4: 43.9000,
+  k5: 56.9000,
+  k6: 69.9000,
+  k7: 82.9000,
+  k8: 95.9000,
+  k9: 9.8000,
+  k10: 22.8000,
+  k11: 35.8000,
+  k12: 48.8000,
+  k13: 61.8000,
+  k14: 74.8000,
+  k15: 87.8000,
+  k16: 1.7000,
+  k17: 14.7000,
+  k18: 27.7000,
+  k19: 40.7000,
+  k20: 53.7000,
+  k21: 66.7000,
+  k22: 79.7000,
+  k23: 92.7000,
+  k24: 6.6000,
+  k25: 19.6000,
+  k26: 32.6000,
+  k27: 45.6000,
+  k28: 58.6000,
+  k29: 71.6000,
+  k30: 84.6000,
+  k31: 97.6000,
+  k32: 11.5000,
+  k33: 24.5000,
+  k34: 37.5000,
+  k35: 50.5000,
+  k36: 63.5000,
+  k37: 76.5000,
+  k38: 89.5000,
+  k39: 3.4000,
+  k40: 16.4000,
+  k41: 29.4000,
+  k42: 42.4000,
+  k43: 55.4000,
+  k44: 68.4000,
+  k45: 81.4000,
+  k46: 94.4000,
+  k47: 8.3000,
+  k48: 21.3000,
+  k49: 34.3000,
+  k50: 47.3000,
+  k51: 60.3000,
+  k52: 73.3000,
+  k53: 86.3000,
+  k54: 0.2000,
+  k55: 13.2000,
+  k56: 26.2000,
+  k57: 39.2000,
+  k58: 52.2000,
+  k59: 65.2000,
+  k60: 78.2000,
+  k61: 91.2000,
+  k62: 5.1000,
+  k63: 18.1000,
+  k64: 31.1000,
+  k65: 44.1000,
+  k66: 57.1000,
+  k67: 70.1000,
+  k68: 83.1000,
+  k69: 96.1000,
+  k70: 10.0000,
+  k71: 23.0000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_147_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_147_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_147_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_147_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_147_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_147_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_147_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_147_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_147_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_147_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_147_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_147_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 148 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_148_META = {
+  id: 'pipeline_148',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'telecom' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 129837,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_148_COEF = {
+  k0: 11.2000,
+  k1: 12.8000,
+  k2: 14.4000,
+  k3: 16.0000,
+  k4: 17.6000,
+  k5: 19.2000,
+  k6: 20.8000,
+  k7: 22.4000,
+  k8: 24.0000,
+  k9: 25.6000,
+  k10: 27.2000,
+  k11: 28.8000,
+  k12: 30.4000,
+  k13: 32.0000,
+  k14: 33.6000,
+  k15: 35.2000,
+  k16: 36.8000,
+  k17: 38.4000,
+  k18: 40.0000,
+  k19: 41.6000,
+  k20: 43.2000,
+  k21: 44.8000,
+  k22: 46.4000,
+  k23: 48.0000,
+  k24: 49.6000,
+  k25: 51.2000,
+  k26: 52.8000,
+  k27: 54.4000,
+  k28: 56.0000,
+  k29: 57.6000,
+  k30: 59.2000,
+  k31: 60.8000,
+  k32: 62.4000,
+  k33: 64.0000,
+  k34: 65.6000,
+  k35: 67.2000,
+  k36: 68.8000,
+  k37: 70.4000,
+  k38: 72.0000,
+  k39: 73.6000,
+  k40: 75.2000,
+  k41: 76.8000,
+  k42: 78.4000,
+  k43: 80.0000,
+  k44: 81.6000,
+  k45: 83.2000,
+  k46: 84.8000,
+  k47: 86.4000,
+  k48: 88.0000,
+  k49: 89.6000,
+  k50: 91.2000,
+  k51: 92.8000,
+  k52: 94.4000,
+  k53: 96.0000,
+  k54: 97.6000,
+  k55: 0.1000,
+  k56: 1.7000,
+  k57: 3.3000,
+  k58: 4.9000,
+  k59: 6.5000,
+  k60: 8.1000,
+  k61: 9.7000,
+  k62: 11.3000,
+  k63: 12.9000,
+  k64: 14.5000,
+  k65: 16.1000,
+  k66: 17.7000,
+  k67: 19.3000,
+  k68: 20.9000,
+  k69: 22.5000,
+  k70: 24.1000,
+  k71: 25.7000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_148_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_148_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_148_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_148_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_148_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_148_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_148_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_148_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_148_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_148_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_148_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_148_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 149 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_149_META = {
+  id: 'pipeline_149',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'finance' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 130714,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_149_COEF = {
+  k0: 30.5000,
+  k1: 20.7000,
+  k2: 10.9000,
+  k3: 1.1000,
+  k4: 90.4000,
+  k5: 80.6000,
+  k6: 70.8000,
+  k7: 61.0000,
+  k8: 51.2000,
+  k9: 41.4000,
+  k10: 31.6000,
+  k11: 21.8000,
+  k12: 12.0000,
+  k13: 2.2000,
+  k14: 91.5000,
+  k15: 81.7000,
+  k16: 71.9000,
+  k17: 62.1000,
+  k18: 52.3000,
+  k19: 42.5000,
+  k20: 32.7000,
+  k21: 22.9000,
+  k22: 13.1000,
+  k23: 3.3000,
+  k24: 92.6000,
+  k25: 82.8000,
+  k26: 73.0000,
+  k27: 63.2000,
+  k28: 53.4000,
+  k29: 43.6000,
+  k30: 33.8000,
+  k31: 24.0000,
+  k32: 14.2000,
+  k33: 4.4000,
+  k34: 93.7000,
+  k35: 83.9000,
+  k36: 74.1000,
+  k37: 64.3000,
+  k38: 54.5000,
+  k39: 44.7000,
+  k40: 34.9000,
+  k41: 25.1000,
+  k42: 15.3000,
+  k43: 5.5000,
+  k44: 94.8000,
+  k45: 85.0000,
+  k46: 75.2000,
+  k47: 65.4000,
+  k48: 55.6000,
+  k49: 45.8000,
+  k50: 36.0000,
+  k51: 26.2000,
+  k52: 16.4000,
+  k53: 6.6000,
+  k54: 95.9000,
+  k55: 86.1000,
+  k56: 76.3000,
+  k57: 66.5000,
+  k58: 56.7000,
+  k59: 46.9000,
+  k60: 37.1000,
+  k61: 27.3000,
+  k62: 17.5000,
+  k63: 7.7000,
+  k64: 97.0000,
+  k65: 87.2000,
+  k66: 77.4000,
+  k67: 67.6000,
+  k68: 57.8000,
+  k69: 48.0000,
+  k70: 38.2000,
+  k71: 28.4000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_149_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_149_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_149_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_149_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_149_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_149_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_149_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_149_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_149_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_149_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_149_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_149_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 150 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_150_META = {
+  id: 'pipeline_150',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'freight' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 131591,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_150_COEF = {
+  k0: 49.8000,
+  k1: 28.6000,
+  k2: 7.4000,
+  k3: 85.3000,
+  k4: 64.1000,
+  k5: 42.9000,
+  k6: 21.7000,
+  k7: 0.5000,
+  k8: 78.4000,
+  k9: 57.2000,
+  k10: 36.0000,
+  k11: 14.8000,
+  k12: 92.7000,
+  k13: 71.5000,
+  k14: 50.3000,
+  k15: 29.1000,
+  k16: 7.9000,
+  k17: 85.8000,
+  k18: 64.6000,
+  k19: 43.4000,
+  k20: 22.2000,
+  k21: 1.0000,
+  k22: 78.9000,
+  k23: 57.7000,
+  k24: 36.5000,
+  k25: 15.3000,
+  k26: 93.2000,
+  k27: 72.0000,
+  k28: 50.8000,
+  k29: 29.6000,
+  k30: 8.4000,
+  k31: 86.3000,
+  k32: 65.1000,
+  k33: 43.9000,
+  k34: 22.7000,
+  k35: 1.5000,
+  k36: 79.4000,
+  k37: 58.2000,
+  k38: 37.0000,
+  k39: 15.8000,
+  k40: 93.7000,
+  k41: 72.5000,
+  k42: 51.3000,
+  k43: 30.1000,
+  k44: 8.9000,
+  k45: 86.8000,
+  k46: 65.6000,
+  k47: 44.4000,
+  k48: 23.2000,
+  k49: 2.0000,
+  k50: 79.9000,
+  k51: 58.7000,
+  k52: 37.5000,
+  k53: 16.3000,
+  k54: 94.2000,
+  k55: 73.0000,
+  k56: 51.8000,
+  k57: 30.6000,
+  k58: 9.4000,
+  k59: 87.3000,
+  k60: 66.1000,
+  k61: 44.9000,
+  k62: 23.7000,
+  k63: 2.5000,
+  k64: 80.4000,
+  k65: 59.2000,
+  k66: 38.0000,
+  k67: 16.8000,
+  k68: 94.7000,
+  k69: 73.5000,
+  k70: 52.3000,
+  k71: 31.1000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_150_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_150_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_150_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_150_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_150_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_150_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_150_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_150_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_150_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_150_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_150_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_150_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 151 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_151_META = {
+  id: 'pipeline_151',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'energy' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 132468,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_151_COEF = {
+  k0: 69.1000,
+  k1: 36.5000,
+  k2: 3.9000,
+  k3: 70.4000,
+  k4: 37.8000,
+  k5: 5.2000,
+  k6: 71.7000,
+  k7: 39.1000,
+  k8: 6.5000,
+  k9: 73.0000,
+  k10: 40.4000,
+  k11: 7.8000,
+  k12: 74.3000,
+  k13: 41.7000,
+  k14: 9.1000,
+  k15: 75.6000,
+  k16: 43.0000,
+  k17: 10.4000,
+  k18: 76.9000,
+  k19: 44.3000,
+  k20: 11.7000,
+  k21: 78.2000,
+  k22: 45.6000,
+  k23: 13.0000,
+  k24: 79.5000,
+  k25: 46.9000,
+  k26: 14.3000,
+  k27: 80.8000,
+  k28: 48.2000,
+  k29: 15.6000,
+  k30: 82.1000,
+  k31: 49.5000,
+  k32: 16.9000,
+  k33: 83.4000,
+  k34: 50.8000,
+  k35: 18.2000,
+  k36: 84.7000,
+  k37: 52.1000,
+  k38: 19.5000,
+  k39: 86.0000,
+  k40: 53.4000,
+  k41: 20.8000,
+  k42: 87.3000,
+  k43: 54.7000,
+  k44: 22.1000,
+  k45: 88.6000,
+  k46: 56.0000,
+  k47: 23.4000,
+  k48: 89.9000,
+  k49: 57.3000,
+  k50: 24.7000,
+  k51: 91.2000,
+  k52: 58.6000,
+  k53: 26.0000,
+  k54: 92.5000,
+  k55: 59.9000,
+  k56: 27.3000,
+  k57: 93.8000,
+  k58: 61.2000,
+  k59: 28.6000,
+  k60: 95.1000,
+  k61: 62.5000,
+  k62: 29.9000,
+  k63: 96.4000,
+  k64: 63.8000,
+  k65: 31.2000,
+  k66: 97.7000,
+  k67: 65.1000,
+  k68: 32.5000,
+  k69: 99.0000,
+  k70: 66.4000,
+  k71: 33.8000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_151_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_151_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_151_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_151_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_151_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_151_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_151_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_151_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_151_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_151_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_151_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_151_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 152 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_152_META = {
+  id: 'pipeline_152',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'water' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 133345,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_152_COEF = {
+  k0: 88.4000,
+  k1: 44.4000,
+  k2: 0.4000,
+  k3: 55.5000,
+  k4: 11.5000,
+  k5: 66.6000,
+  k6: 22.6000,
+  k7: 77.7000,
+  k8: 33.7000,
+  k9: 88.8000,
+  k10: 44.8000,
+  k11: 0.8000,
+  k12: 55.9000,
+  k13: 11.9000,
+  k14: 67.0000,
+  k15: 23.0000,
+  k16: 78.1000,
+  k17: 34.1000,
+  k18: 89.2000,
+  k19: 45.2000,
+  k20: 1.2000,
+  k21: 56.3000,
+  k22: 12.3000,
+  k23: 67.4000,
+  k24: 23.4000,
+  k25: 78.5000,
+  k26: 34.5000,
+  k27: 89.6000,
+  k28: 45.6000,
+  k29: 1.6000,
+  k30: 56.7000,
+  k31: 12.7000,
+  k32: 67.8000,
+  k33: 23.8000,
+  k34: 78.9000,
+  k35: 34.9000,
+  k36: 90.0000,
+  k37: 46.0000,
+  k38: 2.0000,
+  k39: 57.1000,
+  k40: 13.1000,
+  k41: 68.2000,
+  k42: 24.2000,
+  k43: 79.3000,
+  k44: 35.3000,
+  k45: 90.4000,
+  k46: 46.4000,
+  k47: 2.4000,
+  k48: 57.5000,
+  k49: 13.5000,
+  k50: 68.6000,
+  k51: 24.6000,
+  k52: 79.7000,
+  k53: 35.7000,
+  k54: 90.8000,
+  k55: 46.8000,
+  k56: 2.8000,
+  k57: 57.9000,
+  k58: 13.9000,
+  k59: 69.0000,
+  k60: 25.0000,
+  k61: 80.1000,
+  k62: 36.1000,
+  k63: 91.2000,
+  k64: 47.2000,
+  k65: 3.2000,
+  k66: 58.3000,
+  k67: 14.3000,
+  k68: 69.4000,
+  k69: 25.4000,
+  k70: 80.5000,
+  k71: 36.5000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_152_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_152_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_152_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_152_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_152_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_152_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_152_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_152_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_152_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_152_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_152_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_152_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 153 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_153_META = {
+  id: 'pipeline_153',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'digital' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 134222,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_153_COEF = {
+  k0: 8.6000,
+  k1: 52.3000,
+  k2: 96.0000,
+  k3: 40.6000,
+  k4: 84.3000,
+  k5: 28.9000,
+  k6: 72.6000,
+  k7: 17.2000,
+  k8: 60.9000,
+  k9: 5.5000,
+  k10: 49.2000,
+  k11: 92.9000,
+  k12: 37.5000,
+  k13: 81.2000,
+  k14: 25.8000,
+  k15: 69.5000,
+  k16: 14.1000,
+  k17: 57.8000,
+  k18: 2.4000,
+  k19: 46.1000,
+  k20: 89.8000,
+  k21: 34.4000,
+  k22: 78.1000,
+  k23: 22.7000,
+  k24: 66.4000,
+  k25: 11.0000,
+  k26: 54.7000,
+  k27: 98.4000,
+  k28: 43.0000,
+  k29: 86.7000,
+  k30: 31.3000,
+  k31: 75.0000,
+  k32: 19.6000,
+  k33: 63.3000,
+  k34: 7.9000,
+  k35: 51.6000,
+  k36: 95.3000,
+  k37: 39.9000,
+  k38: 83.6000,
+  k39: 28.2000,
+  k40: 71.9000,
+  k41: 16.5000,
+  k42: 60.2000,
+  k43: 4.8000,
+  k44: 48.5000,
+  k45: 92.2000,
+  k46: 36.8000,
+  k47: 80.5000,
+  k48: 25.1000,
+  k49: 68.8000,
+  k50: 13.4000,
+  k51: 57.1000,
+  k52: 1.7000,
+  k53: 45.4000,
+  k54: 89.1000,
+  k55: 33.7000,
+  k56: 77.4000,
+  k57: 22.0000,
+  k58: 65.7000,
+  k59: 10.3000,
+  k60: 54.0000,
+  k61: 97.7000,
+  k62: 42.3000,
+  k63: 86.0000,
+  k64: 30.6000,
+  k65: 74.3000,
+  k66: 18.9000,
+  k67: 62.6000,
+  k68: 7.2000,
+  k69: 50.9000,
+  k70: 94.6000,
+  k71: 39.2000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_153_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_153_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_153_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_153_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_153_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_153_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_153_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_153_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_153_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_153_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_153_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_153_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 154 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_154_META = {
+  id: 'pipeline_154',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'trade' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 135099,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_154_COEF = {
+  k0: 27.9000,
+  k1: 60.2000,
+  k2: 92.5000,
+  k3: 25.7000,
+  k4: 58.0000,
+  k5: 90.3000,
+  k6: 23.5000,
+  k7: 55.8000,
+  k8: 88.1000,
+  k9: 21.3000,
+  k10: 53.6000,
+  k11: 85.9000,
+  k12: 19.1000,
+  k13: 51.4000,
+  k14: 83.7000,
+  k15: 16.9000,
+  k16: 49.2000,
+  k17: 81.5000,
+  k18: 14.7000,
+  k19: 47.0000,
+  k20: 79.3000,
+  k21: 12.5000,
+  k22: 44.8000,
+  k23: 77.1000,
+  k24: 10.3000,
+  k25: 42.6000,
+  k26: 74.9000,
+  k27: 8.1000,
+  k28: 40.4000,
+  k29: 72.7000,
+  k30: 5.9000,
+  k31: 38.2000,
+  k32: 70.5000,
+  k33: 3.7000,
+  k34: 36.0000,
+  k35: 68.3000,
+  k36: 1.5000,
+  k37: 33.8000,
+  k38: 66.1000,
+  k39: 98.4000,
+  k40: 31.6000,
+  k41: 63.9000,
+  k42: 96.2000,
+  k43: 29.4000,
+  k44: 61.7000,
+  k45: 94.0000,
+  k46: 27.2000,
+  k47: 59.5000,
+  k48: 91.8000,
+  k49: 25.0000,
+  k50: 57.3000,
+  k51: 89.6000,
+  k52: 22.8000,
+  k53: 55.1000,
+  k54: 87.4000,
+  k55: 20.6000,
+  k56: 52.9000,
+  k57: 85.2000,
+  k58: 18.4000,
+  k59: 50.7000,
+  k60: 83.0000,
+  k61: 16.2000,
+  k62: 48.5000,
+  k63: 80.8000,
+  k64: 14.0000,
+  k65: 46.3000,
+  k66: 78.6000,
+  k67: 11.8000,
+  k68: 44.1000,
+  k69: 76.4000,
+  k70: 9.6000,
+  k71: 41.9000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_154_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_154_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_154_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_154_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_154_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_154_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_154_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_154_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_154_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_154_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_154_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_154_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 155 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_155_META = {
+  id: 'pipeline_155',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'pharma' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 135976,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_155_COEF = {
+  k0: 47.2000,
+  k1: 68.1000,
+  k2: 89.0000,
+  k3: 10.8000,
+  k4: 31.7000,
+  k5: 52.6000,
+  k6: 73.5000,
+  k7: 94.4000,
+  k8: 16.2000,
+  k9: 37.1000,
+  k10: 58.0000,
+  k11: 78.9000,
+  k12: 0.7000,
+  k13: 21.6000,
+  k14: 42.5000,
+  k15: 63.4000,
+  k16: 84.3000,
+  k17: 6.1000,
+  k18: 27.0000,
+  k19: 47.9000,
+  k20: 68.8000,
+  k21: 89.7000,
+  k22: 11.5000,
+  k23: 32.4000,
+  k24: 53.3000,
+  k25: 74.2000,
+  k26: 95.1000,
+  k27: 16.9000,
+  k28: 37.8000,
+  k29: 58.7000,
+  k30: 79.6000,
+  k31: 1.4000,
+  k32: 22.3000,
+  k33: 43.2000,
+  k34: 64.1000,
+  k35: 85.0000,
+  k36: 6.8000,
+  k37: 27.7000,
+  k38: 48.6000,
+  k39: 69.5000,
+  k40: 90.4000,
+  k41: 12.2000,
+  k42: 33.1000,
+  k43: 54.0000,
+  k44: 74.9000,
+  k45: 95.8000,
+  k46: 17.6000,
+  k47: 38.5000,
+  k48: 59.4000,
+  k49: 80.3000,
+  k50: 2.1000,
+  k51: 23.0000,
+  k52: 43.9000,
+  k53: 64.8000,
+  k54: 85.7000,
+  k55: 7.5000,
+  k56: 28.4000,
+  k57: 49.3000,
+  k58: 70.2000,
+  k59: 91.1000,
+  k60: 12.9000,
+  k61: 33.8000,
+  k62: 54.7000,
+  k63: 75.6000,
+  k64: 96.5000,
+  k65: 18.3000,
+  k66: 39.2000,
+  k67: 60.1000,
+  k68: 81.0000,
+  k69: 2.8000,
+  k70: 23.7000,
+  k71: 44.6000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_155_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_155_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_155_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_155_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_155_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_155_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_155_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_155_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_155_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_155_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_155_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_155_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 156 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_156_META = {
+  id: 'pipeline_156',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'food' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 136853,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_156_COEF = {
+  k0: 66.5000,
+  k1: 76.0000,
+  k2: 85.5000,
+  k3: 95.0000,
+  k4: 5.4000,
+  k5: 14.9000,
+  k6: 24.4000,
+  k7: 33.9000,
+  k8: 43.4000,
+  k9: 52.9000,
+  k10: 62.4000,
+  k11: 71.9000,
+  k12: 81.4000,
+  k13: 90.9000,
+  k14: 1.3000,
+  k15: 10.8000,
+  k16: 20.3000,
+  k17: 29.8000,
+  k18: 39.3000,
+  k19: 48.8000,
+  k20: 58.3000,
+  k21: 67.8000,
+  k22: 77.3000,
+  k23: 86.8000,
+  k24: 96.3000,
+  k25: 6.7000,
+  k26: 16.2000,
+  k27: 25.7000,
+  k28: 35.2000,
+  k29: 44.7000,
+  k30: 54.2000,
+  k31: 63.7000,
+  k32: 73.2000,
+  k33: 82.7000,
+  k34: 92.2000,
+  k35: 2.6000,
+  k36: 12.1000,
+  k37: 21.6000,
+  k38: 31.1000,
+  k39: 40.6000,
+  k40: 50.1000,
+  k41: 59.6000,
+  k42: 69.1000,
+  k43: 78.6000,
+  k44: 88.1000,
+  k45: 97.6000,
+  k46: 8.0000,
+  k47: 17.5000,
+  k48: 27.0000,
+  k49: 36.5000,
+  k50: 46.0000,
+  k51: 55.5000,
+  k52: 65.0000,
+  k53: 74.5000,
+  k54: 84.0000,
+  k55: 93.5000,
+  k56: 3.9000,
+  k57: 13.4000,
+  k58: 22.9000,
+  k59: 32.4000,
+  k60: 41.9000,
+  k61: 51.4000,
+  k62: 60.9000,
+  k63: 70.4000,
+  k64: 79.9000,
+  k65: 89.4000,
+  k66: 98.9000,
+  k67: 9.3000,
+  k68: 18.8000,
+  k69: 28.3000,
+  k70: 37.8000,
+  k71: 47.3000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_156_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_156_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_156_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_156_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_156_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_156_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_156_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_156_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_156_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_156_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_156_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_156_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 157 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_157_META = {
+  id: 'pipeline_157',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'industrial' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 137730,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_157_COEF = {
+  k0: 85.8000,
+  k1: 83.9000,
+  k2: 82.0000,
+  k3: 80.1000,
+  k4: 78.2000,
+  k5: 76.3000,
+  k6: 74.4000,
+  k7: 72.5000,
+  k8: 70.6000,
+  k9: 68.7000,
+  k10: 66.8000,
+  k11: 64.9000,
+  k12: 63.0000,
+  k13: 61.1000,
+  k14: 59.2000,
+  k15: 57.3000,
+  k16: 55.4000,
+  k17: 53.5000,
+  k18: 51.6000,
+  k19: 49.7000,
+  k20: 47.8000,
+  k21: 45.9000,
+  k22: 44.0000,
+  k23: 42.1000,
+  k24: 40.2000,
+  k25: 38.3000,
+  k26: 36.4000,
+  k27: 34.5000,
+  k28: 32.6000,
+  k29: 30.7000,
+  k30: 28.8000,
+  k31: 26.9000,
+  k32: 25.0000,
+  k33: 23.1000,
+  k34: 21.2000,
+  k35: 19.3000,
+  k36: 17.4000,
+  k37: 15.5000,
+  k38: 13.6000,
+  k39: 11.7000,
+  k40: 9.8000,
+  k41: 7.9000,
+  k42: 6.0000,
+  k43: 4.1000,
+  k44: 2.2000,
+  k45: 0.3000,
+  k46: 97.5000,
+  k47: 95.6000,
+  k48: 93.7000,
+  k49: 91.8000,
+  k50: 89.9000,
+  k51: 88.0000,
+  k52: 86.1000,
+  k53: 84.2000,
+  k54: 82.3000,
+  k55: 80.4000,
+  k56: 78.5000,
+  k57: 76.6000,
+  k58: 74.7000,
+  k59: 72.8000,
+  k60: 70.9000,
+  k61: 69.0000,
+  k62: 67.1000,
+  k63: 65.2000,
+  k64: 63.3000,
+  k65: 61.4000,
+  k66: 59.5000,
+  k67: 57.6000,
+  k68: 55.7000,
+  k69: 53.8000,
+  k70: 51.9000,
+  k71: 50.0000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_157_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_157_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_157_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_157_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_157_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_157_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_157_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_157_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_157_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_157_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_157_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_157_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 158 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_158_META = {
+  id: 'pipeline_158',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'telecom' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 138607,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_158_COEF = {
+  k0: 6.0000,
+  k1: 91.8000,
+  k2: 78.5000,
+  k3: 65.2000,
+  k4: 51.9000,
+  k5: 38.6000,
+  k6: 25.3000,
+  k7: 12.0000,
+  k8: 97.8000,
+  k9: 84.5000,
+  k10: 71.2000,
+  k11: 57.9000,
+  k12: 44.6000,
+  k13: 31.3000,
+  k14: 18.0000,
+  k15: 4.7000,
+  k16: 90.5000,
+  k17: 77.2000,
+  k18: 63.9000,
+  k19: 50.6000,
+  k20: 37.3000,
+  k21: 24.0000,
+  k22: 10.7000,
+  k23: 96.5000,
+  k24: 83.2000,
+  k25: 69.9000,
+  k26: 56.6000,
+  k27: 43.3000,
+  k28: 30.0000,
+  k29: 16.7000,
+  k30: 3.4000,
+  k31: 89.2000,
+  k32: 75.9000,
+  k33: 62.6000,
+  k34: 49.3000,
+  k35: 36.0000,
+  k36: 22.7000,
+  k37: 9.4000,
+  k38: 95.2000,
+  k39: 81.9000,
+  k40: 68.6000,
+  k41: 55.3000,
+  k42: 42.0000,
+  k43: 28.7000,
+  k44: 15.4000,
+  k45: 2.1000,
+  k46: 87.9000,
+  k47: 74.6000,
+  k48: 61.3000,
+  k49: 48.0000,
+  k50: 34.7000,
+  k51: 21.4000,
+  k52: 8.1000,
+  k53: 93.9000,
+  k54: 80.6000,
+  k55: 67.3000,
+  k56: 54.0000,
+  k57: 40.7000,
+  k58: 27.4000,
+  k59: 14.1000,
+  k60: 0.8000,
+  k61: 86.6000,
+  k62: 73.3000,
+  k63: 60.0000,
+  k64: 46.7000,
+  k65: 33.4000,
+  k66: 20.1000,
+  k67: 6.8000,
+  k68: 92.6000,
+  k69: 79.3000,
+  k70: 66.0000,
+  k71: 52.7000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_158_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_158_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_158_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_158_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_158_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_158_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_158_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_158_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_158_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_158_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_158_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_158_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 159 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_159_META = {
+  id: 'pipeline_159',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'finance' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 139484,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_159_COEF = {
+  k0: 25.3000,
+  k1: 0.6000,
+  k2: 75.0000,
+  k3: 50.3000,
+  k4: 25.6000,
+  k5: 0.9000,
+  k6: 75.3000,
+  k7: 50.6000,
+  k8: 25.9000,
+  k9: 1.2000,
+  k10: 75.6000,
+  k11: 50.9000,
+  k12: 26.2000,
+  k13: 1.5000,
+  k14: 75.9000,
+  k15: 51.2000,
+  k16: 26.5000,
+  k17: 1.8000,
+  k18: 76.2000,
+  k19: 51.5000,
+  k20: 26.8000,
+  k21: 2.1000,
+  k22: 76.5000,
+  k23: 51.8000,
+  k24: 27.1000,
+  k25: 2.4000,
+  k26: 76.8000,
+  k27: 52.1000,
+  k28: 27.4000,
+  k29: 2.7000,
+  k30: 77.1000,
+  k31: 52.4000,
+  k32: 27.7000,
+  k33: 3.0000,
+  k34: 77.4000,
+  k35: 52.7000,
+  k36: 28.0000,
+  k37: 3.3000,
+  k38: 77.7000,
+  k39: 53.0000,
+  k40: 28.3000,
+  k41: 3.6000,
+  k42: 78.0000,
+  k43: 53.3000,
+  k44: 28.6000,
+  k45: 3.9000,
+  k46: 78.3000,
+  k47: 53.6000,
+  k48: 28.9000,
+  k49: 4.2000,
+  k50: 78.6000,
+  k51: 53.9000,
+  k52: 29.2000,
+  k53: 4.5000,
+  k54: 78.9000,
+  k55: 54.2000,
+  k56: 29.5000,
+  k57: 4.8000,
+  k58: 79.2000,
+  k59: 54.5000,
+  k60: 29.8000,
+  k61: 5.1000,
+  k62: 79.5000,
+  k63: 54.8000,
+  k64: 30.1000,
+  k65: 5.4000,
+  k66: 79.8000,
+  k67: 55.1000,
+  k68: 30.4000,
+  k69: 5.7000,
+  k70: 80.1000,
+  k71: 55.4000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_159_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_159_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_159_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_159_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_159_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_159_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_159_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_159_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_159_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_159_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_159_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_159_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 160 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_160_META = {
+  id: 'pipeline_160',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'freight' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 140361,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_160_COEF = {
+  k0: 44.6000,
+  k1: 8.5000,
+  k2: 71.5000,
+  k3: 35.4000,
+  k4: 98.4000,
+  k5: 62.3000,
+  k6: 26.2000,
+  k7: 89.2000,
+  k8: 53.1000,
+  k9: 17.0000,
+  k10: 80.0000,
+  k11: 43.9000,
+  k12: 7.8000,
+  k13: 70.8000,
+  k14: 34.7000,
+  k15: 97.7000,
+  k16: 61.6000,
+  k17: 25.5000,
+  k18: 88.5000,
+  k19: 52.4000,
+  k20: 16.3000,
+  k21: 79.3000,
+  k22: 43.2000,
+  k23: 7.1000,
+  k24: 70.1000,
+  k25: 34.0000,
+  k26: 97.0000,
+  k27: 60.9000,
+  k28: 24.8000,
+  k29: 87.8000,
+  k30: 51.7000,
+  k31: 15.6000,
+  k32: 78.6000,
+  k33: 42.5000,
+  k34: 6.4000,
+  k35: 69.4000,
+  k36: 33.3000,
+  k37: 96.3000,
+  k38: 60.2000,
+  k39: 24.1000,
+  k40: 87.1000,
+  k41: 51.0000,
+  k42: 14.9000,
+  k43: 77.9000,
+  k44: 41.8000,
+  k45: 5.7000,
+  k46: 68.7000,
+  k47: 32.6000,
+  k48: 95.6000,
+  k49: 59.5000,
+  k50: 23.4000,
+  k51: 86.4000,
+  k52: 50.3000,
+  k53: 14.2000,
+  k54: 77.2000,
+  k55: 41.1000,
+  k56: 5.0000,
+  k57: 68.0000,
+  k58: 31.9000,
+  k59: 94.9000,
+  k60: 58.8000,
+  k61: 22.7000,
+  k62: 85.7000,
+  k63: 49.6000,
+  k64: 13.5000,
+  k65: 76.5000,
+  k66: 40.4000,
+  k67: 4.3000,
+  k68: 67.3000,
+  k69: 31.2000,
+  k70: 94.2000,
+  k71: 58.1000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_160_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_160_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_160_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_160_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_160_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_160_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_160_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_160_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_160_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_160_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_160_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_160_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 161 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_161_META = {
+  id: 'pipeline_161',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'energy' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 141238,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_161_COEF = {
+  k0: 63.9000,
+  k1: 16.4000,
+  k2: 68.0000,
+  k3: 20.5000,
+  k4: 72.1000,
+  k5: 24.6000,
+  k6: 76.2000,
+  k7: 28.7000,
+  k8: 80.3000,
+  k9: 32.8000,
+  k10: 84.4000,
+  k11: 36.9000,
+  k12: 88.5000,
+  k13: 41.0000,
+  k14: 92.6000,
+  k15: 45.1000,
+  k16: 96.7000,
+  k17: 49.2000,
+  k18: 1.7000,
+  k19: 53.3000,
+  k20: 5.8000,
+  k21: 57.4000,
+  k22: 9.9000,
+  k23: 61.5000,
+  k24: 14.0000,
+  k25: 65.6000,
+  k26: 18.1000,
+  k27: 69.7000,
+  k28: 22.2000,
+  k29: 73.8000,
+  k30: 26.3000,
+  k31: 77.9000,
+  k32: 30.4000,
+  k33: 82.0000,
+  k34: 34.5000,
+  k35: 86.1000,
+  k36: 38.6000,
+  k37: 90.2000,
+  k38: 42.7000,
+  k39: 94.3000,
+  k40: 46.8000,
+  k41: 98.4000,
+  k42: 50.9000,
+  k43: 3.4000,
+  k44: 55.0000,
+  k45: 7.5000,
+  k46: 59.1000,
+  k47: 11.6000,
+  k48: 63.2000,
+  k49: 15.7000,
+  k50: 67.3000,
+  k51: 19.8000,
+  k52: 71.4000,
+  k53: 23.9000,
+  k54: 75.5000,
+  k55: 28.0000,
+  k56: 79.6000,
+  k57: 32.1000,
+  k58: 83.7000,
+  k59: 36.2000,
+  k60: 87.8000,
+  k61: 40.3000,
+  k62: 91.9000,
+  k63: 44.4000,
+  k64: 96.0000,
+  k65: 48.5000,
+  k66: 1.0000,
+  k67: 52.6000,
+  k68: 5.1000,
+  k69: 56.7000,
+  k70: 9.2000,
+  k71: 60.8000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_161_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_161_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_161_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_161_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_161_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_161_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_161_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_161_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_161_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_161_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_161_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_161_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 162 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_162_META = {
+  id: 'pipeline_162',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'water' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 142115,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_162_COEF = {
+  k0: 83.2000,
+  k1: 24.3000,
+  k2: 64.5000,
+  k3: 5.6000,
+  k4: 45.8000,
+  k5: 86.0000,
+  k6: 27.1000,
+  k7: 67.3000,
+  k8: 8.4000,
+  k9: 48.6000,
+  k10: 88.8000,
+  k11: 29.9000,
+  k12: 70.1000,
+  k13: 11.2000,
+  k14: 51.4000,
+  k15: 91.6000,
+  k16: 32.7000,
+  k17: 72.9000,
+  k18: 14.0000,
+  k19: 54.2000,
+  k20: 94.4000,
+  k21: 35.5000,
+  k22: 75.7000,
+  k23: 16.8000,
+  k24: 57.0000,
+  k25: 97.2000,
+  k26: 38.3000,
+  k27: 78.5000,
+  k28: 19.6000,
+  k29: 59.8000,
+  k30: 0.9000,
+  k31: 41.1000,
+  k32: 81.3000,
+  k33: 22.4000,
+  k34: 62.6000,
+  k35: 3.7000,
+  k36: 43.9000,
+  k37: 84.1000,
+  k38: 25.2000,
+  k39: 65.4000,
+  k40: 6.5000,
+  k41: 46.7000,
+  k42: 86.9000,
+  k43: 28.0000,
+  k44: 68.2000,
+  k45: 9.3000,
+  k46: 49.5000,
+  k47: 89.7000,
+  k48: 30.8000,
+  k49: 71.0000,
+  k50: 12.1000,
+  k51: 52.3000,
+  k52: 92.5000,
+  k53: 33.6000,
+  k54: 73.8000,
+  k55: 14.9000,
+  k56: 55.1000,
+  k57: 95.3000,
+  k58: 36.4000,
+  k59: 76.6000,
+  k60: 17.7000,
+  k61: 57.9000,
+  k62: 98.1000,
+  k63: 39.2000,
+  k64: 79.4000,
+  k65: 20.5000,
+  k66: 60.7000,
+  k67: 1.8000,
+  k68: 42.0000,
+  k69: 82.2000,
+  k70: 23.3000,
+  k71: 63.5000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_162_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_162_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_162_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_162_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_162_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_162_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_162_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_162_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_162_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_162_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_162_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_162_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 163 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_163_META = {
+  id: 'pipeline_163',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'digital' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 142992,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_163_COEF = {
+  k0: 3.4000,
+  k1: 32.2000,
+  k2: 61.0000,
+  k3: 89.8000,
+  k4: 19.5000,
+  k5: 48.3000,
+  k6: 77.1000,
+  k7: 6.8000,
+  k8: 35.6000,
+  k9: 64.4000,
+  k10: 93.2000,
+  k11: 22.9000,
+  k12: 51.7000,
+  k13: 80.5000,
+  k14: 10.2000,
+  k15: 39.0000,
+  k16: 67.8000,
+  k17: 96.6000,
+  k18: 26.3000,
+  k19: 55.1000,
+  k20: 83.9000,
+  k21: 13.6000,
+  k22: 42.4000,
+  k23: 71.2000,
+  k24: 0.9000,
+  k25: 29.7000,
+  k26: 58.5000,
+  k27: 87.3000,
+  k28: 17.0000,
+  k29: 45.8000,
+  k30: 74.6000,
+  k31: 4.3000,
+  k32: 33.1000,
+  k33: 61.9000,
+  k34: 90.7000,
+  k35: 20.4000,
+  k36: 49.2000,
+  k37: 78.0000,
+  k38: 7.7000,
+  k39: 36.5000,
+  k40: 65.3000,
+  k41: 94.1000,
+  k42: 23.8000,
+  k43: 52.6000,
+  k44: 81.4000,
+  k45: 11.1000,
+  k46: 39.9000,
+  k47: 68.7000,
+  k48: 97.5000,
+  k49: 27.2000,
+  k50: 56.0000,
+  k51: 84.8000,
+  k52: 14.5000,
+  k53: 43.3000,
+  k54: 72.1000,
+  k55: 1.8000,
+  k56: 30.6000,
+  k57: 59.4000,
+  k58: 88.2000,
+  k59: 17.9000,
+  k60: 46.7000,
+  k61: 75.5000,
+  k62: 5.2000,
+  k63: 34.0000,
+  k64: 62.8000,
+  k65: 91.6000,
+  k66: 21.3000,
+  k67: 50.1000,
+  k68: 78.9000,
+  k69: 8.6000,
+  k70: 37.4000,
+  k71: 66.2000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_163_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_163_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_163_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_163_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_163_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_163_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_163_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_163_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_163_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_163_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_163_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_163_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 164 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_164_META = {
+  id: 'pipeline_164',
+  regionId: 'SA' as V1020RpipeRegionId,
+  primarySystem: 'trade' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 143869,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_164_COEF = {
+  k0: 22.7000,
+  k1: 40.1000,
+  k2: 57.5000,
+  k3: 74.9000,
+  k4: 92.3000,
+  k5: 10.6000,
+  k6: 28.0000,
+  k7: 45.4000,
+  k8: 62.8000,
+  k9: 80.2000,
+  k10: 97.6000,
+  k11: 15.9000,
+  k12: 33.3000,
+  k13: 50.7000,
+  k14: 68.1000,
+  k15: 85.5000,
+  k16: 3.8000,
+  k17: 21.2000,
+  k18: 38.6000,
+  k19: 56.0000,
+  k20: 73.4000,
+  k21: 90.8000,
+  k22: 9.1000,
+  k23: 26.5000,
+  k24: 43.9000,
+  k25: 61.3000,
+  k26: 78.7000,
+  k27: 96.1000,
+  k28: 14.4000,
+  k29: 31.8000,
+  k30: 49.2000,
+  k31: 66.6000,
+  k32: 84.0000,
+  k33: 2.3000,
+  k34: 19.7000,
+  k35: 37.1000,
+  k36: 54.5000,
+  k37: 71.9000,
+  k38: 89.3000,
+  k39: 7.6000,
+  k40: 25.0000,
+  k41: 42.4000,
+  k42: 59.8000,
+  k43: 77.2000,
+  k44: 94.6000,
+  k45: 12.9000,
+  k46: 30.3000,
+  k47: 47.7000,
+  k48: 65.1000,
+  k49: 82.5000,
+  k50: 0.8000,
+  k51: 18.2000,
+  k52: 35.6000,
+  k53: 53.0000,
+  k54: 70.4000,
+  k55: 87.8000,
+  k56: 6.1000,
+  k57: 23.5000,
+  k58: 40.9000,
+  k59: 58.3000,
+  k60: 75.7000,
+  k61: 93.1000,
+  k62: 11.4000,
+  k63: 28.8000,
+  k64: 46.2000,
+  k65: 63.6000,
+  k66: 81.0000,
+  k67: 98.4000,
+  k68: 16.7000,
+  k69: 34.1000,
+  k70: 51.5000,
+  k71: 68.9000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_164_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_164_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_164_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_164_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_164_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_164_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_164_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_164_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_164_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_164_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_164_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_164_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 165 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_165_META = {
+  id: 'pipeline_165',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  primarySystem: 'pharma' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 144746,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_165_COEF = {
+  k0: 42.0000,
+  k1: 48.0000,
+  k2: 54.0000,
+  k3: 60.0000,
+  k4: 66.0000,
+  k5: 72.0000,
+  k6: 78.0000,
+  k7: 84.0000,
+  k8: 90.0000,
+  k9: 96.0000,
+  k10: 2.9000,
+  k11: 8.9000,
+  k12: 14.9000,
+  k13: 20.9000,
+  k14: 26.9000,
+  k15: 32.9000,
+  k16: 38.9000,
+  k17: 44.9000,
+  k18: 50.9000,
+  k19: 56.9000,
+  k20: 62.9000,
+  k21: 68.9000,
+  k22: 74.9000,
+  k23: 80.9000,
+  k24: 86.9000,
+  k25: 92.9000,
+  k26: 98.9000,
+  k27: 5.8000,
+  k28: 11.8000,
+  k29: 17.8000,
+  k30: 23.8000,
+  k31: 29.8000,
+  k32: 35.8000,
+  k33: 41.8000,
+  k34: 47.8000,
+  k35: 53.8000,
+  k36: 59.8000,
+  k37: 65.8000,
+  k38: 71.8000,
+  k39: 77.8000,
+  k40: 83.8000,
+  k41: 89.8000,
+  k42: 95.8000,
+  k43: 2.7000,
+  k44: 8.7000,
+  k45: 14.7000,
+  k46: 20.7000,
+  k47: 26.7000,
+  k48: 32.7000,
+  k49: 38.7000,
+  k50: 44.7000,
+  k51: 50.7000,
+  k52: 56.7000,
+  k53: 62.7000,
+  k54: 68.7000,
+  k55: 74.7000,
+  k56: 80.7000,
+  k57: 86.7000,
+  k58: 92.7000,
+  k59: 98.7000,
+  k60: 5.6000,
+  k61: 11.6000,
+  k62: 17.6000,
+  k63: 23.6000,
+  k64: 29.6000,
+  k65: 35.6000,
+  k66: 41.6000,
+  k67: 47.6000,
+  k68: 53.6000,
+  k69: 59.6000,
+  k70: 65.6000,
+  k71: 71.6000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_165_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_165_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_165_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_165_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_165_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_165_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_165_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_165_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_165_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_165_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_165_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_165_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 166 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_166_META = {
+  id: 'pipeline_166',
+  regionId: 'NT' as V1020RpipeRegionId,
+  primarySystem: 'food' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 145623,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_166_COEF = {
+  k0: 61.3000,
+  k1: 55.9000,
+  k2: 50.5000,
+  k3: 45.1000,
+  k4: 39.7000,
+  k5: 34.3000,
+  k6: 28.9000,
+  k7: 23.5000,
+  k8: 18.1000,
+  k9: 12.7000,
+  k10: 7.3000,
+  k11: 1.9000,
+  k12: 95.6000,
+  k13: 90.2000,
+  k14: 84.8000,
+  k15: 79.4000,
+  k16: 74.0000,
+  k17: 68.6000,
+  k18: 63.2000,
+  k19: 57.8000,
+  k20: 52.4000,
+  k21: 47.0000,
+  k22: 41.6000,
+  k23: 36.2000,
+  k24: 30.8000,
+  k25: 25.4000,
+  k26: 20.0000,
+  k27: 14.6000,
+  k28: 9.2000,
+  k29: 3.8000,
+  k30: 97.5000,
+  k31: 92.1000,
+  k32: 86.7000,
+  k33: 81.3000,
+  k34: 75.9000,
+  k35: 70.5000,
+  k36: 65.1000,
+  k37: 59.7000,
+  k38: 54.3000,
+  k39: 48.9000,
+  k40: 43.5000,
+  k41: 38.1000,
+  k42: 32.7000,
+  k43: 27.3000,
+  k44: 21.9000,
+  k45: 16.5000,
+  k46: 11.1000,
+  k47: 5.7000,
+  k48: 0.3000,
+  k49: 94.0000,
+  k50: 88.6000,
+  k51: 83.2000,
+  k52: 77.8000,
+  k53: 72.4000,
+  k54: 67.0000,
+  k55: 61.6000,
+  k56: 56.2000,
+  k57: 50.8000,
+  k58: 45.4000,
+  k59: 40.0000,
+  k60: 34.6000,
+  k61: 29.2000,
+  k62: 23.8000,
+  k63: 18.4000,
+  k64: 13.0000,
+  k65: 7.6000,
+  k66: 2.2000,
+  k67: 95.9000,
+  k68: 90.5000,
+  k69: 85.1000,
+  k70: 79.7000,
+  k71: 74.3000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_166_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_166_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_166_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_166_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_166_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_166_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_166_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_166_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_166_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_166_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_166_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_166_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 167 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_167_META = {
+  id: 'pipeline_167',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  primarySystem: 'industrial' as V1020RpipeSystemDomain,
+  transferBand: 'active' as V1020RpipeTransferBand,
+  seed: 146500,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_167_COEF = {
+  k0: 80.6000,
+  k1: 63.8000,
+  k2: 47.0000,
+  k3: 30.2000,
+  k4: 13.4000,
+  k5: 95.7000,
+  k6: 78.9000,
+  k7: 62.1000,
+  k8: 45.3000,
+  k9: 28.5000,
+  k10: 11.7000,
+  k11: 94.0000,
+  k12: 77.2000,
+  k13: 60.4000,
+  k14: 43.6000,
+  k15: 26.8000,
+  k16: 10.0000,
+  k17: 92.3000,
+  k18: 75.5000,
+  k19: 58.7000,
+  k20: 41.9000,
+  k21: 25.1000,
+  k22: 8.3000,
+  k23: 90.6000,
+  k24: 73.8000,
+  k25: 57.0000,
+  k26: 40.2000,
+  k27: 23.4000,
+  k28: 6.6000,
+  k29: 88.9000,
+  k30: 72.1000,
+  k31: 55.3000,
+  k32: 38.5000,
+  k33: 21.7000,
+  k34: 4.9000,
+  k35: 87.2000,
+  k36: 70.4000,
+  k37: 53.6000,
+  k38: 36.8000,
+  k39: 20.0000,
+  k40: 3.2000,
+  k41: 85.5000,
+  k42: 68.7000,
+  k43: 51.9000,
+  k44: 35.1000,
+  k45: 18.3000,
+  k46: 1.5000,
+  k47: 83.8000,
+  k48: 67.0000,
+  k49: 50.2000,
+  k50: 33.4000,
+  k51: 16.6000,
+  k52: 98.9000,
+  k53: 82.1000,
+  k54: 65.3000,
+  k55: 48.5000,
+  k56: 31.7000,
+  k57: 14.9000,
+  k58: 97.2000,
+  k59: 80.4000,
+  k60: 63.6000,
+  k61: 46.8000,
+  k62: 30.0000,
+  k63: 13.2000,
+  k64: 95.5000,
+  k65: 78.7000,
+  k66: 61.9000,
+  k67: 45.1000,
+  k68: 28.3000,
+  k69: 11.5000,
+  k70: 93.8000,
+  k71: 77.0000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_167_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_167_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_167_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_167_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_167_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_167_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_167_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_167_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_167_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_167_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_167_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_167_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 168 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_168_META = {
+  id: 'pipeline_168',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  primarySystem: 'telecom' as V1020RpipeSystemDomain,
+  transferBand: 'critical' as V1020RpipeTransferBand,
+  seed: 147377,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_168_COEF = {
+  k0: 0.8000,
+  k1: 71.7000,
+  k2: 43.5000,
+  k3: 15.3000,
+  k4: 86.2000,
+  k5: 58.0000,
+  k6: 29.8000,
+  k7: 1.6000,
+  k8: 72.5000,
+  k9: 44.3000,
+  k10: 16.1000,
+  k11: 87.0000,
+  k12: 58.8000,
+  k13: 30.6000,
+  k14: 2.4000,
+  k15: 73.3000,
+  k16: 45.1000,
+  k17: 16.9000,
+  k18: 87.8000,
+  k19: 59.6000,
+  k20: 31.4000,
+  k21: 3.2000,
+  k22: 74.1000,
+  k23: 45.9000,
+  k24: 17.7000,
+  k25: 88.6000,
+  k26: 60.4000,
+  k27: 32.2000,
+  k28: 4.0000,
+  k29: 74.9000,
+  k30: 46.7000,
+  k31: 18.5000,
+  k32: 89.4000,
+  k33: 61.2000,
+  k34: 33.0000,
+  k35: 4.8000,
+  k36: 75.7000,
+  k37: 47.5000,
+  k38: 19.3000,
+  k39: 90.2000,
+  k40: 62.0000,
+  k41: 33.8000,
+  k42: 5.6000,
+  k43: 76.5000,
+  k44: 48.3000,
+  k45: 20.1000,
+  k46: 91.0000,
+  k47: 62.8000,
+  k48: 34.6000,
+  k49: 6.4000,
+  k50: 77.3000,
+  k51: 49.1000,
+  k52: 20.9000,
+  k53: 91.8000,
+  k54: 63.6000,
+  k55: 35.4000,
+  k56: 7.2000,
+  k57: 78.1000,
+  k58: 49.9000,
+  k59: 21.7000,
+  k60: 92.6000,
+  k61: 64.4000,
+  k62: 36.2000,
+  k63: 8.0000,
+  k64: 78.9000,
+  k65: 50.7000,
+  k66: 22.5000,
+  k67: 93.4000,
+  k68: 65.2000,
+  k69: 37.0000,
+  k70: 8.8000,
+  k71: 79.7000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_168_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_168_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_168_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_168_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_168_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_168_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_168_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_168_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_168_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_168_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_168_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_168_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 169 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_169_META = {
+  id: 'pipeline_169',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  primarySystem: 'finance' as V1020RpipeSystemDomain,
+  transferBand: 'recovering' as V1020RpipeTransferBand,
+  seed: 148254,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_169_COEF = {
+  k0: 20.1000,
+  k1: 79.6000,
+  k2: 40.0000,
+  k3: 0.4000,
+  k4: 59.9000,
+  k5: 20.3000,
+  k6: 79.8000,
+  k7: 40.2000,
+  k8: 0.6000,
+  k9: 60.1000,
+  k10: 20.5000,
+  k11: 80.0000,
+  k12: 40.4000,
+  k13: 0.8000,
+  k14: 60.3000,
+  k15: 20.7000,
+  k16: 80.2000,
+  k17: 40.6000,
+  k18: 1.0000,
+  k19: 60.5000,
+  k20: 20.9000,
+  k21: 80.4000,
+  k22: 40.8000,
+  k23: 1.2000,
+  k24: 60.7000,
+  k25: 21.1000,
+  k26: 80.6000,
+  k27: 41.0000,
+  k28: 1.4000,
+  k29: 60.9000,
+  k30: 21.3000,
+  k31: 80.8000,
+  k32: 41.2000,
+  k33: 1.6000,
+  k34: 61.1000,
+  k35: 21.5000,
+  k36: 81.0000,
+  k37: 41.4000,
+  k38: 1.8000,
+  k39: 61.3000,
+  k40: 21.7000,
+  k41: 81.2000,
+  k42: 41.6000,
+  k43: 2.0000,
+  k44: 61.5000,
+  k45: 21.9000,
+  k46: 81.4000,
+  k47: 41.8000,
+  k48: 2.2000,
+  k49: 61.7000,
+  k50: 22.1000,
+  k51: 81.6000,
+  k52: 42.0000,
+  k53: 2.4000,
+  k54: 61.9000,
+  k55: 22.3000,
+  k56: 81.8000,
+  k57: 42.2000,
+  k58: 2.6000,
+  k59: 62.1000,
+  k60: 22.5000,
+  k61: 82.0000,
+  k62: 42.4000,
+  k63: 2.8000,
+  k64: 62.3000,
+  k65: 22.7000,
+  k66: 82.2000,
+  k67: 42.6000,
+  k68: 3.0000,
+  k69: 62.5000,
+  k70: 22.9000,
+  k71: 82.4000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_169_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_169_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_169_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_169_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_169_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_169_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_169_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_169_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_169_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_169_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_169_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_169_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 170 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_170_META = {
+  id: 'pipeline_170',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  primarySystem: 'freight' as V1020RpipeSystemDomain,
+  transferBand: 'latent' as V1020RpipeTransferBand,
+  seed: 149131,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_170_COEF = {
+  k0: 39.4000,
+  k1: 87.5000,
+  k2: 36.5000,
+  k3: 84.6000,
+  k4: 33.6000,
+  k5: 81.7000,
+  k6: 30.7000,
+  k7: 78.8000,
+  k8: 27.8000,
+  k9: 75.9000,
+  k10: 24.9000,
+  k11: 73.0000,
+  k12: 22.0000,
+  k13: 70.1000,
+  k14: 19.1000,
+  k15: 67.2000,
+  k16: 16.2000,
+  k17: 64.3000,
+  k18: 13.3000,
+  k19: 61.4000,
+  k20: 10.4000,
+  k21: 58.5000,
+  k22: 7.5000,
+  k23: 55.6000,
+  k24: 4.6000,
+  k25: 52.7000,
+  k26: 1.7000,
+  k27: 49.8000,
+  k28: 97.9000,
+  k29: 46.9000,
+  k30: 95.0000,
+  k31: 44.0000,
+  k32: 92.1000,
+  k33: 41.1000,
+  k34: 89.2000,
+  k35: 38.2000,
+  k36: 86.3000,
+  k37: 35.3000,
+  k38: 83.4000,
+  k39: 32.4000,
+  k40: 80.5000,
+  k41: 29.5000,
+  k42: 77.6000,
+  k43: 26.6000,
+  k44: 74.7000,
+  k45: 23.7000,
+  k46: 71.8000,
+  k47: 20.8000,
+  k48: 68.9000,
+  k49: 17.9000,
+  k50: 66.0000,
+  k51: 15.0000,
+  k52: 63.1000,
+  k53: 12.1000,
+  k54: 60.2000,
+  k55: 9.2000,
+  k56: 57.3000,
+  k57: 6.3000,
+  k58: 54.4000,
+  k59: 3.4000,
+  k60: 51.5000,
+  k61: 0.5000,
+  k62: 48.6000,
+  k63: 96.7000,
+  k64: 45.7000,
+  k65: 93.8000,
+  k66: 42.8000,
+  k67: 90.9000,
+  k68: 39.9000,
+  k69: 88.0000,
+  k70: 37.0000,
+  k71: 85.1000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_170_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_170_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_170_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_170_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_170_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_170_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_170_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_170_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_170_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_170_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_170_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_170_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Generated pipeline scenario 171 — research pipeline / compliance matrix. */
+export const V1020_RPIPE_PIPELINE_SCENARIO_171_META = {
+  id: 'pipeline_171',
+  regionId: 'WA' as V1020RpipeRegionId,
+  primarySystem: 'energy' as V1020RpipeSystemDomain,
+  transferBand: 'emerging' as V1020RpipeTransferBand,
+  seed: 150008,
+} as const;
+
+const V1020_RPIPE_PIPELINE_SCENARIO_171_COEF = {
+  k0: 58.7000,
+  k1: 95.4000,
+  k2: 33.0000,
+  k3: 69.7000,
+  k4: 7.3000,
+  k5: 44.0000,
+  k6: 80.7000,
+  k7: 18.3000,
+  k8: 55.0000,
+  k9: 91.7000,
+  k10: 29.3000,
+  k11: 66.0000,
+  k12: 3.6000,
+  k13: 40.3000,
+  k14: 77.0000,
+  k15: 14.6000,
+  k16: 51.3000,
+  k17: 88.0000,
+  k18: 25.6000,
+  k19: 62.3000,
+  k20: 99.0000,
+  k21: 36.6000,
+  k22: 73.3000,
+  k23: 10.9000,
+  k24: 47.6000,
+  k25: 84.3000,
+  k26: 21.9000,
+  k27: 58.6000,
+  k28: 95.3000,
+  k29: 32.9000,
+  k30: 69.6000,
+  k31: 7.2000,
+  k32: 43.9000,
+  k33: 80.6000,
+  k34: 18.2000,
+  k35: 54.9000,
+  k36: 91.6000,
+  k37: 29.2000,
+  k38: 65.9000,
+  k39: 3.5000,
+  k40: 40.2000,
+  k41: 76.9000,
+  k42: 14.5000,
+  k43: 51.2000,
+  k44: 87.9000,
+  k45: 25.5000,
+  k46: 62.2000,
+  k47: 98.9000,
+  k48: 36.5000,
+  k49: 73.2000,
+  k50: 10.8000,
+  k51: 47.5000,
+  k52: 84.2000,
+  k53: 21.8000,
+  k54: 58.5000,
+  k55: 95.2000,
+  k56: 32.8000,
+  k57: 69.5000,
+  k58: 7.1000,
+  k59: 43.8000,
+  k60: 80.5000,
+  k61: 18.1000,
+  k62: 54.8000,
+  k63: 91.5000,
+  k64: 29.1000,
+  k65: 65.8000,
+  k66: 3.4000,
+  k67: 40.1000,
+  k68: 76.8000,
+  k69: 14.4000,
+  k70: 51.1000,
+  k71: 87.8000,
+} as const;
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_171_evaluate(turn: number): {
+  severityIndex: number;
+  commercializationStackDelayTurns: number;
+  complianceScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1020_RPIPE_PIPELINE_SCENARIO_171_COEF) as Array<
+    keyof typeof V1020_RPIPE_PIPELINE_SCENARIO_171_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1020_RPIPE_PIPELINE_SCENARIO_171_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1020_RPIPE_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const commercializationStackDelayTurns = V1020_RPIPE_clamp(2 + (acc % 9), 1, 16);
+  const complianceScore = V1020_RPIPE_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1020_RPIPE_complianceFromScore(complianceScore) !== 'fragile';
+  return { severityIndex, commercializationStackDelayTurns, complianceScore, stable };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_171_snapshot(turn: number): V1020RpipeTransferSnapshot {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_171_evaluate(turn);
+  return {
+    scenarioId: V1020_RPIPE_PIPELINE_SCENARIO_171_META.id,
+    regionId: V1020_RPIPE_PIPELINE_SCENARIO_171_META.regionId,
+    systemDomain: V1020_RPIPE_PIPELINE_SCENARIO_171_META.primarySystem,
+    transferBand: V1020_RPIPE_PIPELINE_SCENARIO_171_META.transferBand,
+    severityIndex: r.severityIndex,
+    commercializationStackDelayTurns: r.commercializationStackDelayTurns,
+    complianceScore: r.complianceScore,
+    complianceBand: V1020_RPIPE_complianceFromScore(r.complianceScore),
+  };
+}
+
+export function V1020_RPIPE_PIPELINE_SCENARIO_171_regressionAssert(turn: number): boolean {
+  const r = V1020_RPIPE_PIPELINE_SCENARIO_171_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.complianceScore <= 100;
+}
+
+
+/** Commercialization stack graph shard 000 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_000: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.12, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.127, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.134, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.141, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.148, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.155, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.162, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.169, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.176, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.183, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.19, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.197, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.204, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.211, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.218, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.12, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.127, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.134, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.141, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.148, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.155, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.162, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.169, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.176, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.183, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.19, lagTurns: 4, nodeId: 'lab_transfer_00' },
+];
+
+
+/** Commercialization stack graph shard 001 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_001: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.232, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.239, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.246, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.253, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.155, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.162, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.169, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.176, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.183, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.19, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.197, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.204, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.211, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.218, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.225, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.232, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.239, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.246, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.253, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.155, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.162, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.169, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.176, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.183, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.19, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.197, lagTurns: 5, nodeId: 'lab_transfer_01' },
+];
+
+
+/** Commercialization stack graph shard 002 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_002: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'water', toSystem: 'food', weight: 0.239, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.246, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.253, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.26, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.267, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.274, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.281, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.288, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.19, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.197, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.204, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.211, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.218, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.225, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.232, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.239, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.246, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.253, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.26, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.267, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.274, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.281, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.288, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.19, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.197, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.204, lagTurns: 6, nodeId: 'lab_transfer_02' },
+];
+
+
+/** Commercialization stack graph shard 003 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_003: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.246, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.253, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.26, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.267, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.274, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.281, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.288, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.295, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.302, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.309, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.316, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.323, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.225, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.232, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.239, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.246, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.253, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.26, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.267, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.274, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.281, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.288, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.295, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.302, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.309, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.316, lagTurns: 7, nodeId: 'lab_transfer_03' },
+];
+
+
+/** Commercialization stack graph shard 004 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_004: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.358, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.26, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.267, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.274, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.281, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.288, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.295, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.302, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.309, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.316, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.323, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.33, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.337, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.344, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.351, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.358, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.26, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.267, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.274, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.281, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.288, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.295, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.302, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.309, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.316, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.323, lagTurns: 8, nodeId: 'lab_transfer_04' },
+];
+
+
+/** Commercialization stack graph shard 005 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_005: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.365, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.372, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.379, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.386, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.393, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.295, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.302, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.309, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.316, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.323, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.33, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.337, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.344, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.351, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.358, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.365, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.372, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.379, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.386, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.393, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.295, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.302, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.309, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.316, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.323, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.33, lagTurns: 9, nodeId: 'lab_transfer_05' },
+];
+
+
+/** Commercialization stack graph shard 006 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_006: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.372, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.379, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.386, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.393, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.4, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.407, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.414, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.421, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.428, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.33, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.337, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.344, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.351, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.358, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.365, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.372, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.379, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.386, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.393, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.4, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.407, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.414, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.421, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.428, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.33, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.337, lagTurns: 10, nodeId: 'lab_transfer_06' },
+];
+
+
+/** Commercialization stack graph shard 007 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_007: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.379, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.386, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.393, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.4, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.407, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.414, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.421, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.428, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.435, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.442, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.449, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.456, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.463, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.365, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.372, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.379, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.386, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.393, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.4, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.407, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.414, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.421, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.428, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.435, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.442, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.449, lagTurns: 11, nodeId: 'lab_transfer_07' },
+];
+
+
+/** Commercialization stack graph shard 008 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_008: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.491, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.498, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.4, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.407, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.414, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.421, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.428, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.435, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.442, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.449, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.456, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.463, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.47, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.477, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.484, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.491, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.498, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.4, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.407, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.414, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.421, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.428, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.435, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.442, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.449, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.456, lagTurns: 4, nodeId: 'lab_transfer_08' },
+];
+
+
+/** Commercialization stack graph shard 009 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_009: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.498, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.505, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.512, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.519, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.526, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.533, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.435, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.442, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.449, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.456, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.463, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.47, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.477, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.484, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.491, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.498, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.505, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.512, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.519, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.526, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.533, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.435, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.442, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.449, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.456, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.463, lagTurns: 5, nodeId: 'lab_transfer_09' },
+];
+
+
+/** Commercialization stack graph shard 010 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_010: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.505, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.512, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.519, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.526, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.533, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.54, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.547, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.554, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.561, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.568, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.47, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.477, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.484, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.491, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.498, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.505, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.512, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.519, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.526, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.533, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.54, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.547, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.554, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.561, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.568, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.47, lagTurns: 6, nodeId: 'lab_transfer_10' },
+];
+
+
+/** Commercialization stack graph shard 011 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_011: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.512, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.519, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.526, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.533, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.54, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.547, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.554, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.561, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.568, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.575, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.582, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.589, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.596, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.603, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.505, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.512, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.519, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.526, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.533, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.54, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.547, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.554, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.561, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.568, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.575, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.582, lagTurns: 7, nodeId: 'lab_transfer_11' },
+];
+
+
+/** Commercialization stack graph shard 012 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_012: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'water', toSystem: 'food', weight: 0.624, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.631, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.638, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.54, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.547, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.554, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.561, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.568, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.575, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.582, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.589, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.596, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.603, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.61, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.617, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.624, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.631, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.638, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.54, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.547, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.554, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.561, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.568, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.575, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.582, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.589, lagTurns: 8, nodeId: 'lab_transfer_12' },
+];
+
+
+/** Commercialization stack graph shard 013 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_013: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.631, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.638, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.645, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.652, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.659, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.666, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.673, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.575, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.582, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.589, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.596, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.603, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.61, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.617, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.624, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.631, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.638, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.645, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.652, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.659, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.666, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.673, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.575, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.582, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.589, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.596, lagTurns: 9, nodeId: 'lab_transfer_13' },
+];
+
+
+/** Commercialization stack graph shard 014 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_014: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.638, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.645, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.652, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.659, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.666, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.673, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.68, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.687, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.694, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.701, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.708, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.61, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.617, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.624, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.631, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.638, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.645, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.652, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.659, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.666, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.673, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.68, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.687, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.694, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.701, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.708, lagTurns: 10, nodeId: 'lab_transfer_14' },
+];
+
+
+/** Commercialization stack graph shard 015 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_015: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.645, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.652, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.659, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.666, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.673, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.68, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.687, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.694, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.701, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.708, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.715, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.722, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.729, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.736, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.743, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.645, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.652, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.659, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.666, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.673, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.68, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.687, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.694, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.701, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.708, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.715, lagTurns: 11, nodeId: 'lab_transfer_15' },
+];
+
+
+/** Commercialization stack graph shard 016 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_016: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.757, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.764, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.771, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.778, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.68, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.687, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.694, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.701, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.708, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.715, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.722, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.729, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.736, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.743, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.75, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.757, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.764, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.771, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.778, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.68, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.687, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.694, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.701, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.708, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.715, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.722, lagTurns: 4, nodeId: 'lab_transfer_16' },
+];
+
+
+/** Commercialization stack graph shard 017 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_017: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.764, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.771, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.778, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.785, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.792, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.799, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.806, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.813, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.715, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.722, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.729, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.736, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.743, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.75, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.757, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.764, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.771, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.778, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.785, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.792, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.799, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.806, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.813, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.715, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.722, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.729, lagTurns: 5, nodeId: 'lab_transfer_17' },
+];
+
+
+/** Commercialization stack graph shard 018 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_018: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.771, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.778, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.785, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.792, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.799, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.806, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.813, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.82, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.827, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.834, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.841, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.848, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.75, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.757, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.764, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.771, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.778, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.785, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.792, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.799, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.806, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.813, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.82, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.827, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.834, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.841, lagTurns: 6, nodeId: 'lab_transfer_18' },
+];
+
+
+/** Commercialization stack graph shard 019 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_019: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.218, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.12, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.127, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.134, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.141, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.148, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.155, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.162, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.169, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.176, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.183, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.19, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.197, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.204, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.211, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.218, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.12, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.127, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.134, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.141, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.148, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.155, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.162, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.169, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.176, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.183, lagTurns: 7, nodeId: 'lab_transfer_19' },
+];
+
+
+/** Commercialization stack graph shard 020 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_020: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.225, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.232, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.239, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.246, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.253, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.155, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.162, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.169, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.176, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.183, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.19, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.197, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.204, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.211, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.218, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.225, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.232, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.239, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.246, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.253, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.155, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.162, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.169, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.176, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.183, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.19, lagTurns: 8, nodeId: 'lab_transfer_20' },
+];
+
+
+/** Commercialization stack graph shard 021 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_021: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.232, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.239, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.246, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.253, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.26, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.267, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.274, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.281, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.288, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.19, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.197, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.204, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.211, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.218, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.225, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.232, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.239, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.246, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.253, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.26, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.267, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.274, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.281, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.288, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.19, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.197, lagTurns: 9, nodeId: 'lab_transfer_21' },
+];
+
+
+/** Commercialization stack graph shard 022 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_022: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'water', toSystem: 'food', weight: 0.239, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.246, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.253, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.26, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.267, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.274, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.281, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.288, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.295, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.302, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.309, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.316, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.323, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.225, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.232, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.239, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.246, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.253, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.26, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.267, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.274, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.281, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.288, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.295, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.302, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.309, lagTurns: 10, nodeId: 'lab_transfer_22' },
+];
+
+
+/** Commercialization stack graph shard 023 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_023: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.351, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.358, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.26, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.267, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.274, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.281, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.288, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.295, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.302, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.309, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.316, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.323, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.33, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.337, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.344, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.351, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.358, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.26, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.267, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.274, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.281, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.288, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.295, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.302, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.309, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.316, lagTurns: 11, nodeId: 'lab_transfer_23' },
+];
+
+
+/** Commercialization stack graph shard 024 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_024: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.358, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.365, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.372, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.379, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.386, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.393, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.295, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.302, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.309, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.316, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.323, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.33, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.337, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.344, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.351, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.358, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.365, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.372, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.379, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.386, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.393, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.295, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.302, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.309, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.316, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.323, lagTurns: 4, nodeId: 'lab_transfer_00' },
+];
+
+
+/** Commercialization stack graph shard 025 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_025: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.365, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.372, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.379, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.386, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.393, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.4, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.407, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.414, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.421, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.428, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.33, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.337, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.344, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.351, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.358, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.365, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.372, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.379, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.386, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.393, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.4, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.407, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.414, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.421, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.428, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.33, lagTurns: 5, nodeId: 'lab_transfer_01' },
+];
+
+
+/** Commercialization stack graph shard 026 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_026: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.372, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.379, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.386, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.393, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.4, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.407, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.414, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.421, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.428, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.435, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.442, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.449, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.456, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.463, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.365, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.372, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.379, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.386, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.393, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.4, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.407, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.414, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.421, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.428, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.435, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.442, lagTurns: 6, nodeId: 'lab_transfer_02' },
+];
+
+
+/** Commercialization stack graph shard 027 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_027: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.484, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.491, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.498, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.4, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.407, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.414, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.421, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.428, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.435, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.442, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.449, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.456, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.463, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.47, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.477, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.484, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.491, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.498, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.4, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.407, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.414, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.421, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.428, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.435, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.442, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.449, lagTurns: 7, nodeId: 'lab_transfer_03' },
+];
+
+
+/** Commercialization stack graph shard 028 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_028: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.491, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.498, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.505, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.512, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.519, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.526, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.533, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.435, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.442, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.449, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.456, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.463, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.47, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.477, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.484, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.491, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.498, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.505, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.512, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.519, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.526, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.533, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.435, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.442, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.449, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.456, lagTurns: 8, nodeId: 'lab_transfer_04' },
+];
+
+
+/** Commercialization stack graph shard 029 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_029: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.498, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.505, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.512, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.519, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.526, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.533, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.54, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.547, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.554, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.561, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.568, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.47, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.477, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.484, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.491, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.498, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.505, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.512, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.519, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.526, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.533, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.54, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.547, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.554, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.561, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.568, lagTurns: 9, nodeId: 'lab_transfer_05' },
+];
+
+
+/** Commercialization stack graph shard 030 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_030: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.505, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.512, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.519, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.526, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.533, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.54, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.547, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.554, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.561, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.568, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.575, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.582, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.589, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.596, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.603, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.505, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.512, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.519, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.526, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.533, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.54, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.547, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.554, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.561, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.568, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.575, lagTurns: 10, nodeId: 'lab_transfer_06' },
+];
+
+
+/** Commercialization stack graph shard 031 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_031: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.617, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.624, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.631, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.638, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.54, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.547, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.554, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.561, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.568, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.575, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.582, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.589, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.596, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.603, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.61, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.617, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.624, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.631, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.638, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.54, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.547, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.554, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.561, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.568, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.575, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.582, lagTurns: 11, nodeId: 'lab_transfer_07' },
+];
+
+
+/** Commercialization stack graph shard 032 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_032: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'water', toSystem: 'food', weight: 0.624, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.631, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.638, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.645, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.652, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.659, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.666, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.673, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.575, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.582, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.589, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.596, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.603, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.61, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.617, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.624, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.631, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.638, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.645, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.652, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.659, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.666, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.673, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.575, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.582, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.589, lagTurns: 4, nodeId: 'lab_transfer_08' },
+];
+
+
+/** Commercialization stack graph shard 033 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_033: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.631, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.638, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.645, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.652, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.659, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.666, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.673, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.68, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.687, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.694, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.701, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.708, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.61, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.617, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.624, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.631, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.638, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.645, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.652, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.659, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.666, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.673, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.68, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.687, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.694, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.701, lagTurns: 5, nodeId: 'lab_transfer_09' },
+];
+
+
+/** Commercialization stack graph shard 034 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_034: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.743, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.645, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.652, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.659, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.666, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.673, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.68, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.687, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.694, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.701, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.708, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.715, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.722, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.729, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.736, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.743, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.645, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.652, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.659, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.666, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.673, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.68, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.687, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.694, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.701, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.708, lagTurns: 6, nodeId: 'lab_transfer_10' },
+];
+
+
+/** Commercialization stack graph shard 035 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_035: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.75, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.757, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.764, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.771, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.778, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.68, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.687, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.694, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.701, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.708, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.715, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.722, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.729, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.736, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.743, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.75, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.757, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.764, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.771, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.778, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.68, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.687, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.694, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.701, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.708, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.715, lagTurns: 7, nodeId: 'lab_transfer_11' },
+];
+
+
+/** Commercialization stack graph shard 036 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_036: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.757, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.764, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.771, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.778, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.785, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.792, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.799, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.806, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.813, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.715, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.722, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.729, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.736, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.743, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.75, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.757, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.764, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.771, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.778, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.785, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.792, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.799, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.806, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.813, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.715, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.722, lagTurns: 8, nodeId: 'lab_transfer_12' },
+];
+
+
+/** Commercialization stack graph shard 037 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_037: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.764, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.771, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.778, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.785, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.792, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.799, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.806, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.813, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.82, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.827, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.834, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.841, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.848, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.75, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.757, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.764, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.771, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.778, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.785, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.792, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.799, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.806, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.813, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.82, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.827, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.834, lagTurns: 9, nodeId: 'lab_transfer_13' },
+];
+
+
+/** Commercialization stack graph shard 038 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_038: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.211, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.218, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.12, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.127, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.134, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.141, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.148, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.155, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.162, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.169, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.176, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.183, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.19, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.197, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.204, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.211, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.218, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.12, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.127, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.134, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.141, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.148, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.155, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.162, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.169, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.176, lagTurns: 10, nodeId: 'lab_transfer_14' },
+];
+
+
+/** Commercialization stack graph shard 039 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_039: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.218, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.225, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.232, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.239, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.246, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.253, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.155, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.162, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.169, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.176, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.183, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.19, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.197, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.204, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.211, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.218, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.225, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.232, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.239, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.246, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.253, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.155, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.162, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.169, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.176, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.183, lagTurns: 11, nodeId: 'lab_transfer_15' },
+];
+
+
+/** Commercialization stack graph shard 040 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_040: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.225, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.232, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.239, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.246, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.253, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.26, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.267, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.274, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.281, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.288, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.19, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.197, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.204, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.211, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.218, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.225, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.232, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.239, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.246, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.253, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.26, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.267, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.274, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.281, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.288, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.19, lagTurns: 4, nodeId: 'lab_transfer_16' },
+];
+
+
+/** Commercialization stack graph shard 041 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_041: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.232, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.239, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.246, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.253, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.26, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.267, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.274, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.281, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.288, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.295, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.302, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.309, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.316, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.323, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.225, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.232, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.239, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.246, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.253, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.26, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.267, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.274, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.281, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.288, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.295, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.302, lagTurns: 5, nodeId: 'lab_transfer_17' },
+];
+
+
+/** Commercialization stack graph shard 042 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_042: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'water', toSystem: 'food', weight: 0.344, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.351, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.358, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.26, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.267, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.274, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.281, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.288, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.295, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.302, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.309, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.316, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.323, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.33, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.337, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.344, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.351, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.358, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.26, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.267, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.274, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.281, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.288, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.295, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.302, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.309, lagTurns: 6, nodeId: 'lab_transfer_18' },
+];
+
+
+/** Commercialization stack graph shard 043 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_043: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.351, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.358, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.365, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.372, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.379, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.386, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.393, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.295, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.302, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.309, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.316, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.323, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.33, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.337, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.344, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.351, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.358, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.365, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.372, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.379, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.386, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.393, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.295, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.302, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.309, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.316, lagTurns: 7, nodeId: 'lab_transfer_19' },
+];
+
+
+/** Commercialization stack graph shard 044 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_044: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.358, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.365, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.372, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.379, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.386, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.393, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.4, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.407, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.414, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.421, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.428, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.33, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.337, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.344, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.351, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.358, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.365, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.372, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.379, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.386, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.393, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.4, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.407, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.414, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.421, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.428, lagTurns: 8, nodeId: 'lab_transfer_20' },
+];
+
+
+/** Commercialization stack graph shard 045 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_045: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.365, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.372, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.379, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.386, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.393, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.4, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.407, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.414, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.421, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.428, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.435, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.442, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.449, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.456, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.463, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.365, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.372, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.379, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.386, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.393, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.4, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.407, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.414, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.421, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.428, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.435, lagTurns: 9, nodeId: 'lab_transfer_21' },
+];
+
+
+/** Commercialization stack graph shard 046 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_046: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.477, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.484, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.491, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.498, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.4, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.407, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.414, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.421, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.428, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.435, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.442, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.449, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.456, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.463, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.47, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.477, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.484, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.491, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.498, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.4, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.407, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.414, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.421, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.428, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.435, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.442, lagTurns: 10, nodeId: 'lab_transfer_22' },
+];
+
+
+/** Commercialization stack graph shard 047 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_047: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.484, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.491, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.498, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.505, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.512, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.519, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.526, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.533, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.435, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.442, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.449, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.456, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.463, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.47, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.477, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.484, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.491, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.498, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.505, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.512, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.519, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.526, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.533, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.435, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.442, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.449, lagTurns: 11, nodeId: 'lab_transfer_23' },
+];
+
+
+/** Commercialization stack graph shard 048 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_048: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.491, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.498, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.505, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.512, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.519, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.526, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.533, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.54, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.547, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.554, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.561, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.568, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.47, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.477, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.484, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.491, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.498, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.505, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.512, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.519, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.526, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.533, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.54, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.547, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.554, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.561, lagTurns: 4, nodeId: 'lab_transfer_00' },
+];
+
+
+/** Commercialization stack graph shard 049 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_049: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.603, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.505, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.512, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.519, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.526, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.533, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.54, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.547, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.554, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.561, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.568, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.575, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.582, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.589, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.596, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.603, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.505, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.512, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.519, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.526, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.533, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.54, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.547, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.554, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.561, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.568, lagTurns: 5, nodeId: 'lab_transfer_01' },
+];
+
+
+/** Commercialization stack graph shard 050 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_050: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.61, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.617, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.624, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.631, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.638, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.54, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.547, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.554, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.561, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.568, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.575, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.582, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.589, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.596, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.603, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.61, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.617, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.624, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.631, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.638, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.54, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.547, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.554, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.561, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.568, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.575, lagTurns: 6, nodeId: 'lab_transfer_02' },
+];
+
+
+/** Commercialization stack graph shard 051 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_051: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.617, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.624, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.631, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.638, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.645, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.652, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.659, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.666, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.673, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.575, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.582, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.589, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.596, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.603, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.61, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.617, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.624, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.631, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.638, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.645, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.652, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.659, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.666, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.673, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.575, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.582, lagTurns: 7, nodeId: 'lab_transfer_03' },
+];
+
+
+/** Commercialization stack graph shard 052 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_052: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'water', toSystem: 'food', weight: 0.624, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.631, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.638, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.645, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.652, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.659, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.666, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.673, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.68, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.687, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.694, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.701, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.708, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.61, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.617, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.624, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.631, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.638, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.645, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.652, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.659, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.666, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.673, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.68, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.687, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.694, lagTurns: 8, nodeId: 'lab_transfer_04' },
+];
+
+
+/** Commercialization stack graph shard 053 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_053: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.736, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.743, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.645, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.652, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.659, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.666, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.673, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.68, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.687, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.694, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.701, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.708, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.715, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.722, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.729, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.736, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.743, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.645, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.652, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.659, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.666, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.673, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.68, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.687, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.694, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.701, lagTurns: 9, nodeId: 'lab_transfer_05' },
+];
+
+
+/** Commercialization stack graph shard 054 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_054: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.743, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.75, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.757, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.764, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.771, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.778, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.68, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.687, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.694, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.701, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.708, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.715, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.722, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.729, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.736, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.743, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.75, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.757, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.764, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.771, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.778, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.68, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.687, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.694, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.701, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.708, lagTurns: 10, nodeId: 'lab_transfer_06' },
+];
+
+
+/** Commercialization stack graph shard 055 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_055: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.75, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.757, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.764, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.771, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.778, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.785, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.792, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.799, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.806, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.813, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.715, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.722, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.729, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.736, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.743, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.75, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.757, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.764, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.771, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.778, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.785, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.792, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.799, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.806, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.813, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.715, lagTurns: 11, nodeId: 'lab_transfer_07' },
+];
+
+
+/** Commercialization stack graph shard 056 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_056: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.757, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.764, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.771, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.778, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.785, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.792, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.799, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.806, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.813, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.82, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.827, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.834, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.841, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.848, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.75, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.757, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.764, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.771, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.778, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.785, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.792, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.799, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.806, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.813, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.82, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.827, lagTurns: 4, nodeId: 'lab_transfer_08' },
+];
+
+
+/** Commercialization stack graph shard 057 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_057: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.204, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.211, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.218, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.12, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.127, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.134, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.141, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.148, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.155, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.162, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.169, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.176, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.183, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.19, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.197, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.204, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.211, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.218, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.12, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.127, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.134, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.141, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.148, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.155, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.162, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.169, lagTurns: 5, nodeId: 'lab_transfer_09' },
+];
+
+
+/** Commercialization stack graph shard 058 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_058: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.211, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.218, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.225, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.232, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.239, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.246, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.253, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.155, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.162, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.169, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.176, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.183, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.19, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.197, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.204, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.211, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.218, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.225, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.232, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.239, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.246, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.253, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.155, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.162, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.169, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.176, lagTurns: 6, nodeId: 'lab_transfer_10' },
+];
+
+
+/** Commercialization stack graph shard 059 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_059: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.218, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.225, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.232, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.239, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.246, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.253, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.26, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.267, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.274, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.281, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.288, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.19, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.197, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.204, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.211, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.218, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.225, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.232, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.239, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.246, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.253, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.26, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.267, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.274, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.281, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.288, lagTurns: 7, nodeId: 'lab_transfer_11' },
+];
+
+
+/** Commercialization stack graph shard 060 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_060: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.225, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.232, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.239, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.246, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.253, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.26, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.267, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.274, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.281, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.288, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.295, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.302, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.309, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.316, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.323, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.225, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.232, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.239, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.246, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.253, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.26, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.267, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.274, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.281, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.288, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.295, lagTurns: 8, nodeId: 'lab_transfer_12' },
+];
+
+
+/** Commercialization stack graph shard 061 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_061: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.337, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.344, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.351, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.358, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.26, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.267, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.274, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.281, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.288, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.295, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.302, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.309, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.316, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.323, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.33, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.337, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.344, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.351, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.358, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.26, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.267, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.274, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.281, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.288, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.295, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.302, lagTurns: 9, nodeId: 'lab_transfer_13' },
+];
+
+
+/** Commercialization stack graph shard 062 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_062: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'water', toSystem: 'food', weight: 0.344, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.351, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.358, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.365, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.372, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.379, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.386, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.393, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.295, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.302, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.309, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.316, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.323, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.33, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.337, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.344, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.351, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.358, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.365, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.372, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.379, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.386, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.393, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.295, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.302, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.309, lagTurns: 10, nodeId: 'lab_transfer_14' },
+];
+
+
+/** Commercialization stack graph shard 063 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_063: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.351, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.358, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.365, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.372, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.379, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.386, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.393, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.4, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.407, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.414, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.421, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.428, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.33, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.337, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.344, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.351, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.358, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.365, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.372, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.379, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.386, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.393, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.4, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.407, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.414, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.421, lagTurns: 11, nodeId: 'lab_transfer_15' },
+];
+
+
+/** Commercialization stack graph shard 064 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_064: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.463, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.365, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.372, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.379, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.386, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.393, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.4, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.407, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.414, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.421, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.428, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.435, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.442, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.449, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.456, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.463, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.365, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.372, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.379, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.386, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.393, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.4, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.407, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.414, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.421, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.428, lagTurns: 4, nodeId: 'lab_transfer_16' },
+];
+
+
+/** Commercialization stack graph shard 065 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_065: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.47, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.477, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.484, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.491, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.498, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.4, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.407, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.414, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.421, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.428, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.435, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.442, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.449, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.456, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.463, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.47, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.477, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.484, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.491, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.498, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.4, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.407, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.414, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.421, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.428, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.435, lagTurns: 5, nodeId: 'lab_transfer_17' },
+];
+
+
+/** Commercialization stack graph shard 066 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_066: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.477, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.484, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.491, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.498, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.505, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.512, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.519, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.526, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.533, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.435, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.442, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.449, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.456, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.463, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.47, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.477, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.484, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.491, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.498, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.505, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.512, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.519, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.526, lagTurns: 6, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.533, lagTurns: 7, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.435, lagTurns: 5, nodeId: 'lab_transfer_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.442, lagTurns: 6, nodeId: 'lab_transfer_18' },
+];
+
+
+/** Commercialization stack graph shard 067 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_067: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.484, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.491, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.498, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.505, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.512, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.519, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.526, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.533, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.54, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.547, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.554, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.561, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.568, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.47, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.477, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.484, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.491, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.498, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.505, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.512, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.519, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.526, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.533, lagTurns: 7, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.54, lagTurns: 8, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.547, lagTurns: 6, nodeId: 'lab_transfer_19' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.554, lagTurns: 7, nodeId: 'lab_transfer_19' },
+];
+
+
+/** Commercialization stack graph shard 068 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_068: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.596, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.603, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.505, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.512, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.519, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.526, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.533, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.54, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.547, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.554, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.561, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.568, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.575, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.582, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.589, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.596, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.603, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.505, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.512, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.519, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.526, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.533, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.54, lagTurns: 8, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.547, lagTurns: 9, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.554, lagTurns: 7, nodeId: 'lab_transfer_20' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.561, lagTurns: 8, nodeId: 'lab_transfer_20' },
+];
+
+
+/** Commercialization stack graph shard 069 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_069: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.603, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.61, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.617, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.624, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.631, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.638, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.54, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.547, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.554, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.561, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.568, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.575, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.582, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.589, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.596, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.603, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.61, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.617, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.624, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.631, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.638, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.54, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.547, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.554, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.561, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.568, lagTurns: 9, nodeId: 'lab_transfer_21' },
+];
+
+
+/** Commercialization stack graph shard 070 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_070: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.61, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.617, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.624, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.631, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.638, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.645, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.652, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.659, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.666, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.673, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.575, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.582, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.589, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.596, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.603, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.61, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.617, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.624, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.631, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.638, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.645, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.652, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.659, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.666, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.673, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.575, lagTurns: 10, nodeId: 'lab_transfer_22' },
+];
+
+
+/** Commercialization stack graph shard 071 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_071: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.617, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.624, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.631, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.638, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.645, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.652, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.659, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.666, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.673, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.68, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.687, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.694, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.701, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.708, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.61, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.617, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.624, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.631, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.638, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.645, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.652, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.659, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.666, lagTurns: 11, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.673, lagTurns: 12, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.68, lagTurns: 10, nodeId: 'lab_transfer_23' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.687, lagTurns: 11, nodeId: 'lab_transfer_23' },
+];
+
+
+/** Commercialization stack graph shard 072 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_072: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'water', toSystem: 'food', weight: 0.729, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.736, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.743, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.645, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.652, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.659, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.666, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.673, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.68, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.687, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.694, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.701, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.708, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.715, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.722, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.729, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.736, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.743, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.645, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.652, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.659, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.666, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.673, lagTurns: 4, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.68, lagTurns: 5, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.687, lagTurns: 3, nodeId: 'lab_transfer_00' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.694, lagTurns: 4, nodeId: 'lab_transfer_00' },
+];
+
+
+/** Commercialization stack graph shard 073 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_073: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.736, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.743, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.75, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.757, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.764, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.771, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.778, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.68, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.687, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.694, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.701, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.708, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.715, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.722, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.729, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.736, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.743, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.75, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.757, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.764, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.771, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.778, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.68, lagTurns: 5, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.687, lagTurns: 6, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.694, lagTurns: 4, nodeId: 'lab_transfer_01' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.701, lagTurns: 5, nodeId: 'lab_transfer_01' },
+];
+
+
+/** Commercialization stack graph shard 074 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_074: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.743, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.75, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.757, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.764, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.771, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.778, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.785, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.792, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.799, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.806, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.813, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.715, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.722, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.729, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.736, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.743, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.75, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.757, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.764, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.771, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.778, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.785, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.792, lagTurns: 6, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.799, lagTurns: 7, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.806, lagTurns: 5, nodeId: 'lab_transfer_02' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.813, lagTurns: 6, nodeId: 'lab_transfer_02' },
+];
+
+
+/** Commercialization stack graph shard 075 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_075: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.75, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.757, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.764, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.771, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.778, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.785, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.792, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.799, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.806, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.813, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.82, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.827, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.834, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.841, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.848, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.75, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.757, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.764, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.771, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.778, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.785, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.792, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.799, lagTurns: 7, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.806, lagTurns: 8, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.813, lagTurns: 6, nodeId: 'lab_transfer_03' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.82, lagTurns: 7, nodeId: 'lab_transfer_03' },
+];
+
+
+/** Commercialization stack graph shard 076 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_076: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.197, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.204, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.211, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.218, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.12, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.127, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.134, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.141, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.148, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.155, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.162, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.169, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.176, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.183, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.19, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.197, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.204, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.211, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.218, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.12, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.127, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.134, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.141, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.148, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.155, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.162, lagTurns: 8, nodeId: 'lab_transfer_04' },
+];
+
+
+/** Commercialization stack graph shard 077 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_077: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.204, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.211, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.218, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.225, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.232, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.239, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.246, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.253, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.155, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.162, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.169, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.176, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.183, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.19, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.197, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.204, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.211, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.218, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.225, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.232, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.239, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.246, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.253, lagTurns: 9, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.155, lagTurns: 10, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.162, lagTurns: 8, nodeId: 'lab_transfer_05' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.169, lagTurns: 9, nodeId: 'lab_transfer_05' },
+];
+
+
+/** Commercialization stack graph shard 078 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_078: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.211, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.218, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.225, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.232, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.239, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.246, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.253, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.26, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.267, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.274, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.281, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.288, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.19, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.197, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.204, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.211, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.218, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.225, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.232, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.239, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.246, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.253, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.26, lagTurns: 10, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.267, lagTurns: 11, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.274, lagTurns: 9, nodeId: 'lab_transfer_06' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.281, lagTurns: 10, nodeId: 'lab_transfer_06' },
+];
+
+
+/** Commercialization stack graph shard 079 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_079: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.323, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.225, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.232, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.239, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.246, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.253, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.26, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.267, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.274, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.281, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.288, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.295, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.302, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.309, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.316, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.323, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.225, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.232, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.239, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.246, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.253, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.26, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.267, lagTurns: 11, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.274, lagTurns: 12, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.281, lagTurns: 10, nodeId: 'lab_transfer_07' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.288, lagTurns: 11, nodeId: 'lab_transfer_07' },
+];
+
+
+/** Commercialization stack graph shard 080 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_080: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.33, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.337, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.344, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.351, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.358, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.26, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.267, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.274, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.281, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.288, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.295, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.302, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.309, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.316, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.323, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.33, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.337, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.344, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.351, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.358, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.26, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.267, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.274, lagTurns: 4, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.281, lagTurns: 5, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.288, lagTurns: 3, nodeId: 'lab_transfer_08' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.295, lagTurns: 4, nodeId: 'lab_transfer_08' },
+];
+
+
+/** Commercialization stack graph shard 081 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_081: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.337, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.344, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.351, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.358, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.365, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.372, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.379, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.386, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.393, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.295, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.302, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.309, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.316, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.323, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.33, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.337, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.344, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.351, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.358, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.365, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.372, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.379, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.386, lagTurns: 5, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.393, lagTurns: 6, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.295, lagTurns: 4, nodeId: 'lab_transfer_09' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.302, lagTurns: 5, nodeId: 'lab_transfer_09' },
+];
+
+
+/** Commercialization stack graph shard 082 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_082: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'water', toSystem: 'food', weight: 0.344, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.351, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.358, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.365, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.372, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.379, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.386, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.393, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.4, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.407, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.414, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.421, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.428, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.33, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.337, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.344, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.351, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.358, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.365, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.372, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.379, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.386, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.393, lagTurns: 6, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.4, lagTurns: 7, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.407, lagTurns: 5, nodeId: 'lab_transfer_10' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.414, lagTurns: 6, nodeId: 'lab_transfer_10' },
+];
+
+
+/** Commercialization stack graph shard 083 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_083: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.456, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.463, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.365, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.372, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.379, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.386, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.393, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.4, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.407, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.414, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.421, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.428, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.435, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.442, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.449, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.456, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.463, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.365, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.372, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.379, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.386, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.393, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.4, lagTurns: 7, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.407, lagTurns: 8, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.414, lagTurns: 6, nodeId: 'lab_transfer_11' },
+  { fromSystem: 'digital', toSystem: 'industrial', weight: 0.421, lagTurns: 7, nodeId: 'lab_transfer_11' },
+];
+
+
+/** Commercialization stack graph shard 084 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_084: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.463, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.47, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.477, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.484, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.491, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.498, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.4, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.407, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.414, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.421, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.428, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.435, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.442, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.449, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.456, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.463, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.47, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.477, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.484, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.491, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.498, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.4, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.407, lagTurns: 8, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.414, lagTurns: 9, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.421, lagTurns: 7, nodeId: 'lab_transfer_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.428, lagTurns: 8, nodeId: 'lab_transfer_12' },
+];
+
+
+/** Commercialization stack graph shard 085 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_085: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.47, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.477, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.484, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.491, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.498, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.505, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.512, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.519, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.526, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.533, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.435, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.442, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.449, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.456, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.463, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.47, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.477, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.484, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.491, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.498, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.505, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.512, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.519, lagTurns: 9, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.526, lagTurns: 10, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.533, lagTurns: 8, nodeId: 'lab_transfer_13' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.435, lagTurns: 9, nodeId: 'lab_transfer_13' },
+];
+
+
+/** Commercialization stack graph shard 086 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_086: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.477, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.484, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.491, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.498, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.505, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.512, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.519, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.526, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.533, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.54, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.547, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.554, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.561, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.568, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.47, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.477, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.484, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.491, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.498, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.505, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.512, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.519, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.526, lagTurns: 10, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.533, lagTurns: 11, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.54, lagTurns: 9, nodeId: 'lab_transfer_14' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.547, lagTurns: 10, nodeId: 'lab_transfer_14' },
+];
+
+
+/** Commercialization stack graph shard 087 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_087: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.589, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.596, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.603, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.505, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.512, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.519, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.526, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.533, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.54, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.547, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.554, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.561, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.568, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.575, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.582, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.589, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.596, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.603, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.505, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.512, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.519, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.526, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.533, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.54, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.547, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.554, lagTurns: 11, nodeId: 'lab_transfer_15' },
+];
+
+
+/** Commercialization stack graph shard 088 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_088: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.596, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.603, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.61, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.617, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.624, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.631, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.638, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.54, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.547, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.554, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.561, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.568, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.575, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.582, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.589, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.596, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.603, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.61, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.617, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.624, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.631, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.638, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.54, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.547, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.554, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.561, lagTurns: 4, nodeId: 'lab_transfer_16' },
+];
+
+
+/** Commercialization stack graph shard 089 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_089: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.603, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.61, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.617, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.624, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.631, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.638, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.645, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.652, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.659, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.666, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.673, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.575, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.582, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.589, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.596, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.603, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.61, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.617, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.624, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.631, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.638, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.645, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.652, lagTurns: 5, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.659, lagTurns: 6, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.666, lagTurns: 4, nodeId: 'lab_transfer_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.673, lagTurns: 5, nodeId: 'lab_transfer_17' },
+];
+
+/** Flattened commercializationStack graph (research pipeline coupling). */
+
+export const V1020_RPIPE_GENERATED_COMMERCIALIZATION_STACK_EDGES: readonly V1020RpipeGrantStackEdge[] = [
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_000,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_001,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_002,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_003,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_004,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_005,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_006,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_007,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_008,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_009,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_010,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_011,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_012,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_013,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_014,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_015,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_016,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_017,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_018,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_019,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_020,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_021,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_022,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_023,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_024,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_025,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_026,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_027,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_028,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_029,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_030,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_031,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_032,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_033,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_034,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_035,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_036,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_037,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_038,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_039,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_040,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_041,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_042,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_043,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_044,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_045,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_046,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_047,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_048,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_049,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_050,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_051,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_052,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_053,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_054,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_055,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_056,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_057,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_058,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_059,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_060,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_061,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_062,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_063,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_064,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_065,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_066,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_067,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_068,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_069,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_070,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_071,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_072,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_073,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_074,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_075,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_076,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_077,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_078,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_079,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_080,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_081,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_082,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_083,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_084,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_085,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_086,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_087,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_088,
+  ...V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_089,
+];
+
+/** Generated registry — regenerate via scripts/generate.py */
+
+export const V1020_RPIPE_ALL_PIPELINE_SCENARIO_IDS: readonly string[] = [
+  V1020_RPIPE_PIPELINE_SCENARIO_000_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_001_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_002_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_003_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_004_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_005_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_006_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_007_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_008_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_009_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_010_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_011_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_012_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_013_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_014_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_015_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_016_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_017_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_018_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_019_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_020_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_021_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_022_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_023_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_024_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_025_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_026_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_027_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_028_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_029_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_030_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_031_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_032_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_033_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_034_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_035_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_036_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_037_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_038_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_039_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_040_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_041_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_042_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_043_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_044_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_045_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_046_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_047_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_048_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_049_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_050_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_051_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_052_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_053_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_054_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_055_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_056_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_057_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_058_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_059_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_060_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_061_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_062_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_063_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_064_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_065_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_066_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_067_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_068_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_069_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_070_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_071_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_072_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_073_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_074_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_075_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_076_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_077_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_078_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_079_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_080_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_081_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_082_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_083_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_084_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_085_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_086_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_087_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_088_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_089_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_090_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_091_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_092_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_093_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_094_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_095_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_096_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_097_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_098_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_099_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_100_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_101_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_102_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_103_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_104_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_105_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_106_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_107_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_108_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_109_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_110_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_111_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_112_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_113_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_114_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_115_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_116_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_117_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_118_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_119_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_120_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_121_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_122_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_123_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_124_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_125_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_126_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_127_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_128_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_129_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_130_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_131_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_132_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_133_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_134_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_135_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_136_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_137_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_138_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_139_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_140_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_141_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_142_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_143_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_144_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_145_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_146_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_147_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_148_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_149_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_150_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_151_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_152_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_153_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_154_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_155_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_156_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_157_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_158_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_159_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_160_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_161_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_162_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_163_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_164_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_165_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_166_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_167_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_168_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_169_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_170_META.id,
+  V1020_RPIPE_PIPELINE_SCENARIO_171_META.id,
+];
+
+const V1020_RPIPE_SNAPSHOT_BY_ID: Record<
+  string,
+  (turn: number) => V1020RpipeTransferSnapshot
+> = {
+  [V1020_RPIPE_PIPELINE_SCENARIO_000_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_000_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_001_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_001_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_002_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_002_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_003_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_003_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_004_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_004_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_005_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_005_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_006_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_006_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_007_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_007_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_008_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_008_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_009_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_009_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_010_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_010_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_011_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_011_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_012_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_012_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_013_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_013_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_014_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_014_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_015_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_015_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_016_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_016_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_017_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_017_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_018_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_018_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_019_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_019_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_020_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_020_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_021_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_021_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_022_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_022_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_023_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_023_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_024_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_024_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_025_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_025_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_026_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_026_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_027_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_027_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_028_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_028_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_029_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_029_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_030_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_030_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_031_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_031_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_032_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_032_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_033_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_033_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_034_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_034_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_035_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_035_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_036_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_036_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_037_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_037_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_038_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_038_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_039_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_039_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_040_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_040_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_041_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_041_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_042_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_042_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_043_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_043_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_044_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_044_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_045_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_045_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_046_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_046_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_047_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_047_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_048_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_048_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_049_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_049_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_050_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_050_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_051_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_051_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_052_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_052_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_053_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_053_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_054_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_054_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_055_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_055_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_056_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_056_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_057_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_057_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_058_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_058_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_059_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_059_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_060_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_060_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_061_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_061_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_062_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_062_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_063_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_063_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_064_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_064_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_065_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_065_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_066_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_066_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_067_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_067_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_068_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_068_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_069_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_069_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_070_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_070_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_071_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_071_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_072_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_072_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_073_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_073_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_074_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_074_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_075_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_075_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_076_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_076_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_077_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_077_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_078_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_078_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_079_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_079_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_080_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_080_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_081_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_081_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_082_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_082_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_083_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_083_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_084_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_084_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_085_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_085_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_086_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_086_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_087_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_087_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_088_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_088_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_089_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_089_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_090_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_090_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_091_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_091_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_092_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_092_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_093_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_093_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_094_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_094_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_095_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_095_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_096_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_096_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_097_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_097_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_098_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_098_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_099_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_099_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_100_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_100_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_101_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_101_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_102_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_102_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_103_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_103_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_104_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_104_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_105_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_105_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_106_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_106_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_107_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_107_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_108_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_108_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_109_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_109_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_110_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_110_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_111_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_111_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_112_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_112_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_113_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_113_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_114_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_114_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_115_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_115_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_116_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_116_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_117_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_117_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_118_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_118_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_119_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_119_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_120_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_120_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_121_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_121_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_122_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_122_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_123_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_123_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_124_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_124_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_125_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_125_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_126_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_126_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_127_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_127_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_128_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_128_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_129_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_129_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_130_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_130_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_131_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_131_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_132_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_132_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_133_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_133_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_134_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_134_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_135_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_135_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_136_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_136_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_137_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_137_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_138_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_138_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_139_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_139_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_140_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_140_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_141_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_141_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_142_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_142_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_143_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_143_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_144_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_144_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_145_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_145_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_146_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_146_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_147_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_147_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_148_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_148_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_149_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_149_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_150_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_150_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_151_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_151_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_152_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_152_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_153_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_153_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_154_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_154_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_155_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_155_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_156_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_156_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_157_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_157_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_158_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_158_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_159_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_159_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_160_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_160_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_161_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_161_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_162_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_162_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_163_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_163_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_164_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_164_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_165_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_165_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_166_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_166_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_167_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_167_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_168_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_168_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_169_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_169_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_170_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_170_snapshot,
+  [V1020_RPIPE_PIPELINE_SCENARIO_171_META.id]: V1020_RPIPE_PIPELINE_SCENARIO_171_snapshot,
+};
+
+export function V1020_RPIPE_listActivePipelineScenarioIds(_turn: number): string[] {
+  const stride = 26;
+  const start = (_turn * 5) % Math.max(1, V1020_RPIPE_ALL_PIPELINE_SCENARIO_IDS.length - stride);
+  return V1020_RPIPE_ALL_PIPELINE_SCENARIO_IDS.slice(start, start + stride);
+}
+
+export function V1020_RPIPE_evaluatePipelineBatch(
+  turn: number,
+  scenarioIds: string[],
+): {
+  snapshots: V1020RpipeTransferSnapshot[];
+  meanSeverity: number;
+  meanCompliance: number;
+  byRegion: Partial<Record<V1020RpipeRegionId, V1020RpipeTransferSnapshot>>;
+} {
+  const ids = scenarioIds.length ? scenarioIds : V1020_RPIPE_listActivePipelineScenarioIds(turn);
+  const snaps: V1020RpipeTransferSnapshot[] = [];
+  for (const id of ids) {
+    const fn = V1020_RPIPE_SNAPSHOT_BY_ID[id];
+    if (fn) snaps.push(fn(turn));
+  }
+  const meanSeverity = snaps.reduce((a, s) => a + s.severityIndex, 0) / Math.max(1, snaps.length);
+  const meanCompliance = snaps.reduce((a, s) => a + s.complianceScore, 0) / Math.max(1, snaps.length);
+  const byRegion: Partial<Record<V1020RpipeRegionId, V1020RpipeTransferSnapshot>> = {
+    NSW: snaps.find((s) => s.regionId === 'NSW'),
+    VIC: snaps.find((s) => s.regionId === 'VIC'),
+    QLD: snaps.find((s) => s.regionId === 'QLD'),
+    WA: snaps.find((s) => s.regionId === 'WA'),
+    SA: snaps.find((s) => s.regionId === 'SA'),
+    TAS: snaps.find((s) => s.regionId === 'TAS'),
+    NT: snaps.find((s) => s.regionId === 'NT'),
+    ACT: snaps.find((s) => s.regionId === 'ACT'),
+  };
+  return { snapshots: snaps, meanSeverity, meanCompliance, byRegion };
+}
+
+export function V1020_RPIPE_runPipelineScenarioRegressionSweep(turn: number): number {
+  let ok = 0;
+  for (const id of V1020_RPIPE_ALL_PIPELINE_SCENARIO_IDS) {
+    const fn = V1020_RPIPE_SNAPSHOT_BY_ID[id];
+    if (fn && fn(turn).complianceScore >= 0) ok += 1;
+  }
+  return ok;
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_00_META = {
+  id: 'lab_transfer_00',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  anchorSystem: 'freight' as V1020RpipeSystemDomain,
+  defaultBand: 'latent' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_00_STEPS = [
+  { step: 0, bufferDays: 0.28, rerouteCost: 0 },
+  { step: 1, bufferDays: 0.29, rerouteCost: 1 },
+  { step: 2, bufferDays: 0.3, rerouteCost: 2 },
+  { step: 3, bufferDays: 0.31, rerouteCost: 3 },
+  { step: 4, bufferDays: 0.32, rerouteCost: 4 },
+  { step: 5, bufferDays: 0.33, rerouteCost: 5 },
+  { step: 6, bufferDays: 0.34, rerouteCost: 6 },
+  { step: 7, bufferDays: 0.35, rerouteCost: 7 },
+  { step: 8, bufferDays: 0.36, rerouteCost: 8 },
+  { step: 9, bufferDays: 0.37, rerouteCost: 9 },
+  { step: 10, bufferDays: 0.38, rerouteCost: 10 },
+  { step: 11, bufferDays: 0.39, rerouteCost: 0 },
+  { step: 12, bufferDays: 0.4, rerouteCost: 1 },
+  { step: 13, bufferDays: 0.41, rerouteCost: 2 },
+  { step: 14, bufferDays: 0.42, rerouteCost: 3 },
+  { step: 15, bufferDays: 0.43, rerouteCost: 4 },
+  { step: 16, bufferDays: 0.44, rerouteCost: 5 },
+  { step: 17, bufferDays: 0.45, rerouteCost: 6 },
+  { step: 18, bufferDays: 0.46, rerouteCost: 7 },
+  { step: 19, bufferDays: 0.47, rerouteCost: 8 },
+  { step: 20, bufferDays: 0.48, rerouteCost: 9 },
+  { step: 21, bufferDays: 0.49, rerouteCost: 10 },
+  { step: 22, bufferDays: 0.5, rerouteCost: 0 },
+  { step: 23, bufferDays: 0.51, rerouteCost: 1 },
+  { step: 24, bufferDays: 0.52, rerouteCost: 2 },
+  { step: 25, bufferDays: 0.53, rerouteCost: 3 },
+  { step: 26, bufferDays: 0.54, rerouteCost: 4 },
+  { step: 27, bufferDays: 0.55, rerouteCost: 5 },
+  { step: 28, bufferDays: 0.56, rerouteCost: 6 },
+  { step: 29, bufferDays: 0.57, rerouteCost: 7 },
+  { step: 30, bufferDays: 0.58, rerouteCost: 8 },
+  { step: 31, bufferDays: 0.59, rerouteCost: 9 },
+  { step: 32, bufferDays: 0.6, rerouteCost: 10 },
+  { step: 33, bufferDays: 0.61, rerouteCost: 0 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_00_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_00_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_00_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_00_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_00_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_00_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_01_META = {
+  id: 'lab_transfer_01',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  anchorSystem: 'energy' as V1020RpipeSystemDomain,
+  defaultBand: 'emerging' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_01_STEPS = [
+  { step: 0, bufferDays: 0.45, rerouteCost: 1 },
+  { step: 1, bufferDays: 0.46, rerouteCost: 2 },
+  { step: 2, bufferDays: 0.47, rerouteCost: 3 },
+  { step: 3, bufferDays: 0.48, rerouteCost: 4 },
+  { step: 4, bufferDays: 0.49, rerouteCost: 5 },
+  { step: 5, bufferDays: 0.5, rerouteCost: 6 },
+  { step: 6, bufferDays: 0.51, rerouteCost: 7 },
+  { step: 7, bufferDays: 0.52, rerouteCost: 8 },
+  { step: 8, bufferDays: 0.53, rerouteCost: 9 },
+  { step: 9, bufferDays: 0.54, rerouteCost: 10 },
+  { step: 10, bufferDays: 0.55, rerouteCost: 0 },
+  { step: 11, bufferDays: 0.56, rerouteCost: 1 },
+  { step: 12, bufferDays: 0.57, rerouteCost: 2 },
+  { step: 13, bufferDays: 0.58, rerouteCost: 3 },
+  { step: 14, bufferDays: 0.59, rerouteCost: 4 },
+  { step: 15, bufferDays: 0.6, rerouteCost: 5 },
+  { step: 16, bufferDays: 0.61, rerouteCost: 6 },
+  { step: 17, bufferDays: 0.62, rerouteCost: 7 },
+  { step: 18, bufferDays: 0.63, rerouteCost: 8 },
+  { step: 19, bufferDays: 0.64, rerouteCost: 9 },
+  { step: 20, bufferDays: 0.65, rerouteCost: 10 },
+  { step: 21, bufferDays: 0.66, rerouteCost: 0 },
+  { step: 22, bufferDays: 0.67, rerouteCost: 1 },
+  { step: 23, bufferDays: 0.68, rerouteCost: 2 },
+  { step: 24, bufferDays: 0.69, rerouteCost: 3 },
+  { step: 25, bufferDays: 0.7, rerouteCost: 4 },
+  { step: 26, bufferDays: 0.71, rerouteCost: 5 },
+  { step: 27, bufferDays: 0.72, rerouteCost: 6 },
+  { step: 28, bufferDays: 0.28, rerouteCost: 7 },
+  { step: 29, bufferDays: 0.29, rerouteCost: 8 },
+  { step: 30, bufferDays: 0.3, rerouteCost: 9 },
+  { step: 31, bufferDays: 0.31, rerouteCost: 10 },
+  { step: 32, bufferDays: 0.32, rerouteCost: 0 },
+  { step: 33, bufferDays: 0.33, rerouteCost: 1 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_01_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_01_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_01_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_01_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_01_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_01_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_02_META = {
+  id: 'lab_transfer_02',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  anchorSystem: 'water' as V1020RpipeSystemDomain,
+  defaultBand: 'active' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_02_STEPS = [
+  { step: 0, bufferDays: 0.62, rerouteCost: 2 },
+  { step: 1, bufferDays: 0.63, rerouteCost: 3 },
+  { step: 2, bufferDays: 0.64, rerouteCost: 4 },
+  { step: 3, bufferDays: 0.65, rerouteCost: 5 },
+  { step: 4, bufferDays: 0.66, rerouteCost: 6 },
+  { step: 5, bufferDays: 0.67, rerouteCost: 7 },
+  { step: 6, bufferDays: 0.68, rerouteCost: 8 },
+  { step: 7, bufferDays: 0.69, rerouteCost: 9 },
+  { step: 8, bufferDays: 0.7, rerouteCost: 10 },
+  { step: 9, bufferDays: 0.71, rerouteCost: 0 },
+  { step: 10, bufferDays: 0.72, rerouteCost: 1 },
+  { step: 11, bufferDays: 0.28, rerouteCost: 2 },
+  { step: 12, bufferDays: 0.29, rerouteCost: 3 },
+  { step: 13, bufferDays: 0.3, rerouteCost: 4 },
+  { step: 14, bufferDays: 0.31, rerouteCost: 5 },
+  { step: 15, bufferDays: 0.32, rerouteCost: 6 },
+  { step: 16, bufferDays: 0.33, rerouteCost: 7 },
+  { step: 17, bufferDays: 0.34, rerouteCost: 8 },
+  { step: 18, bufferDays: 0.35, rerouteCost: 9 },
+  { step: 19, bufferDays: 0.36, rerouteCost: 10 },
+  { step: 20, bufferDays: 0.37, rerouteCost: 0 },
+  { step: 21, bufferDays: 0.38, rerouteCost: 1 },
+  { step: 22, bufferDays: 0.39, rerouteCost: 2 },
+  { step: 23, bufferDays: 0.4, rerouteCost: 3 },
+  { step: 24, bufferDays: 0.41, rerouteCost: 4 },
+  { step: 25, bufferDays: 0.42, rerouteCost: 5 },
+  { step: 26, bufferDays: 0.43, rerouteCost: 6 },
+  { step: 27, bufferDays: 0.44, rerouteCost: 7 },
+  { step: 28, bufferDays: 0.45, rerouteCost: 8 },
+  { step: 29, bufferDays: 0.46, rerouteCost: 9 },
+  { step: 30, bufferDays: 0.47, rerouteCost: 10 },
+  { step: 31, bufferDays: 0.48, rerouteCost: 0 },
+  { step: 32, bufferDays: 0.49, rerouteCost: 1 },
+  { step: 33, bufferDays: 0.5, rerouteCost: 2 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_02_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_02_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_02_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_02_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_02_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_02_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_03_META = {
+  id: 'lab_transfer_03',
+  regionId: 'WA' as V1020RpipeRegionId,
+  anchorSystem: 'digital' as V1020RpipeSystemDomain,
+  defaultBand: 'critical' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_03_STEPS = [
+  { step: 0, bufferDays: 0.34, rerouteCost: 3 },
+  { step: 1, bufferDays: 0.35, rerouteCost: 4 },
+  { step: 2, bufferDays: 0.36, rerouteCost: 5 },
+  { step: 3, bufferDays: 0.37, rerouteCost: 6 },
+  { step: 4, bufferDays: 0.38, rerouteCost: 7 },
+  { step: 5, bufferDays: 0.39, rerouteCost: 8 },
+  { step: 6, bufferDays: 0.4, rerouteCost: 9 },
+  { step: 7, bufferDays: 0.41, rerouteCost: 10 },
+  { step: 8, bufferDays: 0.42, rerouteCost: 0 },
+  { step: 9, bufferDays: 0.43, rerouteCost: 1 },
+  { step: 10, bufferDays: 0.44, rerouteCost: 2 },
+  { step: 11, bufferDays: 0.45, rerouteCost: 3 },
+  { step: 12, bufferDays: 0.46, rerouteCost: 4 },
+  { step: 13, bufferDays: 0.47, rerouteCost: 5 },
+  { step: 14, bufferDays: 0.48, rerouteCost: 6 },
+  { step: 15, bufferDays: 0.49, rerouteCost: 7 },
+  { step: 16, bufferDays: 0.5, rerouteCost: 8 },
+  { step: 17, bufferDays: 0.51, rerouteCost: 9 },
+  { step: 18, bufferDays: 0.52, rerouteCost: 10 },
+  { step: 19, bufferDays: 0.53, rerouteCost: 0 },
+  { step: 20, bufferDays: 0.54, rerouteCost: 1 },
+  { step: 21, bufferDays: 0.55, rerouteCost: 2 },
+  { step: 22, bufferDays: 0.56, rerouteCost: 3 },
+  { step: 23, bufferDays: 0.57, rerouteCost: 4 },
+  { step: 24, bufferDays: 0.58, rerouteCost: 5 },
+  { step: 25, bufferDays: 0.59, rerouteCost: 6 },
+  { step: 26, bufferDays: 0.6, rerouteCost: 7 },
+  { step: 27, bufferDays: 0.61, rerouteCost: 8 },
+  { step: 28, bufferDays: 0.62, rerouteCost: 9 },
+  { step: 29, bufferDays: 0.63, rerouteCost: 10 },
+  { step: 30, bufferDays: 0.64, rerouteCost: 0 },
+  { step: 31, bufferDays: 0.65, rerouteCost: 1 },
+  { step: 32, bufferDays: 0.66, rerouteCost: 2 },
+  { step: 33, bufferDays: 0.67, rerouteCost: 3 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_03_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_03_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_03_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_03_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_03_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_03_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_04_META = {
+  id: 'lab_transfer_04',
+  regionId: 'SA' as V1020RpipeRegionId,
+  anchorSystem: 'trade' as V1020RpipeSystemDomain,
+  defaultBand: 'recovering' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_04_STEPS = [
+  { step: 0, bufferDays: 0.51, rerouteCost: 4 },
+  { step: 1, bufferDays: 0.52, rerouteCost: 5 },
+  { step: 2, bufferDays: 0.53, rerouteCost: 6 },
+  { step: 3, bufferDays: 0.54, rerouteCost: 7 },
+  { step: 4, bufferDays: 0.55, rerouteCost: 8 },
+  { step: 5, bufferDays: 0.56, rerouteCost: 9 },
+  { step: 6, bufferDays: 0.57, rerouteCost: 10 },
+  { step: 7, bufferDays: 0.58, rerouteCost: 0 },
+  { step: 8, bufferDays: 0.59, rerouteCost: 1 },
+  { step: 9, bufferDays: 0.6, rerouteCost: 2 },
+  { step: 10, bufferDays: 0.61, rerouteCost: 3 },
+  { step: 11, bufferDays: 0.62, rerouteCost: 4 },
+  { step: 12, bufferDays: 0.63, rerouteCost: 5 },
+  { step: 13, bufferDays: 0.64, rerouteCost: 6 },
+  { step: 14, bufferDays: 0.65, rerouteCost: 7 },
+  { step: 15, bufferDays: 0.66, rerouteCost: 8 },
+  { step: 16, bufferDays: 0.67, rerouteCost: 9 },
+  { step: 17, bufferDays: 0.68, rerouteCost: 10 },
+  { step: 18, bufferDays: 0.69, rerouteCost: 0 },
+  { step: 19, bufferDays: 0.7, rerouteCost: 1 },
+  { step: 20, bufferDays: 0.71, rerouteCost: 2 },
+  { step: 21, bufferDays: 0.72, rerouteCost: 3 },
+  { step: 22, bufferDays: 0.28, rerouteCost: 4 },
+  { step: 23, bufferDays: 0.29, rerouteCost: 5 },
+  { step: 24, bufferDays: 0.3, rerouteCost: 6 },
+  { step: 25, bufferDays: 0.31, rerouteCost: 7 },
+  { step: 26, bufferDays: 0.32, rerouteCost: 8 },
+  { step: 27, bufferDays: 0.33, rerouteCost: 9 },
+  { step: 28, bufferDays: 0.34, rerouteCost: 10 },
+  { step: 29, bufferDays: 0.35, rerouteCost: 0 },
+  { step: 30, bufferDays: 0.36, rerouteCost: 1 },
+  { step: 31, bufferDays: 0.37, rerouteCost: 2 },
+  { step: 32, bufferDays: 0.38, rerouteCost: 3 },
+  { step: 33, bufferDays: 0.39, rerouteCost: 4 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_04_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_04_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_04_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_04_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_04_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_04_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_05_META = {
+  id: 'lab_transfer_05',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  anchorSystem: 'pharma' as V1020RpipeSystemDomain,
+  defaultBand: 'latent' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_05_STEPS = [
+  { step: 0, bufferDays: 0.68, rerouteCost: 5 },
+  { step: 1, bufferDays: 0.69, rerouteCost: 6 },
+  { step: 2, bufferDays: 0.7, rerouteCost: 7 },
+  { step: 3, bufferDays: 0.71, rerouteCost: 8 },
+  { step: 4, bufferDays: 0.72, rerouteCost: 9 },
+  { step: 5, bufferDays: 0.28, rerouteCost: 10 },
+  { step: 6, bufferDays: 0.29, rerouteCost: 0 },
+  { step: 7, bufferDays: 0.3, rerouteCost: 1 },
+  { step: 8, bufferDays: 0.31, rerouteCost: 2 },
+  { step: 9, bufferDays: 0.32, rerouteCost: 3 },
+  { step: 10, bufferDays: 0.33, rerouteCost: 4 },
+  { step: 11, bufferDays: 0.34, rerouteCost: 5 },
+  { step: 12, bufferDays: 0.35, rerouteCost: 6 },
+  { step: 13, bufferDays: 0.36, rerouteCost: 7 },
+  { step: 14, bufferDays: 0.37, rerouteCost: 8 },
+  { step: 15, bufferDays: 0.38, rerouteCost: 9 },
+  { step: 16, bufferDays: 0.39, rerouteCost: 10 },
+  { step: 17, bufferDays: 0.4, rerouteCost: 0 },
+  { step: 18, bufferDays: 0.41, rerouteCost: 1 },
+  { step: 19, bufferDays: 0.42, rerouteCost: 2 },
+  { step: 20, bufferDays: 0.43, rerouteCost: 3 },
+  { step: 21, bufferDays: 0.44, rerouteCost: 4 },
+  { step: 22, bufferDays: 0.45, rerouteCost: 5 },
+  { step: 23, bufferDays: 0.46, rerouteCost: 6 },
+  { step: 24, bufferDays: 0.47, rerouteCost: 7 },
+  { step: 25, bufferDays: 0.48, rerouteCost: 8 },
+  { step: 26, bufferDays: 0.49, rerouteCost: 9 },
+  { step: 27, bufferDays: 0.5, rerouteCost: 10 },
+  { step: 28, bufferDays: 0.51, rerouteCost: 0 },
+  { step: 29, bufferDays: 0.52, rerouteCost: 1 },
+  { step: 30, bufferDays: 0.53, rerouteCost: 2 },
+  { step: 31, bufferDays: 0.54, rerouteCost: 3 },
+  { step: 32, bufferDays: 0.55, rerouteCost: 4 },
+  { step: 33, bufferDays: 0.56, rerouteCost: 5 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_05_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_05_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_05_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_05_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_05_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_05_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_06_META = {
+  id: 'lab_transfer_06',
+  regionId: 'NT' as V1020RpipeRegionId,
+  anchorSystem: 'food' as V1020RpipeSystemDomain,
+  defaultBand: 'emerging' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_06_STEPS = [
+  { step: 0, bufferDays: 0.4, rerouteCost: 6 },
+  { step: 1, bufferDays: 0.41, rerouteCost: 7 },
+  { step: 2, bufferDays: 0.42, rerouteCost: 8 },
+  { step: 3, bufferDays: 0.43, rerouteCost: 9 },
+  { step: 4, bufferDays: 0.44, rerouteCost: 10 },
+  { step: 5, bufferDays: 0.45, rerouteCost: 0 },
+  { step: 6, bufferDays: 0.46, rerouteCost: 1 },
+  { step: 7, bufferDays: 0.47, rerouteCost: 2 },
+  { step: 8, bufferDays: 0.48, rerouteCost: 3 },
+  { step: 9, bufferDays: 0.49, rerouteCost: 4 },
+  { step: 10, bufferDays: 0.5, rerouteCost: 5 },
+  { step: 11, bufferDays: 0.51, rerouteCost: 6 },
+  { step: 12, bufferDays: 0.52, rerouteCost: 7 },
+  { step: 13, bufferDays: 0.53, rerouteCost: 8 },
+  { step: 14, bufferDays: 0.54, rerouteCost: 9 },
+  { step: 15, bufferDays: 0.55, rerouteCost: 10 },
+  { step: 16, bufferDays: 0.56, rerouteCost: 0 },
+  { step: 17, bufferDays: 0.57, rerouteCost: 1 },
+  { step: 18, bufferDays: 0.58, rerouteCost: 2 },
+  { step: 19, bufferDays: 0.59, rerouteCost: 3 },
+  { step: 20, bufferDays: 0.6, rerouteCost: 4 },
+  { step: 21, bufferDays: 0.61, rerouteCost: 5 },
+  { step: 22, bufferDays: 0.62, rerouteCost: 6 },
+  { step: 23, bufferDays: 0.63, rerouteCost: 7 },
+  { step: 24, bufferDays: 0.64, rerouteCost: 8 },
+  { step: 25, bufferDays: 0.65, rerouteCost: 9 },
+  { step: 26, bufferDays: 0.66, rerouteCost: 10 },
+  { step: 27, bufferDays: 0.67, rerouteCost: 0 },
+  { step: 28, bufferDays: 0.68, rerouteCost: 1 },
+  { step: 29, bufferDays: 0.69, rerouteCost: 2 },
+  { step: 30, bufferDays: 0.7, rerouteCost: 3 },
+  { step: 31, bufferDays: 0.71, rerouteCost: 4 },
+  { step: 32, bufferDays: 0.72, rerouteCost: 5 },
+  { step: 33, bufferDays: 0.28, rerouteCost: 6 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_06_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_06_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_06_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_06_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_06_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_06_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_07_META = {
+  id: 'lab_transfer_07',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  anchorSystem: 'industrial' as V1020RpipeSystemDomain,
+  defaultBand: 'active' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_07_STEPS = [
+  { step: 0, bufferDays: 0.57, rerouteCost: 7 },
+  { step: 1, bufferDays: 0.58, rerouteCost: 8 },
+  { step: 2, bufferDays: 0.59, rerouteCost: 9 },
+  { step: 3, bufferDays: 0.6, rerouteCost: 10 },
+  { step: 4, bufferDays: 0.61, rerouteCost: 0 },
+  { step: 5, bufferDays: 0.62, rerouteCost: 1 },
+  { step: 6, bufferDays: 0.63, rerouteCost: 2 },
+  { step: 7, bufferDays: 0.64, rerouteCost: 3 },
+  { step: 8, bufferDays: 0.65, rerouteCost: 4 },
+  { step: 9, bufferDays: 0.66, rerouteCost: 5 },
+  { step: 10, bufferDays: 0.67, rerouteCost: 6 },
+  { step: 11, bufferDays: 0.68, rerouteCost: 7 },
+  { step: 12, bufferDays: 0.69, rerouteCost: 8 },
+  { step: 13, bufferDays: 0.7, rerouteCost: 9 },
+  { step: 14, bufferDays: 0.71, rerouteCost: 10 },
+  { step: 15, bufferDays: 0.72, rerouteCost: 0 },
+  { step: 16, bufferDays: 0.28, rerouteCost: 1 },
+  { step: 17, bufferDays: 0.29, rerouteCost: 2 },
+  { step: 18, bufferDays: 0.3, rerouteCost: 3 },
+  { step: 19, bufferDays: 0.31, rerouteCost: 4 },
+  { step: 20, bufferDays: 0.32, rerouteCost: 5 },
+  { step: 21, bufferDays: 0.33, rerouteCost: 6 },
+  { step: 22, bufferDays: 0.34, rerouteCost: 7 },
+  { step: 23, bufferDays: 0.35, rerouteCost: 8 },
+  { step: 24, bufferDays: 0.36, rerouteCost: 9 },
+  { step: 25, bufferDays: 0.37, rerouteCost: 10 },
+  { step: 26, bufferDays: 0.38, rerouteCost: 0 },
+  { step: 27, bufferDays: 0.39, rerouteCost: 1 },
+  { step: 28, bufferDays: 0.4, rerouteCost: 2 },
+  { step: 29, bufferDays: 0.41, rerouteCost: 3 },
+  { step: 30, bufferDays: 0.42, rerouteCost: 4 },
+  { step: 31, bufferDays: 0.43, rerouteCost: 5 },
+  { step: 32, bufferDays: 0.44, rerouteCost: 6 },
+  { step: 33, bufferDays: 0.45, rerouteCost: 7 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_07_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_07_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_07_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_07_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_07_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_07_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_08_META = {
+  id: 'lab_transfer_08',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  anchorSystem: 'telecom' as V1020RpipeSystemDomain,
+  defaultBand: 'critical' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_08_STEPS = [
+  { step: 0, bufferDays: 0.29, rerouteCost: 8 },
+  { step: 1, bufferDays: 0.3, rerouteCost: 9 },
+  { step: 2, bufferDays: 0.31, rerouteCost: 10 },
+  { step: 3, bufferDays: 0.32, rerouteCost: 0 },
+  { step: 4, bufferDays: 0.33, rerouteCost: 1 },
+  { step: 5, bufferDays: 0.34, rerouteCost: 2 },
+  { step: 6, bufferDays: 0.35, rerouteCost: 3 },
+  { step: 7, bufferDays: 0.36, rerouteCost: 4 },
+  { step: 8, bufferDays: 0.37, rerouteCost: 5 },
+  { step: 9, bufferDays: 0.38, rerouteCost: 6 },
+  { step: 10, bufferDays: 0.39, rerouteCost: 7 },
+  { step: 11, bufferDays: 0.4, rerouteCost: 8 },
+  { step: 12, bufferDays: 0.41, rerouteCost: 9 },
+  { step: 13, bufferDays: 0.42, rerouteCost: 10 },
+  { step: 14, bufferDays: 0.43, rerouteCost: 0 },
+  { step: 15, bufferDays: 0.44, rerouteCost: 1 },
+  { step: 16, bufferDays: 0.45, rerouteCost: 2 },
+  { step: 17, bufferDays: 0.46, rerouteCost: 3 },
+  { step: 18, bufferDays: 0.47, rerouteCost: 4 },
+  { step: 19, bufferDays: 0.48, rerouteCost: 5 },
+  { step: 20, bufferDays: 0.49, rerouteCost: 6 },
+  { step: 21, bufferDays: 0.5, rerouteCost: 7 },
+  { step: 22, bufferDays: 0.51, rerouteCost: 8 },
+  { step: 23, bufferDays: 0.52, rerouteCost: 9 },
+  { step: 24, bufferDays: 0.53, rerouteCost: 10 },
+  { step: 25, bufferDays: 0.54, rerouteCost: 0 },
+  { step: 26, bufferDays: 0.55, rerouteCost: 1 },
+  { step: 27, bufferDays: 0.56, rerouteCost: 2 },
+  { step: 28, bufferDays: 0.57, rerouteCost: 3 },
+  { step: 29, bufferDays: 0.58, rerouteCost: 4 },
+  { step: 30, bufferDays: 0.59, rerouteCost: 5 },
+  { step: 31, bufferDays: 0.6, rerouteCost: 6 },
+  { step: 32, bufferDays: 0.61, rerouteCost: 7 },
+  { step: 33, bufferDays: 0.62, rerouteCost: 8 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_08_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_08_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_08_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_08_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_08_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_08_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_09_META = {
+  id: 'lab_transfer_09',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  anchorSystem: 'finance' as V1020RpipeSystemDomain,
+  defaultBand: 'recovering' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_09_STEPS = [
+  { step: 0, bufferDays: 0.46, rerouteCost: 9 },
+  { step: 1, bufferDays: 0.47, rerouteCost: 10 },
+  { step: 2, bufferDays: 0.48, rerouteCost: 0 },
+  { step: 3, bufferDays: 0.49, rerouteCost: 1 },
+  { step: 4, bufferDays: 0.5, rerouteCost: 2 },
+  { step: 5, bufferDays: 0.51, rerouteCost: 3 },
+  { step: 6, bufferDays: 0.52, rerouteCost: 4 },
+  { step: 7, bufferDays: 0.53, rerouteCost: 5 },
+  { step: 8, bufferDays: 0.54, rerouteCost: 6 },
+  { step: 9, bufferDays: 0.55, rerouteCost: 7 },
+  { step: 10, bufferDays: 0.56, rerouteCost: 8 },
+  { step: 11, bufferDays: 0.57, rerouteCost: 9 },
+  { step: 12, bufferDays: 0.58, rerouteCost: 10 },
+  { step: 13, bufferDays: 0.59, rerouteCost: 0 },
+  { step: 14, bufferDays: 0.6, rerouteCost: 1 },
+  { step: 15, bufferDays: 0.61, rerouteCost: 2 },
+  { step: 16, bufferDays: 0.62, rerouteCost: 3 },
+  { step: 17, bufferDays: 0.63, rerouteCost: 4 },
+  { step: 18, bufferDays: 0.64, rerouteCost: 5 },
+  { step: 19, bufferDays: 0.65, rerouteCost: 6 },
+  { step: 20, bufferDays: 0.66, rerouteCost: 7 },
+  { step: 21, bufferDays: 0.67, rerouteCost: 8 },
+  { step: 22, bufferDays: 0.68, rerouteCost: 9 },
+  { step: 23, bufferDays: 0.69, rerouteCost: 10 },
+  { step: 24, bufferDays: 0.7, rerouteCost: 0 },
+  { step: 25, bufferDays: 0.71, rerouteCost: 1 },
+  { step: 26, bufferDays: 0.72, rerouteCost: 2 },
+  { step: 27, bufferDays: 0.28, rerouteCost: 3 },
+  { step: 28, bufferDays: 0.29, rerouteCost: 4 },
+  { step: 29, bufferDays: 0.3, rerouteCost: 5 },
+  { step: 30, bufferDays: 0.31, rerouteCost: 6 },
+  { step: 31, bufferDays: 0.32, rerouteCost: 7 },
+  { step: 32, bufferDays: 0.33, rerouteCost: 8 },
+  { step: 33, bufferDays: 0.34, rerouteCost: 9 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_09_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_09_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_09_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_09_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_09_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_09_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_10_META = {
+  id: 'lab_transfer_10',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  anchorSystem: 'freight' as V1020RpipeSystemDomain,
+  defaultBand: 'latent' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_10_STEPS = [
+  { step: 0, bufferDays: 0.63, rerouteCost: 10 },
+  { step: 1, bufferDays: 0.64, rerouteCost: 0 },
+  { step: 2, bufferDays: 0.65, rerouteCost: 1 },
+  { step: 3, bufferDays: 0.66, rerouteCost: 2 },
+  { step: 4, bufferDays: 0.67, rerouteCost: 3 },
+  { step: 5, bufferDays: 0.68, rerouteCost: 4 },
+  { step: 6, bufferDays: 0.69, rerouteCost: 5 },
+  { step: 7, bufferDays: 0.7, rerouteCost: 6 },
+  { step: 8, bufferDays: 0.71, rerouteCost: 7 },
+  { step: 9, bufferDays: 0.72, rerouteCost: 8 },
+  { step: 10, bufferDays: 0.28, rerouteCost: 9 },
+  { step: 11, bufferDays: 0.29, rerouteCost: 10 },
+  { step: 12, bufferDays: 0.3, rerouteCost: 0 },
+  { step: 13, bufferDays: 0.31, rerouteCost: 1 },
+  { step: 14, bufferDays: 0.32, rerouteCost: 2 },
+  { step: 15, bufferDays: 0.33, rerouteCost: 3 },
+  { step: 16, bufferDays: 0.34, rerouteCost: 4 },
+  { step: 17, bufferDays: 0.35, rerouteCost: 5 },
+  { step: 18, bufferDays: 0.36, rerouteCost: 6 },
+  { step: 19, bufferDays: 0.37, rerouteCost: 7 },
+  { step: 20, bufferDays: 0.38, rerouteCost: 8 },
+  { step: 21, bufferDays: 0.39, rerouteCost: 9 },
+  { step: 22, bufferDays: 0.4, rerouteCost: 10 },
+  { step: 23, bufferDays: 0.41, rerouteCost: 0 },
+  { step: 24, bufferDays: 0.42, rerouteCost: 1 },
+  { step: 25, bufferDays: 0.43, rerouteCost: 2 },
+  { step: 26, bufferDays: 0.44, rerouteCost: 3 },
+  { step: 27, bufferDays: 0.45, rerouteCost: 4 },
+  { step: 28, bufferDays: 0.46, rerouteCost: 5 },
+  { step: 29, bufferDays: 0.47, rerouteCost: 6 },
+  { step: 30, bufferDays: 0.48, rerouteCost: 7 },
+  { step: 31, bufferDays: 0.49, rerouteCost: 8 },
+  { step: 32, bufferDays: 0.5, rerouteCost: 9 },
+  { step: 33, bufferDays: 0.51, rerouteCost: 10 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_10_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_10_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_10_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_10_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_10_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_10_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_11_META = {
+  id: 'lab_transfer_11',
+  regionId: 'WA' as V1020RpipeRegionId,
+  anchorSystem: 'energy' as V1020RpipeSystemDomain,
+  defaultBand: 'emerging' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_11_STEPS = [
+  { step: 0, bufferDays: 0.35, rerouteCost: 0 },
+  { step: 1, bufferDays: 0.36, rerouteCost: 1 },
+  { step: 2, bufferDays: 0.37, rerouteCost: 2 },
+  { step: 3, bufferDays: 0.38, rerouteCost: 3 },
+  { step: 4, bufferDays: 0.39, rerouteCost: 4 },
+  { step: 5, bufferDays: 0.4, rerouteCost: 5 },
+  { step: 6, bufferDays: 0.41, rerouteCost: 6 },
+  { step: 7, bufferDays: 0.42, rerouteCost: 7 },
+  { step: 8, bufferDays: 0.43, rerouteCost: 8 },
+  { step: 9, bufferDays: 0.44, rerouteCost: 9 },
+  { step: 10, bufferDays: 0.45, rerouteCost: 10 },
+  { step: 11, bufferDays: 0.46, rerouteCost: 0 },
+  { step: 12, bufferDays: 0.47, rerouteCost: 1 },
+  { step: 13, bufferDays: 0.48, rerouteCost: 2 },
+  { step: 14, bufferDays: 0.49, rerouteCost: 3 },
+  { step: 15, bufferDays: 0.5, rerouteCost: 4 },
+  { step: 16, bufferDays: 0.51, rerouteCost: 5 },
+  { step: 17, bufferDays: 0.52, rerouteCost: 6 },
+  { step: 18, bufferDays: 0.53, rerouteCost: 7 },
+  { step: 19, bufferDays: 0.54, rerouteCost: 8 },
+  { step: 20, bufferDays: 0.55, rerouteCost: 9 },
+  { step: 21, bufferDays: 0.56, rerouteCost: 10 },
+  { step: 22, bufferDays: 0.57, rerouteCost: 0 },
+  { step: 23, bufferDays: 0.58, rerouteCost: 1 },
+  { step: 24, bufferDays: 0.59, rerouteCost: 2 },
+  { step: 25, bufferDays: 0.6, rerouteCost: 3 },
+  { step: 26, bufferDays: 0.61, rerouteCost: 4 },
+  { step: 27, bufferDays: 0.62, rerouteCost: 5 },
+  { step: 28, bufferDays: 0.63, rerouteCost: 6 },
+  { step: 29, bufferDays: 0.64, rerouteCost: 7 },
+  { step: 30, bufferDays: 0.65, rerouteCost: 8 },
+  { step: 31, bufferDays: 0.66, rerouteCost: 9 },
+  { step: 32, bufferDays: 0.67, rerouteCost: 10 },
+  { step: 33, bufferDays: 0.68, rerouteCost: 0 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_11_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_11_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_11_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_11_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_11_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_11_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_12_META = {
+  id: 'lab_transfer_12',
+  regionId: 'SA' as V1020RpipeRegionId,
+  anchorSystem: 'water' as V1020RpipeSystemDomain,
+  defaultBand: 'active' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_12_STEPS = [
+  { step: 0, bufferDays: 0.52, rerouteCost: 1 },
+  { step: 1, bufferDays: 0.53, rerouteCost: 2 },
+  { step: 2, bufferDays: 0.54, rerouteCost: 3 },
+  { step: 3, bufferDays: 0.55, rerouteCost: 4 },
+  { step: 4, bufferDays: 0.56, rerouteCost: 5 },
+  { step: 5, bufferDays: 0.57, rerouteCost: 6 },
+  { step: 6, bufferDays: 0.58, rerouteCost: 7 },
+  { step: 7, bufferDays: 0.59, rerouteCost: 8 },
+  { step: 8, bufferDays: 0.6, rerouteCost: 9 },
+  { step: 9, bufferDays: 0.61, rerouteCost: 10 },
+  { step: 10, bufferDays: 0.62, rerouteCost: 0 },
+  { step: 11, bufferDays: 0.63, rerouteCost: 1 },
+  { step: 12, bufferDays: 0.64, rerouteCost: 2 },
+  { step: 13, bufferDays: 0.65, rerouteCost: 3 },
+  { step: 14, bufferDays: 0.66, rerouteCost: 4 },
+  { step: 15, bufferDays: 0.67, rerouteCost: 5 },
+  { step: 16, bufferDays: 0.68, rerouteCost: 6 },
+  { step: 17, bufferDays: 0.69, rerouteCost: 7 },
+  { step: 18, bufferDays: 0.7, rerouteCost: 8 },
+  { step: 19, bufferDays: 0.71, rerouteCost: 9 },
+  { step: 20, bufferDays: 0.72, rerouteCost: 10 },
+  { step: 21, bufferDays: 0.28, rerouteCost: 0 },
+  { step: 22, bufferDays: 0.29, rerouteCost: 1 },
+  { step: 23, bufferDays: 0.3, rerouteCost: 2 },
+  { step: 24, bufferDays: 0.31, rerouteCost: 3 },
+  { step: 25, bufferDays: 0.32, rerouteCost: 4 },
+  { step: 26, bufferDays: 0.33, rerouteCost: 5 },
+  { step: 27, bufferDays: 0.34, rerouteCost: 6 },
+  { step: 28, bufferDays: 0.35, rerouteCost: 7 },
+  { step: 29, bufferDays: 0.36, rerouteCost: 8 },
+  { step: 30, bufferDays: 0.37, rerouteCost: 9 },
+  { step: 31, bufferDays: 0.38, rerouteCost: 10 },
+  { step: 32, bufferDays: 0.39, rerouteCost: 0 },
+  { step: 33, bufferDays: 0.4, rerouteCost: 1 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_12_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_12_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_12_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_12_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_12_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_12_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_13_META = {
+  id: 'lab_transfer_13',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  anchorSystem: 'digital' as V1020RpipeSystemDomain,
+  defaultBand: 'critical' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_13_STEPS = [
+  { step: 0, bufferDays: 0.69, rerouteCost: 2 },
+  { step: 1, bufferDays: 0.7, rerouteCost: 3 },
+  { step: 2, bufferDays: 0.71, rerouteCost: 4 },
+  { step: 3, bufferDays: 0.72, rerouteCost: 5 },
+  { step: 4, bufferDays: 0.28, rerouteCost: 6 },
+  { step: 5, bufferDays: 0.29, rerouteCost: 7 },
+  { step: 6, bufferDays: 0.3, rerouteCost: 8 },
+  { step: 7, bufferDays: 0.31, rerouteCost: 9 },
+  { step: 8, bufferDays: 0.32, rerouteCost: 10 },
+  { step: 9, bufferDays: 0.33, rerouteCost: 0 },
+  { step: 10, bufferDays: 0.34, rerouteCost: 1 },
+  { step: 11, bufferDays: 0.35, rerouteCost: 2 },
+  { step: 12, bufferDays: 0.36, rerouteCost: 3 },
+  { step: 13, bufferDays: 0.37, rerouteCost: 4 },
+  { step: 14, bufferDays: 0.38, rerouteCost: 5 },
+  { step: 15, bufferDays: 0.39, rerouteCost: 6 },
+  { step: 16, bufferDays: 0.4, rerouteCost: 7 },
+  { step: 17, bufferDays: 0.41, rerouteCost: 8 },
+  { step: 18, bufferDays: 0.42, rerouteCost: 9 },
+  { step: 19, bufferDays: 0.43, rerouteCost: 10 },
+  { step: 20, bufferDays: 0.44, rerouteCost: 0 },
+  { step: 21, bufferDays: 0.45, rerouteCost: 1 },
+  { step: 22, bufferDays: 0.46, rerouteCost: 2 },
+  { step: 23, bufferDays: 0.47, rerouteCost: 3 },
+  { step: 24, bufferDays: 0.48, rerouteCost: 4 },
+  { step: 25, bufferDays: 0.49, rerouteCost: 5 },
+  { step: 26, bufferDays: 0.5, rerouteCost: 6 },
+  { step: 27, bufferDays: 0.51, rerouteCost: 7 },
+  { step: 28, bufferDays: 0.52, rerouteCost: 8 },
+  { step: 29, bufferDays: 0.53, rerouteCost: 9 },
+  { step: 30, bufferDays: 0.54, rerouteCost: 10 },
+  { step: 31, bufferDays: 0.55, rerouteCost: 0 },
+  { step: 32, bufferDays: 0.56, rerouteCost: 1 },
+  { step: 33, bufferDays: 0.57, rerouteCost: 2 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_13_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_13_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_13_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_13_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_13_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_13_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_14_META = {
+  id: 'lab_transfer_14',
+  regionId: 'NT' as V1020RpipeRegionId,
+  anchorSystem: 'trade' as V1020RpipeSystemDomain,
+  defaultBand: 'recovering' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_14_STEPS = [
+  { step: 0, bufferDays: 0.41, rerouteCost: 3 },
+  { step: 1, bufferDays: 0.42, rerouteCost: 4 },
+  { step: 2, bufferDays: 0.43, rerouteCost: 5 },
+  { step: 3, bufferDays: 0.44, rerouteCost: 6 },
+  { step: 4, bufferDays: 0.45, rerouteCost: 7 },
+  { step: 5, bufferDays: 0.46, rerouteCost: 8 },
+  { step: 6, bufferDays: 0.47, rerouteCost: 9 },
+  { step: 7, bufferDays: 0.48, rerouteCost: 10 },
+  { step: 8, bufferDays: 0.49, rerouteCost: 0 },
+  { step: 9, bufferDays: 0.5, rerouteCost: 1 },
+  { step: 10, bufferDays: 0.51, rerouteCost: 2 },
+  { step: 11, bufferDays: 0.52, rerouteCost: 3 },
+  { step: 12, bufferDays: 0.53, rerouteCost: 4 },
+  { step: 13, bufferDays: 0.54, rerouteCost: 5 },
+  { step: 14, bufferDays: 0.55, rerouteCost: 6 },
+  { step: 15, bufferDays: 0.56, rerouteCost: 7 },
+  { step: 16, bufferDays: 0.57, rerouteCost: 8 },
+  { step: 17, bufferDays: 0.58, rerouteCost: 9 },
+  { step: 18, bufferDays: 0.59, rerouteCost: 10 },
+  { step: 19, bufferDays: 0.6, rerouteCost: 0 },
+  { step: 20, bufferDays: 0.61, rerouteCost: 1 },
+  { step: 21, bufferDays: 0.62, rerouteCost: 2 },
+  { step: 22, bufferDays: 0.63, rerouteCost: 3 },
+  { step: 23, bufferDays: 0.64, rerouteCost: 4 },
+  { step: 24, bufferDays: 0.65, rerouteCost: 5 },
+  { step: 25, bufferDays: 0.66, rerouteCost: 6 },
+  { step: 26, bufferDays: 0.67, rerouteCost: 7 },
+  { step: 27, bufferDays: 0.68, rerouteCost: 8 },
+  { step: 28, bufferDays: 0.69, rerouteCost: 9 },
+  { step: 29, bufferDays: 0.7, rerouteCost: 10 },
+  { step: 30, bufferDays: 0.71, rerouteCost: 0 },
+  { step: 31, bufferDays: 0.72, rerouteCost: 1 },
+  { step: 32, bufferDays: 0.28, rerouteCost: 2 },
+  { step: 33, bufferDays: 0.29, rerouteCost: 3 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_14_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_14_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_14_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_14_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_14_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_14_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_15_META = {
+  id: 'lab_transfer_15',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  anchorSystem: 'pharma' as V1020RpipeSystemDomain,
+  defaultBand: 'latent' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_15_STEPS = [
+  { step: 0, bufferDays: 0.58, rerouteCost: 4 },
+  { step: 1, bufferDays: 0.59, rerouteCost: 5 },
+  { step: 2, bufferDays: 0.6, rerouteCost: 6 },
+  { step: 3, bufferDays: 0.61, rerouteCost: 7 },
+  { step: 4, bufferDays: 0.62, rerouteCost: 8 },
+  { step: 5, bufferDays: 0.63, rerouteCost: 9 },
+  { step: 6, bufferDays: 0.64, rerouteCost: 10 },
+  { step: 7, bufferDays: 0.65, rerouteCost: 0 },
+  { step: 8, bufferDays: 0.66, rerouteCost: 1 },
+  { step: 9, bufferDays: 0.67, rerouteCost: 2 },
+  { step: 10, bufferDays: 0.68, rerouteCost: 3 },
+  { step: 11, bufferDays: 0.69, rerouteCost: 4 },
+  { step: 12, bufferDays: 0.7, rerouteCost: 5 },
+  { step: 13, bufferDays: 0.71, rerouteCost: 6 },
+  { step: 14, bufferDays: 0.72, rerouteCost: 7 },
+  { step: 15, bufferDays: 0.28, rerouteCost: 8 },
+  { step: 16, bufferDays: 0.29, rerouteCost: 9 },
+  { step: 17, bufferDays: 0.3, rerouteCost: 10 },
+  { step: 18, bufferDays: 0.31, rerouteCost: 0 },
+  { step: 19, bufferDays: 0.32, rerouteCost: 1 },
+  { step: 20, bufferDays: 0.33, rerouteCost: 2 },
+  { step: 21, bufferDays: 0.34, rerouteCost: 3 },
+  { step: 22, bufferDays: 0.35, rerouteCost: 4 },
+  { step: 23, bufferDays: 0.36, rerouteCost: 5 },
+  { step: 24, bufferDays: 0.37, rerouteCost: 6 },
+  { step: 25, bufferDays: 0.38, rerouteCost: 7 },
+  { step: 26, bufferDays: 0.39, rerouteCost: 8 },
+  { step: 27, bufferDays: 0.4, rerouteCost: 9 },
+  { step: 28, bufferDays: 0.41, rerouteCost: 10 },
+  { step: 29, bufferDays: 0.42, rerouteCost: 0 },
+  { step: 30, bufferDays: 0.43, rerouteCost: 1 },
+  { step: 31, bufferDays: 0.44, rerouteCost: 2 },
+  { step: 32, bufferDays: 0.45, rerouteCost: 3 },
+  { step: 33, bufferDays: 0.46, rerouteCost: 4 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_15_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_15_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_15_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_15_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_15_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_15_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_16_META = {
+  id: 'lab_transfer_16',
+  regionId: 'NSW' as V1020RpipeRegionId,
+  anchorSystem: 'food' as V1020RpipeSystemDomain,
+  defaultBand: 'emerging' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_16_STEPS = [
+  { step: 0, bufferDays: 0.3, rerouteCost: 5 },
+  { step: 1, bufferDays: 0.31, rerouteCost: 6 },
+  { step: 2, bufferDays: 0.32, rerouteCost: 7 },
+  { step: 3, bufferDays: 0.33, rerouteCost: 8 },
+  { step: 4, bufferDays: 0.34, rerouteCost: 9 },
+  { step: 5, bufferDays: 0.35, rerouteCost: 10 },
+  { step: 6, bufferDays: 0.36, rerouteCost: 0 },
+  { step: 7, bufferDays: 0.37, rerouteCost: 1 },
+  { step: 8, bufferDays: 0.38, rerouteCost: 2 },
+  { step: 9, bufferDays: 0.39, rerouteCost: 3 },
+  { step: 10, bufferDays: 0.4, rerouteCost: 4 },
+  { step: 11, bufferDays: 0.41, rerouteCost: 5 },
+  { step: 12, bufferDays: 0.42, rerouteCost: 6 },
+  { step: 13, bufferDays: 0.43, rerouteCost: 7 },
+  { step: 14, bufferDays: 0.44, rerouteCost: 8 },
+  { step: 15, bufferDays: 0.45, rerouteCost: 9 },
+  { step: 16, bufferDays: 0.46, rerouteCost: 10 },
+  { step: 17, bufferDays: 0.47, rerouteCost: 0 },
+  { step: 18, bufferDays: 0.48, rerouteCost: 1 },
+  { step: 19, bufferDays: 0.49, rerouteCost: 2 },
+  { step: 20, bufferDays: 0.5, rerouteCost: 3 },
+  { step: 21, bufferDays: 0.51, rerouteCost: 4 },
+  { step: 22, bufferDays: 0.52, rerouteCost: 5 },
+  { step: 23, bufferDays: 0.53, rerouteCost: 6 },
+  { step: 24, bufferDays: 0.54, rerouteCost: 7 },
+  { step: 25, bufferDays: 0.55, rerouteCost: 8 },
+  { step: 26, bufferDays: 0.56, rerouteCost: 9 },
+  { step: 27, bufferDays: 0.57, rerouteCost: 10 },
+  { step: 28, bufferDays: 0.58, rerouteCost: 0 },
+  { step: 29, bufferDays: 0.59, rerouteCost: 1 },
+  { step: 30, bufferDays: 0.6, rerouteCost: 2 },
+  { step: 31, bufferDays: 0.61, rerouteCost: 3 },
+  { step: 32, bufferDays: 0.62, rerouteCost: 4 },
+  { step: 33, bufferDays: 0.63, rerouteCost: 5 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_16_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_16_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_16_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_16_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_16_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_16_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_17_META = {
+  id: 'lab_transfer_17',
+  regionId: 'VIC' as V1020RpipeRegionId,
+  anchorSystem: 'industrial' as V1020RpipeSystemDomain,
+  defaultBand: 'active' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_17_STEPS = [
+  { step: 0, bufferDays: 0.47, rerouteCost: 6 },
+  { step: 1, bufferDays: 0.48, rerouteCost: 7 },
+  { step: 2, bufferDays: 0.49, rerouteCost: 8 },
+  { step: 3, bufferDays: 0.5, rerouteCost: 9 },
+  { step: 4, bufferDays: 0.51, rerouteCost: 10 },
+  { step: 5, bufferDays: 0.52, rerouteCost: 0 },
+  { step: 6, bufferDays: 0.53, rerouteCost: 1 },
+  { step: 7, bufferDays: 0.54, rerouteCost: 2 },
+  { step: 8, bufferDays: 0.55, rerouteCost: 3 },
+  { step: 9, bufferDays: 0.56, rerouteCost: 4 },
+  { step: 10, bufferDays: 0.57, rerouteCost: 5 },
+  { step: 11, bufferDays: 0.58, rerouteCost: 6 },
+  { step: 12, bufferDays: 0.59, rerouteCost: 7 },
+  { step: 13, bufferDays: 0.6, rerouteCost: 8 },
+  { step: 14, bufferDays: 0.61, rerouteCost: 9 },
+  { step: 15, bufferDays: 0.62, rerouteCost: 10 },
+  { step: 16, bufferDays: 0.63, rerouteCost: 0 },
+  { step: 17, bufferDays: 0.64, rerouteCost: 1 },
+  { step: 18, bufferDays: 0.65, rerouteCost: 2 },
+  { step: 19, bufferDays: 0.66, rerouteCost: 3 },
+  { step: 20, bufferDays: 0.67, rerouteCost: 4 },
+  { step: 21, bufferDays: 0.68, rerouteCost: 5 },
+  { step: 22, bufferDays: 0.69, rerouteCost: 6 },
+  { step: 23, bufferDays: 0.7, rerouteCost: 7 },
+  { step: 24, bufferDays: 0.71, rerouteCost: 8 },
+  { step: 25, bufferDays: 0.72, rerouteCost: 9 },
+  { step: 26, bufferDays: 0.28, rerouteCost: 10 },
+  { step: 27, bufferDays: 0.29, rerouteCost: 0 },
+  { step: 28, bufferDays: 0.3, rerouteCost: 1 },
+  { step: 29, bufferDays: 0.31, rerouteCost: 2 },
+  { step: 30, bufferDays: 0.32, rerouteCost: 3 },
+  { step: 31, bufferDays: 0.33, rerouteCost: 4 },
+  { step: 32, bufferDays: 0.34, rerouteCost: 5 },
+  { step: 33, bufferDays: 0.35, rerouteCost: 6 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_17_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_17_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_17_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_17_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_17_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_17_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_18_META = {
+  id: 'lab_transfer_18',
+  regionId: 'QLD' as V1020RpipeRegionId,
+  anchorSystem: 'telecom' as V1020RpipeSystemDomain,
+  defaultBand: 'critical' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_18_STEPS = [
+  { step: 0, bufferDays: 0.64, rerouteCost: 7 },
+  { step: 1, bufferDays: 0.65, rerouteCost: 8 },
+  { step: 2, bufferDays: 0.66, rerouteCost: 9 },
+  { step: 3, bufferDays: 0.67, rerouteCost: 10 },
+  { step: 4, bufferDays: 0.68, rerouteCost: 0 },
+  { step: 5, bufferDays: 0.69, rerouteCost: 1 },
+  { step: 6, bufferDays: 0.7, rerouteCost: 2 },
+  { step: 7, bufferDays: 0.71, rerouteCost: 3 },
+  { step: 8, bufferDays: 0.72, rerouteCost: 4 },
+  { step: 9, bufferDays: 0.28, rerouteCost: 5 },
+  { step: 10, bufferDays: 0.29, rerouteCost: 6 },
+  { step: 11, bufferDays: 0.3, rerouteCost: 7 },
+  { step: 12, bufferDays: 0.31, rerouteCost: 8 },
+  { step: 13, bufferDays: 0.32, rerouteCost: 9 },
+  { step: 14, bufferDays: 0.33, rerouteCost: 10 },
+  { step: 15, bufferDays: 0.34, rerouteCost: 0 },
+  { step: 16, bufferDays: 0.35, rerouteCost: 1 },
+  { step: 17, bufferDays: 0.36, rerouteCost: 2 },
+  { step: 18, bufferDays: 0.37, rerouteCost: 3 },
+  { step: 19, bufferDays: 0.38, rerouteCost: 4 },
+  { step: 20, bufferDays: 0.39, rerouteCost: 5 },
+  { step: 21, bufferDays: 0.4, rerouteCost: 6 },
+  { step: 22, bufferDays: 0.41, rerouteCost: 7 },
+  { step: 23, bufferDays: 0.42, rerouteCost: 8 },
+  { step: 24, bufferDays: 0.43, rerouteCost: 9 },
+  { step: 25, bufferDays: 0.44, rerouteCost: 10 },
+  { step: 26, bufferDays: 0.45, rerouteCost: 0 },
+  { step: 27, bufferDays: 0.46, rerouteCost: 1 },
+  { step: 28, bufferDays: 0.47, rerouteCost: 2 },
+  { step: 29, bufferDays: 0.48, rerouteCost: 3 },
+  { step: 30, bufferDays: 0.49, rerouteCost: 4 },
+  { step: 31, bufferDays: 0.5, rerouteCost: 5 },
+  { step: 32, bufferDays: 0.51, rerouteCost: 6 },
+  { step: 33, bufferDays: 0.52, rerouteCost: 7 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_18_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_18_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_18_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_18_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_18_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_18_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_19_META = {
+  id: 'lab_transfer_19',
+  regionId: 'WA' as V1020RpipeRegionId,
+  anchorSystem: 'finance' as V1020RpipeSystemDomain,
+  defaultBand: 'recovering' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_19_STEPS = [
+  { step: 0, bufferDays: 0.36, rerouteCost: 8 },
+  { step: 1, bufferDays: 0.37, rerouteCost: 9 },
+  { step: 2, bufferDays: 0.38, rerouteCost: 10 },
+  { step: 3, bufferDays: 0.39, rerouteCost: 0 },
+  { step: 4, bufferDays: 0.4, rerouteCost: 1 },
+  { step: 5, bufferDays: 0.41, rerouteCost: 2 },
+  { step: 6, bufferDays: 0.42, rerouteCost: 3 },
+  { step: 7, bufferDays: 0.43, rerouteCost: 4 },
+  { step: 8, bufferDays: 0.44, rerouteCost: 5 },
+  { step: 9, bufferDays: 0.45, rerouteCost: 6 },
+  { step: 10, bufferDays: 0.46, rerouteCost: 7 },
+  { step: 11, bufferDays: 0.47, rerouteCost: 8 },
+  { step: 12, bufferDays: 0.48, rerouteCost: 9 },
+  { step: 13, bufferDays: 0.49, rerouteCost: 10 },
+  { step: 14, bufferDays: 0.5, rerouteCost: 0 },
+  { step: 15, bufferDays: 0.51, rerouteCost: 1 },
+  { step: 16, bufferDays: 0.52, rerouteCost: 2 },
+  { step: 17, bufferDays: 0.53, rerouteCost: 3 },
+  { step: 18, bufferDays: 0.54, rerouteCost: 4 },
+  { step: 19, bufferDays: 0.55, rerouteCost: 5 },
+  { step: 20, bufferDays: 0.56, rerouteCost: 6 },
+  { step: 21, bufferDays: 0.57, rerouteCost: 7 },
+  { step: 22, bufferDays: 0.58, rerouteCost: 8 },
+  { step: 23, bufferDays: 0.59, rerouteCost: 9 },
+  { step: 24, bufferDays: 0.6, rerouteCost: 10 },
+  { step: 25, bufferDays: 0.61, rerouteCost: 0 },
+  { step: 26, bufferDays: 0.62, rerouteCost: 1 },
+  { step: 27, bufferDays: 0.63, rerouteCost: 2 },
+  { step: 28, bufferDays: 0.64, rerouteCost: 3 },
+  { step: 29, bufferDays: 0.65, rerouteCost: 4 },
+  { step: 30, bufferDays: 0.66, rerouteCost: 5 },
+  { step: 31, bufferDays: 0.67, rerouteCost: 6 },
+  { step: 32, bufferDays: 0.68, rerouteCost: 7 },
+  { step: 33, bufferDays: 0.69, rerouteCost: 8 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_19_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_19_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_19_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_19_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_19_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_19_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_20_META = {
+  id: 'lab_transfer_20',
+  regionId: 'SA' as V1020RpipeRegionId,
+  anchorSystem: 'freight' as V1020RpipeSystemDomain,
+  defaultBand: 'latent' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_20_STEPS = [
+  { step: 0, bufferDays: 0.53, rerouteCost: 9 },
+  { step: 1, bufferDays: 0.54, rerouteCost: 10 },
+  { step: 2, bufferDays: 0.55, rerouteCost: 0 },
+  { step: 3, bufferDays: 0.56, rerouteCost: 1 },
+  { step: 4, bufferDays: 0.57, rerouteCost: 2 },
+  { step: 5, bufferDays: 0.58, rerouteCost: 3 },
+  { step: 6, bufferDays: 0.59, rerouteCost: 4 },
+  { step: 7, bufferDays: 0.6, rerouteCost: 5 },
+  { step: 8, bufferDays: 0.61, rerouteCost: 6 },
+  { step: 9, bufferDays: 0.62, rerouteCost: 7 },
+  { step: 10, bufferDays: 0.63, rerouteCost: 8 },
+  { step: 11, bufferDays: 0.64, rerouteCost: 9 },
+  { step: 12, bufferDays: 0.65, rerouteCost: 10 },
+  { step: 13, bufferDays: 0.66, rerouteCost: 0 },
+  { step: 14, bufferDays: 0.67, rerouteCost: 1 },
+  { step: 15, bufferDays: 0.68, rerouteCost: 2 },
+  { step: 16, bufferDays: 0.69, rerouteCost: 3 },
+  { step: 17, bufferDays: 0.7, rerouteCost: 4 },
+  { step: 18, bufferDays: 0.71, rerouteCost: 5 },
+  { step: 19, bufferDays: 0.72, rerouteCost: 6 },
+  { step: 20, bufferDays: 0.28, rerouteCost: 7 },
+  { step: 21, bufferDays: 0.29, rerouteCost: 8 },
+  { step: 22, bufferDays: 0.3, rerouteCost: 9 },
+  { step: 23, bufferDays: 0.31, rerouteCost: 10 },
+  { step: 24, bufferDays: 0.32, rerouteCost: 0 },
+  { step: 25, bufferDays: 0.33, rerouteCost: 1 },
+  { step: 26, bufferDays: 0.34, rerouteCost: 2 },
+  { step: 27, bufferDays: 0.35, rerouteCost: 3 },
+  { step: 28, bufferDays: 0.36, rerouteCost: 4 },
+  { step: 29, bufferDays: 0.37, rerouteCost: 5 },
+  { step: 30, bufferDays: 0.38, rerouteCost: 6 },
+  { step: 31, bufferDays: 0.39, rerouteCost: 7 },
+  { step: 32, bufferDays: 0.4, rerouteCost: 8 },
+  { step: 33, bufferDays: 0.41, rerouteCost: 9 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_20_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_20_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_20_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_20_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_20_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_20_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_21_META = {
+  id: 'lab_transfer_21',
+  regionId: 'TAS' as V1020RpipeRegionId,
+  anchorSystem: 'energy' as V1020RpipeSystemDomain,
+  defaultBand: 'emerging' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_21_STEPS = [
+  { step: 0, bufferDays: 0.7, rerouteCost: 10 },
+  { step: 1, bufferDays: 0.71, rerouteCost: 0 },
+  { step: 2, bufferDays: 0.72, rerouteCost: 1 },
+  { step: 3, bufferDays: 0.28, rerouteCost: 2 },
+  { step: 4, bufferDays: 0.29, rerouteCost: 3 },
+  { step: 5, bufferDays: 0.3, rerouteCost: 4 },
+  { step: 6, bufferDays: 0.31, rerouteCost: 5 },
+  { step: 7, bufferDays: 0.32, rerouteCost: 6 },
+  { step: 8, bufferDays: 0.33, rerouteCost: 7 },
+  { step: 9, bufferDays: 0.34, rerouteCost: 8 },
+  { step: 10, bufferDays: 0.35, rerouteCost: 9 },
+  { step: 11, bufferDays: 0.36, rerouteCost: 10 },
+  { step: 12, bufferDays: 0.37, rerouteCost: 0 },
+  { step: 13, bufferDays: 0.38, rerouteCost: 1 },
+  { step: 14, bufferDays: 0.39, rerouteCost: 2 },
+  { step: 15, bufferDays: 0.4, rerouteCost: 3 },
+  { step: 16, bufferDays: 0.41, rerouteCost: 4 },
+  { step: 17, bufferDays: 0.42, rerouteCost: 5 },
+  { step: 18, bufferDays: 0.43, rerouteCost: 6 },
+  { step: 19, bufferDays: 0.44, rerouteCost: 7 },
+  { step: 20, bufferDays: 0.45, rerouteCost: 8 },
+  { step: 21, bufferDays: 0.46, rerouteCost: 9 },
+  { step: 22, bufferDays: 0.47, rerouteCost: 10 },
+  { step: 23, bufferDays: 0.48, rerouteCost: 0 },
+  { step: 24, bufferDays: 0.49, rerouteCost: 1 },
+  { step: 25, bufferDays: 0.5, rerouteCost: 2 },
+  { step: 26, bufferDays: 0.51, rerouteCost: 3 },
+  { step: 27, bufferDays: 0.52, rerouteCost: 4 },
+  { step: 28, bufferDays: 0.53, rerouteCost: 5 },
+  { step: 29, bufferDays: 0.54, rerouteCost: 6 },
+  { step: 30, bufferDays: 0.55, rerouteCost: 7 },
+  { step: 31, bufferDays: 0.56, rerouteCost: 8 },
+  { step: 32, bufferDays: 0.57, rerouteCost: 9 },
+  { step: 33, bufferDays: 0.58, rerouteCost: 10 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_21_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_21_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_21_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_21_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_21_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_21_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_22_META = {
+  id: 'lab_transfer_22',
+  regionId: 'NT' as V1020RpipeRegionId,
+  anchorSystem: 'water' as V1020RpipeSystemDomain,
+  defaultBand: 'active' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_22_STEPS = [
+  { step: 0, bufferDays: 0.42, rerouteCost: 0 },
+  { step: 1, bufferDays: 0.43, rerouteCost: 1 },
+  { step: 2, bufferDays: 0.44, rerouteCost: 2 },
+  { step: 3, bufferDays: 0.45, rerouteCost: 3 },
+  { step: 4, bufferDays: 0.46, rerouteCost: 4 },
+  { step: 5, bufferDays: 0.47, rerouteCost: 5 },
+  { step: 6, bufferDays: 0.48, rerouteCost: 6 },
+  { step: 7, bufferDays: 0.49, rerouteCost: 7 },
+  { step: 8, bufferDays: 0.5, rerouteCost: 8 },
+  { step: 9, bufferDays: 0.51, rerouteCost: 9 },
+  { step: 10, bufferDays: 0.52, rerouteCost: 10 },
+  { step: 11, bufferDays: 0.53, rerouteCost: 0 },
+  { step: 12, bufferDays: 0.54, rerouteCost: 1 },
+  { step: 13, bufferDays: 0.55, rerouteCost: 2 },
+  { step: 14, bufferDays: 0.56, rerouteCost: 3 },
+  { step: 15, bufferDays: 0.57, rerouteCost: 4 },
+  { step: 16, bufferDays: 0.58, rerouteCost: 5 },
+  { step: 17, bufferDays: 0.59, rerouteCost: 6 },
+  { step: 18, bufferDays: 0.6, rerouteCost: 7 },
+  { step: 19, bufferDays: 0.61, rerouteCost: 8 },
+  { step: 20, bufferDays: 0.62, rerouteCost: 9 },
+  { step: 21, bufferDays: 0.63, rerouteCost: 10 },
+  { step: 22, bufferDays: 0.64, rerouteCost: 0 },
+  { step: 23, bufferDays: 0.65, rerouteCost: 1 },
+  { step: 24, bufferDays: 0.66, rerouteCost: 2 },
+  { step: 25, bufferDays: 0.67, rerouteCost: 3 },
+  { step: 26, bufferDays: 0.68, rerouteCost: 4 },
+  { step: 27, bufferDays: 0.69, rerouteCost: 5 },
+  { step: 28, bufferDays: 0.7, rerouteCost: 6 },
+  { step: 29, bufferDays: 0.71, rerouteCost: 7 },
+  { step: 30, bufferDays: 0.72, rerouteCost: 8 },
+  { step: 31, bufferDays: 0.28, rerouteCost: 9 },
+  { step: 32, bufferDays: 0.29, rerouteCost: 10 },
+  { step: 33, bufferDays: 0.3, rerouteCost: 0 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_22_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_22_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_22_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_22_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_22_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_22_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export const V1020_RPIPE_LAB_TRANSFER_NODE_23_META = {
+  id: 'lab_transfer_23',
+  regionId: 'ACT' as V1020RpipeRegionId,
+  anchorSystem: 'digital' as V1020RpipeSystemDomain,
+  defaultBand: 'critical' as V1020RpipeComplianceBand,
+} as const;
+
+const V1020_RPIPE_LAB_TRANSFER_NODE_23_STEPS = [
+  { step: 0, bufferDays: 0.59, rerouteCost: 1 },
+  { step: 1, bufferDays: 0.6, rerouteCost: 2 },
+  { step: 2, bufferDays: 0.61, rerouteCost: 3 },
+  { step: 3, bufferDays: 0.62, rerouteCost: 4 },
+  { step: 4, bufferDays: 0.63, rerouteCost: 5 },
+  { step: 5, bufferDays: 0.64, rerouteCost: 6 },
+  { step: 6, bufferDays: 0.65, rerouteCost: 7 },
+  { step: 7, bufferDays: 0.66, rerouteCost: 8 },
+  { step: 8, bufferDays: 0.67, rerouteCost: 9 },
+  { step: 9, bufferDays: 0.68, rerouteCost: 10 },
+  { step: 10, bufferDays: 0.69, rerouteCost: 0 },
+  { step: 11, bufferDays: 0.7, rerouteCost: 1 },
+  { step: 12, bufferDays: 0.71, rerouteCost: 2 },
+  { step: 13, bufferDays: 0.72, rerouteCost: 3 },
+  { step: 14, bufferDays: 0.28, rerouteCost: 4 },
+  { step: 15, bufferDays: 0.29, rerouteCost: 5 },
+  { step: 16, bufferDays: 0.3, rerouteCost: 6 },
+  { step: 17, bufferDays: 0.31, rerouteCost: 7 },
+  { step: 18, bufferDays: 0.32, rerouteCost: 8 },
+  { step: 19, bufferDays: 0.33, rerouteCost: 9 },
+  { step: 20, bufferDays: 0.34, rerouteCost: 10 },
+  { step: 21, bufferDays: 0.35, rerouteCost: 0 },
+  { step: 22, bufferDays: 0.36, rerouteCost: 1 },
+  { step: 23, bufferDays: 0.37, rerouteCost: 2 },
+  { step: 24, bufferDays: 0.38, rerouteCost: 3 },
+  { step: 25, bufferDays: 0.39, rerouteCost: 4 },
+  { step: 26, bufferDays: 0.4, rerouteCost: 5 },
+  { step: 27, bufferDays: 0.41, rerouteCost: 6 },
+  { step: 28, bufferDays: 0.42, rerouteCost: 7 },
+  { step: 29, bufferDays: 0.43, rerouteCost: 8 },
+  { step: 30, bufferDays: 0.44, rerouteCost: 9 },
+  { step: 31, bufferDays: 0.45, rerouteCost: 10 },
+  { step: 32, bufferDays: 0.46, rerouteCost: 0 },
+  { step: 33, bufferDays: 0.47, rerouteCost: 1 },
+] as const;
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_23_buffer(turn: number): number {
+  let acc = 0;
+  for (let i = 0; i < V1020_RPIPE_LAB_TRANSFER_NODE_23_STEPS.length; i++) {
+    const row = V1020_RPIPE_LAB_TRANSFER_NODE_23_STEPS[i];
+    acc += row.bufferDays * (1 + (turn + row.step) % 6) * 0.018;
+  }
+  return V1020_RPIPE_clamp(acc / V1020_RPIPE_LAB_TRANSFER_NODE_23_STEPS.length, 0, 1);
+}
+
+export function V1020_RPIPE_LAB_TRANSFER_NODE_23_rerouteStress(turn: number): number {
+  return V1020_RPIPE_clamp(
+    V1020_RPIPE_LAB_TRANSFER_NODE_23_STEPS.reduce((sum, row) => sum + row.rerouteCost * (1 + ((turn + row.step) % 4)), 0) / 48,
+  );
+}
+
+
+export function V1020_RPIPE_clamp(value: number, lo: number, hi: number): number {
+  if (!Number.isFinite(value)) return lo;
+  return Math.min(hi, Math.max(lo, value));
+}
+
+export function V1020_RPIPE_mixSeed(seed: number, turn: number, tag: string): number {
+  let h = (seed ^ turn * 2654435761) >>> 0;
+  for (let i = 0; i < tag.length; i++) {
+    h = Math.imul(h ^ tag.charCodeAt(i), 1597334677) >>> 0;
+  }
+  return (h % 10_000) / 10_000;
+}
+
+export function V1020_RPIPE_hash(payload: Record<string, unknown>): string {
+  const s = JSON.stringify(payload);
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return `ffed_${(h >>> 0).toString(16)}`;
+}
+
+export function V1020_RPIPE_transferBandRank(band: V1020RpipeTransferBand): number {
+  switch (band) {
+    case 'critical':
+      return 5;
+    case 'active':
+      return 4;
+    case 'emerging':
+      return 3;
+    case 'recovering':
+      return 2;
+    case 'latent':
+    default:
+      return 1;
+  }
+}
+
+export function V1020_RPIPE_complianceFromScore(score: number): V1020RpipeComplianceBand {
+  const s = V1020_RPIPE_clamp(score, 0, 100);
+  if (s >= 74) return 'robust';
+  if (s >= 60) return 'stable';
+  if (s >= 46) return 'strained';
+  if (s >= 32) return 'fragile';
+  return 'critical';
+}
+
+export function V1020_RPIPE_weightedMean(items: Array<{ weight: number; value: number }>): number {
+  let wSum = 0;
+  let vSum = 0;
+  for (const it of items) {
+    const w = Math.max(0, it.weight);
+    wSum += w;
+    vSum += w * it.value;
+  }
+  return wSum > 0 ? vSum / wSum : 0;
+}
+
+export function V1020_RPIPE_utilCommercializationStackGraphHash(edges: readonly { weight: number; lagTurns: number }[]): string {
+  let acc = 0;
+  for (let i = 0; i < edges.length; i++) {
+    acc += edges[i].weight * 1000 + edges[i].lagTurns * 17 + i;
+  }
+  return `pg_${(acc >>> 0).toString(16)}`;
+}
+
+/**
+ * Cross-wire: V1014 AI fidelity / commercialization depth (SECTION 20BE — commercialization bridge).
+ */
+
+export function computeV1020RpipeCommercialization20beBridge(
+  input: V1020RpipeTurnInput,
+  severityIndex: number,
+): V1020RpipeSupplyBridge {
+  return readV1020RpipeCommercialization20beBridge(input.aiFidelity20be, severityIndex);
+}
+
+export function applyV1020RpipeCommercialization20beCommercializationOverrides<T extends { bottleneckPressure?: number }>(
+  base: T,
+  bridge: V1020RpipeSupplyBridge,
+): T {
+  return {
+    ...base,
+    bottleneckPressure: V1020_RPIPE_clamp((base.bottleneckPressure ?? 40) + bridge.commercializationDelta, 0, 100),
+  };
+}
+
+
+export function readV1020RpipeSupply20bbBridge(slice: V1020RpipeV1014SupplySlice, severityIndex: number) {
+  const bottleneckDelta = V1020_RPIPE_clamp(slice.bottleneckPressure * 0.04 + severityIndex * 0.06, -12, 18);
+  const stockDaysDelta: Partial<Record<string, number>> = {};
+  Object.entries(slice.regionalStockDays ?? {}).forEach(([region, days]) => {
+    stockDaysDelta[region] = V1020_RPIPE_clamp(Number(days) - severityIndex * 0.08, 0, 120);
+  });
+  return { bottleneckDelta, stockDaysDelta };
+}
+
+export function readV1020RpipeTrade20baBridge(slice: V1020RpipeV1014TradeSlice, transferPressure: number) {
+  const importStressContribution = V1020_RPIPE_clamp(
+    slice.sanctionsPressure * 0.01 + slice.importDependencyRatio * 0.12 + transferPressure * 0.2,
+  );
+  const laneStabilityDelta = V1020_RPIPE_clamp(
+    (slice.exportLaneStability - 50) * 0.06 - importStressContribution * 8,
+    -10,
+    10,
+  );
+  return { laneStabilityDelta, importStressContribution };
+}
+
+export function readV1020RpipeEnergy20bcBridge(slice: V1020RpipeV1014EnergySlice, severityIndex: number) {
+  const gridDrag = V1020_RPIPE_clamp((100 - slice.gridStability) * 0.008 + severityIndex * 0.05, 0, 0.55);
+  const reserveContribution = V1020_RPIPE_clamp(slice.reserveMarginPct * 0.02 - gridDrag * 4, -0.2, 0.35);
+  return { gridDrag, reserveContribution };
+}
+
+export function readV1020RpipeWorkforce20bfBridge(slice: V1020RpipeV1014WorkforceSlice, severityIndex: number) {
+  const mismatchContribution = V1020_RPIPE_clamp(slice.mismatchIndex * 0.01 + severityIndex * 0.04, 0, 1);
+  const readinessDelta = V1020_RPIPE_clamp(
+    (slice.nationalReadiness - 52) * 0.05 - mismatchContribution * 6,
+    -9,
+    9,
+  );
+  return { readinessDelta, mismatchContribution };
+}
+
+export function readV1020RpipeCommercialization20beBridge(
+  slice: V1020RpipeV1014AiFidelitySlice,
+  severityIndex: number,
+) {
+  const commercializationDelta = V1020_RPIPE_clamp(
+    (100 - slice.planVerifyScore) * 0.05 + slice.commercializationReadiness * 0.04 + severityIndex * 0.03,
+    -8,
+    14,
+  );
+  return { bottleneckDelta: commercializationDelta, stockDaysDelta: {}, commercializationDelta };
+}
+
+export function readV1020RpipeLabTransfer20bjBridge(
+  slice: V1020RpipeV1014FiscalFederalismSlice,
+  severityIndex: number,
+) {
+  const labTransferDelta = V1020_RPIPE_clamp(
+    slice.transferPressure * 0.06 + slice.labTransferBacklog * 0.04 + severityIndex * 0.05,
+    -6,
+    16,
+  );
+  return { bottleneckDelta: labTransferDelta, stockDaysDelta: {}, labTransferDelta };
+}
+
+export function buildV1020RpipeBriefing(
+  input: V1020RpipeTurnInput,
+  severity: number,
+  lab_transfer: number,
+): string {
+  return (
+    `Turn ${input.turn}: lab_transfer ${lab_transfer.toFixed(1)}, severity ${severity.toFixed(1)}, ` +
+    `supply bottleneck ${input.supply20bb.bottleneckPressure.toFixed(0)}, ` +
+    `grid ${input.energy20bc.gridStability.toFixed(0)}.`
+  );
+}
+
+/**
+ * Cross-wire: V1014 fiscal federalism lab transfer depth (SECTION 20BJ — lab transfer bridge).
+ */
+
+export function computeV1020RpipeLabTransfer20bjBridge(
+  input: V1020RpipeTurnInput,
+  severityIndex: number,
+): V1020RpipeSupplyBridge {
+  return readV1020RpipeLabTransfer20bjBridge(input.fiscalFederalism20bj, severityIndex);
+}
+
+export function applyV1020RpipeLabTransfer20bjLabTransferOverrides<T extends { bottleneckPressure?: number }>(
+  base: T,
+  bridge: V1020RpipeSupplyBridge,
+): T {
+  return {
+    ...base,
+    bottleneckPressure: V1020_RPIPE_clamp((base.bottleneckPressure ?? 40) + bridge.labTransferDelta, 0, 100),
+  };
+}
+
+/**
+ * Cross-wire: V1014 energy depth (SECTION 20BC).
+ */
+
+export function computeV1020RpipeEnergy20bcBridge(
+  input: V1020RpipeTurnInput,
+  severityIndex: number,
+): V1020RpipeEnergyBridge {
+  return readV1020RpipeEnergy20bcBridge(input.energy20bc, severityIndex);
+}
+
+export function applyV1020RpipeEnergy20bcGridOverrides<T extends { gridStability?: number }>(
+  base: T,
+  bridge: V1020RpipeEnergyBridge,
+): T {
+  return {
+    ...base,
+    gridStability: V1020_RPIPE_clamp((base.gridStability ?? 55) - bridge.gridDrag * 18, 0, 100),
+  };
+}
+
+/**
+ * Cross-wire: V1014 supply chain depth (SECTION 20BB).
+ */
+
+export function computeV1020RpipeSupply20bbBridge(
+  input: V1020RpipeTurnInput,
+  severityIndex: number,
+): V1020RpipeSupplyBridge {
+  return readV1020RpipeSupply20bbBridge(input.supply20bb, severityIndex);
+}
+
+export function applyV1020RpipeSupply20bbBottleneckOverrides<T extends { bottleneckPressure?: number }>(
+  base: T,
+  bridge: V1020RpipeSupplyBridge,
+): T {
+  return {
+    ...base,
+    bottleneckPressure: V1020_RPIPE_clamp((base.bottleneckPressure ?? 40) + bridge.bottleneckDelta, 0, 100),
+  };
+}
+
+/**
+ * Cross-wire: V1014 trade depth (SECTION 20BA).
+ */
+
+export function computeV1020RpipeTrade20baBridge(
+  input: V1020RpipeTurnInput,
+  transferPressure: number,
+): V1020RpipeTradeBridge {
+  return readV1020RpipeTrade20baBridge(input.trade20ba, transferPressure);
+}
+
+export function applyV1020RpipeTrade20baLaneOverrides<T extends { exportLaneStability?: number }>(
+  base: T,
+  bridge: V1020RpipeTradeBridge,
+): T {
+  return {
+    ...base,
+    exportLaneStability: V1020_RPIPE_clamp((base.exportLaneStability ?? 50) + bridge.laneStabilityDelta, 0, 100),
+  };
+}
+
+/**
+ * Cross-wire: V1014 workforce migration v2 (SECTION 20BF).
+ */
+
+export function computeV1020RpipeWorkforce20bfBridge(
+  input: V1020RpipeTurnInput,
+  severityIndex: number,
+): V1020RpipeWorkforceBridge {
+  return readV1020RpipeWorkforce20bfBridge(input.workforce20bf, severityIndex);
+}
+
+export function applyV1020RpipeWorkforce20bfReadinessOverrides<T extends { nationalReadiness?: number }>(
+  base: T,
+  bridge: V1020RpipeWorkforceBridge,
+): T {
+  return {
+    ...base,
+    nationalReadiness: V1020_RPIPE_clamp((base.nationalReadiness ?? 52) + bridge.readinessDelta, 0, 100),
+  };
+}
+
+/**
+ * Turn orchestrator — V1018 research pipeline (SECTION 20BM), post–§11A.
+ */
+
+const V1020_RPIPE_ORCH_REGIONS: V1020RpipeRegionId[] = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'];
+
+export function v1020RpipeInputHash(input: V1020RpipeTurnInput): string {
+  return V1020_RPIPE_hash({
+    turn: input.turn,
+    seed: input.seed,
+    bottleneck: input.supply20bb.bottleneckPressure,
+    sanctions: input.trade20ba.sanctionsPressure,
+    scenarios: input.activeTransferScenarioIds.slice(0, 12),
+    nodes: input.activeLabTransferNodeIds.slice(0, 12),
+  });
+}
+
+export function runV1020RpipeTurn(input: V1020RpipeTurnInput): V1020RpipeTurnResult {
+  const persisted = sanitizeV1020RpipePersisted(input.persisted ?? createEmptyV1020RpipePersisted(), input.turn);
+
+  const mix = V1020_RPIPE_mixSeed(input.seed, input.turn, 'v1020_research_pipeline');
+  const scenarioIds =
+    input.activeTransferScenarioIds.length > 0
+      ? input.activeTransferScenarioIds
+      : V1020_RPIPE_listActivePipelineScenarioIds(input.turn);
+  const transferBatch = V1020_RPIPE_evaluatePipelineBatch(input.turn, scenarioIds);
+
+  let aggregateSeverity = V1020_RPIPE_clamp(
+    transferBatch.meanSeverity * 0.52 +
+      input.supply20bb.bottleneckPressure * 0.18 +
+      input.trade20ba.sanctionsPressure * 0.06 +
+      mix * 7,
+  );
+
+  const transferPressure = V1020_RPIPE_commercializationStackPressure(
+    V1020_RPIPE_GENERATED_COMMERCIALIZATION_STACK_EDGES,
+    input.turn,
+    aggregateSeverity,
+  );
+
+  const supplyBridge = computeV1020RpipeSupply20bbBridge(input, aggregateSeverity);
+  const tradeBridge = computeV1020RpipeTrade20baBridge(input, transferPressure);
+  const energyBridge = computeV1020RpipeEnergy20bcBridge(input, aggregateSeverity);
+  const workforceBridge = computeV1020RpipeWorkforce20bfBridge(input, aggregateSeverity);
+
+  const nodeBuffer = V1020_RPIPE_LAB_TRANSFER_NODE_00_buffer(input.turn);
+  const aggregateCompliance = V1020_RPIPE_clamp(
+    transferBatch.meanCompliance * 0.45 +
+      input.energy20bc.gridStability * 0.22 +
+      input.workforce20bf.nationalReadiness * 0.12 +
+      nodeBuffer * 18 +
+      input.pipelinePolicyFocus * 0.05 -
+      aggregateSeverity * 0.14,
+  );
+
+  const fiscalFederalism = V1020_RPIPE_clamp(
+    aggregateCompliance -
+      tradeBridge.importStressContribution * 12 -
+      energyBridge.gridDrag * 8 +
+      workforceBridge.readinessDelta * 0.6,
+  );
+
+  const commercializationStackGraphHash = V1020_RPIPE_commercializationStackGraphHash(V1020_RPIPE_GENERATED_COMMERCIALIZATION_STACK_EDGES);
+  const inputHash = v1020RpipeInputHash(input);
+  const briefing = buildV1020RpipeBriefing(input, aggregateSeverity, aggregateCompliance);
+
+  const regionalCompliance = { ...persisted.regionalCompliance };
+  V1020_RPIPE_ORCH_REGIONS.forEach((region, idx) => {
+    const prior = regionalCompliance[region] ?? {
+      bufferIndex: 42,
+      rerouteStress: 38,
+      compositeCompliance: 50,
+      exposedSystems: 2,
+    };
+    const regionalTransfer = transferBatch.byRegion[region];
+    const compositeCompliance = V1020_RPIPE_clamp(
+      V1020_RPIPE_weightedMean([
+        { weight: 1.1, value: aggregateCompliance - idx * 0.15 },
+        { weight: 0.9, value: regionalTransfer?.complianceScore ?? aggregateCompliance },
+        { weight: 0.6, value: input.supply20bb.regionalStockDays?.[region] ?? 52 },
+      ]),
+    );
+    regionalCompliance[region] = {
+      bufferIndex: V1020_RPIPE_clamp(prior.bufferIndex + nodeBuffer * 4 - aggregateSeverity * 0.03, 0, 100),
+      rerouteStress: V1020_RPIPE_clamp(
+        prior.rerouteStress + (regionalTransfer?.severityIndex ?? aggregateSeverity) * 0.04,
+      ),
+      compositeCompliance,
+      exposedSystems: V1020_RPIPE_clamp(
+        prior.exposedSystems + (regionalTransfer ? 1 : 0) + (tradeBridge.importStressContribution > 0.35 ? 1 : 0),
+      ),
+    };
+  });
+
+  const pipelineSnapshots = { ...persisted.pipelineSnapshots };
+  transferBatch.snapshots.forEach((snap) => {
+    pipelineSnapshots[snap.scenarioId] = snap;
+  });
+
+  const nextPersisted: V1020RpipePersisted = {
+    ...persisted,
+    revision: persisted.revision + 1,
+    lastProcessedTurn: input.turn,
+    commercializationStackGraphRevision: persisted.commercializationStackGraphRevision + 1,
+    historyTail: [
+      ...persisted.historyTail.slice(-11),
+      { turn: input.turn, inputHash, aggregateSeverity },
+    ],
+    aiReadCache: {
+      ...persisted.aiReadCache,
+      [`turn_${input.turn}`]: briefing.slice(0, 280),
+    },
+  };
+
+  const worldEvents =
+    aggregateSeverity > 58
+      ? [
+          {
+            id: `ffed_pipeline_${input.turn}`,
+            turn: input.turn,
+            kind: 'supply_transfer',
+            title: 'National state–federal transfer elevated',
+            summary: `Severity ${aggregateSeverity.toFixed(1)}; lab_transfer ${aggregateCompliance.toFixed(1)}.`,
+          },
+        ]
+      : [];
+
+  if (V1020_RPIPE_complianceFromScore(fiscalFederalism) === 'critical') {
+    worldEvents.push({
+      id: `ffed_cont_${input.turn}`,
+      turn: input.turn,
+      kind: 'lab_transfer',
+      title: 'Compliance band critical',
+      summary: `Resilience ${fiscalFederalism.toFixed(1)}; commercializationStack ${transferPressure.toFixed(2)}.`,
+    });
+  }
+
+  void supplyBridge;
+  void energyBridge;
+
+  return {
+    state: {
+      turn: input.turn,
+      aggregateSeverityIndex: aggregateSeverity,
+      aggregateComplianceScore: aggregateCompliance,
+      fiscalFederalismScore: fiscalFederalism,
+      supplyTransferPressure: transferPressure,
+    },
+    persisted: nextPersisted,
+    worldEvents,
+  };
+}
+
+export function buildV1020RpipeTurnInputFromGameStateStub(
+  turn: number,
+  seed: number,
+): V1020RpipeTurnInput {
+  return {
+    supply20bb: {
+      turn,
+      bottleneckPressure: 44,
+      regionalStockDays: { NSW: 18, VIC: 16 },
+      commercializationStackIndex: 0.42,
+    },
+    trade20ba: {
+      turn,
+      sanctionsPressure: 22,
+      importDependencyRatio: 0.38,
+      exportLaneStability: 56,
+    },
+    energy20bc: {
+      turn,
+      gridStability: 61,
+      reserveMarginPct: 14,
+      carbonStress: 33,
+    },
+    workforce20bf: {
+      turn,
+      specialistGap: 29,
+      nationalReadiness: 57,
+      mismatchIndex: 41,
+    },
+    aiFidelity20be: {
+      turn,
+      planVerifyScore: 64,
+      automationCoverage: 0.39,
+      commercializationReadiness: 51,
+    },
+    fiscalFederalism20bj: {
+      turn,
+      transferPressure: 34,
+      grantStackLoad: 0.31,
+      labTransferBacklog: 19,
+    },
+    researchHeadroom: 55,
+    pipelinePolicyFocus: 48,
+    activeTransferScenarioIds: V1020_RPIPE_listActivePipelineScenarioIds(turn).slice(0, 10),
+    activeLabTransferNodeIds: ['lab_transfer_00', 'lab_transfer_01'],
+    persisted: null,
+  };
+}
+
+
+/**
+ * LAB suite: v1020_research_pipeline — state–federal transfer & lab_transfer fixtures (SECTION 20BM).
+ */
+
+function v1020RpipeBaseInput(overrides: Partial<V1020RpipeTurnInput> = {}): V1020RpipeTurnInput {
+  return {
+    turn: 1,
+    seed: 10200,
+    supply20bb: {
+      turn: 1,
+      bottleneckPressure: 46,
+      regionalStockDays: { NSW: 20, QLD: 17 },
+      commercializationStackIndex: 0.44,
+    },
+    trade20ba: {
+      turn: 1,
+      sanctionsPressure: 24,
+      importDependencyRatio: 0.36,
+      exportLaneStability: 54,
+    },
+    energy20bc: {
+      turn: 1,
+      gridStability: 59,
+      reserveMarginPct: 13,
+      carbonStress: 31,
+    },
+    workforce20bf: {
+      turn: 1,
+      specialistGap: 31,
+      nationalReadiness: 56,
+      mismatchIndex: 43,
+    },
+    aiFidelity20be: {
+      turn: 1,
+      planVerifyScore: 62,
+      automationCoverage: 0.41,
+      commercializationReadiness: 48,
+    },
+    fiscalFederalism20bj: {
+      turn: 1,
+      transferPressure: 36,
+      grantStackLoad: 0.33,
+      labTransferBacklog: 22,
+    },
+    researchHeadroom: 57,
+    pipelinePolicyFocus: 46,
+    activeTransferScenarioIds: V1020_RPIPE_listActivePipelineScenarioIds(1).slice(0, 8),
+    activeLabTransferNodeIds: ['lab_transfer_00', 'lab_transfer_02'],
+    persisted: null,
+    ...overrides,
+  };
+}
+
+function v1020RpipeSelfTestCheck(
+  results: V1020RpipeSelfTestResult[],
+  id: string,
+  name: string,
+  ok: boolean,
+  detail = 'ok',
+): void {
+  results.push({ id, name, passed: ok, detail: ok ? 'ok' : detail });
+}
+
+export function runV1020RpipeSelfTests(): {
+  passed: number;
+  failed: number;
+  total: number;
+  allPassed: boolean;
+  labSuiteId: string;
+  results: V1020RpipeSelfTestResult[];
+} {
+  const results: V1020RpipeSelfTestResult[] = [];
+
+  v1020RpipeSelfTestCheck(results, 'v1020_rpipe_lab_id', 'LAB suite id', V1020_RPIPE_LAB_SUITE_ID === 'v1020_research_pipeline');
+
+  for (let t = 1; t <= 20; t++) {
+    const inp = v1020RpipeBaseInput({ turn: t, seed: 10200 + t });
+    const out = runV1020RpipeTurn(inp);
+    const id = `v1020_rpipe_${String(t).padStart(2, '0')}`;
+    v1020RpipeSelfTestCheck(results, id, `turn ${t} hash`, out.state.inputHash.length > 8);
+    v1020RpipeSelfTestCheck(results, `${id}b`, `turn ${t} schema`, out.persisted.schemaVersion === V1020_RPIPE_SCHEMA_VERSION);
+    v1020RpipeSelfTestCheck(
+      results,
+      `${id}c`,
+      `turn ${t} severity bounded`,
+      out.state.aggregateSeverityIndex >= 0 && out.state.aggregateSeverityIndex <= 100,
+    );
+  }
+
+  v1020RpipeSelfTestCheck(
+    results,
+    'v1020_rpipe_hash_stable',
+    'input hash deterministic',
+    v1020RpipeInputHash(v1020RpipeBaseInput({ turn: 3, seed: 88 })) === v1020RpipeInputHash(v1020RpipeBaseInput({ turn: 3, seed: 88 })),
+  );
+
+  {
+    const p = createEmptyV1020RpipePersisted();
+    v1020RpipeSelfTestCheck(
+      results,
+      'v1020_rpipe_persist_empty',
+      'empty persisted factory',
+      p.revision === 0 && p.schemaVersion === V1020_RPIPE_SCHEMA_VERSION,
+    );
+  }
+
+  {
+    const p = sanitizeV1020RpipePersisted({ revision: -3 }, 2);
+    v1020RpipeSelfTestCheck(results, 'v1020_rpipe_sanitize', 'sanitize clamps revision', p.revision >= 0);
+  }
+
+  v1020RpipeSelfTestCheck(
+    results,
+    'v1020_rpipe_scenario_catalog',
+    'pipeline scenario catalog populated',
+    V1020_RPIPE_ALL_PIPELINE_SCENARIO_IDS.length >= 100,
+  );
+
+  {
+    const batch = V1020_RPIPE_evaluatePipelineBatch(4, ['pipeline_000', 'pipeline_001', 'pipeline_002']);
+    v1020RpipeSelfTestCheck(
+      results,
+      'v1020_rpipe_scenario_batch',
+      'transfer batch mean',
+      batch.snapshots.length === 3 && batch.meanSeverity > 0,
+    );
+  }
+
+  {
+    const r = V1020_RPIPE_PIPELINE_SCENARIO_000_evaluate(2);
+    v1020RpipeSelfTestCheck(
+      results,
+      'v1020_rpipe_scenario_000',
+      'scenario 000 evaluate',
+      r.complianceScore <= 100 && V1020_RPIPE_PIPELINE_SCENARIO_000_META.id === 'pipeline_000',
+    );
+  }
+
+  v1020RpipeSelfTestCheck(
+    results,
+    'v1020_rpipe_prop_graph',
+    'commercializationStack graph hash',
+    V1020_RPIPE_commercializationStackGraphHash(V1020_RPIPE_GENERATED_COMMERCIALIZATION_STACK_EDGES).startsWith('pg_'),
+  );
+
+  {
+    const merged = V1020_RPIPE_mergeCommercializationStackEdges(
+      [V1020_RPIPE_GENERATED_COMMERCIALIZATION_STACK_EDGES[0], V1020_RPIPE_GENERATED_COMMERCIALIZATION_STACK_EDGES[400]],
+      [V1020_RPIPE_GENERATED_COMMERCIALIZATION_STACK_EDGES[800]],
+    );
+    v1020RpipeSelfTestCheck(results, 'v1020_rpipe_prop_merge', 'commercializationStack merge', merged.length === 3);
+  }
+
+  {
+    const b = V1020_RPIPE_LAB_TRANSFER_NODE_00_buffer(5);
+    v1020RpipeSelfTestCheck(results, 'v1020_rpipe_lab_transfer_buffer', 'lab_transfer node buffer bounded', b >= 0 && b <= 1);
+  }
+
+  {
+    const b = computeV1020RpipeTrade20baBridge(v1020RpipeBaseInput(), 0.32);
+    v1020RpipeSelfTestCheck(
+      results,
+      'v1020_rpipe_trade_bridge',
+      '20BA adapter',
+      b.importStressContribution >= 0 && b.importStressContribution <= 1,
+    );
+  }
+
+  {
+    const b = computeV1020RpipeSupply20bbBridge(v1020RpipeBaseInput(), 52);
+    const next = applyV1020RpipeSupply20bbBottleneckOverrides({ bottleneckPressure: 40 }, b);
+    v1020RpipeSelfTestCheck(results, 'v1020_rpipe_supply_override', '20BB override', typeof next.bottleneckPressure === 'number');
+  }
+
+  {
+    const b = computeV1020RpipeEnergy20bcBridge(v1020RpipeBaseInput(), 48);
+    const next = applyV1020RpipeEnergy20bcGridOverrides({ gridStability: 60 }, b);
+    v1020RpipeSelfTestCheck(results, 'v1020_rpipe_energy_override', '20BC override', typeof next.gridStability === 'number');
+  }
+
+  {
+    const b = computeV1020RpipeWorkforce20bfBridge(v1020RpipeBaseInput(), 44);
+    const next = applyV1020RpipeWorkforce20bfReadinessOverrides({ nationalReadiness: 55 }, b);
+    v1020RpipeSelfTestCheck(results, 'v1020_rpipe_workforce_override', '20BF override', typeof next.nationalReadiness === 'number');
+  }
+
+  {
+    const b = computeV1020RpipeTrade20baBridge(v1020RpipeBaseInput(), 0.2);
+    const next = applyV1020RpipeTrade20baLaneOverrides({ exportLaneStability: 50 }, b);
+    v1020RpipeSelfTestCheck(results, 'v1020_rpipe_trade_override', '20BA lane override', typeof next.exportLaneStability === 'number');
+  }
+
+  {
+    const b = computeV1020RpipeCommercialization20beBridge(v1020RpipeBaseInput(), 0.15);
+    const next = applyV1020RpipeCommercialization20beCommercializationOverrides({ bottleneckPressure: 40 }, b);
+    v1020RpipeSelfTestCheck(
+      results,
+      'v1020_rpipe_commercialization_adapter',
+      '20BE commercialization adapter',
+      typeof next.bottleneckPressure === 'number' && next.bottleneckPressure !== 40,
+    );
+  }
+
+  {
+    const b = computeV1020RpipeLabTransfer20bjBridge(v1020RpipeBaseInput(), 0.18);
+    const next = applyV1020RpipeLabTransfer20bjLabTransferOverrides({ bottleneckPressure: 40 }, b);
+    v1020RpipeSelfTestCheck(
+      results,
+      'v1020_rpipe_lab_transfer_adapter',
+      '20BJ lab transfer adapter',
+      typeof next.bottleneckPressure === 'number' && next.bottleneckPressure !== 40,
+    );
+  }
+
+  v1020RpipeSelfTestCheck(results, 'v1020_rpipe_lab_transfer_band', 'lab_transfer bands', V1020_RPIPE_complianceFromScore(76) === 'robust');
+  v1020RpipeSelfTestCheck(results, 'v1020_rpipe_pipeline_rank', 'transfer band rank', V1020_RPIPE_transferBandRank('critical') === 5);
+  v1020RpipeSelfTestCheck(results, 'v1020_rpipe_clamp', 'clamp finite', V1020_RPIPE_clamp(Number.NaN, 0, 10) === 0);
+
+  {
+    const sweep = V1020_RPIPE_runPipelineScenarioRegressionSweep(3);
+    v1020RpipeSelfTestCheck(results, 'v1020_rpipe_regression_sweep', 'scenario regression sweep', sweep >= 100);
+  }
+
+  {
+    let persisted = createEmptyV1020RpipePersisted();
+    for (let turn = 1; turn <= 4; turn++) {
+      const out = runV1020RpipeTurn(v1020RpipeBaseInput({ turn, persisted }));
+      persisted = out.persisted;
+    }
+    v1020RpipeSelfTestCheck(
+      results,
+      'v1020_rpipe_multi_turn',
+      'multi-turn persistence revision',
+      persisted.revision === 4 && persisted.lastProcessedTurn === 4,
+    );
+  }
+
+  {
+    let persisted = createEmptyV1020RpipePersisted();
+    for (let turn = 1; turn <= 20; turn++) {
+      persisted = runV1020RpipeTurn(v1020RpipeBaseInput({ turn, persisted })).persisted;
+    }
+    v1020RpipeSelfTestCheck(results, 'v1020_rpipe_history_tail', 'history tail depth', persisted.historyTail.length <= 12);
+  }
+
+  const passed = results.filter((r) => r.passed).length;
+  const failed = results.length - passed;
+  return { passed, failed, total: results.length, allPassed: failed === 0, labSuiteId: V1020_RPIPE_LAB_SUITE_ID, results };
+}
+
+export function runV1020RpipeSelfTestsForLab(): V1020RpipeSelfTestResult[] {
+  return runV1020RpipeSelfTests().results;
+}
+function V1020_RPIPE_readPersistedFromGameState(gs: any): V1020RpipePersisted | null {
+  const raw = (gs?.save?.meta?.v1020 as any)?.research_pipeline;
+  return raw ? sanitizeV1020RpipePersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1020_RPIPE_applyToGameState(gs: any, out: V1020RpipeTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1020 = { ...(meta.v1020 || {}) };
+  v1020.research_pipeline = out.persisted;
+  meta.v1020 = v1020;
+  save.meta = meta;
+  return { ...gs, save, v1020ResearchPipeline: out.state };
+}
+
+export function buildV1020RpipeTurnInputFromGameState(gs: any, turn: number): V1020RpipeTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 10200;
+  const inp = buildV1020RpipeTurnInputFromGameStateStub(turn, seed);
+  const supply = gs?.v1014SupplyChain ?? null;
+  const trade = gs?.v1014TradeDepth ?? null;
+  const energy = gs?.energyDepth ?? null;
+  const workforce = gs?.v1014WorkforceV2 ?? gs?.v1014Workforce ?? null;
+  const ai = gs?.v1014AiFidelity ?? null;
+  const ffed = gs?.v1018FiscalFederalism ?? null;
+  return {
+    ...inp,
+    supply20bb: {
+      ...inp.supply20bb,
+      turn,
+      bottleneckPressure: Number(supply?.bottleneckPressure ?? inp.supply20bb.bottleneckPressure),
+      regionalStockDays: supply?.regionalStockDays ?? inp.supply20bb.regionalStockDays,
+    },
+    trade20ba: {
+      ...inp.trade20ba,
+      turn,
+      sanctionsPressure: Number(trade?.sanctionsPressure ?? inp.trade20ba.sanctionsPressure),
+      exportLaneStability: Number(trade?.exportLaneStability ?? inp.trade20ba.exportLaneStability),
+    },
+    energy20bc: {
+      ...inp.energy20bc,
+      turn,
+      gridStability: Number(energy?.gridStability ?? inp.energy20bc.gridStability),
+    },
+    workforce20bf: {
+      ...inp.workforce20bf,
+      turn,
+      nationalReadiness: Number(workforce?.nationalResilienceScore ?? workforce?.nationalReadiness ?? inp.workforce20bf.nationalReadiness),
+    },
+    aiFidelity20be: {
+      ...inp.aiFidelity20be,
+      turn,
+      planVerifyScore: Number(ai?.planVerifyScore ?? ai?.aggregateScore ?? inp.aiFidelity20be.planVerifyScore),
+      commercializationReadiness: Number(ai?.commercializationReadiness ?? inp.aiFidelity20be.commercializationReadiness),
+    },
+    fiscalFederalism20bj: {
+      ...inp.fiscalFederalism20bj,
+      turn,
+      transferPressure: Number(ffed?.supplyTransferPressure ?? ffed?.fiscalFederalismScore ?? inp.fiscalFederalism20bj.transferPressure),
+      labTransferBacklog: Number(ffed?.labTransferBacklog ?? inp.fiscalFederalism20bj.labTransferBacklog),
+    },
+    persisted: null,
+  };
 }
 
 // SECTION 21B: RELIABILITY UPGRADE — FOCUSED REGRESSION SELF-TESTS

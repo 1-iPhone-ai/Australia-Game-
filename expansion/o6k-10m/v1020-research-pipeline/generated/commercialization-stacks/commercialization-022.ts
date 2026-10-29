@@ -1,0 +1,31 @@
+import type { V1020RpipeGrantStackEdge } from '../../types/core.ts';
+
+/** Commercialization stack graph shard 022 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_022: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'water', toSystem: 'food', weight: 0.239, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.246, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.253, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.26, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.267, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.274, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.281, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.288, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.295, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.302, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.309, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.316, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.323, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.225, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.232, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.239, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.246, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.253, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.26, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.267, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.274, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.281, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.288, lagTurns: 10, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.295, lagTurns: 11, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.302, lagTurns: 9, nodeId: 'lab_transfer_22' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.309, lagTurns: 10, nodeId: 'lab_transfer_22' },
+];
