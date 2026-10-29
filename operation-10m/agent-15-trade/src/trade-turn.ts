@@ -207,6 +207,20 @@ import {
   tradeFlowCohesionWorldEvent,
 } from './trade-flow-cohesion.ts';
 import {
+  computeTradeThroughputOrchestrationSnapshot,
+  tradeThroughputOrchestrationDomesticStress,
+  tradeThroughputOrchestrationExportScale,
+  tradeThroughputOrchestrationGiNotes,
+  tradeThroughputOrchestrationWorldEvent,
+} from './trade-throughput-orchestration.ts';
+import {
+  computeCommitmentLedgerHarmonizationSnapshot,
+  commitmentLedgerHarmonizationDomesticStressRelief,
+  commitmentLedgerHarmonizationExportScale,
+  commitmentLedgerHarmonizationGiNotes,
+  commitmentLedgerHarmonizationWorldEvent,
+} from './commitment-ledger-harmonization.ts';
+import {
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -702,6 +716,30 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const flowCohesionEvent = tradeFlowCohesionWorldEvent(tradeFlowCohesion, turn);
   if (flowCohesionEvent) worldEvents.push(flowCohesionEvent);
 
+  const orchestrationStep = computeTradeThroughputOrchestrationSnapshot({
+    exportCommitmentPipeline,
+    importCommitmentPipeline,
+    tradeFlowCohesion,
+    logistics,
+    persisted,
+  });
+  persisted = orchestrationStep.persisted;
+  const tradeThroughputOrchestration = orchestrationStep.snapshot;
+  const orchestrationEvent = tradeThroughputOrchestrationWorldEvent(tradeThroughputOrchestration, turn);
+  if (orchestrationEvent) worldEvents.push(orchestrationEvent);
+
+  const harmonizationStep = computeCommitmentLedgerHarmonizationSnapshot({
+    exportCommitmentPipeline,
+    importCommitmentPipeline,
+    tradeFlowCohesion,
+    tradeThroughputOrchestration,
+    persisted,
+  });
+  persisted = harmonizationStep.persisted;
+  const commitmentLedgerHarmonization = harmonizationStep.snapshot;
+  const harmonizationEvent = commitmentLedgerHarmonizationWorldEvent(commitmentLedgerHarmonization, turn);
+  if (harmonizationEvent) worldEvents.push(harmonizationEvent);
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -723,6 +761,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         exportCommitmentPipelineExportScale(exportCommitmentPipeline) *
         importCommitmentPipelineExportScale(importCommitmentPipeline) *
         tradeFlowCohesionExportScale(tradeFlowCohesion) *
+        tradeThroughputOrchestrationExportScale(tradeThroughputOrchestration) *
+        commitmentLedgerHarmonizationExportScale(commitmentLedgerHarmonization) *
         10,
     ) / 10;
 
@@ -786,6 +826,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       diplomaticTradeCoherenceDomesticStressRelief(diplomaticTradeCoherence) -
       tradeShockAbsorptionDomesticStressRelief(tradeShockAbsorption) +
       tradeFlowCohesionDomesticStressRelief(tradeFlowCohesion) +
+      commitmentLedgerHarmonizationDomesticStressRelief(commitmentLedgerHarmonization) +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
@@ -795,7 +836,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       importLanePressureDomesticStress(importLanePressure) +
       tradeBalanceStabilizationDomesticStress(tradeBalanceStabilization) +
       exportCommitmentPipelineDomesticStress(exportCommitmentPipeline) +
-      importCommitmentPipelineDomesticStress(importCommitmentPipeline),
+      importCommitmentPipelineDomesticStress(importCommitmentPipeline) +
+      tradeThroughputOrchestrationDomesticStress(tradeThroughputOrchestration),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -838,6 +880,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.exportCommitmentPipelineSmoothing,
     persisted.importCommitmentPipelineSmoothing,
     persisted.tradeFlowCohesionSmoothing,
+    persisted.tradeThroughputOrchestrationSmoothing,
+    persisted.commitmentLedgerHarmonizationSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -912,6 +956,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     exportCommitmentPipeline,
     importCommitmentPipeline,
     tradeFlowCohesion,
+    tradeThroughputOrchestration,
+    commitmentLedgerHarmonization,
     inputHash,
   };
 
@@ -965,6 +1011,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...exportCommitmentPipelineGiNotes(state.exportCommitmentPipeline));
   lines.push(...importCommitmentPipelineGiNotes(state.importCommitmentPipeline));
   lines.push(...tradeFlowCohesionGiNotes(state.tradeFlowCohesion));
+  lines.push(...tradeThroughputOrchestrationGiNotes(state.tradeThroughputOrchestration));
+  lines.push(...commitmentLedgerHarmonizationGiNotes(state.commitmentLedgerHarmonization));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }

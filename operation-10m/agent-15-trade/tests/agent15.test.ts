@@ -785,3 +785,44 @@ test('round 16: critical import dependency raises pipeline fill vs slack baselin
     critical.state.importCommitmentPipeline.fillRate >= slack.state.importCommitmentPipeline.fillRate - 0.06,
   );
 });
+
+test('round 17: throughput orchestration and commitment ledger harmonization on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.tradeThroughputOrchestrationSmoothing = 0.56;
+  persisted.commitmentLedgerHarmonizationSmoothing = 0.54;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 51,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 100 } } },
+    persisted,
+  });
+  assert.ok(r.state.tradeThroughputOrchestration);
+  assert.ok(['fluid', 'paced', 'congested', 'stalled'].includes(r.state.tradeThroughputOrchestration.band));
+  assert.ok(r.state.commitmentLedgerHarmonization);
+  assert.ok(['aligned', 'adjusting', 'divergent', 'fractured'].includes(r.state.commitmentLedgerHarmonization.band));
+  assert.ok(r.persisted.tradeThroughputOrchestrationSmoothing != null);
+  assert.ok(r.persisted.commitmentLedgerHarmonizationSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Trade throughput orchestration/i.test(n)));
+  assert.ok(notes.some(n => /Commitment ledger harmonization/i.test(n)));
+});
+
+test('round 17: congested logistics lowers orchestration vs fluid baseline', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.tradeThroughputOrchestrationSmoothing = 0.5;
+  const healthy = advanceGlobalTradeEconomyTurn({
+    turn: 52,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 80 } } },
+    persisted: { ...persisted },
+  });
+  const critical = advanceGlobalTradeEconomyTurn({
+    turn: 52,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 190 } } },
+    persisted: { ...persisted },
+  });
+  assert.ok(
+    healthy.state.tradeThroughputOrchestration.score >= critical.state.tradeThroughputOrchestration.score - 0.12,
+  );
+});

@@ -166,6 +166,10 @@ export interface GTELPersisted {
   importCommitmentPipelineSmoothing?: number;
   /** Smoothed bilateral trade flow cohesion score (0–1). */
   tradeFlowCohesionSmoothing?: number;
+  /** Smoothed trade throughput orchestration score (0–1). */
+  tradeThroughputOrchestrationSmoothing?: number;
+  /** Smoothed commitment ledger harmonization score (0–1). */
+  commitmentLedgerHarmonizationSmoothing?: number;
 }
 
 export interface GTELState {
@@ -211,6 +215,8 @@ export interface GTELState {
   exportCommitmentPipeline: GTELTradeCommitmentPipelineSnapshot;
   importCommitmentPipeline: GTELImportCommitmentPipelineSnapshot;
   tradeFlowCohesion: GTELTradeFlowCohesionSnapshot;
+  tradeThroughputOrchestration: GTELTradeThroughputOrchestrationSnapshot;
+  commitmentLedgerHarmonization: GTELCommitmentLedgerHarmonizationSnapshot;
   inputHash: string;
 }
 
@@ -655,6 +661,26 @@ export interface GTELTradeFlowCohesionSnapshot {
   band: GTELTradeFlowCohesionBand;
   exportImportGap: number;
   stabilizationSupport: number;
+  summary: string;
+}
+
+export type GTELTradeThroughputOrchestrationBand = 'fluid' | 'paced' | 'congested' | 'stalled';
+
+export interface GTELTradeThroughputOrchestrationSnapshot {
+  score: number;
+  band: GTELTradeThroughputOrchestrationBand;
+  pipelineHeadroom: number;
+  logisticsSupport: number;
+  summary: string;
+}
+
+export type GTELCommitmentLedgerHarmonizationBand = 'aligned' | 'adjusting' | 'divergent' | 'fractured';
+
+export interface GTELCommitmentLedgerHarmonizationSnapshot {
+  score: number;
+  band: GTELCommitmentLedgerHarmonizationBand;
+  ledgerGap: number;
+  orchestrationSupport: number;
   summary: string;
 }
 

@@ -39,5 +39,7 @@ export * from './trade-shock-absorption.ts';
 export * from './export-commitment-pipeline.ts';
 export * from './import-commitment-pipeline.ts';
 export * from './trade-flow-cohesion.ts';
+export * from './trade-throughput-orchestration.ts';
+export * from './commitment-ledger-harmonization.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';

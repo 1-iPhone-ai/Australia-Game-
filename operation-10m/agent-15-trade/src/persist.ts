@@ -28,6 +28,8 @@ import { sanitizeTradeShockAbsorptionSmoothing } from './trade-shock-absorption.
 import { sanitizeExportCommitmentPipelineSmoothing } from './export-commitment-pipeline.ts';
 import { sanitizeImportCommitmentPipelineSmoothing } from './import-commitment-pipeline.ts';
 import { sanitizeTradeFlowCohesionSmoothing } from './trade-flow-cohesion.ts';
+import { sanitizeTradeThroughputOrchestrationSmoothing } from './trade-throughput-orchestration.ts';
+import { sanitizeCommitmentLedgerHarmonizationSmoothing } from './commitment-ledger-harmonization.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -74,6 +76,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     exportCommitmentPipelineSmoothing: 0.52,
     importCommitmentPipelineSmoothing: 0.5,
     tradeFlowCohesionSmoothing: 0.52,
+    tradeThroughputOrchestrationSmoothing: 0.52,
+    commitmentLedgerHarmonizationSmoothing: 0.52,
   };
 }
 
@@ -260,5 +264,11 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
     r.importCommitmentPipelineSmoothing,
   );
   base.tradeFlowCohesionSmoothing = sanitizeTradeFlowCohesionSmoothing(r.tradeFlowCohesionSmoothing);
+  base.tradeThroughputOrchestrationSmoothing = sanitizeTradeThroughputOrchestrationSmoothing(
+    r.tradeThroughputOrchestrationSmoothing,
+  );
+  base.commitmentLedgerHarmonizationSmoothing = sanitizeCommitmentLedgerHarmonizationSmoothing(
+    r.commitmentLedgerHarmonizationSmoothing,
+  );
   return base;
 }

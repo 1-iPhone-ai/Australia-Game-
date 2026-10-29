@@ -170,6 +170,10 @@ export interface GTELPersisted {
   importCommitmentPipelineSmoothing?: number;
   /** Smoothed bilateral trade flow cohesion score (0–1). */
   tradeFlowCohesionSmoothing?: number;
+  /** Smoothed trade throughput orchestration score (0–1). */
+  tradeThroughputOrchestrationSmoothing?: number;
+  /** Smoothed commitment ledger harmonization score (0–1). */
+  commitmentLedgerHarmonizationSmoothing?: number;
 }
 
 export interface GTELState {
@@ -215,6 +219,8 @@ export interface GTELState {
   exportCommitmentPipeline: GTELTradeCommitmentPipelineSnapshot;
   importCommitmentPipeline: GTELImportCommitmentPipelineSnapshot;
   tradeFlowCohesion: GTELTradeFlowCohesionSnapshot;
+  tradeThroughputOrchestration: GTELTradeThroughputOrchestrationSnapshot;
+  commitmentLedgerHarmonization: GTELCommitmentLedgerHarmonizationSnapshot;
   inputHash: string;
 }
 
@@ -662,6 +668,26 @@ export interface GTELTradeFlowCohesionSnapshot {
   summary: string;
 }
 
+export type GTELTradeThroughputOrchestrationBand = 'fluid' | 'paced' | 'congested' | 'stalled';
+
+export interface GTELTradeThroughputOrchestrationSnapshot {
+  score: number;
+  band: GTELTradeThroughputOrchestrationBand;
+  pipelineHeadroom: number;
+  logisticsSupport: number;
+  summary: string;
+}
+
+export type GTELCommitmentLedgerHarmonizationBand = 'aligned' | 'adjusting' | 'divergent' | 'fractured';
+
+export interface GTELCommitmentLedgerHarmonizationSnapshot {
+  score: number;
+  band: GTELCommitmentLedgerHarmonizationBand;
+  ledgerGap: number;
+  orchestrationSupport: number;
+  summary: string;
+}
+
 export interface GlobalTradeEconomyPanelProps {
   state: GTELState | null;
   theme?: { isDark?: boolean };
@@ -839,6 +865,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     exportCommitmentPipelineSmoothing: 0.52,
     importCommitmentPipelineSmoothing: 0.5,
     tradeFlowCohesionSmoothing: 0.52,
+    tradeThroughputOrchestrationSmoothing: 0.52,
+    commitmentLedgerHarmonizationSmoothing: 0.52,
   };
 }
 
@@ -1025,6 +1053,12 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
     r.importCommitmentPipelineSmoothing,
   );
   base.tradeFlowCohesionSmoothing = sanitizeTradeFlowCohesionSmoothing(r.tradeFlowCohesionSmoothing);
+  base.tradeThroughputOrchestrationSmoothing = sanitizeTradeThroughputOrchestrationSmoothing(
+    r.tradeThroughputOrchestrationSmoothing,
+  );
+  base.commitmentLedgerHarmonizationSmoothing = sanitizeCommitmentLedgerHarmonizationSmoothing(
+    r.commitmentLedgerHarmonizationSmoothing,
+  );
   return base;
 }
 
@@ -6652,6 +6686,18 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   tradeFlowCohesionGiNotes,
   tradeFlowCohesionWorldEvent,
 } from './trade-flow-cohesion.ts';
+  computeTradeThroughputOrchestrationSnapshot,
+  tradeThroughputOrchestrationDomesticStress,
+  tradeThroughputOrchestrationExportScale,
+  tradeThroughputOrchestrationGiNotes,
+  tradeThroughputOrchestrationWorldEvent,
+} from './trade-throughput-orchestration.ts';
+  computeCommitmentLedgerHarmonizationSnapshot,
+  commitmentLedgerHarmonizationDomesticStressRelief,
+  commitmentLedgerHarmonizationExportScale,
+  commitmentLedgerHarmonizationGiNotes,
+  commitmentLedgerHarmonizationWorldEvent,
+} from './commitment-ledger-harmonization.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -7144,6 +7190,30 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const flowCohesionEvent = tradeFlowCohesionWorldEvent(tradeFlowCohesion, turn);
   if (flowCohesionEvent) worldEvents.push(flowCohesionEvent);
 
+  const orchestrationStep = computeTradeThroughputOrchestrationSnapshot({
+    exportCommitmentPipeline,
+    importCommitmentPipeline,
+    tradeFlowCohesion,
+    logistics,
+    persisted,
+  });
+  persisted = orchestrationStep.persisted;
+  const tradeThroughputOrchestration = orchestrationStep.snapshot;
+  const orchestrationEvent = tradeThroughputOrchestrationWorldEvent(tradeThroughputOrchestration, turn);
+  if (orchestrationEvent) worldEvents.push(orchestrationEvent);
+
+  const harmonizationStep = computeCommitmentLedgerHarmonizationSnapshot({
+    exportCommitmentPipeline,
+    importCommitmentPipeline,
+    tradeFlowCohesion,
+    tradeThroughputOrchestration,
+    persisted,
+  });
+  persisted = harmonizationStep.persisted;
+  const commitmentLedgerHarmonization = harmonizationStep.snapshot;
+  const harmonizationEvent = commitmentLedgerHarmonizationWorldEvent(commitmentLedgerHarmonization, turn);
+  if (harmonizationEvent) worldEvents.push(harmonizationEvent);
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -7165,6 +7235,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         exportCommitmentPipelineExportScale(exportCommitmentPipeline) *
         importCommitmentPipelineExportScale(importCommitmentPipeline) *
         tradeFlowCohesionExportScale(tradeFlowCohesion) *
+        tradeThroughputOrchestrationExportScale(tradeThroughputOrchestration) *
+        commitmentLedgerHarmonizationExportScale(commitmentLedgerHarmonization) *
         10,
     ) / 10;
 
@@ -7228,6 +7300,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       diplomaticTradeCoherenceDomesticStressRelief(diplomaticTradeCoherence) -
       tradeShockAbsorptionDomesticStressRelief(tradeShockAbsorption) +
       tradeFlowCohesionDomesticStressRelief(tradeFlowCohesion) +
+      commitmentLedgerHarmonizationDomesticStressRelief(commitmentLedgerHarmonization) +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
@@ -7237,7 +7310,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       importLanePressureDomesticStress(importLanePressure) +
       tradeBalanceStabilizationDomesticStress(tradeBalanceStabilization) +
       exportCommitmentPipelineDomesticStress(exportCommitmentPipeline) +
-      importCommitmentPipelineDomesticStress(importCommitmentPipeline),
+      importCommitmentPipelineDomesticStress(importCommitmentPipeline) +
+      tradeThroughputOrchestrationDomesticStress(tradeThroughputOrchestration),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -7280,6 +7354,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.exportCommitmentPipelineSmoothing,
     persisted.importCommitmentPipelineSmoothing,
     persisted.tradeFlowCohesionSmoothing,
+    persisted.tradeThroughputOrchestrationSmoothing,
+    persisted.commitmentLedgerHarmonizationSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -7354,6 +7430,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     exportCommitmentPipeline,
     importCommitmentPipeline,
     tradeFlowCohesion,
+    tradeThroughputOrchestration,
+    commitmentLedgerHarmonization,
     inputHash,
   };
 
@@ -7407,6 +7485,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...exportCommitmentPipelineGiNotes(state.exportCommitmentPipeline));
   lines.push(...importCommitmentPipelineGiNotes(state.importCommitmentPipeline));
   lines.push(...tradeFlowCohesionGiNotes(state.tradeFlowCohesion));
+  lines.push(...tradeThroughputOrchestrationGiNotes(state.tradeThroughputOrchestration));
+  lines.push(...commitmentLedgerHarmonizationGiNotes(state.commitmentLedgerHarmonization));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
@@ -7498,6 +7578,14 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   createEmptyTradeFlowCohesionSnapshot,
   tradeFlowCohesionExportScale,
 } from './trade-flow-cohesion.ts';
+  computeTradeThroughputOrchestrationSnapshot,
+  createEmptyTradeThroughputOrchestrationSnapshot,
+  tradeThroughputOrchestrationExportScale,
+} from './trade-throughput-orchestration.ts';
+  computeCommitmentLedgerHarmonizationSnapshot,
+  createEmptyCommitmentLedgerHarmonizationSnapshot,
+  commitmentLedgerHarmonizationExportScale,
+} from './commitment-ledger-harmonization.ts';
   validateScenarioShockCatalog,
   triggerCommodityShockScenario,
   COMMODITY_SHOCK_SCENARIOS,
@@ -8482,6 +8570,57 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     }).snapshot;
     gtelAssert(aligned.score > skewed.score, 'expected stronger cohesion when aligned');
     gtelAssert(tradeFlowCohesionExportScale(aligned) >= tradeFlowCohesionExportScale(skewed), 'expected cohesion scale lift');
+  });
+
+  ok('trade throughput orchestration lifts under fluid logistics and aligned pipelines', () => {
+    const exportPipe = { ...createEmptyTradeCommitmentPipelineSnapshot(), fillRate: 0.48, band: 'steady' as const };
+    const importPipe = { ...createEmptyImportCommitmentPipelineSnapshot(), fillRate: 0.46, band: 'steady' as const };
+    const cohesion = { ...createEmptyTradeFlowCohesionSnapshot(), score: 0.68, band: 'synchronized' as const };
+    const fluid = computeTradeThroughputOrchestrationSnapshot({
+      exportCommitmentPipeline: exportPipe,
+      importCommitmentPipeline: importPipe,
+      tradeFlowCohesion: cohesion,
+      logistics: { band: 'fluid', freightPressure: 0.2, redundancyScore: 0.7, effectiveExportThroughput: 100, networkStrain: 0.1, summary: 'test' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const congested = computeTradeThroughputOrchestrationSnapshot({
+      exportCommitmentPipeline: { ...exportPipe, fillRate: 0.82, band: 'booked_out' },
+      importCommitmentPipeline: { ...importPipe, fillRate: 0.8, band: 'booked_out' },
+      tradeFlowCohesion: { ...cohesion, score: 0.32, band: 'dislocated' },
+      logistics: { band: 'congested', freightPressure: 0.72, redundancyScore: 0.3, effectiveExportThroughput: 60, networkStrain: 0.6, summary: 'test' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(fluid.score > congested.score, 'expected stronger orchestration when fluid');
+    gtelAssert(
+      tradeThroughputOrchestrationExportScale(fluid) >= tradeThroughputOrchestrationExportScale(congested),
+      'expected orchestration scale lift',
+    );
+  });
+
+  ok('commitment ledger harmonization improves when finance coverage aligns', () => {
+    const exportPipe = { ...createEmptyTradeCommitmentPipelineSnapshot(), financeCoverage: 0.72, fillRate: 0.55 };
+    const importPipe = { ...createEmptyImportCommitmentPipelineSnapshot(), financeCoverage: 0.7, fillRate: 0.54 };
+    const cohesion = { ...createEmptyTradeFlowCohesionSnapshot(), score: 0.62, band: 'balanced' as const };
+    const orchestration = { ...createEmptyTradeThroughputOrchestrationSnapshot(), score: 0.66, band: 'fluid' as const };
+    const aligned = computeCommitmentLedgerHarmonizationSnapshot({
+      exportCommitmentPipeline: exportPipe,
+      importCommitmentPipeline: importPipe,
+      tradeFlowCohesion: cohesion,
+      tradeThroughputOrchestration: orchestration,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const fractured = computeCommitmentLedgerHarmonizationSnapshot({
+      exportCommitmentPipeline: { ...exportPipe, financeCoverage: 0.82 },
+      importCommitmentPipeline: { ...importPipe, financeCoverage: 0.38 },
+      tradeFlowCohesion: { ...cohesion, score: 0.34, band: 'dislocated' },
+      tradeThroughputOrchestration: { ...orchestration, score: 0.28, band: 'stalled' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(aligned.score > fractured.score, 'expected stronger harmonization when aligned');
+    gtelAssert(
+      commitmentLedgerHarmonizationExportScale(aligned) >= commitmentLedgerHarmonizationExportScale(fractured),
+      'expected harmonization scale lift',
+    );
   });
 
   return { passed, failed };

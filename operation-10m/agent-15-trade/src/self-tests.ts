@@ -119,6 +119,16 @@ import {
   createEmptyTradeFlowCohesionSnapshot,
   tradeFlowCohesionExportScale,
 } from './trade-flow-cohesion.ts';
+import {
+  computeTradeThroughputOrchestrationSnapshot,
+  createEmptyTradeThroughputOrchestrationSnapshot,
+  tradeThroughputOrchestrationExportScale,
+} from './trade-throughput-orchestration.ts';
+import {
+  computeCommitmentLedgerHarmonizationSnapshot,
+  createEmptyCommitmentLedgerHarmonizationSnapshot,
+  commitmentLedgerHarmonizationExportScale,
+} from './commitment-ledger-harmonization.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -1107,6 +1117,57 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     }).snapshot;
     gtelAssert(aligned.score > skewed.score, 'expected stronger cohesion when aligned');
     gtelAssert(tradeFlowCohesionExportScale(aligned) >= tradeFlowCohesionExportScale(skewed), 'expected cohesion scale lift');
+  });
+
+  ok('trade throughput orchestration lifts under fluid logistics and aligned pipelines', () => {
+    const exportPipe = { ...createEmptyTradeCommitmentPipelineSnapshot(), fillRate: 0.48, band: 'steady' as const };
+    const importPipe = { ...createEmptyImportCommitmentPipelineSnapshot(), fillRate: 0.46, band: 'steady' as const };
+    const cohesion = { ...createEmptyTradeFlowCohesionSnapshot(), score: 0.68, band: 'synchronized' as const };
+    const fluid = computeTradeThroughputOrchestrationSnapshot({
+      exportCommitmentPipeline: exportPipe,
+      importCommitmentPipeline: importPipe,
+      tradeFlowCohesion: cohesion,
+      logistics: { band: 'fluid', freightPressure: 0.2, redundancyScore: 0.7, effectiveExportThroughput: 100, networkStrain: 0.1, summary: 'test' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const congested = computeTradeThroughputOrchestrationSnapshot({
+      exportCommitmentPipeline: { ...exportPipe, fillRate: 0.82, band: 'booked_out' },
+      importCommitmentPipeline: { ...importPipe, fillRate: 0.8, band: 'booked_out' },
+      tradeFlowCohesion: { ...cohesion, score: 0.32, band: 'dislocated' },
+      logistics: { band: 'congested', freightPressure: 0.72, redundancyScore: 0.3, effectiveExportThroughput: 60, networkStrain: 0.6, summary: 'test' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(fluid.score > congested.score, 'expected stronger orchestration when fluid');
+    gtelAssert(
+      tradeThroughputOrchestrationExportScale(fluid) >= tradeThroughputOrchestrationExportScale(congested),
+      'expected orchestration scale lift',
+    );
+  });
+
+  ok('commitment ledger harmonization improves when finance coverage aligns', () => {
+    const exportPipe = { ...createEmptyTradeCommitmentPipelineSnapshot(), financeCoverage: 0.72, fillRate: 0.55 };
+    const importPipe = { ...createEmptyImportCommitmentPipelineSnapshot(), financeCoverage: 0.7, fillRate: 0.54 };
+    const cohesion = { ...createEmptyTradeFlowCohesionSnapshot(), score: 0.62, band: 'balanced' as const };
+    const orchestration = { ...createEmptyTradeThroughputOrchestrationSnapshot(), score: 0.66, band: 'fluid' as const };
+    const aligned = computeCommitmentLedgerHarmonizationSnapshot({
+      exportCommitmentPipeline: exportPipe,
+      importCommitmentPipeline: importPipe,
+      tradeFlowCohesion: cohesion,
+      tradeThroughputOrchestration: orchestration,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const fractured = computeCommitmentLedgerHarmonizationSnapshot({
+      exportCommitmentPipeline: { ...exportPipe, financeCoverage: 0.82 },
+      importCommitmentPipeline: { ...importPipe, financeCoverage: 0.38 },
+      tradeFlowCohesion: { ...cohesion, score: 0.34, band: 'dislocated' },
+      tradeThroughputOrchestration: { ...orchestration, score: 0.28, band: 'stalled' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(aligned.score > fractured.score, 'expected stronger harmonization when aligned');
+    gtelAssert(
+      commitmentLedgerHarmonizationExportScale(aligned) >= commitmentLedgerHarmonizationExportScale(fractured),
+      'expected harmonization scale lift',
+    );
   });
 
   return { passed, failed };
