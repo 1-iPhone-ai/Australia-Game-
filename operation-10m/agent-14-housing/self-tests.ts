@@ -56,6 +56,13 @@ import {
 } from './governance-trajectory.ts';
 import { buildReliefDispatchPlan } from './relief-dispatch-planner.ts';
 import { composeStakeholderCoordinationBrief } from './stakeholder-coordination-brief.ts';
+import {
+  advanceCoordinationTrajectory,
+  createInitialCoordinationTrajectory,
+  sanitizeCoordinationTrajectory,
+} from './coordination-trajectory.ts';
+import { buildReliefExecutionMonitor } from './relief-execution-monitor.ts';
+import { composePortfolioStabilizationBrief } from './portfolio-stabilization-brief.ts';
 import { AGENT14_WELLBEING_SCHEMA_VERSION } from './types.ts';
 
 export interface Agent14SelfTestResult {
@@ -557,8 +564,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Eighteen housing scenarios registered',
-    listAgent14ScenarioIds().length === 18,
+    'Twenty housing scenarios registered',
+    listAgent14ScenarioIds().length === 20,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -786,8 +793,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave5_schema_version',
-    'Wellbeing schema version is wave 8',
-    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.8-scale-wave-8',
+    'Wellbeing schema version is wave 9',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.9-scale-wave-9',
     AGENT14_WELLBEING_SCHEMA_VERSION
   );
 
@@ -1246,7 +1253,7 @@ export function runAgent14WellbeingSelfTests(): {
 
   {
     const raw = sanitizeGovernanceTrajectory({
-      schemaVersion: '10.14.7-scale-wave-7' as any,
+      schemaVersion: '10.14.8-scale-wave-8' as any,
       lastTurn: 2,
       emaAlpha: 0.3,
       governanceScoreEma: 47,
@@ -1350,6 +1357,163 @@ export function runAgent14WellbeingSelfTests(): {
       'Governance trajectory advance updates persisted turn',
       snap.persisted.lastTurn === 3 && snap.snapshot.governanceScoreEma > 0,
       `ema=${snap.snapshot.governanceScoreEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 6, fiscalHeadroom: 24, stateCapacityLoad: 86, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      coordinationTrajectoryPersisted: createInitialCoordinationTrajectory(),
+    });
+    check(
+      results,
+      'wave9_coordination_trajectory',
+      'Turn advance attaches coordination trajectory',
+      adv.inputs.coordinationTrajectory !== undefined &&
+        adv.coordinationTrajectoryPersisted.lastTurn === 6 &&
+        adv.inputs.coordinationTrajectory!.engagementPressureEma > 0,
+      `band=${adv.inputs.coordinationTrajectory?.band} ema=${adv.inputs.coordinationTrajectory?.engagementPressureEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 7, fiscalHeadroom: 21, stateCapacityLoad: 91, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave9_relief_execution_monitor',
+      'Relief execution monitor populated under stress',
+      adv.inputs.reliefExecutionMonitor !== undefined &&
+        adv.inputs.reliefExecutionMonitor!.summary.length > 8,
+      adv.inputs.reliefExecutionMonitor?.summary.slice(0, 72)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 5, fiscalHeadroom: 33, stateCapacityLoad: 78, workforceReadiness: 'weak' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave9_portfolio_stabilization_brief',
+      'Portfolio stabilization brief includes path',
+      adv.inputs.portfolioStabilizationBrief !== undefined &&
+        adv.inputs.portfolioStabilizationBrief!.summary.length > 10,
+      `path=${adv.inputs.portfolioStabilizationBrief?.stabilizationPath}`
+    );
+  }
+
+  {
+    const raw = sanitizeCoordinationTrajectory({
+      schemaVersion: '10.14.8-scale-wave-8' as any,
+      lastTurn: 3,
+      emaAlpha: 0.3,
+      engagementPressureEma: 58,
+    });
+    check(
+      results,
+      'wave9_coordination_sanitize',
+      'Coordination trajectory sanitize upgrades schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.engagementPressureEma === 58,
+      `schema=${raw.schemaVersion}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('coordination_trajectory_arc', 10);
+    const last = sim.turns[9];
+    check(
+      results,
+      'wave9_coordination_arc_scenario',
+      'Coordination arc surfaces trajectory or engagement',
+      last.coordinationTrajectory !== undefined &&
+        (last.coordinationTrajectory!.band !== 'routine' ||
+          last.stakeholderCoordinationBrief!.shouldEngageStakeholders ||
+          last.coordinationTrajectory!.trajectory !== 'flat'),
+      `band=${last.coordinationTrajectory?.band} traj=${last.coordinationTrajectory?.trajectory}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('relief_execution_stress', 8);
+    const last = sim.turns[7];
+    check(
+      results,
+      'wave9_relief_execution_scenario',
+      'Relief execution stress surfaces monitor or stabilization pause',
+      last.reliefExecutionMonitor !== undefined &&
+        (last.reliefExecutionMonitor!.shouldEscalateExecution ||
+          last.reliefExecutionMonitor!.immediateDue > 0 ||
+          last.portfolioStabilizationBrief!.shouldPausePortfolioGrowth),
+      `escalate=${last.reliefExecutionMonitor?.shouldEscalateExecution} pause=${last.portfolioStabilizationBrief?.shouldPausePortfolioGrowth}`
+    );
+  }
+
+  check(
+    results,
+    'wave9_stabilization_stub_catalog',
+    'Wave 9 stabilization stubs present',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_QLD_stakeholder_alignment') &&
+      AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_SA_portfolio_stabilization'),
+    `n=${AGENT14_HEALTH_ED_PROGRAM_STUBS.length}`
+  );
+
+  check(
+    results,
+    'wave9_scenario_catalog',
+    'Scenario catalog includes wave 9 scenarios',
+    listAgent14ScenarioIds().includes('coordination_trajectory_arc') &&
+      listAgent14ScenarioIds().includes('relief_execution_stress'),
+    `count=${listAgent14ScenarioIds().length}`
+  );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 8, fiscalHeadroom: 26, stateCapacityLoad: 85, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const monitor = buildReliefExecutionMonitor({
+      turn: 8,
+      reliefDispatchPlan: adv.inputs.reliefDispatchPlan!,
+      reliefSchedule: adv.inputs.capacityReliefSchedule!,
+      coordinationTrajectory: adv.inputs.coordinationTrajectory,
+    });
+    const brief = composePortfolioStabilizationBrief({
+      turn: 8,
+      reliefExecutionMonitor: monitor,
+      stakeholderBrief: adv.inputs.stakeholderCoordinationBrief!,
+      coordinationTrajectory: adv.inputs.coordinationTrajectory,
+      governanceTrajectory: adv.inputs.governanceTrajectory,
+    });
+    check(
+      results,
+      'wave9_stabilization_composer',
+      'Standalone stabilization composer returns headlines',
+      brief.headlines.length > 0 && brief.summary.length > 10,
+      brief.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 36, stateCapacityLoad: 70, workforceReadiness: 'strained' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const snap = advanceCoordinationTrajectory(
+      4,
+      adv.inputs.stakeholderCoordinationBrief!,
+      createInitialCoordinationTrajectory()
+    );
+    check(
+      results,
+      'wave9_coordination_advance_unit',
+      'Coordination trajectory advance updates persisted turn',
+      snap.persisted.lastTurn === 4 && snap.snapshot.engagementPressureEma > 0,
+      `ema=${snap.snapshot.engagementPressureEma}`
     );
   }
 

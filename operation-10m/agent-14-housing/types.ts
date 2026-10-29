@@ -1,6 +1,6 @@
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.8-scale-wave-8' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.9-scale-wave-9' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -107,6 +107,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   governanceTrajectory?: GovernanceTrajectorySnapshot;
   reliefDispatchPlan?: ReliefDispatchPlan;
   stakeholderCoordinationBrief?: StakeholderCoordinationBrief;
+  coordinationTrajectory?: CoordinationTrajectorySnapshot;
+  reliefExecutionMonitor?: ReliefExecutionMonitor;
+  portfolioStabilizationBrief?: PortfolioStabilizationBrief;
 }
 
 export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
@@ -299,6 +302,45 @@ export interface StakeholderCoordinationBrief {
   trajectory: CouplingTrajectoryTrend;
   reliefActions: number;
   shouldEngageStakeholders: boolean;
+  headlines: string[];
+  summary: string;
+}
+
+export type CoordinationEngagementBand = 'routine' | 'elevated' | 'escalation';
+
+export interface CoordinationTrajectorySnapshot {
+  turn: number;
+  engagementPressureEma: number;
+  instantaneousPressure: number;
+  band: CoordinationEngagementBand;
+  trajectory: CouplingTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface CoordinationTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  engagementPressureEma: number;
+  priorEma?: number;
+}
+
+export interface ReliefExecutionMonitor {
+  turn: number;
+  immediateDue: number;
+  deferredCount: number;
+  holdCount: number;
+  backlogPressure: number;
+  shouldEscalateExecution: boolean;
+  summary: string;
+}
+
+export type PortfolioStabilizationPath = 'clear' | 'watch' | 'blocked';
+
+export interface PortfolioStabilizationBrief {
+  turn: number;
+  stabilizationPath: PortfolioStabilizationPath;
+  shouldPausePortfolioGrowth: boolean;
   headlines: string[];
   summary: string;
 }

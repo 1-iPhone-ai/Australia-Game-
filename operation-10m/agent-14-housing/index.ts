@@ -26,4 +26,7 @@ export * from './wellbeing-governance-panel.ts';
 export * from './governance-trajectory.ts';
 export * from './relief-dispatch-planner.ts';
 export * from './stakeholder-coordination-brief.ts';
+export * from './coordination-trajectory.ts';
+export * from './relief-execution-monitor.ts';
+export * from './portfolio-stabilization-brief.ts';
 export { runAgent14WellbeingSelfTests } from './self-tests.ts';

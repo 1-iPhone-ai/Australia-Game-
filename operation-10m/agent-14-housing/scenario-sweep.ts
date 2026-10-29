@@ -26,7 +26,9 @@ export type Agent14HousingScenarioId =
   | 'resilience_recovery_arc'
   | 'capacity_relief_governance_stress'
   | 'governance_trajectory_arc'
-  | 'relief_dispatch_coordination_stress';
+  | 'relief_dispatch_coordination_stress'
+  | 'coordination_trajectory_arc'
+  | 'relief_execution_stress';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -187,6 +189,27 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
       'ps_ed_VIC_tafe',
     ],
   },
+  {
+    id: 'coordination_trajectory_arc',
+    label: 'Coordination trajectory arc',
+    baseInputs: { fiscalHeadroom: 32, stateCapacityLoad: 74, workforceReadiness: 'strained', workforceSpecialistGap: 62 },
+    launchProgramIds: [
+      'ps_xp_QLD_stakeholder_alignment',
+      'ps_h_QLD_regional_release',
+      'ps_he_QLD_remote_clinic',
+    ],
+  },
+  {
+    id: 'relief_execution_stress',
+    label: 'Relief execution stress',
+    baseInputs: { fiscalHeadroom: 19, stateCapacityLoad: 90, workforceReadiness: 'blocking', workforceSpecialistGap: 76 },
+    launchProgramIds: [
+      'ps_xp_SA_portfolio_stabilization',
+      'ps_h_SA_modular',
+      'ps_he_VIC_hospital_backlog',
+      'ps_ed_NSW_skills',
+    ],
+  },
 ];
 
 export { commitmentFromProgramStub } from './program-stub-commitments.ts';
@@ -207,6 +230,7 @@ export function simulateAgent14HousingScenario(
   let accountabilityTrajectoryPersisted = null;
   let resilienceTrajectoryPersisted = null;
   let governanceTrajectoryPersisted = null;
+  let coordinationTrajectoryPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -225,6 +249,7 @@ export function simulateAgent14HousingScenario(
       accountabilityTrajectoryPersisted,
       resilienceTrajectoryPersisted,
       governanceTrajectoryPersisted,
+      coordinationTrajectoryPersisted,
       newCommitments,
       enforceCapacity: true,
     });
@@ -234,6 +259,7 @@ export function simulateAgent14HousingScenario(
     accountabilityTrajectoryPersisted = result.accountabilityTrajectoryPersisted;
     resilienceTrajectoryPersisted = result.resilienceTrajectoryPersisted;
     governanceTrajectoryPersisted = result.governanceTrajectoryPersisted;
+    coordinationTrajectoryPersisted = result.coordinationTrajectoryPersisted;
     turns.push(result.inputs);
   }
 

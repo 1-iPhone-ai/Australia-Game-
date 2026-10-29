@@ -14,6 +14,9 @@ import type {
   GovernanceTrajectorySnapshot,
   ReliefDispatchPlan,
   StakeholderCoordinationBrief,
+  CoordinationTrajectorySnapshot,
+  ReliefExecutionMonitor,
+  PortfolioStabilizationBrief,
   WellbeingTurnForecastPoint,
 } from './types.ts';
 
@@ -34,6 +37,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   governanceTrajectory?: GovernanceTrajectorySnapshot;
   reliefDispatchPlan?: ReliefDispatchPlan;
   stakeholderCoordinationBrief?: StakeholderCoordinationBrief;
+  coordinationTrajectory?: CoordinationTrajectorySnapshot;
+  reliefExecutionMonitor?: ReliefExecutionMonitor;
+  portfolioStabilizationBrief?: PortfolioStabilizationBrief;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -103,6 +109,17 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   if (args.stakeholderCoordinationBrief?.shouldEngageStakeholders) {
     giNotes.push(args.stakeholderCoordinationBrief.summary);
   }
+  if (args.coordinationTrajectory?.band === 'escalation') {
+    giNotes.push(
+      `Coordination pressure ${args.coordinationTrajectory.band} (EMA ${args.coordinationTrajectory.engagementPressureEma})`
+    );
+  }
+  if (args.reliefExecutionMonitor?.shouldEscalateExecution) {
+    giNotes.push(args.reliefExecutionMonitor.summary);
+  }
+  if (args.portfolioStabilizationBrief?.shouldPausePortfolioGrowth) {
+    giNotes.push(args.portfolioStabilizationBrief.summary);
+  }
 
   const headlineParts: string[] = [];
   if (args.coupling.band === 'critical' || args.coupling.band === 'strained') {
@@ -120,6 +137,8 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
     headlineParts.push('governance crisis');
   } else if (args.wellbeingResilience?.band === 'critical') {
     headlineParts.push('wellbeing resilience critical');
+  } else if (args.portfolioStabilizationBrief?.stabilizationPath === 'blocked') {
+    headlineParts.push('portfolio stabilization blocked');
   }
 
   return {
