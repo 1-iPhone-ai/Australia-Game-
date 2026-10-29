@@ -1,0 +1,31 @@
+import type { V1025BioConservationOffsetEdge } from '../../types/core.ts';
+
+/** Conservation offset graph shard 055 (species/habitat/offset corridor coupling). */
+export const V1025_BIO_CONSERVATION_OFFSET_SHARD_055: readonly V1025BioConservationOffsetEdge[] = [
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.274, lagTurns: 3, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.28, lagTurns: 4, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.286, lagTurns: 5, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.292, lagTurns: 6, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.298, lagTurns: 3, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.304, lagTurns: 4, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.31, lagTurns: 5, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.316, lagTurns: 6, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.322, lagTurns: 3, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.328, lagTurns: 4, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.334, lagTurns: 5, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.34, lagTurns: 6, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.346, lagTurns: 3, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.352, lagTurns: 4, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.358, lagTurns: 5, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.364, lagTurns: 6, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.268, lagTurns: 3, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.274, lagTurns: 4, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.28, lagTurns: 5, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.286, lagTurns: 6, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.292, lagTurns: 3, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.298, lagTurns: 4, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.304, lagTurns: 5, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.31, lagTurns: 6, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.316, lagTurns: 3, nodeId: 'protected_area_07' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.322, lagTurns: 4, nodeId: 'protected_area_07' },
+];

@@ -1,0 +1,31 @@
+import type { V1025BioConservationOffsetEdge } from '../../types/core.ts';
+
+/** Conservation offset graph shard 070 (species/habitat/offset corridor coupling). */
+export const V1025_BIO_CONSERVATION_OFFSET_SHARD_070: readonly V1025BioConservationOffsetEdge[] = [
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.258, lagTurns: 9, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.264, lagTurns: 10, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.27, lagTurns: 11, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.276, lagTurns: 12, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.282, lagTurns: 9, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.288, lagTurns: 10, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.294, lagTurns: 11, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.3, lagTurns: 12, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.204, lagTurns: 9, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.21, lagTurns: 10, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.216, lagTurns: 11, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.222, lagTurns: 12, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.228, lagTurns: 9, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.234, lagTurns: 10, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.24, lagTurns: 11, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.246, lagTurns: 12, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.252, lagTurns: 9, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.258, lagTurns: 10, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.264, lagTurns: 11, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.27, lagTurns: 12, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.276, lagTurns: 9, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.282, lagTurns: 10, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.288, lagTurns: 11, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.294, lagTurns: 12, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.3, lagTurns: 9, nodeId: 'protected_area_22' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.204, lagTurns: 10, nodeId: 'protected_area_22' },
+];

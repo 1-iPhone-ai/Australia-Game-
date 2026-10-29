@@ -1,0 +1,31 @@
+import type { V1025BioConservationOffsetEdge } from '../../types/core.ts';
+
+/** Conservation offset graph shard 083 (species/habitat/offset corridor coupling). */
+export const V1025_BIO_CONSERVATION_OFFSET_SHARD_083: readonly V1025BioConservationOffsetEdge[] = [
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.668, lagTurns: 4, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.674, lagTurns: 5, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.68, lagTurns: 6, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.686, lagTurns: 7, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.692, lagTurns: 4, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.698, lagTurns: 5, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.704, lagTurns: 6, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.71, lagTurns: 7, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.716, lagTurns: 4, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.62, lagTurns: 5, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.626, lagTurns: 6, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.632, lagTurns: 7, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.638, lagTurns: 4, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.644, lagTurns: 5, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.65, lagTurns: 6, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.656, lagTurns: 7, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.662, lagTurns: 4, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.668, lagTurns: 5, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.674, lagTurns: 6, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.68, lagTurns: 7, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.686, lagTurns: 4, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.692, lagTurns: 5, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.698, lagTurns: 6, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.704, lagTurns: 7, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.71, lagTurns: 4, nodeId: 'protected_area_11' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.716, lagTurns: 5, nodeId: 'protected_area_11' },
+];
