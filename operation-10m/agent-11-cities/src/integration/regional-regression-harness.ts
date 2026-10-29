@@ -45,6 +45,9 @@ export type OP10M_A11_RegressionTurnSnapshot = {
   institutionalTrustErosionIndex: number;
   liquidityFragmentationIndex: number;
   cascadingFailureRiskIndex: number;
+  socialContractFragilityIndex: number;
+  capitalFlightPanicIndex: number;
+  irrecoverableCollapseThresholdIndex: number;
   validationErrors: number;
 };
 
@@ -116,6 +119,9 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
       institutionalTrustErosionIndex: out.state.nationalInstitutionalTrustErosionIndex,
       liquidityFragmentationIndex: out.state.nationalLiquidityFragmentationIndex,
       cascadingFailureRiskIndex: out.state.nationalCascadingFailureRiskIndex,
+      socialContractFragilityIndex: out.state.nationalSocialContractFragilityIndex,
+      capitalFlightPanicIndex: out.state.nationalCapitalFlightPanicIndex,
+      irrecoverableCollapseThresholdIndex: out.state.nationalIrrecoverableCollapseThresholdIndex,
       validationErrors,
     });
   }
@@ -176,6 +182,15 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
   const cascadingFailureStable = snapshots.every(
     (s) => s.cascadingFailureRiskIndex >= 8 && s.cascadingFailureRiskIndex <= 100,
   );
+  const socialContractStable = snapshots.every(
+    (s) => s.socialContractFragilityIndex >= 8 && s.socialContractFragilityIndex <= 100,
+  );
+  const capitalFlightStable = snapshots.every(
+    (s) => s.capitalFlightPanicIndex >= 8 && s.capitalFlightPanicIndex <= 100,
+  );
+  const irrecoverableCollapseStable = snapshots.every(
+    (s) => s.irrecoverableCollapseThresholdIndex >= 8 && s.irrecoverableCollapseThresholdIndex <= 100,
+  );
 
   const ok =
     monotonicRevision &&
@@ -215,10 +230,13 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
     compoundShockStable &&
     institutionalTrustStable &&
     liquidityFragmentationStable &&
-    cascadingFailureStable;
+    cascadingFailureStable &&
+    socialContractStable &&
+    capitalFlightStable &&
+    irrecoverableCollapseStable;
   const detail = ok
-    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, cascade risk ${snapshots[snapshots.length - 1].cascadingFailureRiskIndex}`
-    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable} gridlock=${landUseGridlockStable} trap=${mobilityTrapStable} gap=${absorptionGapStable} relief=${reliefOverheadStable} drift=${corridorDriftStable} lag=${adaptationLagStable} fiscal=${fiscalCapacityStable} erosion=${networkErosionStable} horizon=${horizonRiskStable} integrity=${cohesionIntegrityStable} reliefEq=${reliefEquityGapStable} systemic=${systemicFragilityStable} govDecay=${governanceDecayStable} migStab=${migrationStabilityStable} ceiling=${adaptiveCeilingStable} fiscalGov=${fiscalGovernanceCouplingStable} netEq=${networkEquityTensionStable} frontier=${resilienceFrontierStable} metaGov=${metaGovernanceFatigueStable} capital=${capitalMobilityStable} compound=${compoundShockStable} trust=${institutionalTrustStable} liquidity=${liquidityFragmentationStable} cascade=${cascadingFailureStable}`;
+    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, collapse threshold ${snapshots[snapshots.length - 1].irrecoverableCollapseThresholdIndex}`
+    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable} gridlock=${landUseGridlockStable} trap=${mobilityTrapStable} gap=${absorptionGapStable} relief=${reliefOverheadStable} drift=${corridorDriftStable} lag=${adaptationLagStable} fiscal=${fiscalCapacityStable} erosion=${networkErosionStable} horizon=${horizonRiskStable} integrity=${cohesionIntegrityStable} reliefEq=${reliefEquityGapStable} systemic=${systemicFragilityStable} govDecay=${governanceDecayStable} migStab=${migrationStabilityStable} ceiling=${adaptiveCeilingStable} fiscalGov=${fiscalGovernanceCouplingStable} netEq=${networkEquityTensionStable} frontier=${resilienceFrontierStable} metaGov=${metaGovernanceFatigueStable} capital=${capitalMobilityStable} compound=${compoundShockStable} trust=${institutionalTrustStable} liquidity=${liquidityFragmentationStable} cascade=${cascadingFailureStable} social=${socialContractStable} flight=${capitalFlightStable} irrecoverable=${irrecoverableCollapseStable}`;
 
   return { ok, snapshots, detail };
 }

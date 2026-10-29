@@ -93,6 +93,9 @@ import { op10mA11ComputeSettlementCompoundShockSaturation } from './settlement-c
 import { op10mA11ComputeRegionalInstitutionalTrustErosion } from './regional-institutional-trust-erosion.ts';
 import { op10mA11ComputeInterregionalLiquidityFragmentationStress } from './interregional-liquidity-fragmentation-stress.ts';
 import { op10mA11ComputeSettlementCascadingFailureRisk } from './settlement-cascading-failure-risk.ts';
+import { op10mA11ComputeRegionalSocialContractFragility } from './regional-social-contract-fragility.ts';
+import { op10mA11ComputeInterregionalCapitalFlightPanic } from './interregional-capital-flight-panic.ts';
+import { op10mA11ComputeSettlementIrrecoverableCollapseThreshold } from './settlement-irrecoverable-collapse-threshold.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -419,7 +422,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.16',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.17',
     composite.state.schemaVersion,
   );
 
@@ -543,7 +546,10 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastCompoundShockSaturationIndex === composite.state.nationalCompoundShockSaturationIndex &&
       composite.persisted.lastInstitutionalTrustErosionIndex === composite.state.nationalInstitutionalTrustErosionIndex &&
       composite.persisted.lastLiquidityFragmentationIndex === composite.state.nationalLiquidityFragmentationIndex &&
-      composite.persisted.lastCascadingFailureRiskIndex === composite.state.nationalCascadingFailureRiskIndex,
+      composite.persisted.lastCascadingFailureRiskIndex === composite.state.nationalCascadingFailureRiskIndex &&
+      composite.persisted.lastSocialContractFragilityIndex === composite.state.nationalSocialContractFragilityIndex &&
+      composite.persisted.lastCapitalFlightPanicIndex === composite.state.nationalCapitalFlightPanicIndex &&
+      composite.persisted.lastIrrecoverableCollapseThresholdIndex === composite.state.nationalIrrecoverableCollapseThresholdIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -1606,6 +1612,90 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_149',
     composite.state.cascadingFailureRisk.every((c) => c.narrative.includes('cascading failure risk')),
     composite.state.cascadingFailureRisk[0]?.band ?? 'none',
+  );
+
+  const socialContractFragility = op10mA11ComputeRegionalSocialContractFragility({
+    institutionalTrustErosion: composite.state.institutionalTrustErosion,
+    liquidityFragmentation: composite.state.liquidityFragmentation,
+    cascadingFailureRisk: composite.state.cascadingFailureRisk,
+  });
+  push(
+    out,
+    'a11_150',
+    composite.state.socialContractFragility.length === 8 &&
+      composite.state.nationalSocialContractFragilityIndex === socialContractFragility.nationalIndex,
+    `social contract ${composite.state.nationalSocialContractFragilityIndex}`,
+  );
+
+  const capitalFlightPanic = op10mA11ComputeInterregionalCapitalFlightPanic({
+    liquidityFragmentation: composite.state.liquidityFragmentation,
+    institutionalTrustErosion: composite.state.institutionalTrustErosion,
+    capitalMobilityAsymmetry: composite.state.capitalMobilityAsymmetry,
+  });
+  push(
+    out,
+    'a11_151',
+    composite.state.capitalFlightPanic.length === 8 &&
+      composite.state.nationalCapitalFlightPanicIndex === capitalFlightPanic.nationalIndex,
+    `capital flight ${composite.state.nationalCapitalFlightPanicIndex}`,
+  );
+
+  const irrecoverableCollapse = op10mA11ComputeSettlementIrrecoverableCollapseThreshold({
+    cascadingFailureRisk: composite.state.cascadingFailureRisk,
+    compoundShockSaturation: composite.state.compoundShockSaturation,
+    institutionalTrustErosion: composite.state.institutionalTrustErosion,
+  });
+  push(
+    out,
+    'a11_152',
+    composite.state.irrecoverableCollapseThreshold.length === 8 &&
+      composite.state.nationalIrrecoverableCollapseThresholdIndex === irrecoverableCollapse.nationalIndex,
+    `collapse threshold ${composite.state.nationalIrrecoverableCollapseThresholdIndex}`,
+  );
+
+  push(
+    out,
+    'a11_153',
+    composite.state.socialContractFragility.every((s) => s.narrative.includes('social contract fragility')),
+    composite.state.socialContractFragility[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_154',
+    composite.derived.some((d) => d.kind === 'social_contract_fragility') ||
+      composite.state.socialContractFragility.some((s) => s.band === 'fraying' || s.band === 'ruptured'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_155',
+    composite.derived.some((d) => d.kind === 'capital_flight_panic') ||
+      composite.state.capitalFlightPanic.some((c) => c.band === 'panicked' || c.band === 'stampede'),
+    composite.state.capitalFlightPanic[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_156',
+    composite.persisted.lastCapitalFlightPanicIndex === composite.state.nationalCapitalFlightPanicIndex,
+    `persisted capital flight ${composite.persisted.lastCapitalFlightPanicIndex}`,
+  );
+
+  push(
+    out,
+    'a11_157',
+    composite.derived.some((d) => d.kind === 'irrecoverable_collapse_threshold') ||
+      composite.state.irrecoverableCollapseThreshold.some((i) => i.band === 'terminal' || i.band === 'irrecoverable'),
+    composite.state.irrecoverableCollapseThreshold[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_158',
+    composite.state.irrecoverableCollapseThreshold.every((i) => i.narrative.includes('irrecoverable collapse threshold')),
+    composite.state.irrecoverableCollapseThreshold[0]?.band ?? 'none',
   );
 
   return out;

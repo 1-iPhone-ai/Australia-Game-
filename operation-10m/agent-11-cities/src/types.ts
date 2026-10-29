@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.16' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.17' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -269,7 +269,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'compound_shock_saturation'
   | 'institutional_trust_erosion'
   | 'liquidity_fragmentation_stress'
-  | 'cascading_failure_risk';
+  | 'cascading_failure_risk'
+  | 'social_contract_fragility'
+  | 'capital_flight_panic'
+  | 'irrecoverable_collapse_threshold';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -666,6 +669,36 @@ export interface OP10M_A11_CascadingFailureRiskRow {
   narrative: string;
 }
 
+export type OP10M_A11_SocialContractFragilityBand = 'honored' | 'strained' | 'fraying' | 'ruptured';
+
+export interface OP10M_A11_SocialContractFragilityRow {
+  regionId: OP10M_A11_RegionId;
+  fragilityScore: number;
+  band: OP10M_A11_SocialContractFragilityBand;
+  signals: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_CapitalFlightPanicBand = 'stable' | 'nervous' | 'panicked' | 'stampede';
+
+export interface OP10M_A11_CapitalFlightPanicRow {
+  regionId: OP10M_A11_RegionId;
+  panicScore: number;
+  band: OP10M_A11_CapitalFlightPanicBand;
+  drivers: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_IrrecoverableCollapseBand = 'recoverable' | 'stressed' | 'terminal' | 'irrecoverable';
+
+export interface OP10M_A11_IrrecoverableCollapseThresholdRow {
+  regionId: OP10M_A11_RegionId;
+  thresholdScore: number;
+  band: OP10M_A11_IrrecoverableCollapseBand;
+  markers: string[];
+  narrative: string;
+}
+
 export type OP10M_A11_MigrationPressureBand = 'stable' | 'elevated' | 'high' | 'surge';
 
 export interface OP10M_A11_MigrationPressureRow {
@@ -854,6 +887,12 @@ export interface OP10M_A11_CompositeState {
   nationalLiquidityFragmentationIndex: number;
   cascadingFailureRisk: OP10M_A11_CascadingFailureRiskRow[];
   nationalCascadingFailureRiskIndex: number;
+  socialContractFragility: OP10M_A11_SocialContractFragilityRow[];
+  nationalSocialContractFragilityIndex: number;
+  capitalFlightPanic: OP10M_A11_CapitalFlightPanicRow[];
+  nationalCapitalFlightPanicIndex: number;
+  irrecoverableCollapseThreshold: OP10M_A11_IrrecoverableCollapseThresholdRow[];
+  nationalIrrecoverableCollapseThresholdIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -902,5 +941,8 @@ export interface OP10M_A11_CompositePersisted {
   lastInstitutionalTrustErosionIndex: number;
   lastLiquidityFragmentationIndex: number;
   lastCascadingFailureRiskIndex: number;
+  lastSocialContractFragilityIndex: number;
+  lastCapitalFlightPanicIndex: number;
+  lastIrrecoverableCollapseThresholdIndex: number;
   inputHash: string;
 }

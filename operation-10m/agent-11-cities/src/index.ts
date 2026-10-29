@@ -55,5 +55,8 @@ export * from './settlement-compound-shock-saturation.ts';
 export * from './regional-institutional-trust-erosion.ts';
 export * from './interregional-liquidity-fragmentation-stress.ts';
 export * from './settlement-cascading-failure-risk.ts';
+export * from './regional-social-contract-fragility.ts';
+export * from './interregional-capital-flight-panic.ts';
+export * from './settlement-irrecoverable-collapse-threshold.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';

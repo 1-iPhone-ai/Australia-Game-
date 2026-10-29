@@ -2,6 +2,8 @@
 
 Urban growth balance, regional inequality metrics, and national–local spillover links. Standalone TypeScript until Agent 25 assembly into V9.4.
 
+**Scale wave round 18:** regional social contract fragility, interregional capital flight panic, settlement irrecoverable collapse threshold (schema `10m.a11.composite.17`).
+
 **Scale wave round 17:** regional institutional trust erosion, interregional liquidity fragmentation stress, settlement cascading failure risk (schema `10m.a11.composite.16`).
 
 **Scale wave round 16:** regional meta-governance coordination fatigue, interregional capital mobility asymmetry, settlement compound shock saturation (schema `10m.a11.composite.15`).
