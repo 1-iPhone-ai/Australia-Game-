@@ -11,4 +11,4 @@ Branch: `op10m/agent-05-events` · baseline **`aa70dacf`** · **`6ecda061`** @ *
 
 ## Commit
 
-Round 31 base: **`6ecda061`**. Round 32 HEAD: TBD. Push-first.
+Round 31 base: **`6ecda061`**. Round 32 HEAD: **`22489b0d`**. Push-first.
