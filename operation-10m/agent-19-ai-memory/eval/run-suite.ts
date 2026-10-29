@@ -830,6 +830,23 @@ import {
   buildVertexRecoveryOrchestrator,
   vertexRecoveryOrchestratorWithinCap,
 } from '../vertex-recovery-orchestrator.ts';
+import {
+  buildMatchExplainabilityNexusBundle,
+  matchExplainabilityNexusReady,
+} from '../match-explainability-nexus-bundle.ts';
+import {
+  buildSessionNexusExportBundle,
+  sessionNexusExportShipped,
+} from '../session-nexus-export-bundle.ts';
+import { auditVertexNexusBridge, vertexNexusBridgeHealthy } from '../vertex-nexus-bridge.ts';
+import {
+  auditMatchExplainabilityConvergenceGate,
+  matchExplainabilityConvergenceAllowed,
+} from '../match-explainability-convergence-gate.ts';
+import {
+  buildNexusRecoveryOrchestrator,
+  nexusRecoveryOrchestratorWithinCap,
+} from '../nexus-recovery-orchestrator.ts';
 import type { MemoryEvalResult } from '../types.ts';
 
 type Case = [string, string, () => boolean | string];
@@ -7802,6 +7819,132 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return report.vertexBlocked && vertexRecoveryOrchestratorWithinCap(report) && report.stepCount > 0 || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r51_nexus_bundle',
+        'Nexus bundle ready on full vertex stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityNexusBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityNexusReady(bundle) && bundle.nexusAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r51_vertex_nexus_bridge',
+        'Vertex nexus bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditVertexNexusBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return vertexNexusBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r51_nexus_export',
+        'Nexus export shipped when nexus ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionNexusExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionNexusExportShipped(bundle) && bundle.nexusSchema === 'agent19.nexus.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r51_convergence_gate_ok',
+        'Convergence gate allowed on healthy nexus stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityConvergenceGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityConvergenceAllowed(report) && report.nexusExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r51_convergence_gate_block',
+        'Convergence gate denied when nexus pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 74, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityConvergenceGate([pack], {
+            memory: null,
+            currentTurn: 74,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityConvergenceAllowed(report) && !report.nexusReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r51_nexus_recovery',
+        'Nexus recovery orchestrator within cap when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 74, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = buildNexusRecoveryOrchestrator([pack], {
+            memory: null,
+            currentTurn: 74,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return report.nexusBlocked && nexusRecoveryOrchestratorWithinCap(report) && report.stepCount > 0 || JSON.stringify(report);
         },
       ],
     ]),
