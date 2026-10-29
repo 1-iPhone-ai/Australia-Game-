@@ -86,6 +86,14 @@ import {
   integritySealBlocksCommit,
 } from '../planning/integrity-seal.ts';
 import {
+  buildAgent17CommitLattice,
+  commitLatticeBlocksCovenant,
+} from '../planning/commit-lattice.ts';
+import {
+  buildAgent17CovenantGate,
+  covenantGateBlocksOps,
+} from '../planning/covenant-gate.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -881,6 +889,54 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const commitLattice = depthEval.snapshot.planningDepth?.commitLattice;
+  goalResults.push(
+    result(
+      'G17-055',
+      !!commitLattice &&
+        commitLattice.latticeScore >= 0 &&
+        commitLattice.latticeScore <= 100 &&
+        (commitLattice.band === 'bound' ||
+          commitLattice.band === 'flex' ||
+          commitLattice.band === 'fragmented'),
+      `${commitLattice?.latticeScore}/${commitLattice?.band}`
+    )
+  );
+
+  const covenantGate = depthEval.snapshot.planningDepth?.covenantGate;
+  goalResults.push(
+    result(
+      'G17-056',
+      !!covenantGate &&
+        covenantGate.clauses.length >= 5 &&
+        covenantGate.covenantScore >= 0 &&
+        covenantGate.covenantScore <= 100,
+      `clauses=${covenantGate?.clauses.length} score=${covenantGate?.covenantScore}`
+    )
+  );
+
+  const fragmentedLattice = buildAgent17CommitLattice({
+    integritySeal: breachedSeal,
+    fluxIndex: disruptedFlux,
+    escalationMatrix: breachMatrix,
+  });
+  const voidCovenant = buildAgent17CovenantGate({
+    commitLattice: fragmentedLattice,
+    planHealth: assessAgent17PlanHealth(breachOps.activePlan, baseState, 'player'),
+    rollbackAssurance: buildAgent17RollbackAssurance(
+      breachOps,
+      assessAgent17PlanHealth(breachOps.activePlan, baseState, 'player'),
+      breachAudit
+    ),
+  });
+  goalResults.push(
+    result(
+      'G17-057',
+      commitLatticeBlocksCovenant(fragmentedLattice) || covenantGateBlocksOps(voidCovenant),
+      `${fragmentedLattice.band}/${voidCovenant.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -965,6 +1021,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-052',
     'G17-053',
     'G17-054',
+    'G17-055',
+    'G17-056',
+    'G17-057',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

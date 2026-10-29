@@ -33,6 +33,8 @@ export * from './planning/pulse-index.ts';
 export * from './planning/continuity-bridge.ts';
 export * from './planning/flux-index.ts';
 export * from './planning/integrity-seal.ts';
+export * from './planning/commit-lattice.ts';
+export * from './planning/covenant-gate.ts';
 export * from './planning/planning-orchestrator.ts';
 export * from './planning/ops-state.ts';
 export * from './evaluation/operations-evaluator.ts';
@@ -53,6 +55,7 @@ export * from './harness/run-synthesis-depth-tests.ts';
 export * from './harness/run-cadence-depth-tests.ts';
 export * from './harness/run-pulse-depth-tests.ts';
 export * from './harness/run-flux-depth-tests.ts';
+export * from './harness/run-covenant-depth-tests.ts';
 
 export const AGENT17_MODULE_ROOT = 'operation-10m/agent-17-command-center';
 export const AGENT17_ASSEMBLY_ANCHOR = '// SECTION 15: AI COMMAND CENTER';

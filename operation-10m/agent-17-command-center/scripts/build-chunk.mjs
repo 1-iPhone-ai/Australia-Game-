@@ -49,6 +49,8 @@ const FILES = [
   'planning/continuity-bridge.ts',
   'planning/flux-index.ts',
   'planning/integrity-seal.ts',
+  'planning/commit-lattice.ts',
+  'planning/covenant-gate.ts',
   'planning/planning-orchestrator.ts',
   'evaluation/operations-evaluator.ts',
   'rollback/rollback-controller.ts',
@@ -69,6 +71,7 @@ const FILES = [
   'harness/run-cadence-depth-tests.ts',
   'harness/run-pulse-depth-tests.ts',
   'harness/run-flux-depth-tests.ts',
+  'harness/run-covenant-depth-tests.ts',
 ];
 
 function stripModulePreamble(source) {

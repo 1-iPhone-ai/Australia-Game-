@@ -380,6 +380,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Disrupted flux or breached seal yields integritySealBlocksCommit.',
     severity: 'major',
   },
+  {
+    id: 'G17-055',
+    title: 'Commit lattice on planning depth',
+    category: 'telemetry',
+    acceptance: 'commitLattice reports latticeScore 0–100 with bound/flex/fragmented band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-056',
+    title: 'Covenant gate clauses complete',
+    category: 'telemetry',
+    acceptance: 'covenantGate exposes ≥5 covenant clauses and covenantScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-057',
+    title: 'Fragmented lattice voids covenant',
+    category: 'integration',
+    acceptance: 'Fragmented lattice or void covenant yields covenantGateBlocksOps.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

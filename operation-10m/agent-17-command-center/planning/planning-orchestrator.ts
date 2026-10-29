@@ -43,6 +43,8 @@ import { buildAgent17PulseIndex } from './pulse-index.ts';
 import { buildAgent17ContinuityBridge } from './continuity-bridge.ts';
 import { buildAgent17FluxIndex } from './flux-index.ts';
 import { buildAgent17IntegritySeal } from './integrity-seal.ts';
+import { buildAgent17CommitLattice } from './commit-lattice.ts';
+import { buildAgent17CovenantGate } from './covenant-gate.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -247,6 +249,16 @@ export function buildAgent17PlanningDepthSnapshot(
     rollbackAssurance,
     verificationPolicy,
   });
+  const commitLattice = buildAgent17CommitLattice({
+    integritySeal,
+    fluxIndex,
+    escalationMatrix,
+  });
+  const covenantGate = buildAgent17CovenantGate({
+    commitLattice,
+    planHealth,
+    rollbackAssurance,
+  });
   return {
     ...core,
     intentQueue,
@@ -272,6 +284,8 @@ export function buildAgent17PlanningDepthSnapshot(
     continuityBridge,
     fluxIndex,
     integritySeal,
+    commitLattice,
+    covenantGate,
   };
 }
 
