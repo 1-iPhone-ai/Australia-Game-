@@ -209,6 +209,8 @@ export interface RegionMapNode {
   resilience: number | null;
   /** 0..1 visual weight from authoritative momentum history span (not simulated). */
   activityWeight: number;
+  /** Map focus mode dims non-neighbor regions. */
+  dimmed?: boolean;
 }
 
 export interface Agent23TestResult {
@@ -732,6 +734,136 @@ export function nrDashBuildBottleneckRollup(ns: NationalSystemsState | null): Nr
   }));
 }
 
+// --- bundled from core/condition-catalog.ts ---
+export interface NrDashConditionBucket {
+  network: NationalNetworkKind;
+  networkLabel: string;
+  condition: NationalNetworkCondition;
+  conditionLabel: string;
+  regionCount: number;
+}
+
+/** Count regions in each network×condition bucket (authoritative NS cells only). */
+export function nrDashBuildConditionCatalog(ns: NationalSystemsState | null): NrDashConditionBucket[] {
+  if (!ns) return [];
+  const counts = new Map<string, number>();
+  Object.values(ns.regions).forEach(reg => {
+    NATIONAL_NETWORKS.forEach(network => {
+      const cond = reg.networks[network]?.condition ?? 'healthy';
+      const key = `${network}:${cond}`;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+  });
+  const out: NrDashConditionBucket[] = [];
+  NATIONAL_NETWORKS.forEach(network => {
+    const conditions: NationalNetworkCondition[] = ['surplus', 'healthy', 'strained', 'bottlenecked', 'critical'];
+    conditions.forEach(condition => {
+      const regionCount = counts.get(`${network}:${condition}`) || 0;
+      if (regionCount === 0) return;
+      out.push({
+        network,
+        networkLabel: NATIONAL_NETWORK_LABEL[network],
+        condition,
+        conditionLabel: NATIONAL_CONDITION_LABEL[condition],
+        regionCount,
+      });
+    });
+  });
+  return out;
+}
+
+// --- bundled from core/momentum-divergence.ts ---
+export interface NrDashMomentumDivergence {
+  minRank: number;
+  maxRank: number;
+  spread: number;
+  /** Mean absolute deviation from median rank (state rows only). */
+  dispersion: number;
+  hottestRegionId: string | null;
+  coldestRegionId: string | null;
+}
+
+function rankRow(r: NrDashRegionalRow): number {
+  return NR_DASH_MOM_RANK[r.momentumBand as LRMomentumBand] ?? 2;
+}
+
+export function nrDashBuildMomentumDivergence(snap: NrDashAuthSnapshot): NrDashMomentumDivergence | null {
+  if (!snap.regions.length) return null;
+  const ranks = snap.regions.map(r => ({ id: r.regionId, rank: rankRow(r) }));
+  const values = ranks.map(r => r.rank);
+  const minRank = Math.min(...values);
+  const maxRank = Math.max(...values);
+  const median = values.slice().sort((a, b) => a - b)[Math.floor(values.length / 2)] ?? 2;
+  const dispersion =
+    values.reduce((s, v) => s + Math.abs(v - median), 0) / Math.max(1, values.length);
+  const hottest = ranks.find(r => r.rank === maxRank);
+  const coldest = ranks.find(r => r.rank === minRank);
+  return {
+    minRank,
+    maxRank,
+    spread: maxRank - minRank,
+    dispersion: Math.round(dispersion * 100) / 100,
+    hottestRegionId: hottest?.id ?? null,
+    coldestRegionId: coldest?.id ?? null,
+  };
+}
+
+// --- bundled from core/map-focus.ts ---
+export function nrDashLinksTouchingRegion(links: NrDashMapLink[], regionId: string | null): NrDashMapLink[] {
+  if (!regionId) return links;
+  return links.filter(l => l.fromId === regionId || l.toId === regionId);
+}
+
+export function nrDashNeighborRegionIds(regionId: string): string[] {
+  return [...(AGENT23_ADJACENT_REGIONS[regionId] || [])];
+}
+
+export function nrDashApplyMapFocus(
+  nodes: RegionMapNode[],
+  focusRegionId: string | null
+): RegionMapNode[] {
+  if (!focusRegionId) return nodes.map(n => ({ ...n, dimmed: false }));
+  const neighbors = new Set(nrDashNeighborRegionIds(focusRegionId));
+  neighbors.add(focusRegionId);
+  return nodes.map(n => ({
+    ...n,
+    dimmed: !neighbors.has(n.regionId),
+  }));
+}
+
+// --- bundled from core/trend-delta.ts ---
+export interface NrDashTrendDeltaRow {
+  regionId: string;
+  name: string;
+  delta: number | null;
+  last: number | null;
+}
+
+/** Last-minus-first delta from authoritative momentum.history (no forecasting). */
+export function nrDashBuildTrendDeltas(rows: NrDashRegionalRow[]): NrDashTrendDeltaRow[] {
+  return rows.map(r => {
+    const pts = (r.momentumHistory || []).filter(v => Number.isFinite(v));
+    if (pts.length < 2) {
+      return { regionId: r.regionId, name: r.name, delta: null, last: pts[pts.length - 1] ?? null };
+    }
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    return {
+      regionId: r.regionId,
+      name: r.name,
+      delta: Math.round((last - first) * 1000) / 1000,
+      last,
+    };
+  });
+}
+
+export function nrDashTopTrendMovers(rows: NrDashRegionalRow[], limit = 3): NrDashTrendDeltaRow[] {
+  return nrDashBuildTrendDeltas(rows)
+    .filter(r => r.delta != null)
+    .sort((a, b) => Math.abs(b.delta!) - Math.abs(a.delta!))
+    .slice(0, limit);
+}
+
 // --- bundled from tests/fixtures.ts ---
 function emptyNetworks(): Record<NationalNetworkKind, NationalRegionSystemsState['networks']['freight']> {
   const base = { utilization: 0.4, condition: 'healthy' as const };
@@ -742,6 +874,13 @@ function emptyNetworks(): Record<NationalNetworkKind, NationalRegionSystemsState
     trade: { ...base },
     digital: { ...base },
   };
+}
+
+function variedNetworks(code: string): NationalRegionSystemsState['networks'] {
+  const n = emptyNetworks();
+  if (code === 'NSW') n.freight = { utilization: 0.92, condition: 'bottlenecked' };
+  if (code === 'VIC') n.energy = { utilization: 0.88, condition: 'critical' };
+  return n;
 }
 
 export function createAgent23LrFixture(): LivingRegionsWorldView {
@@ -771,7 +910,7 @@ export function createAgent23NsFixture(): NationalSystemsState {
     regions[code] = {
       regionId: code,
       name: code,
-      networks: emptyNetworks(),
+      networks: variedNetworks(code),
       primaryConstraint: 'freight',
       resilience: 55,
       resilienceBand: 'stable',
@@ -929,7 +1068,11 @@ export const NrDashHeatMatrix: React.FC<{
 );
 
 // --- bundled from ui/compare-insights.tsx ---
-export const NrDashCompareInsightsPanel: React.FC<{ insights: NrDashCompareInsights }> = ({ insights }) => (
+export const NrDashCompareInsightsPanel: React.FC<{
+  insights: NrDashCompareInsights;
+  divergence?: NrDashMomentumDivergence | null;
+  conditionBuckets?: NrDashConditionBucket[];
+}> = ({ insights, divergence, conditionBuckets = [] }) => (
   <div className="grid md:grid-cols-2 gap-3 text-xs" data-testid="nr-dash-compare-insights">
     <div className="rounded border border-slate-600/50 p-2">
       <div className="font-semibold mb-1">Regional control (snapshot)</div>
@@ -959,6 +1102,37 @@ export const NrDashCompareInsightsPanel: React.FC<{ insights: NrDashCompareInsig
         ))}
       </div>
     </div>
+    {divergence && (
+      <div className="rounded border border-slate-600/50 p-2" data-testid="nr-dash-momentum-divergence">
+        <div className="font-semibold mb-1">Momentum divergence</div>
+        <div>
+          Spread {divergence.spread} · dispersion {divergence.dispersion} · hot {divergence.hottestRegionId ?? '—'} · cold{' '}
+          {divergence.coldestRegionId ?? '—'}
+        </div>
+      </div>
+    )}
+    {conditionBuckets.length > 0 && (
+      <div className="rounded border border-slate-600/50 p-2 md:col-span-2" data-testid="nr-dash-condition-catalog">
+        <div className="font-semibold mb-1">Network condition counts (regions)</div>
+        <div className="flex flex-wrap gap-1">
+          {conditionBuckets.slice(0, 12).map(b => (
+            <span key={`${b.network}-${b.condition}`} className="px-1 py-0.5 rounded bg-slate-800/70">
+              {b.networkLabel} {b.conditionLabel}: {b.regionCount}
+            </span>
+          ))}
+        </div>
+      </div>
+    )}
+  </div>
+);
+
+// --- bundled from ui/map-legend.tsx ---
+export const NrDashMapLegend: React.FC = () => (
+  <div className="flex flex-wrap gap-3 text-[10px] opacity-80" data-testid="nr-dash-map-legend">
+    <span>— — land adjacency</span>
+    <span>—— NS dependency (color = provider network condition)</span>
+    <span>Ring: you / rival / neutral</span>
+    <span>Dim: outside focus neighborhood</span>
   </div>
 );
 
@@ -1021,8 +1195,9 @@ export const RegionPositionMap: React.FC<RegionPositionMapProps> = ({
     {nodes.map(n => {
       const r = 2.2 + n.activityWeight * 2.8;
       const focused = focusRegionId === n.regionId;
+      const opacity = n.dimmed ? 0.35 : 0.85;
       return (
-        <g key={n.regionId} data-testid={`agent23-map-node-${n.regionId}`}>
+        <g key={n.regionId} data-testid={`agent23-map-node-${n.regionId}`} opacity={opacity}>
           <circle
             cx={n.x}
             cy={n.y}
@@ -1034,7 +1209,7 @@ export const RegionPositionMap: React.FC<RegionPositionMapProps> = ({
             onClick={() => onSelect?.(n.regionId)}
             style={{ cursor: onSelect ? 'pointer' : 'default' }}
           />
-          <text x={n.x} y={n.y + r + 4} textAnchor="middle" fontSize={3.2} fill="#e2e8f0">
+          <text x={n.x} y={n.y + r + 4} textAnchor="middle" fontSize={3.2} fill="#e2e8f0" opacity={n.dimmed ? 0.5 : 1}>
             {n.regionId}
           </text>
           <title>
@@ -1066,7 +1241,11 @@ export const NrDashOverviewTab: React.FC<{
 }> = ({ snap, nsState, onAsk }) => (
   <div className="space-y-4" data-testid="nr-dash-tab-overview">
     <NrDashProvenanceStrip items={snap.provenance} />
-    <NrDashCompareInsightsPanel insights={nrDashBuildCompareInsights(snap, nsState)} />
+    <NrDashCompareInsightsPanel
+      insights={nrDashBuildCompareInsights(snap, nsState)}
+      divergence={nrDashBuildMomentumDivergence(snap)}
+      conditionBuckets={nrDashBuildConditionCatalog(nsState)}
+    />
     <div className="grid md:grid-cols-3 gap-3 text-sm">
       <div className="rounded-lg border border-slate-600/50 p-3">
         <div className="text-xs opacity-70">National resilience</div>
@@ -1201,9 +1380,23 @@ export const NrDashNetworksTab: React.FC<{
   );
 };
 
-export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }) => (
-  <div data-testid="nr-dash-tab-trends">
-    <NrDashProvenanceStrip items={snap.provenance} />
+export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }) => {
+  const movers = nrDashTopTrendMovers(snap.regions, 5);
+  return (
+    <div data-testid="nr-dash-tab-trends">
+      <NrDashProvenanceStrip items={snap.provenance} />
+      {movers.length > 0 && (
+        <div className="text-xs mb-3" data-testid="nr-dash-trend-movers">
+          <div className="font-semibold mb-1">Largest momentum history deltas (authoritative)</div>
+          <ul className="list-disc list-inside">
+            {movers.map(m => (
+              <li key={m.regionId}>
+                {m.name}: Δ {m.delta} (last {m.last})
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     {snap.historySnippets.length ? (
       <ol className="text-xs space-y-1 mt-2 list-decimal list-inside">
         {snap.historySnippets.map((t, i) => (
@@ -1213,8 +1406,9 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
     ) : (
       <p className="text-sm opacity-80">No national or major regional turning points recorded yet.</p>
     )}
-  </div>
-);
+    </div>
+  );
+};
 
 export const NrDashMapTab: React.FC<{
   snap: NrDashAuthSnapshot;
@@ -1222,8 +1416,9 @@ export const NrDashMapTab: React.FC<{
   focusRegionId: string | null;
   onFocusRegion?: (id: string) => void;
 }> = ({ snap, nsState, focusRegionId, onFocusRegion }) => {
-  const nodes = useMemo(() => nrDashBuildRegionMapNodes(snap), [snap]);
-  const links = useMemo(
+  const baseNodes = useMemo(() => nrDashBuildRegionMapNodes(snap), [snap]);
+  const nodes = useMemo(() => nrDashApplyMapFocus(baseNodes, focusRegionId), [baseNodes, focusRegionId]);
+  const allLinks = useMemo(
     () =>
       nrDashMergeMapLinks(
         nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
@@ -1231,10 +1426,15 @@ export const NrDashMapTab: React.FC<{
       ),
     [nsState]
   );
+  const links = useMemo(
+    () => (focusRegionId ? nrDashLinksTouchingRegion(allLinks, focusRegionId) : allLinks),
+    [allLinks, focusRegionId]
+  );
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-map">
       <NrDashProvenanceStrip items={snap.provenance} />
       <RegionPositionMap nodes={nodes} links={links} focusRegionId={focusRegionId} onSelect={onFocusRegion} />
+      <NrDashMapLegend />
       <p className="text-[10px] opacity-70">
         Dashed lines: land adjacency. Solid colored lines: interregional dependencies from National Systems.
       </p>
@@ -1496,6 +1696,49 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
     return snap.historySnippets.length >= 2;
   });
+
+  check('a23_divergence', 'Momentum divergence spread is non-negative', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const d = nrDashBuildMomentumDivergence(snap)!;
+    return d.spread >= 0 && d.dispersion >= 0;
+  });
+
+  check('a23_condition_catalog', 'Condition catalog lists strained cells from fixture', () => {
+    const cat = nrDashBuildConditionCatalog(createAgent23NsFixture());
+    return cat.some(c => c.condition === 'bottlenecked' || c.condition === 'critical');
+  });
+
+  check('a23_trend_delta', 'Trend deltas computed from history', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const deltas = nrDashBuildTrendDeltas(snap.regions);
+    return deltas.length === COMM_REGION_CODES.length && deltas.some(d => d.delta != null);
+  });
+
+  check('a23_trend_movers', 'Top trend movers returns bounded list', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    return nrDashTopTrendMovers(snap.regions, 3).length <= 3;
+  });
+
+  check('a23_map_focus_neighbors', 'NSW focus keeps neighbors undimmed', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const nodes = nrDashApplyMapFocus(nrDashBuildRegionMapNodes(snap), 'NSW');
+    const nsw = nodes.find(n => n.regionId === 'NSW');
+    const qld = nodes.find(n => n.regionId === 'QLD');
+    const wa = nodes.find(n => n.regionId === 'WA');
+    return nsw && !nsw.dimmed && qld && !qld.dimmed && wa && wa.dimmed;
+  });
+
+  check('a23_map_focus_links', 'Focus filters links to touching region', () => {
+    const ns = createAgent23NsFixture();
+    const all = nrDashMergeMapLinks(
+      nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+      nrDashBuildDependencyLinks(ns, AGENT23_REGION_MAP_LAYOUT)
+    );
+    const focused = nrDashLinksTouchingRegion(all, 'SA');
+    return focused.length < all.length && focused.every(l => l.fromId === 'SA' || l.toId === 'SA');
+  });
+
+  check('a23_neighbors_nsw', 'NSW neighbor list includes QLD', () => nrDashNeighborRegionIds('NSW').includes('QLD'));
 
   return results;
 }

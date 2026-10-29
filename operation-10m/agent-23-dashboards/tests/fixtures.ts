@@ -19,6 +19,13 @@ function emptyNetworks(): Record<NationalNetworkKind, NationalRegionSystemsState
   };
 }
 
+function variedNetworks(code: string): NationalRegionSystemsState['networks'] {
+  const n = emptyNetworks();
+  if (code === 'NSW') n.freight = { utilization: 0.92, condition: 'bottlenecked' };
+  if (code === 'VIC') n.energy = { utilization: 0.88, condition: 'critical' };
+  return n;
+}
+
 export function createAgent23LrFixture(): LivingRegionsWorldView {
   const regions: Record<string, DynamicRegionalState> = {};
   COMM_REGION_CODES.forEach((code, i) => {
@@ -46,7 +53,7 @@ export function createAgent23NsFixture(): NationalSystemsState {
     regions[code] = {
       regionId: code,
       name: code,
-      networks: emptyNetworks(),
+      networks: variedNetworks(code),
       primaryConstraint: 'freight',
       resilience: 55,
       resilienceBand: 'stable',

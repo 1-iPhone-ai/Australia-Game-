@@ -8,8 +8,13 @@ export * from './core/adjacency.ts';
 export * from './core/analytics.ts';
 export * from './core/map-links.ts';
 export * from './core/bottleneck-rollup.ts';
+export * from './core/condition-catalog.ts';
+export * from './core/momentum-divergence.ts';
+export * from './core/map-focus.ts';
+export * from './core/trend-delta.ts';
 export * from './ui/charts.tsx';
 export * from './ui/compare-insights.tsx';
+export * from './ui/map-legend.tsx';
 export * from './ui/region-position-map.tsx';
 export * from './ui/dashboard-modal.tsx';
 export {

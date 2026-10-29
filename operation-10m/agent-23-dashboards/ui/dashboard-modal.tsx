@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildCompareInsights } from '../core/analytics.ts';
+import { nrDashBuildConditionCatalog } from '../core/condition-catalog.ts';
+import { nrDashBuildMomentumDivergence } from '../core/momentum-divergence.ts';
+import { nrDashApplyMapFocus, nrDashLinksTouchingRegion } from '../core/map-focus.ts';
+import { nrDashTopTrendMovers } from '../core/trend-delta.ts';
 import { AGENT23_REGION_MAP_LAYOUT } from '../core/constants.ts';
 import { nrDashBuildHeatCells } from '../core/heat-matrix.ts';
 import {
@@ -30,6 +34,7 @@ import type {
 } from '../types.ts';
 import { NrDashBarChart, NrDashHeatMatrix, NrDashSparkline } from './charts.tsx';
 import { NrDashCompareInsightsPanel } from './compare-insights.tsx';
+import { NrDashMapLegend } from './map-legend.tsx';
 import { RegionPositionMap } from './region-position-map.tsx';
 
 const NrDashProvenanceStrip: React.FC<{ items: NrDashProvenance[] }> = ({ items }) => (
@@ -49,7 +54,11 @@ export const NrDashOverviewTab: React.FC<{
 }> = ({ snap, nsState, onAsk }) => (
   <div className="space-y-4" data-testid="nr-dash-tab-overview">
     <NrDashProvenanceStrip items={snap.provenance} />
-    <NrDashCompareInsightsPanel insights={nrDashBuildCompareInsights(snap, nsState)} />
+    <NrDashCompareInsightsPanel
+      insights={nrDashBuildCompareInsights(snap, nsState)}
+      divergence={nrDashBuildMomentumDivergence(snap)}
+      conditionBuckets={nrDashBuildConditionCatalog(nsState)}
+    />
     <div className="grid md:grid-cols-3 gap-3 text-sm">
       <div className="rounded-lg border border-slate-600/50 p-3">
         <div className="text-xs opacity-70">National resilience</div>
@@ -184,9 +193,23 @@ export const NrDashNetworksTab: React.FC<{
   );
 };
 
-export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }) => (
-  <div data-testid="nr-dash-tab-trends">
-    <NrDashProvenanceStrip items={snap.provenance} />
+export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }) => {
+  const movers = nrDashTopTrendMovers(snap.regions, 5);
+  return (
+    <div data-testid="nr-dash-tab-trends">
+      <NrDashProvenanceStrip items={snap.provenance} />
+      {movers.length > 0 && (
+        <div className="text-xs mb-3" data-testid="nr-dash-trend-movers">
+          <div className="font-semibold mb-1">Largest momentum history deltas (authoritative)</div>
+          <ul className="list-disc list-inside">
+            {movers.map(m => (
+              <li key={m.regionId}>
+                {m.name}: Δ {m.delta} (last {m.last})
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     {snap.historySnippets.length ? (
       <ol className="text-xs space-y-1 mt-2 list-decimal list-inside">
         {snap.historySnippets.map((t, i) => (
@@ -196,8 +219,9 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
     ) : (
       <p className="text-sm opacity-80">No national or major regional turning points recorded yet.</p>
     )}
-  </div>
-);
+    </div>
+  );
+};
 
 export const NrDashMapTab: React.FC<{
   snap: NrDashAuthSnapshot;
@@ -205,8 +229,9 @@ export const NrDashMapTab: React.FC<{
   focusRegionId: string | null;
   onFocusRegion?: (id: string) => void;
 }> = ({ snap, nsState, focusRegionId, onFocusRegion }) => {
-  const nodes = useMemo(() => nrDashBuildRegionMapNodes(snap), [snap]);
-  const links = useMemo(
+  const baseNodes = useMemo(() => nrDashBuildRegionMapNodes(snap), [snap]);
+  const nodes = useMemo(() => nrDashApplyMapFocus(baseNodes, focusRegionId), [baseNodes, focusRegionId]);
+  const allLinks = useMemo(
     () =>
       nrDashMergeMapLinks(
         nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
@@ -214,10 +239,15 @@ export const NrDashMapTab: React.FC<{
       ),
     [nsState]
   );
+  const links = useMemo(
+    () => (focusRegionId ? nrDashLinksTouchingRegion(allLinks, focusRegionId) : allLinks),
+    [allLinks, focusRegionId]
+  );
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-map">
       <NrDashProvenanceStrip items={snap.provenance} />
       <RegionPositionMap nodes={nodes} links={links} focusRegionId={focusRegionId} onSelect={onFocusRegion} />
+      <NrDashMapLegend />
       <p className="text-[10px] opacity-70">
         Dashed lines: land adjacency. Solid colored lines: interregional dependencies from National Systems.
       </p>

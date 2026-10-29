@@ -61,8 +61,9 @@ export const RegionPositionMap: React.FC<RegionPositionMapProps> = ({
     {nodes.map(n => {
       const r = 2.2 + n.activityWeight * 2.8;
       const focused = focusRegionId === n.regionId;
+      const opacity = n.dimmed ? 0.35 : 0.85;
       return (
-        <g key={n.regionId} data-testid={`agent23-map-node-${n.regionId}`}>
+        <g key={n.regionId} data-testid={`agent23-map-node-${n.regionId}`} opacity={opacity}>
           <circle
             cx={n.x}
             cy={n.y}
@@ -74,7 +75,7 @@ export const RegionPositionMap: React.FC<RegionPositionMapProps> = ({
             onClick={() => onSelect?.(n.regionId)}
             style={{ cursor: onSelect ? 'pointer' : 'default' }}
           />
-          <text x={n.x} y={n.y + r + 4} textAnchor="middle" fontSize={3.2} fill="#e2e8f0">
+          <text x={n.x} y={n.y + r + 4} textAnchor="middle" fontSize={3.2} fill="#e2e8f0" opacity={n.dimmed ? 0.5 : 1}>
             {n.regionId}
           </text>
           <title>

@@ -1,5 +1,9 @@
 import { agent23ListAdjacencyPairs } from '../core/adjacency.ts';
 import { nrDashBuildCompareInsights, nrDashBuildNetworkStress, nrDashBuildRegionalLeaders } from '../core/analytics.ts';
+import { nrDashBuildConditionCatalog } from '../core/condition-catalog.ts';
+import { nrDashBuildMomentumDivergence } from '../core/momentum-divergence.ts';
+import { nrDashApplyMapFocus, nrDashLinksTouchingRegion, nrDashNeighborRegionIds } from '../core/map-focus.ts';
+import { nrDashBuildTrendDeltas, nrDashTopTrendMovers } from '../core/trend-delta.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
 import { nrDashBuildHeatCells } from '../core/heat-matrix.ts';
@@ -162,6 +166,49 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
     return snap.historySnippets.length >= 2;
   });
+
+  check('a23_divergence', 'Momentum divergence spread is non-negative', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const d = nrDashBuildMomentumDivergence(snap)!;
+    return d.spread >= 0 && d.dispersion >= 0;
+  });
+
+  check('a23_condition_catalog', 'Condition catalog lists strained cells from fixture', () => {
+    const cat = nrDashBuildConditionCatalog(createAgent23NsFixture());
+    return cat.some(c => c.condition === 'bottlenecked' || c.condition === 'critical');
+  });
+
+  check('a23_trend_delta', 'Trend deltas computed from history', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const deltas = nrDashBuildTrendDeltas(snap.regions);
+    return deltas.length === COMM_REGION_CODES.length && deltas.some(d => d.delta != null);
+  });
+
+  check('a23_trend_movers', 'Top trend movers returns bounded list', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    return nrDashTopTrendMovers(snap.regions, 3).length <= 3;
+  });
+
+  check('a23_map_focus_neighbors', 'NSW focus keeps neighbors undimmed', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const nodes = nrDashApplyMapFocus(nrDashBuildRegionMapNodes(snap), 'NSW');
+    const nsw = nodes.find(n => n.regionId === 'NSW');
+    const qld = nodes.find(n => n.regionId === 'QLD');
+    const wa = nodes.find(n => n.regionId === 'WA');
+    return nsw && !nsw.dimmed && qld && !qld.dimmed && wa && wa.dimmed;
+  });
+
+  check('a23_map_focus_links', 'Focus filters links to touching region', () => {
+    const ns = createAgent23NsFixture();
+    const all = nrDashMergeMapLinks(
+      nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+      nrDashBuildDependencyLinks(ns, AGENT23_REGION_MAP_LAYOUT)
+    );
+    const focused = nrDashLinksTouchingRegion(all, 'SA');
+    return focused.length < all.length && focused.every(l => l.fromId === 'SA' || l.toId === 'SA');
+  });
+
+  check('a23_neighbors_nsw', 'NSW neighbor list includes QLD', () => nrDashNeighborRegionIds('NSW').includes('QLD'));
 
   return results;
 }

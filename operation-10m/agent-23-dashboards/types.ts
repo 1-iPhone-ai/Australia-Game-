@@ -205,6 +205,8 @@ export interface RegionMapNode {
   resilience: number | null;
   /** 0..1 visual weight from authoritative momentum history span (not simulated). */
   activityWeight: number;
+  /** Map focus mode dims non-neighbor regions. */
+  dimmed?: boolean;
 }
 
 export interface Agent23TestResult {
