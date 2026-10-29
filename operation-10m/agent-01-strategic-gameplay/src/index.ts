@@ -119,6 +119,7 @@ export {
   metaversalContinuityRankingBonus,
   omniversalSynthesisRankingBonus,
   hyperversalHarmonizationRankingBonus,
+  transcendentOmniumRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -424,6 +425,16 @@ export {
   applyHyperversalHarmonizationMandateBonus,
 } from './engine/coalition-hyperversal-harmonization.ts';
 
+export { coalitionTranscendentOmniumStreakIssues } from './engine/coalition-transcendent-omnium-gates.ts';
+
+export {
+  TRANSCENDENT_COALITION_OMNIUM_THRESHOLD,
+  advanceCoalitionTranscendentOmniumStreak,
+  resetCoalitionTranscendentOmniumStreak,
+  isTranscendentCoalitionOmnium,
+  applyTranscendentOmniumMandateBonus,
+} from './engine/coalition-transcendent-omnium.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '4.1.0';
+export const AGENT_01_MODULE_VERSION = '4.2.0';

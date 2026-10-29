@@ -26,6 +26,7 @@ import { isMultiversalCoalitionPersistence } from '../engine/coalition-multivers
 import { isMetaversalCoalitionContinuity } from '../engine/coalition-metaversal-continuity.ts';
 import { isOmniversalCoalitionSynthesis } from '../engine/coalition-omniversal-synthesis.ts';
 import { isHyperversalCoalitionHarmonization } from '../engine/coalition-hyperversal-harmonization.ts';
+import { isTranscendentCoalitionOmnium } from '../engine/coalition-transcendent-omnium.ts';
 
 /** Outbound coalition telemetry for Agent 02 / Agent 05 assembly hooks (round 10+). */
 export interface ExternalCoalitionTurnSignals {
@@ -78,6 +79,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionOmniversalSynthesisStreakDays: number;
   hyperversalCoalitionHarmonization: boolean;
   coalitionHyperversalHarmonizationStreakDays: number;
+  transcendentCoalitionOmnium: boolean;
+  coalitionTranscendentOmniumStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -135,6 +138,8 @@ export function buildExternalCoalitionTurnSignals(
     hyperversalCoalitionHarmonization: isHyperversalCoalitionHarmonization(state),
     coalitionHyperversalHarmonizationStreakDays:
       state.coalitionHyperversalHarmonizationStreakDays ?? 0,
+    transcendentCoalitionOmnium: isTranscendentCoalitionOmnium(state),
+    coalitionTranscendentOmniumStreakDays: state.coalitionTranscendentOmniumStreakDays ?? 0,
   };
 }
 
@@ -192,5 +197,7 @@ export function normalizeExternalCoalitionTurnSignals(
     hyperversalCoalitionHarmonization: raw?.hyperversalCoalitionHarmonization ?? false,
     coalitionHyperversalHarmonizationStreakDays:
       raw?.coalitionHyperversalHarmonizationStreakDays ?? 0,
+    transcendentCoalitionOmnium: raw?.transcendentCoalitionOmnium ?? false,
+    coalitionTranscendentOmniumStreakDays: raw?.coalitionTranscendentOmniumStreakDays ?? 0,
   };
 }

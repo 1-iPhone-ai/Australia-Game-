@@ -288,3 +288,13 @@ export function hyperversalHarmonizationRankingBonus(
   if (streak >= action.minCoalitionHyperversalHarmonizationStreakDays) return 24;
   return 2;
 }
+
+export function transcendentOmniumRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionTranscendentOmniumStreakDays === undefined) return 0;
+  const streak = state.coalitionTranscendentOmniumStreakDays ?? 0;
+  if (streak >= action.minCoalitionTranscendentOmniumStreakDays) return 25;
+  return 2;
+}

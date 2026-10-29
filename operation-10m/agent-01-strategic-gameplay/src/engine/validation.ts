@@ -51,6 +51,7 @@ import { coalitionMultiversalPersistenceStreakIssues } from './coalition-multive
 import { coalitionMetaversalContinuityStreakIssues } from './coalition-metaversal-continuity-gates.ts';
 import { coalitionOmniversalSynthesisStreakIssues } from './coalition-omniversal-synthesis-gates.ts';
 import { coalitionHyperversalHarmonizationStreakIssues } from './coalition-hyperversal-harmonization-gates.ts';
+import { coalitionTranscendentOmniumStreakIssues } from './coalition-transcendent-omnium-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -325,6 +326,7 @@ export function validateAction(
     issues.push(...coalitionMetaversalContinuityStreakIssues(action, state));
     issues.push(...coalitionOmniversalSynthesisStreakIssues(action, state));
     issues.push(...coalitionHyperversalHarmonizationStreakIssues(action, state));
+    issues.push(...coalitionTranscendentOmniumStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

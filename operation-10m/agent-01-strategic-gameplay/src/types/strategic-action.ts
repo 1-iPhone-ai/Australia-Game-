@@ -121,6 +121,8 @@ export interface StrategicActionDefinition {
   minCoalitionOmniversalSynthesisStreakDays?: number;
   /** Action requires hyperversal harmonization streak after omniversal synthesis. */
   minCoalitionHyperversalHarmonizationStreakDays?: number;
+  /** Action requires transcendent omnium streak after hyperversal harmonization. */
+  minCoalitionTranscendentOmniumStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -187,7 +189,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_multiversal_persistence_streak'; minDays: number }
   | { kind: 'min_coalition_metaversal_continuity_streak'; minDays: number }
   | { kind: 'min_coalition_omniversal_synthesis_streak'; minDays: number }
-  | { kind: 'min_coalition_hyperversal_harmonization_streak'; minDays: number };
+  | { kind: 'min_coalition_hyperversal_harmonization_streak'; minDays: number }
+  | { kind: 'min_coalition_transcendent_omnium_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -283,6 +286,8 @@ export interface StrategicGameplayState {
   coalitionOmniversalSynthesisStreakDays?: number;
   /** Days omniversal synthesis held hyperversal harmonization eligibility. */
   coalitionHyperversalHarmonizationStreakDays?: number;
+  /** Days hyperversal harmonization held transcendent omnium eligibility. */
+  coalitionTranscendentOmniumStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;
