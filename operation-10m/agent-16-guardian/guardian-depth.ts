@@ -2984,6 +2984,47 @@ export function buildGuardianDepthBestowalReport(snapshot: GuardianCoPilotMonito
   return lines.slice(0, 3);
 }
 
+export function computeEndowmentStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceAnimationScore < 50) load += Math.min(25, 50 - snapshot.governanceAnimationScore);
+  if (snapshot.governanceAnimationScore < 35) load += 10;
+  if (snapshot.bestowalIntegrityScore < 45) load += 20;
+  if (snapshot.bestowalIntegrityScore < 35) load += 10;
+  if (snapshot.bestowalStrainIndex >= 55) load += 20;
+  if (snapshot.bestowalStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeEndowmentIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.endowmentStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.endowmentStrainIndex * 0.35));
+  if (snapshot.bestowalIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.bestowalIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceAnimationScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthEndowmentReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.endowmentStrainIndex >= 55) {
+    lines.push(
+      `Endowment strain ${snapshot.endowmentStrainIndex} — stacked endowment review may exceed operator endowment capacity`
+    );
+  }
+  if (snapshot.endowmentIntegrityScore < 45) {
+    lines.push(
+      `Endowment integrity ${snapshot.endowmentIntegrityScore} — align Co-Pilot endowments with Guardian endowment posture`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -3564,9 +3605,21 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withBestowalStrain: GuardianCoPilotMonitorSnapshot = { ...withBestowalSeed, bestowalStrainIndex };
   const bestowalIntegrityScore = computeBestowalIntegrityScore(withBestowalStrain);
   const withBestowal: GuardianCoPilotMonitorSnapshot = { ...withBestowalStrain, bestowalIntegrityScore };
-  return {
+  const withAnimation: GuardianCoPilotMonitorSnapshot = {
     ...withBestowal,
     governanceAnimationScore: computeGovernanceAnimationScore(withBestowal),
+  };
+  const withEndowmentSeed: GuardianCoPilotMonitorSnapshot = {
+    ...withAnimation,
+    endowmentStrainIndex: 0,
+    endowmentIntegrityScore: 100,
+  };
+  const endowmentStrainIndex = computeEndowmentStrainIndex(withEndowmentSeed);
+  const withEndowmentStrain: GuardianCoPilotMonitorSnapshot = { ...withEndowmentSeed, endowmentStrainIndex };
+  const endowmentIntegrityScore = computeEndowmentIntegrityScore(withEndowmentStrain);
+  return {
+    ...withEndowmentStrain,
+    endowmentIntegrityScore,
   };
 }
 

@@ -303,6 +303,8 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     governanceVitalityScore: 100,
     bestowalStrainIndex: 0,
     bestowalIntegrityScore: 100,
+    endowmentStrainIndex: 0,
+    endowmentIntegrityScore: 100,
     governanceAnimationScore: 100,
   };
 

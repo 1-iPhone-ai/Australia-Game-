@@ -224,6 +224,8 @@ export interface GuardianCoPilotMonitorSnapshot {
   governanceVitalityScore: number;
   bestowalStrainIndex: number;
   bestowalIntegrityScore: number;
+  endowmentStrainIndex: number;
+  endowmentIntegrityScore: number;
   governanceAnimationScore: number;
 }
 

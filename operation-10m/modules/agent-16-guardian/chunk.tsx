@@ -228,6 +228,8 @@ export interface GuardianCoPilotMonitorSnapshot {
   governanceVitalityScore: number;
   bestowalStrainIndex: number;
   bestowalIntegrityScore: number;
+  endowmentStrainIndex: number;
+  endowmentIntegrityScore: number;
   governanceAnimationScore: number;
 }
 
@@ -3496,6 +3498,47 @@ export function buildGuardianDepthBestowalReport(snapshot: GuardianCoPilotMonito
   return lines.slice(0, 3);
 }
 
+export function computeEndowmentStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceAnimationScore < 50) load += Math.min(25, 50 - snapshot.governanceAnimationScore);
+  if (snapshot.governanceAnimationScore < 35) load += 10;
+  if (snapshot.bestowalIntegrityScore < 45) load += 20;
+  if (snapshot.bestowalIntegrityScore < 35) load += 10;
+  if (snapshot.bestowalStrainIndex >= 55) load += 20;
+  if (snapshot.bestowalStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeEndowmentIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.endowmentStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.endowmentStrainIndex * 0.35));
+  if (snapshot.bestowalIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.bestowalIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceAnimationScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthEndowmentReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.endowmentStrainIndex >= 55) {
+    lines.push(
+      `Endowment strain ${snapshot.endowmentStrainIndex} — stacked endowment review may exceed operator endowment capacity`
+    );
+  }
+  if (snapshot.endowmentIntegrityScore < 45) {
+    lines.push(
+      `Endowment integrity ${snapshot.endowmentIntegrityScore} — align Co-Pilot endowments with Guardian endowment posture`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -4076,9 +4119,21 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withBestowalStrain: GuardianCoPilotMonitorSnapshot = { ...withBestowalSeed, bestowalStrainIndex };
   const bestowalIntegrityScore = computeBestowalIntegrityScore(withBestowalStrain);
   const withBestowal: GuardianCoPilotMonitorSnapshot = { ...withBestowalStrain, bestowalIntegrityScore };
-  return {
+  const withAnimation: GuardianCoPilotMonitorSnapshot = {
     ...withBestowal,
     governanceAnimationScore: computeGovernanceAnimationScore(withBestowal),
+  };
+  const withEndowmentSeed: GuardianCoPilotMonitorSnapshot = {
+    ...withAnimation,
+    endowmentStrainIndex: 0,
+    endowmentIntegrityScore: 100,
+  };
+  const endowmentStrainIndex = computeEndowmentStrainIndex(withEndowmentSeed);
+  const withEndowmentStrain: GuardianCoPilotMonitorSnapshot = { ...withEndowmentSeed, endowmentStrainIndex };
+  const endowmentIntegrityScore = computeEndowmentIntegrityScore(withEndowmentStrain);
+  return {
+    ...withEndowmentStrain,
+    endowmentIntegrityScore,
   };
 }
 
@@ -13224,6 +13279,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_54: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_54_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_54.length;
 
 
+// --- source: monitor-rules-scale-wave-55.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_55: AdvisoryMonitorRule[] = [
+  {
+    id: 'endowment_strain_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Endowment Strain High',
+    detailTemplate: 'Endowment strain is in the high band — reduce overlapping warn-only endowment review demands',
+    evidenceFields: ['endowmentStrainIndex', 'governanceVitalityScore', 'endowmentIntegrityScore'],
+    evaluate: s => s.endowmentStrainIndex >= 70,
+  },
+  {
+    id: 'endowment_strain_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Endowment Strain Elevated',
+    detailTemplate: 'Endowment strain is elevated — expect slower endowment review across turns',
+    evidenceFields: ['endowmentStrainIndex', 'confermentStrainIndex'],
+    evaluate: s => s.endowmentStrainIndex >= 45 && s.endowmentStrainIndex < 70,
+  },
+  {
+    id: 'endowment_integrity_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Endowment Integrity Low',
+    detailTemplate: 'Endowment integrity is critically low — defer stacked autonomous actions',
+    evidenceFields: ['endowmentIntegrityScore', 'endowmentStrainIndex', 'confermentIntegrityScore'],
+    evaluate: s => s.endowmentIntegrityScore < 35,
+  },
+  {
+    id: 'endowment_integrity_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Endowment While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate endowment integrity',
+    evidenceFields: ['endowmentIntegrityScore', 'copilotAutonomousActive', 'endowmentStrainIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.endowmentIntegrityScore >= 35 && s.endowmentIntegrityScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_animation_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Animation Low',
+    detailTemplate: 'Little governance animation remains for warn-only endowment oversight across turns',
+    evidenceFields: ['governanceAnimationScore', 'endowmentStrainIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governanceAnimationScore < 35,
+  },
+  {
+    id: 'governance_animation_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Animation While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance animation',
+    evidenceFields: ['governanceAnimationScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governanceAnimationScore >= 35 && s.governanceAnimationScore < 55,
+  },
+  {
+    id: 'endowment_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Endowment Envelope Pressured',
+    detailTemplate: 'Endowment strain and low endowment integrity align in the pressured envelope band',
+    evidenceFields: ['endowmentStrainIndex', 'endowmentIntegrityScore', 'governanceAnimationScore'],
+    evaluate: s => s.endowmentStrainIndex >= 55 && s.endowmentIntegrityScore < 50,
+  },
+  {
+    id: 'rival_endowment_strain',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Endowment Strain',
+    detailTemplate: 'Rival victory progress plus elevated endowment strain',
+    evidenceFields: ['rivalVictoryProgressPct', 'endowmentStrainIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.endowmentStrainIndex >= 50,
+  },
+  {
+    id: 'team_plan_endowment_strain',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Endowment Strain',
+    detailTemplate: 'Pending team plan while endowment strain is elevated',
+    evidenceFields: ['teamPlanPending', 'endowmentStrainIndex', 'governanceAnimationScore'],
+    evaluate: s => s.teamPlanPending && s.endowmentStrainIndex >= 55,
+  },
+  {
+    id: 'guardian_endowment_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Endowment Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance animation',
+    evidenceFields: ['guardianRiskBand', 'governanceAnimationScore', 'endowmentStrainIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governanceAnimationScore < 40,
+  },
+  {
+    id: 'copilot_endowment_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Endowment Strain',
+    detailTemplate: 'Autonomous Co-Pilot while endowment strain is high',
+    evidenceFields: ['copilotAutonomousActive', 'endowmentStrainIndex', 'endowmentIntegrityScore'],
+    evaluate: s => s.copilotAutonomousActive && s.endowmentStrainIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_animation',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Animation',
+    detailTemplate: 'Expiring contracts while governance animation is low',
+    evidenceFields: ['expiringContractCount', 'governanceAnimationScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governanceAnimationScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_55_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_55.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -13507,6 +13695,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_52,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_53,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_54,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_55,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -13981,6 +14170,8 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     governanceVitalityScore: 100,
     bestowalStrainIndex: 0,
     bestowalIntegrityScore: 100,
+    endowmentStrainIndex: 0,
+    endowmentIntegrityScore: 100,
     governanceAnimationScore: 100,
   };
 
@@ -17846,6 +18037,27 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['bestowal_envelope_pressured', 'guardian_bestowal_envelope_critical'],
     notes: 'Pressured bestowal envelope with critical Guardian band',
   },
+  {
+    id: 'sc_endowment_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2640,
+      maxSpendPerAction: 12040,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['endowment_envelope_pressured', 'guardian_endowment_envelope_critical'],
+    notes: 'Pressured endowment envelope with critical Guardian band',
+  },
 
 ];
 
@@ -20053,6 +20265,46 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthBestowalReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round55_metrics', 'Round 55 endowment envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.endowmentStrainIndex >= 40 &&
+      snap.endowmentIntegrityScore <= 100
+    );
+  });
+
+  check(results, 'a16_endowment_report', 'Guardian depth endowment report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthEndowmentReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 

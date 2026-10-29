@@ -3626,5 +3626,26 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['bestowal_envelope_pressured', 'guardian_bestowal_envelope_critical'],
     notes: 'Pressured bestowal envelope with critical Guardian band',
   },
+  {
+    id: 'sc_endowment_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2640,
+      maxSpendPerAction: 12040,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['endowment_envelope_pressured', 'guardian_endowment_envelope_critical'],
+    notes: 'Pressured endowment envelope with critical Guardian band',
+  },
 
 ];
