@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/20' &&
+      infra.schemaVersion === 'agent12/21' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -130,8 +130,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalRareEarthMagnetExportIndex >= 6 &&
       infra.nationalTransTasmanReeferExpressIndex >= 8 &&
       infra.zeroEmissionTruckCorridorShare >= 0.034 &&
-      infra.nationalZeroEmissionTruckCorridorThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} rareEarth=${infra.nationalRareEarthMagnetExportIndex.toFixed(1)} reefer=${infra.nationalTransTasmanReeferExpressIndex.toFixed(1)} zet=${infra.nationalZeroEmissionTruckCorridorThroughputIndex.toFixed(1)}`,
+      infra.nationalZeroEmissionTruckCorridorThroughputIndex >= 2 &&
+      infra.nationalOffshoreCcsLogisticsIndex >= 5 &&
+      infra.nationalHydrogenLngExportIndex >= 11 &&
+      infra.urbanMicrofreightHubShare >= 0.035 &&
+      infra.nationalUrbanMicrofreightHubThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} ccs=${infra.nationalOffshoreCcsLogisticsIndex.toFixed(1)} h2lng=${infra.nationalHydrogenLngExportIndex.toFixed(1)} micro=${infra.nationalUrbanMicrofreightHubThroughputIndex.toFixed(1)}`,
   });
 
   return results;

@@ -279,6 +279,22 @@ import {
   nationalZeroEmissionTruckCorridorThroughputIndex,
   zeroEmissionTruckCorridorProductivityMultiplier,
 } from './zero-emission-truck-corridor-index.ts';
+import {
+  computeOffshoreCcsLogisticsByRegion,
+  nationalOffshoreCcsLogisticsIndex,
+  offshoreCcsLogisticsProductivityMultiplier,
+} from '../network/offshore-ccs-logistics-index.ts';
+import {
+  computeHydrogenLngExportByRegion,
+  hydrogenLngExportProductivityMultiplier,
+  nationalHydrogenLngExportIndex,
+} from '../operations/hydrogen-lng-export-index.ts';
+import {
+  computeUrbanMicrofreightHubShare,
+  computeUrbanMicrofreightHubThroughputByRegion,
+  nationalUrbanMicrofreightHubThroughputIndex,
+  urbanMicrofreightHubProductivityMultiplier,
+} from './urban-microfreight-hub-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1012,6 +1028,30 @@ export function computeTransportInfrastructureState(
     zeroEmissionTruckCorridorShare,
     options?.zeroEmissionTruckCorridorPolicy ?? 'baseline',
   );
+  const offshoreCcsLogisticsByRegion = computeOffshoreCcsLogisticsByRegion(ops);
+  const nationalOffshoreCcs = nationalOffshoreCcsLogisticsIndex(offshoreCcsLogisticsByRegion);
+  const ccsMult = offshoreCcsLogisticsProductivityMultiplier(
+    nationalOffshoreCcs,
+    options?.offshoreCcsLogisticsPolicy ?? 'baseline',
+  );
+  const hydrogenLngExportByRegion = computeHydrogenLngExportByRegion(ops, networkStress);
+  const nationalHydrogenLng = nationalHydrogenLngExportIndex(hydrogenLngExportByRegion);
+  const h2LngMult = hydrogenLngExportProductivityMultiplier(
+    nationalHydrogenLng,
+    options?.hydrogenLngExportPolicy ?? 'baseline',
+  );
+  const urbanMicrofreightHubThroughputByRegion = computeUrbanMicrofreightHubThroughputByRegion(ops);
+  const nationalUrbanMicrofreight = nationalUrbanMicrofreightHubThroughputIndex(
+    urbanMicrofreightHubThroughputByRegion,
+  );
+  const urbanMicrofreightHubShare = computeUrbanMicrofreightHubShare(
+    ops,
+    options?.urbanMicrofreightHubPolicy ?? 'baseline',
+  );
+  const microfreightMult = urbanMicrofreightHubProductivityMultiplier(
+    urbanMicrofreightHubShare,
+    options?.urbanMicrofreightHubPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1026,6 +1066,9 @@ export function computeTransportInfrastructureState(
     const rareEarthBoost = (rareEarthMagnetExportByRegion[code] - 5) * 0.0047;
     const reeferBoost = (transTasmanReeferExpressByRegion[code] - 8) * 0.0043;
     const zetBoost = (zeroEmissionTruckCorridorThroughputByRegion[code] - 2) * 0.0045;
+    const ccsBoost = (offshoreCcsLogisticsByRegion[code] - 4) * 0.0046;
+    const h2LngBoost = (hydrogenLngExportByRegion[code] - 11) * 0.0044;
+    const microfreightBoost = (urbanMicrofreightHubThroughputByRegion[code] - 2) * 0.0042;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -1039,7 +1082,10 @@ export function computeTransportInfrastructureState(
         spaceLaunchBoost +
         rareEarthBoost +
         reeferBoost +
-        zetBoost) *
+        zetBoost +
+        ccsBoost +
+        h2LngBoost +
+        microfreightBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -1051,7 +1097,10 @@ export function computeTransportInfrastructureState(
       spaceLaunchMult *
       rareEarthMult *
       reeferMult *
-      zetMult;
+      zetMult *
+      ccsMult *
+      h2LngMult *
+      microfreightMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -1086,7 +1135,10 @@ export function computeTransportInfrastructureState(
     nationalSpaceLaunch * 0.011 +
     nationalRareEarthMagnet * 0.011 +
     nationalTransTasmanReefer * 0.01 +
-    nationalZeroEmissionTruck * 0.01;
+    nationalZeroEmissionTruck * 0.01 +
+    nationalOffshoreCcs * 0.009 +
+    nationalHydrogenLng * 0.009 +
+    nationalUrbanMicrofreight * 0.009;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -1101,7 +1153,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/20',
+    schemaVersion: 'agent12/21',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -1228,6 +1280,13 @@ export function computeTransportInfrastructureState(
     zeroEmissionTruckCorridorShare,
     nationalZeroEmissionTruckCorridorThroughputIndex: nationalZeroEmissionTruck,
     zeroEmissionTruckCorridorThroughputByRegion,
+    nationalOffshoreCcsLogisticsIndex: nationalOffshoreCcs,
+    offshoreCcsLogisticsByRegion,
+    nationalHydrogenLngExportIndex: nationalHydrogenLng,
+    hydrogenLngExportByRegion,
+    urbanMicrofreightHubShare,
+    nationalUrbanMicrofreightHubThroughputIndex: nationalUrbanMicrofreight,
+    urbanMicrofreightHubThroughputByRegion,
     computeMs,
   };
 }

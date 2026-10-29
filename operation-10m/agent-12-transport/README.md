@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 20
+
+- Schema **`agent12/21`**: offshore CCS logistics throughput, hydrogen LNG export readiness, urban microfreight hub share (`offshoreCcsLogisticsPolicy`, `hydrogenLngExportPolicy`, `urbanMicrofreightHubPolicy`)
+- Catalog: **287** assets, **74** corridors, **118** scenarios
+- Systems: `network/offshore-ccs-logistics-index.ts`, `operations/hydrogen-lng-export-index.ts`, `productivity/urban-microfreight-hub-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 19
 
 - Schema **`agent12/20`**: rare-earth magnet export throughput, trans-Tasman reefer express readiness, zero-emission truck corridor share (`rareEarthMagnetExportPolicy`, `transTasmanReeferExpressPolicy`, `zeroEmissionTruckCorridorPolicy`)

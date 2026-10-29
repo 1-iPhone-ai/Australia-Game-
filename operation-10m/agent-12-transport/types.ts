@@ -267,8 +267,14 @@ export type TransTasmanReeferExpressPolicy = 'baseline' | 'surge';
 
 export type ZeroEmissionTruckCorridorPolicy = 'baseline' | 'expand';
 
+export type OffshoreCcsLogisticsPolicy = 'baseline' | 'deploy';
+
+export type HydrogenLngExportPolicy = 'baseline' | 'accelerate';
+
+export type UrbanMicrofreightHubPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/20';
+  schemaVersion: 'agent12/21';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -395,6 +401,13 @@ export interface TransportInfrastructureState {
   zeroEmissionTruckCorridorShare: number;
   nationalZeroEmissionTruckCorridorThroughputIndex: number;
   zeroEmissionTruckCorridorThroughputByRegion: Record<AuRegionCode, number>;
+  nationalOffshoreCcsLogisticsIndex: number;
+  offshoreCcsLogisticsByRegion: Record<AuRegionCode, number>;
+  nationalHydrogenLngExportIndex: number;
+  hydrogenLngExportByRegion: Record<AuRegionCode, number>;
+  urbanMicrofreightHubShare: number;
+  nationalUrbanMicrofreightHubThroughputIndex: number;
+  urbanMicrofreightHubThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -445,6 +458,9 @@ export interface TransportInfrastructureOptions {
   rareEarthMagnetExportPolicy?: RareEarthMagnetExportPolicy;
   transTasmanReeferExpressPolicy?: TransTasmanReeferExpressPolicy;
   zeroEmissionTruckCorridorPolicy?: ZeroEmissionTruckCorridorPolicy;
+  offshoreCcsLogisticsPolicy?: OffshoreCcsLogisticsPolicy;
+  hydrogenLngExportPolicy?: HydrogenLngExportPolicy;
+  urbanMicrofreightHubPolicy?: UrbanMicrofreightHubPolicy;
 }
 
 export interface V94ProjectSnapshot {

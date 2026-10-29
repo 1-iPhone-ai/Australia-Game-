@@ -271,8 +271,14 @@ export type TransTasmanReeferExpressPolicy = 'baseline' | 'surge';
 
 export type ZeroEmissionTruckCorridorPolicy = 'baseline' | 'expand';
 
+export type OffshoreCcsLogisticsPolicy = 'baseline' | 'deploy';
+
+export type HydrogenLngExportPolicy = 'baseline' | 'accelerate';
+
+export type UrbanMicrofreightHubPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/20';
+  schemaVersion: 'agent12/21';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -399,6 +405,13 @@ export interface TransportInfrastructureState {
   zeroEmissionTruckCorridorShare: number;
   nationalZeroEmissionTruckCorridorThroughputIndex: number;
   zeroEmissionTruckCorridorThroughputByRegion: Record<AuRegionCode, number>;
+  nationalOffshoreCcsLogisticsIndex: number;
+  offshoreCcsLogisticsByRegion: Record<AuRegionCode, number>;
+  nationalHydrogenLngExportIndex: number;
+  hydrogenLngExportByRegion: Record<AuRegionCode, number>;
+  urbanMicrofreightHubShare: number;
+  nationalUrbanMicrofreightHubThroughputIndex: number;
+  urbanMicrofreightHubThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -449,6 +462,9 @@ export interface TransportInfrastructureOptions {
   rareEarthMagnetExportPolicy?: RareEarthMagnetExportPolicy;
   transTasmanReeferExpressPolicy?: TransTasmanReeferExpressPolicy;
   zeroEmissionTruckCorridorPolicy?: ZeroEmissionTruckCorridorPolicy;
+  offshoreCcsLogisticsPolicy?: OffshoreCcsLogisticsPolicy;
+  hydrogenLngExportPolicy?: HydrogenLngExportPolicy;
+  urbanMicrofreightHubPolicy?: UrbanMicrofreightHubPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -1307,6 +1323,47 @@ export const TRANSPORT_CORRIDORS_ROUND19: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round20.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND20: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_offshore_ccs_chain',
+    name: 'WA Offshore CCS Chain',
+    networkKind: 'freight',
+    regionSequence: ['WA'],
+    requiredTagsByRegion: {
+      WA: ['offshore_ccs', 'co2_injection', 'carbon_hub'],
+    },
+    productivitySynergyPoints: 5.9,
+    logisticsRelief: 0.033,
+  },
+  {
+    id: 'corr_qld_nsw_h2_lng_export',
+    name: 'QLD–NSW H2 LNG Export',
+    networkKind: 'trade',
+    regionSequence: ['QLD', 'NSW'],
+    requiredTagsByRegion: {
+      QLD: ['hydrogen_lng', 'h2_liquefaction', 'export_cryogenic'],
+      NSW: ['hydrogen_lng', 'export_cryogenic'],
+    },
+    productivitySynergyPoints: 6.4,
+    logisticsRelief: 0.036,
+  },
+  {
+    id: 'corr_nsw_vic_microfreight_spine',
+    name: 'NSW–VIC Microfreight Spine',
+    networkKind: 'mobility',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['microfreight', 'last_mile_hub', 'e_cargo_bike'],
+      VIC: ['microfreight', 'last_mile_hub', 'e_cargo_bike'],
+    },
+    productivitySynergyPoints: 5.6,
+    logisticsRelief: 0.03,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -1473,6 +1530,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND17,
   ...TRANSPORT_CORRIDORS_ROUND18,
   ...TRANSPORT_CORRIDORS_ROUND19,
+  ...TRANSPORT_CORRIDORS_ROUND20,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -2569,6 +2627,62 @@ export const TRANSPORT_SCENARIOS_ROUND19: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round20.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND20: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_ccs_injection_surge',
+    label: 'WA CCS Injection Surge',
+    description: 'Offshore injection campaign overloads Barrow staging and CCS yards.',
+    targetRegions: ['WA'],
+    networkKind: 'freight',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_qld_h2_lng_export_rush',
+    label: 'Queensland H2 LNG Export Rush',
+    description: 'Cryogenic export peak strains Gladstone liquefaction berths.',
+    targetRegions: ['QLD', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_nsw_microfreight_peak',
+    label: 'NSW Microfreight Peak',
+    description: 'Urban e-commerce surge overloads Sydney microfreight hubs.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_vic_port_micro_handoff_delay',
+    label: 'Victoria Port Micro Handoff Delay',
+    description: 'Container gate delays back up Melbourne microfreight stores.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.19,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_qld_cryo_cold_chain_stress',
+    label: 'Queensland Cryo Cold-Chain Stress',
+    description: 'Heat event strains H2 LNG cryogenic logistics yards.',
+    targetRegions: ['QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.21,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -2749,6 +2863,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND17,
   ...TRANSPORT_SCENARIOS_ROUND18,
   ...TRANSPORT_SCENARIOS_ROUND19,
+  ...TRANSPORT_SCENARIOS_ROUND20,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -7773,6 +7888,233 @@ export const SCALE_WAVE_ROUND19_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round20-assets.ts ---
+
+export const ROUND20_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_gorgon_ccs_feed',
+    category: 'road',
+    name: 'Gorgon CCS Feed Road',
+    description: 'CO2 pipeline and injection hub road access.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['freight'],
+    tags: ['offshore_ccs', 'co2_injection', 'carbon_hub', 'mining'],
+    laneKilometres: 34,
+    designSpeedKmh: 88,
+    freightShare: 0.35,
+    urbanShare: 0.05,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_gladstone_h2_lng',
+    category: 'road',
+    name: 'Gladstone H2 LNG Feed',
+    description: 'Cryogenic hydrogen liquefaction road to export berths.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['hydrogen_lng', 'h2_liquefaction', 'export_cryogenic'],
+    laneKilometres: 42,
+    designSpeedKmh: 95,
+    freightShare: 0.4,
+    urbanShare: 0.1,
+    tollRoad: true,
+  },
+  {
+    id: 'road_nsw_parramatta_microfreight',
+    category: 'road',
+    name: 'Parramatta Microfreight Ring',
+    description: 'Urban e-cargo and last-mile hub connector.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'ACT'],
+    baseProductivityPoints: 3.9,
+    strategicNetworks: ['mobility'],
+    tags: ['microfreight', 'last_mile_hub', 'e_cargo_bike', 'motorway'],
+    laneKilometres: 12,
+    designSpeedKmh: 70,
+    freightShare: 0.18,
+    urbanShare: 0.62,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_dandenong_micro_spine',
+    category: 'road',
+    name: 'Dandenong Microfreight Spine',
+    description: 'Melbourne south-east microfreight distribution.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC'],
+    baseProductivityPoints: 3.8,
+    strategicNetworks: ['mobility'],
+    tags: ['microfreight', 'last_mile_hub', 'e_cargo_bike'],
+    laneKilometres: 16,
+    designSpeedKmh: 65,
+    freightShare: 0.2,
+    urbanShare: 0.58,
+    tollRoad: false,
+  },
+];
+
+export const ROUND20_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_bunbury_ccs_rail',
+    category: 'rail',
+    name: 'Bunbury CCS Injection Rail',
+    description: 'Carbon hub module rail to offshore injection staging.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['freight'],
+    tags: ['offshore_ccs', 'co2_injection', 'carbon_hub'],
+    trackKilometres: 88,
+    dualTrackShare: 0.42,
+    electrifiedShare: 0.22,
+    designFreightTonnesPerYear: 5_800_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_qld_curtis_h2_lng_rail',
+    category: 'rail',
+    name: 'Curtis Island H2 LNG Rail',
+    description: 'Liquefied hydrogen module rail to LNG export.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['trade'],
+    tags: ['hydrogen_lng', 'h2_liquefaction', 'export_cryogenic', 'bulk'],
+    trackKilometres: 64,
+    dualTrackShare: 0.5,
+    electrifiedShare: 0.35,
+    designFreightTonnesPerYear: 8_400_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nsw_sydney_microfreight_rail',
+    category: 'rail',
+    name: 'Sydney Microfreight Rail Feed',
+    description: 'Light rail freight feed to urban microfreight hubs.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['mobility'],
+    tags: ['microfreight', 'last_mile_hub', 'e_cargo_bike'],
+    trackKilometres: 28,
+    dualTrackShare: 0.58,
+    electrifiedShare: 0.82,
+    designFreightTonnesPerYear: 2_200_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND20_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_barrow_ccs_staging',
+    category: 'port',
+    name: 'Barrow CCS Staging Port',
+    description: 'Offshore CO2 injection vessel and module staging.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['trade'],
+    tags: ['offshore_ccs', 'co2_injection', 'carbon_hub'],
+    berthCount: 2,
+    maxDraftMetres: 12.8,
+    teuCapacityPerYear: 75_000,
+    automationLevel: 1,
+    bulkShare: 0.38,
+  },
+  {
+    id: 'port_qld_gladstone_h2_lng',
+    category: 'port',
+    name: 'Gladstone H2 LNG Export',
+    description: 'Cryogenic hydrogen liquefaction export berths.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.8,
+    strategicNetworks: ['trade'],
+    tags: ['hydrogen_lng', 'h2_liquefaction', 'export_cryogenic', 'bulk'],
+    berthCount: 3,
+    maxDraftMetres: 14.5,
+    teuCapacityPerYear: 195_000,
+    automationLevel: 1,
+    bulkShare: 0.55,
+  },
+  {
+    id: 'port_vic_port_melbourne_micro',
+    category: 'port',
+    name: 'Port Melbourne Microfreight Handoff',
+    description: 'Container microfreight cross-dock at port gate.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'TAS'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['trade', 'mobility'],
+    tags: ['microfreight', 'last_mile_hub', 'e_cargo_bike', 'container'],
+    berthCount: 2,
+    maxDraftMetres: 13.2,
+    teuCapacityPerYear: 280_000,
+    automationLevel: 2,
+    bulkShare: 0.1,
+  },
+];
+
+export const ROUND20_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_wa_karratha_ccs_yard',
+    category: 'logistics',
+    name: 'Karratha CCS Module Yard',
+    description: 'Offshore injection equipment consolidation.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['freight'],
+    tags: ['offshore_ccs', 'co2_injection', 'carbon_hub'],
+    warehouseSqm: 92_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 44,
+  },
+  {
+    id: 'log_qld_gladstone_cryo_yard',
+    category: 'logistics',
+    name: 'Gladstone Cryogenic H2 Yard',
+    description: 'Liquefied hydrogen tank and module staging.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['trade'],
+    tags: ['hydrogen_lng', 'h2_liquefaction', 'export_cryogenic'],
+    warehouseSqm: 118_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 52,
+  },
+  {
+    id: 'log_nsw_sydney_micro_hub',
+    category: 'logistics',
+    name: 'Sydney CBD Microfreight Hub',
+    description: 'E-cargo bike and last-mile urban consolidation.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'ACT'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['mobility'],
+    tags: ['microfreight', 'last_mile_hub', 'e_cargo_bike'],
+    warehouseSqm: 48_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 88,
+  },
+];
+
+export const SCALE_WAVE_ROUND20_ASSETS = [
+  ...ROUND20_ROADS,
+  ...ROUND20_RAIL,
+  ...ROUND20_PORTS,
+  ...ROUND20_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -7800,6 +8142,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND17_ASSETS,
     ...SCALE_WAVE_ROUND18_ASSETS,
     ...SCALE_WAVE_ROUND19_ASSETS,
+    ...SCALE_WAVE_ROUND20_ASSETS,
   ];
 }
 
@@ -8855,6 +9198,62 @@ export function rareEarthMagnetExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.043 : 0;
   const normalized = (index - 6) / 100;
   return clamp(1 + normalized * 0.048 + policyBoost, 0.93, 1.11);
+}
+
+
+// --- source: network/offshore-ccs-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type OffshoreCcsLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 offshore CCS injection and carbon hub logistics by region. */
+export function computeOffshoreCcsLogisticsByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) => t === 'offshore_ccs' || t === 'co2_injection' || t === 'carbon_hub',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.1 + asset.bulkShare * 4.8;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 96_000 + asset.intermodalLinks.length * 0.9;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 680;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 13_500_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalOffshoreCcsLogisticsIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.46 + max * 0.54, 4, 72) * 10) / 10;
+}
+
+export function offshoreCcsLogisticsProductivityMultiplier(
+  index: number,
+  policy: OffshoreCcsLogisticsPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'deploy' ? 0.041 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.047 + policyBoost, 0.93, 1.1);
 }
 
 
@@ -10016,6 +10415,67 @@ export function transTasmanReeferExpressProductivityMultiplier(
 ): number {
   const bias = policy === 'surge' ? 1.024 : 1;
   return (1 + (share - 0.055) * 0.033) * bias;
+}
+
+
+// --- source: operations/hydrogen-lng-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type HydrogenLngExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 hydrogen liquefaction and cryogenic export readiness by region. */
+export function computeHydrogenLngExportByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 9])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'hydrogen_lng' || t === 'h2_liquefaction' || t === 'export_cryogenic',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.3 + asset.bulkShare * 5.2;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 78_000 + (asset.coldChainCapable ? 1.8 : 0.6);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 540;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 9_800_000;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.04 - stress * 0.031), 5, 90) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalHydrogenLngExportIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.47 + max * 0.53, 7, 85) * 10) / 10;
+}
+
+export function hydrogenLngExportProductivityMultiplier(
+  exportIndex: number,
+  policy: HydrogenLngExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.044 : 0;
+  const normalized = (exportIndex - 11) / 100;
+  return clamp(1 + normalized * 0.049 + policyBoost, 0.92, 1.12);
 }
 
 
@@ -11405,6 +11865,85 @@ export function nationalZeroEmissionTruckCorridorThroughputIndex(
 }
 
 
+// --- source: productivity/urban-microfreight-hub-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type TransportAsset,
+  type UrbanMicrofreightHubPolicy,
+} from '../types.ts';
+
+/** 0–1 share of urban logistics served by microfreight hubs. */
+export function computeUrbanMicrofreightHubShare(
+  operationalAssets: TransportAsset[],
+  policy: UrbanMicrofreightHubPolicy = 'baseline',
+): number {
+  let microUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.some((t) => t === 'microfreight' || t === 'last_mile_hub' || t === 'e_cargo_bike')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 55_000 + asset.lastMileCoveragePct / 120;
+        microUnits += (asset.warehouseSqm / 55_000) * 0.68 + asset.lastMileCoveragePct / 120 * 0.55;
+      }
+      if (asset.category === 'road' && 'urbanShare' in asset && asset.urbanShare > 0.25) {
+        totalUnits += asset.laneKilometres / 320;
+        microUnits += asset.laneKilometres / 320 * 0.52;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.037;
+  const policyBoost = policy === 'expand' ? 0.032 : 0;
+  return Math.round(clamp(microUnits / totalUnits + policyBoost, 0.035, 0.35) * 1000) / 1000;
+}
+
+export function urbanMicrofreightHubProductivityMultiplier(
+  share: number,
+  policy: UrbanMicrofreightHubPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.022 : 1;
+  return (1 + (share - 0.06) * 0.03) * bias;
+}
+
+export function computeUrbanMicrofreightHubThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'microfreight' || t === 'last_mile_hub' || t === 'e_cargo_bike',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 72_000 + asset.lastMileCoveragePct / 18;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 290 * asset.urbanShare;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalUrbanMicrofreightHubThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.53 + max * 0.47, 2, 58) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -11797,6 +12336,19 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalZeroEmissionTruckCorridorThroughputIndex,
   zeroEmissionTruckCorridorProductivityMultiplier,
 } from './zero-emission-truck-corridor-index.ts';
+  computeOffshoreCcsLogisticsByRegion,
+  nationalOffshoreCcsLogisticsIndex,
+  offshoreCcsLogisticsProductivityMultiplier,
+} from '../network/offshore-ccs-logistics-index.ts';
+  computeHydrogenLngExportByRegion,
+  hydrogenLngExportProductivityMultiplier,
+  nationalHydrogenLngExportIndex,
+} from '../operations/hydrogen-lng-export-index.ts';
+  computeUrbanMicrofreightHubShare,
+  computeUrbanMicrofreightHubThroughputByRegion,
+  nationalUrbanMicrofreightHubThroughputIndex,
+  urbanMicrofreightHubProductivityMultiplier,
+} from './urban-microfreight-hub-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -12529,6 +13081,30 @@ export function computeTransportInfrastructureState(
     zeroEmissionTruckCorridorShare,
     options?.zeroEmissionTruckCorridorPolicy ?? 'baseline',
   );
+  const offshoreCcsLogisticsByRegion = computeOffshoreCcsLogisticsByRegion(ops);
+  const nationalOffshoreCcs = nationalOffshoreCcsLogisticsIndex(offshoreCcsLogisticsByRegion);
+  const ccsMult = offshoreCcsLogisticsProductivityMultiplier(
+    nationalOffshoreCcs,
+    options?.offshoreCcsLogisticsPolicy ?? 'baseline',
+  );
+  const hydrogenLngExportByRegion = computeHydrogenLngExportByRegion(ops, networkStress);
+  const nationalHydrogenLng = nationalHydrogenLngExportIndex(hydrogenLngExportByRegion);
+  const h2LngMult = hydrogenLngExportProductivityMultiplier(
+    nationalHydrogenLng,
+    options?.hydrogenLngExportPolicy ?? 'baseline',
+  );
+  const urbanMicrofreightHubThroughputByRegion = computeUrbanMicrofreightHubThroughputByRegion(ops);
+  const nationalUrbanMicrofreight = nationalUrbanMicrofreightHubThroughputIndex(
+    urbanMicrofreightHubThroughputByRegion,
+  );
+  const urbanMicrofreightHubShare = computeUrbanMicrofreightHubShare(
+    ops,
+    options?.urbanMicrofreightHubPolicy ?? 'baseline',
+  );
+  const microfreightMult = urbanMicrofreightHubProductivityMultiplier(
+    urbanMicrofreightHubShare,
+    options?.urbanMicrofreightHubPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -12543,6 +13119,9 @@ export function computeTransportInfrastructureState(
     const rareEarthBoost = (rareEarthMagnetExportByRegion[code] - 5) * 0.0047;
     const reeferBoost = (transTasmanReeferExpressByRegion[code] - 8) * 0.0043;
     const zetBoost = (zeroEmissionTruckCorridorThroughputByRegion[code] - 2) * 0.0045;
+    const ccsBoost = (offshoreCcsLogisticsByRegion[code] - 4) * 0.0046;
+    const h2LngBoost = (hydrogenLngExportByRegion[code] - 11) * 0.0044;
+    const microfreightBoost = (urbanMicrofreightHubThroughputByRegion[code] - 2) * 0.0042;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -12556,7 +13135,10 @@ export function computeTransportInfrastructureState(
         spaceLaunchBoost +
         rareEarthBoost +
         reeferBoost +
-        zetBoost) *
+        zetBoost +
+        ccsBoost +
+        h2LngBoost +
+        microfreightBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -12568,7 +13150,10 @@ export function computeTransportInfrastructureState(
       spaceLaunchMult *
       rareEarthMult *
       reeferMult *
-      zetMult;
+      zetMult *
+      ccsMult *
+      h2LngMult *
+      microfreightMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -12603,7 +13188,10 @@ export function computeTransportInfrastructureState(
     nationalSpaceLaunch * 0.011 +
     nationalRareEarthMagnet * 0.011 +
     nationalTransTasmanReefer * 0.01 +
-    nationalZeroEmissionTruck * 0.01;
+    nationalZeroEmissionTruck * 0.01 +
+    nationalOffshoreCcs * 0.009 +
+    nationalHydrogenLng * 0.009 +
+    nationalUrbanMicrofreight * 0.009;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -12618,7 +13206,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/20',
+    schemaVersion: 'agent12/21',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -12745,6 +13333,13 @@ export function computeTransportInfrastructureState(
     zeroEmissionTruckCorridorShare,
     nationalZeroEmissionTruckCorridorThroughputIndex: nationalZeroEmissionTruck,
     zeroEmissionTruckCorridorThroughputByRegion,
+    nationalOffshoreCcsLogisticsIndex: nationalOffshoreCcs,
+    offshoreCcsLogisticsByRegion,
+    nationalHydrogenLngExportIndex: nationalHydrogenLng,
+    hydrogenLngExportByRegion,
+    urbanMicrofreightHubShare,
+    nationalUrbanMicrofreightHubThroughputIndex: nationalUrbanMicrofreight,
+    urbanMicrofreightHubThroughputByRegion,
     computeMs,
   };
 }
@@ -12827,7 +13422,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/20' &&
+      infra.schemaVersion === 'agent12/21' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -12889,8 +13484,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalRareEarthMagnetExportIndex >= 6 &&
       infra.nationalTransTasmanReeferExpressIndex >= 8 &&
       infra.zeroEmissionTruckCorridorShare >= 0.034 &&
-      infra.nationalZeroEmissionTruckCorridorThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} rareEarth=${infra.nationalRareEarthMagnetExportIndex.toFixed(1)} reefer=${infra.nationalTransTasmanReeferExpressIndex.toFixed(1)} zet=${infra.nationalZeroEmissionTruckCorridorThroughputIndex.toFixed(1)}`,
+      infra.nationalZeroEmissionTruckCorridorThroughputIndex >= 2 &&
+      infra.nationalOffshoreCcsLogisticsIndex >= 5 &&
+      infra.nationalHydrogenLngExportIndex >= 11 &&
+      infra.urbanMicrofreightHubShare >= 0.035 &&
+      infra.nationalUrbanMicrofreightHubThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} ccs=${infra.nationalOffshoreCcsLogisticsIndex.toFixed(1)} h2lng=${infra.nationalHydrogenLngExportIndex.toFixed(1)} micro=${infra.nationalUrbanMicrofreightHubThroughputIndex.toFixed(1)}`,
   });
 
   return results;
