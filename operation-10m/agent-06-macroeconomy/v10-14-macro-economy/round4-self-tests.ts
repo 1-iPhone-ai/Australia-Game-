@@ -39,9 +39,11 @@ export function runAgent06Round4SelfTests(): {
     geography: geo,
     credit: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null },
     innovation: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null },
-    workforce: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null }
+    workforce: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null },
+    strategic: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null },
+    housing: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null }
   });
-  record('R4-03', 'Transmission report has eight layers', report.layers.length === 8, String(report.layers.length));
+  record('R4-03', 'Transmission report has ten layers', report.layers.length === 10, String(report.layers.length));
   record('R4-04', 'Net cycle nudge finite', Number.isFinite(report.netCycleNudge), String(report.netCycleNudge));
 
   const integrated = computeNationalMacroEconomy(
@@ -52,7 +54,7 @@ export function runAgent06Round4SelfTests(): {
     null,
     null
   );
-  record('R4-05', 'State carries transmission report', integrated.state.transmissionReport.layers.length === 8, 'ok');
+  record('R4-05', 'State carries transmission report', integrated.state.transmissionReport.layers.length === 10, 'ok');
   record('R4-06', 'Trade summary on state', integrated.state.tradeSpilloverSummary != null, String(integrated.state.tradeSpilloverSummary));
 
   const stress = computeNationalMacroEconomy(

@@ -23,11 +23,13 @@ export function runMacroEconomyRegressionHarness(options?: {
   scenarioId?: string;
   includeCreditStress?: boolean;
   includeLaborInnovationStress?: boolean;
+  includeHousingStrategicStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
   const includeCreditStress = Boolean(options?.includeCreditStress);
   const includeLaborInnovationStress = Boolean(options?.includeLaborInnovationStress);
+  const includeHousingStrategicStress = Boolean(options?.includeHousingStrategicStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -54,6 +56,18 @@ export function runMacroEconomyRegressionHarness(options?: {
         : undefined,
       innovation: includeLaborInnovationStress
         ? { momentum: { band: t % 5 === 0 ? 'stalled' : 'moderate' }, nationalProductivityBonus: t % 8 === 0 }
+        : undefined,
+      strategicCapital: includeHousingStrategicStress
+        ? {
+            allocationBand: t % 6 === 0 ? 'expansionary' : 'balanced',
+            nationalPriority: t % 9 === 0 ? 'infrastructure' : 'stabilization'
+          }
+        : undefined,
+      housingWellbeing: includeHousingStrategicStress
+        ? {
+            affordability: { band: t % 7 === 0 ? 'stressed' : 'balanced' },
+            construction: { band: t % 5 === 0 ? 'correction' : 'strong' }
+          }
         : undefined
     });
     const { state, persisted: nextP } = computeNationalMacroEconomy(inputs, persisted, prev);
@@ -83,7 +97,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   });
   checks.push({
     id: 'transmission_present',
-    passed: Boolean(prev?.transmissionReport?.layers?.length && prev.transmissionReport.layers.length >= 8),
+    passed: Boolean(prev?.transmissionReport?.layers?.length && prev.transmissionReport.layers.length >= 10),
     detail: String(prev?.transmissionReport?.layers?.length ?? 0)
   });
   if (includeCreditStress && prev) {
@@ -98,6 +112,13 @@ export function runMacroEconomyRegressionHarness(options?: {
       id: 'capacity_snapshot_finite',
       passed: Number.isFinite(prev.capacitySnapshot.index),
       detail: String(prev.capacitySnapshot.index)
+    });
+  }
+  if (includeHousingStrategicStress && prev) {
+    checks.push({
+      id: 'transmission_balance_finite',
+      passed: Number.isFinite(prev.transmissionBalance.dispersionIndex),
+      detail: String(prev.transmissionBalance.dispersionIndex)
     });
   }
   checks.push({

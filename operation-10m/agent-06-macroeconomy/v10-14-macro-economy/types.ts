@@ -93,7 +93,10 @@ export interface NationalMacroEconomyState {
   creditSpilloverSummary: string | null;
   innovationSpilloverSummary: string | null;
   workforceSpilloverSummary: string | null;
+  strategicSpilloverSummary: string | null;
+  housingSpilloverSummary: string | null;
   capacitySnapshot: MacroCapacitySnapshot;
+  transmissionBalance: MacroTransmissionBalanceSnapshot;
   transmissionReport: MacroTransmissionReport;
   stressIndex: MacroStressIndexSnapshot;
   policyStance: MacroPolicyStanceSnapshot;
@@ -165,6 +168,14 @@ export interface MacroCapacitySnapshot {
   summary: string;
 }
 
+export type MacroTransmissionBalanceBand = 'aligned' | 'mixed' | 'cross_current' | 'fragmented';
+
+export interface MacroTransmissionBalanceSnapshot {
+  dispersionIndex: number;
+  band: MacroTransmissionBalanceBand;
+  summary: string;
+}
+
 export type MacroStressBand = 'calm' | 'elevated' | 'acute';
 
 export interface MacroStressIndexSnapshot {
@@ -208,6 +219,9 @@ export interface MacroEconomyInputs {
   industries?: any;
   innovation?: any;
   workforce?: any;
+  strategicCapital?: any;
+  housingWellbeing?: any;
+  housing?: any;
   publicFinance?: any;
   households?: any;
   trade?: any;

@@ -48,6 +48,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Labor & innovation shock',
     shockIds: ['global_slowdown', 'credit_contraction'],
     description: 'External fade with labor and innovation pipeline stress (harness overlay).'
+  },
+  {
+    id: 'housing_strategic_stress',
+    label: 'Housing & strategic stress',
+    shockIds: ['housing_correction', 'credit_contraction'],
+    description: 'Domestic housing correction with strategic capital and credit tension (harness overlay).'
   }
 ];
 

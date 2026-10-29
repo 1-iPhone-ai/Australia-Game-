@@ -7,12 +7,15 @@ import { applyMacroGeographySpillover, readMacroGeographySpillover } from './bri
 import { applyMacroCreditSpillover, readMacroCreditSpilloverFromV1016 } from './bridge-v1016-credit.ts';
 import { applyMacroInnovationSpillover, readMacroInnovationSpilloverFromV104 } from './bridge-v104-innovation.ts';
 import { applyMacroWorkforceSpillover, readMacroWorkforceSpilloverFromV107 } from './bridge-v107-workforce.ts';
+import { applyMacroStrategicSpillover, readMacroStrategicSpilloverFromV109 } from './bridge-v109-strategic.ts';
+import { applyMacroHousingSpillover, readMacroHousingSpilloverFromV1014Housing } from './bridge-v1014-housing.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
 import { buildMacroStressIndexSnapshot } from './macro-stress-index.ts';
 import { buildMacroPolicyStanceSnapshot } from './policy-stance-snapshot.ts';
 import { buildMacroCapacitySnapshot } from './macro-capacity-snapshot.ts';
+import { buildMacroTransmissionBalanceSnapshot } from './macro-transmission-balance.ts';
 import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
 import { V1014_MACRO_LIMITS } from './constants.ts';
 import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
@@ -84,6 +87,8 @@ export function computeNationalMacroEconomy(
   const creditSpillover = readMacroCreditSpilloverFromV1016(inputs);
   const innovationSpillover = readMacroInnovationSpilloverFromV104(inputs);
   const workforceSpillover = readMacroWorkforceSpilloverFromV107(inputs);
+  const strategicSpillover = readMacroStrategicSpilloverFromV109(inputs);
+  const housingSpillover = readMacroHousingSpilloverFromV1014Housing(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -92,7 +97,9 @@ export function computeNationalMacroEconomy(
   const withCredit = applyMacroCreditSpillover(withGeography, creditSpillover);
   const withInnovation = applyMacroInnovationSpillover(withCredit, innovationSpillover);
   const withWorkforce = applyMacroWorkforceSpillover(withInnovation, workforceSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withWorkforce, pushEv);
+  const withStrategic = applyMacroStrategicSpillover(withWorkforce, strategicSpillover);
+  const withHousing = applyMacroHousingSpillover(withStrategic, housingSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withHousing, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -128,8 +135,12 @@ export function computeNationalMacroEconomy(
     geography: geographySpillover,
     credit: creditSpillover,
     innovation: innovationSpillover,
-    workforce: workforceSpillover
+    workforce: workforceSpillover,
+    strategic: strategicSpillover,
+    housing: housingSpillover
   });
+
+  const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
 
   const capacitySnapshot = buildMacroCapacitySnapshot({
     state: {
@@ -188,7 +199,10 @@ export function computeNationalMacroEconomy(
     creditSpilloverSummary: creditSpillover.summary,
     innovationSpilloverSummary: innovationSpillover.summary,
     workforceSpilloverSummary: workforceSpillover.summary,
+    strategicSpilloverSummary: strategicSpillover.summary,
+    housingSpilloverSummary: housingSpillover.summary,
     capacitySnapshot,
+    transmissionBalance,
     transmissionReport,
     stressIndex: {
       score: 0,

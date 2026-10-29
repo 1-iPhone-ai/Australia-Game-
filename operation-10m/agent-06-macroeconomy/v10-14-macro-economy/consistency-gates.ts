@@ -131,5 +131,42 @@ export function evaluateMacroConsistencyGates(
       summary: 'Binding capacity read coexists with frozen investment — financing or policy may be the bind, not physical capacity.'
     });
   }
+  const hw: any = inputs.housingWellbeing ?? inputs.housing;
+  const housingStress = String(hw?.affordability?.band ?? hw?.affordabilityBand ?? hw?.stressBand ?? '');
+  if (
+    (housingStress === 'severe' || housingStress === 'critical' || housingStress === 'stressed') &&
+    (creditTight || spread === 'stressed' || spread === 'frozen')
+  ) {
+    gates.push({
+      id: 'housing_credit_stress',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Housing affordability stress coincides with tight credit — domestic macro downside risk elevated.'
+    });
+  }
+  const sc: any = inputs.strategicCapital;
+  const stratAlloc = String(sc?.allocationBand ?? sc?.capitalBand ?? '');
+  if (
+    (stratAlloc === 'expansionary' || stratAlloc === 'growth' || stratAlloc === 'active') &&
+    state.investmentClimate === 'frozen'
+  ) {
+    gates.push({
+      id: 'strategic_investment_divergence',
+      triggered: true,
+      severity: 'info',
+      summary: 'Strategic capital stance is expansionary while macro investment climate reads frozen — execution or financing gap likely.'
+    });
+  }
+  if (
+    state.transmissionBalance?.band === 'cross_current' ||
+    state.transmissionBalance?.band === 'fragmented'
+  ) {
+    gates.push({
+      id: 'transmission_cross_current',
+      triggered: true,
+      severity: 'info',
+      summary: 'Cross-current transmission layers — headline macro scores may mask offsetting sector forces.'
+    });
+  }
   return gates;
 }

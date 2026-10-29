@@ -32,6 +32,11 @@ export function MacroEconomyInspectorLab(props: {
           Stress: {st.stressIndex.band} ({st.stressIndex.score.toFixed(0)})
         </div>
       )}
+      {st.transmissionBalance?.band && st.transmissionBalance.band !== 'aligned' && (
+        <div style={{ marginTop: 4, color: '#fb923c' }}>
+          Transmission balance: {st.transmissionBalance.band} ({st.transmissionBalance.dispersionIndex.toFixed(1)})
+        </div>
+      )}
       {st.policyStance?.stance && st.policyStance.stance !== 'neutral' && (
         <div style={{ marginTop: 4, color: '#fcd34d' }}>Policy stance: {st.policyStance.stance}</div>
       )}
