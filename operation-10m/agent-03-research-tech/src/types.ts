@@ -162,12 +162,13 @@ export interface ResearchBranchEmphasisState {
   setTurn: number;
 }
 
-export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v8' as const;
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v9' as const;
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
 export type ResearchProgressSchemaVersion =
   | typeof RESEARCH_PROGRESS_SCHEMA_VERSION
+  | 'op10m-agent03-v8'
   | 'op10m-agent03-v7'
   | 'op10m-agent03-v6'
   | 'op10m-agent03-v5'
@@ -339,6 +340,44 @@ export interface ResearchAdoptionHorizonOutlook {
   synergyContribution: number;
 }
 
+export type ResearchSynergyThreshold = 25 | 50 | 75 | 90;
+
+export interface ResearchSynergyThresholdEvent {
+  seq: number;
+  turn: number;
+  threshold: ResearchSynergyThreshold;
+  synergyScore: number;
+  activeMultiBranchCount: number;
+  phase: 'escalation' | 'de-escalation';
+}
+
+export interface ResearchSynergySnapshot {
+  capturedAtTurn: number;
+  currentSynergyScore: number;
+  projectedSynergyScore: number;
+  activeMultiBranchCount: number;
+  peakThreshold: ResearchSynergyThreshold | 0;
+  dominantCapabilityCluster: V94EmergingCapabilityId | null;
+  digest: string;
+}
+
+export interface ResearchPortfolioStabilizationLink {
+  branchId: ResearchBranchId;
+  readinessGap: number;
+  driver: 'readiness_lag' | 'emphasis_mismatch';
+}
+
+export interface ResearchPortfolioStabilizationOutlook {
+  active: boolean;
+  baseTurn: number;
+  horizonTurns: number;
+  nationalStabilizationScore: number;
+  projectedStabilizationScore: number;
+  criticalBranchCount: number;
+  synergyMomentum: number;
+  links: ResearchPortfolioStabilizationLink[];
+}
+
 export interface ResearchProgressState {
   schemaVersion: ResearchProgressSchemaVersion;
   revision: number;
@@ -358,6 +397,7 @@ export interface ResearchProgressState {
   synergyOutlook?: ResearchSynergyOutlook | null;
   integrationRiskOutlook?: ResearchIntegrationRiskOutlook | null;
   adoptionHorizonOutlook?: ResearchAdoptionHorizonOutlook | null;
+  portfolioStabilizationOutlook?: ResearchPortfolioStabilizationOutlook | null;
   unlockSeq: number;
   branchEmphasis?: ResearchBranchEmphasisState[];
   emphasisRevision?: number;
@@ -375,6 +415,8 @@ export interface ResearchProgressState {
   integrationRiskLog?: ResearchIntegrationRiskEvent[];
   integrationRiskSnapshot?: ResearchIntegrationRiskSnapshot | null;
   scaleWaveSnapshot?: ResearchScaleWaveSnapshot | null;
+  synergyThresholdLog?: ResearchSynergyThresholdEvent[];
+  synergySnapshot?: ResearchSynergySnapshot | null;
 }
 
 export interface StrategyHookDefinition {

@@ -25,4 +25,7 @@ export * from './integration-risk-log.ts';
 export * from './integration-risk-snapshot.ts';
 export * from './scale-wave-snapshot.ts';
 export * from './adoption-horizon-outlook.ts';
+export * from './synergy-threshold-log.ts';
+export * from './synergy-snapshot.ts';
+export * from './portfolio-stabilization-outlook.ts';
 export * from './compute.ts';

@@ -702,6 +702,61 @@ tests.push(
 );
 
 tests.push(
+  test('save_v8_migrates_to_v9_with_synergy_fields', () => {
+    const v8 = {
+      schemaVersion: 'op10m-agent03-v8',
+      turn: 14,
+      revision: 2,
+      unlockedNodes: [],
+      institutionUpgrades: [],
+      unlockSeq: 0,
+      branchEmphasis: [],
+      emphasisRevision: 1,
+      migrationLog: [{ fromVersion: 'op10m-agent03-v7', toVersion: 'op10m-agent03-v8', turn: 13 }],
+      saveKind: 'manual',
+      updatedAtTurn: 14,
+      sessionId: 'v8',
+      persistRevision: 6,
+      unlockEventLog: [],
+      lastReconciledAtTurn: 14,
+      emphasisChangeLog: [],
+      institutionTierSnapshot: { capturedAtTurn: 14, tiers: {}, digest: 'abc', nationalIntegrationCount: 0, strategicOrAboveCount: 0 },
+      readinessMilestoneLog: [],
+      readinessBranchSnapshot: null,
+      integrationRiskLog: [],
+      integrationRiskSnapshot: null,
+      scaleWaveSnapshot: null,
+      coreFingerprint: 'legacy',
+    };
+    const core = migrateResearchProgressSave(v8);
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v8'));
+    assert(Array.isArray(core?.synergyThresholdLog));
+    assert(core?.synergySnapshot === null);
+  })
+);
+
+tests.push(
+  test('synergy_threshold_log_and_snapshot_on_compute', () => {
+    const inputs = baseInputs({ turn: 22 });
+    const state = computeResearchProgress(inputs, null);
+    assert(typeof state.synergySnapshot?.digest === 'string');
+    assert(Array.isArray(state.synergyThresholdLog));
+  })
+);
+
+tests.push(
+  test('portfolio_stabilization_outlook_derived', () => {
+    const inputs = baseInputs({ turn: 18 });
+    const state = computeResearchProgress(inputs, null);
+    const outlook = state.portfolioStabilizationOutlook;
+    assert(outlook != null);
+    assert(typeof outlook?.nationalStabilizationScore === 'number');
+    assert(detectForeignSaveFields({ portfolioStabilizationOutlook: outlook }).includes('portfolioStabilizationOutlook'));
+  })
+);
+
+tests.push(
   test('save_v7_migrates_to_v8_with_risk_and_scale_fields', () => {
     const v7 = {
       schemaVersion: 'op10m-agent03-v7',

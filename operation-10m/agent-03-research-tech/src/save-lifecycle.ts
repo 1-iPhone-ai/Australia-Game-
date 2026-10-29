@@ -12,6 +12,7 @@ import type {
   ResearchEmphasisChangeEvent,
   ResearchReadinessMilestoneEvent,
   ResearchIntegrationRiskEvent,
+  ResearchSynergyThresholdEvent,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { RESEARCH_UNLOCK_EVENT_LOG_CAP } from './unlock-event-log.ts';
@@ -20,8 +21,10 @@ import { computeInstitutionTierSnapshot, mergeInstitutionTierSnapshots } from '.
 import { RESEARCH_READINESS_MILESTONE_LOG_CAP } from './readiness-milestone-log.ts';
 import { mergeReadinessBranchSnapshots } from './readiness-branch-snapshot.ts';
 import { RESEARCH_INTEGRATION_RISK_LOG_CAP } from './integration-risk-log.ts';
+import { RESEARCH_SYNERGY_THRESHOLD_LOG_CAP } from './synergy-threshold-log.ts';
 import { mergeIntegrationRiskSnapshots } from './integration-risk-snapshot.ts';
 import { mergeScaleWaveSnapshots } from './scale-wave-snapshot.ts';
+import { mergeSynergySnapshots } from './synergy-snapshot.ts';
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
@@ -83,6 +86,18 @@ function mergeIntegrationRiskLogs(
     byKey.set(key, ev);
   }
   return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_INTEGRATION_RISK_LOG_CAP);
+}
+
+function mergeSynergyThresholdLogs(
+  local: ResearchSynergyThresholdEvent[] | undefined,
+  remote: ResearchSynergyThresholdEvent[] | undefined
+): ResearchSynergyThresholdEvent[] {
+  const byKey = new Map<string, ResearchSynergyThresholdEvent>();
+  for (const ev of [...(local ?? []), ...(remote ?? [])]) {
+    const key = `${ev.seq}:${ev.threshold}:${ev.phase}`;
+    byKey.set(key, ev);
+  }
+  return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_SYNERGY_THRESHOLD_LOG_CAP);
 }
 
 function stableCoreSnapshot(core: ResearchProgressPersistedCore): Record<string, unknown> {
@@ -184,6 +199,9 @@ export function mergeResearchPersistedCores(
       ) ?? null,
     scaleWaveSnapshot:
       mergeScaleWaveSnapshots(local.scaleWaveSnapshot ?? undefined, remote.scaleWaveSnapshot ?? undefined) ?? null,
+    synergyThresholdLog: mergeSynergyThresholdLogs(local.synergyThresholdLog, remote.synergyThresholdLog),
+    synergySnapshot:
+      mergeSynergySnapshots(local.synergySnapshot ?? undefined, remote.synergySnapshot ?? undefined) ?? null,
     lastReconciledAtTurn: Math.max(local.lastReconciledAtTurn ?? 0, remote.lastReconciledAtTurn ?? 0),
   });
 }
@@ -216,6 +234,8 @@ export function reconcileResearchProgressOnLoad(
         integrationRiskLog: persist.integrationRiskLog,
         integrationRiskSnapshot: persist.integrationRiskSnapshot,
         scaleWaveSnapshot: persist.scaleWaveSnapshot,
+        synergyThresholdLog: persist.synergyThresholdLog,
+        synergySnapshot: persist.synergySnapshot,
       },
       persist,
     };
@@ -240,6 +260,8 @@ export function reconcileResearchProgressOnLoad(
     integrationRiskLog: mergedCore.integrationRiskLog,
     integrationRiskSnapshot: mergedCore.integrationRiskSnapshot,
     scaleWaveSnapshot: mergedCore.scaleWaveSnapshot,
+    synergyThresholdLog: mergedCore.synergyThresholdLog,
+    synergySnapshot: mergedCore.synergySnapshot,
     lastReconciledAtTurn: ctx.turn,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
   };
@@ -265,6 +287,8 @@ export function reconcileResearchProgressOnLoad(
       integrationRiskLog: persist.integrationRiskLog,
       integrationRiskSnapshot: persist.integrationRiskSnapshot,
       scaleWaveSnapshot: persist.scaleWaveSnapshot,
+      synergyThresholdLog: persist.synergyThresholdLog,
+      synergySnapshot: persist.synergySnapshot,
     },
     persist,
   };
