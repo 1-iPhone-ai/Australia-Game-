@@ -205,6 +205,8 @@ export interface Agent17PlanningDepthSnapshot {
   readinessGate: Agent17ReadinessGateSnapshot;
   pulseIndex: Agent17PulseIndexSnapshot;
   continuityBridge: Agent17ContinuityBridgeSnapshot;
+  fluxIndex: Agent17FluxIndexSnapshot;
+  integritySeal: Agent17IntegritySealSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -511,6 +513,38 @@ export interface Agent17ContinuityBridgeSnapshot {
   links: Agent17ContinuityBridgeLink[];
   pulseBand: Agent17PulseIndexSnapshot['band'];
   continuityClearance: boolean;
+  headline: string;
+}
+
+export interface Agent17FluxIndexFactor {
+  id: string;
+  label: string;
+  score: number;
+  weight: number;
+}
+
+export interface Agent17FluxIndexSnapshot {
+  fluxIndex: number;
+  band: 'coherent' | 'noisy' | 'disrupted';
+  factors: Agent17FluxIndexFactor[];
+  bridgeBand: Agent17ContinuityBridgeSnapshot['band'];
+  governanceBand: Agent17GovernanceAuditSnapshot['band'];
+  headline: string;
+}
+
+export interface Agent17IntegritySealFacet {
+  id: string;
+  label: string;
+  intact: boolean;
+  weight: number;
+}
+
+export interface Agent17IntegritySealSnapshot {
+  sealScore: number;
+  band: 'trusted' | 'conditional' | 'breached';
+  facets: Agent17IntegritySealFacet[];
+  fluxBand: Agent17FluxIndexSnapshot['band'];
+  commitAllowed: boolean;
   headline: string;
 }
 
@@ -4153,6 +4187,189 @@ export function continuityBridgeBlocksHandoff(
 }
 
 
+// --- source: planning/flux-index.ts ---
+  Agent17ContinuityBridgeSnapshot,
+  Agent17FluxIndexSnapshot,
+  Agent17GovernanceAuditSnapshot,
+  Agent17PulseIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17FluxIndexInputs {
+  continuityBridge: Agent17ContinuityBridgeSnapshot;
+  pulseIndex: Agent17PulseIndexSnapshot;
+  governanceAudit: Agent17GovernanceAuditSnapshot;
+}
+
+export function buildAgent17FluxIndex(inputs: Agent17FluxIndexInputs): Agent17FluxIndexSnapshot {
+  const factors: Agent17FluxIndexSnapshot['factors'] = [];
+
+  factors.push({
+    id: 'bridge_score',
+    label: 'Continuity bridge score',
+    score: inputs.continuityBridge.bridgeScore,
+    weight: 35,
+  });
+
+  factors.push({
+    id: 'pulse_index',
+    label: 'Operational pulse index',
+    score: inputs.pulseIndex.pulseIndex,
+    weight: 30,
+  });
+
+  const auditScore = Math.max(0, 100 - inputs.governanceAudit.openCriticalCount * 22);
+  factors.push({
+    id: 'governance_audit',
+    label: 'Governance audit headroom',
+    score: auditScore,
+    weight: 20,
+  });
+
+  const bridgeLinkRatio = Math.round(
+    (inputs.continuityBridge.links.filter(l => l.connected).length /
+      Math.max(1, inputs.continuityBridge.links.length)) *
+      100
+  );
+  factors.push({
+    id: 'bridge_links',
+    label: 'Bridge link ratio',
+    score: bridgeLinkRatio,
+    weight: 15,
+  });
+
+  const weighted = factors.reduce((n, f) => n + f.score * (f.weight / 100), 0);
+  const totalWeight = factors.reduce((n, f) => n + f.weight, 0);
+  const fluxIndex = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const disruptedSignals =
+    inputs.continuityBridge.band === 'broken' ||
+    inputs.pulseIndex.band === 'flat' ||
+    inputs.governanceAudit.band === 'breach' ||
+    pulseIndexBlocksContinuity(inputs.pulseIndex) ||
+    governanceAuditBlocksAutomation(inputs.governanceAudit);
+
+  const band: Agent17FluxIndexSnapshot['band'] = disruptedSignals
+    ? 'disrupted'
+    : fluxIndex >= 62 &&
+        inputs.continuityBridge.band !== 'broken' &&
+        inputs.pulseIndex.band !== 'flat'
+      ? 'coherent'
+      : 'noisy';
+
+  return {
+    fluxIndex,
+    band,
+    factors,
+    bridgeBand: inputs.continuityBridge.band,
+    governanceBand: inputs.governanceAudit.band,
+    headline: `Flux ${band} (${fluxIndex}/100) · bridge ${inputs.continuityBridge.band}`,
+  };
+}
+
+export function fluxIndexBlocksSeal(snapshot: Agent17FluxIndexSnapshot): boolean {
+  return snapshot.band === 'disrupted' || snapshot.fluxIndex < 33;
+}
+
+
+// --- source: planning/integrity-seal.ts ---
+  Agent17FluxIndexSnapshot,
+  Agent17IntegritySealSnapshot,
+  Agent17RollbackAssuranceSnapshot,
+  Agent17VerificationPolicySnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17IntegritySealInputs {
+  fluxIndex: Agent17FluxIndexSnapshot;
+  rollbackAssurance: Agent17RollbackAssuranceSnapshot;
+  verificationPolicy: Agent17VerificationPolicySnapshot;
+}
+
+export function buildAgent17IntegritySeal(
+  inputs: Agent17IntegritySealInputs
+): Agent17IntegritySealSnapshot {
+  const facets: Agent17IntegritySealSnapshot['facets'] = [];
+
+  facets.push({
+    id: 'flux_coherent',
+    label: 'Flux coherence lane',
+    intact: inputs.fluxIndex.band === 'coherent' || inputs.fluxIndex.band === 'noisy',
+    weight: 30,
+  });
+
+  facets.push({
+    id: 'assurance_score',
+    label: 'Rollback assurance score',
+    intact: inputs.rollbackAssurance.assuranceScore >= 45,
+    weight: 25,
+  });
+
+  facets.push({
+    id: 'verify_open',
+    label: 'Verification policy open',
+    intact: inputs.verificationPolicy.allowVerification,
+    weight: 20,
+  });
+
+  facets.push({
+    id: 'restore_clear',
+    label: 'Restore signal clear',
+    intact: !inputs.rollbackAssurance.restoreRecommended,
+    weight: 15,
+  });
+
+  facets.push({
+    id: 'policy_rules',
+    label: 'Policy rules satisfied',
+    intact: inputs.verificationPolicy.rules.filter(r => r.satisfied).length >= 2,
+    weight: 10,
+  });
+
+  const weighted = facets.reduce(
+    (n, f) => n + (f.intact ? 100 : 18) * (f.weight / 100),
+    0
+  );
+  const totalWeight = facets.reduce((n, f) => n + f.weight, 0);
+  const sealScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const breachedSignals =
+    fluxIndexBlocksSeal(inputs.fluxIndex) ||
+    inputs.rollbackAssurance.band === 'exposed' ||
+    rollbackAssuranceNeedsRestore(inputs.rollbackAssurance);
+
+  const band: Agent17IntegritySealSnapshot['band'] = breachedSignals
+    ? 'breached'
+    : sealScore >= 72 &&
+        inputs.fluxIndex.band === 'coherent' &&
+        !fluxIndexBlocksSeal(inputs.fluxIndex)
+      ? 'trusted'
+      : 'conditional';
+
+  const commitAllowed =
+    band === 'trusted' &&
+    inputs.verificationPolicy.allowVerification &&
+    !fluxIndexBlocksSeal(inputs.fluxIndex);
+
+  return {
+    sealScore,
+    band,
+    facets,
+    fluxBand: inputs.fluxIndex.band,
+    commitAllowed,
+    headline: `Seal ${band} (${sealScore}/100) · ${facets.filter(f => f.intact).length}/${facets.length} facets`,
+  };
+}
+
+export function integritySealBlocksCommit(snapshot: Agent17IntegritySealSnapshot): boolean {
+  return snapshot.band === 'breached' || !snapshot.commitAllowed;
+}
+
+
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -4362,6 +4579,16 @@ export function buildAgent17PlanningDepthSnapshot(
     resilienceScorecard,
     verificationPolicy,
   });
+  const fluxIndex = buildAgent17FluxIndex({
+    continuityBridge,
+    pulseIndex,
+    governanceAudit,
+  });
+  const integritySeal = buildAgent17IntegritySeal({
+    fluxIndex,
+    rollbackAssurance,
+    verificationPolicy,
+  });
   return {
     ...core,
     intentQueue,
@@ -4385,6 +4612,8 @@ export function buildAgent17PlanningDepthSnapshot(
     readinessGate,
     pulseIndex,
     continuityBridge,
+    fluxIndex,
+    integritySeal,
   };
 }
 
@@ -5034,6 +5263,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Flat pulse or broken bridge yields continuityBridgeBlocksHandoff.',
     severity: 'major',
   },
+  {
+    id: 'G17-052',
+    title: 'Flux index on planning depth',
+    category: 'telemetry',
+    acceptance: 'fluxIndex reports fluxIndex 0–100 with coherent/noisy/disrupted band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-053',
+    title: 'Integrity seal facets complete',
+    category: 'telemetry',
+    acceptance: 'integritySeal exposes ≥5 seal facets and sealScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-054',
+    title: 'Disrupted flux breaches integrity seal',
+    category: 'integration',
+    acceptance: 'Disrupted flux or breached seal yields integritySealBlocksCommit.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -5093,6 +5343,12 @@ export function listAgent17GoalIds(): string[] {
   buildAgent17ContinuityBridge,
   continuityBridgeBlocksHandoff,
 } from '../planning/continuity-bridge.ts';
+  buildAgent17FluxIndex,
+  fluxIndexBlocksSeal,
+} from '../planning/flux-index.ts';
+  buildAgent17IntegritySeal,
+  integritySealBlocksCommit,
+} from '../planning/integrity-seal.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -5840,6 +6096,54 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const fluxIndexSnap = depthEval.snapshot.planningDepth?.fluxIndex;
+  goalResults.push(
+    result(
+      'G17-052',
+      !!fluxIndexSnap &&
+        fluxIndexSnap.fluxIndex >= 0 &&
+        fluxIndexSnap.fluxIndex <= 100 &&
+        (fluxIndexSnap.band === 'coherent' ||
+          fluxIndexSnap.band === 'noisy' ||
+          fluxIndexSnap.band === 'disrupted'),
+      `${fluxIndexSnap?.fluxIndex}/${fluxIndexSnap?.band}`
+    )
+  );
+
+  const integritySeal = depthEval.snapshot.planningDepth?.integritySeal;
+  goalResults.push(
+    result(
+      'G17-053',
+      !!integritySeal &&
+        integritySeal.facets.length >= 5 &&
+        integritySeal.sealScore >= 0 &&
+        integritySeal.sealScore <= 100,
+      `facets=${integritySeal?.facets.length} score=${integritySeal?.sealScore}`
+    )
+  );
+
+  const disruptedFlux = buildAgent17FluxIndex({
+    continuityBridge: brokenBridge,
+    pulseIndex: flatPulse,
+    governanceAudit: breachAudit,
+  });
+  const breachedSeal = buildAgent17IntegritySeal({
+    fluxIndex: disruptedFlux,
+    rollbackAssurance: buildAgent17RollbackAssurance(
+      breachOps,
+      assessAgent17PlanHealth(breachOps.activePlan, baseState, 'player'),
+      breachAudit
+    ),
+    verificationPolicy: buildAgent17VerificationPolicy(breachOps, baseState, 'player'),
+  });
+  goalResults.push(
+    result(
+      'G17-054',
+      fluxIndexBlocksSeal(disruptedFlux) || integritySealBlocksCommit(breachedSeal),
+      `${disruptedFlux.band}/${breachedSeal.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -5921,6 +6225,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-049',
     'G17-050',
     'G17-051',
+    'G17-052',
+    'G17-053',
+    'G17-054',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
@@ -9285,6 +9592,435 @@ export function runAgent17PulseDepthTests(): Agent17DevTestReport {
     success: overallStatus === 'passed',
     testResults,
     summary: `Agent 17 Pulse Depth Tests: ${passedCount}/${testResults.length} Passed`,
+  };
+}
+
+
+// --- source: harness/run-flux-depth-tests.ts ---
+  createDefaultAcc17CommandCenterOpsState,
+  acc17CreateMultiStepPlanFromObjective,
+  defaultObjectiveResolver,
+} from '../planning/ops-state.ts';
+  buildAgent17GovernanceAudit,
+  governanceAuditBlocksAutomation,
+} from '../planning/governance-audit.ts';
+  buildAgent17EscalationMatrix,
+  escalationMatrixBlocksAutomation,
+} from '../planning/escalation-matrix.ts';
+  buildAgent17RollbackAssurance,
+  rollbackAssuranceNeedsRestore,
+} from '../planning/rollback-assurance.ts';
+  buildAgent17StabilizationIndex,
+  stabilizationIndexBlocksAutomation,
+} from '../planning/stabilization-index.ts';
+  buildAgent17CommandEnvelope,
+  commandEnvelopeNeedsThrottle,
+} from '../planning/command-envelope.ts';
+  buildAgent17ConvergenceIndex,
+  convergenceIndexBlocksDirective,
+} from '../planning/convergence-index.ts';
+  buildAgent17DirectiveSynthesis,
+  directiveSynthesisBlocksAdvance,
+} from '../planning/directive-synthesis.ts';
+  buildAgent17ContinuityBridge,
+  continuityBridgeBlocksHandoff,
+} from '../planning/continuity-bridge.ts';
+  buildAgent17IntegritySeal,
+  integritySealBlocksCommit,
+} from '../planning/integrity-seal.ts';
+  rankAgent17TemplateCandidates,
+  summarizeAgent17CatalogDepth,
+} from '../planning/template-selector.ts';
+
+export function runAgent17FluxDepthTests(): Agent17DevTestReport {
+  const start = Date.now();
+  const testResults: Agent17DevTestReport['testResults'] = [];
+  const push = (id: string, name: string, ok: boolean, detail?: string) => {
+    testResults.push({
+      id,
+      name,
+      status: ok ? 'passed' : 'failed',
+      durationMs: 0,
+      errorMessage: ok ? undefined : detail,
+    });
+  };
+
+  try {
+    const settings = {
+      commandCenterSettings: { enabled: true },
+      aiCommunicationAutonomyLevel: 'assisted' as const,
+    };
+    const actor = {
+      id: 'player',
+      money: 120,
+      netWorth: 2400,
+      currentRegion: 'QLD',
+      currentSupplies: 6,
+    };
+    const state: Agent17GameStateSlice = {
+      turnCounter: 31,
+      day: 31,
+      player: actor,
+      actorsById: { player: actor },
+      playerTrackedObjective: {
+        title: 'Expand trade network supply chain',
+        sourceType: 'contract',
+      },
+      gi3Strategy: { headline: 'Expand trade network resilience' },
+      strategyPlannerState: { activePlan: { title: 'Trade network supply expansion' } },
+      lastExecutedAction: { type: 'trade' },
+    };
+    const ops = createDefaultAcc17CommandCenterOpsState();
+    const plan = acc17CreateMultiStepPlanFromObjective(
+      state,
+      settings,
+      'player',
+      (s, st, id) => defaultObjectiveResolver(s, st, id)
+    );
+    const opsWithPlan = {
+      ...ops,
+      activePlan: plan ? { ...plan, title: plan.title || 'Trade supply chain plan' } : plan,
+    };
+    const health = assessAgent17PlanHealth(opsWithPlan.activePlan, state, 'player');
+    const intentQueue = buildAgent17IntentQueue(opsWithPlan, state, settings, 'player', health);
+    const alignment = buildAgent17StrategicAlignment(
+      opsWithPlan,
+      state,
+      settings,
+      'player',
+      intentQueue
+    );
+    const policy = buildAgent17VerificationPolicy(
+      { ...opsWithPlan, lastContextFingerprint: 'flux_fp' },
+      state,
+      'player'
+    );
+    const pacing = buildAgent17ExecutionPacing(opsWithPlan, state, health, policy);
+    const scorecard = buildAgent17ResilienceScorecard(
+      opsWithPlan,
+      state,
+      'player',
+      health,
+      policy
+    );
+    const routing = rankAgent17TemplateCandidates(state, settings, 'player');
+    const delegationAnalytics = buildAgent17DelegationAnalytics(opsWithPlan, settings);
+    const core = {
+      turn: state.turnCounter || 1,
+      actorId: 'player',
+      planHealth: health,
+      suggestion: buildAgent17PlanningSuggestion(
+        opsWithPlan,
+        state,
+        settings,
+        'player',
+        'copilot'
+      ),
+      templateRouting: routing,
+      delegationAnalytics,
+      delegationLadder: buildAgent17DelegationLadder(delegationAnalytics, settings, 'copilot'),
+      planLedger: summarizeAgent17PlanLedger(opsWithPlan, state),
+      catalogDepth: summarizeAgent17CatalogDepth(),
+    };
+    const brief = buildAgent17CoordinationBrief(
+      core,
+      intentQueue,
+      policy,
+      opsWithPlan,
+      state,
+      settings
+    );
+    const handoff = buildAgent17HandoffReadiness({
+      coordinationBrief: brief,
+      verificationPolicy: policy,
+      executionPacing: pacing,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const posture = buildAgent17CommandPosture({
+      planHealth: health,
+      handoffReadiness: handoff,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const audit = buildAgent17GovernanceAudit(opsWithPlan, settings, policy);
+    const matrix = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: audit,
+      handoffReadiness: handoff,
+    });
+    const assurance = buildAgent17RollbackAssurance(opsWithPlan, health, audit);
+    const stabilization = buildAgent17StabilizationIndex({
+      escalationMatrix: matrix,
+      rollbackAssurance: assurance,
+    });
+    const envelope = buildAgent17CommandEnvelope({
+      ops: opsWithPlan,
+      executionPacing: pacing,
+      stabilizationIndex: stabilization,
+    });
+    const convergence = buildAgent17ConvergenceIndex({
+      commandEnvelope: envelope,
+      stabilizationIndex: stabilization,
+      strategicAlignment: alignment,
+    });
+    const directive = buildAgent17MissionDirective({
+      intentQueue,
+      commandEnvelope: envelope,
+      convergenceIndex: convergence,
+    });
+    const synthesis = buildAgent17DirectiveSynthesis({
+      missionDirective: directive,
+      convergenceIndex: convergence,
+      intentQueue,
+    });
+    const closure = buildAgent17ExecutionClosure({
+      directiveSynthesis: synthesis,
+      executionPacing: pacing,
+      missionDirective: directive,
+    });
+    const cadence = buildAgent17CadenceLattice({
+      executionClosure: closure,
+      directiveSynthesis: synthesis,
+      executionPacing: pacing,
+    });
+    const readiness = buildAgent17ReadinessGate({
+      cadenceLattice: cadence,
+      handoffReadiness: handoff,
+      coordinationBrief: brief,
+    });
+    const pulse = buildAgent17PulseIndex({
+      readinessGate: readiness,
+      cadenceLattice: cadence,
+      commandPosture: posture,
+    });
+    const bridge = buildAgent17ContinuityBridge({
+      pulseIndex: pulse,
+      resilienceScorecard: scorecard,
+      verificationPolicy: policy,
+    });
+
+    const fluxClean = buildAgent17FluxIndex({
+      continuityBridge: bridge,
+      pulseIndex: pulse,
+      governanceAudit: audit,
+    });
+    push(
+      'flx_index_bounded',
+      'Flux index bounded with band',
+      fluxClean.fluxIndex >= 0 &&
+        fluxClean.fluxIndex <= 100 &&
+        (fluxClean.band === 'coherent' ||
+          fluxClean.band === 'noisy' ||
+          fluxClean.band === 'disrupted'),
+      `${fluxClean.fluxIndex}/${fluxClean.band}`
+    );
+
+    push(
+      'flx_factors',
+      'Flux index exposes weighted factors',
+      fluxClean.factors.length >= 4 && fluxClean.factors.every(f => f.weight > 0),
+      `factors=${fluxClean.factors.length}`
+    );
+
+    const sealClean = buildAgent17IntegritySeal({
+      fluxIndex: fluxClean,
+      rollbackAssurance: assurance,
+      verificationPolicy: policy,
+    });
+    push(
+      'flx_seal_facets',
+      'Integrity seal exposes facets',
+      sealClean.facets.length >= 5 &&
+        sealClean.sealScore >= 0 &&
+        sealClean.sealScore <= 100,
+      `facets=${sealClean.facets.length} score=${sealClean.sealScore}`
+    );
+
+    push(
+      'flx_coherent',
+      'Healthy ops yields coherent or noisy flux',
+      fluxClean.band === 'coherent' || fluxClean.band === 'noisy',
+      fluxClean.band
+    );
+
+    push(
+      'flx_seal_conditional',
+      'Healthy ops yields trusted or conditional seal',
+      sealClean.band === 'trusted' || sealClean.band === 'conditional',
+      sealClean.band
+    );
+
+    const breachOps = {
+      ...opsWithPlan,
+      delegatedProjects: [
+        {
+          id: 'dp1',
+          planId: 'p1',
+          title: 'Breach project',
+          delegateKind: 'team_os' as const,
+          delegateTargetId: 'team',
+          status: 'active' as const,
+          authorityCeiling: 'delegated' as const,
+          assignedTurn: 1,
+          assignedDay: 1,
+          lastVerifiedFingerprint: '',
+          notes: '',
+        },
+      ],
+    };
+    const advisorySettings = {
+      ...settings,
+      aiCommunicationAutonomyLevel: 'advisory' as const,
+    };
+    const auditBreach = buildAgent17GovernanceAudit(breachOps, advisorySettings, policy);
+    const matrixUrgent = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: auditBreach,
+      handoffReadiness: handoff,
+    });
+    const assuranceBreach = buildAgent17RollbackAssurance(
+      breachOps,
+      assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+      auditBreach
+    );
+    const stabilizationVolatile = buildAgent17StabilizationIndex({
+      escalationMatrix: matrixUrgent,
+      rollbackAssurance: assuranceBreach,
+    });
+    const envelopeSaturated = buildAgent17CommandEnvelope({
+      ops: breachOps,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      stabilizationIndex: stabilizationVolatile,
+    });
+    const convergenceDiverging = buildAgent17ConvergenceIndex({
+      commandEnvelope: envelopeSaturated,
+      stabilizationIndex: stabilizationVolatile,
+      strategicAlignment: alignment,
+    });
+    const directiveHeld = buildAgent17MissionDirective({
+      intentQueue,
+      commandEnvelope: envelopeSaturated,
+      convergenceIndex: convergenceDiverging,
+    });
+    const synthesisLocked = buildAgent17DirectiveSynthesis({
+      missionDirective: directiveHeld,
+      convergenceIndex: convergenceDiverging,
+      intentQueue,
+    });
+    const closureSealed = buildAgent17ExecutionClosure({
+      directiveSynthesis: synthesisLocked,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      missionDirective: directiveHeld,
+    });
+    const cadenceStalled = buildAgent17CadenceLattice({
+      executionClosure: closureSealed,
+      directiveSynthesis: synthesisLocked,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+    });
+    const readinessStop = buildAgent17ReadinessGate({
+      cadenceLattice: cadenceStalled,
+      handoffReadiness: handoff,
+      coordinationBrief: brief,
+    });
+    const pulseFlat = buildAgent17PulseIndex({
+      readinessGate: readinessStop,
+      cadenceLattice: cadenceStalled,
+      commandPosture: posture,
+    });
+    const bridgeBroken = buildAgent17ContinuityBridge({
+      pulseIndex: pulseFlat,
+      resilienceScorecard: buildAgent17ResilienceScorecard(
+        breachOps,
+        state,
+        'player',
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      verificationPolicy: policy,
+    });
+    const fluxDisrupted = buildAgent17FluxIndex({
+      continuityBridge: bridgeBroken,
+      pulseIndex: pulseFlat,
+      governanceAudit: auditBreach,
+    });
+    push(
+      'flx_disrupted_blocks',
+      'Governance breach yields disrupted flux or blocks seal',
+      fluxDisrupted.band === 'disrupted' || fluxIndexBlocksSeal(fluxDisrupted),
+      `${fluxDisrupted.band} idx=${fluxDisrupted.fluxIndex}`
+    );
+
+    const sealBreached = buildAgent17IntegritySeal({
+      fluxIndex: fluxDisrupted,
+      rollbackAssurance: assuranceBreach,
+      verificationPolicy: policy,
+    });
+    push(
+      'flx_breached_commit',
+      'Breached seal blocks commit clearance',
+      sealBreached.band === 'breached' ||
+        integritySealBlocksCommit(sealBreached) ||
+        !sealBreached.commitAllowed,
+      `${sealBreached.band} commit=${sealBreached.commitAllowed}`
+    );
+
+    push(
+      'flx_escalation_link',
+      'Urgent escalation propagates to flux factors',
+      escalationMatrixBlocksAutomation(matrixUrgent) ||
+        governanceAuditBlocksAutomation(auditBreach) ||
+        rollbackAssuranceNeedsRestore(assuranceBreach) ||
+        stabilizationIndexBlocksAutomation(stabilizationVolatile) ||
+        commandEnvelopeNeedsThrottle(envelopeSaturated) ||
+        convergenceIndexBlocksDirective(convergenceDiverging) ||
+        directiveSynthesisBlocksAdvance(synthesisLocked),
+      matrixUrgent.band
+    );
+
+    const evalRes = evaluateAcc17CommandCenterOperations(state, settings, 'player', ops);
+    const depth = evalRes.snapshot.planningDepth;
+    push(
+      'flx_evaluator_depth',
+      'Evaluator attaches flux index and integrity seal',
+      !!depth?.fluxIndex?.headline &&
+        !!depth?.integritySeal?.headline &&
+        (depth.integritySeal.facets?.length ?? 0) >= 5,
+      `${depth?.fluxIndex?.band}/${depth?.integritySeal?.band}`
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    push('flx_throw', 'Flux harness did not throw', false, msg);
+  }
+
+  const passedCount = testResults.filter(t => t.status === 'passed').length;
+  const failedCount = testResults.filter(t => t.status === 'failed').length;
+  const overallStatus: 'passed' | 'failed' = failedCount === 0 ? 'passed' : 'failed';
+  return {
+    timestamp: Date.now(),
+    totalTests: testResults.length,
+    passedCount,
+    failedCount,
+    executionTimeMs: Date.now() - start,
+    overallStatus,
+    success: overallStatus === 'passed',
+    testResults,
+    summary: `Agent 17 Flux Depth Tests: ${passedCount}/${testResults.length} Passed`,
   };
 }
 

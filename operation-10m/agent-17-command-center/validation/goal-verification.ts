@@ -78,6 +78,14 @@ import {
   continuityBridgeBlocksHandoff,
 } from '../planning/continuity-bridge.ts';
 import {
+  buildAgent17FluxIndex,
+  fluxIndexBlocksSeal,
+} from '../planning/flux-index.ts';
+import {
+  buildAgent17IntegritySeal,
+  integritySealBlocksCommit,
+} from '../planning/integrity-seal.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -825,6 +833,54 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const fluxIndexSnap = depthEval.snapshot.planningDepth?.fluxIndex;
+  goalResults.push(
+    result(
+      'G17-052',
+      !!fluxIndexSnap &&
+        fluxIndexSnap.fluxIndex >= 0 &&
+        fluxIndexSnap.fluxIndex <= 100 &&
+        (fluxIndexSnap.band === 'coherent' ||
+          fluxIndexSnap.band === 'noisy' ||
+          fluxIndexSnap.band === 'disrupted'),
+      `${fluxIndexSnap?.fluxIndex}/${fluxIndexSnap?.band}`
+    )
+  );
+
+  const integritySeal = depthEval.snapshot.planningDepth?.integritySeal;
+  goalResults.push(
+    result(
+      'G17-053',
+      !!integritySeal &&
+        integritySeal.facets.length >= 5 &&
+        integritySeal.sealScore >= 0 &&
+        integritySeal.sealScore <= 100,
+      `facets=${integritySeal?.facets.length} score=${integritySeal?.sealScore}`
+    )
+  );
+
+  const disruptedFlux = buildAgent17FluxIndex({
+    continuityBridge: brokenBridge,
+    pulseIndex: flatPulse,
+    governanceAudit: breachAudit,
+  });
+  const breachedSeal = buildAgent17IntegritySeal({
+    fluxIndex: disruptedFlux,
+    rollbackAssurance: buildAgent17RollbackAssurance(
+      breachOps,
+      assessAgent17PlanHealth(breachOps.activePlan, baseState, 'player'),
+      breachAudit
+    ),
+    verificationPolicy: buildAgent17VerificationPolicy(breachOps, baseState, 'player'),
+  });
+  goalResults.push(
+    result(
+      'G17-054',
+      fluxIndexBlocksSeal(disruptedFlux) || integritySealBlocksCommit(breachedSeal),
+      `${disruptedFlux.band}/${breachedSeal.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -906,6 +962,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-049',
     'G17-050',
     'G17-051',
+    'G17-052',
+    'G17-053',
+    'G17-054',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

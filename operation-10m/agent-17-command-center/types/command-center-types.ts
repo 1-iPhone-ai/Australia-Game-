@@ -201,6 +201,8 @@ export interface Agent17PlanningDepthSnapshot {
   readinessGate: Agent17ReadinessGateSnapshot;
   pulseIndex: Agent17PulseIndexSnapshot;
   continuityBridge: Agent17ContinuityBridgeSnapshot;
+  fluxIndex: Agent17FluxIndexSnapshot;
+  integritySeal: Agent17IntegritySealSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -507,6 +509,38 @@ export interface Agent17ContinuityBridgeSnapshot {
   links: Agent17ContinuityBridgeLink[];
   pulseBand: Agent17PulseIndexSnapshot['band'];
   continuityClearance: boolean;
+  headline: string;
+}
+
+export interface Agent17FluxIndexFactor {
+  id: string;
+  label: string;
+  score: number;
+  weight: number;
+}
+
+export interface Agent17FluxIndexSnapshot {
+  fluxIndex: number;
+  band: 'coherent' | 'noisy' | 'disrupted';
+  factors: Agent17FluxIndexFactor[];
+  bridgeBand: Agent17ContinuityBridgeSnapshot['band'];
+  governanceBand: Agent17GovernanceAuditSnapshot['band'];
+  headline: string;
+}
+
+export interface Agent17IntegritySealFacet {
+  id: string;
+  label: string;
+  intact: boolean;
+  weight: number;
+}
+
+export interface Agent17IntegritySealSnapshot {
+  sealScore: number;
+  band: 'trusted' | 'conditional' | 'breached';
+  facets: Agent17IntegritySealFacet[];
+  fluxBand: Agent17FluxIndexSnapshot['band'];
+  commitAllowed: boolean;
   headline: string;
 }
 

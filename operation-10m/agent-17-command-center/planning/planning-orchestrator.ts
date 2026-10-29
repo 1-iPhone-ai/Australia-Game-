@@ -41,6 +41,8 @@ import { buildAgent17CadenceLattice } from './cadence-lattice.ts';
 import { buildAgent17ReadinessGate } from './readiness-gate.ts';
 import { buildAgent17PulseIndex } from './pulse-index.ts';
 import { buildAgent17ContinuityBridge } from './continuity-bridge.ts';
+import { buildAgent17FluxIndex } from './flux-index.ts';
+import { buildAgent17IntegritySeal } from './integrity-seal.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -235,6 +237,16 @@ export function buildAgent17PlanningDepthSnapshot(
     resilienceScorecard,
     verificationPolicy,
   });
+  const fluxIndex = buildAgent17FluxIndex({
+    continuityBridge,
+    pulseIndex,
+    governanceAudit,
+  });
+  const integritySeal = buildAgent17IntegritySeal({
+    fluxIndex,
+    rollbackAssurance,
+    verificationPolicy,
+  });
   return {
     ...core,
     intentQueue,
@@ -258,6 +270,8 @@ export function buildAgent17PlanningDepthSnapshot(
     readinessGate,
     pulseIndex,
     continuityBridge,
+    fluxIndex,
+    integritySeal,
   };
 }
 

@@ -359,6 +359,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Flat pulse or broken bridge yields continuityBridgeBlocksHandoff.',
     severity: 'major',
   },
+  {
+    id: 'G17-052',
+    title: 'Flux index on planning depth',
+    category: 'telemetry',
+    acceptance: 'fluxIndex reports fluxIndex 0–100 with coherent/noisy/disrupted band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-053',
+    title: 'Integrity seal facets complete',
+    category: 'telemetry',
+    acceptance: 'integritySeal exposes ≥5 seal facets and sealScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-054',
+    title: 'Disrupted flux breaches integrity seal',
+    category: 'integration',
+    acceptance: 'Disrupted flux or breached seal yields integritySealBlocksCommit.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
