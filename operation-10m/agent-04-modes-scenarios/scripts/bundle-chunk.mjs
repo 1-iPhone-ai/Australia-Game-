@@ -48,6 +48,7 @@ const SOURCE_FILES = [
   'operation-10m/agent-04-modes-scenarios/src/save-format-indictment.ts',
   'operation-10m/agent-04-modes-scenarios/src/save-format-appeal.ts',
   'operation-10m/agent-04-modes-scenarios/src/save-format-clemency.ts',
+  'operation-10m/agent-04-modes-scenarios/src/save-format-pardon.ts',
   'operation-10m/agent-04-modes-scenarios/src/scenario-campaign-planner.ts',
 ];
 
@@ -83,7 +84,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 24, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 25, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -263,16 +264,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const clemencyState = clemency ? attachClemencySessionToState(createEmptyO10mModesPersistedState(), clemency) : null;
   push('agent04_chunk_31', clemencyState !== null && planNextCampaignAction(clemencyState!).kind === 'clemency_step');
 
+  const pardon = createPardonSession({
+    pardonId: 'o10m_pardon_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_pardon_brief_docket'],
+  }).session;
+  const pardonState = pardon ? attachPardonSessionToState(createEmptyO10mModesPersistedState(), pardon) : null;
+  push('agent04_chunk_32', pardonState !== null && planNextCampaignAction(pardonState!).kind === 'pardon_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: '${MODULE_ID}',
-  schemaVersion: 'op10m-agent04-v24',
+  schemaVersion: 'op10m-agent04-v25',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 23,
+  saveSchemaVersion: 24,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;
@@ -313,9 +322,9 @@ const manifest = {
   touchesSaveFormat: true,
   proposedGameStateFields: ['o10mModesProgress'],
   saveFormat: {
-    schemaVersion: 23,
+    schemaVersion: 24,
     gameStateKey: 'o10mModesProgress',
-    nestedFields: ['chainProgress', 'milestones', 'challengeModeIds', 'sandboxProfileId', 'recentRuns', 'integrityFingerprint', 'saveKind', 'objectiveProgress', 'campaignSlots', 'challengeStreak', 'marathonQueue', 'replayLedger', 'gauntletSession', 'catalogUnlockTokens', 'relaySession', 'circuitSession', 'expeditionSession', 'odysseySession', 'pilgrimageSession', 'caravanSession', 'voyageSession', 'siegeSession', 'convoySession', 'escortSession', 'extractionSession', 'subjectSession', 'witnessSession', 'tribunalSession', 'indictmentSession', 'appealSession', 'clemencySession'],
+    nestedFields: ['chainProgress', 'milestones', 'challengeModeIds', 'sandboxProfileId', 'recentRuns', 'integrityFingerprint', 'saveKind', 'objectiveProgress', 'campaignSlots', 'challengeStreak', 'marathonQueue', 'replayLedger', 'gauntletSession', 'catalogUnlockTokens', 'relaySession', 'circuitSession', 'expeditionSession', 'odysseySession', 'pilgrimageSession', 'caravanSession', 'voyageSession', 'siegeSession', 'convoySession', 'escortSession', 'extractionSession', 'subjectSession', 'witnessSession', 'tribunalSession', 'indictmentSession', 'appealSession', 'clemencySession', 'pardonSession'],
   },
   contentSha256: hash,
   chunkPath: 'operation-10m/modules/agent-04-modes-scenarios/chunk.tsx',

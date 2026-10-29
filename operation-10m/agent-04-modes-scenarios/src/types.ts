@@ -375,6 +375,7 @@ export type O10mTribunalPhase = 'docket' | 'hearing' | 'seal';
 export type O10mIndictmentPhase = 'charge' | 'arraign' | 'bind';
 export type O10mAppealPhase = 'petition' | 'review' | 'grant';
 export type O10mClemencyPhase = 'plea' | 'review' | 'clemency';
+export type O10mPardonPhase = 'brief' | 'review' | 'pardon';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -552,6 +553,17 @@ export interface O10mClemencySession {
   phaseTag: O10mClemencyPhase;
 }
 
+/** Schema v24 — pardon arc with grace accrual between phases. */
+export interface O10mPardonSession {
+  pardonId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  graceScore: number;
+  phaseTag: O10mPardonPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -576,6 +588,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'pardon_step'
     | 'clemency_step'
     | 'appeal_step'
     | 'indictment_step'
@@ -674,6 +687,10 @@ export interface O10mCampaignPlan {
   clemencyCursor: number | null;
   clemencyPhase: O10mClemencyPhase | null;
   clemencyMercy: number | null;
+  pardonId: string | null;
+  pardonCursor: number | null;
+  pardonPhase: O10mPardonPhase | null;
+  pardonGrace: number | null;
   reason: string;
 }
 
@@ -743,6 +760,8 @@ export interface O10mModesPersistedState {
   appealSession?: O10mAppealSession | null;
   /** Schema v23 — active clemency arc (mutually exclusive with appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   clemencySession?: O10mClemencySession | null;
+  /** Schema v24 — active pardon arc (mutually exclusive with clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  pardonSession?: O10mPardonSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
