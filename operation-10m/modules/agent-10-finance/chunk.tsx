@@ -4606,6 +4606,172 @@ export function scenarioSandboxInflationBiasScoreAdjustment(band: ScenarioSandbo
 }
 
 
+// --- source: inflation/events-narrative-inflation-persistence.ts ---
+
+export type EventsNarrativeInflationPersistenceBand = 'muted' | 'building' | 'active' | 'entrenched';
+
+export interface EventsNarrativeInflationPersistenceAssessment {
+  persistenceBand: EventsNarrativeInflationPersistenceBand;
+  eventsIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Dynamic events and supply shock inflation persistence (Agent 05). */
+export function assessEventsNarrativeInflationPersistence(input: {
+  inflationShockEventActive: boolean;
+  supplyDisruptionSeverity: 'none' | 'localized' | 'national';
+  confidenceShockBand: 'calm' | 'uneasy' | 'severe';
+  dynamicEventInflationLatch: boolean;
+  supplyShockPersistenceBand: 'none' | 'building' | 'entrenched';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): EventsNarrativeInflationPersistenceAssessment {
+  let pressure = 0;
+  if (input.inflationShockEventActive) {
+    pressure += 0.2;
+  }
+  if (input.supplyDisruptionSeverity === 'national') {
+    pressure += 0.18;
+  } else if (input.supplyDisruptionSeverity === 'localized') {
+    pressure += 0.09;
+  }
+  if (input.confidenceShockBand === 'severe') {
+    pressure += 0.16;
+  } else if (input.confidenceShockBand === 'uneasy') {
+    pressure += 0.08;
+  }
+  if (input.dynamicEventInflationLatch) {
+    pressure += 0.14;
+  }
+  if (input.supplyShockPersistenceBand === 'entrenched') {
+    pressure += 0.22;
+  } else if (input.supplyShockPersistenceBand === 'building') {
+    pressure += 0.11;
+  }
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.05;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.0036, 0, 1.05);
+  const eventsIndex = finRound(100 + pressure * 16, 1);
+
+  let persistenceBand: EventsNarrativeInflationPersistenceBand = 'muted';
+  if (pressure >= 0.55) persistenceBand = 'entrenched';
+  else if (pressure >= 0.35) persistenceBand = 'active';
+  else if (pressure >= 0.16) persistenceBand = 'building';
+
+  const inflationScoreNudge =
+    persistenceBand === 'entrenched'
+      ? 0.09
+      : persistenceBand === 'active'
+        ? 0.056
+        : persistenceBand === 'building'
+          ? 0.028
+          : 0;
+
+  const narrative =
+    persistenceBand === 'entrenched' || persistenceBand === 'active'
+      ? 'Event narrative supply shocks persisting into CPI metadata.'
+      : persistenceBand === 'building'
+        ? 'Dynamic event inflation latch building across turns.'
+        : 'Events inflation persistence muted versus headline CPI.';
+
+  return { persistenceBand, eventsIndex, inflationScoreNudge, narrative };
+}
+
+export function eventsNarrativeInflationPersistenceScoreAdjustment(
+  band: EventsNarrativeInflationPersistenceBand,
+): number {
+  if (band === 'entrenched') return 4;
+  if (band === 'active') return 3;
+  if (band === 'building') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/macro-demand-overheat-inflation-slippage.ts ---
+
+export type MacroDemandOverheatInflationSlippageBand = 'anchored' | 'warming' | 'overheating' | 'dislocated';
+
+export interface MacroDemandOverheatInflationSlippageAssessment {
+  slippageBand: MacroDemandOverheatInflationSlippageBand;
+  macroIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Macro demand overheat and transmission inflation slippage (Agent 06). */
+export function assessMacroDemandOverheatInflationSlippage(input: {
+  gdpGrowthBand: 'contraction' | 'slow' | 'steady' | 'strong';
+  nominalDemandPressure: number;
+  outputGap: number;
+  macroDemandOverheatLatch: boolean;
+  transmissionSlippageBand: 'stable' | 'slipping' | 'dislocated';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): MacroDemandOverheatInflationSlippageAssessment {
+  let pressure = 0;
+  if (input.gdpGrowthBand === 'strong') {
+    pressure += 0.16;
+  } else if (input.gdpGrowthBand === 'steady') {
+    pressure += 0.07;
+  }
+  pressure += finClamp(input.nominalDemandPressure, -0.5, 1) * 0.24;
+  if (input.outputGap > 0.25) {
+    pressure += input.outputGap * 0.35;
+  }
+  if (input.macroDemandOverheatLatch) {
+    pressure += 0.15;
+  }
+  if (input.transmissionSlippageBand === 'dislocated') {
+    pressure += 0.24;
+  } else if (input.transmissionSlippageBand === 'slipping') {
+    pressure += 0.12;
+  }
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.05;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.0035, 0, 1.05);
+  const macroIndex = finRound(100 + pressure * 15, 1);
+
+  let slippageBand: MacroDemandOverheatInflationSlippageBand = 'anchored';
+  if (pressure >= 0.54) slippageBand = 'dislocated';
+  else if (pressure >= 0.34) slippageBand = 'overheating';
+  else if (pressure >= 0.15) slippageBand = 'warming';
+
+  const inflationScoreNudge =
+    slippageBand === 'dislocated'
+      ? 0.087
+      : slippageBand === 'overheating'
+        ? 0.055
+        : slippageBand === 'warming'
+          ? 0.026
+          : 0;
+
+  const narrative =
+    slippageBand === 'dislocated' || slippageBand === 'overheating'
+      ? 'Macro demand overheat is slipping inflation through transmission channels.'
+      : slippageBand === 'warming'
+        ? 'Nominal demand pressure warming CPI metadata.'
+        : 'Macro transmission slippage anchored versus headline CPI.';
+
+  return { slippageBand, macroIndex, inflationScoreNudge, narrative };
+}
+
+export function macroDemandOverheatInflationSlippageScoreAdjustment(
+  band: MacroDemandOverheatInflationSlippageBand,
+): number {
+  if (band === 'dislocated') return 4;
+  if (band === 'overheating') return 3;
+  if (band === 'warming') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -5742,6 +5908,45 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'research', 'modes', 'round26'],
   },
+  {
+    id: 'events_supply_persistence_stack',
+    label: 'Events supply persistence stack',
+    description: 'National supply disruption with entrenched shock persistence latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.28,
+    },
+    tags: ['inflation', 'events', 'round27'],
+  },
+  {
+    id: 'macro_transmission_slippage_stress',
+    label: 'Macro transmission slippage stress',
+    description: 'Strong demand with dislocated transmission slippage under liquidity strain.',
+    patch: {
+      highInflationScenario: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'strained',
+      inflationSettingMultiplier: 1.3,
+    },
+    tags: ['inflation', 'macro', 'round27'],
+  },
+  {
+    id: 'events_macro_fusion_stress',
+    label: 'Events & macro fusion stress',
+    description: 'Entrenched event persistence colliding with dislocated macro slippage.',
+    patch: {
+      inflationSettingMultiplier: 1.38,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 33,
+    },
+    tags: ['inflation', 'events', 'macro', 'round27'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
@@ -6497,6 +6702,10 @@ export interface Agent06MacroSnapshot {
   transmissionStabilityFragile?: boolean;
   /** Round 18: recovery-oriented scenario rank under stress. */
   macroRecoveryRankStressActive?: boolean;
+  /** Round 27: macro demand overheat inflation latch. */
+  macroDemandOverheatLatch?: boolean;
+  /** Round 27: transmission slippage band. */
+  transmissionSlippageBand?: 'stable' | 'slipping' | 'dislocated';
 }
 
 export function mergeAgent06IntoMacroFinancialInputs(
@@ -6525,6 +6734,12 @@ export function mergeAgent06IntoMacroFinancialInputs(
   }
   if (snapshot.macroRecoveryRankStressActive) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  if (snapshot.macroDemandOverheatLatch && snapshot.transmissionSlippageBand === 'dislocated') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  } else if (snapshot.transmissionSlippageBand === 'slipping' && demand > 0.25) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   return {
@@ -7141,6 +7356,10 @@ export interface Agent05EventsSnapshot {
   stagedEventCostShockBand?: 'none' | 'emerging' | 'active' | 'cascade';
   /** Round 19: macro inflation spillover latch from event queue. */
   macroEventInflationSpilloverActive?: boolean;
+  /** Round 27: dynamic event inflation latch across narrative queue. */
+  dynamicEventInflationLatch?: boolean;
+  /** Round 27: supply shock persistence band. */
+  supplyShockPersistenceBand?: 'none' | 'building' | 'entrenched';
 }
 
 export function mergeAgent05IntoMacroFinancialInputs(
@@ -7178,6 +7397,13 @@ export function mergeAgent05IntoMacroFinancialInputs(
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.07, 0.85, 1.45);
   } else if (snapshot.stagedEventCostShockBand === 'active') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  if (snapshot.dynamicEventInflationLatch && snapshot.supplyShockPersistenceBand === 'entrenched') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.supplyShockPersistenceBand === 'building' && snapshot.inflationShockEventActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   return {
@@ -7904,6 +8130,12 @@ export function agent23DashboardsBridgeIntegrationNote(): string {
   assessScenarioSandboxInflationBias,
   type ScenarioSandboxInflationBiasBand,
 } from '../inflation/scenario-sandbox-inflation-bias.js';
+  assessEventsNarrativeInflationPersistence,
+  type EventsNarrativeInflationPersistenceBand,
+} from '../inflation/events-narrative-inflation-persistence.js';
+  assessMacroDemandOverheatInflationSlippage,
+  type MacroDemandOverheatInflationSlippageBand,
+} from '../inflation/macro-demand-overheat-inflation-slippage.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -7956,6 +8188,8 @@ export interface InflationForecastPoint {
   automationAutopilotInflationDriftBand: AutomationAutopilotInflationDriftBand;
   researchProductivityInflationOffsetBand: ResearchProductivityInflationOffsetBand;
   scenarioSandboxInflationBiasBand: ScenarioSandboxInflationBiasBand;
+  eventsNarrativeInflationPersistenceBand: EventsNarrativeInflationPersistenceBand;
+  macroDemandOverheatInflationSlippageBand: MacroDemandOverheatInflationSlippageBand;
 }
 
 export interface InflationForecastPath {
@@ -8373,6 +8607,26 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const eventsPersistence = assessEventsNarrativeInflationPersistence({
+      inflationShockEventActive: inputs.creditShockActive || inputs.highInflationScenario,
+      supplyDisruptionSeverity: inputs.highInflationScenario ? 'national' : inputs.creditShockActive ? 'localized' : 'none',
+      confidenceShockBand: inputs.publicStability < 40 ? 'severe' : inputs.publicStability < 50 ? 'uneasy' : 'calm',
+      dynamicEventInflationLatch: inputs.householdInflationScenarioActive,
+      supplyShockPersistenceBand:
+        inputs.fiscalPressure === 'critical' ? 'entrenched' : inputs.creditShockActive ? 'building' : 'none',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const macroSlippage = assessMacroDemandOverheatInflationSlippage({
+      gdpGrowthBand: inputs.highInflationScenario ? 'strong' : inputs.creditShockActive ? 'steady' : 'slow',
+      nominalDemandPressure: inputs.highInflationScenario ? 0.72 : inputs.creditShockActive ? 0.48 : 0.22,
+      outputGap: inputs.highInflationScenario ? 0.38 : 0.1,
+      macroDemandOverheatLatch: inputs.highInflationScenario && inputs.householdInflationScenarioActive,
+      transmissionSlippageBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'dislocated' : inputs.fiscalPressure === 'critical' ? 'slipping' : 'stable',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -8425,6 +8679,8 @@ export function projectInflationForecastPath(
       automationAutopilotInflationDriftBand: automationDrift.driftBand,
       researchProductivityInflationOffsetBand: researchOffset.offsetBand,
       scenarioSandboxInflationBiasBand: scenarioBias.biasBand,
+      eventsNarrativeInflationPersistenceBand: eventsPersistence.persistenceBand,
+      macroDemandOverheatInflationSlippageBand: macroSlippage.slippageBand,
     });
   }
 
@@ -8530,7 +8786,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r26';
+  schemaVersion: '10.14.agent10.r27';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -8578,6 +8834,8 @@ export interface Agent21InflationForecastBundle {
   terminalAutomationAutopilotInflationDrift: AutomationAutopilotInflationDriftBand;
   terminalResearchProductivityInflationOffset: ResearchProductivityInflationOffsetBand;
   terminalScenarioSandboxInflationBias: ScenarioSandboxInflationBiasBand;
+  terminalEventsNarrativeInflationPersistence: EventsNarrativeInflationPersistenceBand;
+  terminalMacroDemandOverheatInflationSlippage: MacroDemandOverheatInflationSlippageBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -8606,7 +8864,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r26',
+    schemaVersion: '10.14.agent10.r27',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -8654,6 +8912,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalAutomationAutopilotInflationDrift: lastPoint?.automationAutopilotInflationDriftBand ?? 'neutral',
     terminalResearchProductivityInflationOffset: lastPoint?.researchProductivityInflationOffsetBand ?? 'neutral',
     terminalScenarioSandboxInflationBias: lastPoint?.scenarioSandboxInflationBiasBand ?? 'neutral',
+    terminalEventsNarrativeInflationPersistence: lastPoint?.eventsNarrativeInflationPersistenceBand ?? 'muted',
+    terminalMacroDemandOverheatInflationSlippage: lastPoint?.macroDemandOverheatInflationSlippageBand ?? 'anchored',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -8907,6 +9167,12 @@ export function effectiveTierLoanRate(
   assessScenarioSandboxInflationBias,
   scenarioSandboxInflationBiasScoreAdjustment,
 } from './inflation/scenario-sandbox-inflation-bias.js';
+  assessEventsNarrativeInflationPersistence,
+  eventsNarrativeInflationPersistenceScoreAdjustment,
+} from './inflation/events-narrative-inflation-persistence.js';
+  assessMacroDemandOverheatInflationSlippage,
+  macroDemandOverheatInflationSlippageScoreAdjustment,
+} from './inflation/macro-demand-overheat-inflation-slippage.js';
   mergeAgent22IntoMacroFinancialInputs,
   agent22UiBridgeIntegrationNote,
 } from './integration/agent22-ui-bridge.js';
@@ -9311,7 +9577,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r26');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r27');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -9458,7 +9724,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -9550,7 +9816,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -9649,7 +9915,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -9747,7 +10013,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -9845,7 +10111,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -9935,7 +10201,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r12_10',
       'agent21 r12 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalRecreationLeisurePressure !== undefined &&
         bundle.terminalProfessionalServicesFee !== undefined,
     );
@@ -10025,7 +10291,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r13_10',
       'agent21 r13 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalChildcareServicesPressure !== undefined &&
         bundle.terminalGovernmentChargesPressure !== undefined,
     );
@@ -10115,7 +10381,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r14_10',
       'agent21 r14 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalWaterUtilitiesPressure !== undefined &&
         bundle.terminalDomesticTravelPressure !== undefined,
     );
@@ -10205,7 +10471,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r15_10',
       'agent21 r15 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalConstructionMaterialsPressure !== undefined &&
         bundle.terminalRetailTradeMargin !== undefined,
     );
@@ -10297,7 +10563,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r16_10',
       'agent21 r16 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalFinancialServicesFee !== undefined &&
         bundle.terminalAgriculturalFarmgatePressure !== undefined,
     );
@@ -10393,7 +10659,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r17_10',
       'agent21 r17 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalPublicUtilitiesGridTariff !== undefined &&
         bundle.terminalUiInflationSalience !== undefined,
     );
@@ -10497,7 +10763,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r18_10',
       'agent21 r18 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalHousingMortgageEssential !== undefined &&
         bundle.terminalMacroTransmissionMerge !== undefined,
     );
@@ -10602,7 +10868,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r19_10',
       'agent21 r19 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalDynamicEventsInflationSpillover !== undefined &&
         bundle.terminalDashboardMapInflationOverlay !== undefined,
     );
@@ -10707,7 +10973,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r20_10',
       'agent21 r20 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalPublicFinanceDebtService !== undefined &&
         bundle.terminalPopulationLaborWage !== undefined,
     );
@@ -10817,7 +11083,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r21_10',
       'agent21 r21 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalWholesaleEnergyTransition !== undefined &&
         bundle.terminalUrbanRentDispersion !== undefined,
     );
@@ -10919,7 +11185,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r22_10',
       'agent21 r22 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalCorporatePricingPassThrough !== undefined &&
         bundle.terminalTradeExchangeImport !== undefined,
     );
@@ -11025,7 +11291,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r23_10',
       'agent21 r23 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalGuardianInflationIntervention !== undefined &&
         bundle.terminalTeamIntelligenceConsensus !== undefined,
     );
@@ -11131,7 +11397,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r24_10',
       'agent21 r24 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalStrategicGeopoliticalPremium !== undefined &&
         bundle.terminalAiMemoryInflationRecall !== undefined,
     );
@@ -11237,7 +11503,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r25_10',
       'agent21 r25 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalCalendarSeasonInflationCarryover !== undefined &&
         bundle.terminalAutomationAutopilotInflationDrift !== undefined,
     );
@@ -11353,7 +11619,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r26_10',
       'agent21 r26 fields',
-      bundle.schemaVersion === '10.14.agent10.r26' &&
+      bundle.schemaVersion === '10.14.agent10.r27' &&
         bundle.terminalResearchProductivityInflationOffset !== undefined &&
         bundle.terminalScenarioSandboxInflationBias !== undefined,
     );
@@ -11380,6 +11646,119 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'research_modes_fusion_stress');
       return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.36;
+    })(),
+  );
+
+  // --- Round 27 scale wave ---
+  {
+    const persistence = assessEventsNarrativeInflationPersistence({
+      inflationShockEventActive: true,
+      supplyDisruptionSeverity: 'national',
+      confidenceShockBand: 'severe',
+      dynamicEventInflationLatch: true,
+      supplyShockPersistenceBand: 'entrenched',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r27_01',
+      'events active or entrenched',
+      persistence.persistenceBand === 'active' || persistence.persistenceBand === 'entrenched',
+    );
+    check('a10_r27_02', 'events score adj', eventsNarrativeInflationPersistenceScoreAdjustment(persistence.persistenceBand) >= 3);
+  }
+  {
+    const slippage = assessMacroDemandOverheatInflationSlippage({
+      gdpGrowthBand: 'strong',
+      nominalDemandPressure: 0.75,
+      outputGap: 0.4,
+      macroDemandOverheatLatch: true,
+      transmissionSlippageBand: 'dislocated',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r27_03',
+      'macro overheating or dislocated',
+      slippage.slippageBand === 'overheating' || slippage.slippageBand === 'dislocated',
+    );
+    check('a10_r27_04', 'macro score adj', macroDemandOverheatInflationSlippageScoreAdjustment(slippage.slippageBand) >= 3);
+  }
+  {
+    const merged05 = mergeAgent05IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      inflationShockEventActive: true,
+      supplyDisruptionSeverity: 'national',
+      confidenceShockBand: 'severe',
+      dynamicEventInflationLatch: true,
+      supplyShockPersistenceBand: 'entrenched',
+    });
+    check('a10_r27_05', 'agent05 latch entrenched merge', merged05.highInflationScenario === true);
+    check('a10_r27_06', 'agent05 bridge note', agent05EventsBridgeIntegrationNote().includes('Agent 05'));
+  }
+  {
+    const merged06 = mergeAgent06IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      gdpGrowthBand: 'strong',
+      unemploymentBand: 'moderate',
+      outputGap: 0.35,
+      nominalDemandPressure: 0.6,
+      macroDemandOverheatLatch: true,
+      transmissionSlippageBand: 'dislocated',
+    });
+    check(
+      'a10_r27_07',
+      'agent06 slippage merge',
+      (merged06.inflationSettingMultiplier ?? 1) > (makeDefaultMacroFinancialTestInputs().inflationSettingMultiplier ?? 1),
+    );
+    check('a10_r27_08', 'agent06 bridge note', agent06BridgeIntegrationNote().includes('Agent 06'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r27_09',
+      'forecast events persistence and macro slippage fields',
+      path.points.every(
+        (p) => !!p.eventsNarrativeInflationPersistenceBand && !!p.macroDemandOverheatInflationSlippageBand,
+      ),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r27_10',
+      'agent21 r27 fields',
+      bundle.schemaVersion === '10.14.agent10.r27' &&
+        bundle.terminalEventsNarrativeInflationPersistence !== undefined &&
+        bundle.terminalMacroDemandOverheatInflationSlippage !== undefined,
+    );
+  }
+  check(
+    'a10_r27_11',
+    'round27 preset events persistence stack',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'events_supply_persistence_stack');
+      return inp?.highInflationScenario === true && inp.creditShockActive === true;
+    })(),
+  );
+  check(
+    'a10_r27_12',
+    'round27 preset macro slippage stress',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'macro_transmission_slippage_stress');
+      return inp?.highInflationScenario === true && inp.systemicLiquidityBand === 'strained';
+    })(),
+  );
+  check(
+    'a10_r27_13',
+    'round27 preset events macro fusion',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'events_macro_fusion_stress');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.37;
     })(),
   );
 
@@ -13001,6 +13380,81 @@ export function ResearchModesInflationPanel(props: ResearchModesInflationPanelPr
       </p>
       <p data-testid="research-modes-note">{offset.narrative}</p>
       <p>{bias.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/EventsMacroInflationPanel.tsx ---
+  assessEventsNarrativeInflationPersistence,
+  eventsNarrativeInflationPersistenceScoreAdjustment,
+} from '../inflation/events-narrative-inflation-persistence.js';
+  assessMacroDemandOverheatInflationSlippage,
+  macroDemandOverheatInflationSlippageScoreAdjustment,
+} from '../inflation/macro-demand-overheat-inflation-slippage.js';
+
+export interface EventsMacroInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent05?: Agent05EventsSnapshot | null;
+  agent06?: Agent06MacroSnapshot | null;
+}
+
+export function EventsMacroInflationPanel(props: EventsMacroInflationPanelProps) {
+  const events = props.agent05 ?? {
+    turn: props.inputs.turn,
+    inflationShockEventActive: props.inputs.creditShockActive,
+    supplyDisruptionSeverity: props.inputs.highInflationScenario ? ('national' as const) : ('localized' as const),
+    confidenceShockBand: props.inputs.publicStability < 42 ? ('severe' as const) : ('uneasy' as const),
+    dynamicEventInflationLatch: props.inputs.householdInflationScenarioActive,
+    supplyShockPersistenceBand: props.inputs.fiscalPressure === 'critical' ? ('entrenched' as const) : ('building' as const),
+  };
+
+  const macro = props.agent06 ?? {
+    turn: props.inputs.turn,
+    gdpGrowthBand: props.inputs.highInflationScenario ? ('strong' as const) : ('steady' as const),
+    unemploymentBand: 'moderate' as const,
+    outputGap: props.inputs.highInflationScenario ? 0.42 : 0.12,
+    nominalDemandPressure: props.inputs.creditShockActive ? 0.68 : 0.35,
+    transmissionStabilityFragile: props.inputs.creditShockActive,
+    macroRecoveryRankStressActive: false,
+    macroDemandOverheatLatch: props.inputs.highInflationScenario,
+    transmissionSlippageBand: props.inputs.fiscalPressure === 'critical' ? ('dislocated' as const) : ('slipping' as const),
+  };
+
+  const persistence = assessEventsNarrativeInflationPersistence({
+    inflationShockEventActive: events.inflationShockEventActive,
+    supplyDisruptionSeverity: events.supplyDisruptionSeverity,
+    confidenceShockBand: events.confidenceShockBand,
+    dynamicEventInflationLatch: events.dynamicEventInflationLatch === true,
+    supplyShockPersistenceBand: events.supplyShockPersistenceBand ?? 'none',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const slippage = assessMacroDemandOverheatInflationSlippage({
+    gdpGrowthBand: macro.gdpGrowthBand,
+    nominalDemandPressure: macro.nominalDemandPressure,
+    outputGap: macro.outputGap,
+    macroDemandOverheatLatch: macro.macroDemandOverheatLatch === true,
+    transmissionSlippageBand: macro.transmissionSlippageBand ?? 'stable',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-events-macro-inflation" data-testid="events-macro-inflation-panel">
+      <h4>Events persistence & macro slippage (round 27)</h4>
+      <p>
+        Events {persistence.persistenceBand} · index {persistence.eventsIndex.toFixed(0)} · score adj{' '}
+        {eventsNarrativeInflationPersistenceScoreAdjustment(persistence.persistenceBand)}
+      </p>
+      <p>
+        Macro {slippage.slippageBand} · index {slippage.macroIndex.toFixed(0)} · score adj{' '}
+        {macroDemandOverheatInflationSlippageScoreAdjustment(slippage.slippageBand)}
+      </p>
+      <p data-testid="events-macro-note">{persistence.narrative}</p>
+      <p>{slippage.narrative}</p>
     </div>
   );
 }

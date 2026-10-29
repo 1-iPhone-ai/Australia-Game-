@@ -12,6 +12,10 @@ export interface Agent06MacroSnapshot {
   transmissionStabilityFragile?: boolean;
   /** Round 18: recovery-oriented scenario rank under stress. */
   macroRecoveryRankStressActive?: boolean;
+  /** Round 27: macro demand overheat inflation latch. */
+  macroDemandOverheatLatch?: boolean;
+  /** Round 27: transmission slippage band. */
+  transmissionSlippageBand?: 'stable' | 'slipping' | 'dislocated';
 }
 
 export function mergeAgent06IntoMacroFinancialInputs(
@@ -40,6 +44,12 @@ export function mergeAgent06IntoMacroFinancialInputs(
   }
   if (snapshot.macroRecoveryRankStressActive) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  if (snapshot.macroDemandOverheatLatch && snapshot.transmissionSlippageBand === 'dislocated') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  } else if (snapshot.transmissionSlippageBand === 'slipping' && demand > 0.25) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   return {

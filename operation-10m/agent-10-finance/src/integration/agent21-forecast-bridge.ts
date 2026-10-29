@@ -46,11 +46,13 @@ import type { CalendarSeasonInflationCarryoverBand } from '../inflation/calendar
 import type { AutomationAutopilotInflationDriftBand } from '../inflation/automation-autopilot-inflation-drift.js';
 import type { ResearchProductivityInflationOffsetBand } from '../inflation/research-productivity-inflation-offset.js';
 import type { ScenarioSandboxInflationBiasBand } from '../inflation/scenario-sandbox-inflation-bias.js';
+import type { EventsNarrativeInflationPersistenceBand } from '../inflation/events-narrative-inflation-persistence.js';
+import type { MacroDemandOverheatInflationSlippageBand } from '../inflation/macro-demand-overheat-inflation-slippage.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r26';
+  schemaVersion: '10.14.agent10.r27';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -98,6 +100,8 @@ export interface Agent21InflationForecastBundle {
   terminalAutomationAutopilotInflationDrift: AutomationAutopilotInflationDriftBand;
   terminalResearchProductivityInflationOffset: ResearchProductivityInflationOffsetBand;
   terminalScenarioSandboxInflationBias: ScenarioSandboxInflationBiasBand;
+  terminalEventsNarrativeInflationPersistence: EventsNarrativeInflationPersistenceBand;
+  terminalMacroDemandOverheatInflationSlippage: MacroDemandOverheatInflationSlippageBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -126,7 +130,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r26',
+    schemaVersion: '10.14.agent10.r27',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -174,6 +178,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalAutomationAutopilotInflationDrift: lastPoint?.automationAutopilotInflationDriftBand ?? 'neutral',
     terminalResearchProductivityInflationOffset: lastPoint?.researchProductivityInflationOffsetBand ?? 'neutral',
     terminalScenarioSandboxInflationBias: lastPoint?.scenarioSandboxInflationBiasBand ?? 'neutral',
+    terminalEventsNarrativeInflationPersistence: lastPoint?.eventsNarrativeInflationPersistenceBand ?? 'muted',
+    terminalMacroDemandOverheatInflationSlippage: lastPoint?.macroDemandOverheatInflationSlippageBand ?? 'anchored',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

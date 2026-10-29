@@ -11,6 +11,10 @@ export interface Agent05EventsSnapshot {
   stagedEventCostShockBand?: 'none' | 'emerging' | 'active' | 'cascade';
   /** Round 19: macro inflation spillover latch from event queue. */
   macroEventInflationSpilloverActive?: boolean;
+  /** Round 27: dynamic event inflation latch across narrative queue. */
+  dynamicEventInflationLatch?: boolean;
+  /** Round 27: supply shock persistence band. */
+  supplyShockPersistenceBand?: 'none' | 'building' | 'entrenched';
 }
 
 export function mergeAgent05IntoMacroFinancialInputs(
@@ -48,6 +52,13 @@ export function mergeAgent05IntoMacroFinancialInputs(
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.07, 0.85, 1.45);
   } else if (snapshot.stagedEventCostShockBand === 'active') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  if (snapshot.dynamicEventInflationLatch && snapshot.supplyShockPersistenceBand === 'entrenched') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.supplyShockPersistenceBand === 'building' && snapshot.inflationShockEventActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   return {

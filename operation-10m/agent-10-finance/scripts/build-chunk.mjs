@@ -79,6 +79,8 @@ const FILES = [
   'inflation/automation-autopilot-inflation-drift.ts',
   'inflation/research-productivity-inflation-offset.ts',
   'inflation/scenario-sandbox-inflation-bias.ts',
+  'inflation/events-narrative-inflation-persistence.ts',
+  'inflation/macro-demand-overheat-inflation-slippage.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -139,6 +141,7 @@ const FILES = [
   'react/StrategicMemoryInflationPanel.tsx',
   'react/TurnsAutomationInflationPanel.tsx',
   'react/ResearchModesInflationPanel.tsx',
+  'react/EventsMacroInflationPanel.tsx',
 ];
 
 function stripModulePreamble(source) {

@@ -898,6 +898,45 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'research', 'modes', 'round26'],
   },
+  {
+    id: 'events_supply_persistence_stack',
+    label: 'Events supply persistence stack',
+    description: 'National supply disruption with entrenched shock persistence latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.28,
+    },
+    tags: ['inflation', 'events', 'round27'],
+  },
+  {
+    id: 'macro_transmission_slippage_stress',
+    label: 'Macro transmission slippage stress',
+    description: 'Strong demand with dislocated transmission slippage under liquidity strain.',
+    patch: {
+      highInflationScenario: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'strained',
+      inflationSettingMultiplier: 1.3,
+    },
+    tags: ['inflation', 'macro', 'round27'],
+  },
+  {
+    id: 'events_macro_fusion_stress',
+    label: 'Events & macro fusion stress',
+    description: 'Entrenched event persistence colliding with dislocated macro slippage.',
+    patch: {
+      inflationSettingMultiplier: 1.38,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 33,
+    },
+    tags: ['inflation', 'events', 'macro', 'round27'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
