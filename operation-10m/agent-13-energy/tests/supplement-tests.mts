@@ -110,6 +110,11 @@ import {
   V1014_NATURE_COEXISTENCE_TURN_SCENARIOS,
 } from '../modules/nature-positive-siting-biodiversity-coexistence-ledger.ts';
 import {
+  runAgent13ClimateFloodHeatScaleSelfTests,
+  runAgent13ClimateFloodHeatTurnScenario,
+  V1014_CLIMATE_FLOOD_HEAT_TURN_SCENARIOS,
+} from '../modules/climate-adaptation-flood-heat-resilience-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -349,6 +354,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const ncTurn = runAgent13NatureCoexistenceTurnScenario(V1014_NATURE_COEXISTENCE_TURN_SCENARIOS[0]);
   ok(ncTurn.passed);
+
+  const climateFloodHeat = runAgent13ClimateFloodHeatScaleSelfTests();
+  ok(climateFloodHeat.failed === 0 && climateFloodHeat.passed >= 7);
+
+  const cfhTurn = runAgent13ClimateFloodHeatTurnScenario(V1014_CLIMATE_FLOOD_HEAT_TURN_SCENARIOS[0]);
+  ok(cfhTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

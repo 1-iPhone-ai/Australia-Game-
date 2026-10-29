@@ -184,6 +184,13 @@ import {
   type V1014RegionalNaturePositiveSitingLedger,
 } from './nature-positive-siting-biodiversity-coexistence-ledger';
 import {
+  advanceRegionalFloodHeatResilienceOrchestration,
+  computeRegionalClimateAdaptationHardeningLedger,
+  scoreAgent13ClimateFloodHeatGIAlignment,
+  type V1014RegionalClimateAdaptationHardeningLedger,
+  type V1014RegionalFloodHeatResilienceLedger,
+} from './climate-adaptation-flood-heat-resilience-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25736,6 +25743,10 @@ export interface V1014RegionalEnergyProfile {
   naturePositiveSitingRelief: number;
   biodiversityCoexistenceBand: string;
   biodiversityCoexistenceRelief: number;
+  climateAdaptationBand: string;
+  climateAdaptationRelief: number;
+  floodHeatResilienceBand: string;
+  floodHeatResilienceRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25820,6 +25831,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalMerchantStorageLedgers: Record<string, V1014RegionalMerchantStorageLedger>;
   regionalNaturePositiveSitingLedgers: Record<string, V1014RegionalNaturePositiveSitingLedger>;
   regionalBiodiversityCoexistenceLedgers: Record<string, V1014RegionalBiodiversityCoexistenceLedger>;
+  regionalClimateAdaptationHardeningLedgers: Record<string, V1014RegionalClimateAdaptationHardeningLedger>;
+  regionalFloodHeatResilienceLedgers: Record<string, V1014RegionalFloodHeatResilienceLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25875,6 +25888,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalMerchantStorageMemory: Record<string, { merchantIndex: number }>;
   regionalNaturePositiveSitingMemory: Record<string, { regenerationBalance: number; sitingIndex: number }>;
   regionalBiodiversityCoexistenceMemory: Record<string, { coexistenceIndex: number }>;
+  regionalClimateAdaptationHardeningMemory: Record<string, { hardeningBalance: number; adaptationIndex: number }>;
+  regionalFloodHeatResilienceMemory: Record<string, { resilienceIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25942,6 +25957,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalMerchantStorageMemory: {},
     regionalNaturePositiveSitingMemory: {},
     regionalBiodiversityCoexistenceMemory: {},
+    regionalClimateAdaptationHardeningMemory: {},
+    regionalFloodHeatResilienceMemory: {},
     history: [],
   };
 }
@@ -26058,6 +26075,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
     regionalBiodiversityCoexistenceMemory:
       typeof raw.regionalBiodiversityCoexistenceMemory === 'object' && raw.regionalBiodiversityCoexistenceMemory
         ? raw.regionalBiodiversityCoexistenceMemory
+        : {},
+    regionalClimateAdaptationHardeningMemory:
+      typeof raw.regionalClimateAdaptationHardeningMemory === 'object' && raw.regionalClimateAdaptationHardeningMemory
+        ? raw.regionalClimateAdaptationHardeningMemory
+        : {},
+    regionalFloodHeatResilienceMemory:
+      typeof raw.regionalFloodHeatResilienceMemory === 'object' && raw.regionalFloodHeatResilienceMemory
+        ? raw.regionalFloodHeatResilienceMemory
         : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
@@ -26213,6 +26238,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalMerchantStorageLedgers: {},
       regionalNaturePositiveSitingLedgers: {},
       regionalBiodiversityCoexistenceLedgers: {},
+      regionalClimateAdaptationHardeningLedgers: {},
+      regionalFloodHeatResilienceLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26271,6 +26298,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const merchantStorageLedgers: Record<string, V1014RegionalMerchantStorageLedger> = {};
   const naturePositiveSitingLedgers: Record<string, V1014RegionalNaturePositiveSitingLedger> = {};
   const biodiversityCoexistenceLedgers: Record<string, V1014RegionalBiodiversityCoexistenceLedger> = {};
+  const climateAdaptationHardeningLedgers: Record<string, V1014RegionalClimateAdaptationHardeningLedger> = {};
+  const floodHeatResilienceLedgers: Record<string, V1014RegionalFloodHeatResilienceLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26369,6 +26398,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextBiodiversityCoexistenceMemory: Record<string, { coexistenceIndex: number }> = {
     ...persisted.regionalBiodiversityCoexistenceMemory,
+  };
+  const nextClimateAdaptationHardeningMemory: Record<string, { hardeningBalance: number; adaptationIndex: number }> = {
+    ...persisted.regionalClimateAdaptationHardeningMemory,
+  };
+  const nextFloodHeatResilienceMemory: Record<string, { resilienceIndex: number }> = {
+    ...persisted.regionalFloodHeatResilienceMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -26999,6 +27034,33 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= biodiversityCoexistenceStep.ledger.biodiversityCoexistenceRelief;
     pressure = v1014Clamp(pressure, 0, 100);
 
+    const climateAdaptationHardeningStep = computeRegionalClimateAdaptationHardeningLedger({
+      regionId,
+      bushfireGridRelief: bushfireStep.ledger.bushfireGridRelief,
+      droughtDesalRelief: desalStep.ledger.droughtDesalRelief,
+      blueCarbonCoastalRelief: blueCarbonStep.ledger.blueCarbonCoastalRelief,
+      biodiversityCoexistenceRelief: biodiversityCoexistenceStep.ledger.biodiversityCoexistenceRelief,
+      climatePressure,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextClimateAdaptationHardeningMemory[regionId] || null,
+    });
+    nextClimateAdaptationHardeningMemory[regionId] = climateAdaptationHardeningStep.next;
+    climateAdaptationHardeningLedgers[regionId] = climateAdaptationHardeningStep.ledger;
+    pressure -= climateAdaptationHardeningStep.ledger.climateAdaptationRelief;
+
+    const floodHeatResilienceStep = advanceRegionalFloodHeatResilienceOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      adaptationBand: climateAdaptationHardeningStep.ledger.band,
+      communityMicrogridRelief: microgridStep.ledger.communityMicrogridRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextFloodHeatResilienceMemory[regionId] || null,
+    });
+    nextFloodHeatResilienceMemory[regionId] = floodHeatResilienceStep.next;
+    floodHeatResilienceLedgers[regionId] = floodHeatResilienceStep.ledger;
+    pressure -= floodHeatResilienceStep.ledger.floodHeatResilienceRelief;
+    pressure = v1014Clamp(pressure, 0, 100);
+
     nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
 
     const extractionBand = v1014BandExtraction(extractionScore);
@@ -27070,6 +27132,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       merchantStorageStep.ledger.summary,
       naturePositiveSitingStep.ledger.summary,
       biodiversityCoexistenceStep.ledger.summary,
+      climateAdaptationHardeningStep.ledger.summary,
+      floodHeatResilienceStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -27242,6 +27306,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       naturePositiveSitingRelief: naturePositiveSitingStep.ledger.naturePositiveSitingRelief,
       biodiversityCoexistenceBand: biodiversityCoexistenceStep.ledger.band,
       biodiversityCoexistenceRelief: biodiversityCoexistenceStep.ledger.biodiversityCoexistenceRelief,
+      climateAdaptationBand: climateAdaptationHardeningStep.ledger.band,
+      climateAdaptationRelief: climateAdaptationHardeningStep.ledger.climateAdaptationRelief,
+      floodHeatResilienceBand: floodHeatResilienceStep.ledger.band,
+      floodHeatResilienceRelief: floodHeatResilienceStep.ledger.floodHeatResilienceRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -27355,6 +27423,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalMerchantStorageLedgers: merchantStorageLedgers,
     regionalNaturePositiveSitingLedgers: naturePositiveSitingLedgers,
     regionalBiodiversityCoexistenceLedgers: biodiversityCoexistenceLedgers,
+    regionalClimateAdaptationHardeningLedgers: climateAdaptationHardeningLedgers,
+    regionalFloodHeatResilienceLedgers: floodHeatResilienceLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -27410,6 +27480,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalMerchantStorageMemory: nextMerchantStorageMemory,
     regionalNaturePositiveSitingMemory: nextNaturePositiveSitingMemory,
     regionalBiodiversityCoexistenceMemory: nextBiodiversityCoexistenceMemory,
+    regionalClimateAdaptationHardeningMemory: nextClimateAdaptationHardeningMemory,
+    regionalFloodHeatResilienceMemory: nextFloodHeatResilienceMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -28293,6 +28365,45 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     coexistenceBand: rr25.state.regions.QLD?.biodiversityCoexistenceBand,
   });
   check('NATURE COEXISTENCE GI alignment', giNc.relevanceDelta > 0.5, giNc.reason || '');
+
+  const cfhInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'substation_flood_barrier_mesh',
+      'industrial_climate_hardening_loop',
+      'compound_hazard_recovery_hub',
+      'heat_stress_demand_orchestration_hub',
+      'coastal_adaptation_backbone_corridor',
+      'flood_microgrid_island_cluster',
+      'industrial_cooling_resilience_nexus',
+      'heat_derating_orchestration_layer',
+      'biodiversity_offset_stacking_hub',
+      'suburban_islanded_resilience_cluster',
+      'solar_powered_desalination',
+    ],
+  };
+  const rr26 = computeIndustrialEnergyEnvironmentalState(cfhInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check(
+    'CLIMATE ADAPTATION ledger tracked',
+    !!rr26.state.regionalClimateAdaptationHardeningLedgers.QLD?.band,
+    rr26.state.regionalClimateAdaptationHardeningLedgers.QLD?.band || '',
+  );
+  check(
+    'FLOOD HEAT resilience relief',
+    (rr26.state.regions.QLD?.floodHeatResilienceRelief || 0) > 0,
+    String(rr26.state.regions.QLD?.floodHeatResilienceRelief),
+  );
+  check(
+    'CLIMATE ADAPTATION memory persisted',
+    !!rr26.persisted.regionalClimateAdaptationHardeningMemory.QLD,
+    String(rr26.persisted.regionalClimateAdaptationHardeningMemory.QLD?.adaptationIndex),
+  );
+  const giCfh = scoreAgent13ClimateFloodHeatGIAlignment({
+    actionText: 'Substation flood barrier with compound hazard recovery and heat stress orchestration',
+    adaptationBand: rr26.state.regions.QLD?.climateAdaptationBand,
+    resilienceBand: rr26.state.regions.QLD?.floodHeatResilienceBand,
+  });
+  check('CLIMATE FLOOD HEAT GI alignment', giCfh.relevanceDelta > 0.5, giCfh.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');
