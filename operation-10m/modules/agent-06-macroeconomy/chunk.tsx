@@ -185,6 +185,8 @@ export interface NationalMacroEconomyState {
   integrationHealthWave49ExportSpilloverSummary: string | null;
   replayWave50ExportSpilloverSummary: string | null;
   integrationHealthWave50ExportSpilloverSummary: string | null;
+  replayWave51ExportSpilloverSummary: string | null;
+  integrationHealthWave51ExportSpilloverSummary: string | null;
   capacitySnapshot: MacroCapacitySnapshot;
   transmissionBalance: MacroTransmissionBalanceSnapshot;
   transmissionCoherence: MacroTransmissionCoherenceSnapshot;
@@ -753,6 +755,8 @@ export interface MacroEconomyInputs {
   integrationHealthWave49Export?: any;
   replayWave50Export?: any;
   integrationHealthWave50Export?: any;
+  replayWave51Export?: any;
+  integrationHealthWave51Export?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;
   /** Additional catalog shock ids (see catalog/cyclical-shocks.ts). Legacy flags merge in. */
@@ -1634,6 +1638,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Wave 50 replay & integration stress',
     shockIds: ['global_slowdown', 'credit_contraction'],
     description: 'Blocked replay wave 50 export with unready integration health wave 50 export (harness overlay).'
+  },
+  {
+    id: 'wave51_replay_integration_stress',
+    label: 'Wave 51 replay & integration stress',
+    shockIds: ['global_slowdown', 'credit_contraction'],
+    description: 'Blocked replay wave 51 export with unready integration health wave 51 export (harness overlay).'
   }
 ];
 
@@ -2471,6 +2481,16 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
       params?.integrationHealth?.wave50Export ??
       params?.assembly?.integrationHealthWave50Export ??
       params?.nationalIntegration?.healthWave50Export,
+    replayWave51Export:
+      params?.replayWave51Export ??
+      params?.historyReplay?.wave51Export ??
+      params?.replay?.wave51Export ??
+      params?.nationalHistory?.replayWave51Export,
+    integrationHealthWave51Export:
+      params?.integrationHealthWave51Export ??
+      params?.integrationHealth?.wave51Export ??
+      params?.assembly?.integrationHealthWave51Export ??
+      params?.nationalIntegration?.healthWave51Export,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };
@@ -7135,6 +7155,8 @@ export function buildMacroTransmissionReport(params: {
   integrationHealthWave49Export?: MacroIntegrationHealthWave49ExportSpillover;
   replayWave50Export?: MacroReplayWave50ExportSpillover;
   integrationHealthWave50Export?: MacroIntegrationHealthWave50ExportSpillover;
+  replayWave51Export?: MacroReplayWave51ExportSpillover;
+  integrationHealthWave51Export?: MacroIntegrationHealthWave51ExportSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -7222,6 +7244,8 @@ export function buildMacroTransmissionReport(params: {
   const integrationHealthWave49Export = params.integrationHealthWave49Export ?? ZERO_SPILLOVER;
   const replayWave50Export = params.replayWave50Export ?? ZERO_SPILLOVER;
   const integrationHealthWave50Export = params.integrationHealthWave50Export ?? ZERO_SPILLOVER;
+  const replayWave51Export = params.replayWave51Export ?? ZERO_SPILLOVER;
+  const integrationHealthWave51Export = params.integrationHealthWave51Export ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -7962,6 +7986,22 @@ export function buildMacroTransmissionReport(params: {
       integrationHealthWave50Export.investmentNudge,
       integrationHealthWave50Export.productivityNudge,
       integrationHealthWave50Export.summary
+    ),
+    layer(
+      'v10.24_replay_wave51_export',
+      'History replay wave 51 export',
+      replayWave51Export.cycleNudge,
+      replayWave51Export.investmentNudge,
+      replayWave51Export.productivityNudge,
+      replayWave51Export.summary
+    ),
+    layer(
+      'v10.25_integration_health_wave51_export',
+      'Integration health wave 51 export',
+      integrationHealthWave51Export.cycleNudge,
+      integrationHealthWave51Export.investmentNudge,
+      integrationHealthWave51Export.productivityNudge,
+      integrationHealthWave51Export.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);
@@ -12485,6 +12525,916 @@ export function rankMacroScenarioWave46Integration(rows: MacroScenarioCompareRow
 }
 
 
+// --- source: bridge-v1024-replay-wave-round47-export.ts ---
+
+export interface MacroReplayWave47ExportSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.24 history replay wave 47 export spillover (Agent 24 wave 47 export). */
+export function readMacroReplayWave47ExportSpilloverFromV1024(
+  inputs: MacroEconomyInputs
+): MacroReplayWave47ExportSpillover {
+  const exportPayload: any =
+    inputs.replayWave47Export ??
+    inputs.historyReplay?.wave47Export ??
+    inputs.replay?.wave47Export ??
+    inputs.nationalHistory?.replayWave47Export;
+  if (!exportPayload) {
+    return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+  }
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const round47Ready = Boolean(
+    exportPayload.round47Ready ??
+      exportPayload.payload?.round47Ready ??
+      exportPayload.exportReady ??
+      exportPayload.ready
+  );
+  const o10Task = String(exportPayload.o10TaskId ?? exportPayload.taskId ?? exportPayload.payload?.o10TaskId ?? '');
+  const waveRound = Number(exportPayload.waveRound ?? exportPayload.payload?.waveRound ?? 0);
+  const locHint = Number(
+    exportPayload.projectedLocHint ?? exportPayload.payload?.projectedLocHint ?? exportPayload.locHint ?? 0
+  );
+  const integrityBand = String(exportPayload.integrityBand ?? exportPayload.payload?.integrityBand ?? '');
+
+  if (!round47Ready) {
+    cycleNudge -= 3;
+    investmentNudge -= 2;
+    summary = 'History replay wave 47 export not ready — macro cycle read drags.';
+  } else if (o10Task === 'O10-225' || waveRound === 47) {
+    productivityNudge += 1;
+    summary = `Wave 47 replay export latched (${o10Task || 'O10-225'}) supports macro productivity read.`;
+  }
+
+  if (integrityBand === 'corrupt' || integrityBand === 'broken') {
+    investmentNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Corrupt replay integrity band strains macro investment spillover.';
+  }
+
+  if (locHint > 0 && locHint < 2_600_000) {
+    cycleNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Stale wave 47 projected LOC hint misaligns macro cycle transmission.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroReplayWave47ExportSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroReplayWave47ExportSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: bridge-v1025-integration-health-wave-round47-export.ts ---
+
+export interface MacroIntegrationHealthWave47ExportSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.25 integration health wave 47 export spillover (Agent 25 wave 47 export). */
+export function readMacroIntegrationHealthWave47ExportSpilloverFromV1025(
+  inputs: MacroEconomyInputs
+): MacroIntegrationHealthWave47ExportSpillover {
+  const exportPayload: any =
+    inputs.integrationHealthWave47Export ??
+    inputs.integrationHealth?.wave47Export ??
+    inputs.assembly?.integrationHealthWave47Export ??
+    inputs.nationalIntegration?.healthWave47Export;
+  if (!exportPayload) {
+    return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+  }
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const healthReady = Boolean(
+    exportPayload.healthReady ??
+      exportPayload.round47Ready ??
+      exportPayload.payload?.healthReady ??
+      exportPayload.exportReady
+  );
+  const baselineSha = String(exportPayload.baselineSha ?? exportPayload.payload?.baselineSha ?? '');
+  const projectedLoc = Number(exportPayload.projectedFunctionalLoc ?? exportPayload.projectedLoc ?? 0);
+  const slotBand = String(exportPayload.slotBand ?? exportPayload.payload?.slotBand ?? '');
+
+  if (!healthReady) {
+    investmentNudge -= 3;
+    productivityNudge -= 1;
+    summary = 'Integration health wave 47 export not ready — macro investment read drags.';
+  } else if (slotBand === 'green' || slotBand === 'latched') {
+    investmentNudge += 1;
+    cycleNudge += 1;
+    summary = 'Latched integration health wave 47 export supports macro cycle interpretation.';
+  }
+
+  if (baselineSha && !baselineSha.toLowerCase().startsWith('456efb9')) {
+    cycleNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Non-456efb9 wave 47 baseline SHA misaligns macro cycle read.';
+  }
+
+  if (projectedLoc > 0 && projectedLoc < 2_600_000) {
+    investmentNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Under-projected wave 47 functional LOC drags macro investment read.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroIntegrationHealthWave47ExportSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroIntegrationHealthWave47ExportSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: scenario-wave47-integration-rank.ts ---
+
+export interface MacroScenarioWave47IntegrationRow {
+  scenarioId: string;
+  integrationPriority: number;
+}
+
+/** Rank overlays for wave 47 integration (wave 46 latch plus wave 45 integration cushion). */
+export function rankMacroScenarioWave47Integration(rows: MacroScenarioCompareRow[]): MacroScenarioWave47IntegrationRow[] {
+  const wave46 = rankMacroScenarioWave46Integration(rows);
+  const wave45 = rankMacroScenarioWave45Integration(rows);
+  const w46Max = Math.max(1, ...wave46.map(w => w.integrationPriority));
+  const w45Max = Math.max(1, ...wave45.map(w => w.integrationPriority));
+
+  return rows
+    .map(row => {
+      const w46 = wave46.find(w => w.scenarioId === row.scenarioId)?.integrationPriority ?? 0;
+      const w45 = wave45.find(w => w.scenarioId === row.scenarioId)?.integrationPriority ?? 0;
+      const integrationPriority =
+        Math.round(((w46 / w46Max) * 0.55 + (w45 / w45Max) * 0.45) * 1000) / 1000;
+      return { scenarioId: row.scenarioId, integrationPriority };
+    })
+    .sort((a, b) => b.integrationPriority - a.integrationPriority);
+}
+
+
+// --- source: bridge-v1024-replay-wave-round48-export.ts ---
+
+export interface MacroReplayWave48ExportSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.24 history replay wave 48 export spillover (Agent 24 wave 48 export). */
+export function readMacroReplayWave48ExportSpilloverFromV1024(
+  inputs: MacroEconomyInputs
+): MacroReplayWave48ExportSpillover {
+  const exportPayload: any =
+    inputs.replayWave48Export ??
+    inputs.historyReplay?.wave48Export ??
+    inputs.replay?.wave48Export ??
+    inputs.nationalHistory?.replayWave48Export;
+  if (!exportPayload) {
+    return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+  }
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const round48Ready = Boolean(
+    exportPayload.round48Ready ??
+      exportPayload.payload?.round48Ready ??
+      exportPayload.exportReady ??
+      exportPayload.ready
+  );
+  const o10Task = String(exportPayload.o10TaskId ?? exportPayload.taskId ?? exportPayload.payload?.o10TaskId ?? '');
+  const waveRound = Number(exportPayload.waveRound ?? exportPayload.payload?.waveRound ?? 0);
+  const locHint = Number(
+    exportPayload.projectedLocHint ?? exportPayload.payload?.projectedLocHint ?? exportPayload.locHint ?? 0
+  );
+  const integrityBand = String(exportPayload.integrityBand ?? exportPayload.payload?.integrityBand ?? '');
+
+  if (!round48Ready) {
+    cycleNudge -= 3;
+    investmentNudge -= 2;
+    summary = 'History replay wave 48 export not ready — macro cycle read drags.';
+  } else if (o10Task === 'O10-227' || waveRound === 48) {
+    productivityNudge += 1;
+    summary = `Wave 48 replay export latched (${o10Task || 'O10-227'}) supports macro productivity read.`;
+  }
+
+  if (integrityBand === 'corrupt' || integrityBand === 'broken') {
+    investmentNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Corrupt replay integrity band strains macro investment spillover.';
+  }
+
+  if (locHint > 0 && locHint < 2_600_000) {
+    cycleNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Stale wave 48 projected LOC hint misaligns macro cycle transmission.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroReplayWave48ExportSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroReplayWave48ExportSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: bridge-v1025-integration-health-wave-round48-export.ts ---
+
+export interface MacroIntegrationHealthWave48ExportSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.25 integration health wave 48 export spillover (Agent 25 wave 48 export). */
+export function readMacroIntegrationHealthWave48ExportSpilloverFromV1025(
+  inputs: MacroEconomyInputs
+): MacroIntegrationHealthWave48ExportSpillover {
+  const exportPayload: any =
+    inputs.integrationHealthWave48Export ??
+    inputs.integrationHealth?.wave48Export ??
+    inputs.assembly?.integrationHealthWave48Export ??
+    inputs.nationalIntegration?.healthWave48Export;
+  if (!exportPayload) {
+    return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+  }
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const healthReady = Boolean(
+    exportPayload.healthReady ??
+      exportPayload.round48Ready ??
+      exportPayload.payload?.healthReady ??
+      exportPayload.exportReady
+  );
+  const baselineSha = String(exportPayload.baselineSha ?? exportPayload.payload?.baselineSha ?? '');
+  const projectedLoc = Number(exportPayload.projectedFunctionalLoc ?? exportPayload.projectedLoc ?? 0);
+  const slotBand = String(exportPayload.slotBand ?? exportPayload.payload?.slotBand ?? '');
+
+  if (!healthReady) {
+    investmentNudge -= 3;
+    productivityNudge -= 1;
+    summary = 'Integration health wave 48 export not ready — macro investment read drags.';
+  } else if (slotBand === 'green' || slotBand === 'latched') {
+    investmentNudge += 1;
+    cycleNudge += 1;
+    summary = 'Latched integration health wave 48 export supports macro cycle interpretation.';
+  }
+
+  if (baselineSha && !baselineSha.toLowerCase().startsWith('4404bf0f')) {
+    cycleNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Non-4404bf0f wave 47 baseline SHA misaligns macro cycle read.';
+  }
+
+  if (projectedLoc > 0 && projectedLoc < 2_600_000) {
+    investmentNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Under-projected wave 48 functional LOC drags macro investment read.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroIntegrationHealthWave48ExportSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroIntegrationHealthWave48ExportSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: scenario-wave48-integration-rank.ts ---
+
+export interface MacroScenarioWave48IntegrationRow {
+  scenarioId: string;
+  integrationPriority: number;
+}
+
+/** Rank overlays for wave 48 integration (wave 47 latch plus wave 46 integration cushion). */
+export function rankMacroScenarioWave48Integration(rows: MacroScenarioCompareRow[]): MacroScenarioWave48IntegrationRow[] {
+  const wave47 = rankMacroScenarioWave47Integration(rows);
+  const wave46 = rankMacroScenarioWave46Integration(rows);
+  const w47Max = Math.max(1, ...wave47.map(w => w.integrationPriority));
+  const w46Max = Math.max(1, ...wave46.map(w => w.integrationPriority));
+
+  return rows
+    .map(row => {
+      const w47 = wave47.find(w => w.scenarioId === row.scenarioId)?.integrationPriority ?? 0;
+      const w46 = wave46.find(w => w.scenarioId === row.scenarioId)?.integrationPriority ?? 0;
+      const integrationPriority =
+        Math.round(((w47 / w47Max) * 0.55 + (w46 / w46Max) * 0.45) * 1000) / 1000;
+      return { scenarioId: row.scenarioId, integrationPriority };
+    })
+    .sort((a, b) => b.integrationPriority - a.integrationPriority);
+}
+
+
+// --- source: bridge-v1024-replay-wave-round49-export.ts ---
+
+export interface MacroReplayWave49ExportSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.24 history replay wave 48 export spillover (Agent 24 wave 48 export). */
+export function readMacroReplayWave49ExportSpilloverFromV1024(
+  inputs: MacroEconomyInputs
+): MacroReplayWave49ExportSpillover {
+  const exportPayload: any =
+    inputs.replayWave49Export ??
+    inputs.historyReplay?.wave49Export ??
+    inputs.replay?.wave49Export ??
+    inputs.nationalHistory?.replayWave49Export;
+  if (!exportPayload) {
+    return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+  }
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const round49Ready = Boolean(
+    exportPayload.round49Ready ??
+      exportPayload.payload?.round49Ready ??
+      exportPayload.exportReady ??
+      exportPayload.ready
+  );
+  const o10Task = String(exportPayload.o10TaskId ?? exportPayload.taskId ?? exportPayload.payload?.o10TaskId ?? '');
+  const waveRound = Number(exportPayload.waveRound ?? exportPayload.payload?.waveRound ?? 0);
+  const locHint = Number(
+    exportPayload.projectedLocHint ?? exportPayload.payload?.projectedLocHint ?? exportPayload.locHint ?? 0
+  );
+  const integrityBand = String(exportPayload.integrityBand ?? exportPayload.payload?.integrityBand ?? '');
+
+  if (!round49Ready) {
+    cycleNudge -= 3;
+    investmentNudge -= 2;
+    summary = 'History replay wave 48 export not ready — macro cycle read drags.';
+  } else if (o10Task === 'O10-229' || waveRound === 49) {
+    productivityNudge += 1;
+    summary = `Wave 49 replay export latched (${o10Task || 'O10-229'}) supports macro productivity read.`;
+  }
+
+  if (integrityBand === 'corrupt' || integrityBand === 'broken') {
+    investmentNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Corrupt replay integrity band strains macro investment spillover.';
+  }
+
+  if (locHint > 0 && locHint < 2_600_000) {
+    cycleNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Stale wave 48 projected LOC hint misaligns macro cycle transmission.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroReplayWave49ExportSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroReplayWave49ExportSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: bridge-v1025-integration-health-wave-round49-export.ts ---
+
+export interface MacroIntegrationHealthWave49ExportSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.25 integration health wave 48 export spillover (Agent 25 wave 48 export). */
+export function readMacroIntegrationHealthWave49ExportSpilloverFromV1025(
+  inputs: MacroEconomyInputs
+): MacroIntegrationHealthWave49ExportSpillover {
+  const exportPayload: any =
+    inputs.integrationHealthWave49Export ??
+    inputs.integrationHealth?.wave49Export ??
+    inputs.assembly?.integrationHealthWave49Export ??
+    inputs.nationalIntegration?.healthWave49Export;
+  if (!exportPayload) {
+    return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+  }
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const healthReady = Boolean(
+    exportPayload.healthReady ??
+      exportPayload.round49Ready ??
+      exportPayload.payload?.healthReady ??
+      exportPayload.exportReady
+  );
+  const baselineSha = String(exportPayload.baselineSha ?? exportPayload.payload?.baselineSha ?? '');
+  const projectedLoc = Number(exportPayload.projectedFunctionalLoc ?? exportPayload.projectedLoc ?? 0);
+  const slotBand = String(exportPayload.slotBand ?? exportPayload.payload?.slotBand ?? '');
+
+  if (!healthReady) {
+    investmentNudge -= 3;
+    productivityNudge -= 1;
+    summary = 'Integration health wave 48 export not ready — macro investment read drags.';
+  } else if (slotBand === 'green' || slotBand === 'latched') {
+    investmentNudge += 1;
+    cycleNudge += 1;
+    summary = 'Latched integration health wave 48 export supports macro cycle interpretation.';
+  }
+
+  if (baselineSha && !baselineSha.toLowerCase().startsWith('73e5e01e')) {
+    cycleNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Non-73e5e01e wave 47 baseline SHA misaligns macro cycle read.';
+  }
+
+  if (projectedLoc > 0 && projectedLoc < 2_600_000) {
+    investmentNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Under-projected wave 48 functional LOC drags macro investment read.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroIntegrationHealthWave49ExportSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroIntegrationHealthWave49ExportSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: scenario-wave49-integration-rank.ts ---
+
+export interface MacroScenarioWave49IntegrationRow {
+  scenarioId: string;
+  integrationPriority: number;
+}
+
+/** Rank overlays for wave 49 integration (wave 48 latch plus wave 47 integration cushion). */
+export function rankMacroScenarioWave49Integration(rows: MacroScenarioCompareRow[]): MacroScenarioWave49IntegrationRow[] {
+  const wave48 = rankMacroScenarioWave48Integration(rows);
+  const wave47 = rankMacroScenarioWave47Integration(rows);
+  const w48Max = Math.max(1, ...wave48.map(w => w.integrationPriority));
+  const w47Max = Math.max(1, ...wave47.map(w => w.integrationPriority));
+
+  return rows
+    .map(row => {
+      const w48 = wave48.find(w => w.scenarioId === row.scenarioId)?.integrationPriority ?? 0;
+      const w47 = wave47.find(w => w.scenarioId === row.scenarioId)?.integrationPriority ?? 0;
+      const integrationPriority =
+        Math.round(((w48 / w48Max) * 0.55 + (w47 / w47Max) * 0.45) * 1000) / 1000;
+      return { scenarioId: row.scenarioId, integrationPriority };
+    })
+    .sort((a, b) => b.integrationPriority - a.integrationPriority);
+}
+
+
+// --- source: bridge-v1024-replay-wave-round50-export.ts ---
+
+export interface MacroReplayWave50ExportSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.24 history replay wave 50 export spillover (Agent 24 wave 50 export). */
+export function readMacroReplayWave50ExportSpilloverFromV1024(
+  inputs: MacroEconomyInputs
+): MacroReplayWave50ExportSpillover {
+  const exportPayload: any =
+    inputs.replayWave50Export ??
+    inputs.historyReplay?.wave50Export ??
+    inputs.replay?.wave50Export ??
+    inputs.nationalHistory?.replayWave50Export;
+  if (!exportPayload) {
+    return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+  }
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const round50Ready = Boolean(
+    exportPayload.round50Ready ??
+      exportPayload.payload?.round50Ready ??
+      exportPayload.exportReady ??
+      exportPayload.ready
+  );
+  const o10Task = String(exportPayload.o10TaskId ?? exportPayload.taskId ?? exportPayload.payload?.o10TaskId ?? '');
+  const waveRound = Number(exportPayload.waveRound ?? exportPayload.payload?.waveRound ?? 0);
+  const locHint = Number(
+    exportPayload.projectedLocHint ?? exportPayload.payload?.projectedLocHint ?? exportPayload.locHint ?? 0
+  );
+  const integrityBand = String(exportPayload.integrityBand ?? exportPayload.payload?.integrityBand ?? '');
+
+  if (!round50Ready) {
+    cycleNudge -= 3;
+    investmentNudge -= 2;
+    summary = 'History replay wave 50 export not ready — macro cycle read drags.';
+  } else if (o10Task === 'O10-231' || waveRound === 50) {
+    productivityNudge += 1;
+    summary = `Wave 50 replay export latched (${o10Task || 'O10-231'}) supports macro productivity read.`;
+  }
+
+  if (integrityBand === 'corrupt' || integrityBand === 'broken') {
+    investmentNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Corrupt replay integrity band strains macro investment spillover.';
+  }
+
+  if (locHint > 0 && locHint < 2_600_000) {
+    cycleNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Stale wave 49 projected LOC hint misaligns macro cycle transmission.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroReplayWave50ExportSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroReplayWave50ExportSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: bridge-v1025-integration-health-wave-round50-export.ts ---
+
+export interface MacroIntegrationHealthWave50ExportSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.25 integration health wave 50 export spillover (Agent 25 wave 50 export). */
+export function readMacroIntegrationHealthWave50ExportSpilloverFromV1025(
+  inputs: MacroEconomyInputs
+): MacroIntegrationHealthWave50ExportSpillover {
+  const exportPayload: any =
+    inputs.integrationHealthWave50Export ??
+    inputs.integrationHealth?.wave50Export ??
+    inputs.assembly?.integrationHealthWave50Export ??
+    inputs.nationalIntegration?.healthWave50Export;
+  if (!exportPayload) {
+    return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+  }
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const healthReady = Boolean(
+    exportPayload.healthReady ??
+      exportPayload.round50Ready ??
+      exportPayload.payload?.healthReady ??
+      exportPayload.exportReady
+  );
+  const baselineSha = String(exportPayload.baselineSha ?? exportPayload.payload?.baselineSha ?? '');
+  const projectedLoc = Number(exportPayload.projectedFunctionalLoc ?? exportPayload.projectedLoc ?? 0);
+  const slotBand = String(exportPayload.slotBand ?? exportPayload.payload?.slotBand ?? '');
+
+  if (!healthReady) {
+    investmentNudge -= 3;
+    productivityNudge -= 1;
+    summary = 'Integration health wave 50 export not ready — macro investment read drags.';
+  } else if (slotBand === 'green' || slotBand === 'latched') {
+    investmentNudge += 1;
+    cycleNudge += 1;
+    summary = 'Latched integration health wave 50 export supports macro cycle interpretation.';
+  }
+
+  if (baselineSha && !baselineSha.toLowerCase().startsWith('8aaaf700')) {
+    cycleNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Non-8aaaf700 wave 49 baseline SHA misaligns macro cycle read.';
+  }
+
+  if (projectedLoc > 0 && projectedLoc < 2_600_000) {
+    investmentNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Under-projected wave 50 functional LOC drags macro investment read.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroIntegrationHealthWave50ExportSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroIntegrationHealthWave50ExportSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: scenario-wave50-integration-rank.ts ---
+
+export interface MacroScenarioWave50IntegrationRow {
+  scenarioId: string;
+  integrationPriority: number;
+}
+
+/** Rank overlays for wave 50 integration (wave 49 latch plus wave 48 integration cushion). */
+export function rankMacroScenarioWave50Integration(rows: MacroScenarioCompareRow[]): MacroScenarioWave50IntegrationRow[] {
+  const wave49 = rankMacroScenarioWave49Integration(rows);
+  const wave48 = rankMacroScenarioWave48Integration(rows);
+  const w49Max = Math.max(1, ...wave49.map(w => w.integrationPriority));
+  const w48Max = Math.max(1, ...wave48.map(w => w.integrationPriority));
+
+  return rows
+    .map(row => {
+      const w49 = wave49.find(w => w.scenarioId === row.scenarioId)?.integrationPriority ?? 0;
+      const w48 = wave48.find(w => w.scenarioId === row.scenarioId)?.integrationPriority ?? 0;
+      const integrationPriority =
+        Math.round(((w49 / w49Max) * 0.55 + (w48 / w48Max) * 0.45) * 1000) / 1000;
+      return { scenarioId: row.scenarioId, integrationPriority };
+    })
+    .sort((a, b) => b.integrationPriority - a.integrationPriority);
+}
+
+
+// --- source: bridge-v1024-replay-wave-round51-export.ts ---
+
+export interface MacroReplayWave51ExportSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.24 history replay wave 51 export spillover (Agent 24 wave 51 export). */
+export function readMacroReplayWave51ExportSpilloverFromV1024(
+  inputs: MacroEconomyInputs
+): MacroReplayWave51ExportSpillover {
+  const exportPayload: any =
+    inputs.replayWave51Export ??
+    inputs.historyReplay?.wave51Export ??
+    inputs.replay?.wave51Export ??
+    inputs.nationalHistory?.replayWave51Export;
+  if (!exportPayload) {
+    return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+  }
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const round51Ready = Boolean(
+    exportPayload.round51Ready ??
+      exportPayload.payload?.round51Ready ??
+      exportPayload.exportReady ??
+      exportPayload.ready
+  );
+  const o10Task = String(exportPayload.o10TaskId ?? exportPayload.taskId ?? exportPayload.payload?.o10TaskId ?? '');
+  const waveRound = Number(exportPayload.waveRound ?? exportPayload.payload?.waveRound ?? 0);
+  const locHint = Number(
+    exportPayload.projectedLocHint ?? exportPayload.payload?.projectedLocHint ?? exportPayload.locHint ?? 0
+  );
+  const integrityBand = String(exportPayload.integrityBand ?? exportPayload.payload?.integrityBand ?? '');
+
+  if (!round51Ready) {
+    cycleNudge -= 3;
+    investmentNudge -= 2;
+    summary = 'History replay wave 51 export not ready — macro cycle read drags.';
+  } else if (o10Task === 'O10-233' || waveRound === 51) {
+    productivityNudge += 1;
+    summary = `Wave 51 replay export latched (${o10Task || 'O10-233'}) supports macro productivity read.`;
+  }
+
+  if (integrityBand === 'corrupt' || integrityBand === 'broken') {
+    investmentNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Corrupt replay integrity band strains macro investment spillover.';
+  }
+
+  if (locHint > 0 && locHint < 2_700_000) {
+    cycleNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Stale wave 50 projected LOC hint misaligns macro cycle transmission.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroReplayWave51ExportSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroReplayWave51ExportSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: bridge-v1025-integration-health-wave-round51-export.ts ---
+
+export interface MacroIntegrationHealthWave51ExportSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.25 integration health wave 51 export spillover (Agent 25 wave 51 export). */
+export function readMacroIntegrationHealthWave51ExportSpilloverFromV1025(
+  inputs: MacroEconomyInputs
+): MacroIntegrationHealthWave51ExportSpillover {
+  const exportPayload: any =
+    inputs.integrationHealthWave51Export ??
+    inputs.integrationHealth?.wave51Export ??
+    inputs.assembly?.integrationHealthWave51Export ??
+    inputs.nationalIntegration?.healthWave51Export;
+  if (!exportPayload) {
+    return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+  }
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const healthReady = Boolean(
+    exportPayload.healthReady ??
+      exportPayload.round51Ready ??
+      exportPayload.payload?.healthReady ??
+      exportPayload.exportReady
+  );
+  const baselineSha = String(exportPayload.baselineSha ?? exportPayload.payload?.baselineSha ?? '');
+  const projectedLoc = Number(exportPayload.projectedFunctionalLoc ?? exportPayload.projectedLoc ?? 0);
+  const slotBand = String(exportPayload.slotBand ?? exportPayload.payload?.slotBand ?? '');
+
+  if (!healthReady) {
+    investmentNudge -= 3;
+    productivityNudge -= 1;
+    summary = 'Integration health wave 51 export not ready — macro investment read drags.';
+  } else if (slotBand === 'green' || slotBand === 'latched') {
+    investmentNudge += 1;
+    cycleNudge += 1;
+    summary = 'Latched integration health wave 51 export supports macro cycle interpretation.';
+  }
+
+  if (baselineSha && !baselineSha.toLowerCase().startsWith('a32b2b15')) {
+    cycleNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Non-a32b2b15 wave 50 baseline SHA misaligns macro cycle read.';
+  }
+
+  if (projectedLoc > 0 && projectedLoc < 2_700_000) {
+    investmentNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Under-projected wave 51 functional LOC drags macro investment read.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroIntegrationHealthWave51ExportSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroIntegrationHealthWave51ExportSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: scenario-wave51-integration-rank.ts ---
+
+export interface MacroScenarioWave51IntegrationRow {
+  scenarioId: string;
+  integrationPriority: number;
+}
+
+/** Rank overlays for wave 51 integration (wave 50 latch plus wave 49 integration cushion). */
+export function rankMacroScenarioWave51Integration(rows: MacroScenarioCompareRow[]): MacroScenarioWave51IntegrationRow[] {
+  const wave50 = rankMacroScenarioWave50Integration(rows);
+  const wave49 = rankMacroScenarioWave49Integration(rows);
+  const w50Max = Math.max(1, ...wave50.map(w => w.integrationPriority));
+  const w49Max = Math.max(1, ...wave49.map(w => w.integrationPriority));
+
+  return rows
+    .map(row => {
+      const w50 = wave50.find(w => w.scenarioId === row.scenarioId)?.integrationPriority ?? 0;
+      const w49 = wave49.find(w => w.scenarioId === row.scenarioId)?.integrationPriority ?? 0;
+      const integrationPriority =
+        Math.round(((w50 / w50Max) * 0.55 + (w49 / w49Max) * 0.45) * 1000) / 1000;
+      return { scenarioId: row.scenarioId, integrationPriority };
+    })
+    .sort((a, b) => b.integrationPriority - a.integrationPriority);
+}
+
+
 // --- source: regression-harness.ts ---
 
 export interface MacroRegressionCheck {
@@ -12550,6 +13500,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeWave48ReplayIntegrationStress?: boolean;
   includeWave49ReplayIntegrationStress?: boolean;
   includeWave50ReplayIntegrationStress?: boolean;
+  includeWave51ReplayIntegrationStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
@@ -12599,6 +13550,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   const includeWave48ReplayIntegrationStress = Boolean(options?.includeWave48ReplayIntegrationStress);
   const includeWave49ReplayIntegrationStress = Boolean(options?.includeWave49ReplayIntegrationStress);
   const includeWave50ReplayIntegrationStress = Boolean(options?.includeWave50ReplayIntegrationStress);
+  const includeWave51ReplayIntegrationStress = Boolean(options?.includeWave51ReplayIntegrationStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -13279,6 +14231,23 @@ export function runMacroEconomyRegressionHarness(options?: {
             baselineSha: t % 7 === 0 ? 'deadbeef' : '8aaaf700',
             projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_771_207
           }
+        : undefined,
+      replayWave51Export: includeWave51ReplayIntegrationStress
+        ? {
+            round51Ready: t % 6 !== 0,
+            o10TaskId: 'O10-233',
+            waveRound: 51,
+            integrityBand: t % 5 === 0 ? 'corrupt' : 'sound',
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_887_600
+          }
+        : undefined,
+      integrationHealthWave51Export: includeWave51ReplayIntegrationStress
+        ? {
+            healthReady: t % 6 !== 0,
+            slotBand: t % 5 === 0 ? 'red' : 'latched',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : 'a32b2b15',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_887_600
+          }
         : undefined
     });
     const { state, persisted: nextP } = computeNationalMacroEconomy(inputs, persisted, prev);
@@ -13833,6 +14802,18 @@ export function runMacroEconomyRegressionHarness(options?: {
     checks.push({
       id: 'ninety_six_transmission_layers_wave50',
       passed: (prev.transmissionReport?.layers?.length ?? 0) >= 94,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeWave51ReplayIntegrationStress && prev) {
+    checks.push({
+      id: 'transmission_persistence_finite',
+      passed: Number.isFinite(prev.transmissionPersistence.persistenceIndex),
+      detail: String(prev.transmissionPersistence.persistenceIndex)
+    });
+    checks.push({
+      id: 'ninety_eight_transmission_layers_wave51',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 96,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -15836,6 +16817,52 @@ export function evaluateMacroConsistencyGates(
       summary: 'Cohesive transmission persistence after wave 50 replay/integration export layers.'
     });
   }
+  const wave51Replay: any =
+    inputs.replayWave51Export ??
+    inputs.historyReplay?.wave51Export ??
+    inputs.replay?.wave51Export;
+  const round51Ready = Boolean(
+    wave51Replay?.round51Ready ?? wave51Replay?.payload?.round51Ready ?? wave51Replay?.exportReady
+  );
+  if (
+    wave51Replay &&
+    !round51Ready &&
+    (state.replaySpilloverSummary != null || state.replayWave51ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'replay_wave51_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'History replay wave 51 export not ready coincides with strained replay spillover.'
+    });
+  }
+  const wave51Health: any =
+    inputs.integrationHealthWave51Export ??
+    inputs.integrationHealth?.wave51Export ??
+    inputs.assembly?.integrationHealthWave51Export;
+  const wave51HealthReady = Boolean(
+    wave51Health?.healthReady ?? wave51Health?.round51Ready ?? wave51Health?.payload?.healthReady
+  );
+  if (
+    wave51Health &&
+    !wave51HealthReady &&
+    (state.integrationHealthSpilloverSummary != null || state.integrationHealthWave51ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'integration_health_wave51_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Integration health wave 51 export not ready coincides with strained integration health spillover.'
+    });
+  }
+  if (state.transmissionPersistence?.band === 'cohesive') {
+    gates.push({
+      id: 'transmission_persistence_cohesive_wave51',
+      triggered: true,
+      severity: 'info',
+      summary: 'Cohesive transmission persistence after wave 51 replay/integration export layers.'
+    });
+  }
   if (state.transmissionPersistence?.band === 'cohesive') {
     gates.push({
       id: 'transmission_persistence_cohesive',
@@ -16135,6 +17162,12 @@ export function composeMacroEconomyGiAnswer(state: NationalMacroEconomyState, ma
   applyMacroIntegrationHealthWave50ExportSpillover,
   readMacroIntegrationHealthWave50ExportSpilloverFromV1025
 } from './bridge-v1025-integration-health-wave-round50-export.ts';
+  applyMacroReplayWave51ExportSpillover,
+  readMacroReplayWave51ExportSpilloverFromV1024
+} from './bridge-v1024-replay-wave-round51-export.ts';
+  applyMacroIntegrationHealthWave51ExportSpillover,
+  readMacroIntegrationHealthWave51ExportSpilloverFromV1025
+} from './bridge-v1025-integration-health-wave-round51-export.ts';
   v1014macroBandInvestment,
   v1014macroBandProductivity,
   v1014macroBandUtilization,
@@ -16284,6 +17317,8 @@ export function computeNationalMacroEconomy(
   const integrationHealthWave49ExportSpillover = readMacroIntegrationHealthWave49ExportSpilloverFromV1025(inputs);
   const replayWave50ExportSpillover = readMacroReplayWave50ExportSpilloverFromV1024(inputs);
   const integrationHealthWave50ExportSpillover = readMacroIntegrationHealthWave50ExportSpilloverFromV1025(inputs);
+  const replayWave51ExportSpillover = readMacroReplayWave51ExportSpilloverFromV1024(inputs);
+  const integrationHealthWave51ExportSpillover = readMacroIntegrationHealthWave51ExportSpilloverFromV1025(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -16476,7 +17511,15 @@ export function computeNationalMacroEconomy(
     withReplayWave50Export,
     integrationHealthWave50ExportSpillover
   );
-  const shocked = applyMacroShockAdjustments(inputs, withIntegrationHealthWave50Export, pushEv);
+  const withReplayWave51Export = applyMacroReplayWave51ExportSpillover(
+    withIntegrationHealthWave50Export,
+    replayWave51ExportSpillover
+  );
+  const withIntegrationHealthWave51Export = applyMacroIntegrationHealthWave51ExportSpillover(
+    withReplayWave51Export,
+    integrationHealthWave51ExportSpillover
+  );
+  const shocked = applyMacroShockAdjustments(inputs, withIntegrationHealthWave51Export, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -16600,7 +17643,9 @@ export function computeNationalMacroEconomy(
     replayWave49Export: replayWave49ExportSpillover,
     integrationHealthWave49Export: integrationHealthWave49ExportSpillover,
     replayWave50Export: replayWave50ExportSpillover,
-    integrationHealthWave50Export: integrationHealthWave50ExportSpillover
+    integrationHealthWave50Export: integrationHealthWave50ExportSpillover,
+    replayWave51Export: replayWave51ExportSpillover,
+    integrationHealthWave51Export: integrationHealthWave51ExportSpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
@@ -16778,6 +17823,8 @@ export function computeNationalMacroEconomy(
     integrationHealthWave49ExportSpilloverSummary: integrationHealthWave49ExportSpillover.summary,
     replayWave50ExportSpilloverSummary: replayWave50ExportSpillover.summary,
     integrationHealthWave50ExportSpilloverSummary: integrationHealthWave50ExportSpillover.summary,
+    replayWave51ExportSpilloverSummary: replayWave51ExportSpillover.summary,
+    integrationHealthWave51ExportSpilloverSummary: integrationHealthWave51ExportSpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,
@@ -17468,7 +18515,7 @@ export function runAgent06Round4SelfTests(): {
     strategic: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null },
     housing: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null }
   });
-  record('R4-03', 'Transmission report has sixty-eight layers', report.layers.length === 96, String(report.layers.length));
+  record('R4-03', 'Transmission report has sixty-eight layers', report.layers.length === 98, String(report.layers.length));
   record('R4-04', 'Net cycle nudge finite', Number.isFinite(report.netCycleNudge), String(report.netCycleNudge));
 
   const integrated = computeNationalMacroEconomy(
@@ -17479,7 +18526,7 @@ export function runAgent06Round4SelfTests(): {
     null,
     null
   );
-  record('R4-05', 'State carries transmission report', integrated.state.transmissionReport.layers.length === 96, 'ok');
+  record('R4-05', 'State carries transmission report', integrated.state.transmissionReport.layers.length === 98, 'ok');
   record('R4-06', 'Trade summary on state', integrated.state.tradeSpilloverSummary != null, String(integrated.state.tradeSpilloverSummary));
 
   const stress = computeNationalMacroEconomy(
@@ -17622,7 +18669,7 @@ export function runAgent06Round6SelfTests(): {
   );
   record('R6-03', 'State exposes innovation summary', integrated.state.innovationSpilloverSummary != null, 'ok');
   record('R6-04', 'State exposes workforce summary', integrated.state.workforceSpilloverSummary != null, 'ok');
-  record('R6-05', 'Seventy-eight transmission layers', integrated.state.transmissionReport.layers.length === 96, String(integrated.state.transmissionReport.layers.length));
+  record('R6-05', 'Seventy-eight transmission layers', integrated.state.transmissionReport.layers.length === 98, String(integrated.state.transmissionReport.layers.length));
 
   const capacity = buildMacroCapacitySnapshot({
     state: integrated.state,
@@ -17707,7 +18754,7 @@ export function runAgent06Round7SelfTests(): {
   record(
     'R7-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -17795,7 +18842,7 @@ export function runAgent06Round8SelfTests(): {
   record(
     'R8-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -17892,7 +18939,7 @@ export function runAgent06Round9SelfTests(): {
   record(
     'R9-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -17986,7 +19033,7 @@ export function runAgent06Round10SelfTests(): {
   record(
     'R10-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18076,7 +19123,7 @@ export function runAgent06Round11SelfTests(): {
   record(
     'R11-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18165,7 +19212,7 @@ export function runAgent06Round12SelfTests(): {
   record(
     'R12-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18254,7 +19301,7 @@ export function runAgent06Round13SelfTests(): {
   record(
     'R13-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18343,7 +19390,7 @@ export function runAgent06Round14SelfTests(): {
   record(
     'R14-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18432,7 +19479,7 @@ export function runAgent06Round15SelfTests(): {
   record(
     'R15-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18525,7 +19572,7 @@ export function runAgent06Round16SelfTests(): {
   record(
     'R16-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18630,7 +19677,7 @@ export function runAgent06Round17SelfTests(): {
   record(
     'R17-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18747,7 +19794,7 @@ export function runAgent06Round18SelfTests(): {
   record(
     'R18-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18846,7 +19893,7 @@ export function runAgent06Round19SelfTests(): {
   record(
     'R19-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -18949,7 +19996,7 @@ export function runAgent06Round20SelfTests(): {
   record(
     'R20-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -19052,7 +20099,7 @@ export function runAgent06Round21SelfTests(): {
   record(
     'R21-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -19157,7 +20204,7 @@ export function runAgent06Round22SelfTests(): {
   record(
     'R22-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -19246,7 +20293,7 @@ export function runAgent06Round23SelfTests(): {
   record(
     'R23-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -19340,7 +20387,7 @@ export function runAgent06Round24SelfTests(): {
   record(
     'R24-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -19434,7 +20481,7 @@ export function runAgent06Round25SelfTests(): {
   record(
     'R25-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -19528,7 +20575,7 @@ export function runAgent06Round26SelfTests(): {
   record(
     'R26-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -19627,7 +20674,7 @@ export function runAgent06Round27SelfTests(): {
   record(
     'R27-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -19721,7 +20768,7 @@ export function runAgent06Round28SelfTests(): {
   record(
     'R28-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -19820,7 +20867,7 @@ export function runAgent06Round29SelfTests(): {
   record(
     'R29-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -19914,7 +20961,7 @@ export function runAgent06Round30SelfTests(): {
   record(
     'R30-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -20008,7 +21055,7 @@ export function runAgent06Round31SelfTests(): {
   record(
     'R31-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -20102,7 +21149,7 @@ export function runAgent06Round32SelfTests(): {
   record(
     'R32-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -20201,7 +21248,7 @@ export function runAgent06Round33SelfTests(): {
   record(
     'R33-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -20295,7 +21342,7 @@ export function runAgent06Round34SelfTests(): {
   record(
     'R34-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -20389,7 +21436,7 @@ export function runAgent06Round35SelfTests(): {
   record(
     'R35-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -20507,7 +21554,7 @@ export function runAgent06Round36SelfTests(): {
   record(
     'R36-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -20635,7 +21682,7 @@ export function runAgent06Round37SelfTests(): {
   record(
     'R37-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -20768,7 +21815,7 @@ export function runAgent06Round38SelfTests(): {
   record(
     'R38-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -20897,7 +21944,7 @@ export function runAgent06Round39SelfTests(): {
   record(
     'R39-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -21030,7 +22077,7 @@ export function runAgent06Round40SelfTests(): {
   record(
     'R40-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -21163,7 +22210,7 @@ export function runAgent06Round41SelfTests(): {
   record(
     'R41-05',
     'Seventy-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -21292,7 +22339,7 @@ export function runAgent06Round42SelfTests(): {
   record(
     'R42-05',
     'Eighty transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -21425,7 +22472,7 @@ export function runAgent06Round43SelfTests(): {
   record(
     'R43-05',
     'Eighty-two transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -21554,7 +22601,7 @@ export function runAgent06Round44SelfTests(): {
   record(
     'R44-05',
     'Eighty-four transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -21687,7 +22734,7 @@ export function runAgent06Round45SelfTests(): {
   record(
     'R45-05',
     'Eighty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -21820,7 +22867,7 @@ export function runAgent06Round46SelfTests(): {
   record(
     'R46-05',
     'Eighty-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 96,
+    integrated.state.transmissionReport.layers.length === 98,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -21872,6 +22919,671 @@ export function runAgent06Round46SelfTests(): {
   record(
     'R46-10',
     'Wave 46 UI/dashboard export regression harness',
+    harness.allPassed,
+    harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: round47-self-tests.ts ---
+
+export function runAgent06Round47SelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const replay = readMacroReplayWave47ExportSpilloverFromV1024(
+    makeDefaultV1014_MACRO_TestInputs({
+      replayWave47Export: {
+        round47Ready: false,
+        o10TaskId: 'O10-225',
+        waveRound: 47,
+        integrityBand: 'corrupt',
+        projectedLocHint: 1_800_000
+      }
+    })
+  );
+  record('R47-01', 'Wave 47 replay export not ready drags cycle', replay.cycleNudge <= -2, String(replay.cycleNudge));
+
+  const health = readMacroIntegrationHealthWave47ExportSpilloverFromV1025(
+    makeDefaultV1014_MACRO_TestInputs({
+      integrationHealthWave47Export: {
+        healthReady: false,
+        slotBand: 'red',
+        baselineSha: '456efb9',
+        projectedFunctionalLoc: 1_800_000
+      }
+    })
+  );
+  record('R47-02', 'Wave 47 integration health export not ready drags investment', health.investmentNudge <= -2, String(health.investmentNudge));
+
+  const integrated = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({
+      replayWave47Export: {
+        round47Ready: true,
+        o10TaskId: 'O10-225',
+        waveRound: 47,
+        integrityBand: 'sound',
+        projectedLocHint: 2_637_258
+      },
+      integrationHealthWave47Export: {
+        healthReady: true,
+        slotBand: 'latched',
+        baselineSha: '456efb9',
+        projectedFunctionalLoc: 2_637_258
+      }
+    }),
+    null,
+    null
+  );
+  record(
+    'R47-03',
+    'State exposes wave 47 replay export summary',
+    integrated.state.replayWave47ExportSpilloverSummary != null,
+    'ok'
+  );
+  record(
+    'R47-04',
+    'Transmission includes integration health wave 47 export layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.25_integration_health_wave47_export'),
+    'ok'
+  );
+  record(
+    'R47-05',
+    'Ninety transmission layers',
+    integrated.state.transmissionReport.layers.length === 98,
+    String(integrated.state.transmissionReport.layers.length)
+  );
+
+  const persistence = buildMacroTransmissionPersistenceSnapshot(integrated.state.transmissionReport);
+  record(
+    'R47-06',
+    'Transmission persistence finite',
+    Number.isFinite(persistence.persistenceIndex),
+    String(persistence.persistenceIndex)
+  );
+  record(
+    'R47-07',
+    'Transmission includes replay wave 47 export layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.24_replay_wave47_export'),
+    'ok'
+  );
+
+  const compare = compareMacroEconomyScenarios(
+    makeDefaultV1014_MACRO_TestInputs({ turn: 69 }),
+    [
+      {
+        id: 'replay_shock',
+        overlay: {
+          replayWave47Export: { round47Ready: false, o10TaskId: 'O10-225', waveRound: 47, integrityBand: 'corrupt' }
+        }
+      },
+      {
+        id: 'health_shock',
+        overlay: { integrationHealthWave47Export: { healthReady: false, slotBand: 'red', baselineSha: '456efb9' } }
+      }
+    ],
+    null,
+    null
+  );
+  const integration = rankMacroScenarioWave47Integration(compare);
+  record('R47-08', 'Wave 47 integration rank preserves row count', integration.length === 2, String(integration.length));
+  record(
+    'R47-09',
+    'Wave 47 integration ranks scenarios',
+    integration[0].integrationPriority >= 0,
+    integration.map(r => r.scenarioId).join('>')
+  );
+
+  const harness = runMacroEconomyRegressionHarness({
+    turns: 10,
+    scenarioId: 'wave47_replay_integration_stress',
+    includeWave47ReplayIntegrationStress: true
+  });
+  record(
+    'R47-10',
+    'Wave 47 replay/integration regression harness',
+    harness.allPassed,
+    harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: round48-self-tests.ts ---
+
+export function runAgent06Round48SelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const replay = readMacroReplayWave48ExportSpilloverFromV1024(
+    makeDefaultV1014_MACRO_TestInputs({
+      replayWave48Export: {
+        round48Ready: false,
+        o10TaskId: 'O10-227',
+        waveRound: 47,
+        integrityBand: 'corrupt',
+        projectedLocHint: 1_800_000
+      }
+    })
+  );
+  record('R48-01', 'Wave 48 replay export not ready drags cycle', replay.cycleNudge <= -2, String(replay.cycleNudge));
+
+  const health = readMacroIntegrationHealthWave48ExportSpilloverFromV1025(
+    makeDefaultV1014_MACRO_TestInputs({
+      integrationHealthWave48Export: {
+        healthReady: false,
+        slotBand: 'red',
+        baselineSha: '4404bf0f',
+        projectedFunctionalLoc: 1_800_000
+      }
+    })
+  );
+  record('R48-02', 'Wave 48 integration health export not ready drags investment', health.investmentNudge <= -2, String(health.investmentNudge));
+
+  const integrated = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({
+      replayWave48Export: {
+        round48Ready: true,
+        o10TaskId: 'O10-227',
+        waveRound: 47,
+        integrityBand: 'sound',
+        projectedLocHint: 2_684_235
+      },
+      integrationHealthWave48Export: {
+        healthReady: true,
+        slotBand: 'latched',
+        baselineSha: '4404bf0f',
+        projectedFunctionalLoc: 2_684_235
+      }
+    }),
+    null,
+    null
+  );
+  record(
+    'R48-03',
+    'State exposes wave 48 replay export summary',
+    integrated.state.replayWave48ExportSpilloverSummary != null,
+    'ok'
+  );
+  record(
+    'R48-04',
+    'Transmission includes integration health wave 48 export layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.25_integration_health_wave48_export'),
+    'ok'
+  );
+  record(
+    'R48-05',
+    'Ninety-four transmission layers',
+    integrated.state.transmissionReport.layers.length === 98,
+    String(integrated.state.transmissionReport.layers.length)
+  );
+
+  const persistence = buildMacroTransmissionPersistenceSnapshot(integrated.state.transmissionReport);
+  record(
+    'R48-06',
+    'Transmission persistence finite',
+    Number.isFinite(persistence.persistenceIndex),
+    String(persistence.persistenceIndex)
+  );
+  record(
+    'R48-07',
+    'Transmission includes replay wave 48 export layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.24_replay_wave48_export'),
+    'ok'
+  );
+
+  const compare = compareMacroEconomyScenarios(
+    makeDefaultV1014_MACRO_TestInputs({ turn: 69 }),
+    [
+      {
+        id: 'replay_shock',
+        overlay: {
+          replayWave48Export: { round48Ready: false, o10TaskId: 'O10-227', waveRound: 48, integrityBand: 'corrupt' }
+        }
+      },
+      {
+        id: 'health_shock',
+        overlay: { integrationHealthWave48Export: { healthReady: false, slotBand: 'red', baselineSha: '4404bf0f' } }
+      }
+    ],
+    null,
+    null
+  );
+  const integration = rankMacroScenarioWave48Integration(compare);
+  record('R48-08', 'Wave 48 integration rank preserves row count', integration.length === 2, String(integration.length));
+  record(
+    'R48-09',
+    'Wave 48 integration ranks scenarios',
+    integration[0].integrationPriority >= 0,
+    integration.map(r => r.scenarioId).join('>')
+  );
+
+  const harness = runMacroEconomyRegressionHarness({
+    turns: 10,
+    scenarioId: 'wave48_replay_integration_stress',
+    includeWave48ReplayIntegrationStress: true
+  });
+  record(
+    'R48-10',
+    'Wave 48 replay/integration regression harness',
+    harness.allPassed,
+    harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: round49-self-tests.ts ---
+
+export function runAgent06Round49SelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const replay = readMacroReplayWave49ExportSpilloverFromV1024(
+    makeDefaultV1014_MACRO_TestInputs({
+      replayWave49Export: {
+        round49Ready: false,
+        o10TaskId: 'O10-229',
+        waveRound: 47,
+        integrityBand: 'corrupt',
+        projectedLocHint: 1_800_000
+      }
+    })
+  );
+  record('R49-01', 'Wave 49 replay export not ready drags cycle', replay.cycleNudge <= -2, String(replay.cycleNudge));
+
+  const health = readMacroIntegrationHealthWave49ExportSpilloverFromV1025(
+    makeDefaultV1014_MACRO_TestInputs({
+      integrationHealthWave49Export: {
+        healthReady: false,
+        slotBand: 'red',
+        baselineSha: '73e5e01e',
+        projectedFunctionalLoc: 1_800_000
+      }
+    })
+  );
+  record('R49-02', 'Wave 49 integration health export not ready drags investment', health.investmentNudge <= -2, String(health.investmentNudge));
+
+  const integrated = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({
+      replayWave49Export: {
+        round49Ready: true,
+        o10TaskId: 'O10-229',
+        waveRound: 47,
+        integrityBand: 'sound',
+        projectedLocHint: 2_727_364
+      },
+      integrationHealthWave49Export: {
+        healthReady: true,
+        slotBand: 'latched',
+        baselineSha: '73e5e01e',
+        projectedFunctionalLoc: 2_727_364
+      }
+    }),
+    null,
+    null
+  );
+  record(
+    'R49-03',
+    'State exposes wave 49 replay export summary',
+    integrated.state.replayWave49ExportSpilloverSummary != null,
+    'ok'
+  );
+  record(
+    'R49-04',
+    'Transmission includes integration health wave 49 export layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.25_integration_health_wave49_export'),
+    'ok'
+  );
+  record(
+    'R49-05',
+    'Ninety-six transmission layers',
+    integrated.state.transmissionReport.layers.length === 98,
+    String(integrated.state.transmissionReport.layers.length)
+  );
+
+  const persistence = buildMacroTransmissionPersistenceSnapshot(integrated.state.transmissionReport);
+  record(
+    'R49-06',
+    'Transmission persistence finite',
+    Number.isFinite(persistence.persistenceIndex),
+    String(persistence.persistenceIndex)
+  );
+  record(
+    'R49-07',
+    'Transmission includes replay wave 49 export layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.24_replay_wave49_export'),
+    'ok'
+  );
+
+  const compare = compareMacroEconomyScenarios(
+    makeDefaultV1014_MACRO_TestInputs({ turn: 69 }),
+    [
+      {
+        id: 'replay_shock',
+        overlay: {
+          replayWave49Export: { round49Ready: false, o10TaskId: 'O10-229', waveRound: 49, integrityBand: 'corrupt' }
+        }
+      },
+      {
+        id: 'health_shock',
+        overlay: { integrationHealthWave49Export: { healthReady: false, slotBand: 'red', baselineSha: '73e5e01e' } }
+      }
+    ],
+    null,
+    null
+  );
+  const integration = rankMacroScenarioWave49Integration(compare);
+  record('R49-08', 'Wave 49 integration rank preserves row count', integration.length === 2, String(integration.length));
+  record(
+    'R49-09',
+    'Wave 49 integration ranks scenarios',
+    integration[0].integrationPriority >= 0,
+    integration.map(r => r.scenarioId).join('>')
+  );
+
+  const harness = runMacroEconomyRegressionHarness({
+    turns: 10,
+    scenarioId: 'wave49_replay_integration_stress',
+    includeWave49ReplayIntegrationStress: true
+  });
+  record(
+    'R49-10',
+    'Wave 49 replay/integration regression harness',
+    harness.allPassed,
+    harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: round50-self-tests.ts ---
+
+export function runAgent06Round50SelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const replay = readMacroReplayWave50ExportSpilloverFromV1024(
+    makeDefaultV1014_MACRO_TestInputs({
+      replayWave50Export: {
+        round50Ready: false,
+        o10TaskId: 'O10-231',
+        waveRound: 48,
+        integrityBand: 'corrupt',
+        projectedLocHint: 1_800_000
+      }
+    })
+  );
+  record('R50-01', 'Wave 50 replay export not ready drags cycle', replay.cycleNudge <= -2, String(replay.cycleNudge));
+
+  const health = readMacroIntegrationHealthWave50ExportSpilloverFromV1025(
+    makeDefaultV1014_MACRO_TestInputs({
+      integrationHealthWave50Export: {
+        healthReady: false,
+        slotBand: 'red',
+        baselineSha: '8aaaf700',
+        projectedFunctionalLoc: 1_800_000
+      }
+    })
+  );
+  record('R50-02', 'Wave 50 integration health export not ready drags investment', health.investmentNudge <= -2, String(health.investmentNudge));
+
+  const integrated = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({
+      replayWave50Export: {
+        round50Ready: true,
+        o10TaskId: 'O10-231',
+        waveRound: 50,
+        integrityBand: 'sound',
+        projectedLocHint: 2_771_207
+      },
+      integrationHealthWave50Export: {
+        healthReady: true,
+        slotBand: 'latched',
+        baselineSha: '8aaaf700',
+        projectedFunctionalLoc: 2_771_207
+      }
+    }),
+    null,
+    null
+  );
+  record(
+    'R50-03',
+    'State exposes wave 50 replay export summary',
+    integrated.state.replayWave50ExportSpilloverSummary != null,
+    'ok'
+  );
+  record(
+    'R50-04',
+    'Transmission includes integration health wave 50 export layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.25_integration_health_wave50_export'),
+    'ok'
+  );
+  record(
+    'R50-05',
+    'Ninety-six transmission layers',
+    integrated.state.transmissionReport.layers.length === 98,
+    String(integrated.state.transmissionReport.layers.length)
+  );
+
+  const persistence = buildMacroTransmissionPersistenceSnapshot(integrated.state.transmissionReport);
+  record(
+    'R50-06',
+    'Transmission persistence finite',
+    Number.isFinite(persistence.persistenceIndex),
+    String(persistence.persistenceIndex)
+  );
+  record(
+    'R50-07',
+    'Transmission includes replay wave 50 export layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.24_replay_wave50_export'),
+    'ok'
+  );
+
+  const compare = compareMacroEconomyScenarios(
+    makeDefaultV1014_MACRO_TestInputs({ turn: 70 }),
+    [
+      {
+        id: 'replay_shock',
+        overlay: {
+          replayWave50Export: { round50Ready: false, o10TaskId: 'O10-231', waveRound: 50, integrityBand: 'corrupt' }
+        }
+      },
+      {
+        id: 'health_shock',
+        overlay: { integrationHealthWave50Export: { healthReady: false, slotBand: 'red', baselineSha: '8aaaf700' } }
+      }
+    ],
+    null,
+    null
+  );
+  const integration = rankMacroScenarioWave50Integration(compare);
+  record('R50-08', 'Wave 50 integration rank preserves row count', integration.length === 2, String(integration.length));
+  record(
+    'R50-09',
+    'Wave 50 integration ranks scenarios',
+    integration[0].integrationPriority >= 0,
+    integration.map(r => r.scenarioId).join('>')
+  );
+
+  const harness = runMacroEconomyRegressionHarness({
+    turns: 10,
+    scenarioId: 'wave50_replay_integration_stress',
+    includeWave50ReplayIntegrationStress: true
+  });
+  record(
+    'R50-10',
+    'Wave 50 replay/integration regression harness',
+    harness.allPassed,
+    harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: round51-self-tests.ts ---
+
+export function runAgent06Round51SelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const replay = readMacroReplayWave51ExportSpilloverFromV1024(
+    makeDefaultV1014_MACRO_TestInputs({
+      replayWave51Export: {
+        round51Ready: false,
+        o10TaskId: 'O10-233',
+        waveRound: 48,
+        integrityBand: 'corrupt',
+        projectedLocHint: 1_800_000
+      }
+    })
+  );
+  record('R51-01', 'Wave 51 replay export not ready drags cycle', replay.cycleNudge <= -2, String(replay.cycleNudge));
+
+  const health = readMacroIntegrationHealthWave51ExportSpilloverFromV1025(
+    makeDefaultV1014_MACRO_TestInputs({
+      integrationHealthWave51Export: {
+        healthReady: false,
+        slotBand: 'red',
+        baselineSha: 'a32b2b15',
+        projectedFunctionalLoc: 1_800_000
+      }
+    })
+  );
+  record('R51-02', 'Wave 51 integration health export not ready drags investment', health.investmentNudge <= -2, String(health.investmentNudge));
+
+  const integrated = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({
+      replayWave51Export: {
+        round51Ready: true,
+        o10TaskId: 'O10-233',
+        waveRound: 51,
+        integrityBand: 'sound',
+        projectedLocHint: 2_887_600
+      },
+      integrationHealthWave51Export: {
+        healthReady: true,
+        slotBand: 'latched',
+        baselineSha: 'a32b2b15',
+        projectedFunctionalLoc: 2_887_600
+      }
+    }),
+    null,
+    null
+  );
+  record(
+    'R51-03',
+    'State exposes wave 51 replay export summary',
+    integrated.state.replayWave51ExportSpilloverSummary != null,
+    'ok'
+  );
+  record(
+    'R51-04',
+    'Transmission includes integration health wave 51 export layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.25_integration_health_wave51_export'),
+    'ok'
+  );
+  record(
+    'R51-05',
+    'Ninety-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 98,
+    String(integrated.state.transmissionReport.layers.length)
+  );
+
+  const persistence = buildMacroTransmissionPersistenceSnapshot(integrated.state.transmissionReport);
+  record(
+    'R51-06',
+    'Transmission persistence finite',
+    Number.isFinite(persistence.persistenceIndex),
+    String(persistence.persistenceIndex)
+  );
+  record(
+    'R51-07',
+    'Transmission includes replay wave 51 export layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.24_replay_wave51_export'),
+    'ok'
+  );
+
+  const compare = compareMacroEconomyScenarios(
+    makeDefaultV1014_MACRO_TestInputs({ turn: 70 }),
+    [
+      {
+        id: 'replay_shock',
+        overlay: {
+          replayWave51Export: { round51Ready: false, o10TaskId: 'O10-233', waveRound: 51, integrityBand: 'corrupt' }
+        }
+      },
+      {
+        id: 'health_shock',
+        overlay: { integrationHealthWave51Export: { healthReady: false, slotBand: 'red', baselineSha: 'a32b2b15' } }
+      }
+    ],
+    null,
+    null
+  );
+  const integration = rankMacroScenarioWave51Integration(compare);
+  record('R51-08', 'Wave 51 integration rank preserves row count', integration.length === 2, String(integration.length));
+  record(
+    'R51-09',
+    'Wave 51 integration ranks scenarios',
+    integration[0].integrationPriority >= 0,
+    integration.map(r => r.scenarioId).join('>')
+  );
+
+  const harness = runMacroEconomyRegressionHarness({
+    turns: 10,
+    scenarioId: 'wave51_replay_integration_stress',
+    includeWave51ReplayIntegrationStress: true
+  });
+  record(
+    'R51-10',
+    'Wave 51 replay/integration regression harness',
     harness.allPassed,
     harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
   );
@@ -22218,6 +23930,11 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
 
   const round50 = runAgent06Round50SelfTests();
   for (const r of round50.results) {
+    check(r.id, r.name, r.passed, r.detail);
+  }
+
+  const round51 = runAgent06Round51SelfTests();
+  for (const r of round51.results) {
     check(r.id, r.name, r.passed, r.detail);
   }
 

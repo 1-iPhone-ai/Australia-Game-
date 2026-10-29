@@ -1794,6 +1794,52 @@ export function evaluateMacroConsistencyGates(
       summary: 'Cohesive transmission persistence after wave 50 replay/integration export layers.'
     });
   }
+  const wave51Replay: any =
+    inputs.replayWave51Export ??
+    inputs.historyReplay?.wave51Export ??
+    inputs.replay?.wave51Export;
+  const round51Ready = Boolean(
+    wave51Replay?.round51Ready ?? wave51Replay?.payload?.round51Ready ?? wave51Replay?.exportReady
+  );
+  if (
+    wave51Replay &&
+    !round51Ready &&
+    (state.replaySpilloverSummary != null || state.replayWave51ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'replay_wave51_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'History replay wave 51 export not ready coincides with strained replay spillover.'
+    });
+  }
+  const wave51Health: any =
+    inputs.integrationHealthWave51Export ??
+    inputs.integrationHealth?.wave51Export ??
+    inputs.assembly?.integrationHealthWave51Export;
+  const wave51HealthReady = Boolean(
+    wave51Health?.healthReady ?? wave51Health?.round51Ready ?? wave51Health?.payload?.healthReady
+  );
+  if (
+    wave51Health &&
+    !wave51HealthReady &&
+    (state.integrationHealthSpilloverSummary != null || state.integrationHealthWave51ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'integration_health_wave51_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Integration health wave 51 export not ready coincides with strained integration health spillover.'
+    });
+  }
+  if (state.transmissionPersistence?.band === 'cohesive') {
+    gates.push({
+      id: 'transmission_persistence_cohesive_wave51',
+      triggered: true,
+      severity: 'info',
+      summary: 'Cohesive transmission persistence after wave 51 replay/integration export layers.'
+    });
+  }
   if (state.transmissionPersistence?.band === 'cohesive') {
     gates.push({
       id: 'transmission_persistence_cohesive',
