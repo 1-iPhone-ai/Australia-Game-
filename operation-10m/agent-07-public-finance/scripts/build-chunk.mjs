@@ -68,6 +68,10 @@ const FILES = [
   'grant-clawback-schedule/compute.ts',
   'budget-neutral-packages/types.ts',
   'budget-neutral-packages/compute.ts',
+  'infrastructure-fiscal-load/types.ts',
+  'infrastructure-fiscal-load/compute.ts',
+  'revenue-integrity-audit/types.ts',
+  'revenue-integrity-audit/compute.ts',
   'infrastructure-financing/types.ts',
   'infrastructure-financing/compute.ts',
   'recurring-commitments/types.ts',
@@ -139,7 +143,9 @@ const FILES = [
   'sovereign-credit-outlook/self-tests.ts',
   'debt-service-coverage/self-tests.ts',
   'grant-clawback-schedule/self-tests.ts',
-  'budget-neutral-packages/self-tests.ts'
+  'budget-neutral-packages/self-tests.ts',
+  'infrastructure-fiscal-load/self-tests.ts',
+  'revenue-integrity-audit/self-tests.ts'
 ];
 
 function stripModulePreamble(source) {

@@ -29,6 +29,8 @@ import { buildSovereignCreditOutlookReport } from '../sovereign-credit-outlook/c
 import { buildDebtServiceCoverageReport } from '../debt-service-coverage/compute';
 import { buildGrantClawbackScheduleReport } from '../grant-clawback-schedule/compute';
 import { buildBudgetNeutralPackagesReport } from '../budget-neutral-packages/compute';
+import { buildInfrastructureFiscalLoadReport } from '../infrastructure-fiscal-load/compute';
+import { buildRevenueIntegrityAuditReport } from '../revenue-integrity-audit/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -155,6 +157,9 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     infraSummary,
     actorCashProbe: 0
   });
+
+  const infrastructureFiscalLoad = buildInfrastructureFiscalLoadReport(turn, v1012, infraSummary, state.budget);
+  const revenueIntegrityAudit = buildRevenueIntegrityAuditReport(turn, v1012, ledger, taxPolicySensitivity);
 
   checks.push({
     id: 'CF01',
@@ -536,12 +541,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `offsets=${budgetNeutralPackages.aggregateOffsets}, portfolio=${spendingOffsets.aggregateOffsets}`
   });
 
+  checks.push({
+    id: 'CF53',
+    label: 'Infrastructure fiscal load within portfolio cap',
+    passed: infrastructureFiscalLoad.withinPortfolioLoadCap || v1012.pressure === 'critical',
+    detail: `ratio=${infrastructureFiscalLoad.loadToCapacityRatio}, service=${infrastructureFiscalLoad.aggregateServiceLoad}`
+  });
+
+  checks.push({
+    id: 'CF54',
+    label: 'Revenue integrity audit passes',
+    passed: revenueIntegrityAudit.allPassed || v1012.pressure === 'critical',
+    detail: `findings=${revenueIntegrityAudit.findings.filter(f => f.passed).length}/${revenueIntegrityAudit.findings.length}`
+  });
+
+  checks.push({
+    id: 'CF55',
+    label: 'Infra load feasible under consolidated envelope',
+    passed: infrastructureFiscalLoad.feasibleUnderEnvelope,
+    detail: `capital=${infrastructureFiscalLoad.aggregateCapital}, cap=${infrastructureFiscalLoad.envelopeCapacityPoints}`
+  });
+
+  checks.push({
+    id: 'CF56',
+    label: 'Revenue audit coherent with tax sensitivity',
+    passed: revenueIntegrityAudit.coherentWithTaxSensitivity,
+    detail: `gap=${revenueIntegrityAudit.aggregateDeltaGap}, uplift=${taxPolicySensitivity.modeledUpliftPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 50
+    layerCount: 54
   };
 }
