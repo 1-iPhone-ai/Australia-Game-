@@ -10,6 +10,15 @@ import { computeNationalWorkforceCapacityBridge } from './workforce-capacity-bri
 import { computeLaborResilienceScorecard } from './labor-resilience-scorecard';
 import { computeInterregionalLaborRebalancingPlan } from './interregional-labor-rebalancing';
 import { SKILLED_LABOR_PATHWAYS, lookupSkilledLaborPathway, pathwaysForIndustry } from './catalog/skilled-labor-pathways';
+import {
+  WORKFORCE_RETENTION_LEVERS,
+  lookupWorkforceRetentionLever,
+  retentionLeversForIndustry,
+  retentionPullForRegion
+} from './catalog/workforce-retention-levers';
+import { computeNationalDependencyRatioSnapshot } from './dependency-ratio-snapshot';
+import { computeNationalParticipationPressureBrief } from './participation-pressure-brief';
+import { computeNationalLaborMarketVelocityIndex } from './labor-market-velocity-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -332,6 +341,34 @@ export function runV1014LaborDemographicsSelfTests(): {
     'R416',
     computeLaborResilienceScorecard(r1.state, r1.state.integratedLaborBrief!, natBudget, bridgeOnly).band.length > 3,
     'resilience band string'
+  );
+
+  check('R501', WORKFORCE_RETENTION_LEVERS.length >= 8, 'retention lever catalog');
+  check('R502', Boolean(lookupWorkforceRetentionLever('retain_tech_nsw')?.narrative), 'retention lever lookup');
+  check('R503', retentionLeversForIndustry('mining').length >= 1, 'mining retention levers');
+  check('R504', retentionPullForRegion('WA', 'mining') > 0, 'regional retention pull');
+  check('R505', Boolean(r1.state.dependencyRatioSnapshot?.nationalBand), 'dependency snapshot on state');
+  check('R506', Object.keys(r1.state.dependencyRatioSnapshot?.regions ?? {}).length === 8, 'regional dependency rows');
+  check('R507', Boolean(r1.state.participationPressureBrief?.band), 'participation brief on state');
+  check(
+    'R508',
+    (rHhBad.state.participationPressureBrief?.participationIndex ?? 100) <=
+      (rHh.state.participationPressureBrief?.participationIndex ?? 0) + 8,
+    'household strain lowers participation'
+  );
+  check('R509', Boolean(r1.state.laborMarketVelocityIndex?.nationalBand), 'velocity index on state');
+  check('R510', detectLaborDemographicsQuery('participation outlook') === 'participation_outlook', 'GI participation detect');
+  check('R511', detectLaborDemographicsQuery('dependency ratio aging') === 'dependency_ratio', 'GI dependency detect');
+  check('R512', detectLaborDemographicsQuery('labor velocity churn') === 'labor_velocity', 'GI velocity detect');
+  check('R513', answerLaborDemographicsQuestion(r1.state, 'participation_outlook').headline.length > 5, 'GI participation answer');
+  const depOnly = computeNationalDependencyRatioSnapshot(r1.state.turn, r1.state.regions);
+  check('R514', depOnly.summary.length > 10, 'dependency standalone summary');
+  const velOnly = computeNationalLaborMarketVelocityIndex(r1.state.turn, r1.state.regions);
+  check('R515', velOnly.hottestRegion != null, 'velocity hottest region');
+  check(
+    'R516',
+    computeNationalParticipationPressureBrief(r1.state, r1.state.integratedLaborBrief!, depOnly).stewardNote.length > 8,
+    'participation steward note'
   );
 
   for (let i = 19; i <= 50; i++) {

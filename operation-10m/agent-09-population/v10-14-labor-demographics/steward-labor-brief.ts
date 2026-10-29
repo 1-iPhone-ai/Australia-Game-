@@ -32,6 +32,12 @@ export function buildStewardLaborBrief(
   if (state.laborResilienceScorecard?.band === 'fragile') {
     hints.push(state.laborResilienceScorecard.stewardNote);
   }
+  if (state.participationPressureBrief?.band === 'shrinking' || state.participationPressureBrief?.band === 'constrained') {
+    hints.push(state.participationPressureBrief.stewardNote);
+  }
+  if (state.laborMarketVelocityIndex?.nationalBand === 'volatile') {
+    hints.push('Volatile labor market velocity — avoid stacked auto commits until migration bands stabilize.');
+  }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
   }

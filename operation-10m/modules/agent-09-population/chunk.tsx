@@ -201,6 +201,9 @@ export interface NationalLaborDemographicsState {
   workforceCapacityBridge?: NationalWorkforceCapacityBridge;
   laborResilienceScorecard?: LaborResilienceScorecard;
   interregionalRebalancingPlan?: InterregionalLaborRebalancingPlan;
+  dependencyRatioSnapshot?: NationalDependencyRatioSnapshot;
+  participationPressureBrief?: NationalParticipationPressureBrief;
+  laborMarketVelocityIndex?: NationalLaborMarketVelocityIndex;
 }
 
 export type MigrationShockKind =
@@ -321,6 +324,54 @@ export interface LaborRebalancingMove {
 export interface InterregionalLaborRebalancingPlan {
   turn: number;
   moves: LaborRebalancingMove[];
+  summary: string;
+}
+
+export type DependencyRatioBand = 'youth_heavy' | 'balanced' | 'aging' | 'aged_pressure';
+
+export interface RegionalDependencyRatio {
+  regionId: string;
+  ratioIndex: number;
+  band: DependencyRatioBand;
+  narrative: string;
+}
+
+export interface NationalDependencyRatioSnapshot {
+  turn: number;
+  nationalRatioIndex: number;
+  nationalBand: DependencyRatioBand;
+  regions: Record<string, RegionalDependencyRatio>;
+  agedPressureRegions: string[];
+  summary: string;
+}
+
+export type ParticipationPressureBand = 'shrinking' | 'constrained' | 'stable' | 'expansionary';
+
+export interface NationalParticipationPressureBrief {
+  turn: number;
+  participationIndex: number;
+  band: ParticipationPressureBand;
+  headwinds: string[];
+  tailwinds: string[];
+  summary: string;
+  stewardNote: string;
+}
+
+export type LaborMarketVelocityBand = 'sluggish' | 'moderate' | 'active' | 'volatile';
+
+export interface RegionalLaborMarketVelocity {
+  regionId: string;
+  velocityIndex: number;
+  band: LaborMarketVelocityBand;
+  narrative: string;
+}
+
+export interface NationalLaborMarketVelocityIndex {
+  turn: number;
+  nationalVelocityIndex: number;
+  nationalBand: LaborMarketVelocityBand;
+  regions: Record<string, RegionalLaborMarketVelocity>;
+  hottestRegion: string | null;
   summary: string;
 }
 
@@ -1402,7 +1453,10 @@ export type LaborGiQueryTopic =
   | 'migration_shocks'
   | 'household_budget'
   | 'workforce_capacity'
-  | 'labor_resilience';
+  | 'labor_resilience'
+  | 'participation_outlook'
+  | 'dependency_ratio'
+  | 'labor_velocity';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -1419,9 +1473,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(wage|pay pressure|salary pressure)/.test(q)) return 'wage_pressure';
   if (/\b(migrat|inflow|outflow|relocate)/.test(q)) return 'migration_flow';
   if (/\b(employment link|jobs.*output|labor market tight)/.test(q)) return 'employment_linkage';
+  if (/\b(dependency ratio|aging dependency|aged pressure)/.test(q)) return 'dependency_ratio';
   if (/\b(demograph|aging|youth)/.test(q)) return 'demographics';
   if (/\b(workforce capacity|capacity gap|labor shortage)/.test(q)) return 'workforce_capacity';
   if (/\b(labor resilience|resilience score)/.test(q)) return 'labor_resilience';
+  if (/\b(participation|labor force participation)/.test(q)) return 'participation_outlook';
+  if (/\b(labor velocity|market churn|turnover pressure)/.test(q)) return 'labor_velocity';
   if (/\b(labor demo|workforce structure|v10\.14)/.test(q)) return 'national_summary';
   return null;
 }
@@ -1509,6 +1566,33 @@ export function answerLaborDemographicsQuestion(
           'No resilience dimensions.',
         inference: state.laborResilienceScorecard?.stewardNote || state.outlook,
         projection: 'Resilience blends shocks, budget, automation, and capacity margin.'
+      };
+    case 'participation_outlook':
+      return {
+        topic,
+        headline: state.participationPressureBrief?.summary || 'Participation outlook unavailable.',
+        fact: `Participation band ${state.participationPressureBrief?.band ?? 'unknown'}; index ${Math.round(state.participationPressureBrief?.participationIndex ?? 50)}.`,
+        inference:
+          state.participationPressureBrief?.headwinds.join(' ') ||
+          state.participationPressureBrief?.tailwinds.join(' ') ||
+          state.outlook,
+        projection: state.participationPressureBrief?.stewardNote || 'Participation indices are bounded — not literal LFPR.'
+      };
+    case 'dependency_ratio':
+      return {
+        topic,
+        headline: state.dependencyRatioSnapshot?.summary || 'Dependency snapshot unavailable.',
+        fact: `National dependency band ${state.dependencyRatioSnapshot?.nationalBand ?? 'unknown'}; aged-pressure regions: ${(state.dependencyRatioSnapshot?.agedPressureRegions ?? []).join(', ') || 'none'}.`,
+        inference: state.dependencyRatioSnapshot?.regions.NSW?.narrative || state.summary,
+        projection: 'Dependency indices proxy demographic structure — not census ratios.'
+      };
+    case 'labor_velocity':
+      return {
+        topic,
+        headline: state.laborMarketVelocityIndex?.summary || 'Labor velocity index unavailable.',
+        fact: `National velocity ${state.laborMarketVelocityIndex?.nationalBand ?? 'unknown'}; hottest region ${state.laborMarketVelocityIndex?.hottestRegion ?? 'n/a'}.`,
+        inference: state.laborMarketVelocityIndex?.regions.NSW?.narrative || state.outlook,
+        projection: 'Velocity blends migration and wage churn — not literal turnover counts.'
       };
     default:
       return {
@@ -1853,6 +1937,12 @@ export function buildStewardLaborBrief(
   }
   if (state.laborResilienceScorecard?.band === 'fragile') {
     hints.push(state.laborResilienceScorecard.stewardNote);
+  }
+  if (state.participationPressureBrief?.band === 'shrinking' || state.participationPressureBrief?.band === 'constrained') {
+    hints.push(state.participationPressureBrief.stewardNote);
+  }
+  if (state.laborMarketVelocityIndex?.nationalBand === 'volatile') {
+    hints.push('Volatile labor market velocity — avoid stacked auto commits until migration bands stabilize.');
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -2272,6 +2362,332 @@ export function computeInterregionalLaborRebalancingPlan(
     : 'No interregional rebalancing moves recommended this turn.';
 
   return { turn: state.turn, moves: top, summary };
+}
+
+
+// --- source: catalog/workforce-retention-levers.ts ---
+
+export type WorkforceRetentionLeverKind =
+  | 'housing_anchor'
+  | 'career_ladder'
+  | 'regional_incentive'
+  | 'automation_transition'
+  | 'essential_services';
+
+export interface WorkforceRetentionLever {
+  id: string;
+  kind: WorkforceRetentionLeverKind;
+  targetIndustry: StrategicIndustryKind;
+  hostRegions: readonly string[];
+  retentionStrength: number;
+  label: string;
+  narrative: string;
+}
+
+export const WORKFORCE_RETENTION_LEVERS: WorkforceRetentionLever[] = [
+  {
+    id: 'retain_mining_wa',
+    kind: 'housing_anchor',
+    targetIndustry: 'mining',
+    hostRegions: ['WA', 'QLD'],
+    retentionStrength: 0.74,
+    label: 'Resource housing anchor',
+    narrative: 'Camp-to-community transitions reduce fly-in churn when affordability indices improve.'
+  },
+  {
+    id: 'retain_tech_nsw',
+    kind: 'career_ladder',
+    targetIndustry: 'technology',
+    hostRegions: ['NSW', 'VIC'],
+    retentionStrength: 0.81,
+    label: 'Metro career ladder depth',
+    narrative: 'Skilled retention tracks output concentration without literal tenure counts.'
+  },
+  {
+    id: 'retain_health_act',
+    kind: 'essential_services',
+    targetIndustry: 'research',
+    hostRegions: ['ACT', 'NSW'],
+    retentionStrength: 0.68,
+    label: 'Policy-research retention loop',
+    narrative: 'Research adjacency stabilizes specialized labor bands in capital corridors.'
+  },
+  {
+    id: 'retain_agri_sa',
+    kind: 'regional_incentive',
+    targetIndustry: 'agriculture',
+    hostRegions: ['SA', 'TAS', 'VIC'],
+    retentionStrength: 0.58,
+    label: 'Regional agri stay incentives',
+    narrative: 'Seasonal depth scores benefit from bounded regional incentive indices.'
+  },
+  {
+    id: 'retain_energy_nt',
+    kind: 'automation_transition',
+    targetIndustry: 'energy',
+    hostRegions: ['NT', 'QLD', 'WA'],
+    retentionStrength: 0.71,
+    label: 'Frontier energy transition pack',
+    narrative: 'Automation transition packs reduce strain-driven outflow in energy frontiers.'
+  },
+  {
+    id: 'retain_manufacturing_vic',
+    kind: 'career_ladder',
+    targetIndustry: 'manufacturing',
+    hostRegions: ['VIC', 'SA'],
+    retentionStrength: 0.63,
+    label: 'Manufacturing skills depth',
+    narrative: 'Output-linked retention offsets wage pressure in industrial corridors.'
+  },
+  {
+    id: 'retain_tourism_qld',
+    kind: 'regional_incentive',
+    targetIndustry: 'tourism',
+    hostRegions: ['QLD', 'TAS', 'NSW'],
+    retentionStrength: 0.55,
+    label: 'Tourism seasonal retention',
+    narrative: 'Service-sector retention moderates migration volatility in coastal hubs.'
+  },
+  {
+    id: 'retain_trade_sa',
+    kind: 'essential_services',
+    targetIndustry: 'trade',
+    hostRegions: ['SA', 'WA'],
+    retentionStrength: 0.77,
+    label: 'Trade logistics anchor',
+    narrative: 'Long-cycle trade output supports stable employment linkage bands.'
+  }
+];
+
+export function lookupWorkforceRetentionLever(id: string): WorkforceRetentionLever | undefined {
+  return WORKFORCE_RETENTION_LEVERS.find(l => l.id === id);
+}
+
+export function retentionLeversForIndustry(industry: StrategicIndustryKind): WorkforceRetentionLever[] {
+  return WORKFORCE_RETENTION_LEVERS.filter(l => l.targetIndustry === industry);
+}
+
+export function retentionPullForRegion(
+  regionId: string,
+  dominantIndustry: StrategicIndustryKind | null | undefined
+): number {
+  if (!dominantIndustry) return 0;
+  const matches = WORKFORCE_RETENTION_LEVERS.filter(
+    l => l.targetIndustry === dominantIndustry && l.hostRegions.includes(regionId)
+  );
+  if (!matches.length) return 0;
+  return matches.reduce((a, l) => a + l.retentionStrength, 0) / matches.length;
+}
+
+
+// --- source: dependency-ratio-snapshot.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type DependencyRatioBand,
+  type LaborDemographicsRegionSnapshot,
+  type NationalDependencyRatioSnapshot
+} from './types';
+
+function dependencyBand(ratioIndex: number): DependencyRatioBand {
+  if (ratioIndex <= 42) return 'youth_heavy';
+  if (ratioIndex <= 55) return 'balanced';
+  if (ratioIndex <= 68) return 'aging';
+  return 'aged_pressure';
+}
+
+function regionalRatioIndex(region: LaborDemographicsRegionSnapshot): number {
+  const baseline = lookupRegionalLaborBaseline(region.regionId);
+  const inertia = baseline?.demographicInertia ?? 50;
+  const agingPull = 100 - region.demographicScore;
+  const strainPull = region.workforceStrainIndex * 0.25;
+  const retentionEase = retentionPullForRegion(region.regionId, region.dominantIndustry) * 18;
+  return v1014laborClamp(inertia * 0.35 + agingPull * 0.45 + strainPull - retentionEase);
+}
+
+export function computeNationalDependencyRatioSnapshot(
+  turn: number,
+  regions: Record<string, LaborDemographicsRegionSnapshot>
+): NationalDependencyRatioSnapshot {
+  const regional: NationalDependencyRatioSnapshot['regions'] = {};
+  const samples: number[] = [];
+
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    const r = regions[regionId];
+    if (!r) return;
+    const ratioIndex = regionalRatioIndex(r);
+    const band = dependencyBand(ratioIndex);
+    samples.push(ratioIndex);
+    regional[regionId] = {
+      regionId,
+      ratioIndex,
+      band,
+      narrative: `${regionId} dependency ${band.replace('_', ' ')} (index ${Math.round(ratioIndex)}).`
+    };
+  });
+
+  const nationalRatioIndex = v1014laborClamp(
+    samples.reduce((a, b) => a + b, 0) / Math.max(1, samples.length)
+  );
+  const nationalBand = dependencyBand(nationalRatioIndex);
+  const agedRegions = Object.values(regional)
+    .filter(x => x.band === 'aged_pressure' || x.band === 'aging')
+    .map(x => x.regionId);
+
+  return {
+    turn,
+    nationalRatioIndex,
+    nationalBand,
+    regions: regional,
+    agedPressureRegions: agedRegions.slice(0, 4),
+    summary: `Dependency structure ${nationalBand.replace('_', ' ')} nationally (index ${Math.round(nationalRatioIndex)}); ${agedRegions.length} region(s) under aging pressure.`
+  };
+}
+
+
+// --- source: participation-pressure-brief.ts ---
+  IntegratedLaborMarketBrief,
+  NationalDependencyRatioSnapshot,
+  NationalLaborDemographicsState,
+  NationalParticipationPressureBrief,
+  ParticipationPressureBand
+} from './types';
+
+function participationBand(score: number): ParticipationPressureBand {
+  if (score >= 68) return 'expansionary';
+  if (score >= 52) return 'stable';
+  if (score >= 38) return 'constrained';
+  return 'shrinking';
+}
+
+export function computeNationalParticipationPressureBrief(
+  state: NationalLaborDemographicsState,
+  brief: IntegratedLaborMarketBrief | null | undefined,
+  dependency: NationalDependencyRatioSnapshot | null | undefined
+): NationalParticipationPressureBrief {
+  if (!state.enabled || !brief) {
+    return {
+      turn: state.turn,
+      participationIndex: 50,
+      band: 'stable',
+      headwinds: [],
+      tailwinds: [],
+      summary: 'Participation outlook idle — labor layer off.',
+      stewardNote: 'Enable labor demographics before participation guidance.'
+    };
+  }
+
+  const automationDrag = (state.regions.NSW?.automationPressureIndex ?? 50) * 0.22;
+  const dependencyDrag =
+    dependency?.nationalBand === 'aged_pressure'
+      ? 14
+      : dependency?.nationalBand === 'aging'
+        ? 8
+        : 0;
+  const strainDrag = brief.compositePressureIndex * 0.35;
+  const linkageLift = state.employmentLinkageScore * 0.4;
+  const migrationLift = state.migrationFlowScore * 0.12;
+
+  const participationIndex = v1014laborClamp(
+    50 + linkageLift + migrationLift - automationDrag - dependencyDrag - strainDrag * 0.5
+  );
+  const band = participationBand(participationIndex);
+
+  const headwinds: string[] = [];
+  const tailwinds: string[] = [];
+  if (dependencyDrag >= 8) headwinds.push('Aging dependency structure weighs on participation indices.');
+  if (automationDrag >= 12) headwinds.push('Automation pressure caps near-term participation expansion.');
+  if (brief.pressureBand === 'critical' || brief.pressureBand === 'elevated') {
+    headwinds.push('Composite labor pressure constrains participation upside.');
+  }
+  if (state.employmentLinkageScore >= 58) tailwinds.push('Strong employment linkage supports participation depth.');
+  if (state.nationalMigrationFlow === 'inflow' || state.nationalMigrationFlow === 'strong_inflow') {
+    tailwinds.push('Migration inflow bands add participation tailwind (bounded).');
+  }
+  if (state.workforceCapacityBridge?.nationalBand === 'surplus') {
+    tailwinds.push('Workforce capacity surplus eases participation constraints.');
+  }
+
+  const stewardNote =
+    band === 'shrinking' || band === 'constrained'
+      ? 'Participation constrained — prioritize retention levers and affordability before automation stacks.'
+      : band === 'expansionary'
+        ? 'Participation expansionary — monitor strain hubs so growth does not outrun capacity.'
+        : 'Participation stable — maintain corridor balance and household cushion.';
+
+  return {
+    turn: state.turn,
+    participationIndex,
+    band,
+    headwinds: headwinds.slice(0, 3),
+    tailwinds: tailwinds.slice(0, 3),
+    summary: `Participation ${band} (index ${Math.round(participationIndex)}); ${headwinds.length ? headwinds[0] : tailwinds[0] ?? 'mixed signals'}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: labor-market-velocity-index.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type LaborDemographicsRegionSnapshot,
+  type LaborMarketVelocityBand,
+  type NationalLaborMarketVelocityIndex,
+  type RegionalLaborMarketVelocity
+} from './types';
+
+function velocityBand(index: number): LaborMarketVelocityBand {
+  if (index <= 38) return 'sluggish';
+  if (index <= 52) return 'moderate';
+  if (index <= 65) return 'active';
+  return 'volatile';
+}
+
+function regionalVelocity(region: LaborDemographicsRegionSnapshot): number {
+  const migrationChurn = Math.abs(region.migrationFlowScore - 50) * 0.85;
+  const wageChurn = Math.abs(region.wagePressureScore - 50) * 0.55;
+  const strainChurn = region.workforceStrainIndex * 0.35;
+  const stabilityEase = region.householdEmploymentFit * 0.2;
+  return v1014laborClamp(migrationChurn + wageChurn + strainChurn - stabilityEase + 25);
+}
+
+export function computeNationalLaborMarketVelocityIndex(
+  turn: number,
+  regions: Record<string, LaborDemographicsRegionSnapshot>
+): NationalLaborMarketVelocityIndex {
+  const regional: Record<string, RegionalLaborMarketVelocity> = {};
+  const samples: number[] = [];
+  let maxVel = -1;
+  let hottestRegion: string | null = null;
+
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    const r = regions[regionId];
+    if (!r) return;
+    const velocityIndex = regionalVelocity(r);
+    const band = velocityBand(velocityIndex);
+    samples.push(velocityIndex);
+    if (velocityIndex > maxVel) {
+      maxVel = velocityIndex;
+      hottestRegion = regionId;
+    }
+    regional[regionId] = {
+      regionId,
+      velocityIndex,
+      band,
+      narrative: `${regionId} labor velocity ${band} (index ${Math.round(velocityIndex)}).`
+    };
+  });
+
+  const nationalVelocityIndex = v1014laborClamp(
+    samples.reduce((a, b) => a + b, 0) / Math.max(1, samples.length)
+  );
+  const nationalBand = velocityBand(nationalVelocityIndex);
+
+  return {
+    turn,
+    nationalVelocityIndex,
+    nationalBand,
+    regions: regional,
+    hottestRegion,
+    summary: `Labor market velocity ${nationalBand} nationally (index ${Math.round(nationalVelocityIndex)}); ${hottestRegion ?? 'n/a'} most active.`
+  };
 }
 
 
@@ -2774,11 +3190,25 @@ export function computeNationalLaborDemographics(
     integratedBrief,
     capacityBridge
   );
+  const dependencySnapshot = computeNationalDependencyRatioSnapshot(turn, regions);
+  state.dependencyRatioSnapshot = dependencySnapshot;
+  state.participationPressureBrief = computeNationalParticipationPressureBrief(
+    state,
+    integratedBrief,
+    dependencySnapshot
+  );
+  state.laborMarketVelocityIndex = computeNationalLaborMarketVelocityIndex(turn, regions);
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
   if (state.laborResilienceScorecard.stewardNote && state.evidence.length < V1014_LABOR_LIMITS.maxEvidence) {
     state.evidence.push(state.laborResilienceScorecard.stewardNote.slice(0, 120));
+  }
+  if (state.participationPressureBrief.summary && state.evidence.length < V1014_LABOR_LIMITS.maxEvidence) {
+    state.evidence.push(state.participationPressureBrief.summary.slice(0, 120));
+  }
+  if (state.laborMarketVelocityIndex.nationalBand === 'volatile' && state.evidence.length < V1014_LABOR_LIMITS.maxEvidence) {
+    state.evidence.push(state.laborMarketVelocityIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -2798,6 +3228,11 @@ export function computeNationalLaborDemographics(
 
 
 // --- source: self-tests.ts ---
+  WORKFORCE_RETENTION_LEVERS,
+  lookupWorkforceRetentionLever,
+  retentionLeversForIndustry,
+  retentionPullForRegion
+} from './catalog/workforce-retention-levers';
   STRATEGIC_INDUSTRIES,
   V1014_LABOR_CORE_REGIONS,
   V1014_LABOR_INDUSTRY_LABOR_WEIGHT,
@@ -3110,6 +3545,34 @@ export function runV1014LaborDemographicsSelfTests(): {
     'R416',
     computeLaborResilienceScorecard(r1.state, r1.state.integratedLaborBrief!, natBudget, bridgeOnly).band.length > 3,
     'resilience band string'
+  );
+
+  check('R501', WORKFORCE_RETENTION_LEVERS.length >= 8, 'retention lever catalog');
+  check('R502', Boolean(lookupWorkforceRetentionLever('retain_tech_nsw')?.narrative), 'retention lever lookup');
+  check('R503', retentionLeversForIndustry('mining').length >= 1, 'mining retention levers');
+  check('R504', retentionPullForRegion('WA', 'mining') > 0, 'regional retention pull');
+  check('R505', Boolean(r1.state.dependencyRatioSnapshot?.nationalBand), 'dependency snapshot on state');
+  check('R506', Object.keys(r1.state.dependencyRatioSnapshot?.regions ?? {}).length === 8, 'regional dependency rows');
+  check('R507', Boolean(r1.state.participationPressureBrief?.band), 'participation brief on state');
+  check(
+    'R508',
+    (rHhBad.state.participationPressureBrief?.participationIndex ?? 100) <=
+      (rHh.state.participationPressureBrief?.participationIndex ?? 0) + 8,
+    'household strain lowers participation'
+  );
+  check('R509', Boolean(r1.state.laborMarketVelocityIndex?.nationalBand), 'velocity index on state');
+  check('R510', detectLaborDemographicsQuery('participation outlook') === 'participation_outlook', 'GI participation detect');
+  check('R511', detectLaborDemographicsQuery('dependency ratio aging') === 'dependency_ratio', 'GI dependency detect');
+  check('R512', detectLaborDemographicsQuery('labor velocity churn') === 'labor_velocity', 'GI velocity detect');
+  check('R513', answerLaborDemographicsQuestion(r1.state, 'participation_outlook').headline.length > 5, 'GI participation answer');
+  const depOnly = computeNationalDependencyRatioSnapshot(r1.state.turn, r1.state.regions);
+  check('R514', depOnly.summary.length > 10, 'dependency standalone summary');
+  const velOnly = computeNationalLaborMarketVelocityIndex(r1.state.turn, r1.state.regions);
+  check('R515', velOnly.hottestRegion != null, 'velocity hottest region');
+  check(
+    'R516',
+    computeNationalParticipationPressureBrief(r1.state, r1.state.integratedLaborBrief!, depOnly).stewardNote.length > 8,
+    'participation steward note'
   );
 
   for (let i = 19; i <= 50; i++) {

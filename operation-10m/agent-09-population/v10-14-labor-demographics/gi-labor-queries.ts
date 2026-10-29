@@ -15,7 +15,10 @@ export type LaborGiQueryTopic =
   | 'migration_shocks'
   | 'household_budget'
   | 'workforce_capacity'
-  | 'labor_resilience';
+  | 'labor_resilience'
+  | 'participation_outlook'
+  | 'dependency_ratio'
+  | 'labor_velocity';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -32,9 +35,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(wage|pay pressure|salary pressure)/.test(q)) return 'wage_pressure';
   if (/\b(migrat|inflow|outflow|relocate)/.test(q)) return 'migration_flow';
   if (/\b(employment link|jobs.*output|labor market tight)/.test(q)) return 'employment_linkage';
+  if (/\b(dependency ratio|aging dependency|aged pressure)/.test(q)) return 'dependency_ratio';
   if (/\b(demograph|aging|youth)/.test(q)) return 'demographics';
   if (/\b(workforce capacity|capacity gap|labor shortage)/.test(q)) return 'workforce_capacity';
   if (/\b(labor resilience|resilience score)/.test(q)) return 'labor_resilience';
+  if (/\b(participation|labor force participation)/.test(q)) return 'participation_outlook';
+  if (/\b(labor velocity|market churn|turnover pressure)/.test(q)) return 'labor_velocity';
   if (/\b(labor demo|workforce structure|v10\.14)/.test(q)) return 'national_summary';
   return null;
 }
@@ -122,6 +128,33 @@ export function answerLaborDemographicsQuestion(
           'No resilience dimensions.',
         inference: state.laborResilienceScorecard?.stewardNote || state.outlook,
         projection: 'Resilience blends shocks, budget, automation, and capacity margin.'
+      };
+    case 'participation_outlook':
+      return {
+        topic,
+        headline: state.participationPressureBrief?.summary || 'Participation outlook unavailable.',
+        fact: `Participation band ${state.participationPressureBrief?.band ?? 'unknown'}; index ${Math.round(state.participationPressureBrief?.participationIndex ?? 50)}.`,
+        inference:
+          state.participationPressureBrief?.headwinds.join(' ') ||
+          state.participationPressureBrief?.tailwinds.join(' ') ||
+          state.outlook,
+        projection: state.participationPressureBrief?.stewardNote || 'Participation indices are bounded — not literal LFPR.'
+      };
+    case 'dependency_ratio':
+      return {
+        topic,
+        headline: state.dependencyRatioSnapshot?.summary || 'Dependency snapshot unavailable.',
+        fact: `National dependency band ${state.dependencyRatioSnapshot?.nationalBand ?? 'unknown'}; aged-pressure regions: ${(state.dependencyRatioSnapshot?.agedPressureRegions ?? []).join(', ') || 'none'}.`,
+        inference: state.dependencyRatioSnapshot?.regions.NSW?.narrative || state.summary,
+        projection: 'Dependency indices proxy demographic structure — not census ratios.'
+      };
+    case 'labor_velocity':
+      return {
+        topic,
+        headline: state.laborMarketVelocityIndex?.summary || 'Labor velocity index unavailable.',
+        fact: `National velocity ${state.laborMarketVelocityIndex?.nationalBand ?? 'unknown'}; hottest region ${state.laborMarketVelocityIndex?.hottestRegion ?? 'n/a'}.`,
+        inference: state.laborMarketVelocityIndex?.regions.NSW?.narrative || state.outlook,
+        projection: 'Velocity blends migration and wage churn — not literal turnover counts.'
       };
     default:
       return {

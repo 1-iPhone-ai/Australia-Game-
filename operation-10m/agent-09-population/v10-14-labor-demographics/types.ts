@@ -197,6 +197,9 @@ export interface NationalLaborDemographicsState {
   workforceCapacityBridge?: NationalWorkforceCapacityBridge;
   laborResilienceScorecard?: LaborResilienceScorecard;
   interregionalRebalancingPlan?: InterregionalLaborRebalancingPlan;
+  dependencyRatioSnapshot?: NationalDependencyRatioSnapshot;
+  participationPressureBrief?: NationalParticipationPressureBrief;
+  laborMarketVelocityIndex?: NationalLaborMarketVelocityIndex;
 }
 
 export type MigrationShockKind =
@@ -317,6 +320,54 @@ export interface LaborRebalancingMove {
 export interface InterregionalLaborRebalancingPlan {
   turn: number;
   moves: LaborRebalancingMove[];
+  summary: string;
+}
+
+export type DependencyRatioBand = 'youth_heavy' | 'balanced' | 'aging' | 'aged_pressure';
+
+export interface RegionalDependencyRatio {
+  regionId: string;
+  ratioIndex: number;
+  band: DependencyRatioBand;
+  narrative: string;
+}
+
+export interface NationalDependencyRatioSnapshot {
+  turn: number;
+  nationalRatioIndex: number;
+  nationalBand: DependencyRatioBand;
+  regions: Record<string, RegionalDependencyRatio>;
+  agedPressureRegions: string[];
+  summary: string;
+}
+
+export type ParticipationPressureBand = 'shrinking' | 'constrained' | 'stable' | 'expansionary';
+
+export interface NationalParticipationPressureBrief {
+  turn: number;
+  participationIndex: number;
+  band: ParticipationPressureBand;
+  headwinds: string[];
+  tailwinds: string[];
+  summary: string;
+  stewardNote: string;
+}
+
+export type LaborMarketVelocityBand = 'sluggish' | 'moderate' | 'active' | 'volatile';
+
+export interface RegionalLaborMarketVelocity {
+  regionId: string;
+  velocityIndex: number;
+  band: LaborMarketVelocityBand;
+  narrative: string;
+}
+
+export interface NationalLaborMarketVelocityIndex {
+  turn: number;
+  nationalVelocityIndex: number;
+  nationalBand: LaborMarketVelocityBand;
+  regions: Record<string, RegionalLaborMarketVelocity>;
+  hottestRegion: string | null;
   summary: string;
 }
 
