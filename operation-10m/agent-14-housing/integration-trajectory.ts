@@ -20,7 +20,7 @@ function publishSample(brief: WellbeingIntegrationHandoffBrief): number {
 
 export function createInitialIntegrationTrajectory(): IntegrationTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.25-scale-wave-25' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.26-scale-wave-26' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     integrationReadinessEma: 50,
@@ -41,7 +41,7 @@ export function sanitizeIntegrationTrajectory(
       ? Math.max(0, Math.min(100, raw.integrationReadinessEma))
       : 50;
   return {
-    schemaVersion: '10.14.25-scale-wave-25' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.26-scale-wave-26' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     integrationReadinessEma,
