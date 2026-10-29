@@ -15,3 +15,6 @@ export { CoachDismissalBackoffBanner } from './CoachDismissalBackoffBanner.js';
 export { LandmarkSkipLinksStrip } from './LandmarkSkipLinksStrip.js';
 export { AnnouncementDedupStatusBanner } from './AnnouncementDedupStatusBanner.js';
 export { ModalFocusRestoreStrip } from './ModalFocusRestoreStrip.js';
+export { MotionTimingChromeRoot } from './MotionTimingChromeRoot.js';
+export { PacedAnnouncementStatusStrip } from './PacedAnnouncementStatusStrip.js';
+export { KeyboardShortcutConflictBanner } from './KeyboardShortcutConflictBanner.js';

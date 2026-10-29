@@ -48,6 +48,9 @@ const FILES = [
   'engine/announcement-dedup-ledger.ts',
   'engine/modal-focus-restoration.ts',
   'engine/attention-surface-gate.ts',
+  'engine/paced-announcement-scheduler.ts',
+  'engine/keyboard-shortcut-conflict-guard.ts',
+  'engine/live-region-priority-queue.ts',
   'engine/legacy-access.ts',
   'engine/merge-with-v94-contextual-hiding.ts',
   'engine/progression-coach.ts',
@@ -58,6 +61,7 @@ const FILES = [
   'engine/round6-self-tests.ts',
   'engine/round7-self-tests.ts',
   'engine/round8-self-tests.ts',
+  'engine/round9-self-tests.ts',
   'a11y/aria-builders.ts',
   'a11y/focus-management.ts',
   'a11y/live-region-controller.ts',
@@ -81,6 +85,9 @@ const FILES = [
   'react/LandmarkSkipLinksStrip.tsx',
   'react/AnnouncementDedupStatusBanner.tsx',
   'react/ModalFocusRestoreStrip.tsx',
+  'react/MotionTimingChromeRoot.tsx',
+  'react/PacedAnnouncementStatusStrip.tsx',
+  'react/KeyboardShortcutConflictBanner.tsx',
 ];
 
 function stripModulePreamble(source) {
@@ -122,7 +129,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.8.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.9.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -205,6 +212,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
     check(\`agent22_round8_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
+  const round9 = runAgent22Round9SelfTests();
+  for (const r of round9.results) {
+    check(\`agent22_round9_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
   const failed = results.filter(r => !r.passed).length;
   return {
     passed: results.length - failed,
@@ -231,7 +243,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.8.0',
+  moduleVersion: '1.9.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),

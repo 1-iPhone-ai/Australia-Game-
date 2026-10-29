@@ -24,6 +24,11 @@ export function SimulationUiEvolutionBridge({
           Held back {suppressedAnnouncementCount} repeated announcements
         </div>
       ) : null}
+      {result.deferredCoachAnnouncementCount > 0 ? (
+        <div data-testid="sim-ui-evolution-pacing-count">
+          Staggered {result.deferredCoachAnnouncementCount} coach announcements
+        </div>
+      ) : null}
       {result.coachAnnouncements.slice(0, 3).map((line, i) => (
         <div key={i}>{line}</div>
       ))}

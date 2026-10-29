@@ -8,6 +8,12 @@ import {
   filterDedupedAnnouncements,
   mergeAnnouncementDedupLedgerIntoPersisted,
 } from '../engine/announcement-dedup-ledger.js';
+import { DEFAULT_ACCESSIBILITY_SNAPSHOT } from '../types/accessibility.js';
+import { resolveUiDensityProfile } from '../engine/ui-density-progression.js';
+import {
+  buildPacedAnnouncementSchedule,
+  mergePacingDeferredIntoPersisted,
+} from '../engine/paced-announcement-scheduler.js';
 
 /** Persisted slice proposed for `gameSettings.evolvingUi` (assembly-owned). */
 export interface EvolvingUiPersistedState {
@@ -26,12 +32,15 @@ export interface EvolvingUiPersistedState {
   coachDismissalQuietUntilDay?: number;
   /** announcement hash → last game day announced */
   announcementDedupLedger?: Record<string, number>;
+  /** coach lines waiting for staggered live-region delivery */
+  announcementPacingDeferredCount?: number;
 }
 
 export interface DayAdvanceUiEvolutionResult {
   gameDay: number;
   newlyUnlockedPanelIds: string[];
   coachAnnouncements: string[];
+  deferredCoachAnnouncementCount: number;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -116,11 +125,28 @@ export function tickEvolvingUiOnDayAdvance(
     deduped.ledger
   );
 
+  const density = resolveUiDensityProfile({
+    interfaceLevel: nextSignals.interfaceLevel,
+    preferredTier: persisted.preferredDensity ?? null,
+    textScaleMultiplier: DEFAULT_ACCESSIBILITY_SNAPSHOT.textScaleMultiplier,
+  });
+  const pacing = buildPacedAnnouncementSchedule(
+    deduped.freshAnnouncements,
+    DEFAULT_ACCESSIBILITY_SNAPSHOT,
+    density
+  );
+
+  const updatedPersistedWithPacing = mergePacingDeferredIntoPersisted(
+    updatedPersistedWithDedup,
+    pacing.deferredCount
+  );
+
   return {
     gameDay: nextSignals.gameDay,
     newlyUnlockedPanelIds,
-    coachAnnouncements: deduped.freshAnnouncements,
-    updatedPersisted: updatedPersistedWithDedup,
+    coachAnnouncements: pacing.immediateAnnouncements,
+    deferredCoachAnnouncementCount: pacing.deferredCount,
+    updatedPersisted: updatedPersistedWithPacing,
     visiblePanelCount,
   };
 }

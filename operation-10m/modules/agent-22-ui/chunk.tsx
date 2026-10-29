@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 2f6009b7eadb185c
+// content-sha256-prefix: 17636dd38dc974c6
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -853,12 +853,15 @@ export interface EvolvingUiPersistedState {
   coachDismissalQuietUntilDay?: number;
   /** announcement hash → last game day announced */
   announcementDedupLedger?: Record<string, number>;
+  /** coach lines waiting for staggered live-region delivery */
+  announcementPacingDeferredCount?: number;
 }
 
 export interface DayAdvanceUiEvolutionResult {
   gameDay: number;
   newlyUnlockedPanelIds: string[];
   coachAnnouncements: string[];
+  deferredCoachAnnouncementCount: number;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -943,11 +946,28 @@ export function tickEvolvingUiOnDayAdvance(
     deduped.ledger
   );
 
+  const density = resolveUiDensityProfile({
+    interfaceLevel: nextSignals.interfaceLevel,
+    preferredTier: persisted.preferredDensity ?? null,
+    textScaleMultiplier: DEFAULT_ACCESSIBILITY_SNAPSHOT.textScaleMultiplier,
+  });
+  const pacing = buildPacedAnnouncementSchedule(
+    deduped.freshAnnouncements,
+    DEFAULT_ACCESSIBILITY_SNAPSHOT,
+    density
+  );
+
+  const updatedPersistedWithPacing = mergePacingDeferredIntoPersisted(
+    updatedPersistedWithDedup,
+    pacing.deferredCount
+  );
+
   return {
     gameDay: nextSignals.gameDay,
     newlyUnlockedPanelIds,
-    coachAnnouncements: deduped.freshAnnouncements,
-    updatedPersisted: updatedPersistedWithDedup,
+    coachAnnouncements: pacing.immediateAnnouncements,
+    deferredCoachAnnouncementCount: pacing.deferredCount,
+    updatedPersisted: updatedPersistedWithPacing,
     visiblePanelCount,
   };
 }
@@ -2729,6 +2749,172 @@ export function attentionDeferralCopy(deferredIds: AttentionSurfaceId[]): string
   return `${deferredIds.length} coaching surfaces are waiting until attention budget frees up.`;
 }
 
+// --- source: engine/paced-announcement-scheduler.ts ---
+export interface PacedAnnouncementSchedule {
+  /** Announcements safe to fire immediately (first batch). */
+  immediateAnnouncements: string[];
+  /** Remaining lines deferred to later ticks / host scheduler. */
+  deferredAnnouncements: string[];
+  deferredCount: number;
+  batches: PacedAnnouncementBatch[];
+}
+
+export function buildPacedAnnouncementSchedule(
+  announcements: string[],
+  accessibility: AccessibilitySettingsSnapshot,
+  density: UiDensityProfile
+): PacedAnnouncementSchedule {
+  const motion = resolveMotionTimingProfile(accessibility, density);
+  const batches = paceUnlockAnnouncements(announcements, {
+    reducedMotion: accessibility.reducedMotion,
+    announceVerbosity: accessibility.announceVerbosity,
+    motionTiming: motion,
+    allowAssertiveLead: accessibility.announceVerbosity === 'assertive',
+  });
+
+  if (!batches.length) {
+    return {
+      immediateAnnouncements: [],
+      deferredAnnouncements: [],
+      deferredCount: announcements.length,
+      batches: [],
+    };
+  }
+
+  const immediateAnnouncements = [...batches[0].items];
+  const deferredAnnouncements = flattenPacedAnnouncements(batches.slice(1));
+
+  return {
+    immediateAnnouncements,
+    deferredAnnouncements,
+    deferredCount: deferredAnnouncements.length,
+    batches,
+  };
+}
+
+export function pacingStatusCopy(deferredCount: number): string | null {
+  if (deferredCount <= 0) return null;
+  const noun = deferredCount === 1 ? 'announcement' : 'announcements';
+  return `${deferredCount} coach ${noun} queued for staggered screen reader delivery.`;
+}
+
+export function mergePacingDeferredIntoPersisted<T extends { announcementPacingDeferredCount?: number }>(
+  persisted: T,
+  deferredCount: number
+): T {
+  return {
+    ...persisted,
+    announcementPacingDeferredCount: Math.max(0, deferredCount),
+  };
+}
+
+// --- source: engine/keyboard-shortcut-conflict-guard.ts ---
+export interface KeyboardShortcutConflict {
+  keys: string;
+  shortcutIds: string[];
+  actionLabels: string[];
+}
+
+export function detectKeyboardShortcutConflicts(
+  shortcuts: KeyboardShortcutDefinition[]
+): KeyboardShortcutConflict[] {
+  const byKeys = new Map<string, KeyboardShortcutDefinition[]>();
+  for (const shortcut of shortcuts) {
+    const normalized = shortcut.keys.trim().toLowerCase();
+    const bucket = byKeys.get(normalized) ?? [];
+    bucket.push(shortcut);
+    byKeys.set(normalized, bucket);
+  }
+
+  const conflicts: KeyboardShortcutConflict[] = [];
+  for (const [keys, defs] of byKeys) {
+    if (defs.length < 2) continue;
+    conflicts.push({
+      keys,
+      shortcutIds: defs.map(d => d.id),
+      actionLabels: defs.map(d => d.actionLabel),
+    });
+  }
+  return conflicts.sort((a, b) => a.keys.localeCompare(b.keys));
+}
+
+export function planKeyboardShortcutConflicts(
+  interfaceLevel: InterfaceExperienceLevel,
+  phase: V94StandardizedGamePhase
+): KeyboardShortcutConflict[] {
+  return detectKeyboardShortcutConflicts(listAvailableKeyboardShortcuts(interfaceLevel, phase));
+}
+
+export function shortcutConflictWarningCopy(conflicts: KeyboardShortcutConflict[]): string | null {
+  if (!conflicts.length) return null;
+  const first = conflicts[0];
+  const extra = conflicts.length > 1 ? ` (+${conflicts.length - 1} more)` : '';
+  return `Shortcut "${first.keys}" maps to ${first.actionLabels.join(' and ')}${extra}. Rebind in settings.`;
+}
+
+export function shouldWarnKeyboardShortcutConflicts(conflicts: KeyboardShortcutConflict[]): boolean {
+  return conflicts.length > 0;
+}
+
+// --- source: engine/live-region-priority-queue.ts ---
+export type LiveRegionPriority = 'assertive' | 'polite';
+
+export interface QueuedLiveRegionMessage extends LiveRegionMessage {
+  priority: LiveRegionPriority;
+}
+
+const PRIORITY_RANK: Record<LiveRegionPriority, number> = {
+  assertive: 0,
+  polite: 1,
+};
+
+export function enqueueLiveRegionMessage(
+  queue: QueuedLiveRegionMessage[],
+  message: Omit<QueuedLiveRegionMessage, 'createdAt'> & { createdAt?: number }
+): QueuedLiveRegionMessage[] {
+  const entry: QueuedLiveRegionMessage = {
+    ...message,
+    createdAt: message.createdAt ?? Date.now(),
+  };
+  const next = [...queue, entry];
+  next.sort((a, b) => {
+    const rank = PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority];
+    if (rank !== 0) return rank;
+    return a.createdAt - b.createdAt;
+  });
+  return next;
+}
+
+export function drainLiveRegionQueue(queue: QueuedLiveRegionMessage[], max = 3): {
+  drained: QueuedLiveRegionMessage[];
+  remaining: QueuedLiveRegionMessage[];
+} {
+  const drained = queue.slice(0, max);
+  const remaining = queue.slice(max);
+  return { drained, remaining };
+}
+
+export function coalesceDuplicateLiveRegionText(queue: QueuedLiveRegionMessage[]): QueuedLiveRegionMessage[] {
+  const seen = new Set<string>();
+  const out: QueuedLiveRegionMessage[] = [];
+  for (const msg of queue) {
+    const key = `${msg.priority}:${msg.text.trim().toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(msg);
+  }
+  return out;
+}
+
+export function liveRegionQueueSummaryCopy(queue: QueuedLiveRegionMessage[]): string | null {
+  if (!queue.length) return null;
+  const assertive = queue.filter(q => q.priority === 'assertive').length;
+  if (assertive > 0) {
+    return `${queue.length} screen reader messages queued (${assertive} priority).`;
+  }
+  return `${queue.length} screen reader messages queued.`;
+}
+
 // --- source: engine/legacy-access.ts ---
 /** Mirrors V9.4 resolveIntentNavToUiPatch targets (standalone copy for module tests). */
 export function resolveIntentNavToUiPatch(target: string): Record<string, boolean | string> {
@@ -3815,6 +4001,173 @@ export function runAgent22Round8SelfTests(): {
   return { passed: results.length - failed, failed, results };
 }
 
+// --- source: engine/round9-self-tests.ts ---
+export function runAgent22Round9SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r9_pacing_defers_overflow',
+    'pacing defers announcements beyond first batch',
+    (() => {
+      const density = resolveUiDensityProfile({ interfaceLevel: 'guided' });
+      const schedule = buildPacedAnnouncementSchedule(
+        ['one', 'two', 'three', 'four'],
+        DEFAULT_ACCESSIBILITY_SNAPSHOT,
+        density
+      );
+      return schedule.immediateAnnouncements.length >= 1 && schedule.deferredCount >= 1;
+    })()
+  );
+
+  check(
+    'r9_pacing_copy',
+    'pacing status copy mentions deferred count',
+    Boolean(pacingStatusCopy(3)?.includes('3'))
+  );
+
+  check(
+    'r9_tick_sets_deferred',
+    'day advance exposes deferred coach count',
+    (() => {
+      const prior = { gameDay: 1, turnCount: 1, interfaceLevel: 'guided' as const };
+      const next = { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' as const };
+      const r = tickEvolvingUiOnDayAdvance(prior, next, DEFAULT_EVOLVING_UI_ACCESS_POLICY, createDefaultEvolvingUiPersistedState());
+      return typeof r.deferredCoachAnnouncementCount === 'number';
+    })()
+  );
+
+  check(
+    'r9_persist_merge_deferred',
+    'merge pacing deferred into persisted',
+    (() => {
+      const merged = mergePacingDeferredIntoPersisted(createDefaultEvolvingUiPersistedState(), 2);
+      return merged.announcementPacingDeferredCount === 2;
+    })()
+  );
+
+  check(
+    'r9_conflict_detect',
+    'detects duplicate key bindings',
+    (() => {
+      const sample = [
+        EVOLVING_UI_KEYBOARD_SHORTCUTS[0],
+        { ...EVOLVING_UI_KEYBOARD_SHORTCUTS[0], id: 'dup', actionLabel: 'Duplicate' },
+      ];
+      return detectKeyboardShortcutConflicts(sample).length === 1;
+    })()
+  );
+
+  check(
+    'r9_conflict_plan_empty_simple',
+    'simple human turn has no shortcut conflicts',
+    planKeyboardShortcutConflicts('simple', 'human_turn').length === 0
+  );
+
+  check(
+    'r9_conflict_warning_copy',
+    'conflict warning mentions rebind',
+    (() => {
+      const conflicts = detectKeyboardShortcutConflicts([
+        EVOLVING_UI_KEYBOARD_SHORTCUTS[0],
+        { ...EVOLVING_UI_KEYBOARD_SHORTCUTS[0], id: 'dup', actionLabel: 'Other' },
+      ]);
+      return Boolean(shortcutConflictWarningCopy(conflicts)?.includes('Rebind'));
+    })()
+  );
+
+  check(
+    'r9_live_region_priority',
+    'assertive messages drain before polite',
+    (() => {
+      let q = enqueueLiveRegionMessage([], {
+        id: 'p1',
+        text: 'polite',
+        politeness: 'polite',
+        priority: 'polite',
+      });
+      q = enqueueLiveRegionMessage(q, {
+        id: 'a1',
+        text: 'urgent',
+        politeness: 'assertive',
+        priority: 'assertive',
+      });
+      const { drained } = drainLiveRegionQueue(q, 1);
+      return drained[0]?.priority === 'assertive';
+    })()
+  );
+
+  check(
+    'r9_live_region_coalesce',
+    'coalesce drops duplicate text',
+    (() => {
+      const q = coalesceDuplicateLiveRegionText([
+        {
+          id: '1',
+          text: 'Hello',
+          politeness: 'polite',
+          priority: 'polite',
+          createdAt: 1,
+        },
+        {
+          id: '2',
+          text: 'hello',
+          politeness: 'polite',
+          priority: 'polite',
+          createdAt: 2,
+        },
+      ]);
+      return q.length === 1;
+    })()
+  );
+
+  check(
+    'r9_live_region_summary',
+    'queue summary mentions count',
+    Boolean(liveRegionQueueSummaryCopy([
+      {
+        id: '1',
+        text: 'x',
+        politeness: 'assertive',
+        priority: 'assertive',
+        createdAt: 1,
+      },
+    ])?.includes('priority'))
+  );
+
+  check(
+    'r9_motion_chrome_vars',
+    'motion timing css vars include transition ms',
+    (() => {
+      const density = resolveUiDensityProfile({ interfaceLevel: 'simple' });
+      const profile = resolveMotionTimingProfile(DEFAULT_ACCESSIBILITY_SNAPSHOT, density);
+      return Boolean(motionTimingCssVars(profile)['--evolving-ui-transition-ms']);
+    })()
+  );
+
+  check(
+    'r9_reduced_motion_zero_transition',
+    'reduced motion zeroes transition duration',
+    (() => {
+      const density = resolveUiDensityProfile({ interfaceLevel: 'guided' });
+      const profile = resolveMotionTimingProfile(
+        { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, reducedMotion: true },
+        density
+      );
+      return profile.transitionDurationMs === 0;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
+}
+
 // --- source: a11y/aria-builders.ts ---
 const RING_CLASSES: Record<FocusRingStyle, string> = {
   emerald: 'focus-visible:ring-emerald-400',
@@ -4453,6 +4806,11 @@ export function SimulationUiEvolutionBridge({
           Held back {suppressedAnnouncementCount} repeated announcements
         </div>
       ) : null}
+      {result.deferredCoachAnnouncementCount > 0 ? (
+        <div data-testid="sim-ui-evolution-pacing-count">
+          Staggered {result.deferredCoachAnnouncementCount} coach announcements
+        </div>
+      ) : null}
       {result.coachAnnouncements.slice(0, 3).map((line, i) => (
         <div key={i}>{line}</div>
       ))}
@@ -5007,8 +5365,98 @@ export function ModalFocusRestoreStrip({
   );
 }
 
+// --- source: react/MotionTimingChromeRoot.tsx ---
+export interface MotionTimingChromeRootProps {
+  accessibility: AccessibilitySettingsSnapshot;
+  interfaceLevel: InterfaceExperienceLevel;
+  preferredDensityTier?: 'compact' | 'comfortable' | 'spacious' | null;
+  children?: React.ReactNode;
+}
+
+export function MotionTimingChromeRoot({
+  accessibility,
+  interfaceLevel,
+  preferredDensityTier,
+  children,
+}: MotionTimingChromeRootProps): React.ReactElement {
+  const density = resolveUiDensityProfile({
+    interfaceLevel,
+    textScaleMultiplier: accessibility.textScaleMultiplier,
+    preferredTier: preferredDensityTier,
+  });
+  const motion = resolveMotionTimingProfile(accessibility, density);
+  const style = {
+    ...motionTimingCssVars(motion),
+    ...mergeHighContrastChromeStyle(accessibility),
+  };
+
+  return (
+    <div
+      data-testid="motion-timing-chrome-root"
+      style={style}
+      {...motion.dataAttributes}
+    >
+      {children}
+    </div>
+  );
+}
+
+// --- source: react/PacedAnnouncementStatusStrip.tsx ---
+export interface PacedAnnouncementStatusStripProps {
+  deferredCount: number;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function PacedAnnouncementStatusStrip({
+  deferredCount,
+  accessibility,
+}: PacedAnnouncementStatusStripProps): React.ReactElement | null {
+  const copy = pacingStatusCopy(deferredCount);
+  if (!copy) return null;
+
+  return (
+    <div
+      data-testid="paced-announcement-status-strip"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-sky-500/30 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {copy}
+    </div>
+  );
+}
+
+// --- source: react/KeyboardShortcutConflictBanner.tsx ---
+export interface KeyboardShortcutConflictBannerProps {
+  interfaceLevel: InterfaceExperienceLevel;
+  phase: V94StandardizedGamePhase;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function KeyboardShortcutConflictBanner({
+  interfaceLevel,
+  phase,
+  accessibility,
+}: KeyboardShortcutConflictBannerProps): React.ReactElement | null {
+  const conflicts = planKeyboardShortcutConflicts(interfaceLevel, phase);
+  const copy = shortcutConflictWarningCopy(conflicts);
+  if (!copy) return null;
+
+  return (
+    <div
+      data-testid="keyboard-shortcut-conflict-banner"
+      role="alert"
+      className="text-xs border border-amber-500/40 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {copy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.8.0';
+export const AGENT_22_MODULE_VERSION = '1.9.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -5089,6 +5537,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round8 = runAgent22Round8SelfTests();
   for (const r of round8.results) {
     check(`agent22_round8_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round9 = runAgent22Round9SelfTests();
+  for (const r of round9.results) {
+    check(`agent22_round9_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;
