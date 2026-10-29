@@ -29285,7 +29285,7 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
       'scope12_pathway_orchestration_hub',
       'cbam_alignment_export_corridor',
       'decarbon_federation_orchestration_hub',
-      'battery_circular_recovery_hub',
+      'cathode_recycling_loop_hub',
       'renewable_grid',
       'industrial_ccs_cluster',
     ],
