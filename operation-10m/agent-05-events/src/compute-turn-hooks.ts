@@ -15,6 +15,7 @@ import {
   sanitizeOp10mNarrativeEngineState,
   type Op10mTickOptions,
 } from './narrative-runtime.ts';
+import { evaluatePendingResponseOrchestration } from './pending-response-orchestrator.ts';
 import type {
   Op10mChainDescriptor,
   Op10mComputeTurnStage,
@@ -135,6 +136,11 @@ export function executeOp10mNarrativeComputeTurnHook(
   narrative = tick.narrative;
   log.push(...tick.log);
   stagesRun.push('narrative_eligibility');
+
+  const pendingPass = evaluatePendingResponseOrchestration(simulation, narrative, params.day);
+  simulation = pendingPass.simulation;
+  narrative = pendingPass.narrative;
+  log.push(...pendingPass.log);
 
   const deferredCount = getDeferredQueueDepth(narrative);
   const digest = buildTurnComputeDigest(

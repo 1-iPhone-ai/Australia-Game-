@@ -15,6 +15,11 @@ import { getDeferredQueueDepth, getTurnComputePassCount } from './deferred-queue
 import { OP10M_COMPUTE_DRIFT_FLAG } from './compute-turn-reconcile.ts';
 import { OP10M_COMPUTE_DRIFT_SETTLED_FLAG, OP10M_COMPUTE_TURN_GAP_ACK_FLAG } from './compute-turn-drift-settle.ts';
 import { OP10M_TURN_COMPUTE_DIGEST_FLAG } from './types.ts';
+import {
+  OP10M_PENDING_ARBITRATION_FLAG,
+  OP10M_PENDING_BACKLOG_FLAG,
+  countPendingResponses,
+} from './pending-response-orchestrator.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -191,6 +196,25 @@ export function evaluateRequirements(
       case 'compute_turn_gap_ack':
         if (!sim.flags[OP10M_COMPUTE_TURN_GAP_ACK_FLAG]) {
           return { ok: false, reason: 'turn gap not acked' };
+        }
+        break;
+      case 'min_pending_responses': {
+        const narrative = context?.narrative;
+        if (!narrative) return { ok: false, reason: 'missing narrative' };
+        const count = countPendingResponses(narrative);
+        if (count < req.min) {
+          return { ok: false, reason: `pending ${count}<${req.min}` };
+        }
+        break;
+      }
+      case 'pending_backlog':
+        if (!sim.flags[OP10M_PENDING_BACKLOG_FLAG]) {
+          return { ok: false, reason: 'no pending backlog' };
+        }
+        break;
+      case 'pending_arbitration':
+        if (!sim.flags[OP10M_PENDING_ARBITRATION_FLAG]) {
+          return { ok: false, reason: 'no pending arbitration' };
         }
         break;
       default:

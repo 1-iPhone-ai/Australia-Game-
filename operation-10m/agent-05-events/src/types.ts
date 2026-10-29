@@ -1,7 +1,7 @@
 /** Operation 10M · Agent 05 — dynamic events & narrative (standalone contract). */
 
 export const OP10M_AGENT05_MODULE_ID = 'op10m_agent05_dynamic_events';
-export const OP10M_AGENT05_MODULE_VERSION = '1.6.0';
+export const OP10M_AGENT05_MODULE_VERSION = '1.6.1';
 export const OP10M_TURN_COMPUTE_DIGEST_FLAG = 'op10m_turn_compute_digest';
 
 export type Op10mChainPhase = 'signal' | 'pressure' | 'rupture' | 'recovery';
@@ -224,6 +224,19 @@ export interface Op10mTriggerRequireComputeTurnGapAck {
   k: 'compute_turn_gap_ack';
 }
 
+export interface Op10mTriggerRequireMinPendingResponses {
+  k: 'min_pending_responses';
+  min: number;
+}
+
+export interface Op10mTriggerRequirePendingBacklog {
+  k: 'pending_backlog';
+}
+
+export interface Op10mTriggerRequirePendingArbitration {
+  k: 'pending_arbitration';
+}
+
 export type Op10mComputeTurnStage =
   | 'pre_simulation'
   | 'post_simulation'
@@ -272,7 +285,10 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequireComputeTurnDrift
   | Op10mTriggerRequireNoComputeTurnDrift
   | Op10mTriggerRequireComputeDriftSettled
-  | Op10mTriggerRequireComputeTurnGapAck;
+  | Op10mTriggerRequireComputeTurnGapAck
+  | Op10mTriggerRequireMinPendingResponses
+  | Op10mTriggerRequirePendingBacklog
+  | Op10mTriggerRequirePendingArbitration;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -360,6 +376,8 @@ export interface Op10mNarrativeEngineState {
     nationalEscalationSteps: number;
     computeTurnPasses: number;
     deferredMutationsFired: number;
+    pendingBacklogSurges: number;
+    responsesArbitrated: number;
   };
   regional?: Op10mRegionalContagionLedger;
   turnCompute?: Op10mTurnComputeLedger;

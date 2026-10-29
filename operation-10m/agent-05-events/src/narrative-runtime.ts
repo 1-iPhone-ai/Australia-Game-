@@ -75,6 +75,8 @@ export function createDefaultOp10mNarrativeEngineState(): Op10mNarrativeEngineSt
       nationalEscalationSteps: 0,
       computeTurnPasses: 0,
       deferredMutationsFired: 0,
+      pendingBacklogSurges: 0,
+      responsesArbitrated: 0,
     },
     regional: createDefaultRegionalContagionLedger(),
   };
@@ -136,6 +138,8 @@ export function sanitizeOp10mNarrativeEngineState(raw: unknown): Op10mNarrativeE
     base.telemetry.nationalEscalationSteps = Math.max(0, Number(t.nationalEscalationSteps) || 0);
     base.telemetry.computeTurnPasses = Math.max(0, Number(t.computeTurnPasses) || 0);
     base.telemetry.deferredMutationsFired = Math.max(0, Number(t.deferredMutationsFired) || 0);
+    base.telemetry.pendingBacklogSurges = Math.max(0, Number(t.pendingBacklogSurges) || 0);
+    base.telemetry.responsesArbitrated = Math.max(0, Number(t.responsesArbitrated) || 0);
   }
 
   if (r.turnCompute) {

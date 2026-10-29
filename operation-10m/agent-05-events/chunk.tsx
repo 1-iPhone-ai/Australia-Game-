@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-05-events
-// content-sha256-prefix: 1679038a50769da9
+// content-sha256-prefix: 5d162fee60421c61
 // Operation 10M — Agent 05 Dynamic Events & Narrative
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -11,7 +11,7 @@
 /** Operation 10M · Agent 05 — dynamic events & narrative (standalone contract). */
 
 export const OP10M_AGENT05_MODULE_ID = 'op10m_agent05_dynamic_events';
-export const OP10M_AGENT05_MODULE_VERSION = '1.6.0';
+export const OP10M_AGENT05_MODULE_VERSION = '1.6.1';
 export const OP10M_TURN_COMPUTE_DIGEST_FLAG = 'op10m_turn_compute_digest';
 
 export type Op10mChainPhase = 'signal' | 'pressure' | 'rupture' | 'recovery';
@@ -234,6 +234,19 @@ export interface Op10mTriggerRequireComputeTurnGapAck {
   k: 'compute_turn_gap_ack';
 }
 
+export interface Op10mTriggerRequireMinPendingResponses {
+  k: 'min_pending_responses';
+  min: number;
+}
+
+export interface Op10mTriggerRequirePendingBacklog {
+  k: 'pending_backlog';
+}
+
+export interface Op10mTriggerRequirePendingArbitration {
+  k: 'pending_arbitration';
+}
+
 export type Op10mComputeTurnStage =
   | 'pre_simulation'
   | 'post_simulation'
@@ -282,7 +295,10 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequireComputeTurnDrift
   | Op10mTriggerRequireNoComputeTurnDrift
   | Op10mTriggerRequireComputeDriftSettled
-  | Op10mTriggerRequireComputeTurnGapAck;
+  | Op10mTriggerRequireComputeTurnGapAck
+  | Op10mTriggerRequireMinPendingResponses
+  | Op10mTriggerRequirePendingBacklog
+  | Op10mTriggerRequirePendingArbitration;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -370,6 +386,8 @@ export interface Op10mNarrativeEngineState {
     nationalEscalationSteps: number;
     computeTurnPasses: number;
     deferredMutationsFired: number;
+    pendingBacklogSurges: number;
+    responsesArbitrated: number;
   };
   regional?: Op10mRegionalContagionLedger;
   turnCompute?: Op10mTurnComputeLedger;
@@ -1154,6 +1172,113 @@ export function settleOp10mComputeTurnDriftAfterReconcile(
   return { simulation, narrative, log };
 }
 
+// --- src/pending-response-orchestrator.ts ---
+
+export const OP10M_PENDING_BACKLOG_FLAG = 'op10m_pending_response_backlog';
+export const OP10M_PENDING_ARBITRATION_FLAG = 'op10m_pending_arbitration_active';
+
+const BACKLOG_THRESHOLD = 4;
+const ARBITRATION_REGION_THRESHOLD = 2;
+const SEVERE_BACKLOG_THRESHOLD = 6;
+
+export function countPendingResponses(narrative: Op10mNarrativeEngineState): number {
+  return narrative.pendingResponses.length;
+}
+
+export function maxPendingInSingleRegion(narrative: Op10mNarrativeEngineState): number {
+  const counts: Record<string, number> = {};
+  for (const pending of narrative.pendingResponses) {
+    counts[pending.regionId] = (counts[pending.regionId] ?? 0) + 1;
+  }
+  const values = Object.values(counts);
+  return values.length === 0 ? 0 : Math.max(...values);
+}
+
+export interface PendingResponseOrchestrationResult {
+  simulation: Op10mSimulationSlice;
+  narrative: Op10mNarrativeEngineState;
+  log: string[];
+}
+
+/** Post-tick pressure: backlog flags, regional arbitration, and attention tax when queues swell. */
+export function evaluatePendingResponseOrchestration(
+  simulationIn: Op10mSimulationSlice,
+  narrativeIn: Op10mNarrativeEngineState,
+  day: number
+): PendingResponseOrchestrationResult {
+  let simulation = { ...simulationIn };
+  let narrative = { ...narrativeIn };
+  const log: string[] = [];
+
+  const pendingCount = countPendingResponses(narrative);
+  const maxRegional = maxPendingInSingleRegion(narrative);
+  const flags = { ...simulation.flags };
+
+  if (pendingCount < BACKLOG_THRESHOLD) {
+    delete flags[OP10M_PENDING_BACKLOG_FLAG];
+  }
+
+  if (maxRegional < ARBITRATION_REGION_THRESHOLD) {
+    delete flags[OP10M_PENDING_ARBITRATION_FLAG];
+  }
+
+  let telemetry = { ...narrative.telemetry };
+
+  if (pendingCount >= BACKLOG_THRESHOLD) {
+    flags[OP10M_PENDING_BACKLOG_FLAG] = pendingCount;
+    const applied = applyConsequenceMutation(
+      { ...simulation, flags },
+      { ...narrative, telemetry },
+      'pending_backlog',
+      { stabilityDelta: -1 }
+    );
+    simulation = applied.simulation;
+    telemetry = {
+      ...applied.narrative.telemetry,
+      pendingBacklogSurges: applied.narrative.telemetry.pendingBacklogSurges + 1,
+    };
+    narrative = { ...applied.narrative, telemetry };
+    log.push(`pending backlog ${pendingCount}`);
+  } else {
+    simulation = { ...simulation, flags };
+    narrative = { ...narrative, telemetry };
+  }
+
+  if (maxRegional >= ARBITRATION_REGION_THRESHOLD) {
+    simulation = {
+      ...simulation,
+      flags: {
+        ...simulation.flags,
+        [OP10M_PENDING_ARBITRATION_FLAG]: maxRegional,
+      },
+    };
+    narrative = {
+      ...narrative,
+      telemetry: {
+        ...narrative.telemetry,
+        responsesArbitrated: narrative.telemetry.responsesArbitrated + 1,
+      },
+    };
+    log.push(`pending arbitration regionDepth=${maxRegional}`);
+  }
+
+  if (pendingCount >= SEVERE_BACKLOG_THRESHOLD) {
+    const tax = applyConsequenceMutation(simulation, narrative, 'pending_attention_tax', {
+      moneyDelta: -200,
+      stabilityDelta: -1,
+    });
+    simulation = tax.simulation;
+    narrative = tax.narrative;
+    log.push('pending attention tax');
+  }
+
+  if (day > 0 && pendingCount === 0) {
+    log.push('pending queue clear');
+  }
+
+  return { simulation, narrative, log };
+}
+
 // --- src/compute-turn-hooks.ts ---
 
 export {
@@ -1266,6 +1391,11 @@ export function executeOp10mNarrativeComputeTurnHook(
   narrative = tick.narrative;
   log.push(...tick.log);
   stagesRun.push('narrative_eligibility');
+
+  const pendingPass = evaluatePendingResponseOrchestration(simulation, narrative, params.day);
+  simulation = pendingPass.simulation;
+  narrative = pendingPass.narrative;
+  log.push(...pendingPass.log);
 
   const deferredCount = getDeferredQueueDepth(narrative);
   const digest = buildTurnComputeDigest(
@@ -1493,6 +1623,25 @@ export function evaluateRequirements(
       case 'compute_turn_gap_ack':
         if (!sim.flags[OP10M_COMPUTE_TURN_GAP_ACK_FLAG]) {
           return { ok: false, reason: 'turn gap not acked' };
+        }
+        break;
+      case 'min_pending_responses': {
+        const narrative = context?.narrative;
+        if (!narrative) return { ok: false, reason: 'missing narrative' };
+        const count = countPendingResponses(narrative);
+        if (count < req.min) {
+          return { ok: false, reason: `pending ${count}<${req.min}` };
+        }
+        break;
+      }
+      case 'pending_backlog':
+        if (!sim.flags[OP10M_PENDING_BACKLOG_FLAG]) {
+          return { ok: false, reason: 'no pending backlog' };
+        }
+        break;
+      case 'pending_arbitration':
+        if (!sim.flags[OP10M_PENDING_ARBITRATION_FLAG]) {
+          return { ok: false, reason: 'no pending arbitration' };
         }
         break;
       default:
@@ -1778,6 +1927,8 @@ export function createDefaultOp10mNarrativeEngineState(): Op10mNarrativeEngineSt
       nationalEscalationSteps: 0,
       computeTurnPasses: 0,
       deferredMutationsFired: 0,
+      pendingBacklogSurges: 0,
+      responsesArbitrated: 0,
     },
     regional: createDefaultRegionalContagionLedger(),
   };
@@ -1839,6 +1990,8 @@ export function sanitizeOp10mNarrativeEngineState(raw: unknown): Op10mNarrativeE
     base.telemetry.nationalEscalationSteps = Math.max(0, Number(t.nationalEscalationSteps) || 0);
     base.telemetry.computeTurnPasses = Math.max(0, Number(t.computeTurnPasses) || 0);
     base.telemetry.deferredMutationsFired = Math.max(0, Number(t.deferredMutationsFired) || 0);
+    base.telemetry.pendingBacklogSurges = Math.max(0, Number(t.pendingBacklogSurges) || 0);
+    base.telemetry.responsesArbitrated = Math.max(0, Number(t.responsesArbitrated) || 0);
   }
 
   if (r.turnCompute) {
@@ -309955,6 +310108,52 @@ export function runOp10mAgent05EventsAssemblySelfTests(): {
       hookResult.stagesRun.length === 4 &&
 
       hookResult.narrative.telemetry.computeTurnPasses >= 1,
+
+  });
+
+  let pendingAsm = createDefaultOp10mNarrativeEngineState();
+
+  for (let i = 0; i < 4; i++) {
+
+    pendingAsm.pendingResponses.push({
+
+      id: 'asm_pr_' + i,
+
+      chainId: 'c' + i,
+
+      stagePhase: 'pressure',
+
+      regionId: 'NSW',
+
+      choiceIds: ['commit'],
+
+      openedDay: 10,
+
+      expiresDay: 20,
+
+      snapshot: { day: 10, money: 1000, nationalStability: 70, activeCrisisCount: 1 },
+
+    });
+
+  }
+
+  const pendingAsmPass = evaluatePendingResponseOrchestration(
+
+    createDefaultOp10mSimulationSlice({ day: 12 }),
+
+    pendingAsm,
+
+    12,
+
+  );
+
+  results.push({
+
+    id: 'agent05_pending_orchestrator',
+
+    name: 'pending backlog orchestration sets flags',
+
+    passed: !!pendingAsmPass.simulation.flags.op10m_pending_response_backlog,
 
   });
 
