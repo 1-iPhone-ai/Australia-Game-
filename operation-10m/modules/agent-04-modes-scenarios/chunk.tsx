@@ -402,6 +402,7 @@ export type O10mProhibitionPhase = 'filing' | 'review' | 'prohibition';
 export type O10mHabeasPhase = 'filing' | 'review' | 'habeas';
 export type O10mQuowarrantoPhase = 'filing' | 'review' | 'quowarranto';
 export type O10mInjunctionPhase = 'filing' | 'review' | 'injunction';
+export type O10mContemptPhase = 'filing' | 'review' | 'contempt';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -832,6 +833,17 @@ export interface O10mInjunctionSession {
   phaseTag: O10mInjunctionPhase;
 }
 
+/** Schema v47 — contempt arc with score accrual between phases. */
+export interface O10mContemptSession {
+  contemptId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  contemptScore: number;
+  phaseTag: O10mContemptPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -856,6 +868,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'contempt_step'
     | 'injunction_step'
     | 'quowarranto_step'
     | 'habeas_step'
@@ -1069,6 +1082,10 @@ export interface O10mCampaignPlan {
   injunctionCursor: number | null;
   injunctionPhase: O10mInjunctionPhase | null;
   injunctionScore: number | null;
+  contemptId: string | null;
+  contemptCursor: number | null;
+  contemptPhase: O10mContemptPhase | null;
+  contemptScore: number | null;
   reason: string;
 }
 
@@ -1182,8 +1199,10 @@ export interface O10mModesPersistedState {
   habeasSession?: O10mHabeasSession | null;
   /** Schema v45 — active quo warranto arc (mutually exclusive with injunction / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   quowarrantoSession?: O10mQuowarrantoSession | null;
-  /** Schema v46 — active injunction arc (mutually exclusive with quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v46 — active injunction arc (mutually exclusive with contempt / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   injunctionSession?: O10mInjunctionSession | null;
+  /** Schema v47 — active contempt arc (mutually exclusive with injunction / quowarranto / habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  contemptSession?: O10mContemptSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -6193,6 +6212,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Injunction finales', 'Score ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_contempt_filing_docket',
+    title: 'Contempt Filing Docket',
+    description: 'Open a contempt arc with low-pressure score pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100550,
+    startingMoney: 4150,
+    startingRegions: ['NT', 'QLD'],
+    badgeId: 'badge_o10m_contempt_filing_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100550),
+      o10mContemptFilingDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_cfd_obj_day',
+        label: 'Filing Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Contempt arcs', 'Score pacing', 'Filing phase'],
+  },
+  {
+    id: 'o10m_contempt_review_chamber',
+    title: 'Contempt Review Chamber',
+    description: 'Mid contempt review with accrued score bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100551,
+    startingMoney: 4700,
+    startingRegions: ['WA', 'SA'],
+    startingStanding: { WA: 72, SA: 70 },
+    badgeId: 'badge_o10m_contempt_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100551),
+      regionalStandingEnabled: true,
+      o10mContemptReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_crc_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 75',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 75,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Score carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_contempt_sanction_finale',
+    title: 'Contempt Sanction Finale',
+    description: 'Finale contempt stage — net worth gate with full score bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100552,
+    startingMoney: 5150,
+    startingRegions: ['ACT', 'NSW', 'VIC'],
+    badgeId: 'badge_o10m_contempt_sanction_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100552),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mContemptSanctionFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_csf_obj_net',
+        label: 'Sanction Net Worth',
+        description: 'Reach $23,000 net worth',
+        targetType: 'netWorth',
+        targetValue: 23000,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Contempt finales', 'Score ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -8239,6 +8355,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_contempt_route',
+    title: 'Contempt Route',
+    description:
+      'Three-phase contempt arc with score accrual between legs — round-47 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_contempt_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_contempt_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File contempt petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 570 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_contempt_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, VIC: 5 },
+          forcedSettingsPatch: { o10mContemptMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_contempt_sanction_finale',
+        title: 'Sanction Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainContemptRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -9065,7 +9215,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 46;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 47;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -9210,6 +9360,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
   };
 }
 
@@ -9275,6 +9426,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       habeasSession: merged.habeasSession ?? null,
       quowarrantoSession: merged.quowarrantoSession ?? null,
       injunctionSession: merged.injunctionSession ?? null,
+      contemptSession: merged.contemptSession ?? null,
     };
     return upgraded;
   }
@@ -9364,6 +9516,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     habeasSession: sanitizeHabeasSession(o.habeasSession),
     quowarrantoSession: sanitizeQuowarrantoSession(o.quowarrantoSession),
     injunctionSession: sanitizeInjunctionSession(o.injunctionSession),
+    contemptSession: sanitizeContemptSession(o.contemptSession),
   };
 }
 
@@ -9694,6 +9847,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Injunction cursor out of range; clamp on next sanitize.');
   }
 
+  const contempt = sanitizeContemptSession(state.contemptSession);
+  if (state.contemptSession && !contempt) {
+    warnings.push('Contempt session failed sanitization; planner will ignore it.');
+  } else if (contempt && contempt.cursor >= contempt.scenarioIds.length) {
+    warnings.push('Contempt cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -9842,6 +10002,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'prohibitionSession',
   'habeasSession',
   'quowarrantoSession',
+  'contemptSession',
   'injunctionSession',
 ];
 
@@ -10387,6 +10548,7 @@ export function attachMarathonQueueToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -10504,6 +10666,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceContemptSessionAfterRun(next, run);
   next = advanceInjunctionSessionAfterRun(next, run);
   next = advanceQuowarrantoSessionAfterRun(next, run);
   next = advanceHabeasSessionAfterRun(next, run);
@@ -10712,6 +10875,7 @@ export function attachGauntletSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -10980,6 +11144,7 @@ export function attachRelaySessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -11208,6 +11373,7 @@ export function attachCircuitSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -11454,6 +11620,7 @@ export function attachExpeditionSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -11698,6 +11865,7 @@ export function attachOdysseySessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -11941,6 +12109,7 @@ export function attachPilgrimageSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -12185,6 +12354,7 @@ export function attachCaravanSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -12423,6 +12593,7 @@ export function attachVoyageSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -12661,6 +12832,7 @@ export function attachSiegeSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -12899,6 +13071,7 @@ export function attachConvoySessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -13137,6 +13310,7 @@ export function attachEscortSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -13384,6 +13558,7 @@ export function attachExtractionSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -13639,6 +13814,7 @@ export function attachSubjectSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -13894,6 +14070,7 @@ export function attachWitnessSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -14149,6 +14326,7 @@ export function attachTribunalSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -14404,6 +14582,7 @@ export function attachIndictmentSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -14659,6 +14838,7 @@ export function attachAppealSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -14914,6 +15094,7 @@ export function attachClemencySessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -15169,6 +15350,7 @@ export function attachPardonSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,
@@ -15424,6 +15606,7 @@ export function attachAmnestySessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     pardonSession: null,
     clemencySession: null,
     appealSession: null,
@@ -15679,6 +15862,7 @@ export function attachReprieveSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,
@@ -15934,6 +16118,7 @@ export function attachParoleSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     reprieveSession: null,
     amnestySession: null,
     pardonSession: null,
@@ -16189,6 +16374,7 @@ export function attachProbationSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     paroleSession: null,
     reprieveSession: null,
     amnestySession: null,
@@ -16444,6 +16630,7 @@ export function attachCommutationSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     probationSession: null,
     paroleSession: null,
     reprieveSession: null,
@@ -16699,6 +16886,7 @@ export function attachAcquittalSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     commutationSession: null,
     probationSession: null,
     paroleSession: null,
@@ -16954,6 +17142,7 @@ export function attachExonerationSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     acquittalSession: null,
     commutationSession: null,
     probationSession: null,
@@ -17209,6 +17398,7 @@ export function attachExpungementSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     exonerationSession: null,
     acquittalSession: null,
     commutationSession: null,
@@ -17464,6 +17654,7 @@ export function attachVacaturSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     expungementSession: null,
     exonerationSession: null,
     acquittalSession: null,
@@ -17719,6 +17910,7 @@ export function attachRemandSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     vacaturSession: null,
     expungementSession: null,
     exonerationSession: null,
@@ -17974,6 +18166,7 @@ export function attachReversalSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     remandSession: null,
     vacaturSession: null,
     expungementSession: null,
@@ -18229,6 +18422,7 @@ export function attachAnnulmentSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     reversalSession: null,
     remandSession: null,
     vacaturSession: null,
@@ -18486,6 +18680,7 @@ export function attachReinstatementSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     annulmentSession: null,
     reversalSession: null,
     remandSession: null,
@@ -18743,6 +18938,7 @@ export function attachSetAsideSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     reinstatementSession: null,
     annulmentSession: null,
     reversalSession: null,
@@ -18998,6 +19194,7 @@ export function attachQuashSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     setAsideSession: null,
     reinstatementSession: null,
     annulmentSession: null,
@@ -19255,6 +19452,7 @@ export function attachSupersedeSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     quashSession: null,
     setAsideSession: null,
     reinstatementSession: null,
@@ -20526,6 +20724,7 @@ export function attachQuowarrantoSessionToState(
     ...state,
     quowarrantoSession: sanitized,
     injunctionSession: null,
+    contemptSession: null,
     habeasSession: null,
     prohibitionSession: null,
     mandamusSession: null,
@@ -20783,6 +20982,7 @@ export function attachInjunctionSessionToState(
   return {
     ...state,
     injunctionSession: sanitized,
+    contemptSession: null,
     quowarrantoSession: null,
     habeasSession: null,
     prohibitionSession: null,
@@ -20916,6 +21116,265 @@ export function injunctionSessionSummary(state: O10mModesPersistedState): {
     active: session?.active === true,
     cursor: session?.active ? session.cursor : null,
     injunctionScore: session?.injunctionScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
+// --- bundled from src/save-format-contempt.ts ---
+export const O10M_CONTEMPT_SCENARIO_CAP = 6;
+export const O10M_CONTEMPT_SCORE_CAP = 1126;
+export const O10M_CONTEMPT_SCORE_MONEY_CAP = 1208;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mContemptPhase>(['filing', 'review', 'contempt']);
+
+export function unlockTokenForContemptId(contemptId: string): string | null {
+  if (!contemptId.startsWith('o10m_contempt_')) return null;
+  return `o10m_unlock_${contemptId.slice('o10m_contempt_'.length)}`;
+}
+
+export function contemptPhaseForCursor(cursor: number, scenarioCount: number): O10mContemptPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'contempt';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'filing';
+}
+
+export function contemptScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(146, Math.max(36, Math.floor(run.playerNetWorth / 116) + standingSlice));
+}
+
+export function sanitizeContemptSession(raw: unknown): O10mContemptSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const contemptId =
+    typeof o.contemptId === 'string' && o.contemptId.startsWith('o10m_contempt_')
+      ? o.contemptId
+      : null;
+  if (!contemptId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : contemptId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_CONTEMPT_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const contemptScore = Math.min(
+    O10M_CONTEMPT_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.contemptScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mContemptPhase)
+      ? (phaseRaw as O10mContemptPhase)
+      : contemptPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    contemptId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    contemptScore,
+    phaseTag,
+  };
+}
+
+export function createContemptSession(params: {
+  contemptId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mContemptSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.contemptId.startsWith('o10m_contempt_')) {
+    return { session: null, warnings: ['Contempt ids must start with o10m_contempt_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_CONTEMPT_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Contempt arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      contemptId: params.contemptId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      contemptScore: 0,
+      phaseTag: contemptPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachContemptSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mContemptSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeContemptSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    contemptSession: sanitized,
+    injunctionSession: null,
+    quowarrantoSession: null,
+    habeasSession: null,
+    prohibitionSession: null,
+    mandamusSession: null,
+    certiorariSession: null,
+    supersedeSession: null,
+    quashSession: null,
+    setAsideSession: null,
+    reinstatementSession: null,
+    annulmentSession: null,
+    reversalSession: null,
+    remandSession: null,
+    vacaturSession: null,
+    expungementSession: null,
+    exonerationSession: null,
+    acquittalSession: null,
+    commutationSession: null,
+    probationSession: null,
+    paroleSession: null,
+    reprieveSession: null,
+    amnestySession: null,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearContemptSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, contemptSession: null };
+}
+
+export function getContemptScenarioAtCursor(
+  session: O10mContemptSession | null | undefined,
+): string | null {
+  const contempt = sanitizeContemptSession(session);
+  if (!contempt || !contempt.active) return null;
+  return contempt.scenarioIds[contempt.cursor] ?? null;
+}
+
+export function buildContemptScenarioStartOverrides(
+  session: O10mContemptSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const contempt = sanitizeContemptSession(session);
+  if (!contempt) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_CONTEMPT_SCORE_MONEY_CAP,
+    Math.floor(contempt.contemptScore * 0.92),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveContemptId: contempt.contemptId,
+      o10mActiveContemptStep: contempt.cursor,
+      o10mActiveContemptPhase: contempt.phaseTag,
+      o10mContemptScore: contempt.contemptScore,
+    },
+  };
+}
+
+export function advanceContemptSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeContemptSession(state.contemptSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const contemptScore = Math.min(
+    O10M_CONTEMPT_SCORE_CAP,
+    session.contemptScore + contemptScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      contemptSession: {
+        ...session,
+        cursor,
+        contemptScore,
+        phaseTag: contemptPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForContemptId(session.contemptId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    contemptSession: { ...session, active: false, contemptScore, phaseTag: 'contempt' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function contemptSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  contemptScore: number;
+  phase: O10mContemptPhase | null;
+} {
+  const session = sanitizeContemptSession(state.contemptSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    contemptScore: session?.contemptScore ?? 0,
     phase: session?.active ? session.phaseTag : null,
   };
 }
@@ -21086,9 +21545,31 @@ const emptyQueuePlan = {
   injunctionCursor: null as number | null,
   injunctionPhase: null as O10mInjunctionPhase | null,
   injunctionScore: null as number | null,
+  contemptId: null as string | null,
+  contemptCursor: null as number | null,
+  contemptPhase: null as O10mContemptPhase | null,
+  contemptScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const contempt = sanitizeContemptSession(state.contemptSession);
+  const contemptScenario = getContemptScenarioAtCursor(contempt);
+  if (contempt && contempt.active && contemptScenario) {
+    return {
+      kind: 'contempt_step',
+      scenarioId: contemptScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      contemptId: contempt.contemptId,
+      contemptCursor: contempt.cursor,
+      contemptPhase: contempt.phaseTag,
+      contemptScore: contempt.contemptScore,
+      reason: `Contempt "${contempt.label}" ${contempt.phaseTag} phase ${contempt.cursor + 1}/${contempt.scenarioIds.length} (score ${contempt.contemptScore}).`,
+    };
+  }
+
   const injunction = sanitizeInjunctionSession(state.injunctionSession);
   const injunctionScenario = getInjunctionScenarioAtCursor(injunction);
   if (injunction && injunction.active && injunctionScenario) {
@@ -21952,6 +22433,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   habeasActive: boolean;
   quowarrantoActive: boolean;
   injunctionActive: boolean;
+  contemptActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -22001,6 +22483,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const habeas = habeasSessionSummary(state);
   const quowarranto = quowarrantoSessionSummary(state);
   const injunction = injunctionSessionSummary(state);
+  const contempt = contemptSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -22048,6 +22531,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     habeasActive: habeas.active,
     quowarrantoActive: quowarranto.active,
     injunctionActive: injunction.active,
+    contemptActive: contempt.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -22066,7 +22550,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 47, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 48, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -22430,16 +22914,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const injunctionState = injunction ? attachInjunctionSessionToState(createEmptyO10mModesPersistedState(), injunction) : null;
   push('agent04_chunk_54', injunctionState !== null && planNextCampaignAction(injunctionState!).kind === 'injunction_step');
 
+  const contempt = createContemptSession({
+    contemptId: 'o10m_contempt_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_contempt_filing_docket'],
+  }).session;
+  const contemptState = contempt ? attachContemptSessionToState(createEmptyO10mModesPersistedState(), contempt) : null;
+  push('agent04_chunk_55', contemptState !== null && planNextCampaignAction(contemptState!).kind === 'contempt_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v47',
+  schemaVersion: 'op10m-agent04-v48',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 46,
+  saveSchemaVersion: 47,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

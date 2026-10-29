@@ -127,6 +127,7 @@ export function attachInjunctionSessionToState(
   return {
     ...state,
     injunctionSession: sanitized,
+    contemptSession: null,
     quowarrantoSession: null,
     habeasSession: null,
     prohibitionSession: null,

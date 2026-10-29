@@ -135,6 +135,7 @@ export function attachAnnulmentSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     reversalSession: null,
     remandSession: null,
     vacaturSession: null,

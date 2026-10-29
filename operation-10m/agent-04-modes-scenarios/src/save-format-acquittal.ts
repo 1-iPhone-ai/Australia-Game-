@@ -141,6 +141,7 @@ export function attachAcquittalSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     commutationSession: null,
     probationSession: null,
     paroleSession: null,

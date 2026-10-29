@@ -117,6 +117,11 @@ import {
   sanitizeReversalSession,
 } from './save-format-reversal.js';
 import {
+  getContemptScenarioAtCursor,
+  contemptSessionSummary,
+  sanitizeContemptSession,
+} from './save-format-contempt.js';
+import {
   getInjunctionScenarioAtCursor,
   injunctionSessionSummary,
   sanitizeInjunctionSession,
@@ -251,6 +256,7 @@ import type {
   O10mHabeasPhase,
   O10mQuowarrantoPhase,
   O10mInjunctionPhase,
+  O10mContemptPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -421,9 +427,31 @@ const emptyQueuePlan = {
   injunctionCursor: null as number | null,
   injunctionPhase: null as O10mInjunctionPhase | null,
   injunctionScore: null as number | null,
+  contemptId: null as string | null,
+  contemptCursor: null as number | null,
+  contemptPhase: null as O10mContemptPhase | null,
+  contemptScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const contempt = sanitizeContemptSession(state.contemptSession);
+  const contemptScenario = getContemptScenarioAtCursor(contempt);
+  if (contempt && contempt.active && contemptScenario) {
+    return {
+      kind: 'contempt_step',
+      scenarioId: contemptScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      contemptId: contempt.contemptId,
+      contemptCursor: contempt.cursor,
+      contemptPhase: contempt.phaseTag,
+      contemptScore: contempt.contemptScore,
+      reason: `Contempt "${contempt.label}" ${contempt.phaseTag} phase ${contempt.cursor + 1}/${contempt.scenarioIds.length} (score ${contempt.contemptScore}).`,
+    };
+  }
+
   const injunction = sanitizeInjunctionSession(state.injunctionSession);
   const injunctionScenario = getInjunctionScenarioAtCursor(injunction);
   if (injunction && injunction.active && injunctionScenario) {
@@ -1287,6 +1315,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   habeasActive: boolean;
   quowarrantoActive: boolean;
   injunctionActive: boolean;
+  contemptActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -1336,6 +1365,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const habeas = habeasSessionSummary(state);
   const quowarranto = quowarrantoSessionSummary(state);
   const injunction = injunctionSessionSummary(state);
+  const contempt = contemptSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -1383,6 +1413,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     habeasActive: habeas.active,
     quowarrantoActive: quowarranto.active,
     injunctionActive: injunction.active,
+    contemptActive: contempt.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

@@ -133,6 +133,7 @@ export function attachSupersedeSessionToState(
     habeasSession: null,
     quowarrantoSession: null,
     injunctionSession: null,
+    contemptSession: null,
     quashSession: null,
     setAsideSession: null,
     reinstatementSession: null,
