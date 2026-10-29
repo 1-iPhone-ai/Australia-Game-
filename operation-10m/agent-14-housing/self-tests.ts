@@ -81,6 +81,13 @@ import {
 } from './readiness-trajectory.ts';
 import { buildFulfillmentAgingMonitor } from './fulfillment-aging-monitor.ts';
 import { buildPortfolioResumptionPlan } from './portfolio-resumption-plan.ts';
+import {
+  advanceResumptionTrajectory,
+  createInitialResumptionTrajectory,
+  sanitizeResumptionTrajectory,
+} from './resumption-trajectory.ts';
+import { adviseCommitGating } from './commit-gating-advisor.ts';
+import { composePortfolioHandoffBrief } from './portfolio-handoff-brief.ts';
 import { AGENT14_WELLBEING_SCHEMA_VERSION } from './types.ts';
 
 export interface Agent14SelfTestResult {
@@ -582,8 +589,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Twenty-four housing scenarios registered',
-    listAgent14ScenarioIds().length === 24,
+    'Twenty-six housing scenarios registered',
+    listAgent14ScenarioIds().length === 26,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -811,8 +818,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave5_schema_version',
-    'Wellbeing schema version is wave 11',
-    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.11-scale-wave-11',
+    'Wellbeing schema version is wave 12',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.12-scale-wave-12',
     AGENT14_WELLBEING_SCHEMA_VERSION
   );
 
@@ -1874,6 +1881,162 @@ export function runAgent14WellbeingSelfTests(): {
       'Readiness trajectory advance updates persisted turn',
       snap.persisted.lastTurn === 4 && snap.snapshot.readinessGapEma > 0,
       `ema=${snap.snapshot.readinessGapEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 5, fiscalHeadroom: 41, stateCapacityLoad: 66, workforceReadiness: 'strained' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      resumptionTrajectoryPersisted: createInitialResumptionTrajectory(),
+    });
+    check(
+      results,
+      'wave12_resumption_trajectory',
+      'Turn advance attaches resumption trajectory',
+      adv.inputs.resumptionTrajectory !== undefined &&
+        adv.resumptionTrajectoryPersisted.lastTurn === 5 &&
+        adv.inputs.resumptionTrajectory!.resumptionFrictionEma > 0,
+      `band=${adv.inputs.resumptionTrajectory?.band} ema=${adv.inputs.resumptionTrajectory?.resumptionFrictionEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 6, fiscalHeadroom: 18, stateCapacityLoad: 92, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave12_commit_gating_advice',
+      'Commit gating advice populated under stress',
+      adv.inputs.commitGatingAdvice !== undefined &&
+        adv.inputs.commitGatingAdvice!.summary.length > 8,
+      adv.inputs.commitGatingAdvice?.summary.slice(0, 72)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 47, stateCapacityLoad: 54, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave12_portfolio_handoff_brief',
+      'Portfolio handoff brief includes summary',
+      adv.inputs.portfolioHandoffBrief !== undefined &&
+        adv.inputs.portfolioHandoffBrief!.summary.length > 10,
+      `handoff=${adv.inputs.portfolioHandoffBrief?.shouldSignalHandoff}`
+    );
+  }
+
+  {
+    const raw = sanitizeResumptionTrajectory({
+      schemaVersion: '10.14.11-scale-wave-11' as any,
+      lastTurn: 2,
+      emaAlpha: 0.3,
+      resumptionFrictionEma: 55,
+    });
+    check(
+      results,
+      'wave12_resumption_sanitize',
+      'Resumption trajectory sanitize upgrades schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.resumptionFrictionEma === 55,
+      `schema=${raw.schemaVersion}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('resumption_trajectory_arc', 10);
+    const last = sim.turns[9];
+    check(
+      results,
+      'wave12_resumption_arc_scenario',
+      'Resumption arc wires trajectory, gating, and handoff brief',
+      last.resumptionTrajectory !== undefined &&
+        last.commitGatingAdvice !== undefined &&
+        last.portfolioHandoffBrief !== undefined,
+      `friction=${last.resumptionTrajectory?.band} block=${last.commitGatingAdvice?.shouldBlockAllCommits}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('commit_gating_stress', 8);
+    const last = sim.turns[7];
+    check(
+      results,
+      'wave12_gating_stress_scenario',
+      'Gating stress blocks commits or holds resumption',
+      last.commitGatingAdvice !== undefined &&
+        (last.commitGatingAdvice!.shouldBlockAllCommits ||
+          last.commitGatingAdvice!.allowedNewCommits === 0 ||
+          last.portfolioResumptionPlan!.shouldHoldNewCommits),
+      `block=${last.commitGatingAdvice?.shouldBlockAllCommits} allowed=${last.commitGatingAdvice?.allowedNewCommits}`
+    );
+  }
+
+  check(
+    results,
+    'wave12_handoff_stub_catalog',
+    'Wave 12 handoff stubs present',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_TAS_handoff_alignment') &&
+      AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_QLD_commit_gating'),
+    `n=${AGENT14_HEALTH_ED_PROGRAM_STUBS.length}`
+  );
+
+  check(
+    results,
+    'wave12_scenario_catalog',
+    'Scenario catalog includes wave 12 scenarios',
+    listAgent14ScenarioIds().includes('resumption_trajectory_arc') &&
+      listAgent14ScenarioIds().includes('commit_gating_stress'),
+    `count=${listAgent14ScenarioIds().length}`
+  );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 7, fiscalHeadroom: 24, stateCapacityLoad: 87, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const gating = adviseCommitGating({
+      turn: 7,
+      resumptionPlan: adv.inputs.portfolioResumptionPlan!,
+      capacity: adv.inputs.capacity,
+      resumptionTrajectory: adv.inputs.resumptionTrajectory,
+    });
+    const handoff = composePortfolioHandoffBrief({
+      turn: 7,
+      resumptionPlan: adv.inputs.portfolioResumptionPlan!,
+      commitGating: gating,
+      recoveryBrief: adv.inputs.wellbeingRecoveryReadinessBrief!,
+      resumptionTrajectory: adv.inputs.resumptionTrajectory,
+    });
+    check(
+      results,
+      'wave12_handoff_composer',
+      'Standalone handoff composer returns headlines',
+      handoff.headlines.length > 0 && handoff.summary.length > 10,
+      handoff.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 3, fiscalHeadroom: 43, stateCapacityLoad: 62, workforceReadiness: 'weak' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const snap = advanceResumptionTrajectory(
+      3,
+      adv.inputs.portfolioResumptionPlan!,
+      createInitialResumptionTrajectory()
+    );
+    check(
+      results,
+      'wave12_resumption_advance_unit',
+      'Resumption trajectory advance updates persisted turn',
+      snap.persisted.lastTurn === 3 && snap.snapshot.resumptionFrictionEma > 0,
+      `ema=${snap.snapshot.resumptionFrictionEma}`
     );
   }
 

@@ -1,6 +1,6 @@
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.11-scale-wave-11' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.12-scale-wave-12' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -116,6 +116,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   readinessTrajectory?: ReadinessTrajectorySnapshot;
   fulfillmentAgingMonitor?: FulfillmentAgingMonitor;
   portfolioResumptionPlan?: PortfolioResumptionPlan;
+  resumptionTrajectory?: ResumptionTrajectorySnapshot;
+  commitGatingAdvice?: CommitGatingAdvice;
+  portfolioHandoffBrief?: PortfolioHandoffBrief;
 }
 
 export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
@@ -447,6 +450,44 @@ export interface PortfolioResumptionPlan {
   shouldHoldNewCommits: boolean;
   recommendedResumeTurn: number;
   actions: PortfolioResumptionAction[];
+  summary: string;
+}
+
+export type ResumptionFrictionBand = 'low' | 'moderate' | 'high';
+
+export interface ResumptionTrajectorySnapshot {
+  turn: number;
+  resumptionFrictionEma: number;
+  instantaneousFriction: number;
+  band: ResumptionFrictionBand;
+  trajectory: CouplingTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface ResumptionTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  resumptionFrictionEma: number;
+  priorEma?: number;
+}
+
+export interface CommitGatingAdvice {
+  turn: number;
+  shouldBlockAllCommits: boolean;
+  allowedNewCommits: number;
+  rejectedCommitmentsCount: number;
+  bindingConstraint: CapacityBindingConstraint;
+  reasons: string[];
+  summary: string;
+}
+
+export interface PortfolioHandoffBrief {
+  turn: number;
+  shouldSignalHandoff: boolean;
+  queuedResumptionActions: number;
+  allowedNewCommits: number;
+  headlines: string[];
   summary: string;
 }
 

@@ -23,6 +23,9 @@ import type {
   ReadinessTrajectorySnapshot,
   FulfillmentAgingMonitor,
   PortfolioResumptionPlan,
+  ResumptionTrajectorySnapshot,
+  CommitGatingAdvice,
+  PortfolioHandoffBrief,
   WellbeingTurnForecastPoint,
 } from './types.ts';
 
@@ -52,6 +55,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   readinessTrajectory?: ReadinessTrajectorySnapshot;
   fulfillmentAgingMonitor?: FulfillmentAgingMonitor;
   portfolioResumptionPlan?: PortfolioResumptionPlan;
+  resumptionTrajectory?: ResumptionTrajectorySnapshot;
+  commitGatingAdvice?: CommitGatingAdvice;
+  portfolioHandoffBrief?: PortfolioHandoffBrief;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -154,6 +160,17 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   if (args.portfolioResumptionPlan?.shouldHoldNewCommits) {
     giNotes.push(args.portfolioResumptionPlan.summary);
   }
+  if (args.resumptionTrajectory?.trajectory === 'deteriorating') {
+    giNotes.push(
+      `Resumption friction ${args.resumptionTrajectory.trajectory} (EMA ${args.resumptionTrajectory.resumptionFrictionEma})`
+    );
+  }
+  if (args.commitGatingAdvice?.shouldBlockAllCommits) {
+    giNotes.push(args.commitGatingAdvice.summary);
+  }
+  if (args.portfolioHandoffBrief?.shouldSignalHandoff) {
+    giNotes.push(args.portfolioHandoffBrief.summary);
+  }
 
   const headlineParts: string[] = [];
   if (args.coupling.band === 'critical' || args.coupling.band === 'strained') {
@@ -177,6 +194,8 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
     headlineParts.push('recovery readiness clear');
   } else if (args.portfolioResumptionPlan?.shouldHoldNewCommits) {
     headlineParts.push('portfolio resumption on hold');
+  } else if (args.portfolioHandoffBrief?.shouldSignalHandoff) {
+    headlineParts.push('portfolio handoff ready');
   }
 
   return {

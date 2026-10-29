@@ -5,7 +5,7 @@
 // --- source: types.ts ---
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.11-scale-wave-11' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.12-scale-wave-12' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -121,6 +121,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   readinessTrajectory?: ReadinessTrajectorySnapshot;
   fulfillmentAgingMonitor?: FulfillmentAgingMonitor;
   portfolioResumptionPlan?: PortfolioResumptionPlan;
+  resumptionTrajectory?: ResumptionTrajectorySnapshot;
+  commitGatingAdvice?: CommitGatingAdvice;
+  portfolioHandoffBrief?: PortfolioHandoffBrief;
 }
 
 export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
@@ -455,6 +458,44 @@ export interface PortfolioResumptionPlan {
   summary: string;
 }
 
+export type ResumptionFrictionBand = 'low' | 'moderate' | 'high';
+
+export interface ResumptionTrajectorySnapshot {
+  turn: number;
+  resumptionFrictionEma: number;
+  instantaneousFriction: number;
+  band: ResumptionFrictionBand;
+  trajectory: CouplingTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface ResumptionTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  resumptionFrictionEma: number;
+  priorEma?: number;
+}
+
+export interface CommitGatingAdvice {
+  turn: number;
+  shouldBlockAllCommits: boolean;
+  allowedNewCommits: number;
+  rejectedCommitmentsCount: number;
+  bindingConstraint: CapacityBindingConstraint;
+  reasons: string[];
+  summary: string;
+}
+
+export interface PortfolioHandoffBrief {
+  turn: number;
+  shouldSignalHandoff: boolean;
+  queuedResumptionActions: number;
+  allowedNewCommits: number;
+  headlines: string[];
+  summary: string;
+}
+
 export type CouplingStressBand = 'stable' | 'watch' | 'strained' | 'critical';
 
 export interface PillarCouplingSlice {
@@ -710,6 +751,8 @@ export const AGENT14_HEALTH_ED_PROGRAM_STUBS: readonly {
   { id: 'ps_xp_VIC_fulfillment_coordination', pillar: 'education', regionId: 'VIC', fiscalLoadPoints: 19, durationTurns: 5, baseImpact: 9, effectLagTurns: 2 },
   { id: 'ps_xp_WA_resumption_planning', pillar: 'healthcare', regionId: 'WA', fiscalLoadPoints: 18, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
   { id: 'ps_xp_ACT_readiness_cohesion', pillar: 'education', regionId: 'ACT', fiscalLoadPoints: 14, durationTurns: 4, baseImpact: 7, effectLagTurns: 2 },
+  { id: 'ps_xp_TAS_handoff_alignment', pillar: 'healthcare', regionId: 'TAS', fiscalLoadPoints: 16, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
+  { id: 'ps_xp_QLD_commit_gating', pillar: 'education', regionId: 'QLD', fiscalLoadPoints: 17, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
 ];
 
 export const AGENT14_ALL_PROGRAM_STUBS = [
@@ -1053,7 +1096,7 @@ export function canAcceptSpendingCommitment(
 // --- source: delayed-spending-effects.ts ---
 export function createInitialDelayedSpendingPersisted(): DelayedSpendingPersisted {
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     active: [],
     history: [],
   };
@@ -1075,7 +1118,7 @@ export function sanitizeDelayedSpendingPersisted(
         .slice(0, AGENT14_LIMITS.maxActiveCommitments)
     : [];
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     active,
     history: Array.isArray(raw.history) ? raw.history.slice(-AGENT14_LIMITS.maxHistory) : [],
   };
@@ -1635,7 +1678,7 @@ const DEFAULT_EMA_ALPHA = 0.35;
 
 export function createInitialRegionalWellbeingMemory(): RegionalWellbeingMemoryPersisted {
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     affordabilityEma: {},
@@ -1652,7 +1695,7 @@ export function sanitizeRegionalWellbeingMemory(
       ? raw.emaAlpha
       : DEFAULT_EMA_ALPHA;
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     affordabilityEma:
@@ -1720,7 +1763,7 @@ const DEFAULT_EMA_ALPHA = 0.4;
 
 export function createInitialCouplingTrajectory(): CouplingTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     nationalCouplingEma: 58,
@@ -1741,7 +1784,7 @@ export function sanitizeCouplingTrajectory(
       ? Math.max(0, Math.min(100, raw.nationalCouplingEma))
       : 58;
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     nationalCouplingEma,
@@ -1991,7 +2034,7 @@ const DEFAULT_EMA_ALPHA = 0.35;
 
 export function createInitialAccountabilityTrajectory(): AccountabilityTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     overallScoreEma: 62,
@@ -2012,7 +2055,7 @@ export function sanitizeAccountabilityTrajectory(
       ? Math.max(0, Math.min(100, raw.overallScoreEma))
       : 62;
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     overallScoreEma,
@@ -2155,7 +2198,7 @@ const DEFAULT_EMA_ALPHA = 0.32;
 
 export function createInitialResilienceTrajectory(): ResilienceTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     resilienceIndexEma: 58,
@@ -2176,7 +2219,7 @@ export function sanitizeResilienceTrajectory(
       ? Math.max(0, Math.min(100, raw.resilienceIndexEma))
       : 58;
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     resilienceIndexEma,
@@ -2485,7 +2528,7 @@ const DEFAULT_EMA_ALPHA = 0.3;
 
 export function createInitialGovernanceTrajectory(): GovernanceTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     governanceScoreEma: 60,
@@ -2506,7 +2549,7 @@ export function sanitizeGovernanceTrajectory(
       ? Math.max(0, Math.min(100, raw.governanceScoreEma))
       : 60;
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     governanceScoreEma,
@@ -2701,7 +2744,7 @@ function engagementSample(brief: StakeholderCoordinationBrief): number {
 
 export function createInitialCoordinationTrajectory(): CoordinationTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     engagementPressureEma: 45,
@@ -2722,7 +2765,7 @@ export function sanitizeCoordinationTrajectory(
       ? Math.max(0, Math.min(100, raw.engagementPressureEma))
       : 45;
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     engagementPressureEma,
@@ -2911,7 +2954,7 @@ function stressSample(brief: PortfolioStabilizationBrief): number {
 
 export function createInitialStabilizationTrajectory(): StabilizationTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     stabilizationStressEma: 50,
@@ -2932,7 +2975,7 @@ export function sanitizeStabilizationTrajectory(
       ? Math.max(0, Math.min(100, raw.stabilizationStressEma))
       : 50;
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     stabilizationStressEma,
@@ -3007,7 +3050,7 @@ function actionKey(action: ReliefDispatchAction): string {
 
 export function createInitialReliefFulfillment(): ReliefFulfillmentPersisted {
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     openActions: [],
     cumulativeFulfilled: 0,
@@ -3024,7 +3067,7 @@ export function sanitizeReliefFulfillment(
       )
     : [];
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     openActions,
     cumulativeFulfilled:
@@ -3199,7 +3242,7 @@ function gapSample(brief: WellbeingRecoveryReadinessBrief): number {
 
 export function createInitialReadinessTrajectory(): ReadinessTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     readinessGapEma: 48,
@@ -3220,7 +3263,7 @@ export function sanitizeReadinessTrajectory(
       ? Math.max(0, Math.min(100, raw.readinessGapEma))
       : 48;
   return {
-    schemaVersion: '10.14.11-scale-wave-11' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     readinessGapEma,
@@ -3370,6 +3413,197 @@ export function buildPortfolioResumptionPlan(args: {
 }
 
 
+// --- source: resumption-trajectory.ts ---
+const DEFAULT_EMA_ALPHA = 0.3;
+
+function frictionSample(plan: PortfolioResumptionPlan): number {
+  let sample = plan.shouldHoldNewCommits ? 76 : plan.actions.length > 0 ? 32 : 44;
+  if (plan.recommendedResumeTurn > plan.turn + 2) {
+    sample += 10;
+  }
+  return Math.max(0, Math.min(100, sample));
+}
+
+export function createInitialResumptionTrajectory(): ResumptionTrajectoryPersisted {
+  return {
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    lastTurn: 0,
+    emaAlpha: DEFAULT_EMA_ALPHA,
+    resumptionFrictionEma: 50,
+    priorEma: undefined,
+  };
+}
+
+export function sanitizeResumptionTrajectory(
+  raw?: ResumptionTrajectoryPersisted | null
+): ResumptionTrajectoryPersisted {
+  if (!raw || typeof raw !== 'object') return createInitialResumptionTrajectory();
+  const alpha =
+    typeof raw.emaAlpha === 'number' && raw.emaAlpha > 0 && raw.emaAlpha <= 1
+      ? raw.emaAlpha
+      : DEFAULT_EMA_ALPHA;
+  const resumptionFrictionEma =
+    typeof raw.resumptionFrictionEma === 'number' && Number.isFinite(raw.resumptionFrictionEma)
+      ? Math.max(0, Math.min(100, raw.resumptionFrictionEma))
+      : 50;
+  return {
+    schemaVersion: '10.14.12-scale-wave-12' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
+    emaAlpha: alpha,
+    resumptionFrictionEma,
+    priorEma:
+      typeof raw.priorEma === 'number' && Number.isFinite(raw.priorEma)
+        ? Math.max(0, Math.min(100, raw.priorEma))
+        : undefined,
+  };
+}
+
+function trajectoryFromDelta(
+  current: number,
+  previous: number | undefined,
+  epsilon = 0.85
+): CouplingTrajectoryTrend {
+  if (previous === undefined) return 'flat';
+  if (previous - current > epsilon) return 'improving';
+  if (current - previous > epsilon) return 'deteriorating';
+  return 'flat';
+}
+
+function bandFromFriction(score: number): ResumptionFrictionBand {
+  if (score >= 68) return 'high';
+  if (score >= 48) return 'moderate';
+  return 'low';
+}
+
+export function advanceResumptionTrajectory(
+  turn: number,
+  plan: PortfolioResumptionPlan,
+  persisted?: ResumptionTrajectoryPersisted | null
+): { snapshot: ResumptionTrajectorySnapshot; persisted: ResumptionTrajectoryPersisted } {
+  const base = sanitizeResumptionTrajectory(persisted);
+  const alpha = base.emaAlpha;
+  const sample = frictionSample(plan);
+  const priorEma = base.resumptionFrictionEma;
+  const resumptionFrictionEma = Math.round((alpha * sample + (1 - alpha) * priorEma) * 10) / 10;
+  const trajectory = trajectoryFromDelta(resumptionFrictionEma, base.priorEma ?? priorEma);
+  const evidence: string[] = [];
+  if (trajectory === 'improving') {
+    evidence.push(`Resumption friction EMA easing (${priorEma} → ${resumptionFrictionEma})`);
+  } else if (trajectory === 'deteriorating') {
+    evidence.push(`Resumption friction EMA rising (${priorEma} → ${resumptionFrictionEma})`);
+  }
+  if (plan.shouldHoldNewCommits) {
+    evidence.push(`Portfolio commits held until turn ${plan.recommendedResumeTurn}`);
+  }
+
+  return {
+    snapshot: {
+      turn,
+      resumptionFrictionEma,
+      instantaneousFriction: sample,
+      band: bandFromFriction(resumptionFrictionEma),
+      trajectory,
+      evidence,
+    },
+    persisted: {
+      ...base,
+      lastTurn: turn,
+      priorEma: priorEma,
+      resumptionFrictionEma,
+    },
+  };
+}
+
+
+// --- source: commit-gating-advisor.ts ---
+export function adviseCommitGating(args: {
+  turn: number;
+  resumptionPlan: PortfolioResumptionPlan;
+  capacity: PublicServiceCapacitySnapshot;
+  resumptionTrajectory?: ResumptionTrajectorySnapshot;
+  rejectedCommitmentsCount?: number;
+}): CommitGatingAdvice {
+  const rejected = args.rejectedCommitmentsCount ?? 0;
+  const shouldBlockAllCommits =
+    args.resumptionPlan.shouldHoldNewCommits ||
+    args.resumptionTrajectory?.band === 'high' ||
+    args.capacity.bindingConstraint === 'workforce';
+
+  let allowedNewCommits = 0;
+  if (!shouldBlockAllCommits) {
+    allowedNewCommits = Math.min(args.capacity.slotsFree, args.resumptionPlan.actions.length > 0 ? 2 : 1);
+  }
+
+  const reasons: string[] = [];
+  if (shouldBlockAllCommits) {
+    reasons.push('Resumption plan or capacity blocks new commits');
+  }
+  if (rejected > 0) {
+    reasons.push(`${rejected} commitments rejected this turn`);
+  }
+  if (args.capacity.slotsFree === 0 && !shouldBlockAllCommits) {
+    reasons.push('Program slots exhausted');
+    allowedNewCommits = 0;
+  }
+
+  const summary = shouldBlockAllCommits
+    ? `Commit gating: block all new commits (${reasons[0] ?? 'hold active'})`
+    : allowedNewCommits > 0
+      ? `Commit gating: up to ${allowedNewCommits} new commits allowed`
+      : 'Commit gating: no spare capacity for new commits';
+
+  return {
+    turn: args.turn,
+    shouldBlockAllCommits,
+    allowedNewCommits,
+    rejectedCommitmentsCount: rejected,
+    bindingConstraint: args.capacity.bindingConstraint,
+    reasons: reasons.slice(0, 3),
+    summary,
+  };
+}
+
+
+// --- source: portfolio-handoff-brief.ts ---
+export function composePortfolioHandoffBrief(args: {
+  turn: number;
+  resumptionPlan: PortfolioResumptionPlan;
+  commitGating: CommitGatingAdvice;
+  recoveryBrief: WellbeingRecoveryReadinessBrief;
+  resumptionTrajectory?: ResumptionTrajectorySnapshot;
+}): PortfolioHandoffBrief {
+  const shouldSignalHandoff =
+    !args.commitGating.shouldBlockAllCommits &&
+    args.recoveryBrief.readinessBand !== 'not_ready' &&
+    (args.resumptionTrajectory?.trajectory === 'improving' ||
+      args.resumptionPlan.actions.length > 0);
+
+  const headlines: string[] = [];
+  if (shouldSignalHandoff) {
+    headlines.push('Portfolio handoff: sequenced programs ready for national wire-in');
+  } else {
+    headlines.push('Portfolio handoff deferred — finish gating preconditions');
+  }
+  if (args.resumptionPlan.actions.length > 0) {
+    headlines.push(`${args.resumptionPlan.actions.length} resumption actions queued`);
+  }
+  if (args.commitGating.allowedNewCommits > 0) {
+    headlines.push(`Capacity allows ${args.commitGating.allowedNewCommits} gated commits`);
+  }
+
+  const summary = `handoff=${shouldSignalHandoff} allowed=${args.commitGating.allowedNewCommits} hold=${args.resumptionPlan.shouldHoldNewCommits}`;
+
+  return {
+    turn: args.turn,
+    shouldSignalHandoff,
+    queuedResumptionActions: args.resumptionPlan.actions.length,
+    allowedNewCommits: args.commitGating.allowedNewCommits,
+    headlines: headlines.slice(0, 3),
+    summary,
+  };
+}
+
+
 // --- source: wellbeing-executive-brief.ts ---
 export function composeAgent14WellbeingExecutiveBrief(args: {
   turn: number;
@@ -3397,6 +3631,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   readinessTrajectory?: ReadinessTrajectorySnapshot;
   fulfillmentAgingMonitor?: FulfillmentAgingMonitor;
   portfolioResumptionPlan?: PortfolioResumptionPlan;
+  resumptionTrajectory?: ResumptionTrajectorySnapshot;
+  commitGatingAdvice?: CommitGatingAdvice;
+  portfolioHandoffBrief?: PortfolioHandoffBrief;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -3499,6 +3736,17 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   if (args.portfolioResumptionPlan?.shouldHoldNewCommits) {
     giNotes.push(args.portfolioResumptionPlan.summary);
   }
+  if (args.resumptionTrajectory?.trajectory === 'deteriorating') {
+    giNotes.push(
+      `Resumption friction ${args.resumptionTrajectory.trajectory} (EMA ${args.resumptionTrajectory.resumptionFrictionEma})`
+    );
+  }
+  if (args.commitGatingAdvice?.shouldBlockAllCommits) {
+    giNotes.push(args.commitGatingAdvice.summary);
+  }
+  if (args.portfolioHandoffBrief?.shouldSignalHandoff) {
+    giNotes.push(args.portfolioHandoffBrief.summary);
+  }
 
   const headlineParts: string[] = [];
   if (args.coupling.band === 'critical' || args.coupling.band === 'strained') {
@@ -3522,6 +3770,8 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
     headlineParts.push('recovery readiness clear');
   } else if (args.portfolioResumptionPlan?.shouldHoldNewCommits) {
     headlineParts.push('portfolio resumption on hold');
+  } else if (args.portfolioHandoffBrief?.shouldSignalHandoff) {
+    headlineParts.push('portfolio handoff ready');
   }
 
   return {
@@ -3549,6 +3799,7 @@ export interface AdvancePublicServicesTurnArgs {
   stabilizationTrajectoryPersisted?: StabilizationTrajectoryPersisted | null;
   reliefFulfillmentPersisted?: ReliefFulfillmentPersisted | null;
   readinessTrajectoryPersisted?: ReadinessTrajectoryPersisted | null;
+  resumptionTrajectoryPersisted?: ResumptionTrajectoryPersisted | null;
   /** New commitments queued this turn (already validated or not). */
   newCommitments?: SpendingCommitment[];
   /** When true, reject commitments that fail capacity gate. */
@@ -3567,6 +3818,7 @@ export interface AdvancePublicServicesTurnResult {
   stabilizationTrajectoryPersisted: StabilizationTrajectoryPersisted;
   reliefFulfillmentPersisted: ReliefFulfillmentPersisted;
   readinessTrajectoryPersisted: ReadinessTrajectoryPersisted;
+  resumptionTrajectoryPersisted: ResumptionTrajectoryPersisted;
   rejectedCommitments: Array<{ commitment: SpendingCommitment; reason: string }>;
 }
 
@@ -3789,6 +4041,28 @@ export function advancePublicServicesTurn(
     interventionQueue: interventionPriorityQueue,
   });
 
+  const resumptionTrajectoryAdvance = advanceResumptionTrajectory(
+    turn,
+    portfolioResumptionPlan,
+    args.resumptionTrajectoryPersisted
+  );
+
+  const commitGatingAdvice = adviseCommitGating({
+    turn,
+    resumptionPlan: portfolioResumptionPlan,
+    capacity,
+    resumptionTrajectory: resumptionTrajectoryAdvance.snapshot,
+    rejectedCommitmentsCount: rejectedCommitments.length,
+  });
+
+  const portfolioHandoffBrief = composePortfolioHandoffBrief({
+    turn,
+    resumptionPlan: portfolioResumptionPlan,
+    commitGating: commitGatingAdvice,
+    recoveryBrief: wellbeingRecoveryReadinessBrief,
+    resumptionTrajectory: resumptionTrajectoryAdvance.snapshot,
+  });
+
   const executiveBrief = composeAgent14WellbeingExecutiveBrief({
     turn,
     warnings: wellbeingWarnings,
@@ -3814,6 +4088,9 @@ export function advancePublicServicesTurn(
     readinessTrajectory: readinessTrajectoryAdvance.snapshot,
     fulfillmentAgingMonitor,
     portfolioResumptionPlan,
+    resumptionTrajectory: resumptionTrajectoryAdvance.snapshot,
+    commitGatingAdvice,
+    portfolioHandoffBrief,
   });
 
   const enriched: EnrichedPublicServiceTurnInputs = {
@@ -3856,6 +4133,9 @@ export function advancePublicServicesTurn(
     readinessTrajectory: readinessTrajectoryAdvance.snapshot,
     fulfillmentAgingMonitor,
     portfolioResumptionPlan,
+    resumptionTrajectory: resumptionTrajectoryAdvance.snapshot,
+    commitGatingAdvice,
+    portfolioHandoffBrief,
   };
 
   return {
@@ -3870,6 +4150,7 @@ export function advancePublicServicesTurn(
     stabilizationTrajectoryPersisted: stabilizationTrajectoryAdvance.persisted,
     reliefFulfillmentPersisted: reliefFulfillmentAdvance.persisted,
     readinessTrajectoryPersisted: readinessTrajectoryAdvance.persisted,
+    resumptionTrajectoryPersisted: resumptionTrajectoryAdvance.persisted,
     rejectedCommitments,
   };
 }
@@ -3900,7 +4181,9 @@ export type Agent14HousingScenarioId =
   | 'stabilization_recovery_arc'
   | 'relief_fulfillment_backlog_stress'
   | 'readiness_trajectory_arc'
-  | 'fulfillment_aging_stress';
+  | 'fulfillment_aging_stress'
+  | 'resumption_trajectory_arc'
+  | 'commit_gating_stress';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -4126,6 +4409,29 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
       'ps_h_QLD_regional_release',
     ],
   },
+  {
+    id: 'resumption_trajectory_arc',
+    label: 'Resumption trajectory arc',
+    baseInputs: { fiscalHeadroom: 52, stateCapacityLoad: 48, workforceReadiness: 'balanced' },
+    launchProgramIds: [
+      'ps_xp_TAS_handoff_alignment',
+      'ps_h_TAS_affordable',
+      'ps_he_NSW_primary_care',
+    ],
+  },
+  {
+    id: 'commit_gating_stress',
+    label: 'Commit gating stress',
+    baseInputs: { fiscalHeadroom: 15, stateCapacityLoad: 95, workforceReadiness: 'blocking', workforceSpecialistGap: 82 },
+    launchProgramIds: [
+      'ps_xp_QLD_commit_gating',
+      'ps_h_QLD_regional_release',
+      'ps_he_QLD_remote_clinic',
+      'ps_ed_NSW_skills',
+      'ps_h_NSW_social_accel',
+      'ps_h_VIC_planning_reform',
+    ],
+  },
 ];
 
 export function simulateAgent14HousingScenario(
@@ -4148,6 +4454,7 @@ export function simulateAgent14HousingScenario(
   let stabilizationTrajectoryPersisted = null;
   let reliefFulfillmentPersisted = null;
   let readinessTrajectoryPersisted = null;
+  let resumptionTrajectoryPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -4170,6 +4477,7 @@ export function simulateAgent14HousingScenario(
       stabilizationTrajectoryPersisted,
       reliefFulfillmentPersisted,
       readinessTrajectoryPersisted,
+      resumptionTrajectoryPersisted,
       newCommitments,
       enforceCapacity: true,
     });
@@ -4183,6 +4491,7 @@ export function simulateAgent14HousingScenario(
     stabilizationTrajectoryPersisted = result.stabilizationTrajectoryPersisted;
     reliefFulfillmentPersisted = result.reliefFulfillmentPersisted;
     readinessTrajectoryPersisted = result.readinessTrajectoryPersisted;
+    resumptionTrajectoryPersisted = result.resumptionTrajectoryPersisted;
     turns.push(result.inputs);
   }
 
@@ -4716,8 +5025,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Twenty-four housing scenarios registered',
-    listAgent14ScenarioIds().length === 24,
+    'Twenty-six housing scenarios registered',
+    listAgent14ScenarioIds().length === 26,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -4945,8 +5254,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave5_schema_version',
-    'Wellbeing schema version is wave 11',
-    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.11-scale-wave-11',
+    'Wellbeing schema version is wave 12',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.12-scale-wave-12',
     AGENT14_WELLBEING_SCHEMA_VERSION
   );
 
@@ -6008,6 +6317,162 @@ export function runAgent14WellbeingSelfTests(): {
       'Readiness trajectory advance updates persisted turn',
       snap.persisted.lastTurn === 4 && snap.snapshot.readinessGapEma > 0,
       `ema=${snap.snapshot.readinessGapEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 5, fiscalHeadroom: 41, stateCapacityLoad: 66, workforceReadiness: 'strained' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      resumptionTrajectoryPersisted: createInitialResumptionTrajectory(),
+    });
+    check(
+      results,
+      'wave12_resumption_trajectory',
+      'Turn advance attaches resumption trajectory',
+      adv.inputs.resumptionTrajectory !== undefined &&
+        adv.resumptionTrajectoryPersisted.lastTurn === 5 &&
+        adv.inputs.resumptionTrajectory!.resumptionFrictionEma > 0,
+      `band=${adv.inputs.resumptionTrajectory?.band} ema=${adv.inputs.resumptionTrajectory?.resumptionFrictionEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 6, fiscalHeadroom: 18, stateCapacityLoad: 92, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave12_commit_gating_advice',
+      'Commit gating advice populated under stress',
+      adv.inputs.commitGatingAdvice !== undefined &&
+        adv.inputs.commitGatingAdvice!.summary.length > 8,
+      adv.inputs.commitGatingAdvice?.summary.slice(0, 72)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 47, stateCapacityLoad: 54, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave12_portfolio_handoff_brief',
+      'Portfolio handoff brief includes summary',
+      adv.inputs.portfolioHandoffBrief !== undefined &&
+        adv.inputs.portfolioHandoffBrief!.summary.length > 10,
+      `handoff=${adv.inputs.portfolioHandoffBrief?.shouldSignalHandoff}`
+    );
+  }
+
+  {
+    const raw = sanitizeResumptionTrajectory({
+      schemaVersion: '10.14.11-scale-wave-11' as any,
+      lastTurn: 2,
+      emaAlpha: 0.3,
+      resumptionFrictionEma: 55,
+    });
+    check(
+      results,
+      'wave12_resumption_sanitize',
+      'Resumption trajectory sanitize upgrades schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.resumptionFrictionEma === 55,
+      `schema=${raw.schemaVersion}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('resumption_trajectory_arc', 10);
+    const last = sim.turns[9];
+    check(
+      results,
+      'wave12_resumption_arc_scenario',
+      'Resumption arc wires trajectory, gating, and handoff brief',
+      last.resumptionTrajectory !== undefined &&
+        last.commitGatingAdvice !== undefined &&
+        last.portfolioHandoffBrief !== undefined,
+      `friction=${last.resumptionTrajectory?.band} block=${last.commitGatingAdvice?.shouldBlockAllCommits}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('commit_gating_stress', 8);
+    const last = sim.turns[7];
+    check(
+      results,
+      'wave12_gating_stress_scenario',
+      'Gating stress blocks commits or holds resumption',
+      last.commitGatingAdvice !== undefined &&
+        (last.commitGatingAdvice!.shouldBlockAllCommits ||
+          last.commitGatingAdvice!.allowedNewCommits === 0 ||
+          last.portfolioResumptionPlan!.shouldHoldNewCommits),
+      `block=${last.commitGatingAdvice?.shouldBlockAllCommits} allowed=${last.commitGatingAdvice?.allowedNewCommits}`
+    );
+  }
+
+  check(
+    results,
+    'wave12_handoff_stub_catalog',
+    'Wave 12 handoff stubs present',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_TAS_handoff_alignment') &&
+      AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_QLD_commit_gating'),
+    `n=${AGENT14_HEALTH_ED_PROGRAM_STUBS.length}`
+  );
+
+  check(
+    results,
+    'wave12_scenario_catalog',
+    'Scenario catalog includes wave 12 scenarios',
+    listAgent14ScenarioIds().includes('resumption_trajectory_arc') &&
+      listAgent14ScenarioIds().includes('commit_gating_stress'),
+    `count=${listAgent14ScenarioIds().length}`
+  );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 7, fiscalHeadroom: 24, stateCapacityLoad: 87, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const gating = adviseCommitGating({
+      turn: 7,
+      resumptionPlan: adv.inputs.portfolioResumptionPlan!,
+      capacity: adv.inputs.capacity,
+      resumptionTrajectory: adv.inputs.resumptionTrajectory,
+    });
+    const handoff = composePortfolioHandoffBrief({
+      turn: 7,
+      resumptionPlan: adv.inputs.portfolioResumptionPlan!,
+      commitGating: gating,
+      recoveryBrief: adv.inputs.wellbeingRecoveryReadinessBrief!,
+      resumptionTrajectory: adv.inputs.resumptionTrajectory,
+    });
+    check(
+      results,
+      'wave12_handoff_composer',
+      'Standalone handoff composer returns headlines',
+      handoff.headlines.length > 0 && handoff.summary.length > 10,
+      handoff.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 3, fiscalHeadroom: 43, stateCapacityLoad: 62, workforceReadiness: 'weak' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const snap = advanceResumptionTrajectory(
+      3,
+      adv.inputs.portfolioResumptionPlan!,
+      createInitialResumptionTrajectory()
+    );
+    check(
+      results,
+      'wave12_resumption_advance_unit',
+      'Resumption trajectory advance updates persisted turn',
+      snap.persisted.lastTurn === 3 && snap.snapshot.resumptionFrictionEma > 0,
+      `ema=${snap.snapshot.resumptionFrictionEma}`
     );
   }
 

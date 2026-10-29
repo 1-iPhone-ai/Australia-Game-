@@ -35,4 +35,7 @@ export * from './wellbeing-recovery-readiness-brief.ts';
 export * from './readiness-trajectory.ts';
 export * from './fulfillment-aging-monitor.ts';
 export * from './portfolio-resumption-plan.ts';
+export * from './resumption-trajectory.ts';
+export * from './commit-gating-advisor.ts';
+export * from './portfolio-handoff-brief.ts';
 export { runAgent14WellbeingSelfTests } from './self-tests.ts';

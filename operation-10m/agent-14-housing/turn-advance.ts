@@ -28,6 +28,9 @@ import { composeWellbeingRecoveryReadinessBrief } from './wellbeing-recovery-rea
 import { advanceReadinessTrajectory } from './readiness-trajectory.ts';
 import { buildFulfillmentAgingMonitor } from './fulfillment-aging-monitor.ts';
 import { buildPortfolioResumptionPlan } from './portfolio-resumption-plan.ts';
+import { advanceResumptionTrajectory } from './resumption-trajectory.ts';
+import { adviseCommitGating } from './commit-gating-advisor.ts';
+import { composePortfolioHandoffBrief } from './portfolio-handoff-brief.ts';
 import { composeAgent14WellbeingExecutiveBrief } from './wellbeing-executive-brief.ts';
 import {
   canAcceptSpendingCommitment,
@@ -46,6 +49,7 @@ import type {
   StabilizationTrajectoryPersisted,
   ReliefFulfillmentPersisted,
   ReadinessTrajectoryPersisted,
+  ResumptionTrajectoryPersisted,
   SpendingCommitment,
 } from './types.ts';
 
@@ -61,6 +65,7 @@ export interface AdvancePublicServicesTurnArgs {
   stabilizationTrajectoryPersisted?: StabilizationTrajectoryPersisted | null;
   reliefFulfillmentPersisted?: ReliefFulfillmentPersisted | null;
   readinessTrajectoryPersisted?: ReadinessTrajectoryPersisted | null;
+  resumptionTrajectoryPersisted?: ResumptionTrajectoryPersisted | null;
   /** New commitments queued this turn (already validated or not). */
   newCommitments?: SpendingCommitment[];
   /** When true, reject commitments that fail capacity gate. */
@@ -79,6 +84,7 @@ export interface AdvancePublicServicesTurnResult {
   stabilizationTrajectoryPersisted: StabilizationTrajectoryPersisted;
   reliefFulfillmentPersisted: ReliefFulfillmentPersisted;
   readinessTrajectoryPersisted: ReadinessTrajectoryPersisted;
+  resumptionTrajectoryPersisted: ResumptionTrajectoryPersisted;
   rejectedCommitments: Array<{ commitment: SpendingCommitment; reason: string }>;
 }
 
@@ -301,6 +307,28 @@ export function advancePublicServicesTurn(
     interventionQueue: interventionPriorityQueue,
   });
 
+  const resumptionTrajectoryAdvance = advanceResumptionTrajectory(
+    turn,
+    portfolioResumptionPlan,
+    args.resumptionTrajectoryPersisted
+  );
+
+  const commitGatingAdvice = adviseCommitGating({
+    turn,
+    resumptionPlan: portfolioResumptionPlan,
+    capacity,
+    resumptionTrajectory: resumptionTrajectoryAdvance.snapshot,
+    rejectedCommitmentsCount: rejectedCommitments.length,
+  });
+
+  const portfolioHandoffBrief = composePortfolioHandoffBrief({
+    turn,
+    resumptionPlan: portfolioResumptionPlan,
+    commitGating: commitGatingAdvice,
+    recoveryBrief: wellbeingRecoveryReadinessBrief,
+    resumptionTrajectory: resumptionTrajectoryAdvance.snapshot,
+  });
+
   const executiveBrief = composeAgent14WellbeingExecutiveBrief({
     turn,
     warnings: wellbeingWarnings,
@@ -326,6 +354,9 @@ export function advancePublicServicesTurn(
     readinessTrajectory: readinessTrajectoryAdvance.snapshot,
     fulfillmentAgingMonitor,
     portfolioResumptionPlan,
+    resumptionTrajectory: resumptionTrajectoryAdvance.snapshot,
+    commitGatingAdvice,
+    portfolioHandoffBrief,
   });
 
   const enriched: EnrichedPublicServiceTurnInputs = {
@@ -368,6 +399,9 @@ export function advancePublicServicesTurn(
     readinessTrajectory: readinessTrajectoryAdvance.snapshot,
     fulfillmentAgingMonitor,
     portfolioResumptionPlan,
+    resumptionTrajectory: resumptionTrajectoryAdvance.snapshot,
+    commitGatingAdvice,
+    portfolioHandoffBrief,
   };
 
   return {
@@ -382,6 +416,7 @@ export function advancePublicServicesTurn(
     stabilizationTrajectoryPersisted: stabilizationTrajectoryAdvance.persisted,
     reliefFulfillmentPersisted: reliefFulfillmentAdvance.persisted,
     readinessTrajectoryPersisted: readinessTrajectoryAdvance.persisted,
+    resumptionTrajectoryPersisted: resumptionTrajectoryAdvance.persisted,
     rejectedCommitments,
   };
 }
