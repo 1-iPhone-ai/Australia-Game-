@@ -642,6 +642,23 @@ export type {
   TransitionPrecedenceBand,
 } from './production-transition-precedence';
 
+export {
+  AGENT08_TRANSITION_RATIFICATION_SCHEMA_VERSION,
+  buildFirmProductionTransitionRatification,
+  classifyNationalRatificationBand,
+  computeNationalRatificationPressure,
+  computeNationalProductionTransitionRatification,
+  summarizeRegionalTransitionRatification,
+  runAgent08TransitionRatificationSelfTests,
+} from './production-transition-ratification';
+
+export type {
+  FirmProductionTransitionRatification,
+  NationalProductionTransitionRatification,
+  RegionalTransitionRatificationSummary,
+  TransitionRatificationBand,
+} from './production-transition-ratification';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -680,6 +697,7 @@ import { runAgent08TransitionTrustSelfTests } from './production-transition-trus
 import { runAgent08TransitionLegitimacySelfTests } from './production-transition-legitimacy';
 import { runAgent08TransitionRecognitionSelfTests } from './production-transition-recognition';
 import { runAgent08TransitionPrecedenceSelfTests } from './production-transition-precedence';
+import { runAgent08TransitionRatificationSelfTests } from './production-transition-ratification';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -874,6 +892,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionRatification = runAgent08TransitionRatificationSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -913,5 +936,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionLegitimacy,
     ...transitionRecognition,
     ...transitionPrecedence,
+    ...transitionRatification,
   ];
 }

@@ -52,6 +52,7 @@ const FILES = [
   'production-transition-legitimacy.ts',
   'production-transition-recognition.ts',
   'production-transition-precedence.ts',
+  'production-transition-ratification.ts',
   'chunk-exports.ts',
 ];
 
