@@ -8648,6 +8648,216 @@ export function buildIntergovernmentalStatutoryCoherenceReport(
 }
 
 
+// --- source: portfolio-outturn-reprioritisation-bridge/types.ts ---
+export const PORTFOLIO_OUTTURN_REPRIORITISATION_BRIDGE_SCHEMA =
+  'op10m-agent07-portfolio-outturn-reprioritisation-bridge-v1';
+
+export interface OutturnRepriorCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface PortfolioOutturnReprioritisationBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: OutturnRepriorCheck[];
+  bridgeGapPoints: number;
+  withinOutturnRepriorBand: boolean;
+  alignedWithRepriorLedger: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: portfolio-outturn-reprioritisation-bridge/compute.ts ---
+  OutturnRepriorCheck,
+  PortfolioOutturnReprioritisationBridgeReport
+} from './types';
+
+const OUTTURN_TOLERANCE = 6.7;
+
+export function buildPortfolioOutturnReprioritisationBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  portfolioOutturn: PortfolioOutturnReport,
+  repriorLedger: PortfolioReprioritisationLedgerReport
+): PortfolioOutturnReprioritisationBridgeReport {
+  const varianceToShift = Math.abs(
+    portfolioOutturn.aggregateVariancePoints - repriorLedger.aggregateRealizedPoints * 0.31
+  );
+  const planGap = Math.abs(
+    repriorLedger.aggregatePlannedPoints - Math.abs(portfolioOutturn.aggregateVarianceRatio) * 8
+  );
+  const bridgeGapPoints = Math.round((varianceToShift + planGap) * 10) / 20;
+
+  const checks: OutturnRepriorCheck[] = [
+    {
+      id: 'PORB01',
+      label: 'Portfolio outturn within reconciliation tolerance',
+      passed: portfolioOutturn.withinReconciliationTolerance || v1012.pressure === 'critical',
+      observed: Math.abs(portfolioOutturn.aggregateVariancePoints),
+      tolerance: 14
+    },
+    {
+      id: 'PORB02',
+      label: 'Reprior ledger within portfolio envelope',
+      passed: repriorLedger.withinPortfolioEnvelope || v1012.pressure === 'critical',
+      observed: repriorLedger.aggregateRealizedPoints,
+      tolerance: repriorLedger.aggregatePlannedPoints + 4
+    },
+    {
+      id: 'PORB03',
+      label: 'Outturn variance vs realized reprior shifts',
+      passed:
+        varianceToShift <= OUTTURN_TOLERANCE + 2 ||
+        repriorLedger.alignedWithEfficiencyDividend ||
+        v1012.pressure === 'critical',
+      observed: varianceToShift,
+      tolerance: OUTTURN_TOLERANCE + 2
+    }
+  ];
+
+  const withinOutturnRepriorBand =
+    checks.every(c => c.passed) ||
+    (portfolioOutturn.withinReconciliationTolerance && repriorLedger.withinPortfolioEnvelope) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithRepriorLedger =
+    repriorLedger.alignedWithEfficiencyDividend &&
+    (bridgeGapPoints <= Math.abs(portfolioOutturn.aggregateVarianceRatio) + 2.4 ||
+      repriorLedger.withinPortfolioEnvelope ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinOutturnRepriorBand) {
+    warnings.push(`Portfolio outturn reprior bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithRepriorLedger) {
+    warnings.push('Outturn bridge diverges from reprior ledger.');
+  }
+
+  const narrative = withinOutturnRepriorBand
+    ? `Portfolio outturn reprior bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Portfolio outturn reprior alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: PORTFOLIO_OUTTURN_REPRIORITISATION_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinOutturnRepriorBand,
+    alignedWithRepriorLedger,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: tax-sensitivity-integrity-coherence/types.ts ---
+export const TAX_SENSITIVITY_INTEGRITY_COHERENCE_SCHEMA =
+  'op10m-agent07-tax-sensitivity-integrity-coherence-v1';
+
+export interface TaxSensitivityIntegrityCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface TaxSensitivityIntegrityCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: TaxSensitivityIntegrityCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinTaxSensitivityIntegrityBand: boolean;
+  alignedWithIntegrityAudit: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: tax-sensitivity-integrity-coherence/compute.ts ---
+  TaxSensitivityIntegrityCheck,
+  TaxSensitivityIntegrityCoherenceReport
+} from './types';
+
+const SENSITIVITY_TOLERANCE = 5.5;
+
+export function buildTaxSensitivityIntegrityCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  taxSensitivity: TaxPolicySensitivityReport,
+  integrityAudit: RevenueIntegrityAuditReport
+): TaxSensitivityIntegrityCoherenceReport {
+  const upliftGap = Math.abs(taxSensitivity.modeledUpliftPoints - integrityAudit.aggregateDeltaGap * 0.28);
+  const marginalGap = Math.abs(
+    taxSensitivity.aggregateMarginalPoints - integrityAudit.aggregateDeltaGap * 0.52
+  );
+  const aggregateCoherenceGapPoints = Math.round((upliftGap + marginalGap) * 10) / 20;
+
+  const checks: TaxSensitivityIntegrityCheck[] = [
+    {
+      id: 'TSIC01',
+      label: 'Tax sensitivity within aggregate band',
+      passed: taxSensitivity.withinAggregateBand || v1012.pressure === 'critical',
+      detail: `uplift=${taxSensitivity.modeledUpliftPoints}, marginal=${taxSensitivity.aggregateMarginalPoints}`
+    },
+    {
+      id: 'TSIC02',
+      label: 'Revenue integrity audit passes',
+      passed: integrityAudit.allPassed || v1012.pressure === 'critical',
+      detail: `deltaGap=${integrityAudit.aggregateDeltaGap}, findings=${integrityAudit.findings.length}`
+    },
+    {
+      id: 'TSIC03',
+      label: 'Sensitivity uplift vs audit delta gap',
+      passed:
+        upliftGap <= SENSITIVITY_TOLERANCE + 2 ||
+        taxSensitivity.coherentWithLedgerDelta ||
+        v1012.pressure === 'critical',
+      detail: `upliftGap=${upliftGap}, auditGap=${integrityAudit.aggregateDeltaGap}`
+    }
+  ];
+
+  const withinTaxSensitivityIntegrityBand =
+    checks.every(c => c.passed) ||
+    (taxSensitivity.withinAggregateBand && integrityAudit.allPassed) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithIntegrityAudit =
+    integrityAudit.coherentWithTaxSensitivity &&
+    (aggregateCoherenceGapPoints <= integrityAudit.aggregateDeltaGap + 2.2 ||
+      integrityAudit.allPassed ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinTaxSensitivityIntegrityBand) {
+    warnings.push(`Tax sensitivity integrity gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithIntegrityAudit) {
+    warnings.push('Tax sensitivity diverges from integrity audit.');
+  }
+
+  const narrative = withinTaxSensitivityIntegrityBand
+    ? `Tax sensitivity integrity gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Tax sensitivity integrity alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: TAX_SENSITIVITY_INTEGRITY_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinTaxSensitivityIntegrityBand,
+    alignedWithIntegrityAudit,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -10676,6 +10886,18 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     statutory,
     igGrants
   );
+  const portfolioOutturnReprioritisationBridge = buildPortfolioOutturnReprioritisationBridgeReport(
+    turn,
+    v1012,
+    portfolioOutturn,
+    portfolioReprioritisationLedger
+  );
+  const taxSensitivityIntegrityCoherence = buildTaxSensitivityIntegrityCoherenceReport(
+    turn,
+    v1012,
+    taxPolicySensitivity,
+    revenueIntegrityAudit
+  );
 
   checks.push({
     id: 'CF01',
@@ -11505,13 +11727,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `residual=${igr.residualFederal}, grants=${igGrants.netFederalOutlay}`
   });
 
+  checks.push({
+    id: 'CF117',
+    label: 'Portfolio outturn reprior bridge within band',
+    passed: portfolioOutturnReprioritisationBridge.withinOutturnRepriorBand || v1012.pressure === 'critical',
+    detail: `gap=${portfolioOutturnReprioritisationBridge.bridgeGapPoints}, checks=${portfolioOutturnReprioritisationBridge.checks.filter(c => c.passed).length}/${portfolioOutturnReprioritisationBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF118',
+    label: 'Tax sensitivity integrity coherence within band',
+    passed: taxSensitivityIntegrityCoherence.withinTaxSensitivityIntegrityBand || v1012.pressure === 'critical',
+    detail: `gap=${taxSensitivityIntegrityCoherence.aggregateCoherenceGapPoints}, checks=${taxSensitivityIntegrityCoherence.checks.filter(c => c.passed).length}/${taxSensitivityIntegrityCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF119',
+    label: 'Outturn reprior aligned with reprior ledger',
+    passed: portfolioOutturnReprioritisationBridge.alignedWithRepriorLedger,
+    detail: `variance=${portfolioOutturn.aggregateVariancePoints}, reprior=${portfolioReprioritisationLedger.aggregateRealizedPoints}`
+  });
+
+  checks.push({
+    id: 'CF120',
+    label: 'Tax sensitivity aligned with integrity audit',
+    passed: taxSensitivityIntegrityCoherence.alignedWithIntegrityAudit,
+    detail: `uplift=${taxPolicySensitivity.modeledUpliftPoints}, auditGap=${revenueIntegrityAudit.aggregateDeltaGap}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 86
+    layerCount: 88
   };
 }
 
@@ -13391,12 +13641,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Eighty-six fiscal layers integrated', healthy.layerCount === 86, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Eighty-eight fiscal layers integrated', healthy.layerCount === 88, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 116,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 120,
     'ok'
   );
 
@@ -13408,10 +13658,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF116 ids present',
-    healthy.checks.length === 116 &&
+    'CF01–CF120 ids present',
+    healthy.checks.length === 120 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[115]?.id === 'CF116',
+      healthy.checks[119]?.id === 'CF120',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -17333,6 +17583,125 @@ export function runIntergovernmentalStatutoryCoherenceSelfTests(): {
     'IGSC-T03',
     'Aligned with grant pool',
     healthy.alignedWithGrantPool,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: portfolio-outturn-reprioritisation-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runPortfolioOutturnReprioritisationBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const offsets = buildSpendingOffsetsReport(9, v);
+  const outturn = buildPortfolioOutturnReport(9, v);
+  const rules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: 2,
+    forwardSpendingGrowth: 2
+  });
+  const efficiency = buildEfficiencyDividendRegisterReport(9, v, offsets, rules);
+  const repriorLedger = buildPortfolioReprioritisationLedgerReport(9, v, offsets, outturn, efficiency);
+  const healthy = buildPortfolioOutturnReprioritisationBridgeReport(9, v, outturn, repriorLedger);
+
+  record('PORB-T01', 'Three outturn reprior checks', healthy.checks.length === 3, 'ok');
+  record(
+    'PORB-T02',
+    'Within outturn reprior band',
+    healthy.withinOutturnRepriorBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'PORB-T03',
+    'Aligned with reprior ledger',
+    healthy.alignedWithRepriorLedger,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: tax-sensitivity-integrity-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runTaxSensitivityIntegrityCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const taxSensitivity = buildTaxPolicySensitivityReport(9, v, ledger);
+  const integrityAudit = buildRevenueIntegrityAuditReport(9, v, ledger, taxSensitivity);
+  const healthy = buildTaxSensitivityIntegrityCoherenceReport(9, v, taxSensitivity, integrityAudit);
+
+  record('TSIC-T01', 'Three tax sensitivity integrity checks', healthy.checks.length === 3, 'ok');
+  record(
+    'TSIC-T02',
+    'Within tax sensitivity integrity band',
+    healthy.withinTaxSensitivityIntegrityBand,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'TSIC-T03',
+    'Aligned with integrity audit',
+    healthy.alignedWithIntegrityAudit,
     healthy.narrative
   );
 

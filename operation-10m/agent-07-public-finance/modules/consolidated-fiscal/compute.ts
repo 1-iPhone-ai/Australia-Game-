@@ -61,6 +61,8 @@ import { buildContingencyForwardCoherenceReport } from '../contingency-forward-c
 import { buildAppropriationWarrantFiscalBridgeReport } from '../appropriation-warrant-fiscal-bridge/compute';
 import { buildEfficiencyOffsetForwardCoherenceReport } from '../efficiency-offset-forward-coherence/compute';
 import { buildIntergovernmentalStatutoryCoherenceReport } from '../intergovernmental-statutory-coherence/compute';
+import { buildPortfolioOutturnReprioritisationBridgeReport } from '../portfolio-outturn-reprioritisation-bridge/compute';
+import { buildTaxSensitivityIntegrityCoherenceReport } from '../tax-sensitivity-integrity-coherence/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -400,6 +402,18 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     igr,
     statutory,
     igGrants
+  );
+  const portfolioOutturnReprioritisationBridge = buildPortfolioOutturnReprioritisationBridgeReport(
+    turn,
+    v1012,
+    portfolioOutturn,
+    portfolioReprioritisationLedger
+  );
+  const taxSensitivityIntegrityCoherence = buildTaxSensitivityIntegrityCoherenceReport(
+    turn,
+    v1012,
+    taxPolicySensitivity,
+    revenueIntegrityAudit
   );
 
   checks.push({
@@ -1230,12 +1244,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `residual=${igr.residualFederal}, grants=${igGrants.netFederalOutlay}`
   });
 
+  checks.push({
+    id: 'CF117',
+    label: 'Portfolio outturn reprior bridge within band',
+    passed: portfolioOutturnReprioritisationBridge.withinOutturnRepriorBand || v1012.pressure === 'critical',
+    detail: `gap=${portfolioOutturnReprioritisationBridge.bridgeGapPoints}, checks=${portfolioOutturnReprioritisationBridge.checks.filter(c => c.passed).length}/${portfolioOutturnReprioritisationBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF118',
+    label: 'Tax sensitivity integrity coherence within band',
+    passed: taxSensitivityIntegrityCoherence.withinTaxSensitivityIntegrityBand || v1012.pressure === 'critical',
+    detail: `gap=${taxSensitivityIntegrityCoherence.aggregateCoherenceGapPoints}, checks=${taxSensitivityIntegrityCoherence.checks.filter(c => c.passed).length}/${taxSensitivityIntegrityCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF119',
+    label: 'Outturn reprior aligned with reprior ledger',
+    passed: portfolioOutturnReprioritisationBridge.alignedWithRepriorLedger,
+    detail: `variance=${portfolioOutturn.aggregateVariancePoints}, reprior=${portfolioReprioritisationLedger.aggregateRealizedPoints}`
+  });
+
+  checks.push({
+    id: 'CF120',
+    label: 'Tax sensitivity aligned with integrity audit',
+    passed: taxSensitivityIntegrityCoherence.alignedWithIntegrityAudit,
+    detail: `uplift=${taxPolicySensitivity.modeledUpliftPoints}, auditGap=${revenueIntegrityAudit.aggregateDeltaGap}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 86
+    layerCount: 88
   };
 }
