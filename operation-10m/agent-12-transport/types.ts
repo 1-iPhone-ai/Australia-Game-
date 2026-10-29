@@ -273,8 +273,14 @@ export type HydrogenLngExportPolicy = 'baseline' | 'accelerate';
 
 export type UrbanMicrofreightHubPolicy = 'baseline' | 'expand';
 
+export type FloatingOffshoreWindStagingPolicy = 'baseline' | 'deploy';
+
+export type CriticalMedicineAirliftPolicy = 'baseline' | 'surge';
+
+export type RegionalFreightDronePolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/21';
+  schemaVersion: 'agent12/22';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -408,6 +414,14 @@ export interface TransportInfrastructureState {
   urbanMicrofreightHubShare: number;
   nationalUrbanMicrofreightHubThroughputIndex: number;
   urbanMicrofreightHubThroughputByRegion: Record<AuRegionCode, number>;
+  nationalFloatingOffshoreWindStagingIndex: number;
+  floatingOffshoreWindStagingByRegion: Record<AuRegionCode, number>;
+  criticalMedicineAirliftShare: number;
+  nationalCriticalMedicineAirliftIndex: number;
+  criticalMedicineAirliftByRegion: Record<AuRegionCode, number>;
+  regionalFreightDroneShare: number;
+  nationalRegionalFreightDroneThroughputIndex: number;
+  regionalFreightDroneThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -461,6 +475,9 @@ export interface TransportInfrastructureOptions {
   offshoreCcsLogisticsPolicy?: OffshoreCcsLogisticsPolicy;
   hydrogenLngExportPolicy?: HydrogenLngExportPolicy;
   urbanMicrofreightHubPolicy?: UrbanMicrofreightHubPolicy;
+  floatingOffshoreWindStagingPolicy?: FloatingOffshoreWindStagingPolicy;
+  criticalMedicineAirliftPolicy?: CriticalMedicineAirliftPolicy;
+  regionalFreightDronePolicy?: RegionalFreightDronePolicy;
 }
 
 export interface V94ProjectSnapshot {

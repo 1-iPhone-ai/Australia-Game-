@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/21' &&
+      infra.schemaVersion === 'agent12/22' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -134,8 +134,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalOffshoreCcsLogisticsIndex >= 5 &&
       infra.nationalHydrogenLngExportIndex >= 11 &&
       infra.urbanMicrofreightHubShare >= 0.035 &&
-      infra.nationalUrbanMicrofreightHubThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} ccs=${infra.nationalOffshoreCcsLogisticsIndex.toFixed(1)} h2lng=${infra.nationalHydrogenLngExportIndex.toFixed(1)} micro=${infra.nationalUrbanMicrofreightHubThroughputIndex.toFixed(1)}`,
+      infra.nationalUrbanMicrofreightHubThroughputIndex >= 2 &&
+      infra.nationalFloatingOffshoreWindStagingIndex >= 6 &&
+      infra.nationalCriticalMedicineAirliftIndex >= 8 &&
+      infra.regionalFreightDroneShare >= 0.03 &&
+      infra.nationalRegionalFreightDroneThroughputIndex >= 1.5,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} floatWind=${infra.nationalFloatingOffshoreWindStagingIndex.toFixed(1)} medAirlift=${infra.nationalCriticalMedicineAirliftIndex.toFixed(1)} drone=${infra.nationalRegionalFreightDroneThroughputIndex.toFixed(1)}`,
   });
 
   return results;

@@ -35,13 +35,13 @@ describe('Agent 12 round 10 catalog', () => {
 });
 
 describe('Agent 12 round 10 systems', () => {
-  it('returns agent12/21 with deep-sea gateway, permitting, and electric freight', () => {
+  it('returns agent12/22 with deep-sea gateway, permitting, and electric freight', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(70), {
       deepSeaGatewayPolicy: 'expand',
       permittingStreamlinePolicy: 'fast_track',
       electricFreightPolicy: 'accelerate',
     });
-    assert.equal(state.schemaVersion, 'agent12/21');
+    assert.equal(state.schemaVersion, 'agent12/22');
     assert.ok(state.nationalDeepSeaGatewayThroughputIndex >= 12);
     assert.ok(state.nationalInfrastructurePermittingIndex >= 38);
     assert.ok(state.electricFreightShare >= 0.06);

@@ -295,6 +295,23 @@ import {
   nationalUrbanMicrofreightHubThroughputIndex,
   urbanMicrofreightHubProductivityMultiplier,
 } from './urban-microfreight-hub-index.ts';
+import {
+  computeFloatingOffshoreWindStagingByRegion,
+  floatingOffshoreWindStagingProductivityMultiplier,
+  nationalFloatingOffshoreWindStagingIndex,
+} from '../network/floating-offshore-wind-staging-index.ts';
+import {
+  computeCriticalMedicineAirliftByRegion,
+  computeCriticalMedicineAirliftShare,
+  criticalMedicineAirliftProductivityMultiplier,
+  nationalCriticalMedicineAirliftIndex,
+} from '../operations/critical-medicine-airlift-index.ts';
+import {
+  computeRegionalFreightDroneShare,
+  computeRegionalFreightDroneThroughputByRegion,
+  nationalRegionalFreightDroneThroughputIndex,
+  regionalFreightDroneProductivityMultiplier,
+} from './regional-freight-drone-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1052,6 +1069,36 @@ export function computeTransportInfrastructureState(
     urbanMicrofreightHubShare,
     options?.urbanMicrofreightHubPolicy ?? 'baseline',
   );
+  const floatingOffshoreWindStagingByRegion = computeFloatingOffshoreWindStagingByRegion(ops);
+  const nationalFloatingWindStaging = nationalFloatingOffshoreWindStagingIndex(
+    floatingOffshoreWindStagingByRegion,
+  );
+  const floatingWindMult = floatingOffshoreWindStagingProductivityMultiplier(
+    nationalFloatingWindStaging,
+    options?.floatingOffshoreWindStagingPolicy ?? 'baseline',
+  );
+  const criticalMedicineAirliftByRegion = computeCriticalMedicineAirliftByRegion(ops, networkStress);
+  const nationalCriticalMedicineAirlift = nationalCriticalMedicineAirliftIndex(criticalMedicineAirliftByRegion);
+  const criticalMedicineAirliftShare = computeCriticalMedicineAirliftShare(
+    ops,
+    options?.criticalMedicineAirliftPolicy ?? 'baseline',
+  );
+  const medicineAirliftMult = criticalMedicineAirliftProductivityMultiplier(
+    criticalMedicineAirliftShare,
+    options?.criticalMedicineAirliftPolicy ?? 'baseline',
+  );
+  const regionalFreightDroneThroughputByRegion = computeRegionalFreightDroneThroughputByRegion(ops);
+  const nationalRegionalFreightDrone = nationalRegionalFreightDroneThroughputIndex(
+    regionalFreightDroneThroughputByRegion,
+  );
+  const regionalFreightDroneShare = computeRegionalFreightDroneShare(
+    ops,
+    options?.regionalFreightDronePolicy ?? 'baseline',
+  );
+  const freightDroneMult = regionalFreightDroneProductivityMultiplier(
+    regionalFreightDroneShare,
+    options?.regionalFreightDronePolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1069,6 +1116,9 @@ export function computeTransportInfrastructureState(
     const ccsBoost = (offshoreCcsLogisticsByRegion[code] - 4) * 0.0046;
     const h2LngBoost = (hydrogenLngExportByRegion[code] - 11) * 0.0044;
     const microfreightBoost = (urbanMicrofreightHubThroughputByRegion[code] - 2) * 0.0042;
+    const floatingWindBoost = (floatingOffshoreWindStagingByRegion[code] - 5) * 0.0045;
+    const medicineAirliftBoost = (criticalMedicineAirliftByRegion[code] - 8) * 0.0041;
+    const freightDroneBoost = (regionalFreightDroneThroughputByRegion[code] - 1.5) * 0.004;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -1085,7 +1135,10 @@ export function computeTransportInfrastructureState(
         zetBoost +
         ccsBoost +
         h2LngBoost +
-        microfreightBoost) *
+        microfreightBoost +
+        floatingWindBoost +
+        medicineAirliftBoost +
+        freightDroneBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -1100,7 +1153,10 @@ export function computeTransportInfrastructureState(
       zetMult *
       ccsMult *
       h2LngMult *
-      microfreightMult;
+      microfreightMult *
+      floatingWindMult *
+      medicineAirliftMult *
+      freightDroneMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -1138,7 +1194,10 @@ export function computeTransportInfrastructureState(
     nationalZeroEmissionTruck * 0.01 +
     nationalOffshoreCcs * 0.009 +
     nationalHydrogenLng * 0.009 +
-    nationalUrbanMicrofreight * 0.009;
+    nationalUrbanMicrofreight * 0.009 +
+    nationalFloatingWindStaging * 0.008 +
+    nationalCriticalMedicineAirlift * 0.008 +
+    nationalRegionalFreightDrone * 0.008;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -1153,7 +1212,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/21',
+    schemaVersion: 'agent12/22',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -1287,6 +1346,14 @@ export function computeTransportInfrastructureState(
     urbanMicrofreightHubShare,
     nationalUrbanMicrofreightHubThroughputIndex: nationalUrbanMicrofreight,
     urbanMicrofreightHubThroughputByRegion,
+    nationalFloatingOffshoreWindStagingIndex: nationalFloatingWindStaging,
+    floatingOffshoreWindStagingByRegion,
+    criticalMedicineAirliftShare,
+    nationalCriticalMedicineAirliftIndex: nationalCriticalMedicineAirlift,
+    criticalMedicineAirliftByRegion,
+    regionalFreightDroneShare,
+    nationalRegionalFreightDroneThroughputIndex: nationalRegionalFreightDrone,
+    regionalFreightDroneThroughputByRegion,
     computeMs,
   };
 }

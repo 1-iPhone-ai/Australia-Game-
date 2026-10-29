@@ -277,8 +277,14 @@ export type HydrogenLngExportPolicy = 'baseline' | 'accelerate';
 
 export type UrbanMicrofreightHubPolicy = 'baseline' | 'expand';
 
+export type FloatingOffshoreWindStagingPolicy = 'baseline' | 'deploy';
+
+export type CriticalMedicineAirliftPolicy = 'baseline' | 'surge';
+
+export type RegionalFreightDronePolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/21';
+  schemaVersion: 'agent12/22';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -412,6 +418,14 @@ export interface TransportInfrastructureState {
   urbanMicrofreightHubShare: number;
   nationalUrbanMicrofreightHubThroughputIndex: number;
   urbanMicrofreightHubThroughputByRegion: Record<AuRegionCode, number>;
+  nationalFloatingOffshoreWindStagingIndex: number;
+  floatingOffshoreWindStagingByRegion: Record<AuRegionCode, number>;
+  criticalMedicineAirliftShare: number;
+  nationalCriticalMedicineAirliftIndex: number;
+  criticalMedicineAirliftByRegion: Record<AuRegionCode, number>;
+  regionalFreightDroneShare: number;
+  nationalRegionalFreightDroneThroughputIndex: number;
+  regionalFreightDroneThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -465,6 +479,9 @@ export interface TransportInfrastructureOptions {
   offshoreCcsLogisticsPolicy?: OffshoreCcsLogisticsPolicy;
   hydrogenLngExportPolicy?: HydrogenLngExportPolicy;
   urbanMicrofreightHubPolicy?: UrbanMicrofreightHubPolicy;
+  floatingOffshoreWindStagingPolicy?: FloatingOffshoreWindStagingPolicy;
+  criticalMedicineAirliftPolicy?: CriticalMedicineAirliftPolicy;
+  regionalFreightDronePolicy?: RegionalFreightDronePolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -1364,6 +1381,48 @@ export const TRANSPORT_CORRIDORS_ROUND20: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round21.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND21: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_sa_floating_wind_staging',
+    name: 'WA–SA Floating Wind Staging',
+    networkKind: 'freight',
+    regionSequence: ['WA', 'SA'],
+    requiredTagsByRegion: {
+      WA: ['floating_wind', 'offshore_staging', 'turbine_logistics'],
+      SA: ['floating_wind', 'offshore_staging', 'turbine_logistics'],
+    },
+    productivitySynergyPoints: 6.1,
+    logisticsRelief: 0.035,
+  },
+  {
+    id: 'corr_nt_qld_medicine_airlift',
+    name: 'NT–QLD Medicine Airlift',
+    networkKind: 'mobility',
+    regionSequence: ['NT', 'QLD'],
+    requiredTagsByRegion: {
+      NT: ['critical_medicine', 'medevac_airlift', 'pharma_cold_chain'],
+      QLD: ['critical_medicine', 'medevac_airlift', 'pharma_cold_chain'],
+    },
+    productivitySynergyPoints: 5.8,
+    logisticsRelief: 0.032,
+  },
+  {
+    id: 'corr_nsw_vic_freight_drone_spine',
+    name: 'NSW–VIC Freight Drone Spine',
+    networkKind: 'mobility',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['freight_drone', 'regional_uav', 'last_mile_aerial'],
+      VIC: ['freight_drone', 'regional_uav', 'last_mile_aerial'],
+    },
+    productivitySynergyPoints: 5.5,
+    logisticsRelief: 0.029,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -1531,6 +1590,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND18,
   ...TRANSPORT_CORRIDORS_ROUND19,
   ...TRANSPORT_CORRIDORS_ROUND20,
+  ...TRANSPORT_CORRIDORS_ROUND21,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -2683,6 +2743,62 @@ export const TRANSPORT_SCENARIOS_ROUND20: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round21.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND21: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_floating_wind_laydown',
+    label: 'WA Floating Wind Laydown',
+    description: 'Turbine float-out season overloads Albany staging berths.',
+    targetRegions: ['WA', 'SA'],
+    networkKind: 'freight',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_nt_medicine_airlift_surge',
+    label: 'NT Medicine Airlift Surge',
+    description: 'Remote medevac surge strains Darwin and Alice pharma stores.',
+    targetRegions: ['NT', 'QLD'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_nsw_drone_weather_hold',
+    label: 'NSW Drone Weather Hold',
+    description: 'High wind grounds regional UAV freight corridors.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.18,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_qld_pharma_cold_chain_stress',
+    label: 'Queensland Pharma Cold-Chain Stress',
+    description: 'Cyclone prep overloads Cairns medicine airlift terminal.',
+    targetRegions: ['QLD', 'NT'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_sa_offshore_staging_delay',
+    label: 'SA Offshore Staging Delay',
+    description: 'Weather delay backs up Whyalla floating wind yard.',
+    targetRegions: ['SA', 'WA'],
+    networkKind: 'freight',
+    utilizationAdd: 0.2,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'rail'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -2864,6 +2980,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND18,
   ...TRANSPORT_SCENARIOS_ROUND19,
   ...TRANSPORT_SCENARIOS_ROUND20,
+  ...TRANSPORT_SCENARIOS_ROUND21,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -8091,6 +8208,21 @@ export const ROUND20_LOGISTICS: LogisticsNodeAsset[] = [
     lastMileCoveragePct: 52,
   },
   {
+    id: 'log_nsw_newcastle_h2_lng_feed',
+    category: 'logistics',
+    name: 'Newcastle H2 LNG Export Feed',
+    description: 'Cryogenic hydrogen module staging for east coast export.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['trade'],
+    tags: ['hydrogen_lng', 'export_cryogenic', 'h2_liquefaction'],
+    warehouseSqm: 76_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 48,
+  },
+  {
     id: 'log_nsw_sydney_micro_hub',
     category: 'logistics',
     name: 'Sydney CBD Microfreight Hub',
@@ -8112,6 +8244,233 @@ export const SCALE_WAVE_ROUND20_ASSETS = [
   ...ROUND20_RAIL,
   ...ROUND20_PORTS,
   ...ROUND20_LOGISTICS,
+];
+
+
+// --- source: catalog/scale-wave-round21-assets.ts ---
+
+export const ROUND21_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_albany_floating_wind',
+    category: 'road',
+    name: 'Albany Floating Wind Access',
+    description: 'Turbine float-out road to offshore staging.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['freight'],
+    tags: ['floating_wind', 'offshore_staging', 'turbine_logistics', 'port_access'],
+    laneKilometres: 46,
+    designSpeedKmh: 90,
+    freightShare: 0.38,
+    urbanShare: 0.07,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_spencer_floating_staging',
+    category: 'road',
+    name: 'Spencer Gulf Floating Staging',
+    description: 'Offshore wind module road to Whyalla staging.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['freight'],
+    tags: ['floating_wind', 'offshore_staging', 'turbine_logistics'],
+    laneKilometres: 52,
+    designSpeedKmh: 88,
+    freightShare: 0.36,
+    urbanShare: 0.09,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nt_darwin_medevac_feed',
+    category: 'road',
+    name: 'Darwin Medevac Feed',
+    description: 'Critical medicine airlift road to RAAF medevac apron.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'QLD'],
+    baseProductivityPoints: 3.9,
+    strategicNetworks: ['mobility'],
+    tags: ['critical_medicine', 'medevac_airlift', 'pharma_cold_chain', 'remote'],
+    laneKilometres: 22,
+    designSpeedKmh: 85,
+    freightShare: 0.22,
+    urbanShare: 0.18,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_orange_freight_drone',
+    category: 'road',
+    name: 'Orange Regional UAV Feed',
+    description: 'Regional freight drone launch and recovery access.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 3.6,
+    strategicNetworks: ['mobility'],
+    tags: ['freight_drone', 'regional_uav', 'last_mile_aerial', 'regional'],
+    laneKilometres: 28,
+    designSpeedKmh: 80,
+    freightShare: 0.19,
+    urbanShare: 0.14,
+    tollRoad: false,
+  },
+];
+
+export const ROUND21_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_geraldton_floating_wind',
+    category: 'rail',
+    name: 'Geraldton Floating Wind Rail',
+    description: 'Turbine component rail to floating staging port.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['freight'],
+    tags: ['floating_wind', 'offshore_staging', 'turbine_logistics'],
+    trackKilometres: 210,
+    dualTrackShare: 0.44,
+    electrifiedShare: 0.2,
+    designFreightTonnesPerYear: 9_200_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_qld_cairns_medicine_airlift',
+    category: 'rail',
+    name: 'Cairns Medicine Airlift Rail',
+    description: 'Pharma cold-chain rail to tropical medevac hub.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NT'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['mobility'],
+    tags: ['critical_medicine', 'medevac_airlift', 'pharma_cold_chain'],
+    trackKilometres: 96,
+    dualTrackShare: 0.4,
+    electrifiedShare: 0.15,
+    designFreightTonnesPerYear: 3_600_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_vic_ballarat_freight_drone',
+    category: 'rail',
+    name: 'Ballarat Freight Drone Rail Feed',
+    description: 'Regional UAV freight intermodal feed.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['mobility'],
+    tags: ['freight_drone', 'regional_uav', 'last_mile_aerial'],
+    trackKilometres: 72,
+    dualTrackShare: 0.52,
+    electrifiedShare: 0.48,
+    designFreightTonnesPerYear: 2_800_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND21_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_albany_floating_staging',
+    category: 'port',
+    name: 'Albany Floating Wind Staging',
+    description: 'Offshore turbine float-out and staging berths.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['floating_wind', 'offshore_staging', 'turbine_logistics'],
+    berthCount: 3,
+    maxDraftMetres: 13.5,
+    teuCapacityPerYear: 130_000,
+    automationLevel: 1,
+    bulkShare: 0.42,
+  },
+  {
+    id: 'port_nt_darwin_medevac',
+    category: 'port',
+    name: 'Darwin Medevac Pharma Port',
+    description: 'Critical medicine and medevac staging berths.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'QLD'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['mobility'],
+    tags: ['critical_medicine', 'medevac_airlift', 'pharma_cold_chain', 'gateway'],
+    berthCount: 2,
+    maxDraftMetres: 12.2,
+    teuCapacityPerYear: 85_000,
+    automationLevel: 1,
+    bulkShare: 0.1,
+  },
+  {
+    id: 'port_qld_cairns_pharma_airlift',
+    category: 'port',
+    name: 'Cairns Pharma Airlift Terminal',
+    description: 'Tropical medicine airlift and cold-chain export.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NT'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['critical_medicine', 'medevac_airlift', 'pharma_cold_chain'],
+    berthCount: 2,
+    maxDraftMetres: 11.8,
+    teuCapacityPerYear: 92_000,
+    automationLevel: 1,
+    bulkShare: 0.08,
+  },
+];
+
+export const ROUND21_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_sa_whyalla_floating_yard',
+    category: 'logistics',
+    name: 'Whyalla Floating Wind Yard',
+    description: 'Turbine float module consolidation.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['freight'],
+    tags: ['floating_wind', 'offshore_staging', 'turbine_logistics'],
+    warehouseSqm: 102_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 46,
+  },
+  {
+    id: 'log_nt_alice_springs_med_stores',
+    category: 'logistics',
+    name: 'Alice Springs Med Stores',
+    description: 'Remote critical medicine and pharma cold stores.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'QLD', 'SA'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['mobility'],
+    tags: ['critical_medicine', 'medevac_airlift', 'pharma_cold_chain', 'remote'],
+    warehouseSqm: 54_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road'],
+    lastMileCoveragePct: 38,
+  },
+  {
+    id: 'log_nsw_wagga_drone_hub',
+    category: 'logistics',
+    name: 'Wagga Regional Drone Hub',
+    description: 'Freight UAV consolidation and last-mile aerial stores.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 3.8,
+    strategicNetworks: ['mobility'],
+    tags: ['freight_drone', 'regional_uav', 'last_mile_aerial'],
+    warehouseSqm: 44_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 72,
+  },
+];
+
+export const SCALE_WAVE_ROUND21_ASSETS = [
+  ...ROUND21_ROADS,
+  ...ROUND21_RAIL,
+  ...ROUND21_PORTS,
+  ...ROUND21_LOGISTICS,
 ];
 
 
@@ -8143,6 +8502,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND18_ASSETS,
     ...SCALE_WAVE_ROUND19_ASSETS,
     ...SCALE_WAVE_ROUND20_ASSETS,
+    ...SCALE_WAVE_ROUND21_ASSETS,
   ];
 }
 
@@ -9254,6 +9614,64 @@ export function offshoreCcsLogisticsProductivityMultiplier(
   const policyBoost = policy === 'deploy' ? 0.041 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.047 + policyBoost, 0.93, 1.1);
+}
+
+
+// --- source: network/floating-offshore-wind-staging-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type FloatingOffshoreWindStagingPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 floating offshore wind turbine staging throughput by region. */
+export function computeFloatingOffshoreWindStagingByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) => t === 'floating_wind' || t === 'offshore_staging' || t === 'turbine_logistics',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.2 + asset.bulkShare * 4.5;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 92_000 + asset.intermodalLinks.length * 0.88;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 650;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 12_500_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalFloatingOffshoreWindStagingIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.44 + max * 0.56, 5, 75) * 10) / 10;
+}
+
+export function floatingOffshoreWindStagingProductivityMultiplier(
+  index: number,
+  policy: FloatingOffshoreWindStagingPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'deploy' ? 0.042 : 0;
+  const normalized = (index - 6) / 100;
+  return clamp(1 + normalized * 0.048 + policyBoost, 0.93, 1.11);
 }
 
 
@@ -10476,6 +10894,91 @@ export function hydrogenLngExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.044 : 0;
   const normalized = (exportIndex - 11) / 100;
   return clamp(1 + normalized * 0.049 + policyBoost, 0.92, 1.12);
+}
+
+
+// --- source: operations/critical-medicine-airlift-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type CriticalMedicineAirliftPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 critical medicine airlift readiness by region. */
+export function computeCriticalMedicineAirliftByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 7])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'critical_medicine' || t === 'medevac_airlift' || t === 'pharma_cold_chain',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 70_000 + (asset.coldChainCapable ? 2.6 : 0.8);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 520;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.5 + asset.teuCapacityPerYear / 300_000;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 14_000_000;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.038 - stress * 0.029), 4, 88) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalCriticalMedicineAirliftIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.49 + max * 0.51, 6, 82) * 10) / 10;
+}
+
+export function computeCriticalMedicineAirliftShare(
+  operationalAssets: TransportAsset[],
+  policy: CriticalMedicineAirliftPolicy = 'baseline',
+): number {
+  let airliftUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('medevac_airlift') || asset.tags.includes('critical_medicine')) {
+      if (asset.category === 'logistics' && asset.coldChainCapable) {
+        totalUnits += asset.warehouseSqm / 65_000 + 1.2;
+        airliftUnits += (asset.warehouseSqm / 65_000 + 1.2) * 0.77;
+      }
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount;
+        airliftUnits += asset.berthCount * 0.68;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.033;
+  const policyBoost = policy === 'surge' ? 0.034 : 0;
+  return Math.round(clamp(airliftUnits / totalUnits + policyBoost, 0.032, 0.33) * 1000) / 1000;
+}
+
+export function criticalMedicineAirliftProductivityMultiplier(
+  share: number,
+  policy: CriticalMedicineAirliftPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.025 : 1;
+  return (1 + (share - 0.05) * 0.034) * bias;
 }
 
 
@@ -11944,6 +12447,85 @@ export function nationalUrbanMicrofreightHubThroughputIndex(
 }
 
 
+// --- source: productivity/regional-freight-drone-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RegionalFreightDronePolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of regional logistics using freight drone corridors. */
+export function computeRegionalFreightDroneShare(
+  operationalAssets: TransportAsset[],
+  policy: RegionalFreightDronePolicy = 'baseline',
+): number {
+  let droneUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.some((t) => t === 'freight_drone' || t === 'regional_uav' || t === 'last_mile_aerial')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 60_000 + asset.lastMileCoveragePct / 100;
+        droneUnits += (asset.warehouseSqm / 60_000) * 0.66 + asset.lastMileCoveragePct / 100 * 0.48;
+      }
+      if (asset.category === 'road' && asset.tags.includes('regional_uav')) {
+        totalUnits += asset.laneKilometres / 400;
+        droneUnits += asset.laneKilometres / 400 * 0.54;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.031;
+  const policyBoost = policy === 'expand' ? 0.032 : 0;
+  return Math.round(clamp(droneUnits / totalUnits + policyBoost, 0.03, 0.31) * 1000) / 1000;
+}
+
+export function regionalFreightDroneProductivityMultiplier(
+  share: number,
+  policy: RegionalFreightDronePolicy,
+): number {
+  const bias = policy === 'expand' ? 1.021 : 1;
+  return (1 + (share - 0.045) * 0.031) * bias;
+}
+
+export function computeRegionalFreightDroneThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'freight_drone' || t === 'regional_uav' || t === 'last_mile_aerial',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 68_000 + asset.lastMileCoveragePct / 22;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 350;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRegionalFreightDroneThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.52 + max * 0.48, 1.5, 54) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -12349,6 +12931,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalUrbanMicrofreightHubThroughputIndex,
   urbanMicrofreightHubProductivityMultiplier,
 } from './urban-microfreight-hub-index.ts';
+  computeFloatingOffshoreWindStagingByRegion,
+  floatingOffshoreWindStagingProductivityMultiplier,
+  nationalFloatingOffshoreWindStagingIndex,
+} from '../network/floating-offshore-wind-staging-index.ts';
+  computeCriticalMedicineAirliftByRegion,
+  computeCriticalMedicineAirliftShare,
+  criticalMedicineAirliftProductivityMultiplier,
+  nationalCriticalMedicineAirliftIndex,
+} from '../operations/critical-medicine-airlift-index.ts';
+  computeRegionalFreightDroneShare,
+  computeRegionalFreightDroneThroughputByRegion,
+  nationalRegionalFreightDroneThroughputIndex,
+  regionalFreightDroneProductivityMultiplier,
+} from './regional-freight-drone-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -13105,6 +13701,36 @@ export function computeTransportInfrastructureState(
     urbanMicrofreightHubShare,
     options?.urbanMicrofreightHubPolicy ?? 'baseline',
   );
+  const floatingOffshoreWindStagingByRegion = computeFloatingOffshoreWindStagingByRegion(ops);
+  const nationalFloatingWindStaging = nationalFloatingOffshoreWindStagingIndex(
+    floatingOffshoreWindStagingByRegion,
+  );
+  const floatingWindMult = floatingOffshoreWindStagingProductivityMultiplier(
+    nationalFloatingWindStaging,
+    options?.floatingOffshoreWindStagingPolicy ?? 'baseline',
+  );
+  const criticalMedicineAirliftByRegion = computeCriticalMedicineAirliftByRegion(ops, networkStress);
+  const nationalCriticalMedicineAirlift = nationalCriticalMedicineAirliftIndex(criticalMedicineAirliftByRegion);
+  const criticalMedicineAirliftShare = computeCriticalMedicineAirliftShare(
+    ops,
+    options?.criticalMedicineAirliftPolicy ?? 'baseline',
+  );
+  const medicineAirliftMult = criticalMedicineAirliftProductivityMultiplier(
+    criticalMedicineAirliftShare,
+    options?.criticalMedicineAirliftPolicy ?? 'baseline',
+  );
+  const regionalFreightDroneThroughputByRegion = computeRegionalFreightDroneThroughputByRegion(ops);
+  const nationalRegionalFreightDrone = nationalRegionalFreightDroneThroughputIndex(
+    regionalFreightDroneThroughputByRegion,
+  );
+  const regionalFreightDroneShare = computeRegionalFreightDroneShare(
+    ops,
+    options?.regionalFreightDronePolicy ?? 'baseline',
+  );
+  const freightDroneMult = regionalFreightDroneProductivityMultiplier(
+    regionalFreightDroneShare,
+    options?.regionalFreightDronePolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -13122,6 +13748,9 @@ export function computeTransportInfrastructureState(
     const ccsBoost = (offshoreCcsLogisticsByRegion[code] - 4) * 0.0046;
     const h2LngBoost = (hydrogenLngExportByRegion[code] - 11) * 0.0044;
     const microfreightBoost = (urbanMicrofreightHubThroughputByRegion[code] - 2) * 0.0042;
+    const floatingWindBoost = (floatingOffshoreWindStagingByRegion[code] - 5) * 0.0045;
+    const medicineAirliftBoost = (criticalMedicineAirliftByRegion[code] - 8) * 0.0041;
+    const freightDroneBoost = (regionalFreightDroneThroughputByRegion[code] - 1.5) * 0.004;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -13138,7 +13767,10 @@ export function computeTransportInfrastructureState(
         zetBoost +
         ccsBoost +
         h2LngBoost +
-        microfreightBoost) *
+        microfreightBoost +
+        floatingWindBoost +
+        medicineAirliftBoost +
+        freightDroneBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -13153,7 +13785,10 @@ export function computeTransportInfrastructureState(
       zetMult *
       ccsMult *
       h2LngMult *
-      microfreightMult;
+      microfreightMult *
+      floatingWindMult *
+      medicineAirliftMult *
+      freightDroneMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -13191,7 +13826,10 @@ export function computeTransportInfrastructureState(
     nationalZeroEmissionTruck * 0.01 +
     nationalOffshoreCcs * 0.009 +
     nationalHydrogenLng * 0.009 +
-    nationalUrbanMicrofreight * 0.009;
+    nationalUrbanMicrofreight * 0.009 +
+    nationalFloatingWindStaging * 0.008 +
+    nationalCriticalMedicineAirlift * 0.008 +
+    nationalRegionalFreightDrone * 0.008;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -13206,7 +13844,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/21',
+    schemaVersion: 'agent12/22',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -13340,6 +13978,14 @@ export function computeTransportInfrastructureState(
     urbanMicrofreightHubShare,
     nationalUrbanMicrofreightHubThroughputIndex: nationalUrbanMicrofreight,
     urbanMicrofreightHubThroughputByRegion,
+    nationalFloatingOffshoreWindStagingIndex: nationalFloatingWindStaging,
+    floatingOffshoreWindStagingByRegion,
+    criticalMedicineAirliftShare,
+    nationalCriticalMedicineAirliftIndex: nationalCriticalMedicineAirlift,
+    criticalMedicineAirliftByRegion,
+    regionalFreightDroneShare,
+    nationalRegionalFreightDroneThroughputIndex: nationalRegionalFreightDrone,
+    regionalFreightDroneThroughputByRegion,
     computeMs,
   };
 }
@@ -13422,7 +14068,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/21' &&
+      infra.schemaVersion === 'agent12/22' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -13488,8 +14134,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalOffshoreCcsLogisticsIndex >= 5 &&
       infra.nationalHydrogenLngExportIndex >= 11 &&
       infra.urbanMicrofreightHubShare >= 0.035 &&
-      infra.nationalUrbanMicrofreightHubThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} ccs=${infra.nationalOffshoreCcsLogisticsIndex.toFixed(1)} h2lng=${infra.nationalHydrogenLngExportIndex.toFixed(1)} micro=${infra.nationalUrbanMicrofreightHubThroughputIndex.toFixed(1)}`,
+      infra.nationalUrbanMicrofreightHubThroughputIndex >= 2 &&
+      infra.nationalFloatingOffshoreWindStagingIndex >= 6 &&
+      infra.nationalCriticalMedicineAirliftIndex >= 8 &&
+      infra.regionalFreightDroneShare >= 0.03 &&
+      infra.nationalRegionalFreightDroneThroughputIndex >= 1.5,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} floatWind=${infra.nationalFloatingOffshoreWindStagingIndex.toFixed(1)} medAirlift=${infra.nationalCriticalMedicineAirliftIndex.toFixed(1)} drone=${infra.nationalRegionalFreightDroneThroughputIndex.toFixed(1)}`,
   });
 
   return results;

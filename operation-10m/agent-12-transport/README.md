@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 21
+
+- Schema **`agent12/22`**: floating offshore wind staging throughput, critical medicine airlift readiness, regional freight drone share (`floatingOffshoreWindStagingPolicy`, `criticalMedicineAirliftPolicy`, `regionalFreightDronePolicy`)
+- Catalog: **300** assets, **77** corridors, **123** scenarios
+- Systems: `network/floating-offshore-wind-staging-index.ts`, `operations/critical-medicine-airlift-index.ts`, `productivity/regional-freight-drone-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 20
 
 - Schema **`agent12/21`**: offshore CCS logistics throughput, hydrogen LNG export readiness, urban microfreight hub share (`offshoreCcsLogisticsPolicy`, `hydrogenLngExportPolicy`, `urbanMicrofreightHubPolicy`)
