@@ -157,6 +157,7 @@ export function attachRelaySessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };

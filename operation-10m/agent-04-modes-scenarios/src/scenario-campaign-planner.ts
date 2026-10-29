@@ -97,6 +97,11 @@ import {
   sanitizeAmnestySession,
 } from './save-format-amnesty.js';
 import {
+  getExpungementScenarioAtCursor,
+  expungementSessionSummary,
+  sanitizeExpungementSession,
+} from './save-format-expungement.js';
+import {
   getExonerationScenarioAtCursor,
   exonerationSessionSummary,
   sanitizeExonerationSession,
@@ -161,6 +166,7 @@ import type {
   O10mCommutationPhase,
   O10mAcquittalPhase,
   O10mExonerationPhase,
+  O10mExpungementPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -271,9 +277,31 @@ const emptyQueuePlan = {
   exonerationCursor: null as number | null,
   exonerationPhase: null as O10mExonerationPhase | null,
   exonerationRestitution: null as number | null,
+  expungementId: null as string | null,
+  expungementCursor: null as number | null,
+  expungementPhase: null as O10mExpungementPhase | null,
+  expungementSeal: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const expungement = sanitizeExpungementSession(state.expungementSession);
+  const expungementScenario = getExpungementScenarioAtCursor(expungement);
+  if (expungement && expungement.active && expungementScenario) {
+    return {
+      kind: 'expungement_step',
+      scenarioId: expungementScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      expungementId: expungement.expungementId,
+      expungementCursor: expungement.cursor,
+      expungementPhase: expungement.phaseTag,
+      expungementSeal: expungement.sealScore,
+      reason: `Expungement "${expungement.label}" ${expungement.phaseTag} phase ${expungement.cursor + 1}/${expungement.scenarioIds.length} (seal ${expungement.sealScore}).`,
+    };
+  }
+
   const exoneration = sanitizeExonerationSession(state.exonerationSession);
   const exonerationScenario = getExonerationScenarioAtCursor(exoneration);
   if (exoneration && exoneration.active && exonerationScenario) {
@@ -852,6 +880,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   commutationActive: boolean;
   acquittalActive: boolean;
   exonerationActive: boolean;
+  expungementActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -886,6 +915,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const commutation = commutationSessionSummary(state);
   const acquittal = acquittalSessionSummary(state);
   const exoneration = exonerationSessionSummary(state);
+  const expungement = expungementSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -918,6 +948,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     commutationActive: commutation.active,
     acquittalActive: acquittal.active,
     exonerationActive: exoneration.active,
+    expungementActive: expungement.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

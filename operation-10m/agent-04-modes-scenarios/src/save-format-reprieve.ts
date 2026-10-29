@@ -130,6 +130,7 @@ export function attachReprieveSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,

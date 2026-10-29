@@ -26,6 +26,7 @@ import {
   attachCommutationSessionToState,
   attachAcquittalSessionToState,
   attachExonerationSessionToState,
+  attachExpungementSessionToState,
   attachGauntletSessionToState,
   attachMarathonQueueToState,
   attachRelaySessionToState,
@@ -54,6 +55,8 @@ import {
   createProbationSession,
   createCommutationSession,
   createAcquittalSession,
+  createExonerationSession,
+  createExpungementSession,
   createGauntletSession,
   createMarathonQueue,
   createRelaySession,
@@ -229,6 +232,38 @@ describe('scenario campaign planner round 4', () => {
     state = attachReprieveSessionToState(state, reprieve!);
     state = attachParoleSessionToState(state, parole!);
     assert.equal(planNextCampaignAction(state).kind, 'parole_step');
+  });
+
+  it('prefers active expungement over exoneration, acquittal, commutation, probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: expungement } = createExpungementSession({
+      expungementId: 'o10m_expungement_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_expungement_filing_docket', 'o10m_expungement_review_chamber'],
+    });
+    const { session: exoneration } = createExonerationSession({
+      exonerationId: 'o10m_exoneration_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_exoneration_claim_docket', 'o10m_exoneration_review_chamber'],
+    });
+    let state = attachExonerationSessionToState(createEmptyO10mModesPersistedState(), exoneration!);
+    state = attachExpungementSessionToState(state, expungement!);
+    assert.equal(planNextCampaignAction(state).kind, 'expungement_step');
+  });
+
+  it('prefers active exoneration over acquittal, commutation, probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: exoneration } = createExonerationSession({
+      exonerationId: 'o10m_exoneration_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_exoneration_claim_docket', 'o10m_exoneration_review_chamber'],
+    });
+    const { session: acquittal } = createAcquittalSession({
+      acquittalId: 'o10m_acquittal_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_acquittal_brief_docket', 'o10m_acquittal_review_chamber'],
+    });
+    let state = attachAcquittalSessionToState(createEmptyO10mModesPersistedState(), acquittal!);
+    state = attachExonerationSessionToState(state, exoneration!);
+    assert.equal(planNextCampaignAction(state).kind, 'exoneration_step');
   });
 
   it('prefers active acquittal over commutation, probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {

@@ -1096,6 +1096,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_expungement_route',
+    title: 'Expungement Route',
+    description:
+      'Three-phase expungement arc with seal accrual between legs — round-32 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_expungement_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_expungement_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 420 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_expungement_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 6, NSW: 5 },
+          forcedSettingsPatch: { o10mExpungementMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_expungement_seal_finale',
+        title: 'Seal Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainExpungementRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

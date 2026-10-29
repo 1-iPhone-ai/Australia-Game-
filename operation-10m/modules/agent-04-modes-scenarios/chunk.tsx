@@ -387,6 +387,7 @@ export type O10mProbationPhase = 'enrollment' | 'review' | 'probation';
 export type O10mCommutationPhase = 'petition' | 'review' | 'commutation';
 export type O10mAcquittalPhase = 'brief' | 'review' | 'acquittal';
 export type O10mExonerationPhase = 'claim' | 'review' | 'exoneration';
+export type O10mExpungementPhase = 'filing' | 'review' | 'expungement';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -652,6 +653,17 @@ export interface O10mExonerationSession {
   phaseTag: O10mExonerationPhase;
 }
 
+/** Schema v32 — expungement arc with seal accrual between phases. */
+export interface O10mExpungementSession {
+  expungementId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  sealScore: number;
+  phaseTag: O10mExpungementPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -676,6 +688,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'expungement_step'
     | 'exoneration_step'
     | 'acquittal_step'
     | 'commutation_step'
@@ -814,6 +827,10 @@ export interface O10mCampaignPlan {
   exonerationCursor: number | null;
   exonerationPhase: O10mExonerationPhase | null;
   exonerationRestitution: number | null;
+  expungementId: string | null;
+  expungementCursor: number | null;
+  expungementPhase: O10mExpungementPhase | null;
+  expungementSeal: number | null;
   reason: string;
 }
 
@@ -897,8 +914,10 @@ export interface O10mModesPersistedState {
   commutationSession?: O10mCommutationSession | null;
   /** Schema v30 — active acquittal arc (mutually exclusive with exoneration / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   acquittalSession?: O10mAcquittalSession | null;
-  /** Schema v31 — active exoneration arc (mutually exclusive with acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v31 — active exoneration arc (mutually exclusive with expungement / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   exonerationSession?: O10mExonerationSession | null;
+  /** Schema v32 — active expungement arc (mutually exclusive with exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  expungementSession?: O10mExpungementSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -4453,6 +4472,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Exoneration finales', 'Restitution ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_expungement_filing_docket',
+    title: 'Expungement Filing Docket',
+    description: 'Open an expungement arc with low-pressure seal pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100505,
+    startingMoney: 3400,
+    startingRegions: ['TAS', 'VIC'],
+    badgeId: 'badge_o10m_expungement_filing_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100505),
+      o10mExpungementFilingDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_efd_obj_day',
+        label: 'Filing Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Expungement arcs', 'Seal pacing', 'Filing phase'],
+  },
+  {
+    id: 'o10m_expungement_review_chamber',
+    title: 'Expungement Review Chamber',
+    description: 'Mid-expungement review with accrued seal bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100506,
+    startingMoney: 3950,
+    startingRegions: ['NSW', 'WA'],
+    startingStanding: { NSW: 65, WA: 63 },
+    badgeId: 'badge_o10m_expungement_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100506),
+      regionalStandingEnabled: true,
+      o10mExpungementReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_erc2_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 71',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 71,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Seal carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_expungement_seal_finale',
+    title: 'Expungement Seal Finale',
+    description: 'Finale expungement stage — net worth gate with full seal bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100507,
+    startingMoney: 4400,
+    startingRegions: ['QLD', 'NT', 'SA'],
+    badgeId: 'badge_o10m_expungement_seal_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100507),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mExpungementSealFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_esf_obj_net',
+        label: 'Seal Net Worth',
+        description: 'Reach $19,600 net worth',
+        targetType: 'netWorth',
+        targetValue: 19600,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Expungement finales', 'Seal ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -5989,6 +6105,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_expungement_route',
+    title: 'Expungement Route',
+    description:
+      'Three-phase expungement arc with seal accrual between legs — round-32 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_expungement_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_expungement_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 420 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_expungement_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 6, NSW: 5 },
+          forcedSettingsPatch: { o10mExpungementMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_expungement_seal_finale',
+        title: 'Seal Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainExpungementRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -6815,7 +6965,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 31;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 32;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -6945,6 +7095,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
   };
 }
 
@@ -6995,6 +7146,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       commutationSession: merged.commutationSession ?? null,
       acquittalSession: merged.acquittalSession ?? null,
       exonerationSession: merged.exonerationSession ?? null,
+      expungementSession: merged.expungementSession ?? null,
     };
     return upgraded;
   }
@@ -7069,6 +7221,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     commutationSession: sanitizeCommutationSession(o.commutationSession),
     acquittalSession: sanitizeAcquittalSession(o.acquittalSession),
     exonerationSession: sanitizeExonerationSession(o.exonerationSession),
+    expungementSession: sanitizeExpungementSession(o.expungementSession),
   };
 }
 
@@ -7294,6 +7447,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Exoneration cursor out of range; clamp on next sanitize.');
   }
 
+  const expungement = sanitizeExpungementSession(state.expungementSession);
+  if (state.expungementSession && !expungement) {
+    warnings.push('Expungement session failed sanitization; planner will ignore it.');
+  } else if (expungement && expungement.cursor >= expungement.scenarioIds.length) {
+    warnings.push('Expungement cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -7428,6 +7588,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'commutationSession',
   'acquittalSession',
   'exonerationSession',
+  'expungementSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -7957,6 +8118,7 @@ export function attachMarathonQueueToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -8074,6 +8236,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceExpungementSessionAfterRun(next, run);
   next = advanceExonerationSessionAfterRun(next, run);
   next = advanceAcquittalSessionAfterRun(next, run);
   next = advanceCommutationSessionAfterRun(next, run);
@@ -8252,6 +8415,7 @@ export function attachGauntletSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -8505,6 +8669,7 @@ export function attachRelaySessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -8718,6 +8883,7 @@ export function attachCircuitSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -8949,6 +9115,7 @@ export function attachExpeditionSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -9178,6 +9345,7 @@ export function attachOdysseySessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -9406,6 +9574,7 @@ export function attachPilgrimageSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -9635,6 +9804,7 @@ export function attachCaravanSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -9858,6 +10028,7 @@ export function attachVoyageSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -10081,6 +10252,7 @@ export function attachSiegeSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -10304,6 +10476,7 @@ export function attachConvoySessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -10527,6 +10700,7 @@ export function attachEscortSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -10759,6 +10933,7 @@ export function attachExtractionSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -10999,6 +11174,7 @@ export function attachSubjectSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -11239,6 +11415,7 @@ export function attachWitnessSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -11479,6 +11656,7 @@ export function attachTribunalSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -11719,6 +11897,7 @@ export function attachIndictmentSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -11959,6 +12138,7 @@ export function attachAppealSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -12199,6 +12379,7 @@ export function attachClemencySessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -12439,6 +12620,7 @@ export function attachPardonSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,
@@ -12679,6 +12861,7 @@ export function attachAmnestySessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     pardonSession: null,
     clemencySession: null,
     appealSession: null,
@@ -12919,6 +13102,7 @@ export function attachReprieveSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,
@@ -13159,6 +13343,7 @@ export function attachParoleSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     reprieveSession: null,
     amnestySession: null,
     pardonSession: null,
@@ -13399,6 +13584,7 @@ export function attachProbationSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     paroleSession: null,
     reprieveSession: null,
     amnestySession: null,
@@ -13639,6 +13825,7 @@ export function attachCommutationSessionToState(
     commutationSession: sanitized,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     probationSession: null,
     paroleSession: null,
     reprieveSession: null,
@@ -13879,6 +14066,7 @@ export function attachAcquittalSessionToState(
     ...state,
     acquittalSession: sanitized,
     exonerationSession: null,
+    expungementSession: null,
     commutationSession: null,
     probationSession: null,
     paroleSession: null,
@@ -14119,6 +14307,7 @@ export function attachExonerationSessionToState(
   return {
     ...state,
     exonerationSession: sanitized,
+    expungementSession: null,
     acquittalSession: null,
     commutationSession: null,
     probationSession: null,
@@ -14241,6 +14430,248 @@ export function exonerationSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-expungement.ts ---
+export const O10M_EXPUNGEMENT_SCENARIO_CAP = 6;
+export const O10M_EXPUNGEMENT_SEAL_SCORE_CAP = 980;
+export const O10M_EXPUNGEMENT_SEAL_SCORE_MONEY_CAP = 1060;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mExpungementPhase>(['filing', 'review', 'expungement']);
+
+export function unlockTokenForExpungementId(expungementId: string): string | null {
+  if (!expungementId.startsWith('o10m_expungement_')) return null;
+  return `o10m_unlock_${expungementId.slice('o10m_expungement_'.length)}`;
+}
+
+export function expungementPhaseForCursor(cursor: number, scenarioCount: number): O10mExpungementPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'expungement';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'filing';
+}
+
+export function expungementSealScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(126, Math.max(26, Math.floor(run.playerNetWorth / 146) + standingSlice));
+}
+
+export function sanitizeExpungementSession(raw: unknown): O10mExpungementSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const expungementId =
+    typeof o.expungementId === 'string' && o.expungementId.startsWith('o10m_expungement_') ? o.expungementId : null;
+  if (!expungementId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : expungementId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_EXPUNGEMENT_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const sealScore = Math.min(
+    O10M_EXPUNGEMENT_SEAL_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.sealScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mExpungementPhase)
+      ? (phaseRaw as O10mExpungementPhase)
+      : expungementPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    expungementId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    sealScore,
+    phaseTag,
+  };
+}
+
+export function createExpungementSession(params: {
+  expungementId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mExpungementSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.expungementId.startsWith('o10m_expungement_')) {
+    return { session: null, warnings: ['Expungement ids must start with o10m_expungement_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_EXPUNGEMENT_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Expungement arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      expungementId: params.expungementId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      sealScore: 0,
+      phaseTag: expungementPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachExpungementSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mExpungementSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeExpungementSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    expungementSession: sanitized,
+    exonerationSession: null,
+    acquittalSession: null,
+    commutationSession: null,
+    probationSession: null,
+    paroleSession: null,
+    reprieveSession: null,
+    amnestySession: null,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearExpungementSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, expungementSession: null };
+}
+
+export function getExpungementScenarioAtCursor(
+  session: O10mExpungementSession | null | undefined,
+): string | null {
+  const expungement = sanitizeExpungementSession(session);
+  if (!expungement || !expungement.active) return null;
+  return expungement.scenarioIds[expungement.cursor] ?? null;
+}
+
+export function buildExpungementScenarioStartOverrides(
+  session: O10mExpungementSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const expungement = sanitizeExpungementSession(session);
+  if (!expungement) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_EXPUNGEMENT_SEAL_SCORE_MONEY_CAP,
+    Math.floor(expungement.sealScore * 0.87),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveExpungementId: expungement.expungementId,
+      o10mActiveExpungementStep: expungement.cursor,
+      o10mActiveExpungementPhase: expungement.phaseTag,
+      o10mExpungementSealScore: expungement.sealScore,
+    },
+  };
+}
+
+export function advanceExpungementSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeExpungementSession(state.expungementSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const sealScore = Math.min(
+    O10M_EXPUNGEMENT_SEAL_SCORE_CAP,
+    session.sealScore + expungementSealScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      expungementSession: {
+        ...session,
+        cursor,
+        sealScore,
+        phaseTag: expungementPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForExpungementId(session.expungementId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    expungementSession: { ...session, active: false, sealScore, phaseTag: 'expungement' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function expungementSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  sealScore: number;
+  phase: O10mExpungementPhase | null;
+} {
+  const session = sanitizeExpungementSession(state.expungementSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    sealScore: session?.sealScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -14347,9 +14778,31 @@ const emptyQueuePlan = {
   exonerationCursor: null as number | null,
   exonerationPhase: null as O10mExonerationPhase | null,
   exonerationRestitution: null as number | null,
+  expungementId: null as string | null,
+  expungementCursor: null as number | null,
+  expungementPhase: null as O10mExpungementPhase | null,
+  expungementSeal: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const expungement = sanitizeExpungementSession(state.expungementSession);
+  const expungementScenario = getExpungementScenarioAtCursor(expungement);
+  if (expungement && expungement.active && expungementScenario) {
+    return {
+      kind: 'expungement_step',
+      scenarioId: expungementScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      expungementId: expungement.expungementId,
+      expungementCursor: expungement.cursor,
+      expungementPhase: expungement.phaseTag,
+      expungementSeal: expungement.sealScore,
+      reason: `Expungement "${expungement.label}" ${expungement.phaseTag} phase ${expungement.cursor + 1}/${expungement.scenarioIds.length} (seal ${expungement.sealScore}).`,
+    };
+  }
+
   const exoneration = sanitizeExonerationSession(state.exonerationSession);
   const exonerationScenario = getExonerationScenarioAtCursor(exoneration);
   if (exoneration && exoneration.active && exonerationScenario) {
@@ -14928,6 +15381,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   commutationActive: boolean;
   acquittalActive: boolean;
   exonerationActive: boolean;
+  expungementActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -14962,6 +15416,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const commutation = commutationSessionSummary(state);
   const acquittal = acquittalSessionSummary(state);
   const exoneration = exonerationSessionSummary(state);
+  const expungement = expungementSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -14994,6 +15449,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     commutationActive: commutation.active,
     acquittalActive: acquittal.active,
     exonerationActive: exoneration.active,
+    expungementActive: expungement.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -15012,7 +15468,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 32, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 33, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -15256,16 +15712,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const exonerationState = exoneration ? attachExonerationSessionToState(createEmptyO10mModesPersistedState(), exoneration) : null;
   push('agent04_chunk_39', exonerationState !== null && planNextCampaignAction(exonerationState!).kind === 'exoneration_step');
 
+  const expungement = createExpungementSession({
+    expungementId: 'o10m_expungement_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_expungement_filing_docket'],
+  }).session;
+  const expungementState = expungement ? attachExpungementSessionToState(createEmptyO10mModesPersistedState(), expungement) : null;
+  push('agent04_chunk_40', expungementState !== null && planNextCampaignAction(expungementState!).kind === 'expungement_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v32',
+  schemaVersion: 'op10m-agent04-v33',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 31,
+  saveSchemaVersion: 32,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

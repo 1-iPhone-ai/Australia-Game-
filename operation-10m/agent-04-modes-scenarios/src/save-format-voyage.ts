@@ -136,6 +136,7 @@ export function attachVoyageSessionToState(
     commutationSession: null,
     acquittalSession: null,
     exonerationSession: null,
+    expungementSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
