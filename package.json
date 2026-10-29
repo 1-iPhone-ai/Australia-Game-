@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 5173"
+    "preview": "vite preview --host 0.0.0.0 --port 5173",
+    "test:agent-13": "tsx operation-10m/agent-13-energy/tests/run-self-tests.mts",
+    "test:agent-13-supplements": "tsx operation-10m/agent-13-energy/tests/supplement-tests.mts"
   },
   "dependencies": {
     "react": "19.3.1",
@@ -15,6 +17,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "5.2.0",
+    "tsx": "4.20.6",
     "typescript": "5.9.3",
     "vite": "7.3.7"
   }
