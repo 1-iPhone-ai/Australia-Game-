@@ -1,0 +1,36 @@
+# Agent 11 — Cities, regional inequality, national–local links
+
+## Scope
+
+Operation 10M modular slice for **urban growth dynamics**, **regional inequality**, and **local↔national coupling**. Complements canonical V10.14 §20AK (`V1014_CITIES_*`) which owns city snapshots and intercity corridors.
+
+## Upstream inputs (read-only at assembly)
+
+| Source | Fields used |
+|--------|-------------|
+| V10.14 cities | `V1014_CITIES_CityRegionalState.cities`, `.links`, `.turn` |
+| Living Regions | Per-region `economyScore`, `momentumBand`, `developmentTier`, `infrastructureQuality` |
+| National macro (optional) | `nationalGrowthBand`, `distributionBand`, corridor network scores |
+
+## Downstream exports (this module)
+
+All symbols are prefixed `OP10M_A11_` for grep-safe assembly.
+
+| Export | Role |
+|--------|------|
+| `recomputeOP10M_A11_RegionalUrbanLayer` | Turn tick: inequality indices, spillovers, derived events |
+| `validateOP10M_A11_State` | Save/load guard |
+| `runOP10M_A11_SelfTests` | Regression gate |
+
+## Assembly notes (Agent 25)
+
+1. Insert types + functions after §20AK self-tests block (before duplicate AI patterns if deduping).
+2. Wire turn processor: call `recomputeOP10M_A11_RegionalUrbanLayer` immediately after `recomputeV1014_CITIES_CityRegionalState`.
+3. Persist under `gameState.op10mAgent11RegionalUrban` (new key; migrate empty → `createEmptyOP10M_A11_Persisted()`).
+4. Register `runOP10M_A11_SelfTests` in quick regression suite beside `runV1014_CITIES_CityRegionalIntercitySelfTests`.
+
+## Tests
+
+```bash
+npm run test:agent-11-cities
+```
