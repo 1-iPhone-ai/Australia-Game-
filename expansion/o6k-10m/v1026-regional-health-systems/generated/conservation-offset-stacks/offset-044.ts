@@ -1,0 +1,31 @@
+import type { V1026RhsPrimaryCareAccessEdge } from '../../types/core.ts';
+
+/** Primary care access graph shard 044 (clinical/bed/primary-care corridor coupling). */
+export const V1026_RHS_PRIMARY_CARE_ACCESS_SHARD_044: readonly V1026RhsPrimaryCareAccessEdge[] = [
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.526, lagTurns: 10, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.532, lagTurns: 11, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.538, lagTurns: 12, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.544, lagTurns: 13, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.55, lagTurns: 10, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.556, lagTurns: 11, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.46, lagTurns: 12, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.466, lagTurns: 13, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.472, lagTurns: 10, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.478, lagTurns: 11, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.484, lagTurns: 12, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.49, lagTurns: 13, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.496, lagTurns: 10, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.502, lagTurns: 11, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.508, lagTurns: 12, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.514, lagTurns: 13, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.52, lagTurns: 10, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.526, lagTurns: 11, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.532, lagTurns: 12, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.538, lagTurns: 13, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.544, lagTurns: 10, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.55, lagTurns: 11, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.556, lagTurns: 12, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.46, lagTurns: 13, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.466, lagTurns: 10, nodeId: 'hospital_network_20' },
+  { fromChannel: 'fire_regime', toChannel: 'indigenous_care', weight: 0.472, lagTurns: 11, nodeId: 'hospital_network_20' },
+];

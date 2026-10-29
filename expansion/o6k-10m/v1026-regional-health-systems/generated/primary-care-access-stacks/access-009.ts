@@ -1,0 +1,31 @@
+import type { V1026RhsPrimaryCareAccessEdge } from '../../types/core.ts';
+
+/** Primary care access graph shard 009 (clinical/bed/primary-care corridor coupling). */
+export const V1026_RHS_PRIMARY_CARE_ACCESS_SHARD_009: readonly V1026RhsPrimaryCareAccessEdge[] = [
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.518, lagTurns: 2, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.524, lagTurns: 3, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.428, lagTurns: 4, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.434, lagTurns: 5, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.44, lagTurns: 2, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.446, lagTurns: 3, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.452, lagTurns: 4, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.458, lagTurns: 5, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.464, lagTurns: 2, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.47, lagTurns: 3, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.476, lagTurns: 4, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.482, lagTurns: 5, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.488, lagTurns: 2, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.494, lagTurns: 3, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.5, lagTurns: 4, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.506, lagTurns: 5, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.512, lagTurns: 2, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.518, lagTurns: 3, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.524, lagTurns: 4, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.428, lagTurns: 5, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.434, lagTurns: 2, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.44, lagTurns: 3, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.446, lagTurns: 4, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.452, lagTurns: 5, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.458, lagTurns: 2, nodeId: 'hospital_network_09' },
+  { fromChannel: 'remote', toChannel: 'hospital_network', weight: 0.464, lagTurns: 3, nodeId: 'hospital_network_09' },
+];

@@ -1,0 +1,31 @@
+import type { V1026RhsPrimaryCareAccessEdge } from '../../types/core.ts';
+
+/** Primary care access graph shard 077 (clinical/bed/primary-care corridor coupling). */
+export const V1026_RHS_PRIMARY_CARE_ACCESS_SHARD_077: readonly V1026RhsPrimaryCareAccessEdge[] = [
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.518, lagTurns: 7, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.524, lagTurns: 8, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.428, lagTurns: 9, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.434, lagTurns: 10, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.44, lagTurns: 7, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.446, lagTurns: 8, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.452, lagTurns: 9, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.458, lagTurns: 10, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.464, lagTurns: 7, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.47, lagTurns: 8, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.476, lagTurns: 9, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.482, lagTurns: 10, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.488, lagTurns: 7, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.494, lagTurns: 8, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.5, lagTurns: 9, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.506, lagTurns: 10, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.512, lagTurns: 7, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.518, lagTurns: 8, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.524, lagTurns: 9, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.428, lagTurns: 10, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.434, lagTurns: 7, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.44, lagTurns: 8, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.446, lagTurns: 9, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.452, lagTurns: 10, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.458, lagTurns: 7, nodeId: 'hospital_network_05' },
+  { fromChannel: 'indigenous_care', toChannel: 'species_recovery', weight: 0.464, lagTurns: 8, nodeId: 'hospital_network_05' },
+];

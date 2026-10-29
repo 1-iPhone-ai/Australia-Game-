@@ -1,0 +1,31 @@
+import type { V1026RhsPrimaryCareAccessEdge } from '../../types/core.ts';
+
+/** Primary care access graph shard 011 (clinical/bed/primary-care corridor coupling). */
+export const V1026_RHS_PRIMARY_CARE_ACCESS_SHARD_011: readonly V1026RhsPrimaryCareAccessEdge[] = [
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.534, lagTurns: 4, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.54, lagTurns: 5, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.546, lagTurns: 6, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.552, lagTurns: 7, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.558, lagTurns: 4, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.564, lagTurns: 5, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.57, lagTurns: 6, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.576, lagTurns: 7, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.582, lagTurns: 4, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.588, lagTurns: 5, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.492, lagTurns: 6, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.498, lagTurns: 7, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.504, lagTurns: 4, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.51, lagTurns: 5, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.516, lagTurns: 6, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.522, lagTurns: 7, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.528, lagTurns: 4, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.534, lagTurns: 5, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.54, lagTurns: 6, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.546, lagTurns: 7, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.552, lagTurns: 4, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.558, lagTurns: 5, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.564, lagTurns: 6, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.57, lagTurns: 7, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.576, lagTurns: 4, nodeId: 'hospital_network_11' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.582, lagTurns: 5, nodeId: 'hospital_network_11' },
+];
