@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 0f88299492391421
+// content-sha256-prefix: f4f58563a2b698fc
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -919,6 +919,10 @@ export interface DayAdvanceUiEvolutionResult {
   focusSessionSuppressionDayCoachCopy: string | null;
   progressionSignalDeltaDayCoachCopy: string | null;
   layoutOnboardingDayCoachCopy: string | null;
+  guidedLearningPanelDayCoachCopy: string | null;
+  calmRecoveryStatusDayCoachCopy: string | null;
+  phaseShellAttentionDayCoachCopy: string | null;
+  modalFocusTrapDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -933,6 +937,7 @@ export interface TickEvolvingUiDayAdvanceContext {
   layoutPreset?: V94LayoutPreset;
   viewportWidthPx?: number;
   contextualShouldShowByWidget?: Record<string, boolean>;
+  openModalId?: string | null;
 }
 
 export function createDefaultEvolvingUiPersistedState(): EvolvingUiPersistedState {
@@ -1348,8 +1353,24 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const guidedLearningPanelDayCoach = buildGuidedLearningPanelDayCoach({
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const calmRecoveryStatusDayCoach = buildCalmRecoveryStatusDayCoach({
+    persisted: persistedAfterCalm,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const modalFocusTrapDayCoach = buildModalFocusTrapDayCoach({
+    openModalId: context.openModalId,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
+  let phaseShellAttentionDayCoachCopy: string | null = null;
   if (context.phase) {
     const load = assessCognitiveLoad({
       signals: nextSignals,
@@ -1361,6 +1382,15 @@ export function tickEvolvingUiOnDayAdvance(
       band: load.band,
       persisted: persistedAfterCalm,
       gameDay: nextSignals.gameDay,
+      simEvolutionBridgeRequested: newlyUnlockedPanelIds.length > 0,
+      panelUnlockCoachRequested: newlyUnlockedPanelIds.length > 0,
+    }).coachCopy;
+
+    phaseShellAttentionDayCoachCopy = buildPhaseShellAttentionDayCoach({
+      phase: context.phase,
+      band: load.band,
+      persisted: persistedAfterCalm,
+      nextGameDay: nextSignals.gameDay,
       simEvolutionBridgeRequested: newlyUnlockedPanelIds.length > 0,
       panelUnlockCoachRequested: newlyUnlockedPanelIds.length > 0,
     }).coachCopy;
@@ -1428,6 +1458,10 @@ export function tickEvolvingUiOnDayAdvance(
     focusSessionSuppressionDayCoachCopy: focusSessionSuppressionDayCoach.coachCopy,
     progressionSignalDeltaDayCoachCopy: progressionSignalDeltaDayCoach.coachCopy,
     layoutOnboardingDayCoachCopy: layoutOnboardingDayCoach.coachCopy,
+    guidedLearningPanelDayCoachCopy: guidedLearningPanelDayCoach.coachCopy,
+    calmRecoveryStatusDayCoachCopy: calmRecoveryStatusDayCoach.coachCopy,
+    phaseShellAttentionDayCoachCopy,
+    modalFocusTrapDayCoachCopy: modalFocusTrapDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -5663,6 +5697,273 @@ export function buildLayoutOnboardingDayCoach(input: {
     layoutBlockedHighlightCount,
     coachCopy,
   };
+}
+
+// --- source: engine/guided-learning-panel-day-coach.ts ---
+export interface GuidedLearningPanelDayCoach {
+  hintCount: number;
+  coachCopy: string | null;
+}
+
+export function buildGuidedLearningPanelDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  nextGameDay: number;
+}): GuidedLearningPanelDayCoach {
+  const hints = buildGuidedLearningPanelHints(input.signals);
+  const base = guidedLearningPanelCoachCopy(hints);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+  return {
+    hintCount: hints.length,
+    coachCopy,
+  };
+}
+
+// --- source: engine/calm-recovery-status-day-coach.ts ---
+export interface CalmRecoveryStatusDayCoach {
+  active: boolean;
+  coachCopy: string | null;
+}
+
+export function buildCalmRecoveryStatusDayCoach(input: {
+  persisted: EvolvingUiPersistedState;
+  nextGameDay: number;
+}): CalmRecoveryStatusDayCoach {
+  const active = isCalmRecoveryActive(input.persisted, input.nextGameDay);
+  const coachCopy = active ? `Day ${input.nextGameDay}: ${calmRecoveryCoachCopy(true)}` : null;
+  return { active, coachCopy };
+}
+
+// --- source: engine/phase-shell-attention-day-coach.ts ---
+export interface PhaseShellAttentionDayCoach {
+  deferredSurfaceCount: number;
+  coachCopy: string | null;
+}
+
+export function buildPhaseShellAttentionDayCoach(input: {
+  phase: V94StandardizedGamePhase;
+  band: CognitiveLoadBand;
+  persisted: EvolvingUiPersistedState;
+  nextGameDay: number;
+  simEvolutionBridgeRequested?: boolean;
+  panelUnlockCoachRequested?: boolean;
+}): PhaseShellAttentionDayCoach {
+  const plan = planPhaseShellAttentionGate({
+    phase: input.phase,
+    band: input.band,
+    persisted: input.persisted,
+    gameDay: input.nextGameDay,
+    simEvolutionBridgeRequested: input.simEvolutionBridgeRequested,
+    panelUnlockCoachRequested: input.panelUnlockCoachRequested,
+  });
+  const coachCopy = plan.coachCopy ? `Day ${input.nextGameDay}: ${plan.coachCopy}` : null;
+  return {
+    deferredSurfaceCount: plan.deferredSurfaceCount,
+    coachCopy,
+  };
+}
+
+// --- source: engine/modal-focus-trap-day-coach.ts ---
+export interface ModalFocusTrapDayCoach {
+  trapActive: boolean;
+  coachCopy: string | null;
+}
+
+export function buildModalFocusTrapDayCoach(input: {
+  openModalId: string | null | undefined;
+  nextGameDay: number;
+}): ModalFocusTrapDayCoach {
+  const trapActive = Boolean(input.openModalId);
+  const base = modalFocusTrapCoachCopy(input.openModalId ?? null);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+  return { trapActive, coachCopy };
+}
+
+// --- source: engine/round26-self-tests.ts ---
+export function runAgent22Round26SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r26_guided_panel',
+    'guided learning panel day coach with concept',
+    (() => {
+      const coach = buildGuidedLearningPanelDayCoach({
+        signals: {
+          gameDay: 4,
+          turnCount: 4,
+          interfaceLevel: 'guided',
+          guidedConceptStatuses: { capital_allocation: 'introduced' },
+        },
+        nextGameDay: 4,
+      });
+      return coach.hintCount > 0 && Boolean(coach.coachCopy?.includes('Day 4'));
+    })()
+  );
+
+  check(
+    'r26_calm_recovery',
+    'calm recovery status day coach when active',
+    (() => {
+      const coach = buildCalmRecoveryStatusDayCoach({
+        persisted: { ...createDefaultEvolvingUiPersistedState(), calmRecoveryUntilDay: 10 },
+        nextGameDay: 5,
+      });
+      return coach.active && Boolean(coach.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r26_calm_inactive',
+    'calm recovery status day coach null when inactive',
+    (() => {
+      const coach = buildCalmRecoveryStatusDayCoach({
+        persisted: createDefaultEvolvingUiPersistedState(),
+        nextGameDay: 3,
+      });
+      return !coach.active && coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r26_phase_attention',
+    'phase shell attention day coach on save_load',
+    (() => {
+      const coach = buildPhaseShellAttentionDayCoach({
+        phase: 'save_load',
+        band: 'moderate',
+        persisted: createDefaultEvolvingUiPersistedState(),
+        nextGameDay: 6,
+      });
+      return Boolean(coach.coachCopy?.includes('Day 6'));
+    })()
+  );
+
+  check(
+    'r26_modal_trap',
+    'modal focus trap day coach when modal open',
+    (() => {
+      const coach = buildModalFocusTrapDayCoach({
+        openModalId: 'investments_modal',
+        nextGameDay: 7,
+      });
+      return coach.trapActive && Boolean(coach.coachCopy?.includes('Day 7'));
+    })()
+  );
+
+  check(
+    'r26_modal_clear',
+    'modal focus trap day coach null without modal',
+    (() => {
+      const coach = buildModalFocusTrapDayCoach({ openModalId: null, nextGameDay: 2 });
+      return !coach.trapActive && coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r26_tick_guided_panel_field',
+    'day advance exposes guided learning panel day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'guided' },
+        {
+          gameDay: 4,
+          turnCount: 4,
+          interfaceLevel: 'guided',
+          guidedConceptStatuses: { liquidity: 'mastered' },
+        },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.guidedLearningPanelDayCoachCopy === 'string' || r.guidedLearningPanelDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r26_tick_calm_field',
+    'day advance exposes calm recovery status day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        { ...createDefaultEvolvingUiPersistedState(), calmRecoveryUntilDay: 5 },
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.calmRecoveryStatusDayCoachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r26_tick_attention_day_field',
+    'day advance exposes phase shell attention day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' },
+        { gameDay: 6, turnCount: 6, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'save_load' }
+      );
+      return Boolean(r.phaseShellAttentionDayCoachCopy?.includes('Day 6'));
+    })()
+  );
+
+  check(
+    'r26_tick_modal_field',
+    'day advance exposes modal focus trap day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 8, turnCount: 8, interfaceLevel: 'expert' },
+        { gameDay: 9, turnCount: 9, interfaceLevel: 'expert' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn', openModalId: 'loans_modal' }
+      );
+      return Boolean(r.modalFocusTrapDayCoachCopy?.includes('Day 9'));
+    })()
+  );
+
+  check(
+    'r26_tick_guided_panel_active',
+    'guided panel day coach copy when concept introduced',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 6, turnCount: 6, interfaceLevel: 'guided' },
+        {
+          gameDay: 7,
+          turnCount: 7,
+          interfaceLevel: 'guided',
+          guidedConceptStatuses: { opportunity_cost: 'introduced' },
+        },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.guidedLearningPanelDayCoachCopy?.includes('Day 7'));
+    })()
+  );
+
+  check(
+    'r26_guided_panel_empty',
+    'guided learning panel day coach null without concepts',
+    (() => {
+      const coach = buildGuidedLearningPanelDayCoach({
+        signals: { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        nextGameDay: 1,
+      });
+      return coach.hintCount === 0 && coach.coachCopy === null;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round25-self-tests.ts ---
@@ -10465,6 +10766,18 @@ export function SimulationUiEvolutionBridge({
       {result.layoutOnboardingDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-layout-onboarding-day">{result.layoutOnboardingDayCoachCopy}</div>
       ) : null}
+      {result.guidedLearningPanelDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-guided-panel-day">{result.guidedLearningPanelDayCoachCopy}</div>
+      ) : null}
+      {result.calmRecoveryStatusDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-calm-status-day">{result.calmRecoveryStatusDayCoachCopy}</div>
+      ) : null}
+      {result.phaseShellAttentionDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-phase-attention-day">{result.phaseShellAttentionDayCoachCopy}</div>
+      ) : null}
+      {result.modalFocusTrapDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-modal-trap-day">{result.modalFocusTrapDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -12515,7 +12828,7 @@ export function ContextualWidgetDayCoachStrip({
 }
 
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.25.0';
+export const AGENT_22_MODULE_VERSION = '1.26.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -12666,6 +12979,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round26 = runAgent22Round26SelfTests();
+  for (const r of round26.results) {
+    check(`agent22_round26_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round25 = runAgent22Round25SelfTests();

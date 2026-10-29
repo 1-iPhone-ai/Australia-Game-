@@ -81,6 +81,10 @@ import { buildMilestoneForecastDayCoach } from '../engine/milestone-forecast-day
 import { buildFocusSessionSuppressionDayCoach } from '../engine/focus-session-suppression-day-coach.js';
 import { buildProgressionSignalDeltaDayCoach } from '../engine/progression-signal-delta-day-coach.js';
 import { buildLayoutOnboardingDayCoach } from '../engine/layout-onboarding-day-coach.js';
+import { buildGuidedLearningPanelDayCoach } from '../engine/guided-learning-panel-day-coach.js';
+import { buildCalmRecoveryStatusDayCoach } from '../engine/calm-recovery-status-day-coach.js';
+import { buildPhaseShellAttentionDayCoach } from '../engine/phase-shell-attention-day-coach.js';
+import { buildModalFocusTrapDayCoach } from '../engine/modal-focus-trap-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -170,6 +174,10 @@ export interface DayAdvanceUiEvolutionResult {
   focusSessionSuppressionDayCoachCopy: string | null;
   progressionSignalDeltaDayCoachCopy: string | null;
   layoutOnboardingDayCoachCopy: string | null;
+  guidedLearningPanelDayCoachCopy: string | null;
+  calmRecoveryStatusDayCoachCopy: string | null;
+  phaseShellAttentionDayCoachCopy: string | null;
+  modalFocusTrapDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -184,6 +192,7 @@ export interface TickEvolvingUiDayAdvanceContext {
   layoutPreset?: V94LayoutPreset;
   viewportWidthPx?: number;
   contextualShouldShowByWidget?: Record<string, boolean>;
+  openModalId?: string | null;
 }
 
 export function createDefaultEvolvingUiPersistedState(): EvolvingUiPersistedState {
@@ -599,8 +608,24 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const guidedLearningPanelDayCoach = buildGuidedLearningPanelDayCoach({
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const calmRecoveryStatusDayCoach = buildCalmRecoveryStatusDayCoach({
+    persisted: persistedAfterCalm,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const modalFocusTrapDayCoach = buildModalFocusTrapDayCoach({
+    openModalId: context.openModalId,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
+  let phaseShellAttentionDayCoachCopy: string | null = null;
   if (context.phase) {
     const load = assessCognitiveLoad({
       signals: nextSignals,
@@ -612,6 +637,15 @@ export function tickEvolvingUiOnDayAdvance(
       band: load.band,
       persisted: persistedAfterCalm,
       gameDay: nextSignals.gameDay,
+      simEvolutionBridgeRequested: newlyUnlockedPanelIds.length > 0,
+      panelUnlockCoachRequested: newlyUnlockedPanelIds.length > 0,
+    }).coachCopy;
+
+    phaseShellAttentionDayCoachCopy = buildPhaseShellAttentionDayCoach({
+      phase: context.phase,
+      band: load.band,
+      persisted: persistedAfterCalm,
+      nextGameDay: nextSignals.gameDay,
       simEvolutionBridgeRequested: newlyUnlockedPanelIds.length > 0,
       panelUnlockCoachRequested: newlyUnlockedPanelIds.length > 0,
     }).coachCopy;
@@ -679,6 +713,10 @@ export function tickEvolvingUiOnDayAdvance(
     focusSessionSuppressionDayCoachCopy: focusSessionSuppressionDayCoach.coachCopy,
     progressionSignalDeltaDayCoachCopy: progressionSignalDeltaDayCoach.coachCopy,
     layoutOnboardingDayCoachCopy: layoutOnboardingDayCoach.coachCopy,
+    guidedLearningPanelDayCoachCopy: guidedLearningPanelDayCoach.coachCopy,
+    calmRecoveryStatusDayCoachCopy: calmRecoveryStatusDayCoach.coachCopy,
+    phaseShellAttentionDayCoachCopy,
+    modalFocusTrapDayCoachCopy: modalFocusTrapDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

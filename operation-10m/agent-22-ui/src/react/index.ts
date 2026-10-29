@@ -77,3 +77,7 @@ export { MilestoneForecastDayCoachStrip } from './MilestoneForecastDayCoachStrip
 export { FocusSessionSuppressionDayCoachStrip } from './FocusSessionSuppressionDayCoachStrip.js';
 export { ProgressionSignalDeltaDayCoachStrip } from './ProgressionSignalDeltaDayCoachStrip.js';
 export { LayoutOnboardingDayCoachStrip } from './LayoutOnboardingDayCoachStrip.js';
+export { GuidedLearningPanelDayCoachStrip } from './GuidedLearningPanelDayCoachStrip.js';
+export { CalmRecoveryStatusDayCoachStrip } from './CalmRecoveryStatusDayCoachStrip.js';
+export { PhaseShellAttentionDayCoachStrip } from './PhaseShellAttentionDayCoachStrip.js';
+export { ModalFocusTrapDayCoachStrip } from './ModalFocusTrapDayCoachStrip.js';

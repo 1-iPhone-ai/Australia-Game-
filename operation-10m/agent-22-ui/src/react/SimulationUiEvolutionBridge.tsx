@@ -180,6 +180,18 @@ export function SimulationUiEvolutionBridge({
       {result.layoutOnboardingDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-layout-onboarding-day">{result.layoutOnboardingDayCoachCopy}</div>
       ) : null}
+      {result.guidedLearningPanelDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-guided-panel-day">{result.guidedLearningPanelDayCoachCopy}</div>
+      ) : null}
+      {result.calmRecoveryStatusDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-calm-status-day">{result.calmRecoveryStatusDayCoachCopy}</div>
+      ) : null}
+      {result.phaseShellAttentionDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-phase-attention-day">{result.phaseShellAttentionDayCoachCopy}</div>
+      ) : null}
+      {result.modalFocusTrapDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-modal-trap-day">{result.modalFocusTrapDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
