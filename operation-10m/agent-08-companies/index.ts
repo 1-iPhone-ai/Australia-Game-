@@ -52,10 +52,27 @@ export type {
   RegionalSectorDiversificationBand,
 } from './sector-production-depth';
 
+export {
+  AGENT08_CASCADE_SCHEMA_VERSION,
+  computeFirmCascadeExposure,
+  computeNationalProductionCapacityCascade,
+  computeProviderRegionStress,
+  propagateSupplyCascadeEdge,
+  runAgent08CascadeSelfTests,
+} from './production-capacity-cascade';
+
+export type {
+  CascadeSeverityBand,
+  FirmCascadeExposure,
+  NationalProductionCapacityCascade,
+  SupplyCascadeEdge,
+} from './production-capacity-cascade';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
 import { runAgent08SectorDepthSelfTests } from './sector-production-depth';
+import { runAgent08CascadeSelfTests } from './production-capacity-cascade';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -80,5 +97,10 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
-  return [...core.slice(0, 5), ...taxLabor, ...supply, ...sector];
+  const cascade = runAgent08CascadeSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
+  return [...core.slice(0, 5), ...taxLabor, ...supply, ...sector, ...cascade];
 }

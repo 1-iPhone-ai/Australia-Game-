@@ -18,6 +18,7 @@ const FILES = [
   'v1014-private-sector-core.tsx',
   'tax-labor-capacity-linkage.ts',
   'sector-production-depth.ts',
+  'production-capacity-cascade.ts',
   'chunk-exports.ts',
 ];
 

@@ -1,4 +1,4 @@
-import { runAgent08ModuleSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
+import { runAgent08ModuleSelfTests, runAgent08CascadeSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
 
 function main() {
   const tax = runAgent08TaxLaborSelfTests();
@@ -24,6 +24,14 @@ function main() {
     process.exit(1);
   }
   console.log(`Agent 08 sector depth: ${sector.length} passed`);
+
+  const cascade = runAgent08CascadeSelfTests();
+  const failedCascade = cascade.filter(t => !t.passed);
+  if (failedCascade.length) {
+    console.error('Agent 08 cascade tests failed:', failedCascade);
+    process.exit(1);
+  }
+  console.log(`Agent 08 production cascade: ${cascade.length} passed`);
 
   const moduleTests = runAgent08ModuleSelfTests();
   const failed = moduleTests.filter(t => !t.passed);
