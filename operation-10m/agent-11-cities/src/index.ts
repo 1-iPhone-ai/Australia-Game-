@@ -103,5 +103,8 @@ export * from './settlement-existential-total-nullity-decree.ts';
 export * from './regional-collapse-omni-singularity-synthesis.ts';
 export * from './interregional-void-total-erosion-annihilation.ts';
 export * from './settlement-existential-absolute-nullity-mandate.ts';
+export * from './regional-collapse-omni-singularity-convergence.ts';
+export * from './interregional-void-total-erosion-obliteration.ts';
+export * from './settlement-existential-absolute-nullity-binding.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';
