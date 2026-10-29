@@ -28,4 +28,5 @@ export * from './save-format-siege.js';
 export * from './save-format-convoy.js';
 export * from './save-format-escort.js';
 export * from './save-format-extraction.js';
+export * from './save-format-subject.js';
 export * from './scenario-campaign-planner.js';

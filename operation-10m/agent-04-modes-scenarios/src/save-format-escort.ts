@@ -119,6 +119,7 @@ export function attachEscortSessionToState(
     ...state,
     escortSession: sanitized,
     extractionSession: null,
+    subjectSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,

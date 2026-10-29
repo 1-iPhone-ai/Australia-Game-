@@ -57,6 +57,11 @@ import {
   sanitizeExtractionSession,
 } from './save-format-extraction.js';
 import {
+  getSubjectScenarioAtCursor,
+  subjectSessionSummary,
+  sanitizeSubjectSession,
+} from './save-format-subject.js';
+import {
   getSiegeScenarioAtCursor,
   siegeSessionSummary,
   sanitizeSiegeSession,
@@ -77,6 +82,7 @@ import type {
   O10mConvoyStage,
   O10mEscortPhase,
   O10mExtractionPhase,
+  O10mSubjectPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -131,9 +137,31 @@ const emptyQueuePlan = {
   extractionCursor: null as number | null,
   extractionPhase: null as O10mExtractionPhase | null,
   extractionAssets: null as number | null,
+  subjectId: null as string | null,
+  subjectCursor: null as number | null,
+  subjectPhase: null as O10mSubjectPhase | null,
+  subjectFidelity: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const subject = sanitizeSubjectSession(state.subjectSession);
+  const subjectScenario = getSubjectScenarioAtCursor(subject);
+  if (subject && subject.active && subjectScenario) {
+    return {
+      kind: 'subject_step',
+      scenarioId: subjectScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      subjectId: subject.subjectId,
+      subjectCursor: subject.cursor,
+      subjectPhase: subject.phaseTag,
+      subjectFidelity: subject.fidelityScore,
+      reason: `Subject "${subject.label}" ${subject.phaseTag} phase ${subject.cursor + 1}/${subject.scenarioIds.length} (fidelity ${subject.fidelityScore}).`,
+    };
+  }
+
   const extraction = sanitizeExtractionSession(state.extractionSession);
   const extractionScenario = getExtractionScenarioAtCursor(extraction);
   if (extraction && extraction.active && extractionScenario) {
@@ -446,6 +474,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   convoyActive: boolean;
   escortActive: boolean;
   extractionActive: boolean;
+  subjectActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -466,6 +495,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const convoy = convoySessionSummary(state);
   const escort = escortSessionSummary(state);
   const extraction = extractionSessionSummary(state);
+  const subject = subjectSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -484,6 +514,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     convoyActive: convoy.active,
     escortActive: escort.active,
     extractionActive: extraction.active,
+    subjectActive: subject.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

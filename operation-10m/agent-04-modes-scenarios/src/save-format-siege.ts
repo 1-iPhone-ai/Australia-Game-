@@ -121,6 +121,7 @@ export function attachSiegeSessionToState(
     convoySession: null,
     escortSession: null,
   extractionSession: null,
+    subjectSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,

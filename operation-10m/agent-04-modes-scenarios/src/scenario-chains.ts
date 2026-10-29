@@ -620,6 +620,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_subject_route',
+    title: 'Subject Route',
+    description:
+      'Three-phase subject investigation with fidelity accrual between legs — round-18 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_subject_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_subject_intake_brief',
+        title: 'Intake Brief',
+        narrativeBridge: 'Establish subject context before field probes.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 280 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_subject_probe_field',
+        title: 'Probe Field',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 5, QLD: 6 },
+          forcedSettingsPatch: { o10mSubjectMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_subject_verdict_finale',
+        title: 'Verdict Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainSubjectRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

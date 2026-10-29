@@ -125,6 +125,7 @@ export function attachOdysseySessionToState(
     convoySession: null,
     escortSession: null,
   extractionSession: null,
+    subjectSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,

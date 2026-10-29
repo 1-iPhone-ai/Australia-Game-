@@ -369,6 +369,7 @@ export type O10mConvoyStage = 'staging' | 'transit' | 'delivery';
 
 export type O10mEscortPhase = 'briefing' | 'corridor' | 'handoff';
 export type O10mExtractionPhase = 'intel' | 'rescue' | 'exfil';
+export type O10mSubjectPhase = 'intake' | 'probe' | 'verdict';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -480,6 +481,17 @@ export interface O10mExtractionSession {
   phaseTag: O10mExtractionPhase;
 }
 
+/** Schema v18 — subject investigation arc with fidelity accrual between phases. */
+export interface O10mSubjectSession {
+  subjectId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  fidelityScore: number;
+  phaseTag: O10mSubjectPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -504,6 +516,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'subject_step'
     | 'extraction_step'
     | 'escort_step'
     | 'convoy_step'
@@ -572,6 +585,10 @@ export interface O10mCampaignPlan {
   extractionCursor: number | null;
   extractionPhase: O10mExtractionPhase | null;
   extractionAssets: number | null;
+  subjectId: string | null;
+  subjectCursor: number | null;
+  subjectPhase: O10mSubjectPhase | null;
+  subjectFidelity: number | null;
   reason: string;
 }
 
@@ -629,6 +646,8 @@ export interface O10mModesPersistedState {
   escortSession?: O10mEscortSession | null;
   /** Schema v17 — active extraction op (mutually exclusive with escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   extractionSession?: O10mExtractionSession | null;
+  /** Schema v18 — active subject investigation (mutually exclusive with extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  subjectSession?: O10mSubjectSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
