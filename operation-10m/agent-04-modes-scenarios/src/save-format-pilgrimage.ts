@@ -127,6 +127,7 @@ export function attachPilgrimageSessionToState(
     voyageSession: null,
     siegeSession: null,
     convoySession: null,
+    escortSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,

@@ -138,6 +138,7 @@ export function attachGauntletSessionToState(
     voyageSession: null,
     siegeSession: null,
     convoySession: null,
+    escortSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,

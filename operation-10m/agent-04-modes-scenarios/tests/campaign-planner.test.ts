@@ -10,6 +10,7 @@ import {
   attachVoyageSessionToState,
   attachSiegeSessionToState,
   attachConvoySessionToState,
+  attachEscortSessionToState,
   attachGauntletSessionToState,
   attachMarathonQueueToState,
   attachRelaySessionToState,
@@ -23,6 +24,7 @@ import {
   createVoyageSession,
   createSiegeSession,
   createConvoySession,
+  createEscortSession,
   createGauntletSession,
   createMarathonQueue,
   createRelaySession,
@@ -52,7 +54,12 @@ describe('scenario campaign planner round 4', () => {
     assert.equal(plan.chainId, 'o10m_chain_continuity_arc');
   });
 
-  it('prefers active convoy over siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+  it('prefers active escort over convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: escort } = createEscortSession({
+      escortId: 'o10m_escort_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_escort_briefing_yard', 'o10m_escort_corridor_patrol'],
+    });
     const { session: convoy } = createConvoySession({
       convoyId: 'o10m_convoy_priority',
       label: 'Priority',
@@ -125,7 +132,8 @@ describe('scenario campaign planner round 4', () => {
     state = attachVoyageSessionToState(state, voyage!);
     state = attachSiegeSessionToState(state, siege!);
     state = attachConvoySessionToState(state, convoy!);
-    assert.equal(planNextCampaignAction(state).kind, 'convoy_step');
+    state = attachEscortSessionToState(state, escort!);
+    assert.equal(planNextCampaignAction(state).kind, 'escort_step');
   });
 
   it('prefers active siege over voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {

@@ -371,6 +371,8 @@ export type O10mSiegePhase = 'mustering' | 'breach' | 'relief';
 
 export type O10mConvoyStage = 'staging' | 'transit' | 'delivery';
 
+export type O10mEscortPhase = 'briefing' | 'corridor' | 'handoff';
+
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
   circuitId: string;
@@ -459,6 +461,17 @@ export interface O10mConvoySession {
   stageTag: O10mConvoyStage;
 }
 
+/** Schema v16 — VIP escort with trust accrual between phases. */
+export interface O10mEscortSession {
+  escortId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  trustScore: number;
+  phaseTag: O10mEscortPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -483,6 +496,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'escort_step'
     | 'convoy_step'
     | 'siege_step'
     | 'voyage_step'
@@ -541,6 +555,10 @@ export interface O10mCampaignPlan {
   convoyCursor: number | null;
   convoyStage: O10mConvoyStage | null;
   convoyHaul: number | null;
+  escortId: string | null;
+  escortCursor: number | null;
+  escortPhase: O10mEscortPhase | null;
+  escortTrust: number | null;
   reason: string;
 }
 
@@ -594,6 +612,8 @@ export interface O10mModesPersistedState {
   siegeSession?: O10mSiegeSession | null;
   /** Schema v15 — active overland convoy (mutually exclusive with siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   convoySession?: O10mConvoySession | null;
+  /** Schema v16 — active VIP escort (mutually exclusive with convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  escortSession?: O10mEscortSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -2596,6 +2616,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Convoy finales', 'Haul ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_escort_briefing_yard',
+    title: 'Escort Briefing Yard',
+    description: 'Brief a VIP escort with low-pressure trust pacing before the corridor leg.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100450,
+    startingMoney: 2600,
+    startingRegions: ['ACT', 'NSW'],
+    badgeId: 'badge_o10m_escort_briefing_yard',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100450),
+      o10mEscortBriefingYard: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_eby_obj_day',
+        label: 'Briefing Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['VIP escorts', 'Trust pacing', 'Briefing phase'],
+  },
+  {
+    id: 'o10m_escort_corridor_patrol',
+    title: 'Escort Corridor Patrol',
+    description: 'Mid-escort corridor patrol with accrued trust bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100451,
+    startingMoney: 3150,
+    startingRegions: ['VIC', 'SA'],
+    startingStanding: { VIC: 49, SA: 47 },
+    badgeId: 'badge_o10m_escort_corridor_patrol',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100451),
+      regionalStandingEnabled: true,
+      o10mEscortCorridorPatrol: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_ecp_obj_avg',
+        label: 'Corridor Threshold',
+        description: 'Average standing of 55',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 55,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Escort corridor', 'Trust carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_escort_handoff_finale',
+    title: 'Escort Handoff Finale',
+    description: 'Finale handoff stage — net worth gate with full trust bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100452,
+    startingMoney: 3600,
+    startingRegions: ['QLD', 'WA', 'NT'],
+    badgeId: 'badge_o10m_escort_handoff_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100452),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mEscortHandoffFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_ehf_obj_net',
+        label: 'Handoff Net Worth',
+        description: 'Reach $16,400 net worth',
+        targetType: 'netWorth',
+        targetValue: 16400,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Escort finales', 'Trust ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -3588,6 +3705,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_escort_route',
+    title: 'Escort Route',
+    description:
+      'Three-phase VIP escort with trust accrual between legs — round-16 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_escort_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_escort_briefing_yard',
+        title: 'Briefing Yard',
+        narrativeBridge: 'Earn trust before the corridor patrol run.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 260 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_escort_corridor_patrol',
+        title: 'Corridor Patrol',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, ACT: 5 },
+          forcedSettingsPatch: { o10mEscortMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_escort_handoff_finale',
+        title: 'Handoff Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainEscortRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -4414,7 +4565,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 15;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 16;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -4528,6 +4679,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     voyageSession: null,
     siegeSession: null,
     convoySession: null,
+    escortSession: null,
   };
 }
 
@@ -4562,6 +4714,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       voyageSession: merged.voyageSession ?? null,
       siegeSession: merged.siegeSession ?? null,
       convoySession: merged.convoySession ?? null,
+      escortSession: merged.escortSession ?? null,
     };
     return upgraded;
   }
@@ -4620,6 +4773,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     voyageSession: sanitizeVoyageSession(o.voyageSession),
     siegeSession: sanitizeSiegeSession(o.siegeSession),
     convoySession: sanitizeConvoySession(o.convoySession),
+    escortSession: sanitizeEscortSession(o.escortSession),
   };
 }
 
@@ -4731,6 +4885,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Convoy session failed sanitization; planner will ignore it.');
   } else if (convoy && convoy.cursor >= convoy.scenarioIds.length) {
     warnings.push('Convoy cursor out of range; clamp on next sanitize.');
+  }
+
+  const escort = sanitizeEscortSession(state.escortSession);
+  if (state.escortSession && !escort) {
+    warnings.push('Escort session failed sanitization; planner will ignore it.');
+  } else if (escort && escort.cursor >= escort.scenarioIds.length) {
+    warnings.push('Escort cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
@@ -4851,6 +5012,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'voyageSession',
   'siegeSession',
   'convoySession',
+  'escortSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -5364,6 +5526,7 @@ export function attachMarathonQueueToState(
     voyageSession: null,
     siegeSession: null,
     convoySession: null,
+    escortSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -5481,6 +5644,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceEscortSessionAfterRun(next, run);
   next = advanceConvoySessionAfterRun(next, run);
   next = advanceSiegeSessionAfterRun(next, run);
   next = advanceVoyageSessionAfterRun(next, run);
@@ -5627,6 +5791,7 @@ export function attachGauntletSessionToState(
     voyageSession: null,
     siegeSession: null,
     convoySession: null,
+    escortSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -5864,6 +6029,7 @@ export function attachRelaySessionToState(
     voyageSession: null,
     siegeSession: null,
     convoySession: null,
+    escortSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -6061,6 +6227,7 @@ export function attachCircuitSessionToState(
     voyageSession: null,
     siegeSession: null,
     convoySession: null,
+    escortSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -6276,6 +6443,7 @@ export function attachExpeditionSessionToState(
     voyageSession: null,
     siegeSession: null,
     convoySession: null,
+    escortSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -6489,6 +6657,7 @@ export function attachOdysseySessionToState(
     voyageSession: null,
     siegeSession: null,
     convoySession: null,
+    escortSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -6701,6 +6870,7 @@ export function attachPilgrimageSessionToState(
     voyageSession: null,
     siegeSession: null,
     convoySession: null,
+    escortSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -6914,6 +7084,7 @@ export function attachCaravanSessionToState(
     voyageSession: null,
     siegeSession: null,
     convoySession: null,
+    escortSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -7121,6 +7292,7 @@ export function attachVoyageSessionToState(
     voyageSession: sanitized,
     siegeSession: null,
     convoySession: null,
+    escortSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -7328,6 +7500,7 @@ export function attachSiegeSessionToState(
     ...state,
     siegeSession: sanitized,
     convoySession: null,
+    escortSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -7535,6 +7708,7 @@ export function attachConvoySessionToState(
   return {
     ...state,
     convoySession: sanitized,
+    escortSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -7631,6 +7805,215 @@ export function convoySessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-escort.ts ---
+export const O10M_ESCORT_SCENARIO_CAP = 6;
+export const O10M_ESCORT_TRUST_CAP = 660;
+export const O10M_ESCORT_TRUST_MONEY_CAP = 740;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mEscortPhase>(['briefing', 'corridor', 'handoff']);
+
+export function unlockTokenForEscortId(escortId: string): string | null {
+  if (!escortId.startsWith('o10m_escort_')) return null;
+  return `o10m_unlock_${escortId.slice('o10m_escort_'.length)}`;
+}
+
+export function escortPhaseForCursor(cursor: number, scenarioCount: number): O10mEscortPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'handoff';
+  if (clamped >= Math.floor(total / 2)) return 'corridor';
+  return 'briefing';
+}
+
+export function escortTrustFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(16, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(94, Math.max(10, Math.floor(run.playerNetWorth / 200) + standingSlice));
+}
+
+export function sanitizeEscortSession(raw: unknown): O10mEscortSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const escortId =
+    typeof o.escortId === 'string' && o.escortId.startsWith('o10m_escort_') ? o.escortId : null;
+  if (!escortId) return null;
+  const label = typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : escortId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_ESCORT_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const trustScore = Math.min(O10M_ESCORT_TRUST_CAP, Math.max(0, Math.floor(num(o.trustScore, 0))));
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mEscortPhase)
+      ? (phaseRaw as O10mEscortPhase)
+      : escortPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    escortId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    trustScore,
+    phaseTag,
+  };
+}
+
+export function createEscortSession(params: {
+  escortId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mEscortSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.escortId.startsWith('o10m_escort_')) {
+    return { session: null, warnings: ['Escort ids must start with o10m_escort_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_ESCORT_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return { session: null, warnings: [...warnings, 'Escort requires at least one valid scenario.'] };
+  }
+  return {
+    session: {
+      escortId: params.escortId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      trustScore: 0,
+      phaseTag: escortPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachEscortSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mEscortSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeEscortSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    escortSession: sanitized,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearEscortSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, escortSession: null };
+}
+
+export function getEscortScenarioAtCursor(session: O10mEscortSession | null | undefined): string | null {
+  const escort = sanitizeEscortSession(session);
+  if (!escort || !escort.active) return null;
+  return escort.scenarioIds[escort.cursor] ?? null;
+}
+
+export function buildEscortScenarioStartOverrides(session: O10mEscortSession | null | undefined): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const escort = sanitizeEscortSession(session);
+  if (!escort) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(O10M_ESCORT_TRUST_MONEY_CAP, Math.floor(escort.trustScore * 0.76));
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveEscortId: escort.escortId,
+      o10mActiveEscortStep: escort.cursor,
+      o10mActiveEscortPhase: escort.phaseTag,
+      o10mEscortTrust: escort.trustScore,
+    },
+  };
+}
+
+export function advanceEscortSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeEscortSession(state.escortSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const trustScore = Math.min(O10M_ESCORT_TRUST_CAP, session.trustScore + escortTrustFromRun(run));
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      escortSession: {
+        ...session,
+        cursor,
+        trustScore,
+        phaseTag: escortPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForEscortId(session.escortId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    escortSession: { ...session, active: false, trustScore, phaseTag: 'handoff' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function escortSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  trust: number;
+  phase: O10mEscortPhase | null;
+} {
+  const session = sanitizeEscortSession(state.escortSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    trust: session?.trustScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -7673,9 +8056,31 @@ const emptyQueuePlan = {
   convoyCursor: null as number | null,
   convoyStage: null as O10mConvoyStage | null,
   convoyHaul: null as number | null,
+  escortId: null as string | null,
+  escortCursor: null as number | null,
+  escortPhase: null as O10mEscortPhase | null,
+  escortTrust: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const escort = sanitizeEscortSession(state.escortSession);
+  const escortScenario = getEscortScenarioAtCursor(escort);
+  if (escort && escort.active && escortScenario) {
+    return {
+      kind: 'escort_step',
+      scenarioId: escortScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      escortId: escort.escortId,
+      escortCursor: escort.cursor,
+      escortPhase: escort.phaseTag,
+      escortTrust: escort.trustScore,
+      reason: `Escort "${escort.label}" ${escort.phaseTag} phase ${escort.cursor + 1}/${escort.scenarioIds.length} (trust ${escort.trustScore}).`,
+    };
+  }
+
   const convoy = sanitizeConvoySession(state.convoySession);
   const convoyScenario = getConvoyScenarioAtCursor(convoy);
   if (convoy && convoy.active && convoyScenario) {
@@ -7950,6 +8355,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   voyageActive: boolean;
   siegeActive: boolean;
   convoyActive: boolean;
+  escortActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -7968,6 +8374,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const voyage = voyageSessionSummary(state);
   const siege = siegeSessionSummary(state);
   const convoy = convoySessionSummary(state);
+  const escort = escortSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -7984,6 +8391,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     voyageActive: voyage.active,
     siegeActive: siege.active,
     convoyActive: convoy.active,
+    escortActive: escort.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -8002,7 +8410,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 16, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 17, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -8118,16 +8526,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const convoyState = convoy ? attachConvoySessionToState(createEmptyO10mModesPersistedState(), convoy) : null;
   push('agent04_chunk_23', convoyState !== null && planNextCampaignAction(convoyState!).kind === 'convoy_step');
 
+  const escort = createEscortSession({
+    escortId: 'o10m_escort_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_escort_briefing_yard'],
+  }).session;
+  const escortState = escort ? attachEscortSessionToState(createEmptyO10mModesPersistedState(), escort) : null;
+  push('agent04_chunk_24', escortState !== null && planNextCampaignAction(escortState!).kind === 'escort_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v16',
+  schemaVersion: 'op10m-agent04-v17',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 15,
+  saveSchemaVersion: 16,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

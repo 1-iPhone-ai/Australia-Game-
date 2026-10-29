@@ -552,6 +552,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_escort_route',
+    title: 'Escort Route',
+    description:
+      'Three-phase VIP escort with trust accrual between legs — round-16 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_escort_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_escort_briefing_yard',
+        title: 'Briefing Yard',
+        narrativeBridge: 'Earn trust before the corridor patrol run.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 260 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_escort_corridor_patrol',
+        title: 'Corridor Patrol',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, ACT: 5 },
+          forcedSettingsPatch: { o10mEscortMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_escort_handoff_finale',
+        title: 'Handoff Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainEscortRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

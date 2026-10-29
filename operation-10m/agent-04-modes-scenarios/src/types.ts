@@ -367,6 +367,8 @@ export type O10mSiegePhase = 'mustering' | 'breach' | 'relief';
 
 export type O10mConvoyStage = 'staging' | 'transit' | 'delivery';
 
+export type O10mEscortPhase = 'briefing' | 'corridor' | 'handoff';
+
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
   circuitId: string;
@@ -455,6 +457,17 @@ export interface O10mConvoySession {
   stageTag: O10mConvoyStage;
 }
 
+/** Schema v16 — VIP escort with trust accrual between phases. */
+export interface O10mEscortSession {
+  escortId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  trustScore: number;
+  phaseTag: O10mEscortPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -479,6 +492,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'escort_step'
     | 'convoy_step'
     | 'siege_step'
     | 'voyage_step'
@@ -537,6 +551,10 @@ export interface O10mCampaignPlan {
   convoyCursor: number | null;
   convoyStage: O10mConvoyStage | null;
   convoyHaul: number | null;
+  escortId: string | null;
+  escortCursor: number | null;
+  escortPhase: O10mEscortPhase | null;
+  escortTrust: number | null;
   reason: string;
 }
 
@@ -590,6 +608,8 @@ export interface O10mModesPersistedState {
   siegeSession?: O10mSiegeSession | null;
   /** Schema v15 — active overland convoy (mutually exclusive with siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   convoySession?: O10mConvoySession | null;
+  /** Schema v16 — active VIP escort (mutually exclusive with convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  escortSession?: O10mEscortSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

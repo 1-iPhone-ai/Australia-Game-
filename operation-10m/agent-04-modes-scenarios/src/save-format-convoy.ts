@@ -118,6 +118,7 @@ export function attachConvoySessionToState(
   return {
     ...state,
     convoySession: sanitized,
+    escortSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
