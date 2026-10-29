@@ -237,7 +237,7 @@ function bundleSources(): string {
 
   parts.push(
     `export const AGENT_02_MODULE_ID = 'operation-10m/${moduleId}';`,
-    `export const AGENT_02_MODULE_VERSION = '5.6.0';`,
+    `export const AGENT_02_MODULE_VERSION = '5.7.0';`,
     '',
     `export function runOp10mAgent02TurnsTimeSelfTests(): {`,
     `  passed: number;`,
@@ -856,7 +856,7 @@ function bundleSources(): string {
     `  });`,
     `  results.push({`,
     `    id: 'agent02_national_tick_session_wave_assembly_batch_integration_audit_closure_gate_assembly_gate_audit_gate_audit_gate_audit_gate_audit_gate_audit_gate_audit_gate_audit_gate_audit_gate_audit_gate_audit_gate_audit_gate_audit_gate',`,
-    `    name: 'assembly batch integration audit closure gate assembly gate audit gate audit gate audit gate audit gate audit gate audit gate audit gate audit gate audit gate audit gate wave 47',`,
+    `    name: 'assembly batch integration audit closure gate assembly gate audit gate audit gate audit gate audit gate audit gate audit gate audit gate audit gate audit gate audit gate wave 48',`,
     `    passed: exportBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAudit(`,
     `      commitBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditClosureGateAssemblyGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAuditGateAudit(`,
     `        new TurnTimeEngine(),`,
