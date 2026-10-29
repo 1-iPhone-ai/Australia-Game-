@@ -27,6 +27,8 @@ import { runSupplementaryEstimatesSelfTests } from './modules/supplementary-esti
 import { runSpendingOffsetsSelfTests } from './modules/spending-offsets/self-tests';
 import { runPortfolioOutturnSelfTests } from './modules/portfolio-outturn/self-tests';
 import { runDebtPortfolioGovernanceSelfTests } from './modules/debt-portfolio-governance/self-tests';
+import { runFiscalStressScenariosSelfTests } from './modules/fiscal-stress-scenarios/self-tests';
+import { runPublicSectorBalanceSheetSelfTests } from './modules/public-sector-balance-sheet/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -63,6 +65,8 @@ ok = runSuite('Supplementary estimates', runSupplementaryEstimatesSelfTests) && 
 ok = runSuite('Spending offsets', runSpendingOffsetsSelfTests) && ok;
 ok = runSuite('Portfolio outturn reconciliation', runPortfolioOutturnSelfTests) && ok;
 ok = runSuite('Debt portfolio governance', runDebtPortfolioGovernanceSelfTests) && ok;
+ok = runSuite('Fiscal stress scenarios', runFiscalStressScenariosSelfTests) && ok;
+ok = runSuite('Public sector balance sheet', runPublicSectorBalanceSheetSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

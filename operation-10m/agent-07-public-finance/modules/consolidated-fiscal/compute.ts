@@ -19,6 +19,8 @@ import { buildSupplementaryEstimatesReport } from '../supplementary-estimates/co
 import { buildSpendingOffsetsReport } from '../spending-offsets/compute';
 import { buildPortfolioOutturnReport } from '../portfolio-outturn/compute';
 import { buildDebtPortfolioGovernanceReport } from '../debt-portfolio-governance/compute';
+import { buildFiscalStressScenariosReport } from '../fiscal-stress-scenarios/compute';
+import { buildPublicSectorBalanceSheetReport } from '../public-sector-balance-sheet/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -84,6 +86,10 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
   });
   const debtPortfolioGov = buildDebtPortfolioGovernanceReport(turn, v1012, {
     liquidityStress: debtRollover.liquidityStress
+  });
+  const fiscalStress = buildFiscalStressScenariosReport(turn, v1012);
+  const publicBalanceSheet = buildPublicSectorBalanceSheetReport(turn, v1012, {
+    cashClosingBalance: cashMgmt.aggregateClosingBalance
   });
   const resilienceStack = assessFiscalResilience(turn, v1012, ['commodity_drop', 'rate_shock']);
   const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
@@ -358,12 +364,43 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `stress=${debtRollover.liquidityStress}, aligned=${debtPortfolioGov.rolloverStressAligned}`
   });
 
+  checks.push({
+    id: 'CF33',
+    label: 'Fiscal stress scenarios within appetite',
+    passed: fiscalStress.withinStressAppetite,
+    detail: `breaches=${fiscalStress.aggregateBreaches}, worstDelta=${fiscalStress.worstHeadroomDelta}`
+  });
+
+  checks.push({
+    id: 'CF34',
+    label: 'Public sector net worth above floor',
+    passed: publicBalanceSheet.withinNetWorthFloor,
+    detail: `ratio=${publicBalanceSheet.netWorthRatio}, nw=${publicBalanceSheet.netWorthPoints}`
+  });
+
+  checks.push({
+    id: 'CF35',
+    label: 'Stress worst case coherent with risk register heat',
+    passed:
+      Math.abs(fiscalStress.worstHeadroomDelta) <= riskRegister.aggregateHeat * 0.55 + 8 ||
+      v1012.pressure === 'critical' ||
+      !riskRegister.withinRiskAppetite,
+    detail: `worstDelta=${fiscalStress.worstHeadroomDelta}, heat=${riskRegister.aggregateHeat}`
+  });
+
+  checks.push({
+    id: 'CF36',
+    label: 'Balance sheet liquid slice aligned with TGA closing',
+    passed: publicBalanceSheet.liquidSliceCoherentWithCash,
+    detail: `liquid=${publicBalanceSheet.liquidAssetSlice}, tga=${cashMgmt.aggregateClosingBalance}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 30
+    layerCount: 34
   };
 }

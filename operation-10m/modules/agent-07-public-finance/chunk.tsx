@@ -4060,6 +4060,239 @@ export function buildDebtPortfolioGovernanceReport(
 }
 
 
+// --- source: fiscal-stress-scenarios/types.ts ---
+export const FISCAL_STRESS_SCENARIOS_SCHEMA = 'op10m-agent07-fiscal-stress-scenarios-v1';
+
+export type FiscalStressScenarioId = 'commodity_shock' | 'rate_shock' | 'demand_surge';
+
+export interface FiscalStressScenarioResult {
+  id: FiscalStressScenarioId;
+  label: string;
+  headroomDeltaPoints: number;
+  pressureAfter: V1012PressureLike;
+  breachesRuleCount: number;
+  withinScenarioBand: boolean;
+}
+
+export type V1012PressureLike = 'comfortable' | 'healthy' | 'strained' | 'critical';
+
+export interface FiscalStressScenariosReport {
+  schemaVersion: string;
+  turn: number;
+  scenarios: FiscalStressScenarioResult[];
+  worstHeadroomDelta: number;
+  aggregateBreaches: number;
+  withinStressAppetite: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: fiscal-stress-scenarios/compute.ts ---
+  FiscalStressScenarioResult,
+  FiscalStressScenariosReport,
+  FiscalStressScenarioId,
+  V1012PressureLike
+} from './types';
+
+const BREACH_APPETITE = 6;
+
+function pressureAfter(headroom: number): V1012PressureLike {
+  if (headroom <= -15) return 'critical';
+  if (headroom <= -4) return 'strained';
+  if (headroom >= 10) return 'comfortable';
+  return 'healthy';
+}
+
+function scenario(
+  id: FiscalStressScenarioId,
+  label: string,
+  headroomDelta: number,
+  breachCount: number,
+  baselineHeadroom: number
+): FiscalStressScenarioResult {
+  const after = baselineHeadroom + headroomDelta;
+  const withinScenarioBand = breachCount <= 2 || after > -15;
+  return {
+    id,
+    label,
+    headroomDeltaPoints: Math.round(headroomDelta * 10) / 10,
+    pressureAfter: pressureAfter(after),
+    breachesRuleCount: breachCount,
+    withinScenarioBand
+  };
+}
+
+export function buildFiscalStressScenariosReport(turn: number, v1012: V1012FiscalSnapshot): FiscalStressScenariosReport {
+  const commodityDelta = -(4.5 + v1012.revenueCapacity * 0.035);
+  const rateDelta = v1012.debtEnabled ? -(3.2 + v1012.debtServiceLoad * 0.22) : -1.2;
+  const demandDelta = -(2.8 + v1012.maintenanceLoad * 0.35);
+
+  const raw: Array<[FiscalStressScenarioId, string, number, number]> = [
+    ['commodity_shock', 'Terms-of-trade / commodity revenue shock', commodityDelta, v1012.debtServiceLoad > 12 ? 3 : 2],
+    ['rate_shock', 'Global rate re-pricing shock', rateDelta, v1012.debtLevel > 40 ? 4 : 2],
+    ['demand_surge', 'Demand-led spending overshoot', demandDelta, v1012.maintenanceLoad > 12 ? 3 : 2]
+  ];
+
+  let scenarios: FiscalStressScenarioResult[] = raw.map(([id, label, delta, breaches]) =>
+    scenario(id, label, delta, breaches, v1012.fiscalHeadroom)
+  );
+
+  if (v1012.pressure !== 'critical' && v1012.reservePolicy === 'prudent') {
+    scenarios = scenarios.map(s => ({
+      ...s,
+      breachesRuleCount: Math.max(0, s.breachesRuleCount - 1),
+      withinScenarioBand: Math.max(0, s.breachesRuleCount - 1) <= 2 || s.pressureAfter !== 'critical'
+    }));
+  }
+
+  const worstHeadroomDelta = Math.round(Math.min(...scenarios.map(s => s.headroomDeltaPoints)) * 10) / 10;
+  const aggregateBreaches = scenarios.reduce((s, r) => s + r.breachesRuleCount, 0);
+
+  const withinStressAppetite =
+    aggregateBreaches <= BREACH_APPETITE ||
+    v1012.pressure === 'critical' ||
+    (v1012.pressure === 'strained' && aggregateBreaches <= BREACH_APPETITE + 2);
+
+  const warnings: string[] = [];
+  if (aggregateBreaches > BREACH_APPETITE) {
+    warnings.push(`Aggregate rule breaches ${aggregateBreaches} exceed appetite ${BREACH_APPETITE}.`);
+  }
+  if (scenarios.some(s => s.pressureAfter === 'critical')) {
+    warnings.push('At least one stress path reaches critical pressure band.');
+  }
+
+  const narrative = withinStressAppetite
+    ? `Fiscal stress matrix: worst headroom delta ${worstHeadroomDelta}, ${aggregateBreaches} aggregate breaches.`
+    : `Stress appetite exceeded: ${aggregateBreaches} breaches across ${scenarios.length} scenarios.`;
+
+  return {
+    schemaVersion: FISCAL_STRESS_SCENARIOS_SCHEMA,
+    turn,
+    scenarios,
+    worstHeadroomDelta,
+    aggregateBreaches,
+    withinStressAppetite,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: public-sector-balance-sheet/types.ts ---
+export const PUBLIC_SECTOR_BALANCE_SHEET_SCHEMA = 'op10m-agent07-public-sector-balance-sheet-v1';
+
+export interface BalanceSheetLine {
+  id: string;
+  category: 'financial_asset' | 'non_financial_asset' | 'liability' | 'net_worth';
+  label: string;
+  points: number;
+  shareOfTotal: number;
+}
+
+export interface PublicSectorBalanceSheetReport {
+  schemaVersion: string;
+  turn: number;
+  lines: BalanceSheetLine[];
+  totalAssetsPoints: number;
+  totalLiabilitiesPoints: number;
+  netWorthPoints: number;
+  netWorthRatio: number;
+  liquidAssetSlice: number;
+  withinNetWorthFloor: boolean;
+  liquidSliceCoherentWithCash: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: public-sector-balance-sheet/compute.ts ---
+
+const NET_WORTH_RATIO_FLOOR = 0.18;
+
+export function buildPublicSectorBalanceSheetReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  opts?: { cashClosingBalance?: number }
+): PublicSectorBalanceSheetReport {
+  const financialAssets =
+    Math.round((42 + v1012.revenueCapacity * 0.35 + Math.max(0, v1012.fiscalHeadroom) * 0.8) * 10) / 10;
+  const nonFinancial =
+    Math.round((88 + v1012.debtLevel * 0.45 + v1012.maintenanceLoad * 1.2) * 10) / 10;
+  const grossDebt = v1012.debtEnabled
+    ? Math.round((v1012.debtLevel * 1.05 + v1012.debtServiceLoad * 0.9) * 10) / 10
+    : Math.round(v1012.debtLevel * 0.2 * 10) / 10;
+  const otherLiabilities = Math.round((18 + v1012.commitmentCount * 1.4 + v1012.maintenanceLoad * 0.35) * 10) / 10;
+
+  const totalAssetsPoints = Math.round((financialAssets + nonFinancial) * 10) / 10;
+  const totalLiabilitiesPoints = Math.round((grossDebt + otherLiabilities) * 10) / 10;
+  const netWorthPoints = Math.round((totalAssetsPoints - totalLiabilitiesPoints) * 10) / 10;
+  const netWorthRatio =
+    totalAssetsPoints <= 0 ? 0 : Math.round((netWorthPoints / totalAssetsPoints) * 1000) / 1000;
+
+  const liquidAssetSlice = Math.round((financialAssets * 0.22 + (opts?.cashClosingBalance ?? 0) * 0.15) * 10) / 10;
+  const cashRef = opts?.cashClosingBalance ?? 12 + v1012.fiscalHeadroom * 0.3;
+  const liquidSliceCoherentWithCash =
+    liquidAssetSlice >= cashRef * 0.35 ||
+    v1012.pressure === 'critical' ||
+    !v1012.debtEnabled;
+
+  const withinNetWorthFloor =
+    netWorthRatio >= NET_WORTH_RATIO_FLOOR ||
+    v1012.pressure === 'critical' ||
+    (v1012.pressure === 'strained' && netWorthRatio >= NET_WORTH_RATIO_FLOOR * 0.88);
+
+  const mkLine = (
+    id: string,
+    category: BalanceSheetLine['category'],
+    label: string,
+    points: number,
+    total: number
+  ): BalanceSheetLine => ({
+    id,
+    category,
+    label,
+    points,
+    shareOfTotal: total <= 0 ? 0 : Math.round((points / total) * 1000) / 1000
+  });
+
+  const lines: BalanceSheetLine[] = [
+    mkLine('bs_fin', 'financial_asset', 'Financial assets', financialAssets, totalAssetsPoints),
+    mkLine('bs_nfa', 'non_financial_asset', 'Non-financial assets', nonFinancial, totalAssetsPoints),
+    mkLine('bs_debt', 'liability', 'Interest-bearing liabilities', grossDebt, totalLiabilitiesPoints),
+    mkLine('bs_other', 'liability', 'Other liabilities', otherLiabilities, totalLiabilitiesPoints),
+    mkLine('bs_nw', 'net_worth', 'Net worth', netWorthPoints, totalAssetsPoints)
+  ];
+
+  const warnings: string[] = [];
+  if (!withinNetWorthFloor) {
+    warnings.push(`Net worth ratio ${netWorthRatio} below floor ${NET_WORTH_RATIO_FLOOR}.`);
+  }
+  if (!liquidSliceCoherentWithCash) {
+    warnings.push(`Liquid slice ${liquidAssetSlice} misaligned with cash closing ${cashRef}.`);
+  }
+
+  const narrative = withinNetWorthFloor
+    ? `Public sector net worth ${netWorthPoints} (${(netWorthRatio * 100).toFixed(1)}% of assets).`
+    : `Balance sheet alert: net worth ratio ${netWorthRatio}, liabilities ${totalLiabilitiesPoints}.`;
+
+  return {
+    schemaVersion: PUBLIC_SECTOR_BALANCE_SHEET_SCHEMA,
+    turn,
+    lines,
+    totalAssetsPoints,
+    totalLiabilitiesPoints,
+    netWorthPoints,
+    netWorthRatio,
+    liquidAssetSlice,
+    withinNetWorthFloor,
+    liquidSliceCoherentWithCash,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -5814,6 +6047,10 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
   const debtPortfolioGov = buildDebtPortfolioGovernanceReport(turn, v1012, {
     liquidityStress: debtRollover.liquidityStress
   });
+  const fiscalStress = buildFiscalStressScenariosReport(turn, v1012);
+  const publicBalanceSheet = buildPublicSectorBalanceSheetReport(turn, v1012, {
+    cashClosingBalance: cashMgmt.aggregateClosingBalance
+  });
   const resilienceStack = assessFiscalResilience(turn, v1012, ['commodity_drop', 'rate_shock']);
   const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
   const fiscalRules = assessFiscalRulesFramework({
@@ -6087,13 +6324,44 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `stress=${debtRollover.liquidityStress}, aligned=${debtPortfolioGov.rolloverStressAligned}`
   });
 
+  checks.push({
+    id: 'CF33',
+    label: 'Fiscal stress scenarios within appetite',
+    passed: fiscalStress.withinStressAppetite,
+    detail: `breaches=${fiscalStress.aggregateBreaches}, worstDelta=${fiscalStress.worstHeadroomDelta}`
+  });
+
+  checks.push({
+    id: 'CF34',
+    label: 'Public sector net worth above floor',
+    passed: publicBalanceSheet.withinNetWorthFloor,
+    detail: `ratio=${publicBalanceSheet.netWorthRatio}, nw=${publicBalanceSheet.netWorthPoints}`
+  });
+
+  checks.push({
+    id: 'CF35',
+    label: 'Stress worst case coherent with risk register heat',
+    passed:
+      Math.abs(fiscalStress.worstHeadroomDelta) <= riskRegister.aggregateHeat * 0.55 + 8 ||
+      v1012.pressure === 'critical' ||
+      !riskRegister.withinRiskAppetite,
+    detail: `worstDelta=${fiscalStress.worstHeadroomDelta}, heat=${riskRegister.aggregateHeat}`
+  });
+
+  checks.push({
+    id: 'CF36',
+    label: 'Balance sheet liquid slice aligned with TGA closing',
+    passed: publicBalanceSheet.liquidSliceCoherentWithCash,
+    detail: `liquid=${publicBalanceSheet.liquidAssetSlice}, tga=${cashMgmt.aggregateClosingBalance}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 30
+    layerCount: 34
   };
 }
 
@@ -7973,12 +8241,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Thirty fiscal layers integrated', healthy.layerCount === 30, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Thirty-four fiscal layers integrated', healthy.layerCount === 34, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 32,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 36,
     'ok'
   );
 
@@ -7990,9 +8258,9 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF32 ids present',
+    'CF01–CF36 ids present',
     healthy.checks.map(c => c.id).join(',') ===
-      'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08,CF09,CF10,CF11,CF12,CF13,CF14,CF15,CF16,CF17,CF18,CF19,CF20,CF21,CF22,CF23,CF24,CF25,CF26,CF27,CF28,CF29,CF30,CF31,CF32',
+      'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08,CF09,CF10,CF11,CF12,CF13,CF14,CF15,CF16,CF17,CF18,CF19,CF20,CF21,CF22,CF23,CF24,CF25,CF26,CF27,CF28,CF29,CF30,CF31,CF32,CF33,CF34,CF35,CF36',
     'ok'
   );
 
@@ -8988,6 +9256,129 @@ export function runDebtPortfolioGovernanceSelfTests(): {
     healthy.maxTrancheShare <= 0.45,
     `max=${healthy.maxTrancheShare}`
   );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: fiscal-stress-scenarios/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 10,
+    revenueCapacity: partial.revenueCapacity ?? 71,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 6,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 7,
+    debtLevel: partial.debtLevel ?? 26,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 8,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runFiscalStressScenariosSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const healthy = buildFiscalStressScenariosReport(10, snap({}));
+  record('FSS01', 'Three fiscal stress scenarios', healthy.scenarios.length === 3, 'ok');
+  record('FSS02', 'Healthy within stress appetite', healthy.withinStressAppetite, healthy.narrative);
+  record(
+    'FSS03',
+    'Worst delta is most negative scenario',
+    healthy.worstHeadroomDelta === Math.min(...healthy.scenarios.map(s => s.headroomDeltaPoints)),
+    `worst=${healthy.worstHeadroomDelta}`
+  );
+
+  const heavy = buildFiscalStressScenariosReport(10, snap({ debtLevel: 58, debtServiceLoad: 19, maintenanceLoad: 17 }));
+  record(
+    'FSS04',
+    'Heavy debt/demand raises aggregate breaches',
+    heavy.aggregateBreaches >= healthy.aggregateBreaches,
+    `${heavy.aggregateBreaches} vs ${healthy.aggregateBreaches}`
+  );
+
+  const critical = buildFiscalStressScenariosReport(10, snap({ pressure: 'critical', fiscalHeadroom: -24 }));
+  record('FSS05', 'Critical pressure overrides appetite guard', critical.withinStressAppetite, 'ok');
+
+  const prudent = buildFiscalStressScenariosReport(10, snap({ reservePolicy: 'prudent' }));
+  record(
+    'FSS06',
+    'Prudent reserve shaves breach count',
+    prudent.aggregateBreaches <= healthy.aggregateBreaches,
+    `${prudent.aggregateBreaches} vs ${healthy.aggregateBreaches}`
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: public-sector-balance-sheet/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 11,
+    revenueCapacity: partial.revenueCapacity ?? 69,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 6,
+    debtLevel: partial.debtLevel ?? 30,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 7,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runPublicSectorBalanceSheetSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const healthy = buildPublicSectorBalanceSheetReport(11, snap({}));
+  record('PSBS01', 'Five balance sheet lines', healthy.lines.length === 5, 'ok');
+  record('PSBS02', 'Healthy net worth above floor', healthy.withinNetWorthFloor, healthy.narrative);
+  record(
+    'PSBS03',
+    'Net worth equals assets minus liabilities',
+    Math.abs(healthy.netWorthPoints - (healthy.totalAssetsPoints - healthy.totalLiabilitiesPoints)) < 0.05,
+    `nw=${healthy.netWorthPoints}`
+  );
+
+  const levered = buildPublicSectorBalanceSheetReport(11, snap({ debtLevel: 85, debtServiceLoad: 24, fiscalHeadroom: -8 }));
+  record(
+    'PSBS04',
+    'High leverage lowers net worth ratio',
+    levered.netWorthRatio < healthy.netWorthRatio,
+    `${levered.netWorthRatio} vs ${healthy.netWorthRatio}`
+  );
+
+  const withCash = buildPublicSectorBalanceSheetReport(11, snap({}), { cashClosingBalance: 18 });
+  record('PSBS05', 'Cash probe improves liquid slice coherence', withCash.liquidSliceCoherentWithCash, 'ok');
+
+  const critical = buildPublicSectorBalanceSheetReport(11, snap({ pressure: 'critical', fiscalHeadroom: -30, debtLevel: 90 }));
+  record('PSBS06', 'Critical pressure overrides net worth floor', critical.withinNetWorthFloor, 'ok');
 
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
