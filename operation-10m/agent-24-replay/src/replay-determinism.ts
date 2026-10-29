@@ -35,6 +35,15 @@ import {
 } from './replay-playback-integrity.ts';
 import { buildAgent24BranchLineageReport, type Agent24BranchLineageReport } from './branch-lineage.ts';
 import { buildAgent24ExportReadinessReport, type Agent24ExportReadinessReport } from './export-readiness.ts';
+import { buildAgent24ExportManifest, type Agent24ExportManifest } from './export-manifest.ts';
+import {
+  buildAgent24ImportValidationReport,
+  type Agent24ImportValidationReport,
+} from './import-validation.ts';
+import {
+  buildAgent24HistoryRetentionReport,
+  type Agent24HistoryRetentionReport,
+} from './history-retention.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -55,6 +64,9 @@ export interface Agent24ReplayDeterminismBundle {
   playbackIntegrity: Agent24ReplayPlaybackIntegrityReport;
   branchLineage: Agent24BranchLineageReport;
   exportReadiness: Agent24ExportReadinessReport;
+  exportManifest: Agent24ExportManifest;
+  importValidation: Agent24ImportValidationReport;
+  historyRetention: Agent24HistoryRetentionReport;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -242,7 +254,7 @@ export function buildAgent24ReplayDeterminismBundle(
     playbackIntegrity,
     rewindSafety,
   });
-  const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
+  const compositeCore = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
     timeline: timelineRegistry.deterministicFingerprint,
@@ -261,6 +273,49 @@ export function buildAgent24ReplayDeterminismBundle(
     branchLineage: branchLineage.deterministicFingerprint,
     exportReadiness: exportReadinessFinal.deterministicFingerprint,
   });
+  const exportManifest = buildAgent24ExportManifest({
+    matchId: input.matchId,
+    attestation: attestationFinal,
+    exportReadiness: exportReadinessFinal,
+    branchLineage,
+    compositeBundleFingerprint: compositeCore,
+  });
+  const historyRetention = buildAgent24HistoryRetentionReport({
+    matchId: input.matchId,
+    currentTurn: input.turn,
+    maxTurns: input.maxTurns,
+    checkpointCoverage,
+    rewindSafety,
+  });
+  const importValidation = buildAgent24ImportValidationReport({
+    matchId: input.matchId,
+    manifest: exportManifest,
+    attestation: attestationFinal,
+    exportReadiness: exportReadinessFinal,
+    expectedCompositeFingerprint: compositeCore,
+  });
+  const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
+    snap: snapshot.integrity.fingerprint,
+    causal: causalIndex.deterministicFingerprint,
+    timeline: timelineRegistry.deterministicFingerprint,
+    late: lateGame.fingerprint,
+    depth: analyticsDepth.deterministicFingerprint,
+    scenarios: scenarioSuite.deterministicFingerprint,
+    audit: auditTrail.deterministicFingerprint,
+    sessions: multiSession.deterministicFingerprint,
+    divergence: timelineDivergence.deterministicFingerprint,
+    rollup: historyRollup.deterministicFingerprint,
+    attestation: attestationFinal.deterministicFingerprint,
+    checkpointCoverage: checkpointCoverage.deterministicFingerprint,
+    rewindSafety: rewindSafety.deterministicFingerprint,
+    reconciliation: historyReconciliation.deterministicFingerprint,
+    playbackIntegrity: playbackIntegrity.deterministicFingerprint,
+    branchLineage: branchLineage.deterministicFingerprint,
+    exportReadiness: exportReadinessFinal.deterministicFingerprint,
+    exportManifest: exportManifest.deterministicFingerprint,
+    importValidation: importValidation.deterministicFingerprint,
+    historyRetention: historyRetention.deterministicFingerprint,
+  });
 
   return {
     bundleId: o6kAgent24Fingerprint('replay_bundle_id', { matchId: input.matchId, turn: input.turn }),
@@ -273,6 +328,9 @@ export function buildAgent24ReplayDeterminismBundle(
     playbackIntegrity,
     branchLineage,
     exportReadiness: exportReadinessFinal,
+    exportManifest,
+    importValidation,
+    historyRetention,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -368,6 +426,21 @@ export function verifyAgent24ReplayDeterminism(
       name: 'export_readiness_twin',
       passed: a.exportReadiness.deterministicFingerprint === b.exportReadiness.deterministicFingerprint,
       detail: 'Twin export readiness fingerprints',
+    },
+    {
+      name: 'export_manifest_twin',
+      passed: a.exportManifest.deterministicFingerprint === b.exportManifest.deterministicFingerprint,
+      detail: 'Twin export manifest fingerprints',
+    },
+    {
+      name: 'import_validation_twin',
+      passed: a.importValidation.deterministicFingerprint === b.importValidation.deterministicFingerprint,
+      detail: 'Twin import validation fingerprints',
+    },
+    {
+      name: 'history_retention_twin',
+      passed: a.historyRetention.deterministicFingerprint === b.historyRetention.deterministicFingerprint,
+      detail: 'Twin history retention fingerprints',
     },
     {
       name: 'composite_twin',

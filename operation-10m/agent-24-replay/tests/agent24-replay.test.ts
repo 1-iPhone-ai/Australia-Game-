@@ -31,6 +31,15 @@ import {
 } from '../src/replay-playback-integrity.ts';
 import { buildAgent24BranchLineageReport } from '../src/branch-lineage.ts';
 import { buildAgent24ExportReadinessReport } from '../src/export-readiness.ts';
+import { buildAgent24ExportManifest, runAgent24ExportManifestSelfTests } from '../src/export-manifest.ts';
+import {
+  buildAgent24ImportValidationReport,
+  runAgent24ImportValidationSelfTests,
+} from '../src/import-validation.ts';
+import {
+  buildAgent24HistoryRetentionReport,
+  runAgent24HistoryRetentionSelfTests,
+} from '../src/history-retention.ts';
 import { buildO6kHistoricalAnalyticsSnapshot } from '../src/history-replay-analytics.ts';
 import { o6kAgent24StableStringify, runO6kAgent24SelfTests } from '../src/history-replay-analytics.ts';
 
@@ -125,6 +134,9 @@ describe('Agent 24 replay determinism bundle', () => {
     assert.ok(result.probes.some(p => p.name === 'playback_integrity_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'branch_lineage_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'export_readiness_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'export_manifest_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'import_validation_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'history_retention_twin' && p.passed));
   });
 
   it('includes analytics depth rollups and stable twin fingerprint', () => {
@@ -317,6 +329,8 @@ describe('Agent 24 export readiness', () => {
       deterministicMode: true,
     });
     assert.equal(bundle.exportReadiness.ready, true);
+    assert.equal(bundle.importValidation.valid, true);
+    assert.ok(bundle.exportManifest.complete);
     const direct = buildAgent24ExportReadinessReport({
       matchId: 'm',
       attestation: bundle.attestation,
@@ -326,6 +340,70 @@ describe('Agent 24 export readiness', () => {
       rewindSafety: bundle.rewindSafety,
     });
     assert.equal(direct.deterministicFingerprint, bundle.exportReadiness.deterministicFingerprint);
+  });
+});
+
+describe('Agent 24 export manifest', () => {
+  it('lists required manifest sections', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle({
+      matchId: 'm',
+      turn: 10,
+      day: 10,
+      replay: { events: [{ eventType: 'replay_checkpoint', turn: 10, sequence: 1 }], checkpoints: { '10': {} } },
+      deterministicMode: true,
+    });
+    assert.ok(bundle.exportManifest.sections.some(s => s.kind === 'composite_bundle'));
+    assert.ok(runAgent24ExportManifestSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 import validation', () => {
+  it('accepts aligned manifest and bundle fingerprints', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle({
+      matchId: 'm',
+      turn: 14,
+      day: 14,
+      replay: {
+        events: [
+          { eventType: 'replay_checkpoint', turn: 7, sequence: 1 },
+          { eventType: 'replay_checkpoint', turn: 14, sequence: 2 },
+        ],
+        checkpoints: { '7': {}, '14': {} },
+      },
+      deterministicMode: true,
+    });
+    assert.equal(bundle.importValidation.valid, true);
+    assert.ok(runAgent24ImportValidationSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 history retention', () => {
+  it('computes prune-safe cutoff from checkpoints', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle({
+      matchId: 'm',
+      turn: 20,
+      day: 20,
+      maxTurns: 100,
+      replay: {
+        events: [
+          { eventType: 'replay_checkpoint', turn: 8, sequence: 1 },
+          { eventType: 'replay_checkpoint', turn: 15, sequence: 2 },
+        ],
+        checkpoints: { '8': {}, '15': {} },
+      },
+      deterministicMode: true,
+    });
+    assert.ok(bundle.historyRetention.bandCount >= 2);
+    assert.ok(bundle.historyRetention.retentionScore >= 50);
+    const direct = buildAgent24HistoryRetentionReport({
+      matchId: 'm',
+      currentTurn: 20,
+      maxTurns: 100,
+      checkpointCoverage: bundle.checkpointCoverage,
+      rewindSafety: bundle.rewindSafety,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.historyRetention.deterministicFingerprint);
+    assert.ok(runAgent24HistoryRetentionSelfTests().every(t => t.passed));
   });
 });
 

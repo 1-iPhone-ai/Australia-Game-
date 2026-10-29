@@ -1907,6 +1907,432 @@ export function buildAgent24ExportReadinessReport(input: Agent24ExportReadinessI
 }
 
 
+// --- source: export-manifest.ts ---
+
+export type Agent24ExportManifestSectionKind =
+  | 'attestation'
+  | 'export_readiness'
+  | 'branch_lineage'
+  | 'composite_bundle';
+
+export interface Agent24ExportManifestSection {
+  kind: Agent24ExportManifestSectionKind;
+  label: string;
+  fingerprint: string;
+  required: boolean;
+}
+
+export interface Agent24ExportManifest {
+  manifestId: string;
+  matchId: string;
+  sectionCount: number;
+  requiredSectionCount: number;
+  sections: Agent24ExportManifestSection[];
+  compositeBundleFingerprint: string;
+  complete: boolean;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ExportManifestInput {
+  matchId: string;
+  attestation: Agent24ReplayAttestation;
+  exportReadiness: Agent24ExportReadinessReport;
+  branchLineage: Agent24BranchLineageReport;
+  compositeBundleFingerprint: string;
+}
+
+export function buildAgent24ExportManifest(input: Agent24ExportManifestInput): Agent24ExportManifest {
+  const sections: Agent24ExportManifestSection[] = [
+    {
+      kind: 'attestation',
+      label: 'Replay attestation',
+      fingerprint: input.attestation.deterministicFingerprint,
+      required: true,
+    },
+    {
+      kind: 'export_readiness',
+      label: 'Export readiness gate',
+      fingerprint: input.exportReadiness.deterministicFingerprint,
+      required: true,
+    },
+    {
+      kind: 'branch_lineage',
+      label: 'Branch lineage map',
+      fingerprint: input.branchLineage.deterministicFingerprint,
+      required: input.branchLineage.nodeCount > 1,
+    },
+    {
+      kind: 'composite_bundle',
+      label: 'Composite determinism bundle',
+      fingerprint: input.compositeBundleFingerprint,
+      required: true,
+    },
+  ];
+
+  sections.sort((a, b) => a.kind.localeCompare(b.kind));
+  const requiredSectionCount = sections.filter(s => s.required).length;
+  const complete = sections.every(s => !s.required || s.fingerprint.length > 0);
+
+  return {
+    manifestId: o6kAgent24Fingerprint('export_manifest', { matchId: input.matchId, sections: sections.length }),
+    matchId: input.matchId,
+    sectionCount: sections.length,
+    requiredSectionCount,
+    sections,
+    compositeBundleFingerprint: input.compositeBundleFingerprint,
+    complete,
+    deterministicFingerprint: o6kAgent24Fingerprint('export_manifest_body', {
+      sections: sections.map(s => ({ kind: s.kind, fp: s.fingerprint, req: s.required })),
+      complete,
+    }),
+  };
+}
+
+export function runAgent24ExportManifestSelfTests(): Array<{ name: string; passed: boolean }> {
+  const attestationFp = o6kAgent24Fingerprint('test_attest', { ok: 1 });
+  const readinessFp = o6kAgent24Fingerprint('test_ready', { ok: 1 });
+  const lineageFp = o6kAgent24Fingerprint('test_lineage', { ok: 1 });
+  const composite = o6kAgent24Fingerprint('test_composite', { ok: 1 });
+  const input = {
+    matchId: 'self',
+    attestation: {
+      attestationId: 'a',
+      matchId: 'self',
+      turn: 1,
+      status: 'verified' as const,
+      twinBuildPassed: true,
+      integrityScore: 90,
+      scenarioSatisfiedRatio: 1,
+      resumeSafe: true,
+      chainRoot: 'r',
+      chainTip: 't',
+      deterministicFingerprint: attestationFp,
+    },
+    exportReadiness: {
+      reportId: 'r',
+      matchId: 'self',
+      ready: true,
+      readinessScore: 100,
+      blockerCount: 0,
+      blockers: [],
+      deterministicFingerprint: readinessFp,
+    },
+    branchLineage: {
+      reportId: 'l',
+      matchId: 'self',
+      nodeCount: 1,
+      maxDepth: 0,
+      deepestNodeId: 'root',
+      nodes: [],
+      deterministicFingerprint: lineageFp,
+    },
+    compositeBundleFingerprint: composite,
+  };
+  const manifest = buildAgent24ExportManifest(input);
+  const twin = buildAgent24ExportManifest(input);
+  return [
+    { name: 'manifest_complete', passed: manifest.complete && manifest.sectionCount >= 3 },
+    { name: 'deterministic_fingerprint', passed: manifest.deterministicFingerprint === twin.deterministicFingerprint },
+  ];
+}
+
+
+// --- source: import-validation.ts ---
+
+export type Agent24ImportValidationIssueKind =
+  | 'manifest_incomplete'
+  | 'fingerprint_mismatch'
+  | 'export_not_ready'
+  | 'attestation_not_verified';
+
+export interface Agent24ImportValidationIssue {
+  kind: Agent24ImportValidationIssueKind;
+  detail: string;
+  fingerprint: string;
+}
+
+export interface Agent24ImportValidationReport {
+  reportId: string;
+  matchId: string;
+  valid: boolean;
+  issueCount: number;
+  issues: Agent24ImportValidationIssue[];
+  validationScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ImportValidationInput {
+  matchId: string;
+  manifest: Agent24ExportManifest;
+  attestation: Agent24ReplayAttestation;
+  exportReadiness: Agent24ExportReadinessReport;
+  expectedCompositeFingerprint: string;
+}
+
+export function buildAgent24ImportValidationReport(input: Agent24ImportValidationInput): Agent24ImportValidationReport {
+  const issues: Agent24ImportValidationIssue[] = [];
+
+  if (!input.manifest.complete) {
+    issues.push({
+      kind: 'manifest_incomplete',
+      detail: 'Export manifest missing required section fingerprints',
+      fingerprint: o6kAgent24Fingerprint('import_manifest_incomplete', { complete: false }),
+    });
+  }
+  if (input.manifest.compositeBundleFingerprint !== input.expectedCompositeFingerprint) {
+    issues.push({
+      kind: 'fingerprint_mismatch',
+      detail: 'Manifest composite fingerprint does not match live bundle',
+      fingerprint: o6kAgent24Fingerprint('import_fp_mismatch', {
+        manifest: input.manifest.compositeBundleFingerprint,
+        live: input.expectedCompositeFingerprint,
+      }),
+    });
+  }
+  if (!input.exportReadiness.ready) {
+    issues.push({
+      kind: 'export_not_ready',
+      detail: `Export readiness blocked (${input.exportReadiness.blockerCount} blockers)`,
+      fingerprint: o6kAgent24Fingerprint('import_not_ready', { blockers: input.exportReadiness.blockerCount }),
+    });
+  }
+  if (input.attestation.status !== 'verified') {
+    issues.push({
+      kind: 'attestation_not_verified',
+      detail: `Attestation status ${input.attestation.status}`,
+      fingerprint: o6kAgent24Fingerprint('import_attest', { status: input.attestation.status }),
+    });
+  }
+
+  const attestationSection = input.manifest.sections.find(s => s.kind === 'attestation');
+  if (attestationSection && attestationSection.fingerprint !== input.attestation.deterministicFingerprint) {
+    issues.push({
+      kind: 'fingerprint_mismatch',
+      detail: 'Manifest attestation section fingerprint stale',
+      fingerprint: o6kAgent24Fingerprint('import_attest_fp', { stale: true }),
+    });
+  }
+
+  issues.sort((a, b) => a.kind.localeCompare(b.kind));
+  let validationScore = 100;
+  validationScore -= issues.length * 22;
+  validationScore = Math.max(0, Math.min(100, validationScore));
+  const valid = issues.length === 0;
+
+  return {
+    reportId: o6kAgent24Fingerprint('import_validation', { matchId: input.matchId, valid }),
+    matchId: input.matchId,
+    valid,
+    issueCount: issues.length,
+    issues,
+    validationScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('import_validation_body', {
+      issues: issues.map(i => i.fingerprint),
+      valid,
+      validationScore,
+    }),
+  };
+}
+
+export function runAgent24ImportValidationSelfTests(): Array<{ name: string; passed: boolean }> {
+  const composite = o6kAgent24Fingerprint('import_self_composite', { v: 1 });
+  const attestationFp = o6kAgent24Fingerprint('import_self_attest', { v: 1 });
+  const readinessFp = o6kAgent24Fingerprint('import_self_ready', { v: 1 });
+  const manifest = {
+    manifestId: 'm',
+    matchId: 'self',
+    sectionCount: 3,
+    requiredSectionCount: 3,
+    sections: [
+      { kind: 'attestation' as const, label: 'A', fingerprint: attestationFp, required: true },
+      { kind: 'composite_bundle' as const, label: 'C', fingerprint: composite, required: true },
+    ],
+    compositeBundleFingerprint: composite,
+    complete: true,
+    deterministicFingerprint: o6kAgent24Fingerprint('import_self_manifest', { v: 1 }),
+  };
+  const attestation = {
+    attestationId: 'a',
+    matchId: 'self',
+    turn: 5,
+    status: 'verified' as const,
+    twinBuildPassed: true,
+    integrityScore: 90,
+    scenarioSatisfiedRatio: 1,
+    resumeSafe: true,
+    chainRoot: 'r',
+    chainTip: 't',
+    deterministicFingerprint: attestationFp,
+  };
+  const readiness = {
+    reportId: 'r',
+    matchId: 'self',
+    ready: true,
+    readinessScore: 100,
+    blockerCount: 0,
+    blockers: [],
+    deterministicFingerprint: readinessFp,
+  };
+  const ok = buildAgent24ImportValidationReport({
+    matchId: 'self',
+    manifest,
+    attestation,
+    exportReadiness: readiness,
+    expectedCompositeFingerprint: composite,
+  });
+  const bad = buildAgent24ImportValidationReport({
+    matchId: 'self',
+    manifest,
+    attestation,
+    exportReadiness: readiness,
+    expectedCompositeFingerprint: o6kAgent24Fingerprint('wrong', { v: 2 }),
+  });
+  return [
+    { name: 'valid_import', passed: ok.valid && ok.validationScore >= 90 },
+    { name: 'mismatch_detected', passed: !bad.valid && bad.issues.some(i => i.kind === 'fingerprint_mismatch') },
+  ];
+}
+
+
+// --- source: history-retention.ts ---
+
+export interface Agent24HistoryRetentionBand {
+  fromTurn: number;
+  toTurn: number;
+  checkpointCount: number;
+  pruneSafe: boolean;
+  fingerprint: string;
+}
+
+export interface Agent24HistoryRetentionReport {
+  reportId: string;
+  matchId: string;
+  currentTurn: number;
+  retentionWindowTurns: number;
+  pruneSafeCutoffTurn: number;
+  bands: Agent24HistoryRetentionBand[];
+  bandCount: number;
+  retentionScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24HistoryRetentionInput {
+  matchId: string;
+  currentTurn: number;
+  maxTurns?: number;
+  checkpointCoverage: Agent24CheckpointCoverageReport;
+  rewindSafety: Agent24RewindSafetyReport;
+  bandSize?: number;
+  minRetentionTurns?: number;
+}
+
+export function buildAgent24HistoryRetentionReport(input: Agent24HistoryRetentionInput): Agent24HistoryRetentionReport {
+  const bandSize = input.bandSize ?? 10;
+  const minRetention = input.minRetentionTurns ?? Math.max(5, Math.floor(bandSize / 2));
+  const maxTurns = input.maxTurns && input.maxTurns > 0 ? input.maxTurns : Math.max(input.currentTurn, bandSize);
+  const retentionWindowTurns = Math.min(maxTurns, Math.max(minRetention, input.currentTurn));
+
+  const safeTurns = new Set(
+    input.rewindSafety.targets.filter(t => t.safe).map(t => t.turn),
+  );
+  const checkpointTurns = new Set(input.checkpointCoverage.checkpointTurns);
+
+  const bands: Agent24HistoryRetentionBand[] = [];
+  for (let from = 1; from <= input.currentTurn; from += bandSize) {
+    const to = Math.min(from + bandSize - 1, input.currentTurn);
+    let checkpointCount = 0;
+    for (const t of checkpointTurns) {
+      if (t >= from && t <= to) checkpointCount += 1;
+    }
+    const hasSafeRewind = [...safeTurns].some(t => t >= from && t <= to);
+    const pruneSafe = from >= retentionWindowTurns ? false : hasSafeRewind || checkpointCount > 0;
+    bands.push({
+      fromTurn: from,
+      toTurn: to,
+      checkpointCount,
+      pruneSafe,
+      fingerprint: o6kAgent24Fingerprint('retention_band', { from, to, checkpointCount, pruneSafe }),
+    });
+  }
+
+  bands.sort((a, b) => a.fromTurn - b.fromTurn);
+  const pruneSafeCutoffTurn =
+    bands.filter(b => b.pruneSafe).sort((a, b) => b.toTurn - a.toTurn)[0]?.toTurn ?? 0;
+
+  let retentionScore = 100;
+  if (input.checkpointCoverage.coverageScore < 50) retentionScore -= 20;
+  if (input.rewindSafety.safeTargetCount === 0) retentionScore -= 25;
+  if (pruneSafeCutoffTurn < minRetention && input.currentTurn > minRetention) retentionScore -= 15;
+  retentionScore = Math.max(0, Math.min(100, retentionScore));
+
+  return {
+    reportId: o6kAgent24Fingerprint('history_retention', { matchId: input.matchId, turn: input.currentTurn }),
+    matchId: input.matchId,
+    currentTurn: input.currentTurn,
+    retentionWindowTurns,
+    pruneSafeCutoffTurn,
+    bands,
+    bandCount: bands.length,
+    retentionScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('history_retention_body', {
+      bands: bands.map(b => b.fingerprint),
+      pruneSafeCutoffTurn,
+      retentionScore,
+    }),
+  };
+}
+
+export function runAgent24HistoryRetentionSelfTests(): Array<{ name: string; passed: boolean }> {
+  const coverage = {
+    reportId: 'c',
+    matchId: 'self',
+    checkpointTurns: [4, 8, 12],
+    checkpointCount: 3,
+    maxGapTurns: 4,
+    gaps: [],
+    endgameCoverageOk: true,
+    coverageScore: 85,
+    deterministicFingerprint: o6kAgent24Fingerprint('ret_self_cov', { v: 1 }),
+  };
+  const rewind = {
+    reportId: 'w',
+    matchId: 'self',
+    currentTurn: 15,
+    targets: [
+      { turn: 8, source: 'checkpoint' as const, label: 'ckpt', safe: true, fingerprint: 'f1' },
+      { turn: 12, source: 'checkpoint' as const, label: 'ckpt2', safe: true, fingerprint: 'f2' },
+    ],
+    safeTargetCount: 2,
+    recommendedTurn: 12,
+    deterministicFingerprint: o6kAgent24Fingerprint('ret_self_rewind', { v: 1 }),
+  };
+  const report = buildAgent24HistoryRetentionReport({
+    matchId: 'self',
+    currentTurn: 15,
+    maxTurns: 100,
+    checkpointCoverage: coverage,
+    rewindSafety: rewind,
+    bandSize: 5,
+  });
+  return [
+    { name: 'bands_cover_turn_range', passed: report.bandCount >= 2 && report.pruneSafeCutoffTurn >= 8 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        report.deterministicFingerprint ===
+        buildAgent24HistoryRetentionReport({
+          matchId: 'self',
+          currentTurn: 15,
+          maxTurns: 100,
+          checkpointCoverage: coverage,
+          rewindSafety: rewind,
+          bandSize: 5,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
 // --- source: history-replay-analytics.ts ---
 
 export const O6K_AGENT24_MODULE_VERSION = '1.1.0-op10m';
@@ -21404,6 +21830,12 @@ export function applyO6kHistoricalAnalyticsCachePatch(state: Record<string, unkn
   buildAgent24ReplayPlaybackIntegrityReport,
   type Agent24ReplayPlaybackIntegrityReport,
 } from './replay-playback-integrity.ts';
+  buildAgent24ImportValidationReport,
+  type Agent24ImportValidationReport,
+} from './import-validation.ts';
+  buildAgent24HistoryRetentionReport,
+  type Agent24HistoryRetentionReport,
+} from './history-retention.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -21424,6 +21856,9 @@ export interface Agent24ReplayDeterminismBundle {
   playbackIntegrity: Agent24ReplayPlaybackIntegrityReport;
   branchLineage: Agent24BranchLineageReport;
   exportReadiness: Agent24ExportReadinessReport;
+  exportManifest: Agent24ExportManifest;
+  importValidation: Agent24ImportValidationReport;
+  historyRetention: Agent24HistoryRetentionReport;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -21611,7 +22046,7 @@ export function buildAgent24ReplayDeterminismBundle(
     playbackIntegrity,
     rewindSafety,
   });
-  const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
+  const compositeCore = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
     timeline: timelineRegistry.deterministicFingerprint,
@@ -21630,6 +22065,49 @@ export function buildAgent24ReplayDeterminismBundle(
     branchLineage: branchLineage.deterministicFingerprint,
     exportReadiness: exportReadinessFinal.deterministicFingerprint,
   });
+  const exportManifest = buildAgent24ExportManifest({
+    matchId: input.matchId,
+    attestation: attestationFinal,
+    exportReadiness: exportReadinessFinal,
+    branchLineage,
+    compositeBundleFingerprint: compositeCore,
+  });
+  const historyRetention = buildAgent24HistoryRetentionReport({
+    matchId: input.matchId,
+    currentTurn: input.turn,
+    maxTurns: input.maxTurns,
+    checkpointCoverage,
+    rewindSafety,
+  });
+  const importValidation = buildAgent24ImportValidationReport({
+    matchId: input.matchId,
+    manifest: exportManifest,
+    attestation: attestationFinal,
+    exportReadiness: exportReadinessFinal,
+    expectedCompositeFingerprint: compositeCore,
+  });
+  const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
+    snap: snapshot.integrity.fingerprint,
+    causal: causalIndex.deterministicFingerprint,
+    timeline: timelineRegistry.deterministicFingerprint,
+    late: lateGame.fingerprint,
+    depth: analyticsDepth.deterministicFingerprint,
+    scenarios: scenarioSuite.deterministicFingerprint,
+    audit: auditTrail.deterministicFingerprint,
+    sessions: multiSession.deterministicFingerprint,
+    divergence: timelineDivergence.deterministicFingerprint,
+    rollup: historyRollup.deterministicFingerprint,
+    attestation: attestationFinal.deterministicFingerprint,
+    checkpointCoverage: checkpointCoverage.deterministicFingerprint,
+    rewindSafety: rewindSafety.deterministicFingerprint,
+    reconciliation: historyReconciliation.deterministicFingerprint,
+    playbackIntegrity: playbackIntegrity.deterministicFingerprint,
+    branchLineage: branchLineage.deterministicFingerprint,
+    exportReadiness: exportReadinessFinal.deterministicFingerprint,
+    exportManifest: exportManifest.deterministicFingerprint,
+    importValidation: importValidation.deterministicFingerprint,
+    historyRetention: historyRetention.deterministicFingerprint,
+  });
 
   return {
     bundleId: o6kAgent24Fingerprint('replay_bundle_id', { matchId: input.matchId, turn: input.turn }),
@@ -21642,6 +22120,9 @@ export function buildAgent24ReplayDeterminismBundle(
     playbackIntegrity,
     branchLineage,
     exportReadiness: exportReadinessFinal,
+    exportManifest,
+    importValidation,
+    historyRetention,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -21737,6 +22218,21 @@ export function verifyAgent24ReplayDeterminism(
       name: 'export_readiness_twin',
       passed: a.exportReadiness.deterministicFingerprint === b.exportReadiness.deterministicFingerprint,
       detail: 'Twin export readiness fingerprints',
+    },
+    {
+      name: 'export_manifest_twin',
+      passed: a.exportManifest.deterministicFingerprint === b.exportManifest.deterministicFingerprint,
+      detail: 'Twin export manifest fingerprints',
+    },
+    {
+      name: 'import_validation_twin',
+      passed: a.importValidation.deterministicFingerprint === b.importValidation.deterministicFingerprint,
+      detail: 'Twin import validation fingerprints',
+    },
+    {
+      name: 'history_retention_twin',
+      passed: a.historyRetention.deterministicFingerprint === b.historyRetention.deterministicFingerprint,
+      detail: 'Twin history retention fingerprints',
     },
     {
       name: 'composite_twin',
