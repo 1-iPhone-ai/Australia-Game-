@@ -15,6 +15,10 @@ import {
 import { runAgent24ReplayScenarioSuite } from '../src/replay-scenarios.ts';
 import { buildAgent24AuditTrail, mergeAgent24AuditTrails } from '../src/audit-trails.ts';
 import { buildAgent24MultiSessionContinuity } from '../src/multi-session.ts';
+import { buildAgent24TimelineDivergenceReport } from '../src/timeline-divergence.ts';
+import { buildAgent24HistoryRollupReport } from '../src/history-rollups.ts';
+import { buildAgent24ReplayAttestation, runAgent24AttestationSelfTests } from '../src/replay-attestation.ts';
+import { buildO6kHistoricalAnalyticsSnapshot } from '../src/history-replay-analytics.ts';
 import { o6kAgent24StableStringify, runO6kAgent24SelfTests } from '../src/history-replay-analytics.ts';
 
 describe('Agent 24 causal records', () => {
@@ -99,6 +103,9 @@ describe('Agent 24 replay determinism bundle', () => {
     assert.ok(result.probes.some(p => p.name === 'scenario_suite_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'audit_trail_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'multi_session_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'timeline_divergence_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'history_rollup_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'attestation_twin' && p.passed));
   });
 
   it('includes analytics depth rollups and stable twin fingerprint', () => {
@@ -177,6 +184,53 @@ describe('Agent 24 multi-session continuity', () => {
     assert.equal(c.sessionCount, 2);
     assert.equal(c.resumeSafe, true);
     assert.equal(c.totalReplayEvents, 9);
+  });
+});
+
+describe('Agent 24 timeline divergence', () => {
+  it('reports branch pairs deterministically', () => {
+    const reg = buildAgent24TimelineRegistry({
+      matchId: 'm',
+      nodesById: {
+        b1: { nodeId: 'b1', branchTurn: 4, label: 'A' },
+        b2: { nodeId: 'b2', branchTurn: 9, label: 'B' },
+      },
+    });
+    const r = buildAgent24TimelineDivergenceReport({ matchId: 'm', registry: reg });
+    assert.ok(r.pairCount >= 2);
+    const r2 = buildAgent24TimelineDivergenceReport({ matchId: 'm', registry: reg });
+    assert.equal(r.deterministicFingerprint, r2.deterministicFingerprint);
+  });
+});
+
+describe('Agent 24 history rollups', () => {
+  it('windows milestone weight by turn bands', () => {
+    const snap = buildO6kHistoricalAnalyticsSnapshot({
+      matchId: 'm',
+      turn: 25,
+      day: 25,
+      gameActivityLedger: { events: [{ title: 'contract completed', turn: 12 }] },
+      deterministicMode: true,
+    });
+    const report = buildAgent24HistoryRollupReport({ matchId: 'm', snapshot: snap, windowSize: 10 });
+    assert.ok(report.windows.length >= 3);
+    assert.ok(report.totalMilestoneWeight >= 0);
+  });
+});
+
+describe('Agent 24 replay attestation', () => {
+  it('marks verified bundles and runs self-tests', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle({
+      matchId: 'm',
+      turn: 8,
+      day: 8,
+      replay: { events: [{ eventType: 'replay_checkpoint', turn: 8 }] },
+      deterministicMode: true,
+    });
+    assert.equal(bundle.attestation.status, 'verified');
+    assert.ok(runAgent24AttestationSelfTests().every(t => t.passed));
+    const direct = buildAgent24ReplayAttestation(bundle);
+    assert.equal(direct.deterministicFingerprint, bundle.attestation.deterministicFingerprint);
   });
 });
 

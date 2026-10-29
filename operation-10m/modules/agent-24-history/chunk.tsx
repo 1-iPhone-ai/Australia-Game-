@@ -940,6 +940,232 @@ export function buildAgent24MultiSessionContinuity(input: Agent24MultiSessionInp
 }
 
 
+// --- source: timeline-divergence.ts ---
+
+export interface Agent24BranchDivergenceMetric {
+  timelineAId: string;
+  timelineBId: string;
+  divergenceTurnEstimate: number;
+  branchLabelDelta: string;
+  fingerprint: string;
+}
+
+export interface Agent24TimelineDivergenceReport {
+  reportId: string;
+  matchId: string;
+  pairCount: number;
+  metrics: Agent24BranchDivergenceMetric[];
+  maxDivergenceTurn: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24TimelineDivergenceInput {
+  matchId: string;
+  registry: Agent24TimelineRegistry;
+  branchTurnHints?: Record<string, number>;
+}
+
+export function buildAgent24TimelineDivergenceReport(input: Agent24TimelineDivergenceInput): Agent24TimelineDivergenceReport {
+  const branches = input.registry.entries.filter(e => e.status === 'branch' || e.status === 'simulated');
+  const main = input.registry.entries.find(e => e.status === 'main');
+  const metrics: Agent24BranchDivergenceMetric[] = [];
+
+  for (let i = 0; i < branches.length; i++) {
+    for (let j = i + 1; j < branches.length; j++) {
+      const a = branches[i];
+      const b = branches[j];
+      const turnA = a.branchTurn ?? input.branchTurnHints?.[a.branchedAtNodeId ?? ''] ?? 0;
+      const turnB = b.branchTurn ?? input.branchTurnHints?.[b.branchedAtNodeId ?? ''] ?? 0;
+      const divergenceTurnEstimate = Math.min(turnA, turnB);
+      metrics.push({
+        timelineAId: a.timelineId,
+        timelineBId: b.timelineId,
+        divergenceTurnEstimate,
+        branchLabelDelta: `${a.label} vs ${b.label}`,
+        fingerprint: o6kAgent24Fingerprint('branch_divergence', { a: a.timelineId, b: b.timelineId, divergenceTurnEstimate }),
+      });
+    }
+  }
+
+  if (main && branches.length > 0) {
+    for (const br of branches) {
+      const turnB = br.branchTurn ?? input.branchTurnHints?.[br.branchedAtNodeId ?? ''] ?? 0;
+      metrics.push({
+        timelineAId: main.timelineId,
+        timelineBId: br.timelineId,
+        divergenceTurnEstimate: turnB,
+        branchLabelDelta: `main vs ${br.label}`,
+        fingerprint: o6kAgent24Fingerprint('main_branch_divergence', { main: main.timelineId, br: br.timelineId, turnB }),
+      });
+    }
+  }
+
+  metrics.sort((x, y) => x.timelineAId.localeCompare(y.timelineAId) || x.timelineBId.localeCompare(y.timelineBId));
+  const maxDivergenceTurn = metrics.reduce((m, r) => Math.max(m, r.divergenceTurnEstimate), 0);
+  const payload = metrics.map(m => m.fingerprint);
+
+  return {
+    reportId: o6kAgent24Fingerprint('divergence_report', { matchId: input.matchId, count: metrics.length }),
+    matchId: input.matchId,
+    pairCount: metrics.length,
+    metrics,
+    maxDivergenceTurn,
+    deterministicFingerprint: o6kAgent24Fingerprint('divergence_report_body', payload),
+  };
+}
+
+
+// --- source: history-rollups.ts ---
+
+export interface Agent24HistoryWindowRollup {
+  windowId: string;
+  fromTurn: number;
+  toTurn: number;
+  milestoneHitCount: number;
+  milestoneWeightSum: number;
+  replayEventCount: number;
+  fingerprint: string;
+}
+
+export interface Agent24HistoryRollupInput {
+  matchId: string;
+  snapshot: O6kHistoricalAnalyticsSnapshot;
+  windowSize?: number;
+}
+
+export interface Agent24HistoryRollupReport {
+  reportId: string;
+  matchId: string;
+  windowSize: number;
+  windows: Agent24HistoryWindowRollup[];
+  totalMilestoneWeight: number;
+  deterministicFingerprint: string;
+}
+
+export function buildAgent24HistoryRollupReport(input: Agent24HistoryRollupInput): Agent24HistoryRollupReport {
+  const windowSize = input.windowSize && input.windowSize > 0 ? input.windowSize : 10;
+  const maxTurn = input.snapshot.generatedAtTurn;
+  const windows: Agent24HistoryWindowRollup[] = [];
+
+  for (let from = 1; from <= maxTurn; from += windowSize) {
+    const to = Math.min(maxTurn, from + windowSize - 1);
+    const hits = input.snapshot.milestoneHits.filter(h => h.turn >= from && h.turn <= to);
+    const weightSum = hits.reduce((s, h) => s + h.weight, 0);
+    windows.push({
+      windowId: o6kAgent24Fingerprint('history_window', { from, to }),
+      fromTurn: from,
+      toTurn: to,
+      milestoneHitCount: hits.length,
+      milestoneWeightSum: weightSum,
+      replayEventCount: input.snapshot.integrity.replayEventCount,
+      fingerprint: o6kAgent24Fingerprint('history_window_body', { from, to, count: hits.length, weightSum }),
+    });
+  }
+
+  const totalMilestoneWeight = windows.reduce((s, w) => s + w.milestoneWeightSum, 0);
+  const payload = windows.map(w => w.fingerprint);
+
+  return {
+    reportId: o6kAgent24Fingerprint('history_rollup', { matchId: input.matchId, windows: windows.length }),
+    matchId: input.matchId,
+    windowSize,
+    windows,
+    totalMilestoneWeight,
+    deterministicFingerprint: o6kAgent24Fingerprint('history_rollup_body', payload),
+  };
+}
+
+
+// --- source: replay-attestation.ts ---
+
+export interface Agent24ReplayAttestationInput {
+  twinBuildPassed: boolean;
+  compositeFingerprint: string;
+  snapshot: O6kHistoricalAnalyticsSnapshot;
+  causalIndex: Agent24CausalRecordIndex;
+  auditTrail: Agent24AuditTrail;
+  multiSession: Agent24MultiSessionContinuity;
+  analyticsDepth: Agent24ReplayAnalyticsDepth;
+  scenarioSuite: Agent24ReplayScenarioSuiteResult;
+}
+
+export type Agent24AttestationStatus = 'verified' | 'degraded' | 'failed';
+
+export interface Agent24ReplayAttestation {
+  attestationId: string;
+  matchId: string;
+  turn: number;
+  status: Agent24AttestationStatus;
+  twinBuildPassed: boolean;
+  integrityScore: number;
+  scenarioSatisfiedRatio: number;
+  resumeSafe: boolean;
+  chainRoot: string;
+  chainTip: string;
+  deterministicFingerprint: string;
+}
+
+function ratio(n: number, d: number): number {
+  if (d <= 0) return 0;
+  return Math.round((n / d) * 100) / 100;
+}
+
+export function buildAgent24ReplayAttestation(bundle: Agent24ReplayAttestationInput): Agent24ReplayAttestation {
+  const satisfied = bundle.scenarioSuite.satisfiedCount;
+  const total = bundle.scenarioSuite.assessments.length;
+  const scenarioSatisfiedRatio = ratio(satisfied, total);
+  let status: Agent24AttestationStatus = 'verified';
+  if (!bundle.twinBuildPassed) status = 'failed';
+  else if (bundle.analyticsDepth.integrityScore < 70 || !bundle.multiSession.resumeSafe) status = 'degraded';
+
+  const chainLinks = [
+    bundle.snapshot.integrity.fingerprint,
+    bundle.causalIndex.deterministicFingerprint,
+    bundle.auditTrail.deterministicFingerprint,
+    bundle.multiSession.deterministicFingerprint,
+    bundle.compositeFingerprint,
+  ];
+  const chainRoot = chainLinks[0];
+  let chainTip = chainRoot;
+  for (let i = 1; i < chainLinks.length; i++) {
+    chainTip = o6kAgent24Fingerprint('attest_link', { prev: chainTip, next: chainLinks[i] });
+  }
+
+  const payload = {
+    status,
+    twin: bundle.twinBuildPassed,
+    integrityScore: bundle.analyticsDepth.integrityScore,
+    scenarioSatisfiedRatio,
+    resumeSafe: bundle.multiSession.resumeSafe,
+    chainTip,
+  };
+
+  return {
+    attestationId: o6kAgent24Fingerprint('replay_attestation', { matchId: bundle.snapshot.matchId, turn: bundle.snapshot.generatedAtTurn }),
+    matchId: bundle.snapshot.matchId,
+    turn: bundle.snapshot.generatedAtTurn,
+    status,
+    twinBuildPassed: bundle.twinBuildPassed,
+    integrityScore: bundle.analyticsDepth.integrityScore,
+    scenarioSatisfiedRatio,
+    resumeSafe: bundle.multiSession.resumeSafe,
+    chainRoot,
+    chainTip,
+    deterministicFingerprint: o6kAgent24Fingerprint('replay_attestation_body', payload),
+  };
+}
+
+export function runAgent24AttestationSelfTests(): Array<{ name: string; passed: boolean; detail: string }> {
+  return [
+    {
+      name: 'attestation_ratio_bounds',
+      passed: ratio(2, 5) === 0.4 && ratio(0, 0) === 0,
+      detail: 'ratio helper',
+    },
+  ];
+}
+
+
 // --- source: history-replay-analytics.ts ---
 
 export const O6K_AGENT24_MODULE_VERSION = '1.1.0-op10m';
@@ -20438,6 +20664,9 @@ export interface Agent24ReplayDeterminismBundle {
   scenarioSuite: Agent24ReplayScenarioSuiteResult;
   auditTrail: Agent24AuditTrail;
   multiSession: Agent24MultiSessionContinuity;
+  timelineDivergence: Agent24TimelineDivergenceReport;
+  historyRollup: Agent24HistoryRollupReport;
+  attestation: Agent24ReplayAttestation;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -20537,6 +20766,27 @@ export function buildAgent24ReplayDeterminismBundle(
             },
           ],
   });
+  const timelineDivergence = buildAgent24TimelineDivergenceReport({
+    matchId: input.matchId,
+    registry: timelineRegistry,
+  });
+  const historyRollup = buildAgent24HistoryRollupReport({
+    matchId: input.matchId,
+    snapshot,
+    windowSize: input.maxTurns && input.maxTurns > 30 ? 15 : 10,
+  });
+  const partialBundle = {
+    snapshot,
+    causalIndex,
+    timelineRegistry,
+    lateGame,
+    twinBuildPassed: twin.passed,
+    analyticsDepth,
+    scenarioSuite,
+    auditTrail,
+    multiSession,
+  };
+  const attestation = buildAgent24ReplayAttestation({ ...partialBundle, compositeFingerprint: '' });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
@@ -20546,15 +20796,18 @@ export function buildAgent24ReplayDeterminismBundle(
     scenarios: scenarioSuite.deterministicFingerprint,
     audit: auditTrail.deterministicFingerprint,
     sessions: multiSession.deterministicFingerprint,
+    divergence: timelineDivergence.deterministicFingerprint,
+    rollup: historyRollup.deterministicFingerprint,
+    attestation: attestation.deterministicFingerprint,
   });
+  const attestationFinal = buildAgent24ReplayAttestation({ ...partialBundle, compositeFingerprint });
 
   return {
     bundleId: o6kAgent24Fingerprint('replay_bundle_id', { matchId: input.matchId, turn: input.turn }),
-    ...partial,
-    analyticsDepth,
-    scenarioSuite,
-    auditTrail,
-    multiSession,
+    ...partialBundle,
+    timelineDivergence,
+    historyRollup,
+    attestation: attestationFinal,
     compositeFingerprint,
   };
 }
@@ -20604,6 +20857,21 @@ export function verifyAgent24ReplayDeterminism(
       name: 'multi_session_twin',
       passed: a.multiSession.deterministicFingerprint === b.multiSession.deterministicFingerprint,
       detail: 'Twin multi-session continuity fingerprints',
+    },
+    {
+      name: 'timeline_divergence_twin',
+      passed: a.timelineDivergence.deterministicFingerprint === b.timelineDivergence.deterministicFingerprint,
+      detail: 'Twin timeline divergence report fingerprints',
+    },
+    {
+      name: 'history_rollup_twin',
+      passed: a.historyRollup.deterministicFingerprint === b.historyRollup.deterministicFingerprint,
+      detail: 'Twin history rollup fingerprints',
+    },
+    {
+      name: 'attestation_twin',
+      passed: a.attestation.deterministicFingerprint === b.attestation.deterministicFingerprint,
+      detail: 'Twin replay attestation fingerprints',
     },
     {
       name: 'composite_twin',

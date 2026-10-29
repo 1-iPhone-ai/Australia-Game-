@@ -16,6 +16,9 @@ import { buildAgent24ReplayAnalyticsDepth, type Agent24ReplayAnalyticsDepth } fr
 import { runAgent24ReplayScenarioSuite, type Agent24ReplayScenarioSuiteResult } from './replay-scenarios.ts';
 import { buildAgent24AuditTrail, type Agent24AuditTrail, type Agent24AuditTrailAction } from './audit-trails.ts';
 import { buildAgent24MultiSessionContinuity, type Agent24MultiSessionContinuity } from './multi-session.ts';
+import { buildAgent24TimelineDivergenceReport, type Agent24TimelineDivergenceReport } from './timeline-divergence.ts';
+import { buildAgent24HistoryRollupReport, type Agent24HistoryRollupReport } from './history-rollups.ts';
+import { buildAgent24ReplayAttestation, type Agent24ReplayAttestation } from './replay-attestation.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -27,6 +30,9 @@ export interface Agent24ReplayDeterminismBundle {
   scenarioSuite: Agent24ReplayScenarioSuiteResult;
   auditTrail: Agent24AuditTrail;
   multiSession: Agent24MultiSessionContinuity;
+  timelineDivergence: Agent24TimelineDivergenceReport;
+  historyRollup: Agent24HistoryRollupReport;
+  attestation: Agent24ReplayAttestation;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -126,6 +132,27 @@ export function buildAgent24ReplayDeterminismBundle(
             },
           ],
   });
+  const timelineDivergence = buildAgent24TimelineDivergenceReport({
+    matchId: input.matchId,
+    registry: timelineRegistry,
+  });
+  const historyRollup = buildAgent24HistoryRollupReport({
+    matchId: input.matchId,
+    snapshot,
+    windowSize: input.maxTurns && input.maxTurns > 30 ? 15 : 10,
+  });
+  const partialBundle = {
+    snapshot,
+    causalIndex,
+    timelineRegistry,
+    lateGame,
+    twinBuildPassed: twin.passed,
+    analyticsDepth,
+    scenarioSuite,
+    auditTrail,
+    multiSession,
+  };
+  const attestation = buildAgent24ReplayAttestation({ ...partialBundle, compositeFingerprint: '' });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
@@ -135,15 +162,18 @@ export function buildAgent24ReplayDeterminismBundle(
     scenarios: scenarioSuite.deterministicFingerprint,
     audit: auditTrail.deterministicFingerprint,
     sessions: multiSession.deterministicFingerprint,
+    divergence: timelineDivergence.deterministicFingerprint,
+    rollup: historyRollup.deterministicFingerprint,
+    attestation: attestation.deterministicFingerprint,
   });
+  const attestationFinal = buildAgent24ReplayAttestation({ ...partialBundle, compositeFingerprint });
 
   return {
     bundleId: o6kAgent24Fingerprint('replay_bundle_id', { matchId: input.matchId, turn: input.turn }),
-    ...partial,
-    analyticsDepth,
-    scenarioSuite,
-    auditTrail,
-    multiSession,
+    ...partialBundle,
+    timelineDivergence,
+    historyRollup,
+    attestation: attestationFinal,
     compositeFingerprint,
   };
 }
@@ -193,6 +223,21 @@ export function verifyAgent24ReplayDeterminism(
       name: 'multi_session_twin',
       passed: a.multiSession.deterministicFingerprint === b.multiSession.deterministicFingerprint,
       detail: 'Twin multi-session continuity fingerprints',
+    },
+    {
+      name: 'timeline_divergence_twin',
+      passed: a.timelineDivergence.deterministicFingerprint === b.timelineDivergence.deterministicFingerprint,
+      detail: 'Twin timeline divergence report fingerprints',
+    },
+    {
+      name: 'history_rollup_twin',
+      passed: a.historyRollup.deterministicFingerprint === b.historyRollup.deterministicFingerprint,
+      detail: 'Twin history rollup fingerprints',
+    },
+    {
+      name: 'attestation_twin',
+      passed: a.attestation.deterministicFingerprint === b.attestation.deterministicFingerprint,
+      detail: 'Twin replay attestation fingerprints',
     },
     {
       name: 'composite_twin',
