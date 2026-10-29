@@ -109,6 +109,9 @@ import { computeCascadeResonanceAmplificationIndex } from './cascade-resonance-a
 import { computeSynthesisStackAmplificationIndex } from './synthesis-stack-amplification-index.ts';
 import { computeAmplificationConvergenceCascadeIndex } from './amplification-convergence-cascade-index.ts';
 import { computeStackSynthesisResonanceIndex } from './stack-synthesis-resonance-index.ts';
+import { computeStackAmplificationCascadeFusionIndex } from './stack-amplification-cascade-fusion-index.ts';
+import { computeResonanceAmplificationStackIndex } from './resonance-amplification-stack-index.ts';
+import { computeCascadeConvergenceResonanceIndex } from './cascade-convergence-resonance-index.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -2796,6 +2799,56 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.synthesisStackAmplificationCombined === 'number' &&
       typeof dual.amplificationConvergenceCascadeCombined === 'number' &&
       typeof dual.stackSynthesisResonanceCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_stack_amplification_cascade_fusion', 'Stack–amplification cascade fusion: amplification plus cascade scores high', () => {
+    const report = computeStackAmplificationCascadeFusionIndex(50, 48, 3);
+    return report.fusionIndex >= 48;
+  });
+
+  check(results, 'a18_resonance_amplification_stack', 'Resonance–amplification stack: synthesis resonance plus stack amp scores high', () => {
+    const report = computeResonanceAmplificationStackIndex(48, 50, 46);
+    return report.stackIndex >= 47;
+  });
+
+  check(results, 'a18_cascade_convergence_resonance', 'Cascade–convergence resonance: convergence cascade plus synthesis resonance scores high', () => {
+    const report = computeCascadeConvergenceResonanceIndex(48, 50, 42);
+    return report.resonanceIndex >= 46;
+  });
+
+  check(results, 'a18_eval_round28_meta', 'Layer: round-28 meta exposes cascade fusion, amplification stack, convergence resonance', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.stackAmplificationCascadeFusionIndex === 'number' &&
+      typeof m.resonanceAmplificationStackIndex === 'number' &&
+      typeof m.cascadeConvergenceResonanceIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_stack_amplification_cascade_fusion', 'Audit: stack–amplification cascade fusion surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, stackAmplificationCascadeFusionIndex: 72 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /Stack–amplification cascade fusion/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round28_combined', 'Dual team: round-28 combined fusion, stack, resonance exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.stackAmplificationCascadeFusionCombined === 'number' &&
+      typeof dual.resonanceAmplificationStackCombined === 'number' &&
+      typeof dual.cascadeConvergenceResonanceCombined === 'number'
     );
   });
 
