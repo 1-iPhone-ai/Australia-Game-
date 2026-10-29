@@ -4,6 +4,7 @@ import {
   O10M_SCENARIO_CHAINS,
   attachCircuitSessionToState,
   attachExpeditionSessionToState,
+  attachOdysseySessionToState,
   attachGauntletSessionToState,
   attachMarathonQueueToState,
   attachRelaySessionToState,
@@ -11,6 +12,7 @@ import {
   createEmptyO10mModesPersistedState,
   createCircuitSession,
   createExpeditionSession,
+  createOdysseySession,
   createGauntletSession,
   createMarathonQueue,
   createRelaySession,
@@ -38,6 +40,52 @@ describe('scenario campaign planner round 4', () => {
     assert.equal(plan.kind, 'chain_step');
     assert.equal(plan.scenarioId, 'o10m_continuity_drill');
     assert.equal(plan.chainId, 'o10m_chain_continuity_arc');
+  });
+
+  it('prefers active odyssey over expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: odyssey } = createOdysseySession({
+      odysseyId: 'o10m_odyssey_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_odyssey_opening_winds', 'o10m_odyssey_crossing_shelves'],
+    });
+    const { session: expedition } = createExpeditionSession({
+      expeditionId: 'o10m_expedition_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_expedition_departure_dock', 'o10m_expedition_transit_pass'],
+    });
+    const { session: circuit } = createCircuitSession({
+      circuitId: 'o10m_circuit_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_circuit_warmup_laps', 'o10m_circuit_ridge_climb'],
+    });
+    const { session: relay } = createRelaySession({
+      relayId: 'o10m_relay_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_relay_dust_corridor', 'o10m_relay_coastal_handoff'],
+    });
+    const { session: gauntlet } = createGauntletSession({
+      gauntletId: 'o10m_gauntlet_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_gauntlet_opening_gate', 'o10m_gauntlet_midfield_press'],
+    });
+    const { queue } = createMarathonQueue({
+      queueId: 'o10m_marathon_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_marathon_pace_setter'],
+    });
+    let state = createEmptyO10mModesPersistedState();
+    state = pinCampaignSlot(state, {
+      slotId: 'o10m_slot_lab',
+      scenarioId: 'o10m_slot_rotation_lab',
+      turn: 4,
+    }).state;
+    state = attachMarathonQueueToState(state, queue!);
+    state = attachGauntletSessionToState(state, gauntlet!);
+    state = attachRelaySessionToState(state, relay!);
+    state = attachCircuitSessionToState(state, circuit!);
+    state = attachExpeditionSessionToState(state, expedition!);
+    state = attachOdysseySessionToState(state, odyssey!);
+    assert.equal(planNextCampaignAction(state).kind, 'odyssey_step');
   });
 
   it('prefers active expedition over circuit, relay, gauntlet, marathon queue, and campaign slot', () => {

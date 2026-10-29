@@ -117,6 +117,7 @@ export function attachCircuitSessionToState(
   return {
     ...state,
     circuitSession: sanitized,
+    odysseySession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,

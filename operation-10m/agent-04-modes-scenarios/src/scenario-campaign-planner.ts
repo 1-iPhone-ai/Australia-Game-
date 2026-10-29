@@ -26,8 +26,19 @@ import {
   expeditionSessionSummary,
   sanitizeExpeditionSession,
 } from './save-format-expedition.js';
+import {
+  getOdysseyScenarioAtCursor,
+  odysseySessionSummary,
+  sanitizeOdysseySession,
+} from './save-format-odyssey.js';
 import { objectiveProgressCompletionRatio } from './save-format-objective-sync.js';
-import type { O10mCampaignPlan, O10mCircuitPhase, O10mExpeditionLeg, O10mModesPersistedState } from './types.js';
+import type {
+  O10mCampaignPlan,
+  O10mCircuitPhase,
+  O10mExpeditionLeg,
+  O10mOdysseyAct,
+  O10mModesPersistedState,
+} from './types.js';
 
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -46,9 +57,31 @@ const emptyQueuePlan = {
   expeditionCursor: null as number | null,
   expeditionLeg: null as O10mExpeditionLeg | null,
   expeditionSupply: null as number | null,
+  odysseyId: null as string | null,
+  odysseyCursor: null as number | null,
+  odysseyAct: null as O10mOdysseyAct | null,
+  odysseyRenown: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const odyssey = sanitizeOdysseySession(state.odysseySession);
+  const odysseyScenario = getOdysseyScenarioAtCursor(odyssey);
+  if (odyssey && odyssey.active && odysseyScenario) {
+    return {
+      kind: 'odyssey_step',
+      scenarioId: odysseyScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      odysseyId: odyssey.odysseyId,
+      odysseyCursor: odyssey.cursor,
+      odysseyAct: odyssey.actTag,
+      odysseyRenown: odyssey.renownScore,
+      reason: `Odyssey "${odyssey.label}" ${odyssey.actTag} chapter ${odyssey.cursor + 1}/${odyssey.scenarioIds.length} (renown ${odyssey.renownScore}).`,
+    };
+  }
+
   const expedition = sanitizeExpeditionSession(state.expeditionSession);
   const expeditionScenario = getExpeditionScenarioAtCursor(expedition);
   if (expedition && expedition.active && expeditionScenario) {
@@ -209,6 +242,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   relayActive: boolean;
   circuitActive: boolean;
   expeditionActive: boolean;
+  odysseyActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -221,6 +255,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const relay = relaySessionSummary(state);
   const circuit = circuitSessionSummary(state);
   const expedition = expeditionSessionSummary(state);
+  const odyssey = odysseySessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -231,6 +266,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     relayActive: relay.active,
     circuitActive: circuit.active,
     expeditionActive: expedition.active,
+    odysseyActive: odyssey.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

@@ -135,6 +135,7 @@ export function attachRelaySessionToState(
     gauntletSession: null,
     circuitSession: null,
     expeditionSession: null,
+    odysseySession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };

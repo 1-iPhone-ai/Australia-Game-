@@ -359,6 +359,8 @@ export type O10mCircuitPhase = 'warmup' | 'ascent' | 'summit';
 
 export type O10mExpeditionLeg = 'departure' | 'transit' | 'arrival';
 
+export type O10mOdysseyAct = 'opening' | 'crossing' | 'homecoming';
+
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
   circuitId: string;
@@ -379,6 +381,17 @@ export interface O10mExpeditionSession {
   active: boolean;
   supplyScore: number;
   legTag: O10mExpeditionLeg;
+}
+
+/** Schema v10 — multi-act odyssey with renown accrual between chapters. */
+export interface O10mOdysseySession {
+  odysseyId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  renownScore: number;
+  actTag: O10mOdysseyAct;
 }
 
 /** Schema v7 — sequential relay with accumulated carry between legs. */
@@ -405,6 +418,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'odyssey_step'
     | 'expedition_step'
     | 'circuit_step'
     | 'relay_step'
@@ -433,6 +447,10 @@ export interface O10mCampaignPlan {
   expeditionCursor: number | null;
   expeditionLeg: O10mExpeditionLeg | null;
   expeditionSupply: number | null;
+  odysseyId: string | null;
+  odysseyCursor: number | null;
+  odysseyAct: O10mOdysseyAct | null;
+  odysseyRenown: number | null;
   reason: string;
 }
 
@@ -474,6 +492,8 @@ export interface O10mModesPersistedState {
   circuitSession?: O10mCircuitSession | null;
   /** Schema v9 — active expedition route (mutually exclusive with circuit / relay / gauntlet / marathon). */
   expeditionSession?: O10mExpeditionSession | null;
+  /** Schema v10 — active odyssey arc (mutually exclusive with expedition / circuit / relay / gauntlet / marathon). */
+  odysseySession?: O10mOdysseySession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -1894,6 +1914,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Expedition finales', 'Supply ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_odyssey_opening_winds',
+    title: 'Odyssey Opening Winds',
+    description: 'Begin a multi-act odyssey with low-pressure renown building before the crossing.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100432,
+    startingMoney: 2300,
+    startingRegions: ['VIC', 'NSW'],
+    badgeId: 'badge_o10m_odyssey_opening_winds',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100432),
+      o10mOdysseyOpeningWinds: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_oow_obj_day',
+        label: 'Opening Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Odyssey arcs', 'Renown pacing', 'Act opening'],
+  },
+  {
+    id: 'o10m_odyssey_crossing_shelves',
+    title: 'Odyssey Crossing Shelves',
+    description: 'Mid-odyssey standing crossing with accrued renown applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100433,
+    startingMoney: 2900,
+    startingRegions: ['SA', 'NT'],
+    startingStanding: { SA: 43, NT: 46 },
+    badgeId: 'badge_o10m_odyssey_crossing_shelves',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100433),
+      regionalStandingEnabled: true,
+      o10mOdysseyCrossingShelves: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_ocs_obj_avg',
+        label: 'Crossing Threshold',
+        description: 'Average standing of 49',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 49,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Odyssey crossing', 'Renown carry', 'Act transitions'],
+  },
+  {
+    id: 'o10m_odyssey_homecoming_harbor',
+    title: 'Odyssey Homecoming Harbor',
+    description: 'Finale odyssey chapter — net worth gate with full renown bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100434,
+    startingMoney: 3300,
+    startingRegions: ['WA', 'TAS', 'QLD'],
+    badgeId: 'badge_o10m_odyssey_homecoming_harbor',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100434),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mOdysseyHomecomingHarbor: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_ohh_obj_net',
+        label: 'Homecoming Net Worth',
+        description: 'Reach $15,200 net worth',
+        targetType: 'netWorth',
+        targetValue: 15200,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Odyssey finales', 'Renown ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -2679,6 +2796,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
         title: 'Arrival Haven',
         requiresPrimaryVictory: true,
         carryBonusOnComplete: { forcedSettingsPatch: { o10mChainExpeditionArcComplete: true } },
+      },
+    ],
+  },
+  {
+    id: 'o10m_chain_odyssey_route',
+    title: 'Odyssey Route',
+    description:
+      'Three-act odyssey with renown accrual between chapters — round-10 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_odyssey_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_odyssey_opening_winds',
+        title: 'Opening Winds',
+        narrativeBridge: 'Build renown rhythm before the shelf crossing.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 210 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_odyssey_crossing_shelves',
+        title: 'Crossing Shelves',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { SA: 6, NT: 6 },
+          forcedSettingsPatch: { o10mOdysseyMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_odyssey_homecoming_harbor',
+        title: 'Homecoming Harbor',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainOdysseyRouteComplete: true } },
       },
     ],
   },
@@ -3508,7 +3659,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 9;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 10;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -3616,6 +3767,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     relaySession: null,
     circuitSession: null,
     expeditionSession: null,
+    odysseySession: null,
   };
 }
 
@@ -3644,6 +3796,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       relaySession: merged.relaySession ?? null,
       circuitSession: merged.circuitSession ?? null,
       expeditionSession: merged.expeditionSession ?? null,
+      odysseySession: merged.odysseySession ?? null,
     };
     return upgraded;
   }
@@ -3696,6 +3849,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     relaySession: sanitizeRelaySession(o.relaySession),
     circuitSession: sanitizeCircuitSession(o.circuitSession),
     expeditionSession: sanitizeExpeditionSession(o.expeditionSession),
+    odysseySession: sanitizeOdysseySession(o.odysseySession),
   };
 }
 
@@ -3765,6 +3919,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Expedition session failed sanitization; planner will ignore it.');
   } else if (expedition && expedition.cursor >= expedition.scenarioIds.length) {
     warnings.push('Expedition cursor out of range; clamp on next sanitize.');
+  }
+
+  const odyssey = sanitizeOdysseySession(state.odysseySession);
+  if (state.odysseySession && !odyssey) {
+    warnings.push('Odyssey session failed sanitization; planner will ignore it.');
+  } else if (odyssey && odyssey.cursor >= odyssey.scenarioIds.length) {
+    warnings.push('Odyssey cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
@@ -3879,6 +4040,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'relaySession',
   'circuitSession',
   'expeditionSession',
+  'odysseySession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -4386,6 +4548,7 @@ export function attachMarathonQueueToState(
     relaySession: null,
     circuitSession: null,
     expeditionSession: null,
+    odysseySession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -4503,6 +4666,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceOdysseySessionAfterRun(next, run);
   next = advanceExpeditionSessionAfterRun(next, run);
   next = advanceCircuitSessionAfterRun(next, run);
   next = advanceRelaySessionAfterRun(next, run);
@@ -4637,6 +4801,7 @@ export function attachGauntletSessionToState(
     relaySession: null,
     circuitSession: null,
     expeditionSession: null,
+    odysseySession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -4868,6 +5033,7 @@ export function attachRelaySessionToState(
     gauntletSession: null,
     circuitSession: null,
     expeditionSession: null,
+    odysseySession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -5059,6 +5225,7 @@ export function attachCircuitSessionToState(
   return {
     ...state,
     circuitSession: sanitized,
+    odysseySession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -5268,6 +5435,7 @@ export function attachExpeditionSessionToState(
   return {
     ...state,
     expeditionSession: sanitized,
+    odysseySession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -5364,6 +5532,209 @@ export function expeditionSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-odyssey.ts ---
+export const O10M_ODYSSEY_SCENARIO_CAP = 6;
+export const O10M_ODYSSEY_RENOWN_CAP = 680;
+export const O10M_ODYSSEY_RENOWN_MONEY_CAP = 720;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_ACTS = new Set<O10mOdysseyAct>(['opening', 'crossing', 'homecoming']);
+
+export function unlockTokenForOdysseyId(odysseyId: string): string | null {
+  if (!odysseyId.startsWith('o10m_odyssey_')) return null;
+  return `o10m_unlock_${odysseyId.slice('o10m_odyssey_'.length)}`;
+}
+
+export function odysseyActForCursor(cursor: number, scenarioCount: number): O10mOdysseyAct {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'homecoming';
+  if (clamped >= Math.floor(total / 2)) return 'crossing';
+  return 'opening';
+}
+
+export function odysseyRenownFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingBonus = Math.min(25, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(100, Math.max(14, Math.floor(run.playerNetWorth / 200) + standingBonus));
+}
+
+export function sanitizeOdysseySession(raw: unknown): O10mOdysseySession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const odysseyId =
+    typeof o.odysseyId === 'string' && o.odysseyId.startsWith('o10m_odyssey_') ? o.odysseyId : null;
+  if (!odysseyId) return null;
+  const label = typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : odysseyId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_ODYSSEY_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const renownScore = Math.min(O10M_ODYSSEY_RENOWN_CAP, Math.max(0, Math.floor(num(o.renownScore, 0))));
+  const actRaw = o.actTag;
+  const actTag =
+    typeof actRaw === 'string' && VALID_ACTS.has(actRaw as O10mOdysseyAct)
+      ? (actRaw as O10mOdysseyAct)
+      : odysseyActForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    odysseyId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    renownScore,
+    actTag,
+  };
+}
+
+export function createOdysseySession(params: {
+  odysseyId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mOdysseySession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.odysseyId.startsWith('o10m_odyssey_')) {
+    return { session: null, warnings: ['Odyssey ids must start with o10m_odyssey_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_ODYSSEY_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return { session: null, warnings: [...warnings, 'Odyssey requires at least one valid scenario.'] };
+  }
+  return {
+    session: {
+      odysseyId: params.odysseyId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      renownScore: 0,
+      actTag: odysseyActForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachOdysseySessionToState(
+  state: O10mModesPersistedState,
+  session: O10mOdysseySession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeOdysseySession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    odysseySession: sanitized,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearOdysseySession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, odysseySession: null };
+}
+
+export function getOdysseyScenarioAtCursor(session: O10mOdysseySession | null | undefined): string | null {
+  const odyssey = sanitizeOdysseySession(session);
+  if (!odyssey || !odyssey.active) return null;
+  return odyssey.scenarioIds[odyssey.cursor] ?? null;
+}
+
+export function buildOdysseyScenarioStartOverrides(session: O10mOdysseySession | null | undefined): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const odyssey = sanitizeOdysseySession(session);
+  if (!odyssey) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(O10M_ODYSSEY_RENOWN_MONEY_CAP, Math.floor(odyssey.renownScore * 0.8));
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveOdysseyId: odyssey.odysseyId,
+      o10mActiveOdysseyStep: odyssey.cursor,
+      o10mActiveOdysseyAct: odyssey.actTag,
+      o10mOdysseyRenown: odyssey.renownScore,
+    },
+  };
+}
+
+export function advanceOdysseySessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeOdysseySession(state.odysseySession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const renownScore = Math.min(O10M_ODYSSEY_RENOWN_CAP, session.renownScore + odysseyRenownFromRun(run));
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      odysseySession: {
+        ...session,
+        cursor,
+        renownScore,
+        actTag: odysseyActForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForOdysseyId(session.odysseyId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    odysseySession: { ...session, active: false, renownScore, actTag: 'homecoming' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function odysseySessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  renown: number;
+  act: O10mOdysseyAct | null;
+} {
+  const session = sanitizeOdysseySession(state.odysseySession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    renown: session?.renownScore ?? 0,
+    act: session?.active ? session.actTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -5382,9 +5753,31 @@ const emptyQueuePlan = {
   expeditionCursor: null as number | null,
   expeditionLeg: null as O10mExpeditionLeg | null,
   expeditionSupply: null as number | null,
+  odysseyId: null as string | null,
+  odysseyCursor: null as number | null,
+  odysseyAct: null as O10mOdysseyAct | null,
+  odysseyRenown: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const odyssey = sanitizeOdysseySession(state.odysseySession);
+  const odysseyScenario = getOdysseyScenarioAtCursor(odyssey);
+  if (odyssey && odyssey.active && odysseyScenario) {
+    return {
+      kind: 'odyssey_step',
+      scenarioId: odysseyScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      odysseyId: odyssey.odysseyId,
+      odysseyCursor: odyssey.cursor,
+      odysseyAct: odyssey.actTag,
+      odysseyRenown: odyssey.renownScore,
+      reason: `Odyssey "${odyssey.label}" ${odyssey.actTag} chapter ${odyssey.cursor + 1}/${odyssey.scenarioIds.length} (renown ${odyssey.renownScore}).`,
+    };
+  }
+
   const expedition = sanitizeExpeditionSession(state.expeditionSession);
   const expeditionScenario = getExpeditionScenarioAtCursor(expedition);
   if (expedition && expedition.active && expeditionScenario) {
@@ -5545,6 +5938,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   relayActive: boolean;
   circuitActive: boolean;
   expeditionActive: boolean;
+  odysseyActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -5557,6 +5951,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const relay = relaySessionSummary(state);
   const circuit = circuitSessionSummary(state);
   const expedition = expeditionSessionSummary(state);
+  const odyssey = odysseySessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -5567,6 +5962,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     relayActive: relay.active,
     circuitActive: circuit.active,
     expeditionActive: expedition.active,
+    odysseyActive: odyssey.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -5585,7 +5981,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 10, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 11, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -5653,16 +6049,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const expeditionState = expedition ? attachExpeditionSessionToState(createEmptyO10mModesPersistedState(), expedition) : null;
   push('agent04_chunk_17', expeditionState !== null && planNextCampaignAction(expeditionState!).kind === 'expedition_step');
 
+  const odyssey = createOdysseySession({
+    odysseyId: 'o10m_odyssey_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_odyssey_opening_winds'],
+  }).session;
+  const odysseyState = odyssey ? attachOdysseySessionToState(createEmptyO10mModesPersistedState(), odyssey) : null;
+  push('agent04_chunk_18', odysseyState !== null && planNextCampaignAction(odysseyState!).kind === 'odyssey_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v10',
+  schemaVersion: 'op10m-agent04-v11',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 9,
+  saveSchemaVersion: 10,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

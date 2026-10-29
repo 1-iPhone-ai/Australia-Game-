@@ -9,6 +9,7 @@ import { sanitizeCatalogUnlockTokens, sanitizeGauntletSession } from './save-for
 import { sanitizeRelaySession } from './save-format-relay.js';
 import { sanitizeCircuitSession } from './save-format-circuit.js';
 import { sanitizeExpeditionSession } from './save-format-expedition.js';
+import { sanitizeOdysseySession } from './save-format-odyssey.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -27,7 +28,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 9;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 10;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -135,6 +136,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     relaySession: null,
     circuitSession: null,
     expeditionSession: null,
+    odysseySession: null,
   };
 }
 
@@ -163,6 +165,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       relaySession: merged.relaySession ?? null,
       circuitSession: merged.circuitSession ?? null,
       expeditionSession: merged.expeditionSession ?? null,
+      odysseySession: merged.odysseySession ?? null,
     };
     return upgraded;
   }
@@ -215,6 +218,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     relaySession: sanitizeRelaySession(o.relaySession),
     circuitSession: sanitizeCircuitSession(o.circuitSession),
     expeditionSession: sanitizeExpeditionSession(o.expeditionSession),
+    odysseySession: sanitizeOdysseySession(o.odysseySession),
   };
 }
 
@@ -284,6 +288,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Expedition session failed sanitization; planner will ignore it.');
   } else if (expedition && expedition.cursor >= expedition.scenarioIds.length) {
     warnings.push('Expedition cursor out of range; clamp on next sanitize.');
+  }
+
+  const odyssey = sanitizeOdysseySession(state.odysseySession);
+  if (state.odysseySession && !odyssey) {
+    warnings.push('Odyssey session failed sanitization; planner will ignore it.');
+  } else if (odyssey && odyssey.cursor >= odyssey.scenarioIds.length) {
+    warnings.push('Odyssey cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

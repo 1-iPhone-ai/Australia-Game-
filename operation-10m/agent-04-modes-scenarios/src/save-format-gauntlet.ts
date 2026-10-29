@@ -132,6 +132,7 @@ export function attachGauntletSessionToState(
     relaySession: null,
     circuitSession: null,
     expeditionSession: null,
+    odysseySession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,

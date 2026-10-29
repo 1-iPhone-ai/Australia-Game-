@@ -348,6 +348,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_odyssey_route',
+    title: 'Odyssey Route',
+    description:
+      'Three-act odyssey with renown accrual between chapters — round-10 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_odyssey_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_odyssey_opening_winds',
+        title: 'Opening Winds',
+        narrativeBridge: 'Build renown rhythm before the shelf crossing.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 210 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_odyssey_crossing_shelves',
+        title: 'Crossing Shelves',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { SA: 6, NT: 6 },
+          forcedSettingsPatch: { o10mOdysseyMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_odyssey_homecoming_harbor',
+        title: 'Homecoming Harbor',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainOdysseyRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
