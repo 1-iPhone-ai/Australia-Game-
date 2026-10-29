@@ -63,6 +63,9 @@ import { op10mA11ComputeMultiTierGovernanceFriction } from './multi-tier-governa
 import { op10mA11ComputeRegionalHousingSpilloverPressure } from './regional-housing-spillover-pressure.ts';
 import { op10mA11ComputeInterregionalTalentRetentionStress } from './interregional-talent-retention-stress.ts';
 import { op10mA11ComputeClimateSettlementDisplacementRisk } from './climate-settlement-displacement-risk.ts';
+import { op10mA11ComputeRegionalAmenityCostPressure } from './regional-amenity-cost-pressure.ts';
+import { op10mA11ComputeDigitalConnectivityDecentralizationShift } from './digital-connectivity-decentralization-shift.ts';
+import { op10mA11ComputeSettlementRelocationBurden } from './settlement-relocation-burden.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -389,7 +392,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.6',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.7',
     composite.state.schemaVersion,
   );
 
@@ -484,7 +487,9 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastServiceEquityIndex === composite.state.nationalServiceEquityIndex &&
       composite.persisted.lastInfrastructureBacklogIndex === composite.state.nationalInfrastructureBacklogIndex &&
       composite.persisted.lastHousingSpilloverIndex === composite.state.nationalHousingSpilloverIndex &&
-      composite.persisted.lastClimateDisplacementIndex === composite.state.nationalClimateDisplacementIndex,
+      composite.persisted.lastClimateDisplacementIndex === composite.state.nationalClimateDisplacementIndex &&
+      composite.persisted.lastAmenityCostIndex === composite.state.nationalAmenityCostIndex &&
+      composite.persisted.lastRelocationBurdenIndex === composite.state.nationalRelocationBurdenIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -713,6 +718,83 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     composite.derived.some((d) => d.kind === 'climate_displacement_exposure') ||
       composite.state.climateDisplacement.some((c) => c.band === 'acute' || c.band === 'critical'),
     composite.state.climateDisplacement[0]?.band ?? 'none',
+  );
+
+  const amenity = op10mA11ComputeRegionalAmenityCostPressure({
+    housingSpillover: composite.state.housingSpillover,
+    talentRetention: composite.state.talentRetention,
+    fiscalUrbanCoupling: composite.state.fiscalUrbanCoupling,
+  });
+  push(
+    out,
+    'a11_61',
+    composite.state.amenityCost.length === 8 && composite.state.nationalAmenityCostIndex === amenity.nationalIndex,
+    `amenity cost ${composite.state.nationalAmenityCostIndex}`,
+  );
+
+  const decentral = op10mA11ComputeDigitalConnectivityDecentralizationShift({
+    networkDigital: inputs.national.networkDigital,
+    migrationPressure: composite.state.migrationPressure,
+    linkageHubs: composite.state.linkageHubs,
+    hierarchy: composite.state.hierarchy,
+  });
+  push(
+    out,
+    'a11_62',
+    composite.state.decentralizationShift.length === 8 &&
+      composite.state.nationalDecentralizationIndex === decentral.nationalIndex,
+    `decentralization ${composite.state.nationalDecentralizationIndex}`,
+  );
+
+  const relocation = op10mA11ComputeSettlementRelocationBurden({
+    climateDisplacement: composite.state.climateDisplacement,
+    governanceFriction: composite.state.governanceFriction,
+    housingSpillover: composite.state.housingSpillover,
+  });
+  push(
+    out,
+    'a11_63',
+    composite.state.relocationBurden.length === 8 &&
+      composite.state.nationalRelocationBurdenIndex === relocation.nationalIndex,
+    `relocation burden ${composite.state.nationalRelocationBurdenIndex}`,
+  );
+
+  push(
+    out,
+    'a11_64',
+    composite.state.amenityCost.every((a) => a.narrative.includes('amenity cost')),
+    composite.state.amenityCost[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_65',
+    composite.derived.some((d) => d.kind === 'amenity_cost_spiral') ||
+      composite.state.amenityCost.some((a) => a.band === 'strained' || a.band === 'crisis'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_66',
+    composite.derived.some((d) => d.kind === 'digital_decentralization_pulse') ||
+      composite.state.decentralizationShift.some((d) => d.band === 'broadening' || d.band === 'accelerating'),
+    composite.state.decentralizationShift[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_67',
+    composite.persisted.lastAmenityCostIndex === composite.state.nationalAmenityCostIndex,
+    `persisted amenity ${composite.persisted.lastAmenityCostIndex}`,
+  );
+
+  push(
+    out,
+    'a11_68',
+    composite.derived.some((d) => d.kind === 'settlement_relocation_burden') ||
+      composite.state.relocationBurden.some((r) => r.band === 'severe' || r.band === 'overwhelming'),
+    composite.state.relocationBurden[0]?.band ?? 'none',
   );
 
   return out;

@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.6' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.7' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -239,7 +239,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'governance_coordination_breakdown'
   | 'housing_spillover_cascade'
   | 'regional_talent_drain'
-  | 'climate_displacement_exposure';
+  | 'climate_displacement_exposure'
+  | 'amenity_cost_spiral'
+  | 'digital_decentralization_pulse'
+  | 'settlement_relocation_burden';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -333,6 +336,36 @@ export interface OP10M_A11_ClimateDisplacementRow {
   displacementScore: number;
   band: OP10M_A11_ClimateDisplacementBand;
   hazards: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_AmenityCostBand = 'affordable' | 'stretching' | 'strained' | 'crisis';
+
+export interface OP10M_A11_AmenityCostRow {
+  regionId: OP10M_A11_RegionId;
+  amenityScore: number;
+  band: OP10M_A11_AmenityCostBand;
+  pressures: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_DecentralizationBand = 'metro_locked' | 'partial_shift' | 'broadening' | 'accelerating';
+
+export interface OP10M_A11_DecentralizationShiftRow {
+  regionId: OP10M_A11_RegionId;
+  shiftScore: number;
+  band: OP10M_A11_DecentralizationBand;
+  signals: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_RelocationBurdenBand = 'manageable' | 'elevated' | 'severe' | 'overwhelming';
+
+export interface OP10M_A11_RelocationBurdenRow {
+  regionId: OP10M_A11_RegionId;
+  burdenScore: number;
+  band: OP10M_A11_RelocationBurdenBand;
+  factors: string[];
   narrative: string;
 }
 
@@ -464,6 +497,12 @@ export interface OP10M_A11_CompositeState {
   nationalTalentDrainIndex: number;
   climateDisplacement: OP10M_A11_ClimateDisplacementRow[];
   nationalClimateDisplacementIndex: number;
+  amenityCost: OP10M_A11_AmenityCostRow[];
+  nationalAmenityCostIndex: number;
+  decentralizationShift: OP10M_A11_DecentralizationShiftRow[];
+  nationalDecentralizationIndex: number;
+  relocationBurden: OP10M_A11_RelocationBurdenRow[];
+  nationalRelocationBurdenIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -483,5 +522,7 @@ export interface OP10M_A11_CompositePersisted {
   lastGovernanceFrictionIndex: number;
   lastHousingSpilloverIndex: number;
   lastClimateDisplacementIndex: number;
+  lastAmenityCostIndex: number;
+  lastRelocationBurdenIndex: number;
   inputHash: string;
 }

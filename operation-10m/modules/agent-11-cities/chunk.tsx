@@ -219,7 +219,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.6' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.7' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -243,7 +243,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'governance_coordination_breakdown'
   | 'housing_spillover_cascade'
   | 'regional_talent_drain'
-  | 'climate_displacement_exposure';
+  | 'climate_displacement_exposure'
+  | 'amenity_cost_spiral'
+  | 'digital_decentralization_pulse'
+  | 'settlement_relocation_burden';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -337,6 +340,36 @@ export interface OP10M_A11_ClimateDisplacementRow {
   displacementScore: number;
   band: OP10M_A11_ClimateDisplacementBand;
   hazards: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_AmenityCostBand = 'affordable' | 'stretching' | 'strained' | 'crisis';
+
+export interface OP10M_A11_AmenityCostRow {
+  regionId: OP10M_A11_RegionId;
+  amenityScore: number;
+  band: OP10M_A11_AmenityCostBand;
+  pressures: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_DecentralizationBand = 'metro_locked' | 'partial_shift' | 'broadening' | 'accelerating';
+
+export interface OP10M_A11_DecentralizationShiftRow {
+  regionId: OP10M_A11_RegionId;
+  shiftScore: number;
+  band: OP10M_A11_DecentralizationBand;
+  signals: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_RelocationBurdenBand = 'manageable' | 'elevated' | 'severe' | 'overwhelming';
+
+export interface OP10M_A11_RelocationBurdenRow {
+  regionId: OP10M_A11_RegionId;
+  burdenScore: number;
+  band: OP10M_A11_RelocationBurdenBand;
+  factors: string[];
   narrative: string;
 }
 
@@ -468,6 +501,12 @@ export interface OP10M_A11_CompositeState {
   nationalTalentDrainIndex: number;
   climateDisplacement: OP10M_A11_ClimateDisplacementRow[];
   nationalClimateDisplacementIndex: number;
+  amenityCost: OP10M_A11_AmenityCostRow[];
+  nationalAmenityCostIndex: number;
+  decentralizationShift: OP10M_A11_DecentralizationShiftRow[];
+  nationalDecentralizationIndex: number;
+  relocationBurden: OP10M_A11_RelocationBurdenRow[];
+  nationalRelocationBurdenIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -487,6 +526,8 @@ export interface OP10M_A11_CompositePersisted {
   lastGovernanceFrictionIndex: number;
   lastHousingSpilloverIndex: number;
   lastClimateDisplacementIndex: number;
+  lastAmenityCostIndex: number;
+  lastRelocationBurdenIndex: number;
   inputHash: string;
 }
 
@@ -2396,6 +2437,208 @@ export function op10mA11RegionsWithCriticalClimateDisplacement(rows: OP10M_A11_C
 }
 
 
+// --- source: regional-amenity-cost-pressure.ts ---
+
+function amenityBand(score: number): OP10M_A11_AmenityCostBand {
+  if (score < 26) return 'affordable';
+  if (score < 44) return 'stretching';
+  if (score < 62) return 'strained';
+  return 'crisis';
+}
+
+export function op10mA11ComputeRegionalAmenityCostPressure(args: {
+  housingSpillover: OP10M_A11_HousingSpilloverRow[];
+  talentRetention: OP10M_A11_TalentRetentionRow[];
+  fiscalUrbanCoupling: OP10M_A11_FiscalUrbanCouplingRow[];
+}): { rows: OP10M_A11_AmenityCostRow[]; nationalIndex: number } {
+  const spillByRegion = new Map(args.housingSpillover.map((h) => [h.regionId, h]));
+  const talentByRegion = new Map(args.talentRetention.map((t) => [t.regionId, t]));
+  const fiscalByRegion = new Map(args.fiscalUrbanCoupling.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_AmenityCostRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const spill = spillByRegion.get(rid);
+    const talent = talentByRegion.get(rid);
+    const fiscal = fiscalByRegion.get(rid);
+
+    const housingDrag = spill ? op10mA11Clamp(spill.spilloverScore * 0.52) : 14;
+    const workforceDrag = talent ? op10mA11Clamp(talent.drainScore * 0.38) : 10;
+    const fiscalDrag = fiscal
+      ? op10mA11Clamp((100 - fiscal.couplingScore) * 0.22 + (fiscal.band === 'misaligned' ? 12 : 0))
+      : 8;
+
+    const amenityScore = op10mA11Clamp(housingDrag + workforceDrag * 0.58 + fiscalDrag);
+    weighted += amenityScore;
+
+    const pressures: string[] = [];
+    if (spill && (spill.band === 'cascade' || spill.band === 'systemic')) pressures.push('housing spillover');
+    if (talent && (talent.band === 'draining' || talent.band === 'collapse')) pressures.push('talent cost spiral');
+    if (fiscal && (fiscal.band === 'strained' || fiscal.band === 'misaligned')) pressures.push('fiscal mismatch');
+    if (!pressures.length) pressures.push('contained amenity load');
+
+    rows.push({
+      regionId: rid,
+      amenityScore: op10mA11Round(amenityScore),
+      band: amenityBand(amenityScore),
+      pressures: pressures.slice(0, 3),
+      narrative: `${rid} amenity cost ${amenityBand(amenityScore)} (${op10mA11Round(amenityScore)}); ${pressures.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.amenityScore - a.amenityScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithAmenityCostCrisis(rows: OP10M_A11_AmenityCostRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'strained' || r.band === 'crisis').map((r) => r.regionId);
+}
+
+export function op10mA11AmenityCostEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 52;
+  return currentIndex >= 46 && currentIndex > priorIndex + 5;
+}
+
+
+// --- source: digital-connectivity-decentralization-shift.ts ---
+
+function decentralizationBand(score: number): OP10M_A11_DecentralizationBand {
+  if (score < 22) return 'metro_locked';
+  if (score < 40) return 'partial_shift';
+  if (score < 58) return 'broadening';
+  return 'accelerating';
+}
+
+export function op10mA11ComputeDigitalConnectivityDecentralizationShift(args: {
+  networkDigital: number;
+  migrationPressure: OP10M_A11_MigrationPressureRow[];
+  linkageHubs: OP10M_A11_LinkageHubProfile[];
+  hierarchy: OP10M_A11_UrbanHierarchyRow[];
+}): { rows: OP10M_A11_DecentralizationShiftRow[]; nationalIndex: number } {
+  const migrationByRegion = new Map(args.migrationPressure.map((m) => [m.regionId, m]));
+  const hubByRegion = new Map(args.linkageHubs.map((h) => [h.regionId, h]));
+  const hierarchyByRegion = new Map(args.hierarchy.map((h) => [h.regionId, h]));
+  const digitalLift = op10mA11Clamp(args.networkDigital * 0.48);
+
+  const rows: OP10M_A11_DecentralizationShiftRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const migration = migrationByRegion.get(rid);
+    const hub = hubByRegion.get(rid);
+    const hier = hierarchyByRegion.get(rid);
+
+    const remoteEnablement = op10mA11Clamp(digitalLift * (hub && hub.role === 'peripheral' ? 1.08 : 0.92));
+    const outboundRelief =
+      migration && migration.primaryDirection === 'outbound'
+        ? op10mA11Clamp(migration.netPressure * 0.35)
+        : migration && migration.primaryDirection === 'inbound'
+          ? op10mA11Clamp(-migration.netPressure * 0.18)
+          : 0;
+    const primateDrag = hier
+      ? op10mA11Clamp(
+          (hier.primateBand === 'concentrated' || hier.primateBand === 'hyper_concentrated' ? 18 : 6) -
+            hier.secondaryMomentum * 0.12,
+        )
+      : 10;
+
+    const shiftScore = op10mA11Clamp(remoteEnablement + outboundRelief + (100 - primateDrag) * 0.22);
+    weighted += shiftScore;
+
+    const signals: string[] = [];
+    if (remoteEnablement >= 32) signals.push('digital connectivity lift');
+    if (outboundRelief >= 12) signals.push('outbound migration relief');
+    if (hub && (hub.role === 'connector' || hub.role === 'regional_hub')) signals.push('secondary hub pull');
+    if (hier && hier.primateBand === 'decentralized') signals.push('balanced hierarchy');
+    if (!signals.length) signals.push('metro-centric default');
+
+    rows.push({
+      regionId: rid,
+      shiftScore: op10mA11Round(shiftScore),
+      band: decentralizationBand(shiftScore),
+      signals: signals.slice(0, 3),
+      narrative: `${rid} decentralization ${decentralizationBand(shiftScore)} (${op10mA11Round(shiftScore)}); ${signals.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.shiftScore - a.shiftScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithAcceleratingDecentralization(
+  rows: OP10M_A11_DecentralizationShiftRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'broadening' || r.band === 'accelerating').map((r) => r.regionId);
+}
+
+
+// --- source: settlement-relocation-burden.ts ---
+
+function relocationBand(score: number): OP10M_A11_RelocationBurdenBand {
+  if (score < 24) return 'manageable';
+  if (score < 42) return 'elevated';
+  if (score < 60) return 'severe';
+  return 'overwhelming';
+}
+
+export function op10mA11ComputeSettlementRelocationBurden(args: {
+  climateDisplacement: OP10M_A11_ClimateDisplacementRow[];
+  governanceFriction: OP10M_A11_GovernanceFrictionRow[];
+  housingSpillover: OP10M_A11_HousingSpilloverRow[];
+}): { rows: OP10M_A11_RelocationBurdenRow[]; nationalIndex: number } {
+  const climateByRegion = new Map(args.climateDisplacement.map((c) => [c.regionId, c]));
+  const governanceByRegion = new Map(args.governanceFriction.map((g) => [g.regionId, g]));
+  const housingByRegion = new Map(args.housingSpillover.map((h) => [h.regionId, h]));
+
+  const rows: OP10M_A11_RelocationBurdenRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const climate = climateByRegion.get(rid);
+    const governance = governanceByRegion.get(rid);
+    const housing = housingByRegion.get(rid);
+
+    const displacementLoad = climate ? op10mA11Clamp(climate.displacementScore * 0.55) : 16;
+    const coordinationDrag = governance ? op10mA11Clamp(governance.frictionScore * 0.32) : 12;
+    const receptionStress = housing ? op10mA11Clamp(housing.spilloverScore * 0.28) : 10;
+
+    const burdenScore = op10mA11Clamp(displacementLoad + coordinationDrag + receptionStress);
+    weighted += burdenScore;
+
+    const factors: string[] = [];
+    if (climate && (climate.band === 'acute' || climate.band === 'critical')) factors.push('climate displacement');
+    if (governance && (governance.band === 'fragmented' || governance.band === 'breakdown')) {
+      factors.push('governance coordination gap');
+    }
+    if (housing && (housing.band === 'cascade' || housing.band === 'systemic')) factors.push('host market saturation');
+    if (!factors.length) factors.push('routine relocation capacity');
+
+    rows.push({
+      regionId: rid,
+      burdenScore: op10mA11Round(burdenScore),
+      band: relocationBand(burdenScore),
+      factors: factors.slice(0, 3),
+      narrative: `${rid} relocation burden ${relocationBand(burdenScore)} (${op10mA11Round(burdenScore)}); ${factors.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.burdenScore - a.burdenScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithOverwhelmingRelocationBurden(
+  rows: OP10M_A11_RelocationBurdenRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'severe' || r.band === 'overwhelming').map((r) => r.regionId);
+}
+
+export function op10mA11RelocationBurdenEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 50;
+  return currentIndex >= 44 && currentIndex > priorIndex + 6;
+}
+
+
 // --- source: composite-recompute.ts ---
 
 export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePersisted {
@@ -2414,6 +2657,8 @@ export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePe
     lastGovernanceFrictionIndex: 0,
     lastHousingSpilloverIndex: 0,
     lastClimateDisplacementIndex: 0,
+    lastAmenityCostIndex: 0,
+    lastRelocationBurdenIndex: 0,
     inputHash: '',
   };
 }
@@ -2447,6 +2692,12 @@ export function validateOP10M_A11_CompositeState(state: OP10M_A11_CompositeState
   if (state.nationalHousingSpilloverIndex < 0 || state.nationalHousingSpilloverIndex > 100) errs.push('housing spillover index out of range');
   if (state.nationalTalentDrainIndex < 0 || state.nationalTalentDrainIndex > 100) errs.push('talent drain index out of range');
   if (state.nationalClimateDisplacementIndex < 0 || state.nationalClimateDisplacementIndex > 100) errs.push('climate displacement index out of range');
+  if (state.amenityCost.length !== 8) errs.push('amenity cost row count');
+  if (state.decentralizationShift.length !== 8) errs.push('decentralization shift row count');
+  if (state.relocationBurden.length !== 8) errs.push('relocation burden row count');
+  if (state.nationalAmenityCostIndex < 0 || state.nationalAmenityCostIndex > 100) errs.push('amenity cost index out of range');
+  if (state.nationalDecentralizationIndex < 0 || state.nationalDecentralizationIndex > 100) errs.push('decentralization index out of range');
+  if (state.nationalRelocationBurdenIndex < 0 || state.nationalRelocationBurdenIndex > 100) errs.push('relocation burden index out of range');
   return errs;
 }
 
@@ -2577,6 +2828,25 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     bottlenecks: infraOut.state.bottlenecks,
     networkDigital: inputs.infra.networkDigital,
     corridorStressIndex: infraOut.state.corridorStressIndex,
+  });
+
+  const amenityOut = op10mA11ComputeRegionalAmenityCostPressure({
+    housingSpillover: housingSpilloverOut.rows,
+    talentRetention: talentOut.rows,
+    fiscalUrbanCoupling: fiscalOut.rows,
+  });
+
+  const decentralOut = op10mA11ComputeDigitalConnectivityDecentralizationShift({
+    networkDigital: inputs.urban.national.networkDigital,
+    migrationPressure,
+    linkageHubs,
+    hierarchy,
+  });
+
+  const relocationOut = op10mA11ComputeSettlementRelocationBurden({
+    climateDisplacement: climateOut.rows,
+    governanceFriction: governanceOut.rows,
+    housingSpillover: housingSpilloverOut.rows,
   });
 
   const derivedRaw: Omit<OP10M_A11_CompositeDerivedEvent, 'id'>[] = [];
@@ -2827,6 +3097,53 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     );
   }
 
+  const amenityCrisis = op10mA11RegionsWithAmenityCostCrisis(amenityOut.rows);
+  if (
+    amenityCrisis.length >= 2 ||
+    amenityOut.nationalIndex >= 50 ||
+    op10mA11AmenityCostEscalating(amenityOut.nationalIndex, base.revision > 0 ? base.lastAmenityCostIndex : null)
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'amenity_cost_spiral',
+      amenityCrisis.slice(0, 5),
+      `Regional amenity cost spiral (index ${amenityOut.nationalIndex.toFixed(1)}).`,
+      amenityOut.nationalIndex >= 58 ? 'major' : 'meaningful',
+    );
+  }
+
+  const decentralHot = op10mA11RegionsWithAcceleratingDecentralization(decentralOut.rows);
+  if (decentralHot.length >= 3 || decentralOut.nationalIndex >= 52) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'digital_decentralization_pulse',
+      decentralHot.slice(0, 5),
+      `Digital connectivity decentralization pulse (index ${decentralOut.nationalIndex.toFixed(1)}).`,
+      decentralOut.nationalIndex >= 62 ? 'major' : 'meaningful',
+    );
+  }
+
+  const relocationOverwhelm = op10mA11RegionsWithOverwhelmingRelocationBurden(relocationOut.rows);
+  if (
+    relocationOverwhelm.length >= 2 ||
+    relocationOut.nationalIndex >= 48 ||
+    op10mA11RelocationBurdenEscalating(
+      relocationOut.nationalIndex,
+      base.revision > 0 ? base.lastRelocationBurdenIndex : null,
+    )
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'settlement_relocation_burden',
+      relocationOverwhelm.slice(0, 5),
+      `Settlement relocation burden (index ${relocationOut.nationalIndex.toFixed(1)}).`,
+      relocationOut.nationalIndex >= 58 ? 'major' : 'meaningful',
+    );
+  }
+
   base.revision += 1;
   base.urban = urbanOut.persisted;
   base.infra = infraOut.persisted;
@@ -2839,11 +3156,13 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
   base.lastGovernanceFrictionIndex = governanceOut.nationalIndex;
   base.lastHousingSpilloverIndex = housingSpilloverOut.nationalIndex;
   base.lastClimateDisplacementIndex = climateOut.nationalIndex;
+  base.lastAmenityCostIndex = amenityOut.nationalIndex;
+  base.lastRelocationBurdenIndex = relocationOut.nationalIndex;
   base.inputHash = op10mA11HashInputs({
     turn: inputs.urban.turn,
     cityCount: inputs.urban.cities.length,
     regionKeys: 'composite',
-    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}:${metropolitanSaturationIndex}:${backlogOut.nationalIndex}:${housingSpilloverOut.nationalIndex}:${climateOut.nationalIndex}`,
+    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}:${metropolitanSaturationIndex}:${backlogOut.nationalIndex}:${housingSpilloverOut.nationalIndex}:${climateOut.nationalIndex}:${amenityOut.nationalIndex}:${relocationOut.nationalIndex}`,
   });
 
   const state: OP10M_A11_CompositeState = {
@@ -2882,7 +3201,13 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     nationalTalentDrainIndex: talentOut.nationalIndex,
     climateDisplacement: climateOut.rows,
     nationalClimateDisplacementIndex: climateOut.nationalIndex,
-    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}; saturation ${metropolitanSaturationIndex}; service equity ${serviceEquityOut.nationalIndex}; backlog ${backlogOut.nationalIndex}; governance ${governanceOut.nationalIndex}; housing spillover ${housingSpilloverOut.nationalIndex}; talent drain ${talentOut.nationalIndex}; climate displacement ${climateOut.nationalIndex}.`,
+    amenityCost: amenityOut.rows,
+    nationalAmenityCostIndex: amenityOut.nationalIndex,
+    decentralizationShift: decentralOut.rows,
+    nationalDecentralizationIndex: decentralOut.nationalIndex,
+    relocationBurden: relocationOut.rows,
+    nationalRelocationBurdenIndex: relocationOut.nationalIndex,
+    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}; saturation ${metropolitanSaturationIndex}; service equity ${serviceEquityOut.nationalIndex}; backlog ${backlogOut.nationalIndex}; governance ${governanceOut.nationalIndex}; housing spillover ${housingSpilloverOut.nationalIndex}; talent drain ${talentOut.nationalIndex}; climate displacement ${climateOut.nationalIndex}; amenity cost ${amenityOut.nationalIndex}; decentralization ${decentralOut.nationalIndex}; relocation burden ${relocationOut.nationalIndex}.`,
     inputHash: base.inputHash,
   };
 
@@ -2917,6 +3242,8 @@ export type OP10M_A11_RegressionTurnSnapshot = {
   governanceFrictionIndex: number;
   housingSpilloverIndex: number;
   climateDisplacementIndex: number;
+  amenityCostIndex: number;
+  relocationBurdenIndex: number;
   validationErrors: number;
 };
 
@@ -2959,6 +3286,8 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
       governanceFrictionIndex: out.state.nationalGovernanceFrictionIndex,
       housingSpilloverIndex: out.state.nationalHousingSpilloverIndex,
       climateDisplacementIndex: out.state.nationalClimateDisplacementIndex,
+      amenityCostIndex: out.state.nationalAmenityCostIndex,
+      relocationBurdenIndex: out.state.nationalRelocationBurdenIndex,
       validationErrors,
     });
   }
@@ -2972,6 +3301,8 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
   const governanceStable = snapshots.every((s) => s.governanceFrictionIndex >= 8 && s.governanceFrictionIndex <= 100);
   const housingStable = snapshots.every((s) => s.housingSpilloverIndex >= 8 && s.housingSpilloverIndex <= 100);
   const climateStable = snapshots.every((s) => s.climateDisplacementIndex >= 8 && s.climateDisplacementIndex <= 100);
+  const amenityStable = snapshots.every((s) => s.amenityCostIndex >= 8 && s.amenityCostIndex <= 100);
+  const relocationStable = snapshots.every((s) => s.relocationBurdenIndex >= 8 && s.relocationBurdenIndex <= 100);
 
   const ok =
     monotonicRevision &&
@@ -2982,10 +3313,12 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
     backlogStable &&
     governanceStable &&
     housingStable &&
-    climateStable;
+    climateStable &&
+    amenityStable &&
+    relocationStable;
   const detail = ok
-    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, spillover ${snapshots[snapshots.length - 1].housingSpilloverIndex}`
-    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable}`;
+    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, amenity ${snapshots[snapshots.length - 1].amenityCostIndex}`
+    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable}`;
 
   return { ok, snapshots, detail };
 }
@@ -3318,7 +3651,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.6',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.7',
     composite.state.schemaVersion,
   );
 
@@ -3413,7 +3746,9 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastServiceEquityIndex === composite.state.nationalServiceEquityIndex &&
       composite.persisted.lastInfrastructureBacklogIndex === composite.state.nationalInfrastructureBacklogIndex &&
       composite.persisted.lastHousingSpilloverIndex === composite.state.nationalHousingSpilloverIndex &&
-      composite.persisted.lastClimateDisplacementIndex === composite.state.nationalClimateDisplacementIndex,
+      composite.persisted.lastClimateDisplacementIndex === composite.state.nationalClimateDisplacementIndex &&
+      composite.persisted.lastAmenityCostIndex === composite.state.nationalAmenityCostIndex &&
+      composite.persisted.lastRelocationBurdenIndex === composite.state.nationalRelocationBurdenIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -3642,6 +3977,83 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     composite.derived.some((d) => d.kind === 'climate_displacement_exposure') ||
       composite.state.climateDisplacement.some((c) => c.band === 'acute' || c.band === 'critical'),
     composite.state.climateDisplacement[0]?.band ?? 'none',
+  );
+
+  const amenity = op10mA11ComputeRegionalAmenityCostPressure({
+    housingSpillover: composite.state.housingSpillover,
+    talentRetention: composite.state.talentRetention,
+    fiscalUrbanCoupling: composite.state.fiscalUrbanCoupling,
+  });
+  push(
+    out,
+    'a11_61',
+    composite.state.amenityCost.length === 8 && composite.state.nationalAmenityCostIndex === amenity.nationalIndex,
+    `amenity cost ${composite.state.nationalAmenityCostIndex}`,
+  );
+
+  const decentral = op10mA11ComputeDigitalConnectivityDecentralizationShift({
+    networkDigital: inputs.national.networkDigital,
+    migrationPressure: composite.state.migrationPressure,
+    linkageHubs: composite.state.linkageHubs,
+    hierarchy: composite.state.hierarchy,
+  });
+  push(
+    out,
+    'a11_62',
+    composite.state.decentralizationShift.length === 8 &&
+      composite.state.nationalDecentralizationIndex === decentral.nationalIndex,
+    `decentralization ${composite.state.nationalDecentralizationIndex}`,
+  );
+
+  const relocation = op10mA11ComputeSettlementRelocationBurden({
+    climateDisplacement: composite.state.climateDisplacement,
+    governanceFriction: composite.state.governanceFriction,
+    housingSpillover: composite.state.housingSpillover,
+  });
+  push(
+    out,
+    'a11_63',
+    composite.state.relocationBurden.length === 8 &&
+      composite.state.nationalRelocationBurdenIndex === relocation.nationalIndex,
+    `relocation burden ${composite.state.nationalRelocationBurdenIndex}`,
+  );
+
+  push(
+    out,
+    'a11_64',
+    composite.state.amenityCost.every((a) => a.narrative.includes('amenity cost')),
+    composite.state.amenityCost[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_65',
+    composite.derived.some((d) => d.kind === 'amenity_cost_spiral') ||
+      composite.state.amenityCost.some((a) => a.band === 'strained' || a.band === 'crisis'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_66',
+    composite.derived.some((d) => d.kind === 'digital_decentralization_pulse') ||
+      composite.state.decentralizationShift.some((d) => d.band === 'broadening' || d.band === 'accelerating'),
+    composite.state.decentralizationShift[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_67',
+    composite.persisted.lastAmenityCostIndex === composite.state.nationalAmenityCostIndex,
+    `persisted amenity ${composite.persisted.lastAmenityCostIndex}`,
+  );
+
+  push(
+    out,
+    'a11_68',
+    composite.derived.some((d) => d.kind === 'settlement_relocation_burden') ||
+      composite.state.relocationBurden.some((r) => r.band === 'severe' || r.band === 'overwhelming'),
+    composite.state.relocationBurden[0]?.band ?? 'none',
   );
 
   return out;

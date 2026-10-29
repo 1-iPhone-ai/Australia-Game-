@@ -25,5 +25,8 @@ export * from './multi-tier-governance-friction.ts';
 export * from './regional-housing-spillover-pressure.ts';
 export * from './interregional-talent-retention-stress.ts';
 export * from './climate-settlement-displacement-risk.ts';
+export * from './regional-amenity-cost-pressure.ts';
+export * from './digital-connectivity-decentralization-shift.ts';
+export * from './settlement-relocation-burden.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';

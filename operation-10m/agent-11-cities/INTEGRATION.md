@@ -33,6 +33,14 @@ All symbols are prefixed `OP10M_A11_` for grep-safe assembly.
 4. Persist infra slice under `gameState.op10mAgent11IntercityInfra` (`createEmptyOP10M_A11_InfraPersisted()`).
 5. Register `runOP10M_A11_SelfTests` in quick regression suite beside `runV1014_CITIES_CityRegionalIntercitySelfTests`.
 
+### Scale wave round 8 (schema `10m.a11.composite.7`)
+
+- **Regional amenity cost pressure** — housing spillover × talent drain × fiscal coupling (`op10mA11ComputeRegionalAmenityCostPressure`)
+- **Digital connectivity decentralization shift** — network digital × migration × hierarchy (`op10mA11ComputeDigitalConnectivityDecentralizationShift`)
+- **Settlement relocation burden** — climate displacement × governance × housing reception (`op10mA11ComputeSettlementRelocationBurden`)
+- **10-turn regression harness** — extended bounds for amenity + relocation indices
+- Derived events: `amenity_cost_spiral`, `digital_decentralization_pulse`, `settlement_relocation_burden`
+
 ### Scale wave round 6 (schema `10m.a11.composite.5`)
 
 - **Peri-urban expansion pressure** — corridor pull × metro growth bands (`op10mA11ComputePeriUrbanExpansionPressure`, `nationalPeriUrbanPressureIndex`)

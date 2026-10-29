@@ -16,6 +16,8 @@ export type OP10M_A11_RegressionTurnSnapshot = {
   governanceFrictionIndex: number;
   housingSpilloverIndex: number;
   climateDisplacementIndex: number;
+  amenityCostIndex: number;
+  relocationBurdenIndex: number;
   validationErrors: number;
 };
 
@@ -58,6 +60,8 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
       governanceFrictionIndex: out.state.nationalGovernanceFrictionIndex,
       housingSpilloverIndex: out.state.nationalHousingSpilloverIndex,
       climateDisplacementIndex: out.state.nationalClimateDisplacementIndex,
+      amenityCostIndex: out.state.nationalAmenityCostIndex,
+      relocationBurdenIndex: out.state.nationalRelocationBurdenIndex,
       validationErrors,
     });
   }
@@ -71,6 +75,8 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
   const governanceStable = snapshots.every((s) => s.governanceFrictionIndex >= 8 && s.governanceFrictionIndex <= 100);
   const housingStable = snapshots.every((s) => s.housingSpilloverIndex >= 8 && s.housingSpilloverIndex <= 100);
   const climateStable = snapshots.every((s) => s.climateDisplacementIndex >= 8 && s.climateDisplacementIndex <= 100);
+  const amenityStable = snapshots.every((s) => s.amenityCostIndex >= 8 && s.amenityCostIndex <= 100);
+  const relocationStable = snapshots.every((s) => s.relocationBurdenIndex >= 8 && s.relocationBurdenIndex <= 100);
 
   const ok =
     monotonicRevision &&
@@ -81,10 +87,12 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
     backlogStable &&
     governanceStable &&
     housingStable &&
-    climateStable;
+    climateStable &&
+    amenityStable &&
+    relocationStable;
   const detail = ok
-    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, spillover ${snapshots[snapshots.length - 1].housingSpilloverIndex}`
-    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable}`;
+    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, amenity ${snapshots[snapshots.length - 1].amenityCostIndex}`
+    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable}`;
 
   return { ok, snapshots, detail };
 }
