@@ -1201,6 +1201,30 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Suspended superintendent or revoked oversight yields overseerAccordBlocksSuperintendent.',
     severity: 'major',
   },
+,
+  {
+    id: 'G17-169',
+    title: 'Wardenship index on planning depth',
+    category: 'telemetry',
+    acceptance:
+      'wardenshipIndex reports wardenshipScore 0–100 with engaged/tentative/revoked band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-170',
+    title: 'Warden accord directives complete',
+    category: 'telemetry',
+    acceptance: 'wardenAccord exposes ≥5 directives and wardenScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-171',
+    title: 'Vacated overseer suspends warden accord',
+    category: 'integration',
+    acceptance:
+      'Vacated overseer or revoked wardenship yields wardenAccordBlocksOverseer.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

@@ -155,3 +155,6 @@ export * from './harness/run-settlement-depth-tests.ts';
 
 export const AGENT17_MODULE_ROOT = 'operation-10m/agent-17-command-center';
 export const AGENT17_ASSEMBLY_ANCHOR = '// SECTION 15: AI COMMAND CENTER';
+
+export { buildAgent17WardenshipIndex, wardenshipIndexBlocksWarden } from './planning/wardenship-index.ts';
+export { buildAgent17WardenAccord, wardenAccordBlocksOverseer } from './planning/warden-accord.ts';

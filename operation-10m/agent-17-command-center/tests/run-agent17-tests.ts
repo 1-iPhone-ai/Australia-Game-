@@ -52,6 +52,7 @@ import { runAgent17AdministrationDepthTests } from '../harness/run-administratio
 import { runAgent17CuratorshipDepthTests } from '../harness/run-curatorship-depth-tests.ts';
 import { runAgent17SuperintendenceDepthTests } from '../harness/run-superintendence-depth-tests.ts';
 import { runAgent17OversightDepthTests } from '../harness/run-oversight-depth-tests.ts';
+import { runAgent17WardenshipDepthTests } from '../harness/run-wardenship-depth-tests.ts';
 import { verifyAgent17Goals, validateGoalRegistryCoverage } from '../validation/goal-verification.ts';
 import { createAgent17RollbackController } from '../rollback/rollback-controller.ts';
 
@@ -109,6 +110,7 @@ const reports = [
   runAgent17CuratorshipDepthTests(),
   runAgent17SuperintendenceDepthTests(),
   runAgent17OversightDepthTests(),
+  runAgent17WardenshipDepthTests(),
 ];
 
 const combinedSuccess = reports.every(r => r.success);

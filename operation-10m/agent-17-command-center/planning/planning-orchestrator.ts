@@ -119,6 +119,8 @@ import { buildAgent17SuperintendenceIndex } from './superintendence-index.ts';
 import { buildAgent17SuperintendentAccord } from './superintendent-accord.ts';
 import { buildAgent17OversightIndex } from './oversight-index.ts';
 import { buildAgent17OverseerAccord } from './overseer-accord.ts';
+import { buildAgent17WardenshipIndex } from './wardenship-index.ts';
+import { buildAgent17WardenAccord } from './warden-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -703,6 +705,16 @@ export function buildAgent17PlanningDepthSnapshot(
     superintendentAccord,
     superintendenceIndex,
   });
+  const wardenshipIndex = buildAgent17WardenshipIndex({
+    overseerAccord,
+    oversightIndex,
+    superintendentAccord,
+  });
+  const wardenAccord = buildAgent17WardenAccord({
+    wardenshipIndex,
+    overseerAccord,
+    oversightIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -804,6 +816,8 @@ export function buildAgent17PlanningDepthSnapshot(
     superintendentAccord,
     oversightIndex,
     overseerAccord,
+    wardenshipIndex,
+    wardenAccord,
   };
 }
 
