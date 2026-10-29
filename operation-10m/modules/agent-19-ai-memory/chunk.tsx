@@ -1689,6 +1689,232 @@ export function adaptivePlanInfluenceAligned(
 }
 
 
+// --- source: turn-pack-composite-audit.ts ---
+
+export interface TurnPackCompositeAuditReport {
+  sliceOk: boolean;
+  giRedactionOk: boolean;
+  driftOk: boolean;
+  findings: MemoryInfluenceAuditFinding[];
+  narrativeLines: string[];
+}
+
+/** Single-turn explainability gate: slice attribution, GI redaction, and optional prior-pack drift. */
+export function auditTurnPackComposite(
+  pack: TurnExplainabilityPack,
+  params: {
+    decisionsBefore: import('./types.ts').MemoryInfluenceDecisionLike[];
+    decisionsAfter: import('./types.ts').MemoryInfluenceDecisionLike[];
+    inspection?: AiMemoryInspectionView | null;
+    priorPack?: TurnExplainabilityPack | null;
+  },
+): TurnPackCompositeAuditReport {
+  const sliceReport = auditTurnSliceAttribution(params.decisionsBefore, params.decisionsAfter);
+  const sliceOk = turnSliceAttributionOk(sliceReport);
+  const giFindings = params.inspection
+    ? auditTurnPackGiRedaction(pack, params.inspection)
+    : [];
+  const giRedactionOk = giRedactionConsistencyOk(giFindings);
+  let driftOk = true;
+  const driftFindings: MemoryInfluenceAuditFinding[] = params.priorPack
+    ? auditInfluenceDriftBetweenTurns(params.priorPack, pack)
+    : [];
+  if (driftFindings.some(f => f.code === 'influence_spike')) {
+    driftOk = false;
+  }
+  const findings = [...sliceReport.findings, ...giFindings, ...driftFindings];
+  const narrativeLines = [
+    `Turn ${pack.turn} composite audit: slices ${sliceOk ? 'ok' : 'FAIL'}, GI redaction ${giRedactionOk ? 'ok' : 'FAIL'}, drift ${driftOk ? 'ok' : 'warn'}.`,
+    ...sliceReport.narrativeLines,
+  ];
+  return { sliceOk, giRedactionOk, driftOk, findings, narrativeLines };
+}
+
+export function turnPackCompositeOk(report: TurnPackCompositeAuditReport): boolean {
+  return report.sliceOk && report.giRedactionOk && report.driftOk;
+}
+
+
+// --- source: session-gi-claims-rollup.ts ---
+
+export const AGENT19_SESSION_GI_CLAIM_CAP = 24;
+
+export interface SessionGiClaimsRollup {
+  claimCount: number;
+  uniqueIds: string[];
+  claims: MemoryGiClaim[];
+  narrativeLines: string[];
+}
+
+/** Merges Ask-the-Game claims across turn packs; dedupes by id keeping latest turn text. */
+export function buildSessionGiClaimsRollup(
+  packs: TurnExplainabilityPack[],
+  params?: {
+    inspection?: AiMemoryInspectionView | null;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionGiClaimsRollup {
+  const byId = new Map<string, MemoryGiClaim>();
+  packs.forEach(pack => {
+    const claims = buildTurnPackGiClaims({
+      pack,
+      horizon: pack.horizonAfter,
+      inspection: params?.inspection,
+      memoryInfluenceEnabled: params?.memoryInfluenceEnabled,
+    });
+    claims.forEach(c => byId.set(c.id, c));
+  });
+  const claims = [...byId.values()].slice(0, AGENT19_SESSION_GI_CLAIM_CAP);
+  const narrativeLines = [
+    `Session GI rollup: ${claims.length} claim(s) from ${packs.length} turn pack(s) (cap ${AGENT19_SESSION_GI_CLAIM_CAP}).`,
+  ];
+  claims.slice(0, 4).forEach(c => narrativeLines.push(`• [${c.id}] ${c.text.slice(0, 120)}`));
+  return {
+    claimCount: claims.length,
+    uniqueIds: claims.map(c => c.id),
+    claims,
+    narrativeLines,
+  };
+}
+
+export function sessionGiRollupWithinCap(rollup: SessionGiClaimsRollup): boolean {
+  return rollup.claimCount <= AGENT19_SESSION_GI_CLAIM_CAP;
+}
+
+
+// --- source: negotiation-influence-bridge.ts ---
+
+export const AGENT19_NEGOTIATION_SLICE_MIN = 0.5;
+
+export interface NegotiationInfluenceBridgeReport {
+  negotiationShift: number;
+  relationshipSliceDelta: number;
+  aligned: boolean;
+  narrativeLines: string[];
+}
+
+/** Links diplomacy negotiation threshold shift to relationship-flavored influence slices on the same turn. */
+export function buildNegotiationInfluenceBridge(
+  rel: Partial<AiRelationship> | null | undefined,
+  decisionsAfter: MemoryInfluenceDecisionLike[],
+  ctx?: { dealAffordable?: boolean; thirdPartyThreat?: number },
+): NegotiationInfluenceBridgeReport {
+  const { shift } = computeNegotiationThresholdShift(rel, ctx || {});
+  const relSlices = decisionsAfter.flatMap(d => d.memoryInfluenceSlices || []).filter(s => /trust|griev|gratitude|relationship/i.test(s.reason));
+  const relationshipSliceDelta = relSlices.reduce((s, x) => s + x.delta, 0);
+  const signMatch =
+    Math.abs(shift) < 0.01 ||
+    Math.abs(relationshipSliceDelta) < AGENT19_NEGOTIATION_SLICE_MIN ||
+    (shift < 0 && relationshipSliceDelta > 0) ||
+    (shift > 0 && relationshipSliceDelta < 0);
+  const aligned = signMatch;
+  const narrativeLines = [
+    `Negotiation bridge: threshold shift ${shift >= 0 ? '+' : ''}${shift.toFixed(3)} vs relationship slice Δ ${relationshipSliceDelta.toFixed(2)} (${aligned ? 'consistent' : 'mismatch'}).`,
+  ];
+  if (relSlices[0]) {
+    narrativeLines.push(`Primary relationship slice: ${relSlices[0].reason} (${relSlices[0].delta >= 0 ? '+' : ''}${relSlices[0].delta.toFixed(2)}).`);
+  }
+  return { negotiationShift: shift, relationshipSliceDelta, aligned, narrativeLines };
+}
+
+export function negotiationInfluenceAligned(report: NegotiationInfluenceBridgeReport): boolean {
+  return report.aligned;
+}
+
+
+// --- source: decision-trace-continuity-audit.ts ---
+
+export interface DecisionTraceContinuityReport {
+  continuityOk: boolean;
+  droppedTypes: string[];
+  findings: MemoryInfluenceAuditFinding[];
+  narrativeLines: string[];
+}
+
+/** Ensures every before decision still produces a trace after memory influence (no silent drops). */
+export function auditDecisionTraceContinuity(
+  before: MemoryInfluenceDecisionLike[],
+  after: MemoryInfluenceDecisionLike[],
+): DecisionTraceContinuityReport {
+  const afterTypes = new Set(after.map(d => String(d.type || 'unknown')));
+  const droppedTypes = before.map(d => String(d.type || 'unknown')).filter(t => !afterTypes.has(t));
+  const findings: MemoryInfluenceAuditFinding[] = [];
+  droppedTypes.forEach(t => {
+    findings.push({
+      code: 'trace_option_dropped',
+      severity: 'fail',
+      message: `Decision type "${t}" missing after memory pass.`,
+    });
+  });
+  const horizon = buildAiMemoryHorizonSnapshot(null);
+  before.forEach((b, i) => {
+    const a = after[i];
+    if (!a) return;
+    buildAgent19DecisionTraceReport({ before: b, after: a, horizonSnapshot: horizon });
+  });
+  const continuityOk = droppedTypes.length === 0;
+  const narrativeLines = [
+    continuityOk
+      ? 'Decision trace continuity: all option types preserved.'
+      : `Decision trace continuity: ${droppedTypes.length} type(s) dropped (${droppedTypes.join(', ')}).`,
+  ];
+  return { continuityOk, droppedTypes, findings, narrativeLines };
+}
+
+export function decisionTraceContinuityOk(report: DecisionTraceContinuityReport): boolean {
+  return report.continuityOk;
+}
+
+
+// --- source: explainability-confidence-band.ts ---
+
+export type ExplainabilityConfidenceBand = 'high' | 'medium' | 'low';
+
+export interface ExplainabilityConfidenceReport {
+  band: ExplainabilityConfidenceBand;
+  score: number;
+  narrativeLines: string[];
+}
+
+/** Derives player-facing confidence from integrity + composite turn audits. */
+export function computeExplainabilityConfidence(params: {
+  integrity: ExplainabilityIntegrityReport;
+  composite?: TurnPackCompositeAuditReport | null;
+}): ExplainabilityConfidenceReport {
+  let score = 100;
+  if (!params.integrity.boundsOk) score -= 35;
+  if (!params.integrity.retentionOk) score -= 15;
+  if (!params.integrity.stalenessOk) score -= 10;
+  params.integrity.findings.filter(f => f.severity === 'warn').forEach(() => {
+    score -= 3;
+  });
+  if (params.composite) {
+    if (!params.composite.sliceOk) score -= 20;
+    if (!params.composite.giRedactionOk) score -= 25;
+    if (!params.composite.driftOk) score -= 8;
+  }
+  score = Math.max(0, Math.min(100, score));
+  let band: ExplainabilityConfidenceBand = 'high';
+  if (score < 55) band = 'low';
+  else if (score < 80) band = 'medium';
+  const narrativeLines = [
+    `Explainability confidence: ${band} (${score}/100) — integrity bounds ${params.integrity.boundsOk ? 'ok' : 'fail'}.`,
+  ];
+  if (params.composite && !params.composite.sliceOk) {
+    narrativeLines.push('Slice attribution issues reduce confidence.');
+  }
+  return { band, score, narrativeLines };
+}
+
+export function explainabilityConfidenceAtLeast(
+  report: ExplainabilityConfidenceReport,
+  minBand: ExplainabilityConfidenceBand,
+): boolean {
+  const order: ExplainabilityConfidenceBand[] = ['low', 'medium', 'high'];
+  return order.indexOf(report.band) >= order.indexOf(minBand);
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -1827,6 +2053,19 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   buildAdaptivePlanInfluenceBridge,
   AGENT19_DIRECTIVE_BRIDGE_MAG_THRESHOLD,
 } from '../adaptive-plan-influence-bridge.ts';
+  buildSessionGiClaimsRollup,
+  sessionGiRollupWithinCap,
+  AGENT19_SESSION_GI_CLAIM_CAP,
+} from '../session-gi-claims-rollup.ts';
+  buildNegotiationInfluenceBridge,
+  negotiationInfluenceAligned,
+} from '../negotiation-influence-bridge.ts';
+  auditDecisionTraceContinuity,
+  decisionTraceContinuityOk,
+} from '../decision-trace-continuity-audit.ts';
+  computeExplainabilityConfidence,
+  explainabilityConfidenceAtLeast,
+} from '../explainability-confidence-band.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -2700,6 +2939,160 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             lines.some(l => l.includes('Team-directive')) &&
             AGENT19_DIRECTIVE_BRIDGE_MAG_THRESHOLD >= 5
           ) || lines.join('|');
+        },
+      ],
+      [
+        'a19_r8_composite_ok',
+        'Turn pack composite audit passes slice + GI checks',
+        () => {
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 5 }],
+            decisionsAfter: [
+              {
+                type: 'a',
+                score: 10,
+                memoryInfluence: 5,
+                memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 'trust' }],
+              },
+            ],
+          });
+          const report = auditTurnPackComposite(pack, {
+            decisionsBefore: [{ type: 'a', score: 5 }],
+            decisionsAfter: pack.influenceSummary.influencedDecisionCount
+              ? [
+                  {
+                    type: 'a',
+                    score: 10,
+                    memoryInfluence: 5,
+                    memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 'trust' }],
+                  },
+                ]
+              : [{ type: 'a', score: 5 }],
+          });
+          return turnPackCompositeOk(report) && report.sliceOk || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r8_composite_fail',
+        'Composite audit fails when slice sums mismatch',
+        () => {
+          const pack = buildTurnExplainabilityPack({
+            turn: 2,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'b', score: 1 }],
+            decisionsAfter: [
+              {
+                type: 'b',
+                score: 8,
+                memoryInfluence: 5,
+                memoryInfluenceSlices: [{ horizon: 'team_directive', delta: 1, reason: 'plan' }],
+              },
+            ],
+          });
+          const report = auditTurnPackComposite(pack, {
+            decisionsBefore: [{ type: 'b', score: 1 }],
+            decisionsAfter: [
+              {
+                type: 'b',
+                score: 8,
+                memoryInfluence: 5,
+                memoryInfluenceSlices: [{ horizon: 'team_directive', delta: 1, reason: 'plan' }],
+              },
+            ],
+          });
+          return !turnPackCompositeOk(report) && !report.sliceOk || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r8_session_gi_rollup',
+        'Session GI rollup dedupes claims and respects cap',
+        () => {
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 1 }],
+            decisionsAfter: [{ type: 'a', score: 3, memoryInfluence: 2 }],
+          });
+          const rollup = buildSessionGiClaimsRollup([pack, pack], { memoryInfluenceEnabled: true });
+          return (
+            sessionGiRollupWithinCap(rollup) &&
+            rollup.uniqueIds.includes('turn_influence') &&
+            rollup.claimCount <= AGENT19_SESSION_GI_CLAIM_CAP
+          ) || JSON.stringify(rollup);
+        },
+      ],
+      [
+        'a19_r8_negotiation_bridge',
+        'Negotiation bridge aligns trust shift with relationship slices',
+        () => {
+          const bridge = buildNegotiationInfluenceBridge(
+            { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 },
+            [
+              {
+                type: 'diplomacy',
+                score: 12,
+                memoryInfluence: 3,
+                memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 3, reason: 'trust from prior deal' }],
+              },
+            ],
+          );
+          return negotiationInfluenceAligned(bridge) && bridge.negotiationShift < 0 || JSON.stringify(bridge);
+        },
+      ],
+      [
+        'a19_r8_trace_continuity_ok',
+        'Trace continuity ok when option types preserved',
+        () => {
+          const report = auditDecisionTraceContinuity(
+            [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }],
+            [
+              { type: 'sell', score: 7, memoryInfluence: 2 },
+              { type: 'hold', score: 3 },
+            ],
+          );
+          return decisionTraceContinuityOk(report) && report.droppedTypes.length === 0 || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r8_trace_continuity_fail',
+        'Trace continuity fails when an option type disappears',
+        () => {
+          const report = auditDecisionTraceContinuity(
+            [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }],
+            [{ type: 'sell', score: 7, memoryInfluence: 2 }],
+          );
+          return !decisionTraceContinuityOk(report) && report.droppedTypes.includes('hold') || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r8_confidence_band',
+        'Confidence band drops when integrity bounds fail',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.events = Array.from({ length: AGENT19_AI_MEMORY_EVENT_CAP + 1 }, (_, i) => ({
+            id: `e${i}`,
+            turn: i,
+            actionType: 'sell',
+            actorId: 'player',
+            targetId: null,
+            regionId: null,
+            summary: 's',
+            importance: 1,
+            valence: 0,
+            stableKey: `k${i}`,
+          }));
+          const integrity = auditExplainabilityIntegrity(mem, 1);
+          const confidence = computeExplainabilityConfidence({ integrity });
+          return (
+            !integrity.boundsOk &&
+            confidence.band === 'low' &&
+            !explainabilityConfidenceAtLeast(confidence, 'medium')
+          ) || JSON.stringify({ integrity, confidence });
         },
       ],
     ]),

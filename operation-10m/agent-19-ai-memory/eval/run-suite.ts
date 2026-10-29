@@ -77,6 +77,24 @@ import {
   buildAdaptivePlanInfluenceBridge,
   AGENT19_DIRECTIVE_BRIDGE_MAG_THRESHOLD,
 } from '../adaptive-plan-influence-bridge.ts';
+import { auditTurnPackComposite, turnPackCompositeOk } from '../turn-pack-composite-audit.ts';
+import {
+  buildSessionGiClaimsRollup,
+  sessionGiRollupWithinCap,
+  AGENT19_SESSION_GI_CLAIM_CAP,
+} from '../session-gi-claims-rollup.ts';
+import {
+  buildNegotiationInfluenceBridge,
+  negotiationInfluenceAligned,
+} from '../negotiation-influence-bridge.ts';
+import {
+  auditDecisionTraceContinuity,
+  decisionTraceContinuityOk,
+} from '../decision-trace-continuity-audit.ts';
+import {
+  computeExplainabilityConfidence,
+  explainabilityConfidenceAtLeast,
+} from '../explainability-confidence-band.ts';
 import type { MemoryEvalResult } from '../types.ts';
 
 type Case = [string, string, () => boolean | string];
@@ -951,6 +969,160 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             lines.some(l => l.includes('Team-directive')) &&
             AGENT19_DIRECTIVE_BRIDGE_MAG_THRESHOLD >= 5
           ) || lines.join('|');
+        },
+      ],
+      [
+        'a19_r8_composite_ok',
+        'Turn pack composite audit passes slice + GI checks',
+        () => {
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 5 }],
+            decisionsAfter: [
+              {
+                type: 'a',
+                score: 10,
+                memoryInfluence: 5,
+                memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 'trust' }],
+              },
+            ],
+          });
+          const report = auditTurnPackComposite(pack, {
+            decisionsBefore: [{ type: 'a', score: 5 }],
+            decisionsAfter: pack.influenceSummary.influencedDecisionCount
+              ? [
+                  {
+                    type: 'a',
+                    score: 10,
+                    memoryInfluence: 5,
+                    memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 'trust' }],
+                  },
+                ]
+              : [{ type: 'a', score: 5 }],
+          });
+          return turnPackCompositeOk(report) && report.sliceOk || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r8_composite_fail',
+        'Composite audit fails when slice sums mismatch',
+        () => {
+          const pack = buildTurnExplainabilityPack({
+            turn: 2,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'b', score: 1 }],
+            decisionsAfter: [
+              {
+                type: 'b',
+                score: 8,
+                memoryInfluence: 5,
+                memoryInfluenceSlices: [{ horizon: 'team_directive', delta: 1, reason: 'plan' }],
+              },
+            ],
+          });
+          const report = auditTurnPackComposite(pack, {
+            decisionsBefore: [{ type: 'b', score: 1 }],
+            decisionsAfter: [
+              {
+                type: 'b',
+                score: 8,
+                memoryInfluence: 5,
+                memoryInfluenceSlices: [{ horizon: 'team_directive', delta: 1, reason: 'plan' }],
+              },
+            ],
+          });
+          return !turnPackCompositeOk(report) && !report.sliceOk || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r8_session_gi_rollup',
+        'Session GI rollup dedupes claims and respects cap',
+        () => {
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 1 }],
+            decisionsAfter: [{ type: 'a', score: 3, memoryInfluence: 2 }],
+          });
+          const rollup = buildSessionGiClaimsRollup([pack, pack], { memoryInfluenceEnabled: true });
+          return (
+            sessionGiRollupWithinCap(rollup) &&
+            rollup.uniqueIds.includes('turn_influence') &&
+            rollup.claimCount <= AGENT19_SESSION_GI_CLAIM_CAP
+          ) || JSON.stringify(rollup);
+        },
+      ],
+      [
+        'a19_r8_negotiation_bridge',
+        'Negotiation bridge aligns trust shift with relationship slices',
+        () => {
+          const bridge = buildNegotiationInfluenceBridge(
+            { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 },
+            [
+              {
+                type: 'diplomacy',
+                score: 12,
+                memoryInfluence: 3,
+                memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 3, reason: 'trust from prior deal' }],
+              },
+            ],
+          );
+          return negotiationInfluenceAligned(bridge) && bridge.negotiationShift < 0 || JSON.stringify(bridge);
+        },
+      ],
+      [
+        'a19_r8_trace_continuity_ok',
+        'Trace continuity ok when option types preserved',
+        () => {
+          const report = auditDecisionTraceContinuity(
+            [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }],
+            [
+              { type: 'sell', score: 7, memoryInfluence: 2 },
+              { type: 'hold', score: 3 },
+            ],
+          );
+          return decisionTraceContinuityOk(report) && report.droppedTypes.length === 0 || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r8_trace_continuity_fail',
+        'Trace continuity fails when an option type disappears',
+        () => {
+          const report = auditDecisionTraceContinuity(
+            [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }],
+            [{ type: 'sell', score: 7, memoryInfluence: 2 }],
+          );
+          return !decisionTraceContinuityOk(report) && report.droppedTypes.includes('hold') || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r8_confidence_band',
+        'Confidence band drops when integrity bounds fail',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.events = Array.from({ length: AGENT19_AI_MEMORY_EVENT_CAP + 1 }, (_, i) => ({
+            id: `e${i}`,
+            turn: i,
+            actionType: 'sell',
+            actorId: 'player',
+            targetId: null,
+            regionId: null,
+            summary: 's',
+            importance: 1,
+            valence: 0,
+            stableKey: `k${i}`,
+          }));
+          const integrity = auditExplainabilityIntegrity(mem, 1);
+          const confidence = computeExplainabilityConfidence({ integrity });
+          return (
+            !integrity.boundsOk &&
+            confidence.band === 'low' &&
+            !explainabilityConfidenceAtLeast(confidence, 'medium')
+          ) || JSON.stringify({ integrity, confidence });
         },
       ],
     ]),
