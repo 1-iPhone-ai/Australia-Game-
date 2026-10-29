@@ -253,6 +253,7 @@ export interface GTELPersisted {
   settledLaunchedClearedForwardArcHandoffContinuitySmoothing?: number;
   bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing?: number;
   wave53SovereignHandoffDepthSmoothing?: number;
+  wave54SovereignHandoffLatticeSmoothing?: number;
 }
 
 export interface GTELState {
@@ -1790,6 +1791,7 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     settledLaunchedClearedForwardArcHandoffContinuitySmoothing: 0.52,
     bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing: 0.52,
     wave53SovereignHandoffDepthSmoothing: 0.52,
+    wave54SovereignHandoffLatticeSmoothing: 0.54,
   };
 }
 
@@ -2185,6 +2187,11 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
     sanitizeBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing(
       r.bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing,
     );
+  base.wave54SovereignHandoffLatticeSmoothing = gtelClamp(
+    gtelNum(r.wave54SovereignHandoffLatticeSmoothing, 0.54),
+    0.18,
+    0.94,
+  );
   base.wave53SovereignHandoffDepthSmoothing = gtelClamp(
     gtelNum(r.wave53SovereignHandoffDepthSmoothing, 0.52),
     0.16,
@@ -7576,6 +7583,54 @@ export function wave53SovereignHandoffDepthExportScale(snapshot: GTELWave53Sover
 }
 
 
+// --- source: o10-240-wave54-sovereign-handoff-lattice.ts ---
+/**
+ * Agent 15 scale wave round 54 (O10-240) — sovereign handoff lattice depth stub.
+ */
+
+
+export interface GTELWave54SovereignHandoffLatticeSnapshot {
+  score: number;
+  band: 'latched' | 'aligned' | 'forming' | 'open';
+  summary: string;
+}
+
+export function sanitizeWave54SovereignHandoffLatticeSmoothing(raw: unknown): number {
+  return gtelClamp(gtelNum(raw, 0.54), 0.18, 0.94);
+}
+
+export function computeWave54SovereignHandoffLatticeSnapshot(input: {
+  wave53Depth: GTELWave53SovereignHandoffDepthSnapshot;
+  persisted: GTELPersisted;
+}): { snapshot: GTELWave54SovereignHandoffLatticeSnapshot; persisted: GTELPersisted } {
+  const raw = gtelClamp(input.wave53Depth.score * 0.91 + 0.1, 0.18, 0.94);
+  const prev = sanitizeWave54SovereignHandoffLatticeSmoothing(
+    input.persisted.wave54SovereignHandoffLatticeSmoothing,
+  );
+  const score = gtelClamp(prev * 0.22 + raw * 0.78, 0.18, 0.94);
+  const band: GTELWave54SovereignHandoffLatticeSnapshot['band'] =
+    score >= 0.88 ? 'latched' : score >= 0.68 ? 'aligned' : score >= 0.52 ? 'forming' : 'open';
+  const persisted: GTELPersisted = {
+    ...input.persisted,
+    wave54SovereignHandoffLatticeSmoothing: Math.round(score * 1000) / 1000,
+  };
+  return {
+    snapshot: {
+      score,
+      band,
+      summary: `Wave 54 sovereign handoff lattice ${band} (${score.toFixed(2)})`,
+    },
+    persisted,
+  };
+}
+
+export function wave54SovereignHandoffLatticeExportScale(
+  snapshot: GTELWave54SovereignHandoffLatticeSnapshot,
+): number {
+  return gtelClamp(snapshot.score * 1.04, 0.18, 0.96);
+}
+
+
 // --- source: domestic-consequences.ts ---
   GTELCommodityQuote,
   GTELDomesticCoupling,
@@ -8296,6 +8351,9 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   computeWave53SovereignHandoffDepthSnapshot,
   wave53SovereignHandoffDepthExportScale,
 } from './o10-237-wave53-sovereign-handoff-depth.ts';
+  computeWave54SovereignHandoffLatticeSnapshot,
+  wave54SovereignHandoffLatticeExportScale,
+} from './o10-240-wave54-sovereign-handoff-lattice.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -9621,6 +9679,12 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   });
   persisted = wave53SovereignHandoffStep.persisted;
 
+  const wave54SovereignHandoffLatticeStep = computeWave54SovereignHandoffLatticeSnapshot({
+    wave53Depth: wave53SovereignHandoffStep.snapshot,
+    persisted,
+  });
+  persisted = wave54SovereignHandoffLatticeStep.persisted;
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -9721,6 +9785,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
           bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGate,
         ) *
         wave53SovereignHandoffDepthExportScale(wave53SovereignHandoffStep.snapshot) *
+        wave54SovereignHandoffLatticeExportScale(wave54SovereignHandoffLatticeStep.snapshot) *
         10,
     ) / 10;
 
@@ -10651,6 +10716,9 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   computeWave53SovereignHandoffDepthSnapshot,
   wave53SovereignHandoffDepthExportScale,
 } from './o10-237-wave53-sovereign-handoff-depth.ts';
+  computeWave54SovereignHandoffLatticeSnapshot,
+  wave54SovereignHandoffLatticeExportScale,
+} from './o10-240-wave54-sovereign-handoff-lattice.ts';
   validateScenarioShockCatalog,
   triggerCommodityShockScenario,
   COMMODITY_SHOCK_SCENARIOS,
@@ -13416,6 +13484,22 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       wave53SovereignHandoffDepthExportScale(step.snapshot) >= 0.16,
       'expected wave53 export scale',
+    );
+  });
+
+  ok('wave54 sovereign handoff lattice improves export scale', () => {
+    const depth = computeWave53SovereignHandoffDepthSnapshot({
+      certifiedHandoffScore: 0.84,
+      persisted: createEmptyGTELPersisted(),
+    });
+    const lattice = computeWave54SovereignHandoffLatticeSnapshot({
+      wave53Depth: depth.snapshot,
+      persisted: depth.persisted,
+    });
+    gtelAssert(lattice.snapshot.band !== 'open', 'expected wave54 sovereign handoff lattice formed');
+    gtelAssert(
+      wave54SovereignHandoffLatticeExportScale(lattice.snapshot) >= 0.18,
+      'expected wave54 export scale',
     );
   });
 
