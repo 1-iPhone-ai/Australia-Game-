@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-01-strategic-gameplay
-// content-sha256-prefix: 0f89520d2d3e9abe
+// content-sha256-prefix: b263da0657912b70
 // Operation 10M — Agent 01 Strategic Gameplay
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -252,6 +252,8 @@ export interface TurnStrategicBriefing {
   coalitionBalanceIndex: number;
   coalitionCrisisLevel: CoalitionCrisisLevel;
   coalitionCrisisStreakDays: number;
+  coalitionRecoveryStreakDays: number;
+  prolongedCoalitionCrisis: boolean;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;
@@ -312,6 +314,10 @@ export interface StrategicActionDefinition {
   minCoalitionBalanceIndex?: number;
   /** Crisis-only actions — balance index must be at or below this value. */
   maxCoalitionBalanceIndex?: number;
+  /** Action requires this many consecutive acute coalition calendar days. */
+  minCoalitionCrisisStreakDays?: number;
+  /** Action requires this many consecutive stable coalition calendar days. */
+  minCoalitionRecoveryStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -350,7 +356,9 @@ export type StrategicValidationRequirement =
   | { kind: 'action_not_yet_completed'; actionId: string }
   | { kind: 'mandate_milestone'; priorityId: NationalPriorityId; milestoneId: MandateMilestoneId }
   | { kind: 'min_coalition_balance'; minIndex: number }
-  | { kind: 'max_coalition_balance'; maxIndex: number };
+  | { kind: 'max_coalition_balance'; maxIndex: number }
+  | { kind: 'min_coalition_crisis_streak'; minDays: number }
+  | { kind: 'min_coalition_recovery_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -394,6 +402,8 @@ export interface StrategicGameplayState {
   lastAlignedActionDay?: number;
   /** Consecutive calendar days coalition balance remained acute. */
   coalitionCrisisStreakDays?: number;
+  /** Consecutive calendar days coalition balance remained stable. */
+  coalitionRecoveryStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;
@@ -883,6 +893,16 @@ export function coalitionBalanceRankingBonus(state: StrategicGameplayState): num
   return 0;
 }
 
+export function coalitionRecoveryRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionRecoveryStreakDays === undefined) return 0;
+  const streak = state.coalitionRecoveryStreakDays ?? 0;
+  if (streak >= action.minCoalitionRecoveryStreakDays) return 5;
+  return 2;
+}
+
 // --- src/engine/mandate-idle-drift.ts ---
 
 const IDLE_GRACE_DAYS = 3;
@@ -969,6 +989,111 @@ export function resetCoalitionCrisisStreak(
   state: StrategicGameplayState,
 ): StrategicGameplayState {
   return { ...state, coalitionCrisisStreakDays: 0 };
+}
+
+// --- src/engine/coalition-crisis-pressure.ts ---
+
+export const PROLONGED_COALITION_CRISIS_THRESHOLD = 4;
+const CRISIS_MANDATE_DRIFT_PER_DAY = 1;
+
+function decayTrack(track: PriorityMandateTrack, pointsLost: number): PriorityMandateTrack {
+  const points = Math.max(0, track.points - pointsLost);
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isProlongedCoalitionCrisis(state: StrategicGameplayState): boolean {
+  return (state.coalitionCrisisStreakDays ?? 0) >= PROLONGED_COALITION_CRISIS_THRESHOLD;
+}
+
+/** Extra mandate decay while acute coalition crisis persists beyond the prolonged threshold. */
+export function applyProlongedCrisisMandatePressure(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isProlongedCoalitionCrisis(state)) return state;
+
+  const driftTotal = daysAdvanced * CRISIS_MANDATE_DRIFT_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = decayTrack(track, driftTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-crisis-gates.ts ---
+
+export function coalitionCrisisStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionCrisisStreakDays === undefined) return [];
+
+  const streak = state.coalitionCrisisStreakDays ?? 0;
+  if (streak >= action.minCoalitionCrisisStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_CRISIS_STREAK_TOO_SHORT',
+      message: `Coalition crisis streak ${streak} below required ${action.minCoalitionCrisisStreakDays} acute day(s).`,
+      requirement: {
+        kind: 'min_coalition_crisis_streak',
+        minDays: action.minCoalitionCrisisStreakDays,
+      },
+    },
+  ];
+}
+
+export function coalitionRecoveryStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionRecoveryStreakDays === undefined) return [];
+
+  const streak = state.coalitionRecoveryStreakDays ?? 0;
+  if (streak >= action.minCoalitionRecoveryStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_RECOVERY_STREAK_TOO_SHORT',
+      message: `Coalition recovery streak ${streak} below required ${action.minCoalitionRecoveryStreakDays} stable day(s).`,
+      requirement: {
+        kind: 'min_coalition_recovery_streak',
+        minDays: action.minCoalitionRecoveryStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-recovery.ts ---
+
+/** Increment recovery streak while coalition balance stays stable; reset when strained or acute. */
+export function advanceCoalitionRecoveryStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') {
+    if ((state.coalitionRecoveryStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionRecoveryStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionRecoveryStreakDays: (state.coalitionRecoveryStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionRecoveryStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionRecoveryStreakDays: 0 };
 }
 
 // --- src/engine/coalition-gates.ts ---
@@ -1081,17 +1206,23 @@ export interface StrategicGameplaySaveV4 extends Omit<StrategicGameplaySaveV3, '
   coalitionCrisisStreakDays: number;
 }
 
+export interface StrategicGameplaySaveV5 extends Omit<StrategicGameplaySaveV4, 'version'> {
+  version: 5;
+  coalitionRecoveryStreakDays: number;
+}
+
 export type StrategicGameplaySaveBlob =
   | StrategicGameplaySaveV1
   | StrategicGameplaySaveV2
   | StrategicGameplaySaveV3
-  | StrategicGameplaySaveV4;
+  | StrategicGameplaySaveV4
+  | StrategicGameplaySaveV5;
 
 export function serializeStrategicGameplayState(
   state: StrategicGameplayState,
-): StrategicGameplaySaveV4 {
+): StrategicGameplaySaveV5 {
   return {
-    version: 4,
+    version: 5,
     day: state.day,
     completedActionIds: [...state.completedActionIds],
     pendingDelayed: state.pendingDelayed.map((p) => ({ ...p, effects: { ...p.effects } })),
@@ -1105,6 +1236,7 @@ export function serializeStrategicGameplayState(
     },
     lastAlignedActionDay: state.lastAlignedActionDay ?? state.day,
     coalitionCrisisStreakDays: state.coalitionCrisisStreakDays ?? 0,
+    coalitionRecoveryStreakDays: state.coalitionRecoveryStreakDays ?? 0,
   };
 }
 
@@ -1124,6 +1256,7 @@ export function deserializeStrategicGameplayState(
       stakeholderSentiment: createDefaultStakeholderSentiment(),
       lastAlignedActionDay: save.day,
       coalitionCrisisStreakDays: 0,
+      coalitionRecoveryStreakDays: 0,
     };
   }
   if (save.version === 2) {
@@ -1139,6 +1272,7 @@ export function deserializeStrategicGameplayState(
       stakeholderSentiment: { ...save.stakeholderSentiment },
       lastAlignedActionDay: save.day,
       coalitionCrisisStreakDays: 0,
+      coalitionRecoveryStreakDays: 0,
     };
   }
   if (save.version === 3) {
@@ -1154,9 +1288,26 @@ export function deserializeStrategicGameplayState(
       stakeholderSentiment: { ...save.stakeholderSentiment },
       lastAlignedActionDay: save.lastAlignedActionDay,
       coalitionCrisisStreakDays: 0,
+      coalitionRecoveryStreakDays: 0,
     };
   }
-  if (save.version !== 4) {
+  if (save.version === 4) {
+    return {
+      day: save.day,
+      completedActionIds: [...save.completedActionIds],
+      pendingDelayed: save.pendingDelayed.slice(),
+      journal: save.journal.slice(),
+      priorityMomentum: { ...save.priorityMomentum },
+      actionCooldowns: { ...save.actionCooldowns },
+      activeChoice: save.activeChoice ? { ...save.activeChoice } : null,
+      mandateProgress: { ...save.mandateProgress },
+      stakeholderSentiment: { ...save.stakeholderSentiment },
+      lastAlignedActionDay: save.lastAlignedActionDay,
+      coalitionCrisisStreakDays: save.coalitionCrisisStreakDays,
+      coalitionRecoveryStreakDays: 0,
+    };
+  }
+  if (save.version !== 5) {
     throw new Error(`Unsupported strategic save version: ${(save as { version: number }).version}`);
   }
   return {
@@ -1171,6 +1322,7 @@ export function deserializeStrategicGameplayState(
     stakeholderSentiment: { ...save.stakeholderSentiment },
     lastAlignedActionDay: save.lastAlignedActionDay,
     coalitionCrisisStreakDays: save.coalitionCrisisStreakDays,
+    coalitionRecoveryStreakDays: save.coalitionRecoveryStreakDays,
   };
 }
 
@@ -1511,6 +1663,8 @@ export function validateAction(
     issues.push(...stakeholderOppositionIssues(action, contracts, state));
     issues.push(...mandateMilestoneIssues(action, state));
     issues.push(...coalitionBalanceIssues(action, state));
+    issues.push(...coalitionCrisisStreakIssues(action, state));
+    issues.push(...coalitionRecoveryStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({
@@ -1619,7 +1773,8 @@ export function rankStrategicActions(
         priorityMomentumBonus(state, action) +
         synergyScoreBonus(synergies) +
         mandateRankingBonus(state, action) +
-        coalitionBalanceRankingBonus(state),
+        coalitionBalanceRankingBonus(state) +
+        coalitionRecoveryRankingBonus(state, action),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });
@@ -1657,6 +1812,8 @@ export function buildTurnStrategicBriefing(
     coalitionBalanceIndex: computeCoalitionBalanceIndex(state.stakeholderSentiment),
     coalitionCrisisLevel: classifyCoalitionCrisisLevel(state),
     coalitionCrisisStreakDays: state.coalitionCrisisStreakDays ?? 0,
+    coalitionRecoveryStreakDays: state.coalitionRecoveryStreakDays ?? 0,
+    prolongedCoalitionCrisis: isProlongedCoalitionCrisis(state),
     mandateDriftRisk: classifyMandateDriftRisk(state),
     completedActionCount: state.completedActionIds.length,
     activeChoiceId: state.activeChoice?.choiceId ?? null,
@@ -1800,6 +1957,8 @@ export function advanceStrategicGameplayCalendar(
   const { state: afterDelayed, fired } = advanceDayAndResolveDelayed(state, contracts, toDay);
   let next = applyMandateIdleDrift(afterDelayed, toDay);
   next = advanceCoalitionCrisisStreak(next, daysAdvanced);
+  next = applyProlongedCrisisMandatePressure(next, daysAdvanced);
+  next = advanceCoalitionRecoveryStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 
   return { state: next, firedTradeOffCount: fired.length };
@@ -1819,6 +1978,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     stakeholderSentiment: createDefaultStakeholderSentiment(),
     lastAlignedActionDay: day,
     coalitionCrisisStreakDays: 0,
+    coalitionRecoveryStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -1959,6 +2119,12 @@ export function executeStrategicAction(
   }
   if (action.id === 'sga_coalition_reconciliation_forum') {
     nextState = resetCoalitionCrisisStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_emergency_compact') {
+    nextState = resetCoalitionCrisisStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_stability_dividend') {
+    nextState = resetCoalitionRecoveryStreak(nextState);
   }
 
   contracts.ui.pushToast({
@@ -2447,6 +2613,58 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
         },
       },
     ],
+  },
+  'sga_coalition_emergency_compact': {
+    id: 'sga_coalition_emergency_compact',
+    title: 'Coalition Emergency Compact',
+    category: 'governance',
+    apCost: 2,
+    cashCost: 12_000,
+    treasuryCost: 48_000,
+    minApproval: 36,
+    alignedPriorities: ['supply_chain_security', 'economic_diversification'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'crisis_response', 'emergency'],
+    repeatable: false,
+    maxCoalitionBalanceIndex: 44,
+    minCoalitionCrisisStreakDays: 3,
+    immediateEffects: {
+      economy: { cashDelta: -12_000, treasuryDelta: -48_000 },
+      government: { approvalDelta: 3, regulatoryBurdenDelta: -2 },
+      population: { publicStabilityDelta: 5, affordabilityStressDelta: -2 },
+    },
+    delayedTradeOffs: [
+      {
+        label: 'Emergency compact oversight',
+        warning: 'Independent monitors increase regulatory load next week.',
+        effects: {
+          government: { regulatoryBurdenDelta: 2 },
+          economy: { treasuryDelta: -15_000 },
+        },
+      },
+    ],
+  },
+  'sga_coalition_stability_dividend': {
+    id: 'sga_coalition_stability_dividend',
+    title: 'Coalition Stability Dividend',
+    category: 'governance',
+    apCost: 1,
+    cashCost: 10_000,
+    treasuryCost: 40_000,
+    minApproval: 52,
+    alignedPriorities: ['freight_modernization', 'technology_competitiveness'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'recovery'],
+    repeatable: true,
+    minCoalitionBalanceIndex: 68,
+    minCoalitionRecoveryStreakDays: 2,
+    cooldownDays: 3,
+    immediateEffects: {
+      economy: { cashDelta: -10_000, treasuryDelta: -40_000, netWorthMultiplier: 1.005 },
+      government: { approvalDelta: 3, directiveSlotsDelta: 1 },
+      population: { publicStabilityDelta: 2, migrationDelta: 1 },
+    },
+    delayedTradeOffs: [],
   },
 };
 
@@ -2984,7 +3202,7 @@ export function createMemoryStrategicContracts(
 
 export const AGENT_01_MODULE_ID = 'operation-10m/agent-01-strategic-gameplay';
 
-export const AGENT_01_MODULE_VERSION = '1.6.0';
+export const AGENT_01_MODULE_VERSION = '1.7.0';
 
 
 

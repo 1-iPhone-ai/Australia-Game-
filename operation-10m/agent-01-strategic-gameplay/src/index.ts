@@ -93,6 +93,7 @@ export { buildTurnStrategicBriefing } from './engine/turn-briefing.ts';
 export {
   computeCoalitionBalanceIndex,
   coalitionBalanceRankingBonus,
+  coalitionRecoveryRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -114,6 +115,22 @@ export {
   resetCoalitionCrisisStreak,
 } from './engine/coalition-crisis.ts';
 
+export {
+  PROLONGED_COALITION_CRISIS_THRESHOLD,
+  isProlongedCoalitionCrisis,
+  applyProlongedCrisisMandatePressure,
+} from './engine/coalition-crisis-pressure.ts';
+
+export {
+  coalitionCrisisStreakIssues,
+  coalitionRecoveryStreakIssues,
+} from './engine/coalition-crisis-gates.ts';
+
+export {
+  advanceCoalitionRecoveryStreak,
+  resetCoalitionRecoveryStreak,
+} from './engine/coalition-recovery.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '1.6.0';
+export const AGENT_01_MODULE_VERSION = '1.7.0';

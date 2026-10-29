@@ -1,5 +1,5 @@
 import type { StakeholderSentiment } from '../types/coalition-mandate.ts';
-import type { StrategicGameplayState } from '../types/strategic-action.ts';
+import type { StrategicActionDefinition, StrategicGameplayState } from '../types/strategic-action.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 
 const STAKEHOLDER_GROUPS: (keyof StakeholderSentiment)[] = [
@@ -27,4 +27,14 @@ export function coalitionBalanceRankingBonus(state: StrategicGameplayState): num
   if (index >= 70) return 3;
   if (index < 45) return -4;
   return 0;
+}
+
+export function coalitionRecoveryRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionRecoveryStreakDays === undefined) return 0;
+  const streak = state.coalitionRecoveryStreakDays ?? 0;
+  if (streak >= action.minCoalitionRecoveryStreakDays) return 5;
+  return 2;
 }

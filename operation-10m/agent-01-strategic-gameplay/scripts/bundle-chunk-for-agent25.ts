@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const moduleRoot = resolve(__dirname, '..');
 const moduleId = 'agent-01-strategic-gameplay';
-const moduleVersion = '1.6.0';
+const moduleVersion = '1.7.0';
 
 /** Stable concat order: dependencies before dependents. */
 const SOURCE_FILES = [
@@ -32,6 +32,9 @@ const SOURCE_FILES = [
   'src/engine/coalition-balance.ts',
   'src/engine/mandate-idle-drift.ts',
   'src/engine/coalition-crisis.ts',
+  'src/engine/coalition-crisis-pressure.ts',
+  'src/engine/coalition-crisis-gates.ts',
+  'src/engine/coalition-recovery.ts',
   'src/engine/coalition-gates.ts',
   'src/engine/mandate-gates.ts',
   'src/engine/strategic-save.ts',

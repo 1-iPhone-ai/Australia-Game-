@@ -424,6 +424,58 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
       },
     ],
   },
+  'sga_coalition_emergency_compact': {
+    id: 'sga_coalition_emergency_compact',
+    title: 'Coalition Emergency Compact',
+    category: 'governance',
+    apCost: 2,
+    cashCost: 12_000,
+    treasuryCost: 48_000,
+    minApproval: 36,
+    alignedPriorities: ['supply_chain_security', 'economic_diversification'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'crisis_response', 'emergency'],
+    repeatable: false,
+    maxCoalitionBalanceIndex: 44,
+    minCoalitionCrisisStreakDays: 3,
+    immediateEffects: {
+      economy: { cashDelta: -12_000, treasuryDelta: -48_000 },
+      government: { approvalDelta: 3, regulatoryBurdenDelta: -2 },
+      population: { publicStabilityDelta: 5, affordabilityStressDelta: -2 },
+    },
+    delayedTradeOffs: [
+      {
+        label: 'Emergency compact oversight',
+        warning: 'Independent monitors increase regulatory load next week.',
+        effects: {
+          government: { regulatoryBurdenDelta: 2 },
+          economy: { treasuryDelta: -15_000 },
+        },
+      },
+    ],
+  },
+  'sga_coalition_stability_dividend': {
+    id: 'sga_coalition_stability_dividend',
+    title: 'Coalition Stability Dividend',
+    category: 'governance',
+    apCost: 1,
+    cashCost: 10_000,
+    treasuryCost: 40_000,
+    minApproval: 52,
+    alignedPriorities: ['freight_modernization', 'technology_competitiveness'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'recovery'],
+    repeatable: true,
+    minCoalitionBalanceIndex: 68,
+    minCoalitionRecoveryStreakDays: 2,
+    cooldownDays: 3,
+    immediateEffects: {
+      economy: { cashDelta: -10_000, treasuryDelta: -40_000, netWorthMultiplier: 1.005 },
+      government: { approvalDelta: 3, directiveSlotsDelta: 1 },
+      population: { publicStabilityDelta: 2, migrationDelta: 1 },
+    },
+    delayedTradeOffs: [],
+  },
 };
 
 export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefinition> = {

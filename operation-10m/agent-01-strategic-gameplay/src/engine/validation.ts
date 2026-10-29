@@ -22,6 +22,10 @@ import {
 import { stakeholderOppositionIssues } from './stakeholder-coalition.ts';
 import { mandateMilestoneIssues } from './mandate-gates.ts';
 import { coalitionBalanceIssues } from './coalition-gates.ts';
+import {
+  coalitionCrisisStreakIssues,
+  coalitionRecoveryStreakIssues,
+} from './coalition-crisis-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -268,6 +272,8 @@ export function validateAction(
     issues.push(...stakeholderOppositionIssues(action, contracts, state));
     issues.push(...mandateMilestoneIssues(action, state));
     issues.push(...coalitionBalanceIssues(action, state));
+    issues.push(...coalitionCrisisStreakIssues(action, state));
+    issues.push(...coalitionRecoveryStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

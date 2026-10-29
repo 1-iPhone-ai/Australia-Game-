@@ -3,6 +3,8 @@ import type { StrategicGameplayState } from '../types/strategic-action.ts';
 import { advanceDayAndResolveDelayed } from './delayed-effects.ts';
 import { applyMandateIdleDrift } from './mandate-idle-drift.ts';
 import { advanceCoalitionCrisisStreak } from './coalition-crisis.ts';
+import { applyProlongedCrisisMandatePressure } from './coalition-crisis-pressure.ts';
+import { advanceCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 import type { StakeholderGroupId, StakeholderSentiment } from '../types/coalition-mandate.ts';
 
@@ -54,6 +56,8 @@ export function advanceStrategicGameplayCalendar(
   const { state: afterDelayed, fired } = advanceDayAndResolveDelayed(state, contracts, toDay);
   let next = applyMandateIdleDrift(afterDelayed, toDay);
   next = advanceCoalitionCrisisStreak(next, daysAdvanced);
+  next = applyProlongedCrisisMandatePressure(next, daysAdvanced);
+  next = advanceCoalitionRecoveryStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 
   return { state: next, firedTradeOffCount: fired.length };

@@ -26,6 +26,7 @@ import { advanceMandateOnAction } from './strategic-mandate.ts';
 import { applyStakeholderReaction } from './stakeholder-coalition.ts';
 import { touchLastAlignedActionDay } from './mandate-idle-drift.ts';
 import { resetCoalitionCrisisStreak } from './coalition-crisis.ts';
+import { resetCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import {
   scoreNationalPriorityAlignment,
   validateAction,
@@ -47,6 +48,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     stakeholderSentiment: createDefaultStakeholderSentiment(),
     lastAlignedActionDay: day,
     coalitionCrisisStreakDays: 0,
+    coalitionRecoveryStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -187,6 +189,12 @@ export function executeStrategicAction(
   }
   if (action.id === 'sga_coalition_reconciliation_forum') {
     nextState = resetCoalitionCrisisStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_emergency_compact') {
+    nextState = resetCoalitionCrisisStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_stability_dividend') {
+    nextState = resetCoalitionRecoveryStreak(nextState);
   }
 
   contracts.ui.pushToast({

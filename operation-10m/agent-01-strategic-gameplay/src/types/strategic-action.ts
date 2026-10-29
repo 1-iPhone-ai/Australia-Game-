@@ -65,6 +65,10 @@ export interface StrategicActionDefinition {
   minCoalitionBalanceIndex?: number;
   /** Crisis-only actions — balance index must be at or below this value. */
   maxCoalitionBalanceIndex?: number;
+  /** Action requires this many consecutive acute coalition calendar days. */
+  minCoalitionCrisisStreakDays?: number;
+  /** Action requires this many consecutive stable coalition calendar days. */
+  minCoalitionRecoveryStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -103,7 +107,9 @@ export type StrategicValidationRequirement =
   | { kind: 'action_not_yet_completed'; actionId: string }
   | { kind: 'mandate_milestone'; priorityId: NationalPriorityId; milestoneId: MandateMilestoneId }
   | { kind: 'min_coalition_balance'; minIndex: number }
-  | { kind: 'max_coalition_balance'; maxIndex: number };
+  | { kind: 'max_coalition_balance'; maxIndex: number }
+  | { kind: 'min_coalition_crisis_streak'; minDays: number }
+  | { kind: 'min_coalition_recovery_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -147,6 +153,8 @@ export interface StrategicGameplayState {
   lastAlignedActionDay?: number;
   /** Consecutive calendar days coalition balance remained acute. */
   coalitionCrisisStreakDays?: number;
+  /** Consecutive calendar days coalition balance remained stable. */
+  coalitionRecoveryStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;
