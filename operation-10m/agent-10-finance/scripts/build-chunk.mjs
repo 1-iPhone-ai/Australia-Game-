@@ -137,6 +137,8 @@ const FILES = [
   'inflation/grant-sovereign-reconciliation-outlook-inflation-latch.ts',
   'inflation/sovereign-grant-reconciliation-outlook-inflation-latch.ts',
   'inflation/fiscal-buffer-reconciliation-outlook-coherence-inflation-latch.ts',
+  'inflation/wave55-sovereign-grant-reconciliation-outlook-inflation-depth-latch.ts',
+  'inflation/wave55-fiscal-buffer-reconciliation-outlook-coherence-inflation-depth-latch.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -223,6 +225,7 @@ const FILES = [
   'react/HousingTransportWave50InflationPanel.tsx',
   'react/MacroFiscalWave51InflationPanel.tsx',
   'react/MacroFiscalWave52InflationPanel.tsx',
+  'react/MacroFiscalWave55InflationPanel.tsx',
 ];
 
 function stripModulePreamble(source) {

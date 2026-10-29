@@ -510,6 +510,22 @@ import {
   bufferGrantReconciliationOutlookCoherenceInflationLatchScoreAdjustment,
 } from './inflation/buffer-grant-reconciliation-outlook-coherence-inflation-latch.js';
 import {
+  assessSovereignGrantReconciliationOutlookInflationLatch,
+  sovereignGrantReconciliationOutlookInflationLatchScoreAdjustment,
+} from './inflation/sovereign-grant-reconciliation-outlook-inflation-latch.js';
+import {
+  assessFiscalBufferReconciliationOutlookCoherenceInflationLatch,
+  fiscalBufferReconciliationOutlookCoherenceInflationLatchScoreAdjustment,
+} from './inflation/fiscal-buffer-reconciliation-outlook-coherence-inflation-latch.js';
+import {
+  assessWave55SovereignGrantReconciliationOutlookInflationDepthLatch,
+  wave55SovereignGrantReconciliationOutlookInflationDepthLatchScoreAdjustment,
+} from './inflation/wave55-sovereign-grant-reconciliation-outlook-inflation-depth-latch.js';
+import {
+  assessWave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatch,
+  wave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatchScoreAdjustment,
+} from './inflation/wave55-fiscal-buffer-reconciliation-outlook-coherence-inflation-depth-latch.js';
+import {
   mergeAgent22IntoMacroFinancialInputs,
   agent22UiBridgeIntegrationNote,
 } from './integration/agent22-ui-bridge.js';
@@ -6212,6 +6228,75 @@ export function runAgent10FinanceSelfTests(): {
       );
       return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.62;
     })(),
+  );
+
+  {
+    const wave54Grant = assessSovereignGrantReconciliationOutlookInflationLatch({
+      consolidatedDeficitBand: 'large_deficit',
+      debtServicePressure: 'critical',
+      wave53GrantSovereignReconciliationOutlookLatch: true,
+      sovereignGrantReconciliationOutlookBand: 'ruptured',
+      sovereignBufferBridgeGapElevated: true,
+      inflationBand: 'high',
+      turn: 3,
+    });
+    const grantDepth = assessWave55SovereignGrantReconciliationOutlookInflationDepthLatch({
+      wave54SovereignGrantReconciliationOutlookLatch: true,
+      wave54SovereignGrantReconciliationOutlookBand: wave54Grant.latchBand,
+      consolidatedDeficitBand: 'large_deficit',
+      sovereignBufferBridgeGapElevated: true,
+      inflationBand: 'high',
+      turn: 3,
+    });
+    check(
+      'a10_r55_01',
+      'wave55 grant depth critical or rupture stack',
+      grantDepth.latchBand === 'critical_depth' || grantDepth.latchBand === 'rupture_stack',
+    );
+    check(
+      'a10_r55_02',
+      'wave55 grant depth score adj',
+      wave55SovereignGrantReconciliationOutlookInflationDepthLatchScoreAdjustment(grantDepth.latchBand) >= 3,
+    );
+  }
+  {
+    const wave54Buffer = assessFiscalBufferReconciliationOutlookCoherenceInflationLatch({
+      revenueMomentum: 'weak',
+      grantFiscalCoherenceGapElevated: true,
+      wave53BufferFiscalReconciliationOutlookCoherenceLatch: true,
+      fiscalBufferReconciliationOutlookCoherenceBand: 'critical',
+      grantOutlookWithinBand: false,
+      inflationBand: 'high',
+      turn: 3,
+    });
+    const bufferDepth = assessWave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatch({
+      wave54FiscalBufferReconciliationOutlookCoherenceLatch: true,
+      wave54FiscalBufferReconciliationOutlookCoherenceBand: wave54Buffer.latchBand,
+      revenueMomentum: 'weak',
+      grantFiscalCoherenceGapElevated: true,
+      inflationBand: 'high',
+      turn: 3,
+    });
+    check(
+      'a10_r55_03',
+      'wave55 buffer depth critical or stack rupture',
+      bufferDepth.latchBand === 'critical_depth' || bufferDepth.latchBand === 'coherence_stack_rupture',
+    );
+    check(
+      'a10_r55_04',
+      'wave55 buffer depth score adj',
+      wave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatchScoreAdjustment(bufferDepth.latchBand) >= 3,
+    );
+  }
+  check(
+    'a10_r55_05',
+    'wave54 grant score adj path',
+    sovereignGrantReconciliationOutlookInflationLatchScoreAdjustment('strained') >= 3,
+  );
+  check(
+    'a10_r55_06',
+    'wave54 buffer score adj path',
+    fiscalBufferReconciliationOutlookCoherenceInflationLatchScoreAdjustment('strained') >= 3,
   );
 
   const passed = results.filter((r) => r.passed).length;
