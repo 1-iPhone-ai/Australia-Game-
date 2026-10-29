@@ -1,0 +1,31 @@
+import type { V1031GresGridBufferEdge } from '../../types/core.ts';
+
+/** Grid buffer graph shard 045 (extreme_heat/drought/dust corridor coupling). */
+export const V1031_GRES_GRID_BUFFER_SHARD_045: readonly V1031GresGridBufferEdge[] = [
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.534, lagTurns: 2, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.54, lagTurns: 3, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.546, lagTurns: 4, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.552, lagTurns: 5, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.558, lagTurns: 2, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.564, lagTurns: 3, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.57, lagTurns: 4, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.576, lagTurns: 5, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.582, lagTurns: 2, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.588, lagTurns: 3, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.492, lagTurns: 4, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.498, lagTurns: 5, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.504, lagTurns: 2, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.51, lagTurns: 3, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.516, lagTurns: 4, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.522, lagTurns: 5, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.528, lagTurns: 2, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.534, lagTurns: 3, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.54, lagTurns: 4, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.546, lagTurns: 5, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.552, lagTurns: 2, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.558, lagTurns: 3, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.564, lagTurns: 4, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.57, lagTurns: 5, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.576, lagTurns: 2, nodeId: 'substation_zone_21' },
+  { fromChannel: 'specialist_referral', toChannel: 'regional', weight: 0.582, lagTurns: 3, nodeId: 'substation_zone_21' },
+];

@@ -1,0 +1,31 @@
+import type { V1031GresGridBufferEdge } from '../../types/core.ts';
+
+/** Grid buffer graph shard 074 (extreme_heat/drought/dust corridor coupling). */
+export const V1031_GRES_GRID_BUFFER_SHARD_074: readonly V1031GresGridBufferEdge[] = [
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.392, lagTurns: 4, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.398, lagTurns: 5, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.404, lagTurns: 6, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.41, lagTurns: 7, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.416, lagTurns: 4, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.422, lagTurns: 5, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.428, lagTurns: 6, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.332, lagTurns: 7, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.338, lagTurns: 4, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.344, lagTurns: 5, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.35, lagTurns: 6, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.356, lagTurns: 7, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.362, lagTurns: 4, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.368, lagTurns: 5, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.374, lagTurns: 6, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.38, lagTurns: 7, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.386, lagTurns: 4, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.392, lagTurns: 5, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.398, lagTurns: 6, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.404, lagTurns: 7, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.41, lagTurns: 4, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.416, lagTurns: 5, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.422, lagTurns: 6, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.428, lagTurns: 7, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.332, lagTurns: 4, nodeId: 'substation_zone_02' },
+  { fromChannel: 'rural_clinic', toChannel: 'mental_health', weight: 0.338, lagTurns: 5, nodeId: 'substation_zone_02' },
+];

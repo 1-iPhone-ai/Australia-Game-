@@ -1,0 +1,31 @@
+import type { V1031GresGridBufferEdge } from '../../types/core.ts';
+
+/** Grid buffer graph shard 051 (extreme_heat/drought/dust corridor coupling). */
+export const V1031_GRES_GRID_BUFFER_SHARD_051: readonly V1031GresGridBufferEdge[] = [
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.14, lagTurns: 8, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.146, lagTurns: 9, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.152, lagTurns: 10, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.158, lagTurns: 11, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.164, lagTurns: 8, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.17, lagTurns: 9, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.176, lagTurns: 10, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.182, lagTurns: 11, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.188, lagTurns: 8, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.194, lagTurns: 9, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.2, lagTurns: 10, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.206, lagTurns: 11, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.212, lagTurns: 8, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.218, lagTurns: 9, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.224, lagTurns: 10, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.23, lagTurns: 11, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.236, lagTurns: 8, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.14, lagTurns: 9, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.146, lagTurns: 10, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.152, lagTurns: 11, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.158, lagTurns: 8, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.164, lagTurns: 9, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.17, lagTurns: 10, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.176, lagTurns: 11, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.182, lagTurns: 8, nodeId: 'substation_zone_03' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.188, lagTurns: 9, nodeId: 'substation_zone_03' },
+];
