@@ -13,10 +13,8 @@ Wave baseline (coord): **`aa70dac`** / **1,798,330** projected. Builds on round 
 Version **`1.32.0`** · **15058** lines · prefix `196893107fb93ebb`
 
 ```
-contentSha256: 196893107fb93ebb0e8f8c8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8
+contentSha256: 196893107fb93ebbb6b42973986c54408e495e282ba41e50d8612cb8aaa69aae
 ```
-
-*(Regenerate manifest via `npm run build:agent22-chunk` at **`a4964555`** for exact SHA.)*
 
 Wave commit: **`a4964555`** — `feat(agent-22-ui): O10-195 scale wave round 32 (v1.32.0)`
 
