@@ -1,0 +1,8 @@
+{
+  "name": "@operation-10m/agent-24-replay",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/**/*.test.ts"
+  }
+}
