@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 5173"
+    "preview": "vite preview --host 0.0.0.0 --port 5173",
+    "test:agent-03": "npx --yes tsx@4.19.4 operation-10m/agent-03-research-tech/tests/agent03-self-tests.ts",
+    "bundle:agent-03-chunk": "node operation-10m/agent-03-research-tech/scripts/bundle-chunk.mjs"
   },
   "dependencies": {
     "react": "19.3.1",

@@ -1,0 +1,10 @@
+{
+  "moduleId": "agent-03-research-tech",
+  "slot": "post-v10z",
+  "touchesSaveFormat": true,
+  "proposedGameStateField": "researchProgress",
+  "contentSha256": "8cec0aa6987d65db6bac3fdbc540060c15ab0be9aa6652bc9c2ab8d21eff2f78",
+  "saveFormatVersion": 6,
+  "schemaVersion": "op10m-agent03-v6",
+  "chunkPath": "operation-10m/modules/agent-03-research-tech/chunk.tsx"
+}
