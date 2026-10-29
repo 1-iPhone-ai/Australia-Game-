@@ -27,3 +27,10 @@ See docs commit on `op10m/agent-17-command-center`.
 Gate subject (feat): **O10-231 · wave 50 · round 50**
 
 Prior: [agent-17-scale-wave-round49.md](./agent-17-scale-wave-round49.md)
+
+## Commits
+
+| Commit | Subject |
+|--------|---------|
+| **9271580** | `merge(op10m): integrate O10-230 baseline 8aaaf700 for wave 50` |
+| **d479a46** | `feat(op10m): O10-231 · wave 50 · round 50` |
