@@ -28,6 +28,8 @@ Uses the same shapes as `ScenarioDefinition`, `GameModeSelection`, and scenario 
 
 | `readO10mModesProgressFromGameState` | Load/migrate `gameState.o10mModesProgress` |
 | `buildO10mModesPersistedSnapshot` | Serialize active mode/scenario/chain/milestones for save |
+| `sealO10mModesPersistedState` / `verifyO10mModesIntegrity` | Save blob fingerprint (schema v3) |
+| `mergeO10mModesPersistedStates` / `reconcileO10mModesOnGameLoad` | Multi-slot merge + live game reconcile |
 
 ## Assembly chunk (Agent 25)
 

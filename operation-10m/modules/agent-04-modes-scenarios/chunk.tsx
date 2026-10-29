@@ -318,6 +318,10 @@ export interface O10mChainAdvanceResult {
 export interface O10mModesPersistedState {
   schemaVersion: number;
   updatedAtTurn: number;
+  updatedAtDay?: number;
+  saveKind?: O10mModesSaveKind;
+  sessionId?: string;
+  integrityFingerprint?: string;
   baseMode: GameModeSelection;
   scenarioId: string | null;
   chainProgress: O10mChainProgress | null;
@@ -327,6 +331,24 @@ export interface O10mModesPersistedState {
   milestones: O10mMilestoneProgress[];
   completedChainIds: string[];
   recentRuns: O10mPersistedRunRecord[];
+}
+
+export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
+
+export interface O10mModesReconcileContext {
+  turn: number;
+  day: number;
+  liveBaseMode?: GameModeSelection | null;
+  liveScenarioId?: string | null;
+}
+
+export interface O10mModesMergeResult {
+  merged: O10mModesPersistedState;
+  warnings: string[];
+}
+
+export interface O10mModesPersistedDiff {
+  changedFields: string[];
 }
 
 export interface O10mPersistedRunRecord {
@@ -2540,7 +2562,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 2;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 3;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -2647,12 +2669,15 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
   const v1 = num(o.schemaVersion, 1);
   const merged = sanitizeO10mModesPersistedState({ ...o, schemaVersion: Math.max(v1, 1) }) ?? base;
   if (merged.schemaVersion < O10M_MODES_SAVE_SCHEMA_VERSION) {
-    return {
+    const upgraded: O10mModesPersistedState = {
       ...merged,
       schemaVersion: O10M_MODES_SAVE_SCHEMA_VERSION,
       recentRuns: merged.recentRuns ?? [],
       completedChainIds: merged.completedChainIds ?? [],
+      saveKind: merged.saveKind ?? 'manual',
+      updatedAtDay: merged.updatedAtDay ?? 0,
     };
+    return upgraded;
   }
   return merged;
 }
@@ -2667,9 +2692,17 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
   >;
   const knobResolved = resolveSandboxKnobValues(str(o.sandboxProfileId), sandboxKnobsRaw);
 
+  const saveKindRaw = o.saveKind;
+  const saveKind =
+    saveKindRaw === 'autosave' || saveKindRaw === 'manual' || saveKindRaw === 'checkpoint' ? saveKindRaw : 'manual';
+
   return {
     schemaVersion: num(o.schemaVersion, O10M_MODES_SAVE_SCHEMA_VERSION),
     updatedAtTurn: num(o.updatedAtTurn, 0),
+    updatedAtDay: num(o.updatedAtDay, 0) || undefined,
+    saveKind,
+    sessionId: str(o.sessionId) ?? undefined,
+    integrityFingerprint: str(o.integrityFingerprint) ?? undefined,
     baseMode,
     scenarioId: str(o.scenarioId),
     chainProgress: sanitizeChainProgress(o.chainProgress),
@@ -2809,6 +2842,176 @@ export function ensureChainProgressOnLoad(
   return fresh ? { ...state, chainProgress: fresh } : state;
 }
 
+// --- bundled from src/save-format-lifecycle.ts ---
+const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
+  'baseMode',
+  'scenarioId',
+  'chainProgress',
+  'challengeModeIds',
+  'sandboxProfileId',
+  'milestones',
+  'completedChainIds',
+];
+
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  return `{${keys.map(k => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(',')}}`;
+}
+
+/** Browser-safe fingerprint (no Node crypto) for assembly chunk. */
+export function hashO10mModesPayload(payload: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < payload.length; i++) {
+    h ^= payload.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+export function computeO10mModesIntegrityFingerprint(state: O10mModesPersistedState): string {
+  const payload: Record<string, unknown> = {};
+  for (const key of FINGERPRINT_KEYS) {
+    payload[key] = state[key];
+  }
+  payload.schemaVersion = state.schemaVersion;
+  return hashO10mModesPayload(stableStringify(payload));
+}
+
+export function sealO10mModesPersistedState(
+  state: O10mModesPersistedState,
+  saveKind: O10mModesSaveKind = 'manual',
+): O10mModesPersistedState {
+  const sealed: O10mModesPersistedState = {
+    ...state,
+    schemaVersion: O10M_MODES_SAVE_SCHEMA_VERSION,
+    saveKind,
+    sessionId: state.sessionId || `o10m_sess_${state.updatedAtTurn}_${state.scenarioId || 'none'}`,
+  };
+  return {
+    ...sealed,
+    integrityFingerprint: computeO10mModesIntegrityFingerprint(sealed),
+  };
+}
+
+export function verifyO10mModesIntegrity(state: O10mModesPersistedState): boolean {
+  if (!state.integrityFingerprint) return true;
+  return state.integrityFingerprint === computeO10mModesIntegrityFingerprint({ ...state, integrityFingerprint: undefined });
+}
+
+function mergeMilestones(a: O10mMilestoneProgress[], b: O10mMilestoneProgress[]): O10mMilestoneProgress[] {
+  const map = new Map<string, O10mMilestoneProgress>();
+  for (const m of [...a, ...b]) {
+    const prev = map.get(m.milestoneId);
+    if (!prev || (m.unlocked && !prev.unlocked)) map.set(m.milestoneId, m);
+    else if (m.unlocked && prev.unlocked) {
+      map.set(m.milestoneId, {
+        ...prev,
+        unlockedAtRunCount: Math.min(prev.unlockedAtRunCount || 999, m.unlockedAtRunCount || 999),
+      });
+    }
+  }
+  return [...map.values()].sort((x, y) => x.milestoneId.localeCompare(y.milestoneId));
+}
+
+export function mergeO10mModesPersistedStates(
+  primary: O10mModesPersistedState,
+  secondary: O10mModesPersistedState,
+  strategy: 'prefer_newest_turn' | 'prefer_primary' | 'union_milestones' = 'prefer_newest_turn',
+): O10mModesMergeResult {
+  const warnings: string[] = [];
+  let base = strategy === 'prefer_primary' ? primary : secondary.updatedAtTurn > primary.updatedAtTurn ? secondary : primary;
+  const other = base === primary ? secondary : primary;
+
+  if (base.scenarioId && other.scenarioId && base.scenarioId !== other.scenarioId) {
+    warnings.push(`Merged saves disagree on scenarioId (${base.scenarioId} vs ${other.scenarioId}); kept newer turn.`);
+  }
+
+  if (strategy === 'union_milestones') {
+    base = {
+      ...base,
+      milestones: mergeMilestones(primary.milestones, secondary.milestones),
+      completedChainIds: [...new Set([...primary.completedChainIds, ...secondary.completedChainIds])].sort(),
+      recentRuns: [...primary.recentRuns, ...secondary.recentRuns].slice(-24),
+    };
+  }
+
+  const merged = sealO10mModesPersistedState(
+    {
+      ...base,
+      challengeModeIds: base.challengeModeIds.length ? base.challengeModeIds : other.challengeModeIds,
+      sandboxProfileId: base.sandboxProfileId ?? other.sandboxProfileId,
+      sandboxKnobs: Object.keys(base.sandboxKnobs).length ? base.sandboxKnobs : other.sandboxKnobs,
+    },
+    base.saveKind ?? 'manual',
+  );
+
+  return { merged, warnings };
+}
+
+export function reconcileO10mModesOnGameLoad(
+  state: O10mModesPersistedState,
+  ctx: O10mModesReconcileContext,
+): { state: O10mModesPersistedState; warnings: string[] } {
+  const warnings: string[] = [];
+  let next: O10mModesPersistedState = { ...state, updatedAtDay: ctx.day };
+
+  if (ctx.turn < state.updatedAtTurn) {
+    warnings.push('Live turn is behind persisted o10mModesProgress; possible reload of older snapshot.');
+  }
+
+  if (ctx.liveBaseMode && ctx.liveBaseMode !== state.baseMode) {
+    warnings.push(`Live baseMode ${ctx.liveBaseMode} differs from persisted ${state.baseMode}.`);
+    next = { ...next, baseMode: ctx.liveBaseMode };
+  }
+
+  if (ctx.liveScenarioId && state.scenarioId && ctx.liveScenarioId !== state.scenarioId) {
+    warnings.push(`Live scenarioId ${ctx.liveScenarioId} differs from persisted ${state.scenarioId}.`);
+    next = { ...next, scenarioId: ctx.liveScenarioId };
+  }
+
+  next = sealO10mModesPersistedState({ ...next, updatedAtTurn: Math.max(state.updatedAtTurn, ctx.turn) }, state.saveKind ?? 'manual');
+  return { state: next, warnings };
+}
+
+export function diffO10mModesPersisted(before: O10mModesPersistedState, after: O10mModesPersistedState): O10mModesPersistedDiff {
+  const changedFields: string[] = [];
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)] as Array<keyof O10mModesPersistedState>);
+  for (const key of keys) {
+    if (stableStringify(before[key]) !== stableStringify(after[key])) changedFields.push(String(key));
+  }
+  return { changedFields: changedFields.sort() };
+}
+
+export function exportO10mModesProgressJson(state: O10mModesPersistedState): string {
+  return JSON.stringify(sealO10mModesPersistedState(state));
+}
+
+export function importO10mModesProgressJson(raw: string): { state: O10mModesPersistedState | null; errors: string[] } {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    const migrated = migrateO10mModesPersistedState(parsed);
+    const validation = validateO10mModesPersistedForLoad(migrated);
+    if (!validation.ok) return { state: null, errors: validation.errors };
+    if (!verifyO10mModesIntegrity(migrated)) {
+      return { state: null, errors: ['Integrity fingerprint mismatch on import.'] };
+    }
+    return { state: migrated, errors: validation.warnings };
+  } catch {
+    return { state: null, errors: ['Invalid JSON for o10mModesProgress import.'] };
+  }
+}
+
+export function prepareO10mModesForAutosave(state: O10mModesPersistedState, turn: number, day: number): O10mModesPersistedState {
+  return sealO10mModesPersistedState({ ...state, updatedAtTurn: turn, updatedAtDay: day }, 'autosave');
+}
+
+export function prepareO10mModesCheckpoint(state: O10mModesPersistedState, turn: number, day: number): O10mModesPersistedState {
+  return sealO10mModesPersistedState({ ...state, updatedAtTurn: turn, updatedAtDay: day }, 'checkpoint');
+}
+
 
 /** Agent 25 — smoke self-tests (subset of agent-04 npm test). */
 export function runAgent04ModesScenariosSelfTests(): {
@@ -2845,6 +3048,8 @@ export function runAgent04ModesScenariosSelfTests(): {
     attachO10mModesProgressToGameState({}, createEmptyO10mModesPersistedState()).o10mModesProgress,
   );
   push('agent04_chunk_10', saveRoundTrip !== null && saveRoundTrip.schemaVersion === O10M_MODES_SAVE_SCHEMA_VERSION);
+  const sealed = sealO10mModesPersistedState(createEmptyO10mModesPersistedState());
+  push('agent04_chunk_11', verifyO10mModesIntegrity(sealed));
 
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
@@ -2852,10 +3057,10 @@ export function runAgent04ModesScenariosSelfTests(): {
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v3',
+  schemaVersion: 'op10m-agent04-v4',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 2,
+  saveSchemaVersion: 3,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

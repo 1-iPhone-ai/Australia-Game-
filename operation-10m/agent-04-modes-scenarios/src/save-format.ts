@@ -16,7 +16,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 2;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 3;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -123,12 +123,15 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
   const v1 = num(o.schemaVersion, 1);
   const merged = sanitizeO10mModesPersistedState({ ...o, schemaVersion: Math.max(v1, 1) }) ?? base;
   if (merged.schemaVersion < O10M_MODES_SAVE_SCHEMA_VERSION) {
-    return {
+    const upgraded: O10mModesPersistedState = {
       ...merged,
       schemaVersion: O10M_MODES_SAVE_SCHEMA_VERSION,
       recentRuns: merged.recentRuns ?? [],
       completedChainIds: merged.completedChainIds ?? [],
+      saveKind: merged.saveKind ?? 'manual',
+      updatedAtDay: merged.updatedAtDay ?? 0,
     };
+    return upgraded;
   }
   return merged;
 }
@@ -143,9 +146,17 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
   >;
   const knobResolved = resolveSandboxKnobValues(str(o.sandboxProfileId), sandboxKnobsRaw);
 
+  const saveKindRaw = o.saveKind;
+  const saveKind =
+    saveKindRaw === 'autosave' || saveKindRaw === 'manual' || saveKindRaw === 'checkpoint' ? saveKindRaw : 'manual';
+
   return {
     schemaVersion: num(o.schemaVersion, O10M_MODES_SAVE_SCHEMA_VERSION),
     updatedAtTurn: num(o.updatedAtTurn, 0),
+    updatedAtDay: num(o.updatedAtDay, 0) || undefined,
+    saveKind,
+    sessionId: str(o.sessionId) ?? undefined,
+    integrityFingerprint: str(o.integrityFingerprint) ?? undefined,
     baseMode,
     scenarioId: str(o.scenarioId),
     chainProgress: sanitizeChainProgress(o.chainProgress),

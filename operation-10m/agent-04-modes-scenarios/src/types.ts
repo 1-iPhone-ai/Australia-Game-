@@ -314,6 +314,10 @@ export interface O10mChainAdvanceResult {
 export interface O10mModesPersistedState {
   schemaVersion: number;
   updatedAtTurn: number;
+  updatedAtDay?: number;
+  saveKind?: O10mModesSaveKind;
+  sessionId?: string;
+  integrityFingerprint?: string;
   baseMode: GameModeSelection;
   scenarioId: string | null;
   chainProgress: O10mChainProgress | null;
@@ -323,6 +327,24 @@ export interface O10mModesPersistedState {
   milestones: O10mMilestoneProgress[];
   completedChainIds: string[];
   recentRuns: O10mPersistedRunRecord[];
+}
+
+export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
+
+export interface O10mModesReconcileContext {
+  turn: number;
+  day: number;
+  liveBaseMode?: GameModeSelection | null;
+  liveScenarioId?: string | null;
+}
+
+export interface O10mModesMergeResult {
+  merged: O10mModesPersistedState;
+  warnings: string[];
+}
+
+export interface O10mModesPersistedDiff {
+  changedFields: string[];
 }
 
 export interface O10mPersistedRunRecord {

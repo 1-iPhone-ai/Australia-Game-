@@ -12,3 +12,4 @@ export * from './sandbox-knobs.js';
 export * from './mode-mission-registry.js';
 export * from './scenario-content-audit.js';
 export * from './save-format.js';
+export * from './save-format-lifecycle.js';

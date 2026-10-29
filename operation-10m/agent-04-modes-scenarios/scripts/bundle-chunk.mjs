@@ -26,6 +26,7 @@ const SOURCE_FILES = [
   'operation-10m/agent-04-modes-scenarios/src/mode-mission-registry.ts',
   'operation-10m/agent-04-modes-scenarios/src/scenario-content-audit.ts',
   'operation-10m/agent-04-modes-scenarios/src/save-format.ts',
+  'operation-10m/agent-04-modes-scenarios/src/save-format-lifecycle.ts',
 ];
 
 function stripModuleImports(src) {
@@ -84,6 +85,8 @@ export function runAgent04ModesScenariosSelfTests(): {
     attachO10mModesProgressToGameState({}, createEmptyO10mModesPersistedState()).o10mModesProgress,
   );
   push('agent04_chunk_10', saveRoundTrip !== null && saveRoundTrip.schemaVersion === O10M_MODES_SAVE_SCHEMA_VERSION);
+  const sealed = sealO10mModesPersistedState(createEmptyO10mModesPersistedState());
+  push('agent04_chunk_11', verifyO10mModesIntegrity(sealed));
 
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
@@ -91,10 +94,10 @@ export function runAgent04ModesScenariosSelfTests(): {
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: '${MODULE_ID}',
-  schemaVersion: 'op10m-agent04-v3',
+  schemaVersion: 'op10m-agent04-v4',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 2,
+  saveSchemaVersion: 3,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;
@@ -135,9 +138,9 @@ const manifest = {
   touchesSaveFormat: true,
   proposedGameStateFields: ['o10mModesProgress'],
   saveFormat: {
-    schemaVersion: 2,
+    schemaVersion: 3,
     gameStateKey: 'o10mModesProgress',
-    nestedFields: ['chainProgress', 'milestones', 'challengeModeIds', 'sandboxProfileId', 'recentRuns'],
+    nestedFields: ['chainProgress', 'milestones', 'challengeModeIds', 'sandboxProfileId', 'recentRuns', 'integrityFingerprint', 'saveKind'],
   },
   contentSha256: hash,
   chunkPath: 'operation-10m/modules/agent-04-modes-scenarios/chunk.tsx',
