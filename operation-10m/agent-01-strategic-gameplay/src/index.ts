@@ -112,6 +112,7 @@ export {
   absoluteSanctityRankingBonus,
   universalImmortalityRankingBonus,
   cosmicPerpetuityRankingBonus,
+  galacticInfinityRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -347,6 +348,16 @@ export {
   applyCosmicPerpetuityMandateBonus,
 } from './engine/coalition-cosmic-perpetuity.ts';
 
+export { coalitionGalacticInfinityStreakIssues } from './engine/coalition-galactic-infinity-gates.ts';
+
+export {
+  GALACTIC_COALITION_INFINITY_THRESHOLD,
+  advanceCoalitionGalacticInfinityStreak,
+  resetCoalitionGalacticInfinityStreak,
+  isGalacticCoalitionInfinity,
+  applyGalacticInfinityMandateBonus,
+} from './engine/coalition-galactic-infinity.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '3.4.0';
+export const AGENT_01_MODULE_VERSION = '3.5.0';
