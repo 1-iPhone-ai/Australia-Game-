@@ -201,6 +201,11 @@ export * from './batch-national-tick-session-wave55-integration-export.js';
 export * from './batch-national-tick-session-wave55-integration-export-compare.js';
 export * from './batch-national-tick-session-wave55-integration-replay-parity.js';
 
+export * from './batch-national-tick-session-wave56-integration-seal.js';
+export * from './batch-national-tick-session-wave56-integration-export.js';
+export * from './batch-national-tick-session-wave56-integration-export-compare.js';
+export * from './batch-national-tick-session-wave56-integration-replay-parity.js';
+
 export * from './batch-national-tick-session-wave52-integration-seal.js';
 export * from './batch-national-tick-session-wave52-integration-export.js';
 export * from './batch-national-tick-session-wave52-integration-export-compare.js';
