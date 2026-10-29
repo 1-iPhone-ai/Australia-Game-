@@ -1,5 +1,5 @@
 {
-  "scannedAt": "2026-10-29T08:16:09.802Z",
+  "scannedAt": "2026-10-29T08:20:00.135Z",
   "canonicalBase": "origin/australia-game-upgrade",
   "baselineCommit": "bc1adf3",
   "originOp10mHeadCount": 32,
@@ -45,7 +45,7 @@
       "chunkPath": "operation-10m/modules/agent-04-modes-scenarios/chunk.tsx",
       "markerModuleId": "agent-04-modes-scenarios",
       "assemblyReady": true,
-      "contentSha256": "a427301d1a1285164631ba69dd1510d91b92a8f952d2d1fb4afbae0d2c8046b9",
+      "contentSha256": "b7983ad55efb77cc0d9a96641f22fe27853a7f38ceb3a71afc18befa010c22e2",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -55,7 +55,7 @@
       "chunkPath": "operation-10m/agent-05-events/chunk.tsx",
       "markerModuleId": "agent-05-events",
       "assemblyReady": true,
-      "contentSha256": "6969bbb2b7eb970e1d32b68fa0c0028b1a1b3bddedd3f9d8cc745e711880f12c",
+      "contentSha256": "fbc990e09313d0fe0b3f83426748d9b7e14e3185fc113a21a06bfb6a77b3cd2d",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -125,7 +125,7 @@
       "chunkPath": "operation-10m/modules/agent-11-cities/chunk.tsx",
       "markerModuleId": "agent-11-cities",
       "assemblyReady": true,
-      "contentSha256": "74d8ff85c07b6b8d286f85d475e8ef0fed3a32ac6e07c5d69f1b40a5c2ce9a0d",
+      "contentSha256": "abd3ab772fa5791c75b9902b7d5ca7c835f551c9f691fcc0aa2c61283fe51800",
       "defaultSlot": "pre-final-export"
     },
     {
