@@ -12,6 +12,7 @@ import {
   O6K_AGENT24_WAVE26_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE27_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE28_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE29_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
 export { O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA } from './replay-scale-wave-integration-closeout.ts';
@@ -49,7 +50,9 @@ export function buildAgent24ReplayScaleWaveProjectionHandoffSeal(
   const waveRound = input.replayScaleWaveIntegrationVerification.waveRound;
   const projectionBaselineSha =
     input.projectionBaselineSha ??
-    (waveRound >= 28
+    (waveRound >= 29
+      ? O6K_AGENT24_WAVE29_INTEGRATION_BASELINE_SHA
+      : waveRound >= 28
       ? O6K_AGENT24_WAVE28_INTEGRATION_BASELINE_SHA
       : waveRound >= 27
       ? O6K_AGENT24_WAVE27_INTEGRATION_BASELINE_SHA
@@ -138,8 +141,8 @@ export function runAgent24ReplayScaleWaveProjectionHandoffSealSelfTests(): Array
   const integrationVerification = {
     reportId: 'iv',
     matchId: 'self',
-    waveRound: 28,
-    integrationBaselineSha: O6K_AGENT24_WAVE28_INTEGRATION_BASELINE_SHA,
+    waveRound: 29,
+    integrationBaselineSha: O6K_AGENT24_WAVE29_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -150,7 +153,7 @@ export function runAgent24ReplayScaleWaveProjectionHandoffSealSelfTests(): Array
   const exportGate = {
     reportId: 'eg',
     matchId: 'self',
-    waveRound: 28,
+    waveRound: 29,
     exportAllowed: true,
     blockerCount: 0,
     blockers: [],
@@ -169,9 +172,9 @@ export function runAgent24ReplayScaleWaveProjectionHandoffSealSelfTests(): Array
       name: 'handoff_ready_at_projection_baseline',
       passed:
         seal.handoffReady &&
-        seal.projectionBaselineSha === O6K_AGENT24_WAVE28_INTEGRATION_BASELINE_SHA,
+        seal.projectionBaselineSha === O6K_AGENT24_WAVE29_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: seal.waveRound === 28 },
+    { name: 'wave_round_pinned', passed: seal.waveRound === 29 },
     {
       name: 'deterministic_fingerprint',
       passed:

@@ -97,7 +97,7 @@ export function runAgent24ArchiveScaleWaveFullChunksGateSelfTests(): Array<{ nam
   const dryrunVerification = {
     reportId: 'dv',
     matchId: 'self',
-    waveRound: 28,
+    waveRound: 29,
     dryrunBaselineSha: '634656bb',
     verified: true,
     issueCount: 0,
@@ -135,7 +135,7 @@ export function runAgent24ArchiveScaleWaveFullChunksGateSelfTests(): Array<{ nam
 
   return [
     { name: 'chunks_gate_open_when_full_chunks_stack_ready', passed: report.chunksGateOpen && report.blockerCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 28 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 29 },
     {
       name: 'deterministic_fingerprint',
       passed:

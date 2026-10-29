@@ -10,6 +10,7 @@ import {
   O6K_AGENT24_WAVE26_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE27_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE28_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE29_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
 /** @deprecated use integration-closeout WAVE21 constant */
@@ -48,7 +49,9 @@ export function buildAgent24ReplayScaleWaveDryrunHandoffReport(
   const waveRound = input.replayScaleWaveProjectionVerification.waveRound;
   const dryrunBaselineSha =
     input.dryrunBaselineSha ??
-    (waveRound >= 28
+    (waveRound >= 29
+      ? O6K_AGENT24_WAVE29_INTEGRATION_BASELINE_SHA
+      : waveRound >= 28
       ? O6K_AGENT24_WAVE28_INTEGRATION_BASELINE_SHA
       : waveRound >= 27
       ? O6K_AGENT24_WAVE27_INTEGRATION_BASELINE_SHA
@@ -132,8 +135,8 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
   const projectionVerification = {
     reportId: 'pv',
     matchId: 'self',
-    waveRound: 28,
-    projectionBaselineSha: O6K_AGENT24_WAVE28_INTEGRATION_BASELINE_SHA,
+    waveRound: 29,
+    projectionBaselineSha: O6K_AGENT24_WAVE29_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -144,7 +147,7 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
   const postProjectionGate = {
     reportId: 'ppg',
     matchId: 'self',
-    waveRound: 28,
+    waveRound: 29,
     gateOpen: true,
     blockerCount: 0,
     blockers: [],
@@ -160,12 +163,12 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
 
   return [
     {
-      name: 'dryrun_handoff_complete_at_wave28_baseline',
+      name: 'dryrun_handoff_complete_at_wave29_baseline',
       passed:
         report.handoffComplete &&
-        report.dryrunBaselineSha === O6K_AGENT24_WAVE28_INTEGRATION_BASELINE_SHA,
+        report.dryrunBaselineSha === O6K_AGENT24_WAVE29_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: report.waveRound === 28 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 29 },
     {
       name: 'deterministic_fingerprint',
       passed:
