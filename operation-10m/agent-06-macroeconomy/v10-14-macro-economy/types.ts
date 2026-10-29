@@ -177,6 +177,8 @@ export interface NationalMacroEconomyState {
   integrationHealthWave47ExportSpilloverSummary: string | null;
   replayWave48ExportSpilloverSummary: string | null;
   integrationHealthWave48ExportSpilloverSummary: string | null;
+  replayWave49ExportSpilloverSummary: string | null;
+  integrationHealthWave49ExportSpilloverSummary: string | null;
   capacitySnapshot: MacroCapacitySnapshot;
   transmissionBalance: MacroTransmissionBalanceSnapshot;
   transmissionCoherence: MacroTransmissionCoherenceSnapshot;

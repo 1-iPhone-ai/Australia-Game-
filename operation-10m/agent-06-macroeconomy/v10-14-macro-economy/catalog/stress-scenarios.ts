@@ -300,6 +300,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Wave 48 replay & integration stress',
     shockIds: ['global_slowdown', 'credit_contraction'],
     description: 'Blocked replay wave 48 export with unready integration health wave 48 export (harness overlay).'
+  },
+  {
+    id: 'wave49_replay_integration_stress',
+    label: 'Wave 49 replay & integration stress',
+    shockIds: ['global_slowdown', 'credit_contraction'],
+    description: 'Blocked replay wave 49 export with unready integration health wave 49 export (harness overlay).'
   }
 ];
 

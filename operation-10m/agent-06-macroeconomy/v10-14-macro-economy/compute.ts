@@ -238,6 +238,14 @@ import {
   applyMacroIntegrationHealthWave48ExportSpillover,
   readMacroIntegrationHealthWave48ExportSpilloverFromV1025
 } from './bridge-v1025-integration-health-wave-round48-export.ts';
+import {
+  applyMacroReplayWave49ExportSpillover,
+  readMacroReplayWave49ExportSpilloverFromV1024
+} from './bridge-v1024-replay-wave-round49-export.ts';
+import {
+  applyMacroIntegrationHealthWave49ExportSpillover,
+  readMacroIntegrationHealthWave49ExportSpilloverFromV1025
+} from './bridge-v1025-integration-health-wave-round49-export.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
@@ -432,6 +440,8 @@ export function computeNationalMacroEconomy(
   const integrationHealthWave47ExportSpillover = readMacroIntegrationHealthWave47ExportSpilloverFromV1025(inputs);
   const replayWave48ExportSpillover = readMacroReplayWave48ExportSpilloverFromV1024(inputs);
   const integrationHealthWave48ExportSpillover = readMacroIntegrationHealthWave48ExportSpilloverFromV1025(inputs);
+  const replayWave49ExportSpillover = readMacroReplayWave49ExportSpilloverFromV1024(inputs);
+  const integrationHealthWave49ExportSpillover = readMacroIntegrationHealthWave49ExportSpilloverFromV1025(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -608,7 +618,15 @@ export function computeNationalMacroEconomy(
     withReplayWave48Export,
     integrationHealthWave48ExportSpillover
   );
-  const shocked = applyMacroShockAdjustments(inputs, withIntegrationHealthWave48Export, pushEv);
+  const withReplayWave49Export = applyMacroReplayWave49ExportSpillover(
+    withIntegrationHealthWave48Export,
+    replayWave49ExportSpillover
+  );
+  const withIntegrationHealthWave49Export = applyMacroIntegrationHealthWave49ExportSpillover(
+    withReplayWave49Export,
+    integrationHealthWave49ExportSpillover
+  );
+  const shocked = applyMacroShockAdjustments(inputs, withIntegrationHealthWave49Export, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -728,7 +746,9 @@ export function computeNationalMacroEconomy(
     replayWave47Export: replayWave47ExportSpillover,
     integrationHealthWave47Export: integrationHealthWave47ExportSpillover,
     replayWave48Export: replayWave48ExportSpillover,
-    integrationHealthWave48Export: integrationHealthWave48ExportSpillover
+    integrationHealthWave48Export: integrationHealthWave48ExportSpillover,
+    replayWave49Export: replayWave49ExportSpillover,
+    integrationHealthWave49Export: integrationHealthWave49ExportSpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
@@ -902,6 +922,8 @@ export function computeNationalMacroEconomy(
     integrationHealthWave47ExportSpilloverSummary: integrationHealthWave47ExportSpillover.summary,
     replayWave48ExportSpilloverSummary: replayWave48ExportSpillover.summary,
     integrationHealthWave48ExportSpilloverSummary: integrationHealthWave48ExportSpillover.summary,
+    replayWave49ExportSpilloverSummary: replayWave49ExportSpillover.summary,
+    integrationHealthWave49ExportSpilloverSummary: integrationHealthWave49ExportSpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,

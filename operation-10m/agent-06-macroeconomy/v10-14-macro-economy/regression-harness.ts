@@ -65,6 +65,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeWave46UiDashboardExportStress?: boolean;
   includeWave47ReplayIntegrationStress?: boolean;
   includeWave48ReplayIntegrationStress?: boolean;
+  includeWave49ReplayIntegrationStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
@@ -112,6 +113,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   const includeWave46UiDashboardExportStress = Boolean(options?.includeWave46UiDashboardExportStress);
   const includeWave47ReplayIntegrationStress = Boolean(options?.includeWave47ReplayIntegrationStress);
   const includeWave48ReplayIntegrationStress = Boolean(options?.includeWave48ReplayIntegrationStress);
+  const includeWave49ReplayIntegrationStress = Boolean(options?.includeWave49ReplayIntegrationStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -757,6 +759,23 @@ export function runMacroEconomyRegressionHarness(options?: {
             slotBand: t % 5 === 0 ? 'red' : 'latched',
             baselineSha: t % 7 === 0 ? 'deadbeef' : '4404bf0f',
             projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_684_235
+          }
+        : undefined,
+      replayWave49Export: includeWave49ReplayIntegrationStress
+        ? {
+            round49Ready: t % 6 !== 0,
+            o10TaskId: 'O10-229',
+            waveRound: 49,
+            integrityBand: t % 5 === 0 ? 'corrupt' : 'sound',
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_727_364
+          }
+        : undefined,
+      integrationHealthWave49Export: includeWave49ReplayIntegrationStress
+        ? {
+            healthReady: t % 6 !== 0,
+            slotBand: t % 5 === 0 ? 'red' : 'latched',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : '73e5e01e',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_727_364
           }
         : undefined
     });

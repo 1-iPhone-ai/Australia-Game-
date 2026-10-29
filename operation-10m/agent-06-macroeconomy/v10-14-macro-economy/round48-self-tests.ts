@@ -71,14 +71,14 @@ export function runAgent06Round48SelfTests(): {
   );
   record(
     'R48-04',
-    'Transmission includes integration health wave 47 export layer',
+    'Transmission includes integration health wave 48 export layer',
     integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.25_integration_health_wave48_export'),
     'ok'
   );
   record(
     'R48-05',
-    'Ninety-two transmission layers',
-    integrated.state.transmissionReport.layers.length === 92,
+    'Ninety-four transmission layers',
+    integrated.state.transmissionReport.layers.length === 94,
     String(integrated.state.transmissionReport.layers.length)
   );
 
