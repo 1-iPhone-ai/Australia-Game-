@@ -1,12 +1,12 @@
 {
   "projectionId": "tranche-projection-full-chunks",
-  "dryRunAt": "2026-10-29T08:39:46.022Z",
+  "dryRunAt": "2026-10-29T08:43:35.800Z",
   "canonicalBaseCommit": "bc1adf3",
   "baselineAuditedFunctional": 389566,
-  "projectedAuditedFunctional": 1645538,
-  "deltaAuditedFunctional": 1255972,
+  "projectedAuditedFunctional": 1683733,
+  "deltaAuditedFunctional": 1294167,
   "baselinePhysicalLines": 419353,
-  "projectedPhysicalLines": 1715507,
+  "projectedPhysicalLines": 1754691,
   "branchHeadCount": 32,
   "branchesScannedExcludingIntegration": 31,
   "assemblyReadyRemote": 24,
@@ -99,7 +99,7 @@
     {
       "moduleId": "agent-05-events",
       "slot": "pre-final-export",
-      "contentSha256": "e1e3f47d5abf5cb7a7cddd80096ae09f7a20e3835787e98f338b4781cc6b9bb6"
+      "contentSha256": "caa68e7fd453fe06572b8fe20e9c56eaba8c6b986a4e62916e7c4b1846318e19"
     },
     {
       "moduleId": "agent-06-macroeconomy",
