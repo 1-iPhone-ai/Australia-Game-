@@ -24,11 +24,12 @@ Gate subject (feat): **O10-233 · wave 51 · round 51**
 
 ## SHA (origin tip)
 
-**`09d410f0`** (`09d410f0…` pending docs handoff)
+**`887099b7`** (`887099b735116ff307a04527219c6fd697af2740`)
 
 | Commit | Subject |
 |--------|---------|
 | **5fcd5473** | `merge(op10m): integrate O10-232 baseline a32b2b15 for wave 51` |
 | **09d410f0** | `feat(op10m): O10-233 · wave 51 · round 51` |
+| **887099b7** | `docs(op10m): O10-233 · wave 51 · round 51 origin handoff` |
 
 Prior: [agent-17-scale-wave-round50.md](./agent-17-scale-wave-round50.md)
