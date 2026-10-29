@@ -148,6 +148,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   sanctionStrainIndex: number;
   sanctionIntegrityScore: number;
   governanceFirmnessScore: number;
+  warrantStrainIndex: number;
+  warrantIntegrityScore: number;
+  governanceConstancyScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -1902,6 +1905,62 @@ export function buildGuardianDepthSanctionReport(snapshot: GuardianCoPilotMonito
   return lines.slice(0, 3);
 }
 
+export function computeWarrantStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceFirmnessScore < 50) load += Math.min(25, 50 - snapshot.governanceFirmnessScore);
+  if (snapshot.governanceFirmnessScore < 35) load += 10;
+  if (snapshot.sanctionIntegrityScore < 45) load += 20;
+  if (snapshot.sanctionIntegrityScore < 35) load += 10;
+  if (snapshot.sanctionStrainIndex >= 55) load += 20;
+  if (snapshot.sanctionStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeWarrantIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.warrantStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.warrantStrainIndex * 0.35));
+  if (snapshot.sanctionIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.sanctionIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceFirmnessScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceConstancyScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.warrantStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.warrantStrainIndex * 0.32));
+  if (snapshot.warrantIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.warrantIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceFirmnessScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthWarrantReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.warrantStrainIndex >= 55) {
+    lines.push(
+      `Warrant strain ${snapshot.warrantStrainIndex} — stacked warrant review may exceed operator warrant capacity`
+    );
+  }
+  if (snapshot.warrantIntegrityScore < 45) {
+    lines.push(
+      `Warrant integrity ${snapshot.warrantIntegrityScore} — align Co-Pilot warrants with Guardian warrant posture`
+    );
+  }
+  if (snapshot.governanceConstancyScore < 40) {
+    lines.push(
+      `Governance constancy ${snapshot.governanceConstancyScore} — little constancy to sustain warrant oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -2173,9 +2232,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withSanctionStrain: GuardianCoPilotMonitorSnapshot = { ...withResoluteness, sanctionStrainIndex };
   const sanctionIntegrityScore = computeSanctionIntegrityScore(withSanctionStrain);
   const withSanction: GuardianCoPilotMonitorSnapshot = { ...withSanctionStrain, sanctionIntegrityScore };
-  return {
+  const withFirmness: GuardianCoPilotMonitorSnapshot = {
     ...withSanction,
     governanceFirmnessScore: computeGovernanceFirmnessScore(withSanction),
+    warrantStrainIndex: 0,
+    warrantIntegrityScore: 100,
+    governanceConstancyScore: 100,
+  };
+  const warrantStrainIndex = computeWarrantStrainIndex(withFirmness);
+  const withWarrantStrain: GuardianCoPilotMonitorSnapshot = { ...withFirmness, warrantStrainIndex };
+  const warrantIntegrityScore = computeWarrantIntegrityScore(withWarrantStrain);
+  const withWarrant: GuardianCoPilotMonitorSnapshot = { ...withWarrantStrain, warrantIntegrityScore };
+  return {
+    ...withWarrant,
+    governanceConstancyScore: computeGovernanceConstancyScore(withWarrant),
   };
 }
 
@@ -3042,6 +3112,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceFirmnessScore(snap) < 35;
+  });
+  ok('gd_warrant_strain', () => {
+    const snap = {
+      governanceFirmnessScore: 30,
+      sanctionIntegrityScore: 32,
+      sanctionStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeWarrantStrainIndex(snap) >= 70;
+  });
+  ok('gd_warrant_integrity', () => {
+    const snap = {
+      warrantStrainIndex: 72,
+      sanctionIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceFirmnessScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeWarrantIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_constancy', () => {
+    const snap = {
+      warrantStrainIndex: 78,
+      warrantIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceFirmnessScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceConstancyScore(snap) < 35;
   });
   return out;
 }
@@ -6678,6 +6782,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_26: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_26_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_26.length;
 
 
+// --- source: monitor-rules-scale-wave-27.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_27: AdvisoryMonitorRule[] = [
+  {
+    id: 'warrant_strain_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Warrant Strain High',
+    detailTemplate: 'Warrant strain is in the high band — reduce overlapping warn-only warrant review demands',
+    evidenceFields: ['warrantStrainIndex', 'governanceFirmnessScore', 'warrantIntegrityScore'],
+    evaluate: s => s.warrantStrainIndex >= 70,
+  },
+  {
+    id: 'warrant_strain_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Warrant Strain Elevated',
+    detailTemplate: 'Warrant strain is elevated — expect slower warrant review across turns',
+    evidenceFields: ['warrantStrainIndex', 'sanctionStrainIndex'],
+    evaluate: s => s.warrantStrainIndex >= 45 && s.warrantStrainIndex < 70,
+  },
+  {
+    id: 'warrant_integrity_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Warrant Integrity Low',
+    detailTemplate: 'Warrant integrity is critically low — defer stacked autonomous actions',
+    evidenceFields: ['warrantIntegrityScore', 'warrantStrainIndex', 'sanctionIntegrityScore'],
+    evaluate: s => s.warrantIntegrityScore < 35,
+  },
+  {
+    id: 'warrant_integrity_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Warrant While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate warrant integrity',
+    evidenceFields: ['warrantIntegrityScore', 'copilotAutonomousActive', 'warrantStrainIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.warrantIntegrityScore >= 35 && s.warrantIntegrityScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_constancy_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Constancy Low',
+    detailTemplate: 'Little governance constancy remains for warn-only warrant oversight across turns',
+    evidenceFields: ['governanceConstancyScore', 'warrantStrainIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governanceConstancyScore < 35,
+  },
+  {
+    id: 'governance_constancy_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Constancy While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance constancy',
+    evidenceFields: ['governanceConstancyScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governanceConstancyScore >= 35 && s.governanceConstancyScore < 55,
+  },
+  {
+    id: 'warrant_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Warrant Envelope Pressured',
+    detailTemplate: 'Warrant strain and low warrant integrity align in the pressured envelope band',
+    evidenceFields: ['warrantStrainIndex', 'warrantIntegrityScore', 'governanceConstancyScore'],
+    evaluate: s => s.warrantStrainIndex >= 55 && s.warrantIntegrityScore < 50,
+  },
+  {
+    id: 'rival_warrant_strain',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Warrant Strain',
+    detailTemplate: 'Rival victory progress plus elevated warrant strain',
+    evidenceFields: ['rivalVictoryProgressPct', 'warrantStrainIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.warrantStrainIndex >= 50,
+  },
+  {
+    id: 'team_plan_warrant_strain',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Warrant Strain',
+    detailTemplate: 'Pending team plan while warrant strain is elevated',
+    evidenceFields: ['teamPlanPending', 'warrantStrainIndex', 'governanceConstancyScore'],
+    evaluate: s => s.teamPlanPending && s.warrantStrainIndex >= 55,
+  },
+  {
+    id: 'guardian_warrant_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Warrant Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance constancy',
+    evidenceFields: ['guardianRiskBand', 'governanceConstancyScore', 'warrantStrainIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governanceConstancyScore < 40,
+  },
+  {
+    id: 'copilot_warrant_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Warrant Strain',
+    detailTemplate: 'Autonomous Co-Pilot while warrant strain is high',
+    evidenceFields: ['copilotAutonomousActive', 'warrantStrainIndex', 'warrantIntegrityScore'],
+    evaluate: s => s.copilotAutonomousActive && s.warrantStrainIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_constancy',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Constancy',
+    detailTemplate: 'Expiring contracts while governance constancy is low',
+    evidenceFields: ['expiringContractCount', 'governanceConstancyScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governanceConstancyScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_27_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_27.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -6933,6 +7170,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_24,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_25,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_26,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_27,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -7327,6 +7565,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     sanctionStrainIndex: 0,
     sanctionIntegrityScore: 100,
     governanceFirmnessScore: 100,
+    warrantStrainIndex: 0,
+    warrantIntegrityScore: 100,
+    governanceConstancyScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -9355,6 +9596,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['sanction_envelope_pressured', 'guardian_sanction_envelope_critical'],
     notes: 'Pressured sanction envelope with critical Guardian band',
   },
+  {
+    id: 'sc_warrant_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2220,
+      maxSpendPerAction: 10520,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['warrant_strain_high', 'warrant_integrity_low'],
+    notes: 'High warrant strain with critical warrant integrity',
+  },
+  {
+    id: 'sc_governance_constancy_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 5,
+      minCashReserve: 500,
+      debt: 1360,
+      maxSpendPerAction: 8020,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_constancy_low', 'contracts_governance_constancy'],
+    notes: 'Low governance constancy with expiring contracts',
+  },
+  {
+    id: 'sc_warrant_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 1280,
+      maxSpendPerAction: 8240,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['warrant_envelope_pressured', 'guardian_warrant_envelope_critical'],
+    notes: 'Pressured warrant envelope with critical Guardian band',
+  },
 ];
 
 
@@ -9530,8 +9839,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 26 scale wave brings monitor catalog to 346+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 346;
+  check(results, 'a16_expansion_count', 'Round 27 scale wave brings monitor catalog to 358+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 358;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -10454,6 +10763,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthSanctionReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round27_metrics', 'Round 27 warrant envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.warrantStrainIndex >= 40 &&
+      snap.warrantIntegrityScore <= 100 &&
+      snap.governanceConstancyScore <= 100
+    );
+  });
+
+  check(results, 'a16_warrant_report', 'Guardian depth warrant report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthWarrantReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 

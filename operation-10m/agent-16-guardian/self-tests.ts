@@ -46,6 +46,7 @@ import {
   buildGuardianDepthAuthorizationReport,
   buildGuardianDepthAffirmationReport,
   buildGuardianDepthSanctionReport,
+  buildGuardianDepthWarrantReport,
   runGuardianDepthUnitSelfTests,
 } from './guardian-depth.js';
 import type { AdvisoryRecommendation, Agent16SelfTestResult, AiSuggestedAction } from './types.js';
@@ -220,8 +221,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 26 scale wave brings monitor catalog to 346+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 346;
+  check(results, 'a16_expansion_count', 'Round 27 scale wave brings monitor catalog to 358+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 358;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -1144,6 +1145,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthSanctionReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round27_metrics', 'Round 27 warrant envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.warrantStrainIndex >= 40 &&
+      snap.warrantIntegrityScore <= 100 &&
+      snap.governanceConstancyScore <= 100
+    );
+  });
+
+  check(results, 'a16_warrant_report', 'Guardian depth warrant report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthWarrantReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 
