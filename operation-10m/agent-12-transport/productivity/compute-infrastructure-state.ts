@@ -482,6 +482,23 @@ import {
   electricBusDepotChargingLogisticsProductivityMultiplier,
   nationalElectricBusDepotChargingLogisticsThroughputIndex,
 } from './electric-bus-depot-charging-logistics-index.ts';
+import {
+  computeVanadiumFlowBatteryExportByRegion,
+  nationalVanadiumFlowBatteryExportIndex,
+  vanadiumFlowBatteryExportProductivityMultiplier,
+} from '../network/vanadium-flow-battery-export-index.ts';
+import {
+  computeBushfireEvacuationRailBridgeByRegion,
+  computeBushfireEvacuationRailBridgeShare,
+  bushfireEvacuationRailBridgeProductivityMultiplier,
+  nationalBushfireEvacuationRailBridgeIndex,
+} from '../operations/bushfire-evacuation-rail-bridge-index.ts';
+import {
+  computeAutomatedGrainSiloRailLoadoutShare,
+  computeAutomatedGrainSiloRailLoadoutThroughputByRegion,
+  automatedGrainSiloRailLoadoutProductivityMultiplier,
+  nationalAutomatedGrainSiloRailLoadoutThroughputIndex,
+} from './automated-grain-silo-rail-loadout-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1551,6 +1568,35 @@ export function computeTransportInfrastructureState(
     electricBusDepotChargingLogisticsShare,
     options?.electricBusDepotChargingLogisticsPolicy ?? 'baseline',
   );
+  const vanadiumFlowBatteryExportByRegion = computeVanadiumFlowBatteryExportByRegion(ops);
+  const nationalVanadiumFlow = nationalVanadiumFlowBatteryExportIndex(vanadiumFlowBatteryExportByRegion);
+  const vanadiumFlowMult = vanadiumFlowBatteryExportProductivityMultiplier(
+    nationalVanadiumFlow,
+    options?.vanadiumFlowBatteryExportPolicy ?? 'baseline',
+  );
+  const bushfireEvacuationRailBridgeByRegion = computeBushfireEvacuationRailBridgeByRegion(ops, networkStress);
+  const nationalBushfireEvac = nationalBushfireEvacuationRailBridgeIndex(bushfireEvacuationRailBridgeByRegion);
+  const bushfireEvacuationRailBridgeShare = computeBushfireEvacuationRailBridgeShare(
+    ops,
+    options?.bushfireEvacuationRailBridgePolicy ?? 'baseline',
+  );
+  const bushfireEvacMult = bushfireEvacuationRailBridgeProductivityMultiplier(
+    bushfireEvacuationRailBridgeShare,
+    options?.bushfireEvacuationRailBridgePolicy ?? 'baseline',
+  );
+  const automatedGrainSiloRailLoadoutThroughputByRegion =
+    computeAutomatedGrainSiloRailLoadoutThroughputByRegion(ops);
+  const nationalGrainSiloAuto = nationalAutomatedGrainSiloRailLoadoutThroughputIndex(
+    automatedGrainSiloRailLoadoutThroughputByRegion,
+  );
+  const automatedGrainSiloRailLoadoutShare = computeAutomatedGrainSiloRailLoadoutShare(
+    ops,
+    options?.automatedGrainSiloRailLoadoutPolicy ?? 'baseline',
+  );
+  const grainSiloAutoMult = automatedGrainSiloRailLoadoutProductivityMultiplier(
+    automatedGrainSiloRailLoadoutShare,
+    options?.automatedGrainSiloRailLoadoutPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1601,6 +1647,9 @@ export function computeTransportInfrastructureState(
     const graphiteAnodeBoost = (graphiteBatteryAnodeExportByRegion[code] - 5) * 0.0037;
     const cycloneCoastalBoost = (cycloneResilientCoastalFreightByRegion[code] - 6) * 0.0033;
     const ebusDepotBoost = (electricBusDepotChargingLogisticsThroughputByRegion[code] - 1.8) * 0.0029;
+    const vanadiumFlowBoost = (vanadiumFlowBatteryExportByRegion[code] - 5) * 0.0036;
+    const bushfireEvacBoost = (bushfireEvacuationRailBridgeByRegion[code] - 6) * 0.0032;
+    const grainSiloAutoBoost = (automatedGrainSiloRailLoadoutThroughputByRegion[code] - 1.9) * 0.0028;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -1650,7 +1699,10 @@ export function computeTransportInfrastructureState(
         inlandTerminalAutoBoost +
         graphiteAnodeBoost +
         cycloneCoastalBoost +
-        ebusDepotBoost) *
+        ebusDepotBoost +
+        vanadiumFlowBoost +
+        bushfireEvacBoost +
+        grainSiloAutoBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -1698,7 +1750,10 @@ export function computeTransportInfrastructureState(
       inlandTerminalAutoMult *
       graphiteAnodeMult *
       cycloneCoastalMult *
-      ebusDepotMult;
+      ebusDepotMult *
+      vanadiumFlowMult *
+      bushfireEvacMult *
+      grainSiloAutoMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -1769,7 +1824,10 @@ export function computeTransportInfrastructureState(
     nationalInlandTerminalAuto * 0.003 +
     nationalGraphiteAnode * 0.003 +
     nationalCycloneCoastal * 0.003 +
-    nationalEbusDepot * 0.003;
+    nationalEbusDepot * 0.003 +
+    nationalVanadiumFlow * 0.003 +
+    nationalBushfireEvac * 0.003 +
+    nationalGrainSiloAuto * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -1784,7 +1842,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/32',
+    schemaVersion: 'agent12/33',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -2006,6 +2064,14 @@ export function computeTransportInfrastructureState(
     electricBusDepotChargingLogisticsShare,
     nationalElectricBusDepotChargingLogisticsThroughputIndex: nationalEbusDepot,
     electricBusDepotChargingLogisticsThroughputByRegion,
+    nationalVanadiumFlowBatteryExportIndex: nationalVanadiumFlow,
+    vanadiumFlowBatteryExportByRegion,
+    bushfireEvacuationRailBridgeShare,
+    nationalBushfireEvacuationRailBridgeIndex: nationalBushfireEvac,
+    bushfireEvacuationRailBridgeByRegion,
+    automatedGrainSiloRailLoadoutShare,
+    nationalAutomatedGrainSiloRailLoadoutThroughputIndex: nationalGrainSiloAuto,
+    automatedGrainSiloRailLoadoutThroughputByRegion,
     computeMs,
   };
 }

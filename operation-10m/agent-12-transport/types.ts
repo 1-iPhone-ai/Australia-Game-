@@ -339,8 +339,14 @@ export type CycloneResilientCoastalFreightPolicy = 'baseline' | 'harden';
 
 export type ElectricBusDepotChargingLogisticsPolicy = 'baseline' | 'expand';
 
+export type VanadiumFlowBatteryExportPolicy = 'baseline' | 'accelerate';
+
+export type BushfireEvacuationRailBridgePolicy = 'baseline' | 'surge';
+
+export type AutomatedGrainSiloRailLoadoutPolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/32';
+  schemaVersion: 'agent12/33';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -562,6 +568,14 @@ export interface TransportInfrastructureState {
   electricBusDepotChargingLogisticsShare: number;
   nationalElectricBusDepotChargingLogisticsThroughputIndex: number;
   electricBusDepotChargingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalVanadiumFlowBatteryExportIndex: number;
+  vanadiumFlowBatteryExportByRegion: Record<AuRegionCode, number>;
+  bushfireEvacuationRailBridgeShare: number;
+  nationalBushfireEvacuationRailBridgeIndex: number;
+  bushfireEvacuationRailBridgeByRegion: Record<AuRegionCode, number>;
+  automatedGrainSiloRailLoadoutShare: number;
+  nationalAutomatedGrainSiloRailLoadoutThroughputIndex: number;
+  automatedGrainSiloRailLoadoutThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -648,6 +662,9 @@ export interface TransportInfrastructureOptions {
   graphiteBatteryAnodeExportPolicy?: GraphiteBatteryAnodeExportPolicy;
   cycloneResilientCoastalFreightPolicy?: CycloneResilientCoastalFreightPolicy;
   electricBusDepotChargingLogisticsPolicy?: ElectricBusDepotChargingLogisticsPolicy;
+  vanadiumFlowBatteryExportPolicy?: VanadiumFlowBatteryExportPolicy;
+  bushfireEvacuationRailBridgePolicy?: BushfireEvacuationRailBridgePolicy;
+  automatedGrainSiloRailLoadoutPolicy?: AutomatedGrainSiloRailLoadoutPolicy;
 }
 
 export interface V94ProjectSnapshot {

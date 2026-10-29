@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 32
+
+- Schema **`agent12/33`**: vanadium flow-battery export throughput, bushfire evacuation rail bridge readiness, automated grain silo rail loadout share (`vanadiumFlowBatteryExportPolicy`, `bushfireEvacuationRailBridgePolicy`, `automatedGrainSiloRailLoadoutPolicy`)
+- Catalog: **445** assets, **110** corridors, **178** scenarios
+- Systems: `network/vanadium-flow-battery-export-index.ts`, `operations/bushfire-evacuation-rail-bridge-index.ts`, `productivity/automated-grain-silo-rail-loadout-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 31
 
 - Schema **`agent12/32`**: synthetic graphite battery anode export throughput, cyclone-resilient coastal freight readiness, electric bus depot charging logistics share (`graphiteBatteryAnodeExportPolicy`, `cycloneResilientCoastalFreightPolicy`, `electricBusDepotChargingLogisticsPolicy`)

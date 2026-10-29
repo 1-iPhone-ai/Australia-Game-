@@ -343,8 +343,14 @@ export type CycloneResilientCoastalFreightPolicy = 'baseline' | 'harden';
 
 export type ElectricBusDepotChargingLogisticsPolicy = 'baseline' | 'expand';
 
+export type VanadiumFlowBatteryExportPolicy = 'baseline' | 'accelerate';
+
+export type BushfireEvacuationRailBridgePolicy = 'baseline' | 'surge';
+
+export type AutomatedGrainSiloRailLoadoutPolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/32';
+  schemaVersion: 'agent12/33';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -566,6 +572,14 @@ export interface TransportInfrastructureState {
   electricBusDepotChargingLogisticsShare: number;
   nationalElectricBusDepotChargingLogisticsThroughputIndex: number;
   electricBusDepotChargingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalVanadiumFlowBatteryExportIndex: number;
+  vanadiumFlowBatteryExportByRegion: Record<AuRegionCode, number>;
+  bushfireEvacuationRailBridgeShare: number;
+  nationalBushfireEvacuationRailBridgeIndex: number;
+  bushfireEvacuationRailBridgeByRegion: Record<AuRegionCode, number>;
+  automatedGrainSiloRailLoadoutShare: number;
+  nationalAutomatedGrainSiloRailLoadoutThroughputIndex: number;
+  automatedGrainSiloRailLoadoutThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -652,6 +666,9 @@ export interface TransportInfrastructureOptions {
   graphiteBatteryAnodeExportPolicy?: GraphiteBatteryAnodeExportPolicy;
   cycloneResilientCoastalFreightPolicy?: CycloneResilientCoastalFreightPolicy;
   electricBusDepotChargingLogisticsPolicy?: ElectricBusDepotChargingLogisticsPolicy;
+  vanadiumFlowBatteryExportPolicy?: VanadiumFlowBatteryExportPolicy;
+  bushfireEvacuationRailBridgePolicy?: BushfireEvacuationRailBridgePolicy;
+  automatedGrainSiloRailLoadoutPolicy?: AutomatedGrainSiloRailLoadoutPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -2013,6 +2030,48 @@ export const TRANSPORT_CORRIDORS_ROUND31: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round32.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND32: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_sa_vanadium_flow',
+    name: 'WA–SA Vanadium Flow',
+    networkKind: 'trade',
+    regionSequence: ['WA', 'SA'],
+    requiredTagsByRegion: {
+      WA: ['vanadium_flow_export', 'grid_storage_mineral', 'bulk_battery_feed'],
+      SA: ['vanadium_flow_export', 'grid_storage_mineral', 'bulk_battery_feed'],
+    },
+    productivitySynergyPoints: 6.0,
+    logisticsRelief: 0.036,
+  },
+  {
+    id: 'corr_nsw_vic_bushfire_evac',
+    name: 'NSW–VIC Bushfire Evac',
+    networkKind: 'mobility',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['bushfire_evac_rail', 'smoke_routing', 'emergency_passenger_haul'],
+      VIC: ['bushfire_evac_rail', 'smoke_routing', 'emergency_passenger_haul'],
+    },
+    productivitySynergyPoints: 5.7,
+    logisticsRelief: 0.03,
+  },
+  {
+    id: 'corr_sa_vic_grain_silo_auto',
+    name: 'SA–VIC Grain Silo Auto',
+    networkKind: 'freight',
+    regionSequence: ['SA', 'VIC'],
+    requiredTagsByRegion: {
+      SA: ['auto_grain_silo', 'bulk_rail_loadout', 'harvest_peak_staging'],
+      VIC: ['auto_grain_silo', 'bulk_rail_loadout', 'harvest_peak_staging'],
+    },
+    productivitySynergyPoints: 5.8,
+    logisticsRelief: 0.031,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -2191,6 +2250,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND29,
   ...TRANSPORT_CORRIDORS_ROUND30,
   ...TRANSPORT_CORRIDORS_ROUND31,
+  ...TRANSPORT_CORRIDORS_ROUND32,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -3959,6 +4019,62 @@ export const TRANSPORT_SCENARIOS_ROUND31: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round32.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND32: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_vanadium_export_surge',
+    label: 'WA Vanadium Export Surge',
+    description: 'Grid-storage demand overloads Ningaloo bulk berths.',
+    targetRegions: ['WA', 'SA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_nsw_bushfire_evac_peak',
+    label: 'NSW Bushfire Evac Peak',
+    description: 'Fire weather strains Southern Highlands evac slots.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail', 'logistics'],
+  },
+  {
+    id: 'scn_vic_smoke_routing_hold',
+    label: 'Victoria Smoke Routing Hold',
+    description: 'Smoke limits emergency passenger haul capacity.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail'],
+  },
+  {
+    id: 'scn_sa_harvest_silo_surge',
+    label: 'SA Harvest Silo Surge',
+    description: 'Peak harvest overloads Tailem Bend loadout.',
+    targetRegions: ['SA', 'VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'rail'],
+  },
+  {
+    id: 'scn_vic_portland_grain_delay',
+    label: 'Portland Grain Delay',
+    description: 'Berth queue backs up automated silo rail feed.',
+    targetRegions: ['VIC', 'SA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.21,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -4151,6 +4267,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND29,
   ...TRANSPORT_SCENARIOS_ROUND30,
   ...TRANSPORT_SCENARIOS_ROUND31,
+  ...TRANSPORT_SCENARIOS_ROUND32,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -11944,6 +12061,240 @@ export const SCALE_WAVE_ROUND31_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round32-assets.ts ---
+
+export const ROUND32_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_meekatharra_vanadium_haul',
+    category: 'road',
+    name: 'Meekatharra Vanadium Haul',
+    description: 'WA grid-storage mineral road to export rail.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['vanadium_flow_export', 'grid_storage_mineral', 'bulk_battery_feed'],
+    laneKilometres: 46,
+    designSpeedKmh: 85,
+    freightShare: 0.4,
+    urbanShare: 0.03,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_blue_mountains_evac_feed',
+    category: 'road',
+    name: 'Blue Mountains Evac Feed',
+    description: 'NSW bushfire evacuation rail bridge road access.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['bushfire_evac_rail', 'smoke_routing', 'emergency_passenger_haul'],
+    laneKilometres: 22,
+    designSpeedKmh: 76,
+    freightShare: 0.15,
+    urbanShare: 0.35,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_murray_bridge_grain_haul',
+    category: 'road',
+    name: 'Murray Bridge Grain Haul',
+    description: 'SA harvest peak staging road to silo loadout.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'VIC'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['auto_grain_silo', 'bulk_rail_loadout', 'harvest_peak_staging'],
+    laneKilometres: 30,
+    designSpeedKmh: 88,
+    freightShare: 0.38,
+    urbanShare: 0.08,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_horsham_grain_staging',
+    category: 'road',
+    name: 'Horsham Grain Staging',
+    description: 'Victorian automated silo rail loadout connector.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'SA'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['freight'],
+    tags: [
+      'auto_grain_silo',
+      'bulk_rail_loadout',
+      'harvest_peak_staging',
+      'bushfire_evac_rail',
+      'smoke_routing',
+      'emergency_passenger_haul',
+    ],
+    laneKilometres: 24,
+    designSpeedKmh: 86,
+    freightShare: 0.36,
+    urbanShare: 0.1,
+    tollRoad: false,
+  },
+];
+
+export const ROUND32_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_goldfields_vanadium_rail',
+    category: 'rail',
+    name: 'Goldfields Vanadium Rail',
+    description: 'WA flow-battery mineral export corridor.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['vanadium_flow_export', 'grid_storage_mineral', 'bulk_battery_feed'],
+    trackKilometres: 98,
+    dualTrackShare: 0.43,
+    electrifiedShare: 0.18,
+    designFreightTonnesPerYear: 7_200_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nsw_southern_evac_bridge',
+    category: 'rail',
+    name: 'Southern Highlands Evac Bridge',
+    description: 'NSW emergency passenger haul and smoke routing.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['bushfire_evac_rail', 'smoke_routing', 'emergency_passenger_haul'],
+    trackKilometres: 64,
+    dualTrackShare: 0.52,
+    electrifiedShare: 0.61,
+    designFreightTonnesPerYear: 3_200_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_sa_victor_harbor_grain_loadout',
+    category: 'rail',
+    name: 'Victor Harbor Grain Loadout Rail',
+    description: 'SA automated bulk silo rail loadout line.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'VIC'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['auto_grain_silo', 'bulk_rail_loadout', 'harvest_peak_staging'],
+    trackKilometres: 52,
+    dualTrackShare: 0.47,
+    electrifiedShare: 0.35,
+    designFreightTonnesPerYear: 6_400_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND32_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_ningaloo_vanadium_export',
+    category: 'port',
+    name: 'Ningaloo Vanadium Export',
+    description: 'WA vanadium flow-battery bulk export berths.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['trade'],
+    tags: ['vanadium_flow_export', 'grid_storage_mineral', 'bulk_battery_feed', 'bulk'],
+    berthCount: 3,
+    maxDraftMetres: 13.6,
+    teuCapacityPerYear: 112_000,
+    automationLevel: 2,
+    bulkShare: 0.72,
+  },
+  {
+    id: 'port_sa_port_augusta_vanadium_handoff',
+    category: 'port',
+    name: 'Port Augusta Vanadium Handoff',
+    description: 'SA grid-storage mineral coastal handoff.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['trade'],
+    tags: ['vanadium_flow_export', 'grid_storage_mineral', 'bulk_battery_feed'],
+    berthCount: 2,
+    maxDraftMetres: 12.0,
+    teuCapacityPerYear: 98_000,
+    automationLevel: 1,
+    bulkShare: 0.55,
+  },
+  {
+    id: 'port_vic_portland_grain_export',
+    category: 'port',
+    name: 'Portland Grain Export',
+    description: 'Victorian harvest bulk export with silo staging.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'SA'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['auto_grain_silo', 'bulk_rail_loadout', 'harvest_peak_staging'],
+    berthCount: 3,
+    maxDraftMetres: 13.2,
+    teuCapacityPerYear: 175_000,
+    automationLevel: 2,
+    bulkShare: 0.48,
+  },
+];
+
+export const ROUND32_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_wa_kalgoorlie_vanadium_stores',
+    category: 'logistics',
+    name: 'Kalgoorlie Vanadium Stores',
+    description: 'WA bulk battery feed consolidation.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['trade'],
+    tags: ['vanadium_flow_export', 'grid_storage_mineral', 'bulk_battery_feed'],
+    warehouseSqm: 74_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 47,
+  },
+  {
+    id: 'log_nsw_lithgow_evac_staging',
+    category: 'logistics',
+    name: 'Lithgow Evac Staging',
+    description: 'NSW bushfire evacuation supplies staging.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['mobility'],
+    tags: ['bushfire_evac_rail', 'smoke_routing', 'emergency_passenger_haul'],
+    warehouseSqm: 36_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 62,
+  },
+  {
+    id: 'log_sa_tailem_bend_silo_yard',
+    category: 'logistics',
+    name: 'Tailem Bend Silo Yard',
+    description: 'SA automated grain silo rail loadout yard.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'VIC'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['auto_grain_silo', 'bulk_rail_loadout', 'harvest_peak_staging'],
+    warehouseSqm: 82_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 44,
+  },
+];
+
+export const SCALE_WAVE_ROUND32_ASSETS = [
+  ...ROUND32_ROADS,
+  ...ROUND32_RAIL,
+  ...ROUND32_PORTS,
+  ...ROUND32_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -11983,6 +12334,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND29_ASSETS,
     ...SCALE_WAVE_ROUND30_ASSETS,
     ...SCALE_WAVE_ROUND31_ASSETS,
+    ...SCALE_WAVE_ROUND32_ASSETS,
   ];
 }
 
@@ -13724,6 +14076,64 @@ export function graphiteBatteryAnodeExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.036 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.041 + policyBoost, 0.93, 1.1);
+}
+
+
+// --- source: network/vanadium-flow-battery-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type VanadiumFlowBatteryExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 vanadium flow-battery export throughput by region. */
+export function computeVanadiumFlowBatteryExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) => t === 'vanadium_flow_export' || t === 'grid_storage_mineral' || t === 'bulk_battery_feed',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.0 + asset.bulkShare * 4.5;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 82_000 + asset.intermodalLinks.length * 0.72;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 530;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 9_200_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalVanadiumFlowBatteryExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.48 + max * 0.52, 5, 74) * 10) / 10;
+}
+
+export function vanadiumFlowBatteryExportProductivityMultiplier(
+  index: number,
+  policy: VanadiumFlowBatteryExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.035 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.04 + policyBoost, 0.93, 1.1);
 }
 
 
@@ -15898,6 +16308,94 @@ export function cycloneResilientCoastalFreightProductivityMultiplier(
 ): number {
   const bias = policy === 'harden' ? 1.021 : 1;
   return (1 + (share - 0.052) * 0.027) * bias;
+}
+
+
+// --- source: operations/bushfire-evacuation-rail-bridge-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type BushfireEvacuationRailBridgePolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 bushfire evacuation rail bridge readiness by region. */
+export function computeBushfireEvacuationRailBridgeByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'bushfire_evac_rail' || t === 'smoke_routing' || t === 'emergency_passenger_haul',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] +=
+        asset.designFreightTonnesPerYear / 14_500_000 + (asset.passengerCapable ? 2.2 : 0.8);
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 77_000 + asset.lastMileCoveragePct / 120;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 560;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.85;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.038 - stress * 0.027), 5, 78) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalBushfireEvacuationRailBridgeIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.49 + max * 0.51, 6, 76) * 10) / 10;
+}
+
+export function computeBushfireEvacuationRailBridgeShare(
+  operationalAssets: TransportAsset[],
+  policy: BushfireEvacuationRailBridgePolicy = 'baseline',
+): number {
+  let evacUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('bushfire_evac_rail') || asset.tags.includes('emergency_passenger_haul')) {
+      if (asset.category === 'rail' && 'passengerCapable' in asset) {
+        totalUnits += asset.trackKilometres / 95 + (asset.passengerCapable ? 1.2 : 0.4);
+        evacUnits += (asset.trackKilometres / 95) * (asset.passengerCapable ? 0.68 : 0.35);
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 70_000;
+        evacUnits += (asset.warehouseSqm / 70_000) * 0.55;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.035;
+  const policyBoost = policy === 'surge' ? 0.028 : 0;
+  return Math.round(clamp(evacUnits / totalUnits + policyBoost, 0.034, 0.25) * 1000) / 1000;
+}
+
+export function bushfireEvacuationRailBridgeProductivityMultiplier(
+  share: number,
+  policy: BushfireEvacuationRailBridgePolicy,
+): number {
+  const bias = policy === 'surge' ? 1.022 : 1;
+  return (1 + (share - 0.051) * 0.026) * bias;
 }
 
 
@@ -18305,6 +18803,92 @@ export function nationalElectricBusDepotChargingLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/automated-grain-silo-rail-loadout-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type AutomatedGrainSiloRailLoadoutPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of harvest bulk using automated silo rail loadout. */
+export function computeAutomatedGrainSiloRailLoadoutShare(
+  operationalAssets: TransportAsset[],
+  policy: AutomatedGrainSiloRailLoadoutPolicy = 'baseline',
+): number {
+  let autoUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) => t === 'auto_grain_silo' || t === 'bulk_rail_loadout' || t === 'harvest_peak_staging',
+      )
+    ) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 60_000 + asset.intermodalLinks.length * 0.9;
+        autoUnits += (asset.warehouseSqm / 60_000) * 0.64 + asset.intermodalLinks.length * 0.52;
+      }
+      if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+        totalUnits += asset.designFreightTonnesPerYear / 11_000_000;
+        autoUnits += (asset.designFreightTonnesPerYear / 11_000_000) * 0.57;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.038;
+  const policyBoost = policy === 'deploy' ? 0.03 : 0;
+  return Math.round(clamp(autoUnits / totalUnits + policyBoost, 0.037, 0.29) * 1000) / 1000;
+}
+
+export function automatedGrainSiloRailLoadoutProductivityMultiplier(
+  share: number,
+  policy: AutomatedGrainSiloRailLoadoutPolicy,
+): number {
+  const bias = policy === 'deploy' ? 1.024 : 1;
+  return (1 + (share - 0.059) * 0.027) * bias;
+}
+
+export function computeAutomatedGrainSiloRailLoadoutThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'auto_grain_silo' || t === 'bulk_rail_loadout' || t === 'harvest_peak_staging',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 65_000;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 10_800_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 450;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalAutomatedGrainSiloRailLoadoutThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 1.9, 54) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -18864,6 +19448,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   electricBusDepotChargingLogisticsProductivityMultiplier,
   nationalElectricBusDepotChargingLogisticsThroughputIndex,
 } from './electric-bus-depot-charging-logistics-index.ts';
+  computeVanadiumFlowBatteryExportByRegion,
+  nationalVanadiumFlowBatteryExportIndex,
+  vanadiumFlowBatteryExportProductivityMultiplier,
+} from '../network/vanadium-flow-battery-export-index.ts';
+  computeBushfireEvacuationRailBridgeByRegion,
+  computeBushfireEvacuationRailBridgeShare,
+  bushfireEvacuationRailBridgeProductivityMultiplier,
+  nationalBushfireEvacuationRailBridgeIndex,
+} from '../operations/bushfire-evacuation-rail-bridge-index.ts';
+  computeAutomatedGrainSiloRailLoadoutShare,
+  computeAutomatedGrainSiloRailLoadoutThroughputByRegion,
+  automatedGrainSiloRailLoadoutProductivityMultiplier,
+  nationalAutomatedGrainSiloRailLoadoutThroughputIndex,
+} from './automated-grain-silo-rail-loadout-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -19932,6 +20530,35 @@ export function computeTransportInfrastructureState(
     electricBusDepotChargingLogisticsShare,
     options?.electricBusDepotChargingLogisticsPolicy ?? 'baseline',
   );
+  const vanadiumFlowBatteryExportByRegion = computeVanadiumFlowBatteryExportByRegion(ops);
+  const nationalVanadiumFlow = nationalVanadiumFlowBatteryExportIndex(vanadiumFlowBatteryExportByRegion);
+  const vanadiumFlowMult = vanadiumFlowBatteryExportProductivityMultiplier(
+    nationalVanadiumFlow,
+    options?.vanadiumFlowBatteryExportPolicy ?? 'baseline',
+  );
+  const bushfireEvacuationRailBridgeByRegion = computeBushfireEvacuationRailBridgeByRegion(ops, networkStress);
+  const nationalBushfireEvac = nationalBushfireEvacuationRailBridgeIndex(bushfireEvacuationRailBridgeByRegion);
+  const bushfireEvacuationRailBridgeShare = computeBushfireEvacuationRailBridgeShare(
+    ops,
+    options?.bushfireEvacuationRailBridgePolicy ?? 'baseline',
+  );
+  const bushfireEvacMult = bushfireEvacuationRailBridgeProductivityMultiplier(
+    bushfireEvacuationRailBridgeShare,
+    options?.bushfireEvacuationRailBridgePolicy ?? 'baseline',
+  );
+  const automatedGrainSiloRailLoadoutThroughputByRegion =
+    computeAutomatedGrainSiloRailLoadoutThroughputByRegion(ops);
+  const nationalGrainSiloAuto = nationalAutomatedGrainSiloRailLoadoutThroughputIndex(
+    automatedGrainSiloRailLoadoutThroughputByRegion,
+  );
+  const automatedGrainSiloRailLoadoutShare = computeAutomatedGrainSiloRailLoadoutShare(
+    ops,
+    options?.automatedGrainSiloRailLoadoutPolicy ?? 'baseline',
+  );
+  const grainSiloAutoMult = automatedGrainSiloRailLoadoutProductivityMultiplier(
+    automatedGrainSiloRailLoadoutShare,
+    options?.automatedGrainSiloRailLoadoutPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -19982,6 +20609,9 @@ export function computeTransportInfrastructureState(
     const graphiteAnodeBoost = (graphiteBatteryAnodeExportByRegion[code] - 5) * 0.0037;
     const cycloneCoastalBoost = (cycloneResilientCoastalFreightByRegion[code] - 6) * 0.0033;
     const ebusDepotBoost = (electricBusDepotChargingLogisticsThroughputByRegion[code] - 1.8) * 0.0029;
+    const vanadiumFlowBoost = (vanadiumFlowBatteryExportByRegion[code] - 5) * 0.0036;
+    const bushfireEvacBoost = (bushfireEvacuationRailBridgeByRegion[code] - 6) * 0.0032;
+    const grainSiloAutoBoost = (automatedGrainSiloRailLoadoutThroughputByRegion[code] - 1.9) * 0.0028;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -20031,7 +20661,10 @@ export function computeTransportInfrastructureState(
         inlandTerminalAutoBoost +
         graphiteAnodeBoost +
         cycloneCoastalBoost +
-        ebusDepotBoost) *
+        ebusDepotBoost +
+        vanadiumFlowBoost +
+        bushfireEvacBoost +
+        grainSiloAutoBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -20079,7 +20712,10 @@ export function computeTransportInfrastructureState(
       inlandTerminalAutoMult *
       graphiteAnodeMult *
       cycloneCoastalMult *
-      ebusDepotMult;
+      ebusDepotMult *
+      vanadiumFlowMult *
+      bushfireEvacMult *
+      grainSiloAutoMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -20150,7 +20786,10 @@ export function computeTransportInfrastructureState(
     nationalInlandTerminalAuto * 0.003 +
     nationalGraphiteAnode * 0.003 +
     nationalCycloneCoastal * 0.003 +
-    nationalEbusDepot * 0.003;
+    nationalEbusDepot * 0.003 +
+    nationalVanadiumFlow * 0.003 +
+    nationalBushfireEvac * 0.003 +
+    nationalGrainSiloAuto * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -20165,7 +20804,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/32',
+    schemaVersion: 'agent12/33',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -20387,6 +21026,14 @@ export function computeTransportInfrastructureState(
     electricBusDepotChargingLogisticsShare,
     nationalElectricBusDepotChargingLogisticsThroughputIndex: nationalEbusDepot,
     electricBusDepotChargingLogisticsThroughputByRegion,
+    nationalVanadiumFlowBatteryExportIndex: nationalVanadiumFlow,
+    vanadiumFlowBatteryExportByRegion,
+    bushfireEvacuationRailBridgeShare,
+    nationalBushfireEvacuationRailBridgeIndex: nationalBushfireEvac,
+    bushfireEvacuationRailBridgeByRegion,
+    automatedGrainSiloRailLoadoutShare,
+    nationalAutomatedGrainSiloRailLoadoutThroughputIndex: nationalGrainSiloAuto,
+    automatedGrainSiloRailLoadoutThroughputByRegion,
     computeMs,
   };
 }
@@ -20469,7 +21116,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/32' &&
+      infra.schemaVersion === 'agent12/33' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -20579,8 +21226,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalGraphiteBatteryAnodeExportIndex >= 5 &&
       infra.nationalCycloneResilientCoastalFreightIndex >= 6 &&
       infra.electricBusDepotChargingLogisticsShare >= 0.03 &&
-      infra.nationalElectricBusDepotChargingLogisticsThroughputIndex >= 1.8,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} graphite=${infra.nationalGraphiteBatteryAnodeExportIndex.toFixed(1)} cyclone=${infra.nationalCycloneResilientCoastalFreightIndex.toFixed(1)} ebus=${infra.nationalElectricBusDepotChargingLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalElectricBusDepotChargingLogisticsThroughputIndex >= 1.8 &&
+      infra.nationalVanadiumFlowBatteryExportIndex >= 5 &&
+      infra.nationalBushfireEvacuationRailBridgeIndex >= 6 &&
+      infra.automatedGrainSiloRailLoadoutShare >= 0.03 &&
+      infra.nationalAutomatedGrainSiloRailLoadoutThroughputIndex >= 1.9,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} vanadium=${infra.nationalVanadiumFlowBatteryExportIndex.toFixed(1)} evac=${infra.nationalBushfireEvacuationRailBridgeIndex.toFixed(1)} grain=${infra.nationalAutomatedGrainSiloRailLoadoutThroughputIndex.toFixed(1)}`,
   });
 
   return results;
