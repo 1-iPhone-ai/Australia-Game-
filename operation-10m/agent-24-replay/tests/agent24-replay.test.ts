@@ -145,6 +145,18 @@ import {
   buildAgent24ArchiveContinuityFinalizationReport,
   runAgent24ArchiveContinuityFinalizationSelfTests,
 } from '../src/archive-continuity-finalization.ts';
+import {
+  buildAgent24ArchiveContinuityVerificationReport,
+  runAgent24ArchiveContinuityVerificationSelfTests,
+} from '../src/archive-continuity-verification.ts';
+import {
+  buildAgent24ReplayScaleWaveAcceptanceReport,
+  runAgent24ReplayScaleWaveAcceptanceSelfTests,
+} from '../src/replay-scale-wave-acceptance.ts';
+import {
+  buildAgent24ArchiveReleaseGateReport,
+  runAgent24ArchiveReleaseGateSelfTests,
+} from '../src/archive-release-gate.ts';
 import { buildO6kHistoricalAnalyticsSnapshot } from '../src/history-replay-analytics.ts';
 import { o6kAgent24StableStringify, runO6kAgent24SelfTests } from '../src/history-replay-analytics.ts';
 
@@ -1163,6 +1175,53 @@ describe('Agent 24 archive continuity finalization', () => {
     });
     assert.equal(direct.deterministicFingerprint, bundle.archiveContinuityFinalization.deterministicFingerprint);
     assert.ok(runAgent24ArchiveContinuityFinalizationSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 archive continuity verification', () => {
+  it('verifies continuity when finalization, handoff, and closeout align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.archiveContinuityVerification.verified, true);
+    const direct = buildAgent24ArchiveContinuityVerificationReport({
+      matchId: 'm',
+      archiveContinuityFinalization: bundle.archiveContinuityFinalization,
+      archiveHandoffVerification: bundle.archiveHandoffVerification,
+      replayPipelineCloseout: bundle.replayPipelineCloseout,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.archiveContinuityVerification.deterministicFingerprint);
+    assert.ok(runAgent24ArchiveContinuityVerificationSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 replay scale wave acceptance', () => {
+  it('accepts wave 16 when continuity, export, and depth align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.replayScaleWaveAcceptance.accepted, true);
+    assert.equal(bundle.replayScaleWaveAcceptance.waveRound, 16);
+    const direct = buildAgent24ReplayScaleWaveAcceptanceReport({
+      matchId: 'm',
+      waveRound: 16,
+      archiveContinuityVerification: bundle.archiveContinuityVerification,
+      exportReadiness: bundle.exportReadiness,
+      analyticsDepth: bundle.analyticsDepth,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.replayScaleWaveAcceptance.deterministicFingerprint);
+    assert.ok(runAgent24ReplayScaleWaveAcceptanceSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 archive release gate', () => {
+  it('allows release when wave acceptance and publish pipeline align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle(richArchiveBundleInput());
+    assert.equal(bundle.archiveReleaseGate.releaseAllowed, true);
+    const direct = buildAgent24ArchiveReleaseGateReport({
+      matchId: 'm',
+      replayScaleWaveAcceptance: bundle.replayScaleWaveAcceptance,
+      archivePublishPlan: bundle.archivePublishPlan,
+      archivePublishDispatch: bundle.archivePublishDispatch,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.archiveReleaseGate.deterministicFingerprint);
+    assert.ok(runAgent24ArchiveReleaseGateSelfTests().every(t => t.passed));
   });
 });
 
