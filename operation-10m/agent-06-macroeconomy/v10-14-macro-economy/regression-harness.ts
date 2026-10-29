@@ -64,6 +64,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeWave45ReplayIntegrationStress?: boolean;
   includeWave46UiDashboardExportStress?: boolean;
   includeWave47ReplayIntegrationStress?: boolean;
+  includeWave48ReplayIntegrationStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
@@ -110,6 +111,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   const includeWave45ReplayIntegrationStress = Boolean(options?.includeWave45ReplayIntegrationStress);
   const includeWave46UiDashboardExportStress = Boolean(options?.includeWave46UiDashboardExportStress);
   const includeWave47ReplayIntegrationStress = Boolean(options?.includeWave47ReplayIntegrationStress);
+  const includeWave48ReplayIntegrationStress = Boolean(options?.includeWave48ReplayIntegrationStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -739,6 +741,23 @@ export function runMacroEconomyRegressionHarness(options?: {
             baselineSha: t % 7 === 0 ? 'deadbeef' : '456efb9',
             projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_637_258
           }
+        : undefined,
+      replayWave48Export: includeWave48ReplayIntegrationStress
+        ? {
+            round48Ready: t % 6 !== 0,
+            o10TaskId: 'O10-227',
+            waveRound: 48,
+            integrityBand: t % 5 === 0 ? 'corrupt' : 'sound',
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_684_235
+          }
+        : undefined,
+      integrationHealthWave48Export: includeWave48ReplayIntegrationStress
+        ? {
+            healthReady: t % 6 !== 0,
+            slotBand: t % 5 === 0 ? 'red' : 'latched',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : '4404bf0f',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_684_235
+          }
         : undefined
     });
     const { state, persisted: nextP } = computeNationalMacroEconomy(inputs, persisted, prev);
@@ -1272,8 +1291,19 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
+  if (includeWave48ReplayIntegrationStress && prev) {
+    checks.push({
+      id: 'transmission_persistence_finite',
+      passed: Number.isFinite(prev.transmissionPersistence.persistenceIndex),
+      detail: String(prev.transmissionPersistence.persistenceIndex)
+    });
+    checks.push({
+      id: 'ninety_two_transmission_layers_wave48',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 92,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
   checks.push({
-    id: 'input_hash_stable_replay',
     passed: lastHash.length > 8,
     detail: lastHash.slice(0, 12)
   });
