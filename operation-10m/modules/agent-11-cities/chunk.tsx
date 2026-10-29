@@ -219,7 +219,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.36' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.37' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -333,7 +333,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'existential_absolute_nullity_perpetuity'
   | 'collapse_omni_singularity_consolidation'
   | 'void_total_erosion_dissolution'
-  | 'existential_absolute_nullity_immutability';
+  | 'existential_absolute_nullity_immutability'
+  | 'collapse_omni_singularity_coalescence'
+  | 'void_total_erosion_sublimation'
+  | 'existential_absolute_nullity_permanence';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -1324,6 +1327,36 @@ export interface OP10M_A11_ExistentialAbsoluteNullityImmutabilityRow {
   narrative: string;
 }
 
+export type OP10M_A11_CollapseOmniSingularityCoalescenceBand = 'latent' | 'aligning' | 'total' | 'coalescence';
+
+export interface OP10M_A11_CollapseOmniSingularityCoalescenceRow {
+  regionId: OP10M_A11_RegionId;
+  coalescenceScore: number;
+  band: OP10M_A11_CollapseOmniSingularityCoalescenceBand;
+  marks: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_VoidTotalErosionSublimationBand = 'dormant' | 'sublimating' | 'total' | 'complete_sublimation';
+
+export interface OP10M_A11_VoidTotalErosionSublimationRow {
+  regionId: OP10M_A11_RegionId;
+  sublimationScore: number;
+  band: OP10M_A11_VoidTotalErosionSublimationBand;
+  phases: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_ExistentialAbsoluteNullityPermanenceBand = 'trace' | 'permanent' | 'absolute' | 'total_permanence';
+
+export interface OP10M_A11_ExistentialAbsoluteNullityPermanenceRow {
+  regionId: OP10M_A11_RegionId;
+  permanenceScore: number;
+  band: OP10M_A11_ExistentialAbsoluteNullityPermanenceBand;
+  marks: string[];
+  narrative: string;
+}
+
 export interface OP10M_A11_ExistentialAbsoluteNullityContinuityRow {
   regionId: OP10M_A11_RegionId;
   continuityScore: number;
@@ -1640,6 +1673,12 @@ export interface OP10M_A11_CompositeState {
   nationalVoidTotalErosionDissolutionIndex: number;
   existentialAbsoluteNullityImmutability: OP10M_A11_ExistentialAbsoluteNullityImmutabilityRow[];
   nationalExistentialAbsoluteNullityImmutabilityIndex: number;
+  collapseOmniSingularityCoalescence: OP10M_A11_CollapseOmniSingularityCoalescenceRow[];
+  nationalCollapseOmniSingularityCoalescenceIndex: number;
+  voidTotalErosionSublimation: OP10M_A11_VoidTotalErosionSublimationRow[];
+  nationalVoidTotalErosionSublimationIndex: number;
+  existentialAbsoluteNullityPermanence: OP10M_A11_ExistentialAbsoluteNullityPermanenceRow[];
+  nationalExistentialAbsoluteNullityPermanenceIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -1748,6 +1787,9 @@ export interface OP10M_A11_CompositePersisted {
   lastCollapseOmniSingularityConsolidationIndex: number;
   lastVoidTotalErosionDissolutionIndex: number;
   lastExistentialAbsoluteNullityImmutabilityIndex: number;
+  lastCollapseOmniSingularityCoalescenceIndex: number;
+  lastVoidTotalErosionSublimationIndex: number;
+  lastExistentialAbsoluteNullityPermanenceIndex: number;
   inputHash: string;
 }
 
@@ -5993,6 +6035,9 @@ export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePe
     lastCollapseOmniSingularityConsolidationIndex: 0,
     lastVoidTotalErosionDissolutionIndex: 0,
     lastExistentialAbsoluteNullityImmutabilityIndex: 0,
+    lastCollapseOmniSingularityCoalescenceIndex: 0,
+    lastVoidTotalErosionSublimationIndex: 0,
+    lastExistentialAbsoluteNullityPermanenceIndex: 0,
     inputHash: '',
   };
 }
@@ -6206,6 +6251,12 @@ export function validateOP10M_A11_CompositeState(state: OP10M_A11_CompositeState
   if (state.nationalCollapseOmniSingularityConsolidationIndex < 0 || state.nationalCollapseOmniSingularityConsolidationIndex > 100) errs.push('collapse omni singularity consolidation index out of range');
   if (state.nationalVoidTotalErosionDissolutionIndex < 0 || state.nationalVoidTotalErosionDissolutionIndex > 100) errs.push('void total erosion dissolution index out of range');
   if (state.nationalExistentialAbsoluteNullityImmutabilityIndex < 0 || state.nationalExistentialAbsoluteNullityImmutabilityIndex > 100) errs.push('existential absolute nullity immutability index out of range');
+  if (state.collapseOmniSingularityCoalescence.length !== 8) errs.push('collapse omni singularity coalescence row count');
+  if (state.voidTotalErosionSublimation.length !== 8) errs.push('void total erosion sublimation row count');
+  if (state.existentialAbsoluteNullityPermanence.length !== 8) errs.push('existential absolute nullity permanence row count');
+  if (state.nationalCollapseOmniSingularityCoalescenceIndex < 0 || state.nationalCollapseOmniSingularityCoalescenceIndex > 100) errs.push('collapse omni singularity coalescence index out of range');
+  if (state.nationalVoidTotalErosionSublimationIndex < 0 || state.nationalVoidTotalErosionSublimationIndex > 100) errs.push('void total erosion sublimation index out of range');
+  if (state.nationalExistentialAbsoluteNullityPermanenceIndex < 0 || state.nationalExistentialAbsoluteNullityPermanenceIndex > 100) errs.push('existential absolute nullity permanence index out of range');
   return errs;
 }
 
@@ -6877,6 +6928,24 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
   const existentialAbsoluteNullityImmutabilityOut = op10mA11ComputeSettlementExistentialAbsoluteNullityImmutability({
     existentialAbsoluteNullityPerpetuity: existentialAbsoluteNullityPerpetuityOut.rows,
     collapseOmniSingularityUnification: collapseOmniSingularityUnificationOut.rows,
+    existentialFinalNullitySentence: existentialFinalNullitySentenceOut.rows,
+  });
+
+  const collapseOmniSingularityCoalescenceOut = op10mA11ComputeRegionalCollapseOmniSingularityCoalescence({
+    collapseOmniSingularityConsolidation: collapseOmniSingularityConsolidationOut.rows,
+    voidTotalErosionDissolution: voidTotalErosionDissolutionOut.rows,
+    existentialAbsoluteNullityImmutability: existentialAbsoluteNullityImmutabilityOut.rows,
+  });
+
+  const voidTotalErosionSublimationOut = op10mA11ComputeInterregionalVoidTotalErosionSublimation({
+    voidTotalErosionDissolution: voidTotalErosionDissolutionOut.rows,
+    collapseOmniSingularityConsolidation: collapseOmniSingularityConsolidationOut.rows,
+    voidExistenceAnnihilationFront: voidExistenceAnnihilationFrontOut.rows,
+  });
+
+  const existentialAbsoluteNullityPermanenceOut = op10mA11ComputeSettlementExistentialAbsoluteNullityPermanence({
+    existentialAbsoluteNullityImmutability: existentialAbsoluteNullityImmutabilityOut.rows,
+    collapseOmniSingularityConsolidation: collapseOmniSingularityConsolidationOut.rows,
     existentialFinalNullitySentence: existentialFinalNullitySentenceOut.rows,
   });
 
@@ -8833,6 +8902,67 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     );
   }
 
+  const singularityCoalescence = op10mA11RegionsWithCollapseSingularityCoalescence(
+    collapseOmniSingularityCoalescenceOut.rows,
+  );
+  if (
+    singularityCoalescence.length >= 2 ||
+    collapseOmniSingularityCoalescenceOut.nationalIndex >= 71 ||
+    op10mA11CollapseOmniSingularityCoalescenceEscalating(
+      collapseOmniSingularityCoalescenceOut.nationalIndex,
+      base.revision > 0 ? base.lastCollapseOmniSingularityCoalescenceIndex : null,
+    )
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'collapse_omni_singularity_coalescence',
+      singularityCoalescence.slice(0, 5),
+      `Regional collapse omni singularity coalescence (index ${collapseOmniSingularityCoalescenceOut.nationalIndex.toFixed(1)}).`,
+      collapseOmniSingularityCoalescenceOut.nationalIndex >= 81 ? 'major' : 'meaningful',
+    );
+  }
+
+  const erosionSublimation = op10mA11RegionsWithTotalErosionSublimation(voidTotalErosionSublimationOut.rows);
+  if (
+    erosionSublimation.length >= 2 ||
+    voidTotalErosionSublimationOut.nationalIndex >= 70 ||
+    op10mA11VoidTotalErosionSublimationEscalating(
+      voidTotalErosionSublimationOut.nationalIndex,
+      base.revision > 0 ? base.lastVoidTotalErosionSublimationIndex : null,
+    )
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'void_total_erosion_sublimation',
+      erosionSublimation.slice(0, 5),
+      `Interregional void total erosion sublimation (index ${voidTotalErosionSublimationOut.nationalIndex.toFixed(1)}).`,
+      voidTotalErosionSublimationOut.nationalIndex >= 80 ? 'major' : 'meaningful',
+    );
+  }
+
+  const nullityPermanence = op10mA11RegionsWithTotalAbsoluteNullityPermanence(
+    existentialAbsoluteNullityPermanenceOut.rows,
+  );
+  if (
+    nullityPermanence.length >= 2 ||
+    existentialAbsoluteNullityPermanenceOut.nationalIndex >= 73 ||
+    op10mA11ExistentialAbsoluteNullityPermanenceEscalating(
+      existentialAbsoluteNullityPermanenceOut.nationalIndex,
+      base.revision > 0 ? base.lastExistentialAbsoluteNullityPermanenceIndex : null,
+    )
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'existential_absolute_nullity_permanence',
+      nullityPermanence.slice(0, 5),
+      `Settlement existential absolute nullity permanence (index ${existentialAbsoluteNullityPermanenceOut.nationalIndex.toFixed(1)}).`,
+      existentialAbsoluteNullityPermanenceOut.nationalIndex >= 83 ? 'major' : 'meaningful',
+    );
+  }
+
   base.revision += 1;
   base.urban = urbanOut.persisted;
   base.infra = infraOut.persisted;
@@ -8934,11 +9064,14 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
   base.lastCollapseOmniSingularityConsolidationIndex = collapseOmniSingularityConsolidationOut.nationalIndex;
   base.lastVoidTotalErosionDissolutionIndex = voidTotalErosionDissolutionOut.nationalIndex;
   base.lastExistentialAbsoluteNullityImmutabilityIndex = existentialAbsoluteNullityImmutabilityOut.nationalIndex;
+  base.lastCollapseOmniSingularityCoalescenceIndex = collapseOmniSingularityCoalescenceOut.nationalIndex;
+  base.lastVoidTotalErosionSublimationIndex = voidTotalErosionSublimationOut.nationalIndex;
+  base.lastExistentialAbsoluteNullityPermanenceIndex = existentialAbsoluteNullityPermanenceOut.nationalIndex;
   base.inputHash = op10mA11HashInputs({
     turn: inputs.urban.turn,
     cityCount: inputs.urban.cities.length,
     regionKeys: 'composite',
-    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}:${metropolitanSaturationIndex}:${backlogOut.nationalIndex}:${housingSpilloverOut.nationalIndex}:${climateOut.nationalIndex}:${amenityOut.nationalIndex}:${relocationOut.nationalIndex}:${employmentAnchorOut.nationalIndex}:${commuteWedgeOut.nationalIndex}:${receptionStrainOut.nationalIndex}:${landUseGridlockOut.nationalIndex}:${mobilityTrapOut.nationalIndex}:${absorptionGapOut.nationalIndex}:${reliefOverheadOut.nationalIndex}:${corridorEquityDriftOut.nationalIndex}:${climateAdaptationLagOut.nationalIndex}:${fiscalCapacityStrainOut.nationalIndex}:${networkErosionOut.nationalIndex}:${longHorizonRiskOut.nationalIndex}:${cohesionIntegrityOut.nationalIndex}:${reliefEquityGapOut.nationalIndex}:${systemicFragilityOut.nationalIndex}:${governanceResilienceDecayOut.nationalIndex}:${migrationStabilityErosionOut.nationalIndex}:${adaptiveCapacityCeilingOut.nationalIndex}:${fiscalGovernanceCouplingOut.nationalIndex}:${networkEquityTensionOut.nationalIndex}:${resilienceFrontierOut.nationalIndex}:${metaGovernanceFatigueOut.nationalIndex}:${capitalMobilityAsymmetryOut.nationalIndex}:${compoundShockSaturationOut.nationalIndex}:${institutionalTrustErosionOut.nationalIndex}:${liquidityFragmentationOut.nationalIndex}:${cascadingFailureRiskOut.nationalIndex}:${socialContractFragilityOut.nationalIndex}:${capitalFlightPanicOut.nationalIndex}:${irrecoverableCollapseOut.nationalIndex}:${settlementLegitimacyCollapseOut.nationalIndex}:${fiscalPanicContagionOut.nationalIndex}:${terminalStateLockInOut.nationalIndex}:${governanceVacuumEscalationOut.nationalIndex}:${settlementAbandonmentSpiralOut.nationalIndex}:${postCollapseRecoveryImpossibilityOut.nationalIndex}:${stateCollapseCascadeAmplificationOut.nationalIndex}:${hollowRegionContagionOut.nationalIndex}:${permanentDepopulationLockOut.nationalIndex}:${totalCollapseSingularityOut.nationalIndex}:${voidExpansionVelocityOut.nationalIndex}:${existentialContinuityFractureOut.nationalIndex}:${collapseHorizonConvergenceOut.nationalIndex}:${voidTotalizationSurgeOut.nationalIndex}:${existentialTerminusLockOut.nationalIndex}:${absoluteCollapseHorizonLockOut.nationalIndex}:${voidFinalizationCascadeOut.nationalIndex}:${existentialObliterationThresholdOut.nationalIndex}:${ultimateCollapseSingularitySealOut.nationalIndex}:${voidAnnihilationConvergenceOut.nationalIndex}:${existentialNullStateLockOut.nationalIndex}:${collapseExistenceSingularityPointOut.nationalIndex}:${voidExistenceAnnihilationFrontOut.nationalIndex}:${existentialAbsoluteZeroLockOut.nationalIndex}:${collapseOmniSingularityNodeOut.nationalIndex}:${voidAbsoluteErosionSurgeOut.nationalIndex}:${existentialFinalNullityLockOut.nationalIndex}:${collapseTotalSingularityVertexOut.nationalIndex}:${voidTerminalErosionCascadeOut.nationalIndex}:${existentialUltimateNullitySealOut.nationalIndex}:${collapseAbsoluteSingularityApexOut.nationalIndex}:${voidCompleteErosionTerminalityOut.nationalIndex}:${existentialFinalNullityClosureOut.nationalIndex}:${collapseUltimateSingularityZenithOut.nationalIndex}:${voidTotalErosionFinalityOut.nationalIndex}:${existentialAbsoluteNullityVerdictOut.nationalIndex}:${collapseTotalSingularityNexusOut.nationalIndex}:${voidAbsoluteErosionTerminationOut.nationalIndex}:${existentialFinalNullitySentenceOut.nationalIndex}:${collapseAbsoluteSingularityCulminationOut.nationalIndex}:${voidCompleteErosionExtinctionOut.nationalIndex}:${existentialTotalNullityDecreeOut.nationalIndex}:${collapseOmniSingularitySynthesisOut.nationalIndex}:${voidTotalErosionAnnihilationOut.nationalIndex}:${existentialAbsoluteNullityMandateOut.nationalIndex}:${collapseOmniSingularityConvergenceOut.nationalIndex}:${voidTotalErosionObliterationOut.nationalIndex}:${existentialAbsoluteNullityBindingOut.nationalIndex}:${collapseOmniSingularityIntegrationOut.nationalIndex}:${voidTotalErosionEradicationOut.nationalIndex}:${existentialAbsoluteNullityContinuityOut.nationalIndex}:${collapseOmniSingularityUnificationOut.nationalIndex}:${voidTotalErosionEliminationOut.nationalIndex}:${existentialAbsoluteNullityPerpetuityOut.nationalIndex}:${collapseOmniSingularityConsolidationOut.nationalIndex}:${voidTotalErosionDissolutionOut.nationalIndex}:${existentialAbsoluteNullityImmutabilityOut.nationalIndex}`,
+    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}:${metropolitanSaturationIndex}:${backlogOut.nationalIndex}:${housingSpilloverOut.nationalIndex}:${climateOut.nationalIndex}:${amenityOut.nationalIndex}:${relocationOut.nationalIndex}:${employmentAnchorOut.nationalIndex}:${commuteWedgeOut.nationalIndex}:${receptionStrainOut.nationalIndex}:${landUseGridlockOut.nationalIndex}:${mobilityTrapOut.nationalIndex}:${absorptionGapOut.nationalIndex}:${reliefOverheadOut.nationalIndex}:${corridorEquityDriftOut.nationalIndex}:${climateAdaptationLagOut.nationalIndex}:${fiscalCapacityStrainOut.nationalIndex}:${networkErosionOut.nationalIndex}:${longHorizonRiskOut.nationalIndex}:${cohesionIntegrityOut.nationalIndex}:${reliefEquityGapOut.nationalIndex}:${systemicFragilityOut.nationalIndex}:${governanceResilienceDecayOut.nationalIndex}:${migrationStabilityErosionOut.nationalIndex}:${adaptiveCapacityCeilingOut.nationalIndex}:${fiscalGovernanceCouplingOut.nationalIndex}:${networkEquityTensionOut.nationalIndex}:${resilienceFrontierOut.nationalIndex}:${metaGovernanceFatigueOut.nationalIndex}:${capitalMobilityAsymmetryOut.nationalIndex}:${compoundShockSaturationOut.nationalIndex}:${institutionalTrustErosionOut.nationalIndex}:${liquidityFragmentationOut.nationalIndex}:${cascadingFailureRiskOut.nationalIndex}:${socialContractFragilityOut.nationalIndex}:${capitalFlightPanicOut.nationalIndex}:${irrecoverableCollapseOut.nationalIndex}:${settlementLegitimacyCollapseOut.nationalIndex}:${fiscalPanicContagionOut.nationalIndex}:${terminalStateLockInOut.nationalIndex}:${governanceVacuumEscalationOut.nationalIndex}:${settlementAbandonmentSpiralOut.nationalIndex}:${postCollapseRecoveryImpossibilityOut.nationalIndex}:${stateCollapseCascadeAmplificationOut.nationalIndex}:${hollowRegionContagionOut.nationalIndex}:${permanentDepopulationLockOut.nationalIndex}:${totalCollapseSingularityOut.nationalIndex}:${voidExpansionVelocityOut.nationalIndex}:${existentialContinuityFractureOut.nationalIndex}:${collapseHorizonConvergenceOut.nationalIndex}:${voidTotalizationSurgeOut.nationalIndex}:${existentialTerminusLockOut.nationalIndex}:${absoluteCollapseHorizonLockOut.nationalIndex}:${voidFinalizationCascadeOut.nationalIndex}:${existentialObliterationThresholdOut.nationalIndex}:${ultimateCollapseSingularitySealOut.nationalIndex}:${voidAnnihilationConvergenceOut.nationalIndex}:${existentialNullStateLockOut.nationalIndex}:${collapseExistenceSingularityPointOut.nationalIndex}:${voidExistenceAnnihilationFrontOut.nationalIndex}:${existentialAbsoluteZeroLockOut.nationalIndex}:${collapseOmniSingularityNodeOut.nationalIndex}:${voidAbsoluteErosionSurgeOut.nationalIndex}:${existentialFinalNullityLockOut.nationalIndex}:${collapseTotalSingularityVertexOut.nationalIndex}:${voidTerminalErosionCascadeOut.nationalIndex}:${existentialUltimateNullitySealOut.nationalIndex}:${collapseAbsoluteSingularityApexOut.nationalIndex}:${voidCompleteErosionTerminalityOut.nationalIndex}:${existentialFinalNullityClosureOut.nationalIndex}:${collapseUltimateSingularityZenithOut.nationalIndex}:${voidTotalErosionFinalityOut.nationalIndex}:${existentialAbsoluteNullityVerdictOut.nationalIndex}:${collapseTotalSingularityNexusOut.nationalIndex}:${voidAbsoluteErosionTerminationOut.nationalIndex}:${existentialFinalNullitySentenceOut.nationalIndex}:${collapseAbsoluteSingularityCulminationOut.nationalIndex}:${voidCompleteErosionExtinctionOut.nationalIndex}:${existentialTotalNullityDecreeOut.nationalIndex}:${collapseOmniSingularitySynthesisOut.nationalIndex}:${voidTotalErosionAnnihilationOut.nationalIndex}:${existentialAbsoluteNullityMandateOut.nationalIndex}:${collapseOmniSingularityConvergenceOut.nationalIndex}:${voidTotalErosionObliterationOut.nationalIndex}:${existentialAbsoluteNullityBindingOut.nationalIndex}:${collapseOmniSingularityIntegrationOut.nationalIndex}:${voidTotalErosionEradicationOut.nationalIndex}:${existentialAbsoluteNullityContinuityOut.nationalIndex}:${collapseOmniSingularityUnificationOut.nationalIndex}:${voidTotalErosionEliminationOut.nationalIndex}:${existentialAbsoluteNullityPerpetuityOut.nationalIndex}:${collapseOmniSingularityConsolidationOut.nationalIndex}:${voidTotalErosionDissolutionOut.nationalIndex}:${existentialAbsoluteNullityImmutabilityOut.nationalIndex}:${collapseOmniSingularityCoalescenceOut.nationalIndex}:${voidTotalErosionSublimationOut.nationalIndex}:${existentialAbsoluteNullityPermanenceOut.nationalIndex}`,
   });
 
   const state: OP10M_A11_CompositeState = {
@@ -9157,7 +9290,13 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     nationalVoidTotalErosionDissolutionIndex: voidTotalErosionDissolutionOut.nationalIndex,
     existentialAbsoluteNullityImmutability: existentialAbsoluteNullityImmutabilityOut.rows,
     nationalExistentialAbsoluteNullityImmutabilityIndex: existentialAbsoluteNullityImmutabilityOut.nationalIndex,
-    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}; saturation ${metropolitanSaturationIndex}; service equity ${serviceEquityOut.nationalIndex}; backlog ${backlogOut.nationalIndex}; governance ${governanceOut.nationalIndex}; housing spillover ${housingSpilloverOut.nationalIndex}; talent drain ${talentOut.nationalIndex}; climate displacement ${climateOut.nationalIndex}; amenity cost ${amenityOut.nationalIndex}; decentralization ${decentralOut.nationalIndex}; relocation burden ${relocationOut.nationalIndex}; employment anchor ${employmentAnchorOut.nationalIndex}; commute wedge ${commuteWedgeOut.nationalIndex}; reception strain ${receptionStrainOut.nationalIndex}; land-use gridlock ${landUseGridlockOut.nationalIndex}; mobility trap ${mobilityTrapOut.nationalIndex}; absorption gap ${absorptionGapOut.nationalIndex}; relief overhead ${reliefOverheadOut.nationalIndex}; corridor equity drift ${corridorEquityDriftOut.nationalIndex}; climate adaptation lag ${climateAdaptationLagOut.nationalIndex}; fiscal capacity ${fiscalCapacityStrainOut.nationalIndex}; network erosion ${networkErosionOut.nationalIndex}; horizon risk ${longHorizonRiskOut.nationalIndex}; cohesion integrity ${cohesionIntegrityOut.nationalIndex}; relief equity gap ${reliefEquityGapOut.nationalIndex}; systemic fragility ${systemicFragilityOut.nationalIndex}; governance decay ${governanceResilienceDecayOut.nationalIndex}; migration stability ${migrationStabilityErosionOut.nationalIndex}; adaptive ceiling ${adaptiveCapacityCeilingOut.nationalIndex}; fiscal–governance ${fiscalGovernanceCouplingOut.nationalIndex}; network equity ${networkEquityTensionOut.nationalIndex}; resilience frontier ${resilienceFrontierOut.nationalIndex}; meta-governance fatigue ${metaGovernanceFatigueOut.nationalIndex}; capital mobility ${capitalMobilityAsymmetryOut.nationalIndex}; compound shocks ${compoundShockSaturationOut.nationalIndex}; institutional trust ${institutionalTrustErosionOut.nationalIndex}; liquidity fragmentation ${liquidityFragmentationOut.nationalIndex}; cascade risk ${cascadingFailureRiskOut.nationalIndex}; social contract ${socialContractFragilityOut.nationalIndex}; capital flight ${capitalFlightPanicOut.nationalIndex}; collapse threshold ${irrecoverableCollapseOut.nationalIndex}; legitimacy collapse ${settlementLegitimacyCollapseOut.nationalIndex}; fiscal contagion ${fiscalPanicContagionOut.nationalIndex}; terminal lock-in ${terminalStateLockInOut.nationalIndex}; governance vacuum ${governanceVacuumEscalationOut.nationalIndex}; abandonment spiral ${settlementAbandonmentSpiralOut.nationalIndex}; recovery impossibility ${postCollapseRecoveryImpossibilityOut.nationalIndex}; cascade amplification ${stateCollapseCascadeAmplificationOut.nationalIndex}; hollow contagion ${hollowRegionContagionOut.nationalIndex}; depopulation lock ${permanentDepopulationLockOut.nationalIndex}; collapse singularity ${totalCollapseSingularityOut.nationalIndex}; void expansion ${voidExpansionVelocityOut.nationalIndex}; continuity fracture ${existentialContinuityFractureOut.nationalIndex}; horizon convergence ${collapseHorizonConvergenceOut.nationalIndex}; void totalization ${voidTotalizationSurgeOut.nationalIndex}; terminus lock ${existentialTerminusLockOut.nationalIndex}; absolute horizon lock ${absoluteCollapseHorizonLockOut.nationalIndex}; void finalization ${voidFinalizationCascadeOut.nationalIndex}; obliteration threshold ${existentialObliterationThresholdOut.nationalIndex}; singularity seal ${ultimateCollapseSingularitySealOut.nationalIndex}; void annihilation ${voidAnnihilationConvergenceOut.nationalIndex}; null-state lock ${existentialNullStateLockOut.nationalIndex}; existence point ${collapseExistenceSingularityPointOut.nationalIndex}; void front ${voidExistenceAnnihilationFrontOut.nationalIndex}; absolute zero ${existentialAbsoluteZeroLockOut.nationalIndex}; omni node ${collapseOmniSingularityNodeOut.nationalIndex}; erosion surge ${voidAbsoluteErosionSurgeOut.nationalIndex}; final nullity ${existentialFinalNullityLockOut.nationalIndex}; singularity vertex ${collapseTotalSingularityVertexOut.nationalIndex}; terminal erosion ${voidTerminalErosionCascadeOut.nationalIndex}; ultimate seal ${existentialUltimateNullitySealOut.nationalIndex}; singularity apex ${collapseAbsoluteSingularityApexOut.nationalIndex}; complete terminality ${voidCompleteErosionTerminalityOut.nationalIndex}; nullity closure ${existentialFinalNullityClosureOut.nationalIndex}; singularity zenith ${collapseUltimateSingularityZenithOut.nationalIndex}; total finality ${voidTotalErosionFinalityOut.nationalIndex}; nullity verdict ${existentialAbsoluteNullityVerdictOut.nationalIndex}; singularity nexus ${collapseTotalSingularityNexusOut.nationalIndex}; erosion termination ${voidAbsoluteErosionTerminationOut.nationalIndex}; nullity sentence ${existentialFinalNullitySentenceOut.nationalIndex}; singularity culmination ${collapseAbsoluteSingularityCulminationOut.nationalIndex}; erosion extinction ${voidCompleteErosionExtinctionOut.nationalIndex}; nullity decree ${existentialTotalNullityDecreeOut.nationalIndex}; omni synthesis ${collapseOmniSingularitySynthesisOut.nationalIndex}; erosion annihilation ${voidTotalErosionAnnihilationOut.nationalIndex}; nullity mandate ${existentialAbsoluteNullityMandateOut.nationalIndex}; omni convergence ${collapseOmniSingularityConvergenceOut.nationalIndex}; erosion obliteration ${voidTotalErosionObliterationOut.nationalIndex}; nullity binding ${existentialAbsoluteNullityBindingOut.nationalIndex}; omni integration ${collapseOmniSingularityIntegrationOut.nationalIndex}; erosion eradication ${voidTotalErosionEradicationOut.nationalIndex}; nullity continuity ${existentialAbsoluteNullityContinuityOut.nationalIndex}; omni unification ${collapseOmniSingularityUnificationOut.nationalIndex}; erosion elimination ${voidTotalErosionEliminationOut.nationalIndex}; nullity perpetuity ${existentialAbsoluteNullityPerpetuityOut.nationalIndex}; omni consolidation ${collapseOmniSingularityConsolidationOut.nationalIndex}; erosion dissolution ${voidTotalErosionDissolutionOut.nationalIndex}; nullity immutability ${existentialAbsoluteNullityImmutabilityOut.nationalIndex}.`,
+    collapseOmniSingularityCoalescence: collapseOmniSingularityCoalescenceOut.rows,
+    nationalCollapseOmniSingularityCoalescenceIndex: collapseOmniSingularityCoalescenceOut.nationalIndex,
+    voidTotalErosionSublimation: voidTotalErosionSublimationOut.rows,
+    nationalVoidTotalErosionSublimationIndex: voidTotalErosionSublimationOut.nationalIndex,
+    existentialAbsoluteNullityPermanence: existentialAbsoluteNullityPermanenceOut.rows,
+    nationalExistentialAbsoluteNullityPermanenceIndex: existentialAbsoluteNullityPermanenceOut.nationalIndex,
+    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}; saturation ${metropolitanSaturationIndex}; service equity ${serviceEquityOut.nationalIndex}; backlog ${backlogOut.nationalIndex}; governance ${governanceOut.nationalIndex}; housing spillover ${housingSpilloverOut.nationalIndex}; talent drain ${talentOut.nationalIndex}; climate displacement ${climateOut.nationalIndex}; amenity cost ${amenityOut.nationalIndex}; decentralization ${decentralOut.nationalIndex}; relocation burden ${relocationOut.nationalIndex}; employment anchor ${employmentAnchorOut.nationalIndex}; commute wedge ${commuteWedgeOut.nationalIndex}; reception strain ${receptionStrainOut.nationalIndex}; land-use gridlock ${landUseGridlockOut.nationalIndex}; mobility trap ${mobilityTrapOut.nationalIndex}; absorption gap ${absorptionGapOut.nationalIndex}; relief overhead ${reliefOverheadOut.nationalIndex}; corridor equity drift ${corridorEquityDriftOut.nationalIndex}; climate adaptation lag ${climateAdaptationLagOut.nationalIndex}; fiscal capacity ${fiscalCapacityStrainOut.nationalIndex}; network erosion ${networkErosionOut.nationalIndex}; horizon risk ${longHorizonRiskOut.nationalIndex}; cohesion integrity ${cohesionIntegrityOut.nationalIndex}; relief equity gap ${reliefEquityGapOut.nationalIndex}; systemic fragility ${systemicFragilityOut.nationalIndex}; governance decay ${governanceResilienceDecayOut.nationalIndex}; migration stability ${migrationStabilityErosionOut.nationalIndex}; adaptive ceiling ${adaptiveCapacityCeilingOut.nationalIndex}; fiscal–governance ${fiscalGovernanceCouplingOut.nationalIndex}; network equity ${networkEquityTensionOut.nationalIndex}; resilience frontier ${resilienceFrontierOut.nationalIndex}; meta-governance fatigue ${metaGovernanceFatigueOut.nationalIndex}; capital mobility ${capitalMobilityAsymmetryOut.nationalIndex}; compound shocks ${compoundShockSaturationOut.nationalIndex}; institutional trust ${institutionalTrustErosionOut.nationalIndex}; liquidity fragmentation ${liquidityFragmentationOut.nationalIndex}; cascade risk ${cascadingFailureRiskOut.nationalIndex}; social contract ${socialContractFragilityOut.nationalIndex}; capital flight ${capitalFlightPanicOut.nationalIndex}; collapse threshold ${irrecoverableCollapseOut.nationalIndex}; legitimacy collapse ${settlementLegitimacyCollapseOut.nationalIndex}; fiscal contagion ${fiscalPanicContagionOut.nationalIndex}; terminal lock-in ${terminalStateLockInOut.nationalIndex}; governance vacuum ${governanceVacuumEscalationOut.nationalIndex}; abandonment spiral ${settlementAbandonmentSpiralOut.nationalIndex}; recovery impossibility ${postCollapseRecoveryImpossibilityOut.nationalIndex}; cascade amplification ${stateCollapseCascadeAmplificationOut.nationalIndex}; hollow contagion ${hollowRegionContagionOut.nationalIndex}; depopulation lock ${permanentDepopulationLockOut.nationalIndex}; collapse singularity ${totalCollapseSingularityOut.nationalIndex}; void expansion ${voidExpansionVelocityOut.nationalIndex}; continuity fracture ${existentialContinuityFractureOut.nationalIndex}; horizon convergence ${collapseHorizonConvergenceOut.nationalIndex}; void totalization ${voidTotalizationSurgeOut.nationalIndex}; terminus lock ${existentialTerminusLockOut.nationalIndex}; absolute horizon lock ${absoluteCollapseHorizonLockOut.nationalIndex}; void finalization ${voidFinalizationCascadeOut.nationalIndex}; obliteration threshold ${existentialObliterationThresholdOut.nationalIndex}; singularity seal ${ultimateCollapseSingularitySealOut.nationalIndex}; void annihilation ${voidAnnihilationConvergenceOut.nationalIndex}; null-state lock ${existentialNullStateLockOut.nationalIndex}; existence point ${collapseExistenceSingularityPointOut.nationalIndex}; void front ${voidExistenceAnnihilationFrontOut.nationalIndex}; absolute zero ${existentialAbsoluteZeroLockOut.nationalIndex}; omni node ${collapseOmniSingularityNodeOut.nationalIndex}; erosion surge ${voidAbsoluteErosionSurgeOut.nationalIndex}; final nullity ${existentialFinalNullityLockOut.nationalIndex}; singularity vertex ${collapseTotalSingularityVertexOut.nationalIndex}; terminal erosion ${voidTerminalErosionCascadeOut.nationalIndex}; ultimate seal ${existentialUltimateNullitySealOut.nationalIndex}; singularity apex ${collapseAbsoluteSingularityApexOut.nationalIndex}; complete terminality ${voidCompleteErosionTerminalityOut.nationalIndex}; nullity closure ${existentialFinalNullityClosureOut.nationalIndex}; singularity zenith ${collapseUltimateSingularityZenithOut.nationalIndex}; total finality ${voidTotalErosionFinalityOut.nationalIndex}; nullity verdict ${existentialAbsoluteNullityVerdictOut.nationalIndex}; singularity nexus ${collapseTotalSingularityNexusOut.nationalIndex}; erosion termination ${voidAbsoluteErosionTerminationOut.nationalIndex}; nullity sentence ${existentialFinalNullitySentenceOut.nationalIndex}; singularity culmination ${collapseAbsoluteSingularityCulminationOut.nationalIndex}; erosion extinction ${voidCompleteErosionExtinctionOut.nationalIndex}; nullity decree ${existentialTotalNullityDecreeOut.nationalIndex}; omni synthesis ${collapseOmniSingularitySynthesisOut.nationalIndex}; erosion annihilation ${voidTotalErosionAnnihilationOut.nationalIndex}; nullity mandate ${existentialAbsoluteNullityMandateOut.nationalIndex}; omni convergence ${collapseOmniSingularityConvergenceOut.nationalIndex}; erosion obliteration ${voidTotalErosionObliterationOut.nationalIndex}; nullity binding ${existentialAbsoluteNullityBindingOut.nationalIndex}; omni integration ${collapseOmniSingularityIntegrationOut.nationalIndex}; erosion eradication ${voidTotalErosionEradicationOut.nationalIndex}; nullity continuity ${existentialAbsoluteNullityContinuityOut.nationalIndex}; omni unification ${collapseOmniSingularityUnificationOut.nationalIndex}; erosion elimination ${voidTotalErosionEliminationOut.nationalIndex}; nullity perpetuity ${existentialAbsoluteNullityPerpetuityOut.nationalIndex}; omni consolidation ${collapseOmniSingularityConsolidationOut.nationalIndex}; erosion dissolution ${voidTotalErosionDissolutionOut.nationalIndex}; nullity immutability ${existentialAbsoluteNullityImmutabilityOut.nationalIndex}; omni coalescence ${collapseOmniSingularityCoalescenceOut.nationalIndex}; erosion sublimation ${voidTotalErosionSublimationOut.nationalIndex}; nullity permanence ${existentialAbsoluteNullityPermanenceOut.nationalIndex}.`,
     inputHash: base.inputHash,
   };
 
@@ -9281,6 +9420,9 @@ export type OP10M_A11_RegressionTurnSnapshot = {
   collapseOmniSingularityConsolidationIndex: number;
   voidTotalErosionDissolutionIndex: number;
   existentialAbsoluteNullityImmutabilityIndex: number;
+  collapseOmniSingularityCoalescenceIndex: number;
+  voidTotalErosionSublimationIndex: number;
+  existentialAbsoluteNullityPermanenceIndex: number;
   validationErrors: number;
 };
 
@@ -10087,7 +10229,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.36',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.37',
     composite.state.schemaVersion,
   );
 
@@ -10271,7 +10413,10 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastExistentialAbsoluteNullityPerpetuityIndex === composite.state.nationalExistentialAbsoluteNullityPerpetuityIndex &&
       composite.persisted.lastCollapseOmniSingularityConsolidationIndex === composite.state.nationalCollapseOmniSingularityConsolidationIndex &&
       composite.persisted.lastVoidTotalErosionDissolutionIndex === composite.state.nationalVoidTotalErosionDissolutionIndex &&
-      composite.persisted.lastExistentialAbsoluteNullityImmutabilityIndex === composite.state.nationalExistentialAbsoluteNullityImmutabilityIndex,
+      composite.persisted.lastExistentialAbsoluteNullityImmutabilityIndex === composite.state.nationalExistentialAbsoluteNullityImmutabilityIndex &&
+      composite.persisted.lastCollapseOmniSingularityCoalescenceIndex === composite.state.nationalCollapseOmniSingularityCoalescenceIndex &&
+      composite.persisted.lastVoidTotalErosionSublimationIndex === composite.state.nationalVoidTotalErosionSublimationIndex &&
+      composite.persisted.lastExistentialAbsoluteNullityPermanenceIndex === composite.state.nationalExistentialAbsoluteNullityPermanenceIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -13012,6 +13157,90 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_329',
     composite.state.existentialAbsoluteNullityImmutability.every((i) => i.narrative.includes('existential absolute nullity immutability')),
     composite.state.existentialAbsoluteNullityImmutability[0]?.band ?? 'none',
+  );
+
+  const collapseOmniSingularityCoalescence = op10mA11ComputeRegionalCollapseOmniSingularityCoalescence({
+    collapseOmniSingularityConsolidation: composite.state.collapseOmniSingularityConsolidation,
+    voidTotalErosionDissolution: composite.state.voidTotalErosionDissolution,
+    existentialAbsoluteNullityImmutability: composite.state.existentialAbsoluteNullityImmutability,
+  });
+  push(
+    out,
+    'a11_330',
+    composite.state.collapseOmniSingularityCoalescence.length === 8 &&
+      composite.state.nationalCollapseOmniSingularityCoalescenceIndex === collapseOmniSingularityCoalescence.nationalIndex,
+    `omni coalescence ${composite.state.nationalCollapseOmniSingularityCoalescenceIndex}`,
+  );
+
+  const voidTotalErosionSublimation = op10mA11ComputeInterregionalVoidTotalErosionSublimation({
+    voidTotalErosionDissolution: composite.state.voidTotalErosionDissolution,
+    collapseOmniSingularityConsolidation: composite.state.collapseOmniSingularityConsolidation,
+    voidExistenceAnnihilationFront: composite.state.voidExistenceAnnihilationFront,
+  });
+  push(
+    out,
+    'a11_331',
+    composite.state.voidTotalErosionSublimation.length === 8 &&
+      composite.state.nationalVoidTotalErosionSublimationIndex === voidTotalErosionSublimation.nationalIndex,
+    `erosion sublimation ${composite.state.nationalVoidTotalErosionSublimationIndex}`,
+  );
+
+  const existentialAbsoluteNullityPermanence = op10mA11ComputeSettlementExistentialAbsoluteNullityPermanence({
+    existentialAbsoluteNullityImmutability: composite.state.existentialAbsoluteNullityImmutability,
+    collapseOmniSingularityConsolidation: composite.state.collapseOmniSingularityConsolidation,
+    existentialFinalNullitySentence: composite.state.existentialFinalNullitySentence,
+  });
+  push(
+    out,
+    'a11_332',
+    composite.state.existentialAbsoluteNullityPermanence.length === 8 &&
+      composite.state.nationalExistentialAbsoluteNullityPermanenceIndex === existentialAbsoluteNullityPermanence.nationalIndex,
+    `nullity permanence ${composite.state.nationalExistentialAbsoluteNullityPermanenceIndex}`,
+  );
+
+  push(
+    out,
+    'a11_333',
+    composite.state.collapseOmniSingularityCoalescence.every((c) => c.narrative.includes('collapse omni singularity coalescence')),
+    composite.state.collapseOmniSingularityCoalescence[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_334',
+    composite.derived.some((d) => d.kind === 'collapse_omni_singularity_coalescence') ||
+      composite.state.collapseOmniSingularityCoalescence.some((c) => c.band === 'total' || c.band === 'coalescence'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_335',
+    composite.derived.some((d) => d.kind === 'void_total_erosion_sublimation') ||
+      composite.state.voidTotalErosionSublimation.some((s) => s.band === 'total' || s.band === 'complete_sublimation'),
+    composite.state.voidTotalErosionSublimation[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_336',
+    composite.persisted.lastVoidTotalErosionSublimationIndex === composite.state.nationalVoidTotalErosionSublimationIndex,
+    `persisted sublimation ${composite.persisted.lastVoidTotalErosionSublimationIndex}`,
+  );
+
+  push(
+    out,
+    'a11_337',
+    composite.derived.some((d) => d.kind === 'existential_absolute_nullity_permanence') ||
+      composite.state.existentialAbsoluteNullityPermanence.some((p) => p.band === 'absolute' || p.band === 'total_permanence'),
+    composite.state.existentialAbsoluteNullityPermanence[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_338',
+    composite.state.existentialAbsoluteNullityPermanence.every((p) => p.narrative.includes('existential absolute nullity permanence')),
+    composite.state.existentialAbsoluteNullityPermanence[0]?.band ?? 'none',
   );
 
   return out;
