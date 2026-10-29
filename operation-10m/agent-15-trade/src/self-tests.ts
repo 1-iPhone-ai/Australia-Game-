@@ -249,6 +249,20 @@ import {
   createEmptyBilateralForwardCommitmentAdmissionSnapshot,
   bilateralForwardCommitmentAdmissionExportScale,
 } from './bilateral-forward-commitment-admission.ts';
+import {
+  computeAdmittedForwardCommitmentContinuitySnapshot,
+  createEmptyAdmittedForwardCommitmentContinuitySnapshot,
+  admittedForwardCommitmentContinuityExportScale,
+} from './admitted-forward-commitment-continuity.ts';
+import {
+  computeBilateralCommitmentWindowHandoffSnapshot,
+  createEmptyBilateralCommitmentWindowHandoffSnapshot,
+  bilateralCommitmentWindowHandoffExportScale,
+} from './bilateral-commitment-window-handoff.ts';
+import {
+  computeBilateralTradeWindowContinuitySnapshot,
+  createEmptyBilateralTradeWindowContinuitySnapshot,
+} from './bilateral-trade-window-continuity.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -1789,6 +1803,55 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
       bilateralForwardCommitmentAdmissionExportScale(admitted) >=
         bilateralForwardCommitmentAdmissionExportScale(closed),
       'expected forward admission scale lift',
+    );
+  });
+
+  ok('admitted forward commitment continuity improves when admission is admitted', () => {
+    const admission = {
+      ...createEmptyBilateralForwardCommitmentAdmissionSnapshot(),
+      score: 0.95,
+      band: 'admitted' as const,
+    };
+    const arc = { ...createEmptyCommitmentArcContinuitySnapshot(), score: 0.93, band: 'sustained' as const };
+    const anchored = computeAdmittedForwardCommitmentContinuitySnapshot({
+      bilateralForwardCommitmentAdmission: admission,
+      commitmentArcContinuity: arc,
+      persisted: { ...createEmptyGTELPersisted(), admittedForwardCommitmentContinuitySmoothing: 0.89 },
+    }).snapshot;
+    const revoked = computeAdmittedForwardCommitmentContinuitySnapshot({
+      bilateralForwardCommitmentAdmission: { ...admission, score: 0.1, band: 'closed' },
+      commitmentArcContinuity: { ...arc, score: 0.08, band: 'lost' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(anchored.score > revoked.score, 'expected anchored admitted continuity');
+    gtelAssert(
+      admittedForwardCommitmentContinuityExportScale(anchored) >=
+        admittedForwardCommitmentContinuityExportScale(revoked),
+      'expected admitted continuity scale lift',
+    );
+  });
+
+  ok('bilateral commitment window handoff improves when continuity is anchored', () => {
+    const admitted = {
+      ...createEmptyAdmittedForwardCommitmentContinuitySnapshot(),
+      score: 0.96,
+      band: 'anchored' as const,
+    };
+    const window = { ...createEmptyBilateralTradeWindowContinuitySnapshot(), score: 0.92, band: 'continuous' as const };
+    const handed = computeBilateralCommitmentWindowHandoffSnapshot({
+      admittedForwardCommitmentContinuity: admitted,
+      bilateralTradeWindowContinuity: window,
+      persisted: { ...createEmptyGTELPersisted(), bilateralCommitmentWindowHandoffSmoothing: 0.91 },
+    }).snapshot;
+    const blocked = computeBilateralCommitmentWindowHandoffSnapshot({
+      admittedForwardCommitmentContinuity: { ...admitted, score: 0.11, band: 'revoked' },
+      bilateralTradeWindowContinuity: { ...window, score: 0.09, band: 'severed' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(handed.score > blocked.score, 'expected window handoff when anchored');
+    gtelAssert(
+      bilateralCommitmentWindowHandoffExportScale(handed) >= bilateralCommitmentWindowHandoffExportScale(blocked),
+      'expected window handoff scale lift',
     );
   });
 

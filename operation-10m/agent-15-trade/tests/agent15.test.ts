@@ -47,7 +47,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 65);
+  assert.ok(r.passed >= 67);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -1353,5 +1353,52 @@ test('round 29: sealed arc opening weakens continuity vs opened baseline', () =>
   });
   assert.ok(
     opened.state.commitmentArcContinuity.score >= sealed.state.commitmentArcContinuity.score - 0.14,
+  );
+});
+
+test('round 30: admitted continuity and commitment window handoff on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.admittedForwardCommitmentContinuitySmoothing = 0.57;
+  persisted.bilateralCommitmentWindowHandoffSmoothing = 0.55;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 77,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 108 } } },
+    persisted,
+  });
+  assert.ok(r.state.admittedForwardCommitmentContinuity);
+  assert.ok(['anchored', 'holding', 'slipping', 'revoked'].includes(r.state.admittedForwardCommitmentContinuity.band));
+  assert.ok(r.state.bilateralCommitmentWindowHandoff);
+  assert.ok(
+    ['handed_off', 'aligning', 'queued', 'blocked'].includes(r.state.bilateralCommitmentWindowHandoff.band),
+  );
+  assert.ok(r.persisted.admittedForwardCommitmentContinuitySmoothing != null);
+  assert.ok(r.persisted.bilateralCommitmentWindowHandoffSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Admitted forward commitment continuity/i.test(n)));
+  assert.ok(notes.some(n => /Bilateral commitment window handoff/i.test(n)));
+});
+
+test('round 30: closed admission weakens admitted continuity vs admitted baseline', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.bilateralForwardCommitmentAdmissionSmoothing = 0.9;
+  persisted.commitmentArcContinuitySmoothing = 0.87;
+  const admitted = advanceGlobalTradeEconomyTurn({
+    turn: 78,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 88 } } },
+    persisted: { ...persisted },
+  });
+  persisted.bilateralForwardCommitmentAdmissionSmoothing = 0.12;
+  persisted.commitmentArcContinuitySmoothing = 0.1;
+  const closed = advanceGlobalTradeEconomyTurn({
+    turn: 78,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 235 } } },
+    persisted: { ...persisted },
+  });
+  assert.ok(
+    admitted.state.admittedForwardCommitmentContinuity.score >=
+      closed.state.admittedForwardCommitmentContinuity.score - 0.14,
   );
 });
