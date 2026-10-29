@@ -1,0 +1,31 @@
+import type { V1022HaffSupplyPipelineEdge } from '../../types/core.ts';
+
+/** Supply pipeline graph shard 068 (rent/mortgage/social corridor coupling). */
+export const V1022_HAFF_SUPPLY_PIPELINE_SHARD_068: readonly V1022HaffSupplyPipelineEdge[] = [
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.14, lagTurns: 7, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.146, lagTurns: 8, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.152, lagTurns: 9, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.158, lagTurns: 10, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.164, lagTurns: 7, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.17, lagTurns: 8, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.176, lagTurns: 9, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.182, lagTurns: 10, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.188, lagTurns: 7, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.194, lagTurns: 8, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.2, lagTurns: 9, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.206, lagTurns: 10, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.212, lagTurns: 7, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.218, lagTurns: 8, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.224, lagTurns: 9, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.23, lagTurns: 10, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.236, lagTurns: 7, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.14, lagTurns: 8, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.146, lagTurns: 9, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.152, lagTurns: 10, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.158, lagTurns: 7, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.164, lagTurns: 8, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.17, lagTurns: 9, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.176, lagTurns: 10, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.182, lagTurns: 7, nodeId: 'zoning_node_20' },
+  { fromTenure: 'investor', toTenure: 'mortgage', weight: 0.188, lagTurns: 8, nodeId: 'zoning_node_20' },
+];

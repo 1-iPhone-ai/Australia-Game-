@@ -1,0 +1,31 @@
+import type { V1022HaffSupplyPipelineEdge } from '../../types/core.ts';
+
+/** Supply pipeline graph shard 084 (rent/mortgage/social corridor coupling). */
+export const V1022_HAFF_SUPPLY_PIPELINE_SHARD_084: readonly V1022HaffSupplyPipelineEdge[] = [
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.676, lagTurns: 5, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.682, lagTurns: 6, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.688, lagTurns: 7, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.694, lagTurns: 8, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.7, lagTurns: 5, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.706, lagTurns: 6, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.712, lagTurns: 7, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.718, lagTurns: 8, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.724, lagTurns: 5, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.73, lagTurns: 6, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.736, lagTurns: 7, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.742, lagTurns: 8, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.748, lagTurns: 5, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.652, lagTurns: 6, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.658, lagTurns: 7, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.664, lagTurns: 8, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.67, lagTurns: 5, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.676, lagTurns: 6, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.682, lagTurns: 7, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.688, lagTurns: 8, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.694, lagTurns: 5, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.7, lagTurns: 6, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.706, lagTurns: 7, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.712, lagTurns: 8, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.718, lagTurns: 5, nodeId: 'zoning_node_12' },
+  { fromTenure: 'student', toTenure: 'remote', weight: 0.724, lagTurns: 6, nodeId: 'zoning_node_12' },
+];
