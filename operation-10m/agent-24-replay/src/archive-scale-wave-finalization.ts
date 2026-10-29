@@ -107,7 +107,7 @@ export function runAgent24ArchiveScaleWaveFinalizationSelfTests(): Array<{ name:
   const closeout = {
     reportId: 'co',
     matchId: 'self',
-    waveRound: 18,
+    waveRound: 19,
     closeoutComplete: true,
     checkpointCount: 3,
     satisfiedCheckpointCount: 3,
@@ -118,7 +118,7 @@ export function runAgent24ArchiveScaleWaveFinalizationSelfTests(): Array<{ name:
   const verification = {
     reportId: 'sv',
     matchId: 'self',
-    waveRound: 18,
+    waveRound: 19,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -136,7 +136,7 @@ export function runAgent24ArchiveScaleWaveFinalizationSelfTests(): Array<{ name:
 
   return [
     { name: 'finalized_when_scale_wave_stack_ready', passed: report.finalized && report.blockerCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 18 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 19 },
     {
       name: 'deterministic_fingerprint',
       passed:
