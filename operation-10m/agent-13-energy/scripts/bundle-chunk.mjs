@@ -67,6 +67,7 @@ const FILES = [
   'offshore-floating-wind-export-corridor-federation-ledger.ts',
   'compound-climate-grid-hardening-federation-ledger.ts',
   'sovereign-interconnector-critical-infrastructure-federation-ledger.ts',
+  'export-corridor-transmission-resilience-federation-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -304,6 +305,9 @@ const EXPORT_MANIFEST = [
   'runAgent13SovereignInterconnectorInfrastructureScaleSelfTests',
   'runAgent13SovereignInterconnectorInfrastructureTurnScenario',
   'V1014_SOVEREIGN_INTERCONNECTOR_INFRA_TURN_SCENARIOS',
+  'runAgent13ExportCorridorTransmissionResilienceScaleSelfTests',
+  'runAgent13ExportCorridorTransmissionResilienceTurnScenario',
+  'V1014_EXPORT_CORRIDOR_TRANSMISSION_RESILIENCE_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

@@ -220,6 +220,11 @@ import {
   V1014_SOVEREIGN_INTERCONNECTOR_INFRA_TURN_SCENARIOS,
 } from '../modules/sovereign-interconnector-critical-infrastructure-federation-ledger.ts';
 import {
+  runAgent13ExportCorridorTransmissionResilienceScaleSelfTests,
+  runAgent13ExportCorridorTransmissionResilienceTurnScenario,
+  V1014_EXPORT_CORRIDOR_TRANSMISSION_RESILIENCE_TURN_SCENARIOS,
+} from '../modules/export-corridor-transmission-resilience-federation-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -591,6 +596,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const sovereignInterconnectorTurn = runAgent13SovereignInterconnectorInfrastructureTurnScenario(V1014_SOVEREIGN_INTERCONNECTOR_INFRA_TURN_SCENARIOS[0]);
   ok(sovereignInterconnectorTurn.passed);
+
+  const exportCorridor = runAgent13ExportCorridorTransmissionResilienceScaleSelfTests();
+  ok(exportCorridor.failed === 0 && exportCorridor.passed >= 5);
+
+  const exportCorridorTurn = runAgent13ExportCorridorTransmissionResilienceTurnScenario(V1014_EXPORT_CORRIDOR_TRANSMISSION_RESILIENCE_TURN_SCENARIOS[0]);
+  ok(exportCorridorTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
