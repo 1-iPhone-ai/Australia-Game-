@@ -70,3 +70,28 @@ export const AGENT14_HOUSING_PROGRAM_STUBS: readonly {
   { id: 'ps_h_SA_modular', regionId: 'SA', fiscalLoadPoints: 14, durationTurns: 4, baseImpact: 6, effectLagTurns: 1 },
   { id: 'ps_h_ACT_density', regionId: 'ACT', fiscalLoadPoints: 12, durationTurns: 4, baseImpact: 5, effectLagTurns: 1 },
 ];
+
+/** Healthcare and education program stubs (scale wave 4). */
+export const AGENT14_HEALTH_ED_PROGRAM_STUBS: readonly {
+  id: string;
+  pillar: Exclude<PublicServicePillar, 'housing'>;
+  regionId: Agent14CoreRegion;
+  fiscalLoadPoints: number;
+  durationTurns: number;
+  baseImpact: number;
+  effectLagTurns: number;
+}[] = [
+  { id: 'ps_he_NSW_primary_care', pillar: 'healthcare', regionId: 'NSW', fiscalLoadPoints: 20, durationTurns: 5, baseImpact: 9, effectLagTurns: 2 },
+  { id: 'ps_he_VIC_hospital_backlog', pillar: 'healthcare', regionId: 'VIC', fiscalLoadPoints: 24, durationTurns: 6, baseImpact: 10, effectLagTurns: 3 },
+  { id: 'ps_he_QLD_remote_clinic', pillar: 'healthcare', regionId: 'QLD', fiscalLoadPoints: 22, durationTurns: 7, baseImpact: 11, effectLagTurns: 3 },
+  { id: 'ps_he_NT_remote_clinic', pillar: 'healthcare', regionId: 'NT', fiscalLoadPoints: 26, durationTurns: 8, baseImpact: 12, effectLagTurns: 4 },
+  { id: 'ps_ed_NSW_skills', pillar: 'education', regionId: 'NSW', fiscalLoadPoints: 18, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
+  { id: 'ps_ed_VIC_tafe', pillar: 'education', regionId: 'VIC', fiscalLoadPoints: 16, durationTurns: 4, baseImpact: 7, effectLagTurns: 2 },
+  { id: 'ps_ed_WA_regional_schools', pillar: 'education', regionId: 'WA', fiscalLoadPoints: 21, durationTurns: 6, baseImpact: 9, effectLagTurns: 3 },
+  { id: 'ps_ed_TAS_rural_connect', pillar: 'education', regionId: 'TAS', fiscalLoadPoints: 19, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
+];
+
+export const AGENT14_ALL_PROGRAM_STUBS = [
+  ...AGENT14_HOUSING_PROGRAM_STUBS.map((s) => ({ ...s, pillar: 'housing' as const })),
+  ...AGENT14_HEALTH_ED_PROGRAM_STUBS,
+] as const;

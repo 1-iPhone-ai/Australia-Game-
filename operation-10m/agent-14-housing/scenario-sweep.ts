@@ -1,4 +1,4 @@
-import { AGENT14_HOUSING_PROGRAM_STUBS, AGENT14_LIMITS } from './constants.ts';
+import { AGENT14_ALL_PROGRAM_STUBS, AGENT14_HOUSING_PROGRAM_STUBS, AGENT14_LIMITS } from './constants.ts';
 import { makeSpendingCommitment } from './delayed-spending-effects.ts';
 import { advancePublicServicesTurn } from './turn-advance.ts';
 import type {
@@ -16,7 +16,9 @@ export type Agent14HousingScenarioId =
   | 'workforce_blocking'
   | 'crisis_recovery'
   | 'mixed_pillar_push'
-  | 'capacity_saturated';
+  | 'capacity_saturated'
+  | 'health_education_surge'
+  | 'persisted_recovery_arc';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -84,6 +86,23 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
       'ps_h_ACT_density',
     ],
   },
+  {
+    id: 'health_education_surge',
+    label: 'Health and education surge',
+    baseInputs: { fiscalHeadroom: 68, stateCapacityLoad: 35, workforceReadiness: 'strong' },
+    launchProgramIds: [
+      'ps_he_NSW_primary_care',
+      'ps_he_VIC_hospital_backlog',
+      'ps_ed_NSW_skills',
+      'ps_ed_WA_regional_schools',
+    ],
+  },
+  {
+    id: 'persisted_recovery_arc',
+    label: 'Persisted recovery arc',
+    baseInputs: { fiscalHeadroom: 38, stateCapacityLoad: 65, workforceReadiness: 'weak' },
+    launchProgramIds: ['ps_h_SA_modular', 'ps_he_QLD_remote_clinic', 'ps_ed_TAS_rural_connect'],
+  },
 ];
 
 export function commitmentFromProgramStub(
@@ -91,12 +110,12 @@ export function commitmentFromProgramStub(
   committedTurn: number,
   seq: number
 ): SpendingCommitment | null {
-  const stub = AGENT14_HOUSING_PROGRAM_STUBS.find((p) => p.id === stubId);
+  const stub = AGENT14_ALL_PROGRAM_STUBS.find((p) => p.id === stubId);
   if (!stub) return null;
   return makeSpendingCommitment({
     id: `${stub.id}_c${seq}`,
     programId: stub.id,
-    pillar: 'housing',
+    pillar: stub.pillar,
     regionId: stub.regionId,
     committedTurn,
     fiscalLoadPoints: stub.fiscalLoadPoints,
@@ -118,6 +137,7 @@ export function simulateAgent14HousingScenario(
   const scenario = AGENT14_HOUSING_SCENARIOS.find((s) => s.id === scenarioId)!;
   const maxTurns = Math.min(Math.max(1, turnCount), AGENT14_LIMITS.maxSimulationTurns);
   let spendingPersisted: DelayedSpendingPersisted | null = null;
+  let wellbeingMemoryPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -131,10 +151,12 @@ export function simulateAgent14HousingScenario(
     const result = advancePublicServicesTurn({
       inputs: { turn: t, ...scenario.baseInputs },
       spendingPersisted,
+      wellbeingMemoryPersisted,
       newCommitments,
       enforceCapacity: true,
     });
     spendingPersisted = result.spendingPersisted;
+    wellbeingMemoryPersisted = result.wellbeingMemoryPersisted;
     turns.push(result.inputs);
   }
 

@@ -4,7 +4,10 @@ import { computeAllRegionalHousingPipelines } from './housing-delivery-pipeline.
 import { computeNationalHousingWellbeingSnapshot } from './national-wellbeing-snapshot.ts';
 import { recommendAgent14ProgramSequence } from './program-sequencing.ts';
 import { computeNationalServiceAccessLens } from './service-access-lens.ts';
+import { computeCrossPillarCoupling } from './cross-pillar-coupling.ts';
+import { advanceRegionalWellbeingMemory } from './regional-wellbeing-memory.ts';
 import { evaluateAgent14WellbeingWarnings } from './wellbeing-guardian-warnings.ts';
+import { composeAgent14WellbeingExecutiveBrief } from './wellbeing-executive-brief.ts';
 import {
   canAcceptSpendingCommitment,
   computePublicServiceCapacity,
@@ -13,12 +16,14 @@ import type {
   CapacityAndSpendingInputs,
   DelayedSpendingPersisted,
   EnrichedPublicServiceTurnInputs,
+  RegionalWellbeingMemoryPersisted,
   SpendingCommitment,
 } from './types.ts';
 
 export interface AdvancePublicServicesTurnArgs {
   inputs: CapacityAndSpendingInputs;
   spendingPersisted?: DelayedSpendingPersisted | null;
+  wellbeingMemoryPersisted?: RegionalWellbeingMemoryPersisted | null;
   /** New commitments queued this turn (already validated or not). */
   newCommitments?: SpendingCommitment[];
   /** When true, reject commitments that fail capacity gate. */
@@ -28,6 +33,7 @@ export interface AdvancePublicServicesTurnArgs {
 export interface AdvancePublicServicesTurnResult {
   inputs: EnrichedPublicServiceTurnInputs;
   spendingPersisted: DelayedSpendingPersisted;
+  wellbeingMemoryPersisted: RegionalWellbeingMemoryPersisted;
   rejectedCommitments: Array<{ commitment: SpendingCommitment; reason: string }>;
 }
 
@@ -87,6 +93,27 @@ export function advancePublicServicesTurn(
     6
   );
 
+  const crossPillarCoupling = computeCrossPillarCoupling(
+    turn,
+    capacity,
+    housingWellbeing,
+    serviceAccessLens
+  );
+
+  const memoryAdvance = advanceRegionalWellbeingMemory(
+    turn,
+    housingWellbeing,
+    serviceAccessLens,
+    args.wellbeingMemoryPersisted
+  );
+
+  const executiveBrief = composeAgent14WellbeingExecutiveBrief({
+    turn,
+    warnings: wellbeingWarnings,
+    coupling: crossPillarCoupling,
+    recommendations: programRecommendations,
+  });
+
   const enriched: EnrichedPublicServiceTurnInputs = {
     ...args.inputs,
     turn,
@@ -103,7 +130,15 @@ export function advancePublicServicesTurn(
     serviceAccessLens,
     wellbeingWarnings,
     programRecommendations,
+    crossPillarCoupling,
+    regionalWellbeingMemory: memoryAdvance.snapshot,
+    executiveBrief,
   };
 
-  return { inputs: enriched, spendingPersisted, rejectedCommitments };
+  return {
+    inputs: enriched,
+    spendingPersisted,
+    wellbeingMemoryPersisted: memoryAdvance.persisted,
+    rejectedCommitments,
+  };
 }

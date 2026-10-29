@@ -23,7 +23,15 @@ import {
 import { computeNationalServiceAccessLens } from './service-access-lens.ts';
 import { evaluateAgent14WellbeingWarnings } from './wellbeing-guardian-warnings.ts';
 import { recommendAgent14ProgramSequence } from './program-sequencing.ts';
+import { computeCrossPillarCoupling } from './cross-pillar-coupling.ts';
+import {
+  advanceRegionalWellbeingMemory,
+  createInitialRegionalWellbeingMemory,
+  sanitizeRegionalWellbeingMemory,
+} from './regional-wellbeing-memory.ts';
+import { composeAgent14WellbeingExecutiveBrief } from './wellbeing-executive-brief.ts';
 import { forecastAgent14WellbeingTurns, forecastFromInputs, listAgent14ScenarioIds } from './wellbeing-forecast.ts';
+import { AGENT14_HEALTH_ED_PROGRAM_STUBS } from './constants.ts';
 
 export interface Agent14SelfTestResult {
   id: string;
@@ -524,8 +532,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Eight housing scenarios registered',
-    listAgent14ScenarioIds().length === 8,
+    'Ten housing scenarios registered',
+    listAgent14ScenarioIds().length === 10,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -602,6 +610,151 @@ export function runAgent14WellbeingSelfTests(): {
       `Scenario ${id} completes 8 turns with access lens`,
       last.serviceAccessLens !== undefined && last.programRecommendations!.length >= 3,
       `composite=${last.serviceAccessLens?.nationalComposite}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 52, stateCapacityLoad: 48 },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave4_cross_pillar_coupling',
+      'Turn advance attaches cross-pillar coupling snapshot',
+      adv.inputs.crossPillarCoupling !== undefined &&
+        adv.inputs.crossPillarCoupling!.byPillar.healthcare.netCouplingIndex > 0,
+      `national=${adv.inputs.crossPillarCoupling?.nationalCouplingIndex} band=${adv.inputs.crossPillarCoupling?.band}`
+    );
+  }
+
+  {
+    let mem = createInitialRegionalWellbeingMemory();
+    let snap = null as ReturnType<typeof advanceRegionalWellbeingMemory> | null;
+    for (let t = 1; t <= 5; t += 1) {
+      const adv = advancePublicServicesTurn({
+        inputs: { turn: t, fiscalHeadroom: 50 + t, stateCapacityLoad: 45 },
+        spendingPersisted: createInitialDelayedSpendingPersisted(),
+        wellbeingMemoryPersisted: mem,
+      });
+      mem = adv.wellbeingMemoryPersisted;
+      snap = { snapshot: adv.inputs.regionalWellbeingMemory!, persisted: mem };
+    }
+    check(
+      results,
+      'wave4_regional_memory_persist',
+      'Regional wellbeing memory accumulates EMA across turns',
+      snap !== null &&
+        snap.persisted.lastTurn === 5 &&
+        snap.snapshot.regions.NSW!.rollingAffordability > 0,
+      `NSW aff=${snap?.snapshot.regions.NSW?.rollingAffordability} trend=${snap?.snapshot.regions.NSW?.affordabilityTrend}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 3, fiscalHeadroom: 60, stateCapacityLoad: 40 },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave4_executive_brief',
+      'Executive brief includes headline and coupling band',
+      adv.inputs.executiveBrief !== undefined &&
+        adv.inputs.executiveBrief!.headline.length > 10 &&
+        adv.inputs.executiveBrief!.couplingBand.length > 0,
+      adv.inputs.executiveBrief?.headline.slice(0, 72)
+    );
+  }
+
+  {
+    const he = commitmentFromProgramStub('ps_he_NSW_primary_care', 1, 0);
+    check(
+      results,
+      'wave4_health_stub_commitment',
+      'Healthcare program stub maps to healthcare pillar',
+      he !== null && he!.pillar === 'healthcare' && he!.regionId === 'NSW',
+      `load=${he?.fiscalLoadPoints}`
+    );
+  }
+
+  check(
+    results,
+    'wave4_health_ed_stub_catalog',
+    'Health/education stub catalog populated',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.length >= 6,
+    `n=${AGENT14_HEALTH_ED_PROGRAM_STUBS.length}`
+  );
+
+  {
+    const sim = simulateAgent14HousingScenario('health_education_surge', 10);
+    const last = sim.turns[9];
+    check(
+      results,
+      'wave4_health_education_surge',
+      'Health/education surge scenario completes with health project boost',
+      last.completedHealthProjects + last.completedEducationProjects >= 0 &&
+        last.crossPillarCoupling !== undefined,
+      `health=${last.completedHealthProjects} ed=${last.completedEducationProjects}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('persisted_recovery_arc', 12);
+    const t12 = sim.turns[11];
+    check(
+      results,
+      'wave4_recovery_arc_memory',
+      'Recovery arc records memory trends on turn 12',
+      t12.regionalWellbeingMemory !== undefined &&
+        Object.values(t12.regionalWellbeingMemory!.regions).some(
+          (r) => r.affordabilityTrend !== undefined
+        ),
+      `coupling=${t12.crossPillarCoupling?.band}`
+    );
+  }
+
+  {
+    const raw = sanitizeRegionalWellbeingMemory({
+      schemaVersion: '10.14.3-scale-wave-3' as any,
+      lastTurn: 2,
+      emaAlpha: 0.5,
+      affordabilityEma: { NSW: 50 },
+      accessEma: {},
+    });
+    check(
+      results,
+      'wave4_memory_sanitize_schema',
+      'Memory sanitize upgrades schema to wave 4',
+      raw.schemaVersion === '10.14.4-scale-wave-4' && raw.affordabilityEma.NSW === 50,
+      `schema=${raw.schemaVersion}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 6, fiscalHeadroom: 30, stateCapacityLoad: 78, workforceReadiness: 'weak' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const coupling = computeCrossPillarCoupling(
+      6,
+      adv.inputs.capacity,
+      adv.inputs.housingWellbeing!,
+      adv.inputs.serviceAccessLens!
+    );
+    const brief = composeAgent14WellbeingExecutiveBrief({
+      turn: 6,
+      warnings: adv.inputs.wellbeingWarnings!,
+      coupling,
+      recommendations: adv.inputs.programRecommendations!,
+      forecastPoints: forecastFromInputs({ turn: 6, fiscalHeadroom: 30, stateCapacityLoad: 78 }, 3),
+    });
+    check(
+      results,
+      'wave4_brief_matches_turn_coupling',
+      'Standalone brief composer aligns with coupling band',
+      brief.couplingBand === coupling.band,
+      `band=${brief.couplingBand}`
     );
   }
 

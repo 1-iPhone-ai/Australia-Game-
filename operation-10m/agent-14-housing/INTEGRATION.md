@@ -13,7 +13,19 @@ Agent 25 inlines the chunk (or runs the assembly pipeline) — **do not** hand-e
 
 ## Git branch
 
-Integration branch: **`op10m/agent-14-housing`** (canonical worker branch for this module).
+Integration branch: **`op10m/agent-14-housing`** (canonical worker branch for this module). Scale wave round 4 workers may push **`op10m/agent-14-housing-wellbeing`** for PR #331 head sync.
+
+## Scale wave 4 (persisted memory)
+
+| Module | Purpose |
+|--------|---------|
+| `cross-pillar-coupling.ts` | Housing backlog / equity spillover into healthcare & education coupling indices |
+| `regional-wellbeing-memory.ts` | Cross-turn EMA of regional affordability & access (`RegionalWellbeingMemoryPersisted`) |
+| `wellbeing-executive-brief.ts` | Single-turn GI headline synthesizing warnings, coupling, sequencing |
+
+Turn advance attaches `crossPillarCoupling`, `regionalWellbeingMemory`, `executiveBrief`, and returns `wellbeingMemoryPersisted` for Agent 25 wire-up.
+
+Health/education program stubs live in `AGENT14_HEALTH_ED_PROGRAM_STUBS`; scenarios `health_education_surge`, `persisted_recovery_arc`.
 
 ## Anchor (canonical TSX)
 
@@ -46,7 +58,7 @@ Suggested marker:
 - `advanceDelayedSpendingEffects` / `commitSpendingProgram` / `makeSpendingCommitment`
 - `runAgent14WellbeingSelfTests`
 - `runAgent14HousingScenarioSweep` / `simulateAgent14HousingScenario`
-- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.2-housing-depth`)
+- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.4-scale-wave-4`)
 
 ## Upstream inputs (read-only)
 

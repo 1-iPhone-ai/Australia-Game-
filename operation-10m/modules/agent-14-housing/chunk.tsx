@@ -5,7 +5,7 @@
 // --- source: types.ts ---
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.3-scale-wave-3' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.4-scale-wave-4' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -97,6 +97,60 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   serviceAccessLens?: NationalServiceAccessLens;
   wellbeingWarnings?: Agent14WellbeingWarningBundle;
   programRecommendations?: ProgramSequencingRecommendation[];
+  crossPillarCoupling?: CrossPillarCouplingSnapshot;
+  regionalWellbeingMemory?: RegionalWellbeingMemorySnapshot;
+  executiveBrief?: Agent14WellbeingExecutiveBrief;
+}
+
+export type CouplingStressBand = 'stable' | 'watch' | 'strained' | 'critical';
+
+export interface PillarCouplingSlice {
+  pillar: PublicServicePillar;
+  spilloverFromHousing: number;
+  spilloverFromCapacity: number;
+  netCouplingIndex: number;
+  band: CouplingStressBand;
+}
+
+export interface CrossPillarCouplingSnapshot {
+  turn: number;
+  nationalCouplingIndex: number;
+  band: CouplingStressBand;
+  byPillar: Record<PublicServicePillar, PillarCouplingSlice>;
+  evidence: string[];
+}
+
+export interface RegionalWellbeingMemoryRow {
+  regionId: string;
+  turnsRecorded: number;
+  rollingAffordability: number;
+  rollingAccessComposite: number;
+  affordabilityTrend: 'improving' | 'flat' | 'deteriorating';
+  accessTrend: 'improving' | 'flat' | 'deteriorating';
+}
+
+export interface RegionalWellbeingMemorySnapshot {
+  turn: number;
+  regions: Record<string, RegionalWellbeingMemoryRow>;
+}
+
+export interface RegionalWellbeingMemoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  /** Exponential moving average alpha (0–1). */
+  emaAlpha: number;
+  affordabilityEma: Record<string, number>;
+  accessEma: Record<string, number>;
+}
+
+export interface Agent14WellbeingExecutiveBrief {
+  turn: number;
+  headline: string;
+  topWarningId?: string;
+  forecastDeltaAffordability?: number;
+  couplingBand: CouplingStressBand;
+  recommendedProgramId?: string;
+  giNotes: string[];
 }
 
 export type HousingPipelineStage =
@@ -270,6 +324,31 @@ export const AGENT14_HOUSING_PROGRAM_STUBS: readonly {
   { id: 'ps_h_SA_modular', regionId: 'SA', fiscalLoadPoints: 14, durationTurns: 4, baseImpact: 6, effectLagTurns: 1 },
   { id: 'ps_h_ACT_density', regionId: 'ACT', fiscalLoadPoints: 12, durationTurns: 4, baseImpact: 5, effectLagTurns: 1 },
 ];
+
+/** Healthcare and education program stubs (scale wave 4). */
+export const AGENT14_HEALTH_ED_PROGRAM_STUBS: readonly {
+  id: string;
+  pillar: Exclude<PublicServicePillar, 'housing'>;
+  regionId: Agent14CoreRegion;
+  fiscalLoadPoints: number;
+  durationTurns: number;
+  baseImpact: number;
+  effectLagTurns: number;
+}[] = [
+  { id: 'ps_he_NSW_primary_care', pillar: 'healthcare', regionId: 'NSW', fiscalLoadPoints: 20, durationTurns: 5, baseImpact: 9, effectLagTurns: 2 },
+  { id: 'ps_he_VIC_hospital_backlog', pillar: 'healthcare', regionId: 'VIC', fiscalLoadPoints: 24, durationTurns: 6, baseImpact: 10, effectLagTurns: 3 },
+  { id: 'ps_he_QLD_remote_clinic', pillar: 'healthcare', regionId: 'QLD', fiscalLoadPoints: 22, durationTurns: 7, baseImpact: 11, effectLagTurns: 3 },
+  { id: 'ps_he_NT_remote_clinic', pillar: 'healthcare', regionId: 'NT', fiscalLoadPoints: 26, durationTurns: 8, baseImpact: 12, effectLagTurns: 4 },
+  { id: 'ps_ed_NSW_skills', pillar: 'education', regionId: 'NSW', fiscalLoadPoints: 18, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
+  { id: 'ps_ed_VIC_tafe', pillar: 'education', regionId: 'VIC', fiscalLoadPoints: 16, durationTurns: 4, baseImpact: 7, effectLagTurns: 2 },
+  { id: 'ps_ed_WA_regional_schools', pillar: 'education', regionId: 'WA', fiscalLoadPoints: 21, durationTurns: 6, baseImpact: 9, effectLagTurns: 3 },
+  { id: 'ps_ed_TAS_rural_connect', pillar: 'education', regionId: 'TAS', fiscalLoadPoints: 19, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
+];
+
+export const AGENT14_ALL_PROGRAM_STUBS = [
+  ...AGENT14_HOUSING_PROGRAM_STUBS.map((s) => ({ ...s, pillar: 'housing' as const })),
+  ...AGENT14_HEALTH_ED_PROGRAM_STUBS,
+] as const;
 
 
 // --- source: housing-delivery-pipeline.ts ---
@@ -607,7 +686,7 @@ export function canAcceptSpendingCommitment(
 // --- source: delayed-spending-effects.ts ---
 export function createInitialDelayedSpendingPersisted(): DelayedSpendingPersisted {
   return {
-    schemaVersion: '10.14.3-scale-wave-3' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.4-scale-wave-4' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     active: [],
     history: [],
   };
@@ -629,7 +708,7 @@ export function sanitizeDelayedSpendingPersisted(
         .slice(0, AGENT14_LIMITS.maxActiveCommitments)
     : [];
   return {
-    schemaVersion: '10.14.3-scale-wave-3' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.4-scale-wave-4' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     active,
     history: Array.isArray(raw.history) ? raw.history.slice(-AGENT14_LIMITS.maxHistory) : [],
   };
@@ -747,6 +826,7 @@ export function commitSpendingProgram(
 export interface AdvancePublicServicesTurnArgs {
   inputs: CapacityAndSpendingInputs;
   spendingPersisted?: DelayedSpendingPersisted | null;
+  wellbeingMemoryPersisted?: RegionalWellbeingMemoryPersisted | null;
   /** New commitments queued this turn (already validated or not). */
   newCommitments?: SpendingCommitment[];
   /** When true, reject commitments that fail capacity gate. */
@@ -756,6 +836,7 @@ export interface AdvancePublicServicesTurnArgs {
 export interface AdvancePublicServicesTurnResult {
   inputs: EnrichedPublicServiceTurnInputs;
   spendingPersisted: DelayedSpendingPersisted;
+  wellbeingMemoryPersisted: RegionalWellbeingMemoryPersisted;
   rejectedCommitments: Array<{ commitment: SpendingCommitment; reason: string }>;
 }
 
@@ -815,6 +896,27 @@ export function advancePublicServicesTurn(
     6
   );
 
+  const crossPillarCoupling = computeCrossPillarCoupling(
+    turn,
+    capacity,
+    housingWellbeing,
+    serviceAccessLens
+  );
+
+  const memoryAdvance = advanceRegionalWellbeingMemory(
+    turn,
+    housingWellbeing,
+    serviceAccessLens,
+    args.wellbeingMemoryPersisted
+  );
+
+  const executiveBrief = composeAgent14WellbeingExecutiveBrief({
+    turn,
+    warnings: wellbeingWarnings,
+    coupling: crossPillarCoupling,
+    recommendations: programRecommendations,
+  });
+
   const enriched: EnrichedPublicServiceTurnInputs = {
     ...args.inputs,
     turn,
@@ -831,9 +933,17 @@ export function advancePublicServicesTurn(
     serviceAccessLens,
     wellbeingWarnings,
     programRecommendations,
+    crossPillarCoupling,
+    regionalWellbeingMemory: memoryAdvance.snapshot,
+    executiveBrief,
   };
 
-  return { inputs: enriched, spendingPersisted, rejectedCommitments };
+  return {
+    inputs: enriched,
+    spendingPersisted,
+    wellbeingMemoryPersisted: memoryAdvance.persisted,
+    rejectedCommitments,
+  };
 }
 
 
@@ -846,7 +956,9 @@ export type Agent14HousingScenarioId =
   | 'workforce_blocking'
   | 'crisis_recovery'
   | 'mixed_pillar_push'
-  | 'capacity_saturated';
+  | 'capacity_saturated'
+  | 'health_education_surge'
+  | 'persisted_recovery_arc';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -914,6 +1026,23 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
       'ps_h_ACT_density',
     ],
   },
+  {
+    id: 'health_education_surge',
+    label: 'Health and education surge',
+    baseInputs: { fiscalHeadroom: 68, stateCapacityLoad: 35, workforceReadiness: 'strong' },
+    launchProgramIds: [
+      'ps_he_NSW_primary_care',
+      'ps_he_VIC_hospital_backlog',
+      'ps_ed_NSW_skills',
+      'ps_ed_WA_regional_schools',
+    ],
+  },
+  {
+    id: 'persisted_recovery_arc',
+    label: 'Persisted recovery arc',
+    baseInputs: { fiscalHeadroom: 38, stateCapacityLoad: 65, workforceReadiness: 'weak' },
+    launchProgramIds: ['ps_h_SA_modular', 'ps_he_QLD_remote_clinic', 'ps_ed_TAS_rural_connect'],
+  },
 ];
 
 export function commitmentFromProgramStub(
@@ -921,12 +1050,12 @@ export function commitmentFromProgramStub(
   committedTurn: number,
   seq: number
 ): SpendingCommitment | null {
-  const stub = AGENT14_HOUSING_PROGRAM_STUBS.find((p) => p.id === stubId);
+  const stub = AGENT14_ALL_PROGRAM_STUBS.find((p) => p.id === stubId);
   if (!stub) return null;
   return makeSpendingCommitment({
     id: `${stub.id}_c${seq}`,
     programId: stub.id,
-    pillar: 'housing',
+    pillar: stub.pillar,
     regionId: stub.regionId,
     committedTurn,
     fiscalLoadPoints: stub.fiscalLoadPoints,
@@ -948,6 +1077,7 @@ export function simulateAgent14HousingScenario(
   const scenario = AGENT14_HOUSING_SCENARIOS.find((s) => s.id === scenarioId)!;
   const maxTurns = Math.min(Math.max(1, turnCount), AGENT14_LIMITS.maxSimulationTurns);
   let spendingPersisted: DelayedSpendingPersisted | null = null;
+  let wellbeingMemoryPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -961,10 +1091,12 @@ export function simulateAgent14HousingScenario(
     const result = advancePublicServicesTurn({
       inputs: { turn: t, ...scenario.baseInputs },
       spendingPersisted,
+      wellbeingMemoryPersisted,
       newCommitments,
       enforceCapacity: true,
     });
     spendingPersisted = result.spendingPersisted;
+    wellbeingMemoryPersisted = result.wellbeingMemoryPersisted;
     turns.push(result.inputs);
   }
 
@@ -1824,8 +1956,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Eight housing scenarios registered',
-    listAgent14ScenarioIds().length === 8,
+    'Ten housing scenarios registered',
+    listAgent14ScenarioIds().length === 10,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -1902,6 +2034,151 @@ export function runAgent14WellbeingSelfTests(): {
       `Scenario ${id} completes 8 turns with access lens`,
       last.serviceAccessLens !== undefined && last.programRecommendations!.length >= 3,
       `composite=${last.serviceAccessLens?.nationalComposite}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 52, stateCapacityLoad: 48 },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave4_cross_pillar_coupling',
+      'Turn advance attaches cross-pillar coupling snapshot',
+      adv.inputs.crossPillarCoupling !== undefined &&
+        adv.inputs.crossPillarCoupling!.byPillar.healthcare.netCouplingIndex > 0,
+      `national=${adv.inputs.crossPillarCoupling?.nationalCouplingIndex} band=${adv.inputs.crossPillarCoupling?.band}`
+    );
+  }
+
+  {
+    let mem = createInitialRegionalWellbeingMemory();
+    let snap = null as ReturnType<typeof advanceRegionalWellbeingMemory> | null;
+    for (let t = 1; t <= 5; t += 1) {
+      const adv = advancePublicServicesTurn({
+        inputs: { turn: t, fiscalHeadroom: 50 + t, stateCapacityLoad: 45 },
+        spendingPersisted: createInitialDelayedSpendingPersisted(),
+        wellbeingMemoryPersisted: mem,
+      });
+      mem = adv.wellbeingMemoryPersisted;
+      snap = { snapshot: adv.inputs.regionalWellbeingMemory!, persisted: mem };
+    }
+    check(
+      results,
+      'wave4_regional_memory_persist',
+      'Regional wellbeing memory accumulates EMA across turns',
+      snap !== null &&
+        snap.persisted.lastTurn === 5 &&
+        snap.snapshot.regions.NSW!.rollingAffordability > 0,
+      `NSW aff=${snap?.snapshot.regions.NSW?.rollingAffordability} trend=${snap?.snapshot.regions.NSW?.affordabilityTrend}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 3, fiscalHeadroom: 60, stateCapacityLoad: 40 },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave4_executive_brief',
+      'Executive brief includes headline and coupling band',
+      adv.inputs.executiveBrief !== undefined &&
+        adv.inputs.executiveBrief!.headline.length > 10 &&
+        adv.inputs.executiveBrief!.couplingBand.length > 0,
+      adv.inputs.executiveBrief?.headline.slice(0, 72)
+    );
+  }
+
+  {
+    const he = commitmentFromProgramStub('ps_he_NSW_primary_care', 1, 0);
+    check(
+      results,
+      'wave4_health_stub_commitment',
+      'Healthcare program stub maps to healthcare pillar',
+      he !== null && he!.pillar === 'healthcare' && he!.regionId === 'NSW',
+      `load=${he?.fiscalLoadPoints}`
+    );
+  }
+
+  check(
+    results,
+    'wave4_health_ed_stub_catalog',
+    'Health/education stub catalog populated',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.length >= 6,
+    `n=${AGENT14_HEALTH_ED_PROGRAM_STUBS.length}`
+  );
+
+  {
+    const sim = simulateAgent14HousingScenario('health_education_surge', 10);
+    const last = sim.turns[9];
+    check(
+      results,
+      'wave4_health_education_surge',
+      'Health/education surge scenario completes with health project boost',
+      last.completedHealthProjects + last.completedEducationProjects >= 0 &&
+        last.crossPillarCoupling !== undefined,
+      `health=${last.completedHealthProjects} ed=${last.completedEducationProjects}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('persisted_recovery_arc', 12);
+    const t12 = sim.turns[11];
+    check(
+      results,
+      'wave4_recovery_arc_memory',
+      'Recovery arc records memory trends on turn 12',
+      t12.regionalWellbeingMemory !== undefined &&
+        Object.values(t12.regionalWellbeingMemory!.regions).some(
+          (r) => r.affordabilityTrend !== undefined
+        ),
+      `coupling=${t12.crossPillarCoupling?.band}`
+    );
+  }
+
+  {
+    const raw = sanitizeRegionalWellbeingMemory({
+      schemaVersion: '10.14.3-scale-wave-3' as any,
+      lastTurn: 2,
+      emaAlpha: 0.5,
+      affordabilityEma: { NSW: 50 },
+      accessEma: {},
+    });
+    check(
+      results,
+      'wave4_memory_sanitize_schema',
+      'Memory sanitize upgrades schema to wave 4',
+      raw.schemaVersion === '10.14.4-scale-wave-4' && raw.affordabilityEma.NSW === 50,
+      `schema=${raw.schemaVersion}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 6, fiscalHeadroom: 30, stateCapacityLoad: 78, workforceReadiness: 'weak' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const coupling = computeCrossPillarCoupling(
+      6,
+      adv.inputs.capacity,
+      adv.inputs.housingWellbeing!,
+      adv.inputs.serviceAccessLens!
+    );
+    const brief = composeAgent14WellbeingExecutiveBrief({
+      turn: 6,
+      warnings: adv.inputs.wellbeingWarnings!,
+      coupling,
+      recommendations: adv.inputs.programRecommendations!,
+      forecastPoints: forecastFromInputs({ turn: 6, fiscalHeadroom: 30, stateCapacityLoad: 78 }, 3),
+    });
+    check(
+      results,
+      'wave4_brief_matches_turn_coupling',
+      'Standalone brief composer aligns with coupling band',
+      brief.couplingBand === coupling.band,
+      `band=${brief.couplingBand}`
     );
   }
 

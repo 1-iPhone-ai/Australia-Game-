@@ -1,6 +1,6 @@
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.3-scale-wave-3' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.4-scale-wave-4' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -92,6 +92,60 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   serviceAccessLens?: NationalServiceAccessLens;
   wellbeingWarnings?: Agent14WellbeingWarningBundle;
   programRecommendations?: ProgramSequencingRecommendation[];
+  crossPillarCoupling?: CrossPillarCouplingSnapshot;
+  regionalWellbeingMemory?: RegionalWellbeingMemorySnapshot;
+  executiveBrief?: Agent14WellbeingExecutiveBrief;
+}
+
+export type CouplingStressBand = 'stable' | 'watch' | 'strained' | 'critical';
+
+export interface PillarCouplingSlice {
+  pillar: PublicServicePillar;
+  spilloverFromHousing: number;
+  spilloverFromCapacity: number;
+  netCouplingIndex: number;
+  band: CouplingStressBand;
+}
+
+export interface CrossPillarCouplingSnapshot {
+  turn: number;
+  nationalCouplingIndex: number;
+  band: CouplingStressBand;
+  byPillar: Record<PublicServicePillar, PillarCouplingSlice>;
+  evidence: string[];
+}
+
+export interface RegionalWellbeingMemoryRow {
+  regionId: string;
+  turnsRecorded: number;
+  rollingAffordability: number;
+  rollingAccessComposite: number;
+  affordabilityTrend: 'improving' | 'flat' | 'deteriorating';
+  accessTrend: 'improving' | 'flat' | 'deteriorating';
+}
+
+export interface RegionalWellbeingMemorySnapshot {
+  turn: number;
+  regions: Record<string, RegionalWellbeingMemoryRow>;
+}
+
+export interface RegionalWellbeingMemoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  /** Exponential moving average alpha (0–1). */
+  emaAlpha: number;
+  affordabilityEma: Record<string, number>;
+  accessEma: Record<string, number>;
+}
+
+export interface Agent14WellbeingExecutiveBrief {
+  turn: number;
+  headline: string;
+  topWarningId?: string;
+  forecastDeltaAffordability?: number;
+  couplingBand: CouplingStressBand;
+  recommendedProgramId?: string;
+  giNotes: string[];
 }
 
 export type HousingPipelineStage =

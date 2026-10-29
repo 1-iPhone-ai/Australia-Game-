@@ -10,4 +10,7 @@ export * from './service-access-lens.ts';
 export * from './wellbeing-guardian-warnings.ts';
 export * from './program-sequencing.ts';
 export * from './wellbeing-forecast.ts';
+export * from './cross-pillar-coupling.ts';
+export * from './regional-wellbeing-memory.ts';
+export * from './wellbeing-executive-brief.ts';
 export { runAgent14WellbeingSelfTests } from './self-tests.ts';
