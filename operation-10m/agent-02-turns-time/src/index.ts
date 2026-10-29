@@ -13,4 +13,7 @@ export * from './pause-resume.js';
 export * from './multi-turn-construction.js';
 export * from './diagnostics.js';
 export * from './fast-forward.js';
+export * from './pipeline-stages.js';
+export * from './plan-actual-reconcile.js';
+export * from './advance-budget.js';
 export * from './engine.js';

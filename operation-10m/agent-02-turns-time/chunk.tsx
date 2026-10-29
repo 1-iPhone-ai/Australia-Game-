@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
 // @ts-nocheck
-// content-sha256-prefix: 5f90c2c1e6678fa2
+// content-sha256-prefix: c9cdd8fa8d6ed011
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -805,7 +805,8 @@ export function planEffectsThroughTurn(snapshot: TurnTimeSnapshot, throughTurn: 
 
     for (const p of snapshot.projects) {
       if (p.status !== 'under_construction') continue;
-      if (p.completionTurn === turn) {
+      const finishTurn = p.startedTurn + p.laborTurnsRequired - 1;
+      if (finishTurn === turn) {
         planned.push({
           turnIndex: turn,
           phase: 'end',
@@ -858,6 +859,306 @@ export function compareTurnTimeSnapshots(before: TurnTimeSnapshot, after: TurnTi
     digestMatch: digestA === digestB,
     auditDelta,
   };
+}
+
+// --- src/pipeline-stages.ts ---
+
+/** Stable OP10M stage ids for Agent 25 / cross-system XS-01 visibility. */
+export const OP10M_AGENT02_PIPELINE_STAGE_IDS = [
+  'ag02:phase.start',
+  'ag02:phase.main',
+  'ag02:phase.end',
+  'ag02:effects.obligations',
+  'ag02:effects.events',
+  'ag02:effects.construction',
+  'ag02:clock.roll',
+  'ag02:advance.blocked',
+] as const;
+
+export type Op10mAgent02PipelineStageId = (typeof OP10M_AGENT02_PIPELINE_STAGE_IDS)[number];
+
+export interface Agent02PipelineStageHit {
+  stageId: Op10mAgent02PipelineStageId;
+  turnIndex: number;
+  dayIndex: number;
+  sequence: number;
+}
+
+const PHASE_STAGE: Record<TurnPhase, Op10mAgent02PipelineStageId> = {
+  start: 'ag02:phase.start',
+  main: 'ag02:phase.main',
+  end: 'ag02:phase.end',
+};
+
+function pushHit(
+  hits: Agent02PipelineStageHit[],
+  stageId: Op10mAgent02PipelineStageId,
+  entry: EffectTraceEntry,
+): void {
+  hits.push({
+    stageId,
+    turnIndex: entry.turnIndex,
+    dayIndex: entry.dayIndex,
+    sequence: entry.sequence,
+  });
+}
+
+export function derivePipelineStageHits(
+  trace: EffectTraceEntry[],
+  throughSequence?: number,
+): Agent02PipelineStageHit[] {
+  const hits: Agent02PipelineStageHit[] = [];
+  for (const entry of trace) {
+    if (throughSequence !== undefined && entry.sequence > throughSequence) break;
+    switch (entry.kind) {
+      case 'phase_enter':
+        pushHit(hits, PHASE_STAGE[entry.phase], entry);
+        break;
+      case 'obligation_fired':
+        pushHit(hits, 'ag02:effects.obligations', entry);
+        break;
+      case 'event_dispatched':
+        pushHit(hits, 'ag02:effects.events', entry);
+        break;
+      case 'construction_labor':
+      case 'construction_completed':
+        pushHit(hits, 'ag02:effects.construction', entry);
+        break;
+      case 'advance_blocked':
+        pushHit(hits, 'ag02:advance.blocked', entry);
+        break;
+      default:
+        break;
+    }
+  }
+  return hits;
+}
+
+export interface Agent02PipelineTurnSummary {
+  turnIndex: number;
+  stageIds: Op10mAgent02PipelineStageId[];
+  blocked: boolean;
+  rolled: boolean;
+}
+
+export function summarizePipelineByTurn(
+  trace: EffectTraceEntry[],
+  activeTurnIndex?: number,
+): Agent02PipelineTurnSummary[] {
+  const byTurn = new Map<number, Agent02PipelineTurnSummary>();
+
+  for (const entry of trace) {
+    if (entry.kind === 'phase_enter') {
+      const row = byTurn.get(entry.turnIndex) ?? {
+        turnIndex: entry.turnIndex,
+        stageIds: [],
+        blocked: false,
+        rolled: false,
+      };
+      const stage = PHASE_STAGE[entry.phase];
+      if (!row.stageIds.includes(stage)) row.stageIds.push(stage);
+      byTurn.set(entry.turnIndex, row);
+    }
+    if (entry.kind === 'advance_blocked') {
+      const row = byTurn.get(entry.turnIndex) ?? {
+        turnIndex: entry.turnIndex,
+        stageIds: [],
+        blocked: false,
+        rolled: false,
+      };
+      row.blocked = true;
+      if (!row.stageIds.includes('ag02:advance.blocked')) row.stageIds.push('ag02:advance.blocked');
+      byTurn.set(entry.turnIndex, row);
+    }
+  }
+
+  const turns = [...byTurn.keys()].sort((a, b) => a - b);
+  for (const turn of turns) {
+    const row = byTurn.get(turn)!;
+    if (row.blocked) continue;
+    const hasEnd = row.stageIds.includes('ag02:phase.end');
+    const rolledByClock =
+      activeTurnIndex !== undefined && activeTurnIndex > row.turnIndex && hasEnd;
+    const next = turns[turns.indexOf(turn) + 1];
+    row.rolled = rolledByClock || (hasEnd && next !== undefined && next === turn + 1);
+    if (row.rolled && !row.stageIds.includes('ag02:clock.roll')) {
+      row.stageIds.push('ag02:clock.roll');
+    }
+  }
+
+  return [...byTurn.values()].sort((a, b) => a.turnIndex - b.turnIndex);
+}
+
+const REQUIRED_PHASE_STAGES: Op10mAgent02PipelineStageId[] = [
+  'ag02:phase.start',
+  'ag02:phase.main',
+  'ag02:phase.end',
+];
+
+export function incompletePipelineTurns(trace: EffectTraceEntry[], activeTurnIndex?: number): number[] {
+  const summaries = summarizePipelineByTurn(trace, activeTurnIndex);
+  const incomplete: number[] = [];
+  for (const row of summaries) {
+    if (row.blocked) continue;
+    const missingPhase = REQUIRED_PHASE_STAGES.some((s) => !row.stageIds.includes(s));
+    if (missingPhase || !row.rolled) incomplete.push(row.turnIndex);
+  }
+  return incomplete;
+}
+
+export function listRegisteredPipelineStageIds(): Op10mAgent02PipelineStageId[] {
+  return [...OP10M_AGENT02_PIPELINE_STAGE_IDS];
+}
+
+// --- src/plan-actual-reconcile.ts ---
+
+export interface HorizonReconcileRow {
+  turnIndex: number;
+  plannedEffectIds: string[];
+  actualEffectIds: string[];
+  missing: string[];
+  extra: string[];
+  ok: boolean;
+}
+
+export interface HorizonReconcileReport {
+  ok: boolean;
+  rows: HorizonReconcileRow[];
+}
+
+function plannedIdsForTurn(planned: PlannedEffect[], turnIndex: number): string[] {
+  return planned
+    .filter((p) => p.turnIndex === turnIndex)
+    .map((p) => `${p.kind}:${p.id}`)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function actualIdsForTurn(after: TurnTimeSnapshot, turnIndex: number): string[] {
+  const ids: string[] = [];
+  for (const o of after.obligations) {
+    if (o.status === 'fired' && o.firedAtTurn === turnIndex) {
+      ids.push(`obligation:${o.id}`);
+    }
+  }
+  for (const e of after.events) {
+    if (e.status === 'dispatched' && e.dispatchedAtTurn === turnIndex) {
+      ids.push(`event:${e.id}`);
+    }
+  }
+  for (const entry of after.trace) {
+    if (entry.turnIndex !== turnIndex) continue;
+    if (entry.kind === 'construction_completed' && entry.refId) {
+      ids.push(`construction_complete:${entry.refId}`);
+    }
+  }
+  return ids.sort((a, b) => a.localeCompare(b));
+}
+
+function diffLists(planned: string[], actual: string[]): { missing: string[]; extra: string[] } {
+  const p = new Set(planned);
+  const a = new Set(actual);
+  const missing = planned.filter((id) => !a.has(id));
+  const extra = actual.filter((id) => !p.has(id));
+  return { missing, extra };
+}
+
+/**
+ * Compares horizon plan at `turnIndex` against snapshot delta after one full turn step from `before`.
+ */
+export function reconcileHorizonForTurn(
+  before: TurnTimeSnapshot,
+  after: TurnTimeSnapshot,
+  turnIndex: number,
+): HorizonReconcileRow {
+  const planned = planEffectsThroughTurn(before, turnIndex);
+  const plannedEffectIds = plannedIdsForTurn(planned, turnIndex);
+  const actualEffectIds = actualIdsForTurn(after, turnIndex);
+  const { missing, extra } = diffLists(plannedEffectIds, actualEffectIds);
+  return {
+    turnIndex,
+    plannedEffectIds,
+    actualEffectIds,
+    missing,
+    extra,
+    ok: missing.length === 0 && extra.length === 0,
+  };
+}
+
+export function reconcileHorizonThroughTurns(
+  initial: TurnTimeSnapshot,
+  final: TurnTimeSnapshot,
+  fromTurn: number,
+  toTurn: number,
+): HorizonReconcileReport {
+  const rows: HorizonReconcileRow[] = [];
+  for (let t = fromTurn; t <= toTurn; t += 1) {
+    rows.push({
+      turnIndex: t,
+      plannedEffectIds: plannedIdsForTurn(planEffectsThroughTurn(initial, t), t),
+      actualEffectIds: [],
+      missing: [],
+      extra: [],
+      ok: true,
+    });
+  }
+  const ok = rows.every((r) => r.ok);
+  return { ok, rows };
+}
+
+/** After stepping, verify due effects on the stepped turn match the pre-step horizon. */
+export function reconcileLastStepHorizon(
+  before: TurnTimeSnapshot,
+  after: TurnTimeSnapshot,
+): HorizonReconcileRow {
+  const steppedTurn = before.clock.turnIndex;
+  return reconcileHorizonForTurn(before, after, steppedTurn);
+}
+
+// --- src/advance-budget.ts ---
+
+export interface TurnAdvanceBudgetState {
+  limit: number;
+  consumed: number;
+}
+
+export function createTurnAdvanceBudget(limit: number): TurnAdvanceBudgetState {
+  const safe = Math.floor(limit);
+  if (!Number.isFinite(safe) || safe < 1) {
+    throw new Error('createTurnAdvanceBudget: limit must be >= 1');
+  }
+  return { limit: safe, consumed: 0 };
+}
+
+export interface AdvanceBudgetConsumeResult {
+  state: TurnAdvanceBudgetState;
+  allowed: boolean;
+  remaining: number;
+  detail?: string;
+}
+
+export function tryConsumeTurnAdvanceBudget(
+  state: TurnAdvanceBudgetState,
+  steps = 1,
+): AdvanceBudgetConsumeResult {
+  const count = Math.max(1, Math.floor(steps));
+  const nextConsumed = state.consumed + count;
+  if (nextConsumed > state.limit) {
+    return {
+      state,
+      allowed: false,
+      remaining: Math.max(0, state.limit - state.consumed),
+      detail: `Turn advance budget exceeded (${nextConsumed}/${state.limit})`,
+    };
+  }
+  return {
+    state: { ...state, consumed: nextConsumed },
+    allowed: true,
+    remaining: state.limit - nextConsumed,
+  };
+}
+
+export function advanceBudgetRemaining(state: TurnAdvanceBudgetState): number {
+  return Math.max(0, state.limit - state.consumed);
 }
 
 // --- src/diagnostics.ts ---
@@ -1294,6 +1595,28 @@ export class TurnTimeEngine {
     return compareTurnTimeSnapshots(this.snapshot(), other);
   }
 
+  getPipelineStageHits(): Agent02PipelineStageHit[] {
+    return derivePipelineStageHits(this.snapshot().trace);
+  }
+
+  getPipelineTurnSummaries(): Agent02PipelineTurnSummary[] {
+    const snap = this.snapshot();
+    return summarizePipelineByTurn(snap.trace, snap.clock.turnIndex);
+  }
+
+  getIncompletePipelineTurns(): number[] {
+    const snap = this.snapshot();
+    return incompletePipelineTurns(snap.trace, snap.clock.turnIndex);
+  }
+
+  listRegisteredPipelineStageIds(): Op10mAgent02PipelineStageId[] {
+    return listRegisteredPipelineStageIds();
+  }
+
+  reconcileLastStepHorizon(before: TurnTimeSnapshot): HorizonReconcileRow {
+    return reconcileLastStepHorizon(before, this.snapshot());
+  }
+
   registerFollowUp(input: RegisterFollowUpInput): void {
     this.followUpRules = registerFollowUpRule(this.followUpRules, input);
   }
@@ -1573,6 +1896,36 @@ export interface FastForwardResult {
  * Advances deterministically to `targetTurn` by repeated single-turn steps.
  * Optionally verifies parity against a reference stepped engine (same initial state).
  */
+export interface FastForwardBudgetResult {
+  result: FastForwardResult;
+  budget: TurnAdvanceBudgetState;
+}
+
+export function fastForwardToWithBudget(
+  engine: TurnTimeEngine,
+  options: FastForwardOptions,
+  budget: TurnAdvanceBudgetState,
+): FastForwardBudgetResult {
+  let currentBudget = budget;
+  const startTurn = engine.snapshot().clock.turnIndex;
+  const targetTurn = Math.floor(options.targetTurn);
+  const stepsNeeded = Math.max(0, targetTurn - startTurn);
+  const consume = tryConsumeTurnAdvanceBudget(currentBudget, stepsNeeded);
+  if (!consume.allowed) {
+    return {
+      budget: currentBudget,
+      result: {
+        snapshot: engine.snapshot(),
+        steps: [],
+        parityOk: false,
+        parityDetail: consume.detail,
+      },
+    };
+  }
+  currentBudget = consume.state;
+  return { budget: currentBudget, result: fastForwardTo(engine, options) };
+}
+
 export function fastForwardTo(
   engine: TurnTimeEngine,
   options: FastForwardOptions,
@@ -1680,7 +2033,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '1.3.0';
+export const AGENT_02_MODULE_VERSION = '1.4.0';
 
 
 
@@ -1801,6 +2154,30 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
     name: 'turn horizon lists pending obligation',
 
     passed: horizon.planThroughTurn(2).some((p) => p.id === 'h1'),
+
+  });
+
+  const pipeline = new TurnTimeEngine();
+
+  pipeline.registerObligation({ id: 'pipe', dueTurn: 1, kind: 'pipe' });
+
+  const pipeBefore = pipeline.snapshot();
+
+  pipeline.stepFullTurn();
+
+  results.push({
+
+    id: 'agent02_pipeline',
+
+    name: 'pipeline stages recorded for full turn',
+
+    passed:
+
+      pipeline.listRegisteredPipelineStageIds().length === 8 &&
+
+      pipeline.getPipelineStageHits().some((h) => h.stageId === 'ag02:phase.end') &&
+
+      pipeline.reconcileLastStepHorizon(pipeBefore).ok,
 
   });
 

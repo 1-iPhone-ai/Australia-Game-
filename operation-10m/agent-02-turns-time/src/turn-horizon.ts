@@ -54,7 +54,8 @@ export function planEffectsThroughTurn(snapshot: TurnTimeSnapshot, throughTurn: 
 
     for (const p of snapshot.projects) {
       if (p.status !== 'under_construction') continue;
-      if (p.completionTurn === turn) {
+      const finishTurn = p.startedTurn + p.laborTurnsRequired - 1;
+      if (finishTurn === turn) {
         planned.push({
           turnIndex: turn,
           phase: 'end',

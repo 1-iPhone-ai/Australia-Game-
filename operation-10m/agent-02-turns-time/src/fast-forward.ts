@@ -7,6 +7,10 @@ import {
 } from './types.js';
 import { TurnTimeEngine, StepTurnResult } from './engine.js';
 import { stableFiredIdList, stableDispatchedEventIds, traceObligationFirings, traceEventDispatches } from './diagnostics.js';
+import {
+  tryConsumeTurnAdvanceBudget,
+  type TurnAdvanceBudgetState,
+} from './advance-budget.js';
 
 export interface FastForwardResult {
   snapshot: TurnTimeSnapshot;
@@ -19,6 +23,36 @@ export interface FastForwardResult {
  * Advances deterministically to `targetTurn` by repeated single-turn steps.
  * Optionally verifies parity against a reference stepped engine (same initial state).
  */
+export interface FastForwardBudgetResult {
+  result: FastForwardResult;
+  budget: TurnAdvanceBudgetState;
+}
+
+export function fastForwardToWithBudget(
+  engine: TurnTimeEngine,
+  options: FastForwardOptions,
+  budget: TurnAdvanceBudgetState,
+): FastForwardBudgetResult {
+  let currentBudget = budget;
+  const startTurn = engine.snapshot().clock.turnIndex;
+  const targetTurn = Math.floor(options.targetTurn);
+  const stepsNeeded = Math.max(0, targetTurn - startTurn);
+  const consume = tryConsumeTurnAdvanceBudget(currentBudget, stepsNeeded);
+  if (!consume.allowed) {
+    return {
+      budget: currentBudget,
+      result: {
+        snapshot: engine.snapshot(),
+        steps: [],
+        parityOk: false,
+        parityDetail: consume.detail,
+      },
+    };
+  }
+  currentBudget = consume.state;
+  return { budget: currentBudget, result: fastForwardTo(engine, options) };
+}
+
 export function fastForwardTo(
   engine: TurnTimeEngine,
   options: FastForwardOptions,

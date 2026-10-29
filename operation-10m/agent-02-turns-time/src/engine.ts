@@ -42,6 +42,16 @@ import { slipActiveConstructionCompletion } from './construction-pause-slip.js';
 import { planEffectsThroughTurn, type PlannedEffect } from './turn-horizon.js';
 import { compareTurnTimeSnapshots, type SnapshotCompareReport } from './replay-compare.js';
 import {
+  derivePipelineStageHits,
+  summarizePipelineByTurn,
+  incompletePipelineTurns,
+  listRegisteredPipelineStageIds,
+  type Agent02PipelineStageHit,
+  type Agent02PipelineTurnSummary,
+  type Op10mAgent02PipelineStageId,
+} from './pipeline-stages.js';
+import { reconcileLastStepHorizon, type HorizonReconcileRow } from './plan-actual-reconcile.js';
+import {
   createInitialPauseState,
   clonePauseState,
   pauseTime,
@@ -134,6 +144,28 @@ export class TurnTimeEngine {
 
   compareToSnapshot(other: TurnTimeSnapshot): SnapshotCompareReport {
     return compareTurnTimeSnapshots(this.snapshot(), other);
+  }
+
+  getPipelineStageHits(): Agent02PipelineStageHit[] {
+    return derivePipelineStageHits(this.snapshot().trace);
+  }
+
+  getPipelineTurnSummaries(): Agent02PipelineTurnSummary[] {
+    const snap = this.snapshot();
+    return summarizePipelineByTurn(snap.trace, snap.clock.turnIndex);
+  }
+
+  getIncompletePipelineTurns(): number[] {
+    const snap = this.snapshot();
+    return incompletePipelineTurns(snap.trace, snap.clock.turnIndex);
+  }
+
+  listRegisteredPipelineStageIds(): Op10mAgent02PipelineStageId[] {
+    return listRegisteredPipelineStageIds();
+  }
+
+  reconcileLastStepHorizon(before: TurnTimeSnapshot): HorizonReconcileRow {
+    return reconcileLastStepHorizon(before, this.snapshot());
   }
 
   registerFollowUp(input: RegisterFollowUpInput): void {

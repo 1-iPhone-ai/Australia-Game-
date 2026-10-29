@@ -12,11 +12,8 @@ describe('turn horizon planner', () => {
 
     const plan = engine.planThroughTurn(3);
     const turn2 = plan.filter((p) => p.turnIndex === 2);
-    assert.deepEqual(
-      turn2.map((p) => p.id),
-      [...turn2].sort((a, b) => a.id.localeCompare(b.id)).map((p) => p.id),
-    );
-    assert.equal(turn2.length, 3);
+    assert.deepEqual(turn2.map((p) => p.id), ['ev-1', 'ob-a', 'ob-b', 'build']);
+    assert.equal(turn2.length, 4);
     assert.ok(plan.some((p) => p.kind === 'construction_complete' && p.id === 'build'));
     assert.deepEqual(planEffectsThroughTurn(engine.snapshot(), 3), plan);
   });
