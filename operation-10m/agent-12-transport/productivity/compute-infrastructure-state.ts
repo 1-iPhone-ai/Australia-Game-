@@ -669,6 +669,23 @@ import {
   nationalPortContainerReeferLogisticsThroughputIndex,
   portContainerReeferLogisticsProductivityMultiplier,
 } from './port-container-reefer-logistics-index.ts';
+import {
+  computeTidalLagoonExportByRegion,
+  nationalTidalLagoonExportIndex,
+  tidalLagoonExportProductivityMultiplier,
+} from '../network/tidal-lagoon-export-index.ts';
+import {
+  computeRemoteTelehealthSupplyStagingByRegion,
+  computeRemoteTelehealthSupplyStagingShare,
+  nationalRemoteTelehealthSupplyStagingIndex,
+  remoteTelehealthSupplyStagingProductivityMultiplier,
+} from '../operations/remote-telehealth-supply-staging-index.ts';
+import {
+  computeWarehouseVerticalFulfillmentLogisticsShare,
+  computeWarehouseVerticalFulfillmentLogisticsThroughputByRegion,
+  nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex,
+  warehouseVerticalFulfillmentLogisticsProductivityMultiplier,
+} from './warehouse-vertical-fulfillment-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -2054,6 +2071,35 @@ export function computeTransportInfrastructureState(
     portContainerReeferLogisticsShare,
     options?.portContainerReeferLogisticsPolicy ?? 'baseline',
   );
+  const tidalLagoonExportByRegion = computeTidalLagoonExportByRegion(ops);
+  const nationalTidalLagoon = nationalTidalLagoonExportIndex(tidalLagoonExportByRegion);
+  const tidalLagoonMult = tidalLagoonExportProductivityMultiplier(
+    nationalTidalLagoon,
+    options?.tidalLagoonExportPolicy ?? 'baseline',
+  );
+  const remoteTelehealthSupplyStagingByRegion = computeRemoteTelehealthSupplyStagingByRegion(ops, networkStress);
+  const nationalTelehealth = nationalRemoteTelehealthSupplyStagingIndex(remoteTelehealthSupplyStagingByRegion);
+  const remoteTelehealthSupplyStagingShare = computeRemoteTelehealthSupplyStagingShare(
+    ops,
+    options?.remoteTelehealthSupplyStagingPolicy ?? 'baseline',
+  );
+  const telehealthMult = remoteTelehealthSupplyStagingProductivityMultiplier(
+    remoteTelehealthSupplyStagingShare,
+    options?.remoteTelehealthSupplyStagingPolicy ?? 'baseline',
+  );
+  const warehouseVerticalFulfillmentLogisticsThroughputByRegion =
+    computeWarehouseVerticalFulfillmentLogisticsThroughputByRegion(ops);
+  const nationalVerticalFulfillment = nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex(
+    warehouseVerticalFulfillmentLogisticsThroughputByRegion,
+  );
+  const warehouseVerticalFulfillmentLogisticsShare = computeWarehouseVerticalFulfillmentLogisticsShare(
+    ops,
+    options?.warehouseVerticalFulfillmentLogisticsPolicy ?? 'baseline',
+  );
+  const verticalFulfillmentMult = warehouseVerticalFulfillmentLogisticsProductivityMultiplier(
+    warehouseVerticalFulfillmentLogisticsShare,
+    options?.warehouseVerticalFulfillmentLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -2137,6 +2183,9 @@ export function computeTransportInfrastructureState(
     const biomethaneBoost = (biomethaneGridExportByRegion[code] - 5) * 0.0026;
     const miningCampBoost = (miningCampResupplyStagingByRegion[code] - 6) * 0.0022;
     const containerReeferBoost = (portContainerReeferLogisticsThroughputByRegion[code] - 2) * 0.0018;
+    const tidalLagoonBoost = (tidalLagoonExportByRegion[code] - 5) * 0.0025;
+    const telehealthBoost = (remoteTelehealthSupplyStagingByRegion[code] - 6) * 0.0021;
+    const verticalFulfillmentBoost = (warehouseVerticalFulfillmentLogisticsThroughputByRegion[code] - 2) * 0.0017;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -2219,7 +2268,10 @@ export function computeTransportInfrastructureState(
         railShuntingBoost +
         biomethaneBoost +
         miningCampBoost +
-        containerReeferBoost) *
+        containerReeferBoost +
+        tidalLagoonBoost +
+        telehealthBoost +
+        verticalFulfillmentBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -2300,7 +2352,10 @@ export function computeTransportInfrastructureState(
       railShuntingMult *
       biomethaneMult *
       miningCampMult *
-      containerReeferMult;
+      containerReeferMult *
+      tidalLagoonMult *
+      telehealthMult *
+      verticalFulfillmentMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -2404,7 +2459,10 @@ export function computeTransportInfrastructureState(
     nationalRailShunting * 0.003 +
     nationalBiomethane * 0.003 +
     nationalMiningCamp * 0.003 +
-    nationalContainerReefer * 0.003;
+    nationalContainerReefer * 0.003 +
+    nationalTidalLagoon * 0.003 +
+    nationalTelehealth * 0.003 +
+    nationalVerticalFulfillment * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -2419,7 +2477,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/43',
+    schemaVersion: 'agent12/44',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -2729,6 +2787,14 @@ export function computeTransportInfrastructureState(
     portContainerReeferLogisticsShare,
     nationalPortContainerReeferLogisticsThroughputIndex: nationalContainerReefer,
     portContainerReeferLogisticsThroughputByRegion,
+    nationalTidalLagoonExportIndex: nationalTidalLagoon,
+    tidalLagoonExportByRegion,
+    remoteTelehealthSupplyStagingShare,
+    nationalRemoteTelehealthSupplyStagingIndex: nationalTelehealth,
+    remoteTelehealthSupplyStagingByRegion,
+    warehouseVerticalFulfillmentLogisticsShare,
+    nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex: nationalVerticalFulfillment,
+    warehouseVerticalFulfillmentLogisticsThroughputByRegion,
     computeMs,
   };
 }

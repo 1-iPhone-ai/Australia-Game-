@@ -37,13 +37,13 @@ describe('Agent 12 round 31 catalog', () => {
 });
 
 describe('Agent 12 round 31 systems', () => {
-  it('returns agent12/43 with graphite anode, cyclone coastal, e-bus depot', () => {
+  it('returns agent12/44 with graphite anode, cyclone coastal, e-bus depot', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(280), {
       graphiteBatteryAnodeExportPolicy: 'accelerate',
       cycloneResilientCoastalFreightPolicy: 'harden',
       electricBusDepotChargingLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/43');
+    assert.equal(state.schemaVersion, 'agent12/44');
     assert.ok(state.nationalGraphiteBatteryAnodeExportIndex >= 5);
     assert.ok(state.nationalCycloneResilientCoastalFreightIndex >= 6);
     assert.ok(state.electricBusDepotChargingLogisticsShare >= 0.03);

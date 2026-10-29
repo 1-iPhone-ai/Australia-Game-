@@ -37,13 +37,13 @@ describe('Agent 12 round 28 catalog', () => {
 });
 
 describe('Agent 12 round 28 systems', () => {
-  it('returns agent12/43 with copper export, pharma cold chain, pax–freight path', () => {
+  it('returns agent12/44 with copper export, pharma cold chain, pax–freight path', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(250), {
       copperConcentrateExportPolicy: 'accelerate',
       pharmaceuticalColdChainPolicy: 'surge',
       railPassengerFreightPathPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/43');
+    assert.equal(state.schemaVersion, 'agent12/44');
     assert.ok(state.nationalCopperConcentrateExportIndex >= 5);
     assert.ok(state.nationalPharmaceuticalColdChainIndex >= 6);
     assert.ok(state.railPassengerFreightPathShare >= 0.03);

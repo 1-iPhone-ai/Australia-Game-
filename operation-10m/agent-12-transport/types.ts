@@ -405,8 +405,14 @@ export type MiningCampResupplyStagingPolicy = 'baseline' | 'surge';
 
 export type PortContainerReeferLogisticsPolicy = 'baseline' | 'expand';
 
+export type TidalLagoonExportPolicy = 'baseline' | 'accelerate';
+
+export type RemoteTelehealthSupplyStagingPolicy = 'baseline' | 'surge';
+
+export type WarehouseVerticalFulfillmentLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/43';
+  schemaVersion: 'agent12/44';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -716,6 +722,14 @@ export interface TransportInfrastructureState {
   portContainerReeferLogisticsShare: number;
   nationalPortContainerReeferLogisticsThroughputIndex: number;
   portContainerReeferLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalTidalLagoonExportIndex: number;
+  tidalLagoonExportByRegion: Record<AuRegionCode, number>;
+  remoteTelehealthSupplyStagingShare: number;
+  nationalRemoteTelehealthSupplyStagingIndex: number;
+  remoteTelehealthSupplyStagingByRegion: Record<AuRegionCode, number>;
+  warehouseVerticalFulfillmentLogisticsShare: number;
+  nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex: number;
+  warehouseVerticalFulfillmentLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -835,6 +849,9 @@ export interface TransportInfrastructureOptions {
   biomethaneGridExportPolicy?: BiomethaneGridExportPolicy;
   miningCampResupplyStagingPolicy?: MiningCampResupplyStagingPolicy;
   portContainerReeferLogisticsPolicy?: PortContainerReeferLogisticsPolicy;
+  tidalLagoonExportPolicy?: TidalLagoonExportPolicy;
+  remoteTelehealthSupplyStagingPolicy?: RemoteTelehealthSupplyStagingPolicy;
+  warehouseVerticalFulfillmentLogisticsPolicy?: WarehouseVerticalFulfillmentLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
