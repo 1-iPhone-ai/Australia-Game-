@@ -109,6 +109,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   legitimacyStrainIndex: number;
   oversightIntegrityScore: number;
   governanceContinuityScore: number;
+  complianceStrainIndex: number;
+  policyIntegrityScore: number;
+  governanceResilienceScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -1135,6 +1138,62 @@ export function buildGuardianDepthLegitimacyReport(snapshot: GuardianCoPilotMoni
   return lines.slice(0, 3);
 }
 
+export function computeComplianceStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceContinuityScore < 50) load += Math.min(25, 50 - snapshot.governanceContinuityScore);
+  if (snapshot.governanceContinuityScore < 35) load += 10;
+  if (snapshot.oversightIntegrityScore < 45) load += 20;
+  if (snapshot.oversightIntegrityScore < 35) load += 10;
+  if (snapshot.legitimacyStrainIndex >= 55) load += 20;
+  if (snapshot.legitimacyStrainIndex >= 70) load += 10;
+  if (snapshot.governanceCoherenceScore < 45) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.humanRelayPressure >= 50) load += 10;
+  return Math.min(100, load);
+}
+
+export function computePolicyIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.complianceStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.complianceStrainIndex * 0.35));
+  if (snapshot.oversightIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.oversightIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianRequiresConfirmation && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceContinuityScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceResilienceScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.complianceStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.complianceStrainIndex * 0.32));
+  if (snapshot.policyIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.policyIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governancePersistenceScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthComplianceReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.complianceStrainIndex >= 55) {
+    lines.push(
+      `Compliance strain ${snapshot.complianceStrainIndex} — stacked policy review may exceed operator compliance capacity`
+    );
+  }
+  if (snapshot.policyIntegrityScore < 45) {
+    lines.push(
+      `Policy integrity ${snapshot.policyIntegrityScore} — align Co-Pilot policy with Guardian compliance posture`
+    );
+  }
+  if (snapshot.governanceResilienceScore < 40) {
+    lines.push(
+      `Governance resilience ${snapshot.governanceResilienceScore} — little resilience to sustain compliance oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -1263,9 +1322,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withLegitimacyStrain: GuardianCoPilotMonitorSnapshot = { ...withPersistence, legitimacyStrainIndex };
   const oversightIntegrityScore = computeOversightIntegrityScore(withLegitimacyStrain);
   const withOversightIntegrity: GuardianCoPilotMonitorSnapshot = { ...withLegitimacyStrain, oversightIntegrityScore };
-  return {
+  const withGovernanceContinuity: GuardianCoPilotMonitorSnapshot = {
     ...withOversightIntegrity,
     governanceContinuityScore: computeGovernanceContinuityScore(withOversightIntegrity),
+    complianceStrainIndex: 0,
+    policyIntegrityScore: 100,
+    governanceResilienceScore: 100,
+  };
+  const complianceStrainIndex = computeComplianceStrainIndex(withGovernanceContinuity);
+  const withComplianceStrain: GuardianCoPilotMonitorSnapshot = { ...withGovernanceContinuity, complianceStrainIndex };
+  const policyIntegrityScore = computePolicyIntegrityScore(withComplianceStrain);
+  const withPolicy: GuardianCoPilotMonitorSnapshot = { ...withComplianceStrain, policyIntegrityScore };
+  return {
+    ...withPolicy,
+    governanceResilienceScore: computeGovernanceResilienceScore(withPolicy),
   };
 }
 
@@ -1690,6 +1760,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceContinuityScore(snap) < 35;
+  });
+  ok('gd_compliance_strain', () => {
+    const snap = {
+      governanceContinuityScore: 30,
+      oversightIntegrityScore: 32,
+      legitimacyStrainIndex: 72,
+      governanceCoherenceScore: 35,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      humanRelayPressure: 55,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeComplianceStrainIndex(snap) >= 70;
+  });
+  ok('gd_policy_integrity', () => {
+    const snap = {
+      complianceStrainIndex: 72,
+      oversightIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      governanceContinuityScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computePolicyIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_resilience', () => {
+    const snap = {
+      complianceStrainIndex: 78,
+      policyIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governancePersistenceScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceResilienceScore(snap) < 35;
   });
   return out;
 }
@@ -3597,6 +3701,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_13: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_13_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_13.length;
 
 
+// --- source: monitor-rules-scale-wave-14.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_14: AdvisoryMonitorRule[] = [
+  {
+    id: 'compliance_strain_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Compliance Strain High',
+    detailTemplate: 'Compliance strain is in the high band — reduce overlapping warn-only policy review demands',
+    evidenceFields: ['complianceStrainIndex', 'governanceContinuityScore', 'policyIntegrityScore'],
+    evaluate: s => s.complianceStrainIndex >= 70,
+  },
+  {
+    id: 'compliance_strain_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Compliance Strain Elevated',
+    detailTemplate: 'Compliance strain is elevated — expect slower policy review across turns',
+    evidenceFields: ['complianceStrainIndex', 'legitimacyStrainIndex'],
+    evaluate: s => s.complianceStrainIndex >= 45 && s.complianceStrainIndex < 70,
+  },
+  {
+    id: 'policy_integrity_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Policy Integrity Low',
+    detailTemplate: 'Policy integrity is critically low — defer stacked autonomous actions',
+    evidenceFields: ['policyIntegrityScore', 'complianceStrainIndex', 'oversightIntegrityScore'],
+    evaluate: s => s.policyIntegrityScore < 35,
+  },
+  {
+    id: 'policy_integrity_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Policy While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate policy integrity',
+    evidenceFields: ['policyIntegrityScore', 'copilotAutonomousActive', 'complianceStrainIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.policyIntegrityScore >= 35 && s.policyIntegrityScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_resilience_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Resilience Low',
+    detailTemplate: 'Little governance resilience remains for warn-only compliance oversight across turns',
+    evidenceFields: ['governanceResilienceScore', 'complianceStrainIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governanceResilienceScore < 35,
+  },
+  {
+    id: 'governance_resilience_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Resilience While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance resilience',
+    evidenceFields: ['governanceResilienceScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governanceResilienceScore >= 35 && s.governanceResilienceScore < 55,
+  },
+  {
+    id: 'compliance_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Compliance Envelope Pressured',
+    detailTemplate: 'Compliance strain and low policy integrity align in the pressured envelope band',
+    evidenceFields: ['complianceStrainIndex', 'policyIntegrityScore', 'governanceResilienceScore'],
+    evaluate: s => s.complianceStrainIndex >= 55 && s.policyIntegrityScore < 50,
+  },
+  {
+    id: 'rival_compliance_strain',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Compliance Strain',
+    detailTemplate: 'Rival victory progress plus elevated compliance strain',
+    evidenceFields: ['rivalVictoryProgressPct', 'complianceStrainIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.complianceStrainIndex >= 50,
+  },
+  {
+    id: 'team_plan_compliance_strain',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Compliance Strain',
+    detailTemplate: 'Pending team plan while compliance strain is elevated',
+    evidenceFields: ['teamPlanPending', 'complianceStrainIndex', 'governanceResilienceScore'],
+    evaluate: s => s.teamPlanPending && s.complianceStrainIndex >= 55,
+  },
+  {
+    id: 'guardian_compliance_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Compliance Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance resilience',
+    evidenceFields: ['guardianRiskBand', 'governanceResilienceScore', 'complianceStrainIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governanceResilienceScore < 40,
+  },
+  {
+    id: 'copilot_compliance_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Compliance Strain',
+    detailTemplate: 'Autonomous Co-Pilot while compliance strain is high',
+    evidenceFields: ['copilotAutonomousActive', 'complianceStrainIndex', 'policyIntegrityScore'],
+    evaluate: s => s.copilotAutonomousActive && s.complianceStrainIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_resilience',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Resilience',
+    detailTemplate: 'Expiring contracts while governance resilience is low',
+    evidenceFields: ['expiringContractCount', 'governanceResilienceScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governanceResilienceScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_14_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_14.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -3839,6 +4076,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_11,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_12,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_13,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_14,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -4194,6 +4432,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     legitimacyStrainIndex: 0,
     oversightIntegrityScore: 100,
     governanceContinuityScore: 100,
+    complianceStrainIndex: 0,
+    policyIntegrityScore: 100,
+    governanceResilienceScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -4289,6 +4530,9 @@ export function createAdvisoryOpsFixtureSnapshot(
     legitimacyStrainIndex: 0,
     oversightIntegrityScore: 100,
     governanceContinuityScore: 100,
+    complianceStrainIndex: 0,
+    policyIntegrityScore: 100,
+    governanceResilienceScore: 100,
     ...overrides,
   };
   if (snap.objectiveTargetRegion && !snap.objectiveRegion) {
@@ -5329,6 +5573,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['legitimacy_envelope_pressured', 'guardian_legitimacy_envelope_critical'],
     notes: 'Pressured legitimacy envelope with critical Guardian band',
   },
+  {
+    id: 'sc_compliance_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 8,
+      minCashReserve: 500,
+      debt: 1710,
+      maxSpendPerAction: 9600,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['compliance_strain_high', 'policy_integrity_low'],
+    notes: 'High compliance strain with critical policy integrity',
+  },
+  {
+    id: 'sc_governance_resilience_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 19,
+      minCashReserve: 500,
+      debt: 1140,
+      maxSpendPerAction: 7480,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_resilience_low', 'contracts_governance_resilience'],
+    notes: 'Low governance resilience with expiring contracts',
+  },
+  {
+    id: 'sc_compliance_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 13,
+      minCashReserve: 500,
+      debt: 1120,
+      maxSpendPerAction: 7920,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['compliance_envelope_pressured', 'guardian_compliance_envelope_critical'],
+    notes: 'Pressured compliance envelope with critical Guardian band',
+  },
 ];
 
 
@@ -5504,8 +5816,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 12 scale wave brings monitor catalog to 178+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 178;
+  check(results, 'a16_expansion_count', 'Round 14 scale wave brings monitor catalog to 202+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 202;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -5854,6 +6166,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthCharterReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round13_metrics', 'Round 13 legitimacy envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.legitimacyStrainIndex >= 40 &&
+      snap.oversightIntegrityScore <= 100 &&
+      snap.governanceContinuityScore <= 100
+    );
+  });
+
+  check(results, 'a16_legitimacy_report', 'Guardian depth legitimacy report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthLegitimacyReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 

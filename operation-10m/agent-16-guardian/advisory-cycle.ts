@@ -104,6 +104,9 @@ export function createAdvisoryOpsFixtureSnapshot(
     legitimacyStrainIndex: 0,
     oversightIntegrityScore: 100,
     governanceContinuityScore: 100,
+    complianceStrainIndex: 0,
+    policyIntegrityScore: 100,
+    governanceResilienceScore: 100,
     ...overrides,
   };
   if (snap.objectiveTargetRegion && !snap.objectiveRegion) {
