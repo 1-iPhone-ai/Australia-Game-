@@ -1,0 +1,31 @@
+import type { V1016NresPropagationEdge } from '../../types/core.ts';
+
+/** Propagation graph shard 025 (supply shock cross-system coupling). */
+export const V1016_NRES_PROPAGATION_SHARD_025: readonly V1016NresPropagationEdge[] = [
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.365, lagTurns: 4, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.372, lagTurns: 5, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.379, lagTurns: 6, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.386, lagTurns: 4, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.393, lagTurns: 5, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.4, lagTurns: 6, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.407, lagTurns: 4, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.414, lagTurns: 5, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.421, lagTurns: 6, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.428, lagTurns: 4, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.33, lagTurns: 5, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.337, lagTurns: 6, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.344, lagTurns: 4, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.351, lagTurns: 5, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.358, lagTurns: 6, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.365, lagTurns: 4, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.372, lagTurns: 5, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.379, lagTurns: 6, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.386, lagTurns: 4, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.393, lagTurns: 5, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.4, lagTurns: 6, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.407, lagTurns: 4, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.414, lagTurns: 5, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.421, lagTurns: 6, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.428, lagTurns: 4, nodeId: 'node_01' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.33, lagTurns: 5, nodeId: 'node_01' },
+];

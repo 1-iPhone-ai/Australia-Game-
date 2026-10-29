@@ -1,0 +1,31 @@
+import type { V1016NresPropagationEdge } from '../../types/core.ts';
+
+/** Propagation graph shard 010 (supply shock cross-system coupling). */
+export const V1016_NRES_PROPAGATION_SHARD_010: readonly V1016NresPropagationEdge[] = [
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.505, lagTurns: 5, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.512, lagTurns: 6, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.519, lagTurns: 7, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.526, lagTurns: 5, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.533, lagTurns: 6, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.54, lagTurns: 7, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.547, lagTurns: 5, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.554, lagTurns: 6, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.561, lagTurns: 7, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.568, lagTurns: 5, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.47, lagTurns: 6, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.477, lagTurns: 7, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.484, lagTurns: 5, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.491, lagTurns: 6, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.498, lagTurns: 7, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.505, lagTurns: 5, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.512, lagTurns: 6, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.519, lagTurns: 7, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.526, lagTurns: 5, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.533, lagTurns: 6, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.54, lagTurns: 7, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.547, lagTurns: 5, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.554, lagTurns: 6, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.561, lagTurns: 7, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.568, lagTurns: 5, nodeId: 'node_10' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.47, lagTurns: 6, nodeId: 'node_10' },
+];

@@ -1,0 +1,31 @@
+import type { V1016NresPropagationEdge } from '../../types/core.ts';
+
+/** Propagation graph shard 029 (supply shock cross-system coupling). */
+export const V1016_NRES_PROPAGATION_SHARD_029: readonly V1016NresPropagationEdge[] = [
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.498, lagTurns: 8, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.505, lagTurns: 9, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.512, lagTurns: 10, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.519, lagTurns: 8, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.526, lagTurns: 9, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.533, lagTurns: 10, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.54, lagTurns: 8, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.547, lagTurns: 9, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.554, lagTurns: 10, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.561, lagTurns: 8, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.568, lagTurns: 9, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.47, lagTurns: 10, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.477, lagTurns: 8, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.484, lagTurns: 9, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.491, lagTurns: 10, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.498, lagTurns: 8, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.505, lagTurns: 9, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.512, lagTurns: 10, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.519, lagTurns: 8, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.526, lagTurns: 9, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.533, lagTurns: 10, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.54, lagTurns: 8, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.547, lagTurns: 9, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.554, lagTurns: 10, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.561, lagTurns: 8, nodeId: 'node_05' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.568, lagTurns: 9, nodeId: 'node_05' },
+];

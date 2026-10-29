@@ -1,0 +1,130 @@
+import { V1016_NRES_clamp, V1016_NRES_continuityFromScore } from '../../engine/national-resilience-utils.ts';
+import type {
+  V1016NresShockBand,
+  V1016NresRegionId,
+  V1016NresSupplyShockSnapshot,
+  V1016NresSystemDomain,
+} from '../../types/core.ts';
+
+/** Generated supply-shock scenario 117 — national resilience / continuity matrix. */
+export const V1016_NRES_SHOCK_SCENARIO_117_META = {
+  id: 'shock_117',
+  regionId: 'TAS' as V1016NresRegionId,
+  primarySystem: 'industrial' as V1016NresSystemDomain,
+  shockBand: 'active' as V1016NresShockBand,
+  seed: 102650,
+} as const;
+
+const V1016_NRES_SHOCK_SCENARIO_117_COEF = {
+  k0: 7.5000,
+  k1: 65.2000,
+  k2: 23.8000,
+  k3: 81.5000,
+  k4: 40.1000,
+  k5: 97.8000,
+  k6: 56.4000,
+  k7: 15.0000,
+  k8: 72.7000,
+  k9: 31.3000,
+  k10: 89.0000,
+  k11: 47.6000,
+  k12: 6.2000,
+  k13: 63.9000,
+  k14: 22.5000,
+  k15: 80.2000,
+  k16: 38.8000,
+  k17: 96.5000,
+  k18: 55.1000,
+  k19: 13.7000,
+  k20: 71.4000,
+  k21: 30.0000,
+  k22: 87.7000,
+  k23: 46.3000,
+  k24: 4.9000,
+  k25: 62.6000,
+  k26: 21.2000,
+  k27: 78.9000,
+  k28: 37.5000,
+  k29: 95.2000,
+  k30: 53.8000,
+  k31: 12.4000,
+  k32: 70.1000,
+  k33: 28.7000,
+  k34: 86.4000,
+  k35: 45.0000,
+  k36: 3.6000,
+  k37: 61.3000,
+  k38: 19.9000,
+  k39: 77.6000,
+  k40: 36.2000,
+  k41: 93.9000,
+  k42: 52.5000,
+  k43: 11.1000,
+  k44: 68.8000,
+  k45: 27.4000,
+  k46: 85.1000,
+  k47: 43.7000,
+  k48: 2.3000,
+  k49: 60.0000,
+  k50: 18.6000,
+  k51: 76.3000,
+  k52: 34.9000,
+  k53: 92.6000,
+  k54: 51.2000,
+  k55: 9.8000,
+  k56: 67.5000,
+  k57: 26.1000,
+  k58: 83.8000,
+  k59: 42.4000,
+  k60: 1.0000,
+  k61: 58.7000,
+  k62: 17.3000,
+  k63: 75.0000,
+  k64: 33.6000,
+  k65: 91.3000,
+  k66: 49.9000,
+  k67: 8.5000,
+  k68: 66.2000,
+  k69: 24.8000,
+  k70: 82.5000,
+  k71: 41.1000,
+} as const;
+
+export function V1016_NRES_SHOCK_SCENARIO_117_evaluate(turn: number): {
+  severityIndex: number;
+  propagationDelayTurns: number;
+  continuityScore: number;
+  stable: boolean;
+} {
+  let acc = 0;
+  const keys = Object.keys(V1016_NRES_SHOCK_SCENARIO_117_COEF) as Array<
+    keyof typeof V1016_NRES_SHOCK_SCENARIO_117_COEF
+  >;
+  for (let j = 0; j < keys.length; j++) {
+    acc += V1016_NRES_SHOCK_SCENARIO_117_COEF[keys[j]] * ((turn + j) % 13);
+  }
+  const severityIndex = V1016_NRES_clamp(18 + (acc % 62) + turn * 0.05, 0, 100);
+  const propagationDelayTurns = V1016_NRES_clamp(2 + (acc % 9), 1, 16);
+  const continuityScore = V1016_NRES_clamp(88 - severityIndex * 0.62 + (turn % 7) * 0.4, 0, 100);
+  const stable = V1016_NRES_continuityFromScore(continuityScore) !== 'fragile';
+  return { severityIndex, propagationDelayTurns, continuityScore, stable };
+}
+
+export function V1016_NRES_SHOCK_SCENARIO_117_snapshot(turn: number): V1016NresSupplyShockSnapshot {
+  const r = V1016_NRES_SHOCK_SCENARIO_117_evaluate(turn);
+  return {
+    scenarioId: V1016_NRES_SHOCK_SCENARIO_117_META.id,
+    regionId: V1016_NRES_SHOCK_SCENARIO_117_META.regionId,
+    systemDomain: V1016_NRES_SHOCK_SCENARIO_117_META.primarySystem,
+    shockBand: V1016_NRES_SHOCK_SCENARIO_117_META.shockBand,
+    severityIndex: r.severityIndex,
+    propagationDelayTurns: r.propagationDelayTurns,
+    continuityScore: r.continuityScore,
+    continuityBand: V1016_NRES_continuityFromScore(r.continuityScore),
+  };
+}
+
+export function V1016_NRES_SHOCK_SCENARIO_117_regressionAssert(turn: number): boolean {
+  const r = V1016_NRES_SHOCK_SCENARIO_117_evaluate(turn);
+  return typeof r.severityIndex === 'number' && r.continuityScore <= 100;
+}

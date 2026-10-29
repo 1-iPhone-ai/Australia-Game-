@@ -1,0 +1,31 @@
+import type { V1016NresPropagationEdge } from '../../types/core.ts';
+
+/** Propagation graph shard 052 (supply shock cross-system coupling). */
+export const V1016_NRES_PROPAGATION_SHARD_052: readonly V1016NresPropagationEdge[] = [
+  { fromSystem: 'water', toSystem: 'food', weight: 0.624, lagTurns: 7, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.631, lagTurns: 8, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.638, lagTurns: 9, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.645, lagTurns: 7, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.652, lagTurns: 8, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.659, lagTurns: 9, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.666, lagTurns: 7, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.673, lagTurns: 8, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.68, lagTurns: 9, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.687, lagTurns: 7, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.694, lagTurns: 8, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.701, lagTurns: 9, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.708, lagTurns: 7, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.61, lagTurns: 8, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.617, lagTurns: 9, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.624, lagTurns: 7, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.631, lagTurns: 8, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.638, lagTurns: 9, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.645, lagTurns: 7, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.652, lagTurns: 8, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.659, lagTurns: 9, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.666, lagTurns: 7, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.673, lagTurns: 8, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.68, lagTurns: 9, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.687, lagTurns: 7, nodeId: 'node_04' },
+  { fromSystem: 'water', toSystem: 'food', weight: 0.694, lagTurns: 8, nodeId: 'node_04' },
+];
