@@ -277,6 +277,10 @@ export interface NationalLaborDemographicsState {
   onboardingSustainOutlook?: NationalOnboardingSustainOutlook;
   subjectApexReadinessBrief?: NationalSubjectApexReadinessBrief;
   nationalWorkforceApexIndex?: NationalWorkforceApexIndex;
+  apexAdvocacyCouplingBrief?: NationalApexAdvocacyCouplingBrief;
+  reengagementThrustOutlook?: NationalReengagementThrustOutlook;
+  subjectPinnacleReadinessBrief?: NationalSubjectPinnacleReadinessBrief;
+  nationalWorkforcePinnacleIndex?: NationalWorkforcePinnacleIndex;
 }
 
 export type MigrationShockKind =
@@ -1257,6 +1261,50 @@ export interface NationalWorkforceApexIndex {
   apexIndex: number;
   band: WorkforceApexBand;
   apexDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ApexAdvocacyCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalApexAdvocacyCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: ApexAdvocacyCouplingBand;
+  apexDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ReengagementThrustBand = 'stalled' | 'patchy' | 'building' | 'surging';
+
+export interface NationalReengagementThrustOutlook {
+  turn: number;
+  thrustIndex: number;
+  band: ReengagementThrustBand;
+  sustainDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectPinnacleReadinessBand = 'below_pinnacle' | 'approaching' | 'pinnacle_ready' | 'summit_locked';
+
+export interface NationalSubjectPinnacleReadinessBrief {
+  turn: number;
+  pinnacleIndex: number;
+  band: SubjectPinnacleReadinessBand;
+  pinnacleDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforcePinnacleBand = 'fragile' | 'thin' | 'elevated' | 'summit';
+
+export interface NationalWorkforcePinnacleIndex {
+  turn: number;
+  pinnacleIndex: number;
+  band: WorkforcePinnacleBand;
+  pinnacleDrag: number;
   summary: string;
   stewardNote: string;
 }
@@ -2415,7 +2463,11 @@ export type LaborGiQueryTopic =
   | 'culmination_mentorship_coupling'
   | 'onboarding_sustain'
   | 'subject_apex_readiness'
-  | 'workforce_apex';
+  | 'workforce_apex'
+  | 'apex_advocacy_coupling'
+  | 'reengagement_thrust'
+  | 'subject_pinnacle_readiness'
+  | 'workforce_pinnacle';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -2504,6 +2556,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(onboarding sustain|onboarding pipeline sustain)/.test(q)) return 'onboarding_sustain';
   if (/\b(subject apex readiness|apex readiness subject)/.test(q)) return 'subject_apex_readiness';
   if (/\b(workforce apex|apex index labor)/.test(q)) return 'workforce_apex';
+  if (/\b(apex advocacy|apex-advocacy coupling)/.test(q)) return 'apex_advocacy_coupling';
+  if (/\b(reengagement thrust|reengagement pipeline thrust)/.test(q)) return 'reengagement_thrust';
+  if (/\b(subject pinnacle readiness|pinnacle readiness subject)/.test(q)) return 'subject_pinnacle_readiness';
+  if (/\b(workforce pinnacle|pinnacle index labor)/.test(q)) return 'workforce_pinnacle';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -3226,6 +3282,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Apex band ${state.nationalWorkforceApexIndex?.band ?? 'unknown'}; apex drag ${Math.round(state.nationalWorkforceApexIndex?.apexDrag ?? 0)}.`,
         inference: state.nationalWorkforceApexIndex?.stewardNote || state.summary,
         projection: 'Workforce apex synthesizes mentorship coupling, onboarding sustain, and subject apex readiness.'
+      };
+    case 'apex_advocacy_coupling':
+      return {
+        topic,
+        headline: state.apexAdvocacyCouplingBrief?.summary || 'Apex-advocacy coupling unavailable.',
+        fact: `Coupling band ${state.apexAdvocacyCouplingBrief?.band ?? 'unknown'}; apex drag ${Math.round(state.apexAdvocacyCouplingBrief?.apexDrag ?? 0)}.`,
+        inference: state.apexAdvocacyCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce apex with advocacy levers — wave 27 / O10-185 depth.'
+      };
+    case 'reengagement_thrust':
+      return {
+        topic,
+        headline: state.reengagementThrustOutlook?.summary || 'Reengagement thrust unavailable.',
+        fact: `Thrust band ${state.reengagementThrustOutlook?.band ?? 'unknown'}; sustain drag ${Math.round(state.reengagementThrustOutlook?.sustainDrag ?? 0)}.`,
+        inference: state.reengagementThrustOutlook?.stewardNote || state.outlook,
+        projection: 'Thrust blends reengagement levers with onboarding sustain — bounded indices only.'
+      };
+    case 'subject_pinnacle_readiness':
+      return {
+        topic,
+        headline: state.subjectPinnacleReadinessBrief?.summary || 'Subject pinnacle readiness unavailable.',
+        fact: `Pinnacle band ${state.subjectPinnacleReadinessBrief?.band ?? 'unknown'}; pinnacle drag ${Math.round(state.subjectPinnacleReadinessBrief?.pinnacleDrag ?? 0)}.`,
+        inference: state.subjectPinnacleReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject pinnacle readiness gates subject apex against workforce apex for O10-185 wave 27.'
+      };
+    case 'workforce_pinnacle':
+      return {
+        topic,
+        headline: state.nationalWorkforcePinnacleIndex?.summary || 'Workforce pinnacle unavailable.',
+        fact: `Pinnacle band ${state.nationalWorkforcePinnacleIndex?.band ?? 'unknown'}; pinnacle drag ${Math.round(state.nationalWorkforcePinnacleIndex?.pinnacleDrag ?? 0)}.`,
+        inference: state.nationalWorkforcePinnacleIndex?.stewardNote || state.summary,
+        projection: 'Workforce pinnacle synthesizes advocacy coupling, reengagement thrust, and subject pinnacle.'
       };
     default:
       return {
@@ -3999,6 +4087,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceApexIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceApexIndex.stewardNote);
+  }
+  if (
+    state.apexAdvocacyCouplingBrief?.band === 'decoupled' ||
+    state.apexAdvocacyCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.apexAdvocacyCouplingBrief.stewardNote);
+  }
+  if (
+    state.reengagementThrustOutlook?.band === 'stalled' ||
+    state.reengagementThrustOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.reengagementThrustOutlook.stewardNote);
+  }
+  if (
+    state.subjectPinnacleReadinessBrief?.band === 'below_pinnacle' ||
+    state.subjectPinnacleReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectPinnacleReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforcePinnacleIndex?.band === 'fragile' ||
+    state.nationalWorkforcePinnacleIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforcePinnacleIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -11063,6 +11175,275 @@ export function computeNationalWorkforceApexIndex(
 }
 
 
+// --- source: apex-advocacy-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type ApexAdvocacyCouplingBand,
+  type NationalApexAdvocacyCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalWorkforceApexIndex
+} from './types';
+
+function couplingBand(index: number): ApexAdvocacyCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+export function computeNationalApexAdvocacyCouplingBrief(
+  state: NationalLaborDemographicsState,
+  apex: NationalWorkforceApexIndex | null | undefined
+): NationalApexAdvocacyCouplingBrief {
+  if (!state.enabled || !apex) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      apexDrag: 0,
+      summary: 'Apex-advocacy coupling idle — workforce apex unavailable.',
+      stewardNote: 'Compute workforce apex before advocacy coupling guidance.'
+    };
+  }
+
+  let advocacyLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    advocacyLift += advocacyEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  advocacyLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const apexDrag = v1014laborClamp(
+    apex.apexDrag * 0.48 + (apex.band === 'fragile' || apex.band === 'thin' ? 11 : 3)
+  );
+  const apexLift =
+    apex.band === 'elevated' || apex.band === 'summit' ? apex.apexIndex * 0.24 : apex.apexIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + advocacyLift * 21 + apexLift - apexDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained apex-advocacy link — deploy advocacy levers before wave-27 pinnacle commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard reengagement thrust spikes that drain advocacy buffers.'
+        : 'Amplified coupling — pair advocacy packs with subject pinnacle readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    apexDrag,
+    summary: `Apex-advocacy coupling ${band} (index ${Math.round(couplingIndex)}); apex drag ${Math.round(apexDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: reengagement-thrust-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalOnboardingSustainOutlook,
+  type NationalReengagementThrustOutlook,
+  type ReengagementThrustBand
+} from './types';
+
+function thrustBand(index: number): ReengagementThrustBand {
+  if (index <= 34) return 'stalled';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'building';
+  return 'surging';
+}
+
+export function computeNationalReengagementThrustOutlook(
+  state: NationalLaborDemographicsState,
+  onboardingSustain: NationalOnboardingSustainOutlook | null | undefined
+): NationalReengagementThrustOutlook {
+  if (!state.enabled || !onboardingSustain) {
+    return {
+      turn: state.turn,
+      thrustIndex: 50,
+      band: 'patchy',
+      sustainDrag: 0,
+      summary: 'Reengagement thrust idle — onboarding sustain unavailable.',
+      stewardNote: 'Compute onboarding sustain before reengagement thrust guidance.'
+    };
+  }
+
+  let reengagementLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    reengagementLift += reengagementPullForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  reengagementLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const sustainDrag = v1014laborClamp(
+    onboardingSustain.anchorDrag * 0.46 +
+      (onboardingSustain.band === 'depleted' || onboardingSustain.band === 'thin' ? 10 : 3)
+  );
+  const sustainLift =
+    onboardingSustain.band === 'sustained' || onboardingSustain.band === 'deep'
+      ? onboardingSustain.sustainIndex * 0.2
+      : onboardingSustain.sustainIndex * 0.1;
+
+  const thrustIndex = v1014laborClamp(24 + reengagementLift * 22 + sustainLift - sustainDrag);
+  const band = thrustBand(thrustIndex);
+
+  const stewardNote =
+    band === 'stalled' || band === 'patchy'
+      ? 'Patchy reengagement thrust — deploy reengagement levers before subject pinnacle assembly.'
+      : band === 'surging'
+        ? 'Surging thrust band — verify apex-advocacy coupling before auto workforce pushes.'
+        : 'Building thrust — align with reengagement momentum outlook checks.';
+
+  return {
+    turn: state.turn,
+    thrustIndex,
+    band,
+    sustainDrag,
+    summary: `National reengagement thrust ${band} (index ${Math.round(thrustIndex)}); sustain drag ${Math.round(sustainDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-pinnacle-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectApexReadinessBrief,
+  type NationalSubjectPinnacleReadinessBrief,
+  type NationalWorkforceApexIndex,
+  type SubjectPinnacleReadinessBand
+} from './types';
+
+function pinnacleBand(index: number): SubjectPinnacleReadinessBand {
+  if (index <= 34) return 'below_pinnacle';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'pinnacle_ready';
+  return 'summit_locked';
+}
+
+/** Round-27 / wave-27 subject pinnacle readiness — apex × workforce apex (O10-185). */
+export function computeNationalSubjectPinnacleReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectApex: NationalSubjectApexReadinessBrief | null | undefined,
+  workforceApex: NationalWorkforceApexIndex | null | undefined
+): NationalSubjectPinnacleReadinessBrief {
+  if (!state.enabled || !subjectApex || !workforceApex) {
+    return {
+      turn: state.turn,
+      pinnacleIndex: 50,
+      band: 'approaching',
+      pinnacleDrag: 0,
+      summary: 'Subject pinnacle readiness idle — subject apex or workforce apex unavailable.',
+      stewardNote: 'Compute subject apex and workforce apex before pinnacle guidance.'
+    };
+  }
+
+  const pinnacleDrag = v1014laborClamp(
+    subjectApex.apexDrag * 0.38 +
+      workforceApex.apexDrag * 0.38 +
+      (subjectApex.band === 'below_apex' || workforceApex.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectApex.band === 'apex_ready' || subjectApex.band === 'summit_locked'
+      ? subjectApex.apexIndex * 0.27
+      : subjectApex.apexIndex * 0.14;
+  const workforceLift =
+    workforceApex.band === 'elevated' || workforceApex.band === 'summit'
+      ? workforceApex.apexIndex * 0.25
+      : workforceApex.apexIndex * 0.12;
+
+  const pinnacleIndex = v1014laborClamp(20 + subjectLift + workforceLift - pinnacleDrag);
+  const band = pinnacleBand(pinnacleIndex);
+
+  const stewardNote =
+    band === 'below_pinnacle' || band === 'approaching'
+      ? 'Approaching pinnacle — hold O10-185 wave-27 scale until apex-advocacy syncs.'
+      : band === 'summit_locked'
+        ? 'Summit-locked pinnacle — still monitor reengagement thrust during corridor peaks.'
+        : 'Pinnacle-ready — pair with workforce pinnacle index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    pinnacleIndex,
+    band,
+    pinnacleDrag,
+    summary: `Subject pinnacle readiness ${band} (index ${Math.round(pinnacleIndex)}); pinnacle drag ${Math.round(pinnacleDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-pinnacle-index.ts ---
+  type NationalApexAdvocacyCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalReengagementThrustOutlook,
+  type NationalSubjectPinnacleReadinessBrief,
+  type NationalWorkforcePinnacleIndex,
+  type WorkforcePinnacleBand
+} from './types';
+
+function pinnacleBand(index: number): WorkforcePinnacleBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'summit';
+}
+
+export function computeNationalWorkforcePinnacleIndex(
+  state: NationalLaborDemographicsState,
+  advocacyCoupling: NationalApexAdvocacyCouplingBrief | null | undefined,
+  reengagementThrust: NationalReengagementThrustOutlook | null | undefined,
+  subjectPinnacle: NationalSubjectPinnacleReadinessBrief | null | undefined
+): NationalWorkforcePinnacleIndex {
+  if (!state.enabled || !advocacyCoupling || !reengagementThrust || !subjectPinnacle) {
+    return {
+      turn: state.turn,
+      pinnacleIndex: 50,
+      band: 'thin',
+      pinnacleDrag: 0,
+      summary: 'Workforce pinnacle idle — advocacy coupling, reengagement thrust, or subject pinnacle unavailable.',
+      stewardNote: 'Compute O10-185 wave-27 depth stack before pinnacle guidance.'
+    };
+  }
+
+  const pinnacleDrag = v1014laborClamp(
+    subjectPinnacle.pinnacleDrag * 0.35 +
+      advocacyCoupling.apexDrag * 0.3 +
+      reengagementThrust.sustainDrag * 0.25 +
+      (subjectPinnacle.band === 'below_pinnacle' || advocacyCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const advocacyLift =
+    advocacyCoupling.band === 'amplified' || advocacyCoupling.band === 'elevated'
+      ? advocacyCoupling.couplingIndex * 0.2
+      : advocacyCoupling.couplingIndex * 0.1;
+  const thrustLift =
+    reengagementThrust.band === 'building' || reengagementThrust.band === 'surging'
+      ? reengagementThrust.thrustIndex * 0.18
+      : reengagementThrust.thrustIndex * 0.09;
+  const subjectLift =
+    subjectPinnacle.band === 'pinnacle_ready' || subjectPinnacle.band === 'summit_locked'
+      ? subjectPinnacle.pinnacleIndex * 0.22
+      : subjectPinnacle.pinnacleIndex * 0.11;
+
+  const pinnacleIndex = v1014laborClamp(18 + advocacyLift + thrustLift + subjectLift - pinnacleDrag);
+  const band = pinnacleBand(pinnacleIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce pinnacle — sequence apex-advocacy, reengagement thrust, and subject pinnacle before post-7c1cfd89 tranche.'
+      : band === 'summit'
+        ? 'Summit pinnacle — avoid corridor overload that breaks subject pinnacle bands.'
+        : 'Elevated pinnacle — refresh subject pinnacle checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    pinnacleIndex,
+    band,
+    pinnacleDrag,
+    summary: `National workforce pinnacle ${band} (index ${Math.round(pinnacleIndex)}); pinnacle drag ${Math.round(pinnacleDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -11924,6 +12305,25 @@ export function computeNationalLaborDemographics(
     state.onboardingSustainOutlook,
     state.subjectApexReadinessBrief
   );
+  state.apexAdvocacyCouplingBrief = computeNationalApexAdvocacyCouplingBrief(
+    state,
+    state.nationalWorkforceApexIndex
+  );
+  state.reengagementThrustOutlook = computeNationalReengagementThrustOutlook(
+    state,
+    state.onboardingSustainOutlook
+  );
+  state.subjectPinnacleReadinessBrief = computeNationalSubjectPinnacleReadinessBrief(
+    state,
+    state.subjectApexReadinessBrief,
+    state.nationalWorkforceApexIndex
+  );
+  state.nationalWorkforcePinnacleIndex = computeNationalWorkforcePinnacleIndex(
+    state,
+    state.apexAdvocacyCouplingBrief,
+    state.reengagementThrustOutlook,
+    state.subjectPinnacleReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -12438,6 +12838,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceApexIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.apexAdvocacyCouplingBrief?.band === 'decoupled' ||
+      state.apexAdvocacyCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.apexAdvocacyCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.reengagementThrustOutlook?.band === 'stalled' ||
+      state.reengagementThrustOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.reengagementThrustOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectPinnacleReadinessBrief?.band === 'below_pinnacle' ||
+      state.subjectPinnacleReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectPinnacleReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforcePinnacleIndex?.band === 'fragile' ||
+      state.nationalWorkforcePinnacleIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforcePinnacleIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -13980,6 +14408,59 @@ export function runV1014LaborDemographicsSelfTests(): {
     'apex steward note'
   );
   check('R2616', mentorshipEaseForRegion('NSW', 'technology') > 0, 'mentorship ease for region');
+
+  check('R2701', Boolean(r1.state.apexAdvocacyCouplingBrief?.band), 'apex advocacy on state');
+  check('R2702', (r1.state.apexAdvocacyCouplingBrief?.apexDrag ?? 0) >= 0, 'apex advocacy drag');
+  check('R2703', Boolean(r1.state.reengagementThrustOutlook?.band), 'reengagement thrust on state');
+  check('R2704', (r1.state.reengagementThrustOutlook?.sustainDrag ?? 0) >= 0, 'reengagement sustain drag');
+  check('R2705', Boolean(r1.state.subjectPinnacleReadinessBrief?.band), 'subject pinnacle on state');
+  check('R2706', Boolean(r1.state.nationalWorkforcePinnacleIndex?.band), 'workforce pinnacle on state');
+  check(
+    'R2707',
+    detectLaborDemographicsQuery('apex advocacy coupling') === 'apex_advocacy_coupling',
+    'GI apex advocacy detect'
+  );
+  check(
+    'R2708',
+    detectLaborDemographicsQuery('reengagement thrust') === 'reengagement_thrust',
+    'GI reengagement thrust detect'
+  );
+  check(
+    'R2709',
+    detectLaborDemographicsQuery('subject pinnacle readiness') === 'subject_pinnacle_readiness',
+    'GI subject pinnacle detect'
+  );
+  check(
+    'R2710',
+    detectLaborDemographicsQuery('workforce pinnacle') === 'workforce_pinnacle',
+    'GI workforce pinnacle detect'
+  );
+  check(
+    'R2711',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_pinnacle').headline.length > 5,
+    'GI workforce pinnacle answer'
+  );
+  const apexAdvocacyOnly = computeNationalApexAdvocacyCouplingBrief(r1.state, r1.state.nationalWorkforceApexIndex);
+  check('R2712', apexAdvocacyOnly.summary.length > 10, 'apex advocacy standalone summary');
+  const reengagementThrustOnly = computeNationalReengagementThrustOutlook(r1.state, r1.state.onboardingSustainOutlook);
+  check('R2713', reengagementThrustOnly.band.length > 3, 'reengagement thrust band string');
+  const subjectPinnacleOnly = computeNationalSubjectPinnacleReadinessBrief(
+    r1.state,
+    r1.state.subjectApexReadinessBrief,
+    r1.state.nationalWorkforceApexIndex
+  );
+  check('R2714', subjectPinnacleOnly.pinnacleDrag >= 0, 'subject pinnacle drag');
+  check(
+    'R2715',
+    computeNationalWorkforcePinnacleIndex(
+      rHhBad.state,
+      rHhBad.state.apexAdvocacyCouplingBrief,
+      rHhBad.state.reengagementThrustOutlook,
+      rHhBad.state.subjectPinnacleReadinessBrief
+    ).stewardNote.length > 8,
+    'pinnacle steward note'
+  );
+  check('R2716', advocacyEaseForRegion('NSW', 'technology') > 0, 'advocacy ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

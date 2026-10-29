@@ -158,6 +158,10 @@ import { computeNationalCulminationMentorshipCouplingBrief } from './culmination
 import { computeNationalOnboardingSustainOutlook } from './onboarding-sustain-outlook';
 import { computeNationalSubjectApexReadinessBrief } from './subject-apex-readiness-brief';
 import { computeNationalWorkforceApexIndex } from './national-workforce-apex-index';
+import { computeNationalApexAdvocacyCouplingBrief } from './apex-advocacy-coupling-brief';
+import { computeNationalReengagementThrustOutlook } from './reengagement-thrust-outlook';
+import { computeNationalSubjectPinnacleReadinessBrief } from './subject-pinnacle-readiness-brief';
+import { computeNationalWorkforcePinnacleIndex } from './national-workforce-pinnacle-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -1631,6 +1635,59 @@ export function runV1014LaborDemographicsSelfTests(): {
     'apex steward note'
   );
   check('R2616', mentorshipEaseForRegion('NSW', 'technology') > 0, 'mentorship ease for region');
+
+  check('R2701', Boolean(r1.state.apexAdvocacyCouplingBrief?.band), 'apex advocacy on state');
+  check('R2702', (r1.state.apexAdvocacyCouplingBrief?.apexDrag ?? 0) >= 0, 'apex advocacy drag');
+  check('R2703', Boolean(r1.state.reengagementThrustOutlook?.band), 'reengagement thrust on state');
+  check('R2704', (r1.state.reengagementThrustOutlook?.sustainDrag ?? 0) >= 0, 'reengagement sustain drag');
+  check('R2705', Boolean(r1.state.subjectPinnacleReadinessBrief?.band), 'subject pinnacle on state');
+  check('R2706', Boolean(r1.state.nationalWorkforcePinnacleIndex?.band), 'workforce pinnacle on state');
+  check(
+    'R2707',
+    detectLaborDemographicsQuery('apex advocacy coupling') === 'apex_advocacy_coupling',
+    'GI apex advocacy detect'
+  );
+  check(
+    'R2708',
+    detectLaborDemographicsQuery('reengagement thrust') === 'reengagement_thrust',
+    'GI reengagement thrust detect'
+  );
+  check(
+    'R2709',
+    detectLaborDemographicsQuery('subject pinnacle readiness') === 'subject_pinnacle_readiness',
+    'GI subject pinnacle detect'
+  );
+  check(
+    'R2710',
+    detectLaborDemographicsQuery('workforce pinnacle') === 'workforce_pinnacle',
+    'GI workforce pinnacle detect'
+  );
+  check(
+    'R2711',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_pinnacle').headline.length > 5,
+    'GI workforce pinnacle answer'
+  );
+  const apexAdvocacyOnly = computeNationalApexAdvocacyCouplingBrief(r1.state, r1.state.nationalWorkforceApexIndex);
+  check('R2712', apexAdvocacyOnly.summary.length > 10, 'apex advocacy standalone summary');
+  const reengagementThrustOnly = computeNationalReengagementThrustOutlook(r1.state, r1.state.onboardingSustainOutlook);
+  check('R2713', reengagementThrustOnly.band.length > 3, 'reengagement thrust band string');
+  const subjectPinnacleOnly = computeNationalSubjectPinnacleReadinessBrief(
+    r1.state,
+    r1.state.subjectApexReadinessBrief,
+    r1.state.nationalWorkforceApexIndex
+  );
+  check('R2714', subjectPinnacleOnly.pinnacleDrag >= 0, 'subject pinnacle drag');
+  check(
+    'R2715',
+    computeNationalWorkforcePinnacleIndex(
+      rHhBad.state,
+      rHhBad.state.apexAdvocacyCouplingBrief,
+      rHhBad.state.reengagementThrustOutlook,
+      rHhBad.state.subjectPinnacleReadinessBrief
+    ).stewardNote.length > 8,
+    'pinnacle steward note'
+  );
+  check('R2716', advocacyEaseForRegion('NSW', 'technology') > 0, 'advocacy ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

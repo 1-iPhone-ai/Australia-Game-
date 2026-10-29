@@ -91,7 +91,11 @@ export type LaborGiQueryTopic =
   | 'culmination_mentorship_coupling'
   | 'onboarding_sustain'
   | 'subject_apex_readiness'
-  | 'workforce_apex';
+  | 'workforce_apex'
+  | 'apex_advocacy_coupling'
+  | 'reengagement_thrust'
+  | 'subject_pinnacle_readiness'
+  | 'workforce_pinnacle';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -180,6 +184,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(onboarding sustain|onboarding pipeline sustain)/.test(q)) return 'onboarding_sustain';
   if (/\b(subject apex readiness|apex readiness subject)/.test(q)) return 'subject_apex_readiness';
   if (/\b(workforce apex|apex index labor)/.test(q)) return 'workforce_apex';
+  if (/\b(apex advocacy|apex-advocacy coupling)/.test(q)) return 'apex_advocacy_coupling';
+  if (/\b(reengagement thrust|reengagement pipeline thrust)/.test(q)) return 'reengagement_thrust';
+  if (/\b(subject pinnacle readiness|pinnacle readiness subject)/.test(q)) return 'subject_pinnacle_readiness';
+  if (/\b(workforce pinnacle|pinnacle index labor)/.test(q)) return 'workforce_pinnacle';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -902,6 +910,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Apex band ${state.nationalWorkforceApexIndex?.band ?? 'unknown'}; apex drag ${Math.round(state.nationalWorkforceApexIndex?.apexDrag ?? 0)}.`,
         inference: state.nationalWorkforceApexIndex?.stewardNote || state.summary,
         projection: 'Workforce apex synthesizes mentorship coupling, onboarding sustain, and subject apex readiness.'
+      };
+    case 'apex_advocacy_coupling':
+      return {
+        topic,
+        headline: state.apexAdvocacyCouplingBrief?.summary || 'Apex-advocacy coupling unavailable.',
+        fact: `Coupling band ${state.apexAdvocacyCouplingBrief?.band ?? 'unknown'}; apex drag ${Math.round(state.apexAdvocacyCouplingBrief?.apexDrag ?? 0)}.`,
+        inference: state.apexAdvocacyCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce apex with advocacy levers — wave 27 / O10-185 depth.'
+      };
+    case 'reengagement_thrust':
+      return {
+        topic,
+        headline: state.reengagementThrustOutlook?.summary || 'Reengagement thrust unavailable.',
+        fact: `Thrust band ${state.reengagementThrustOutlook?.band ?? 'unknown'}; sustain drag ${Math.round(state.reengagementThrustOutlook?.sustainDrag ?? 0)}.`,
+        inference: state.reengagementThrustOutlook?.stewardNote || state.outlook,
+        projection: 'Thrust blends reengagement levers with onboarding sustain — bounded indices only.'
+      };
+    case 'subject_pinnacle_readiness':
+      return {
+        topic,
+        headline: state.subjectPinnacleReadinessBrief?.summary || 'Subject pinnacle readiness unavailable.',
+        fact: `Pinnacle band ${state.subjectPinnacleReadinessBrief?.band ?? 'unknown'}; pinnacle drag ${Math.round(state.subjectPinnacleReadinessBrief?.pinnacleDrag ?? 0)}.`,
+        inference: state.subjectPinnacleReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject pinnacle readiness gates subject apex against workforce apex for O10-185 wave 27.'
+      };
+    case 'workforce_pinnacle':
+      return {
+        topic,
+        headline: state.nationalWorkforcePinnacleIndex?.summary || 'Workforce pinnacle unavailable.',
+        fact: `Pinnacle band ${state.nationalWorkforcePinnacleIndex?.band ?? 'unknown'}; pinnacle drag ${Math.round(state.nationalWorkforcePinnacleIndex?.pinnacleDrag ?? 0)}.`,
+        inference: state.nationalWorkforcePinnacleIndex?.stewardNote || state.summary,
+        projection: 'Workforce pinnacle synthesizes advocacy coupling, reengagement thrust, and subject pinnacle.'
       };
     default:
       return {

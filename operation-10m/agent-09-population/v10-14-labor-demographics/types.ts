@@ -273,6 +273,10 @@ export interface NationalLaborDemographicsState {
   onboardingSustainOutlook?: NationalOnboardingSustainOutlook;
   subjectApexReadinessBrief?: NationalSubjectApexReadinessBrief;
   nationalWorkforceApexIndex?: NationalWorkforceApexIndex;
+  apexAdvocacyCouplingBrief?: NationalApexAdvocacyCouplingBrief;
+  reengagementThrustOutlook?: NationalReengagementThrustOutlook;
+  subjectPinnacleReadinessBrief?: NationalSubjectPinnacleReadinessBrief;
+  nationalWorkforcePinnacleIndex?: NationalWorkforcePinnacleIndex;
 }
 
 export type MigrationShockKind =
@@ -1253,6 +1257,50 @@ export interface NationalWorkforceApexIndex {
   apexIndex: number;
   band: WorkforceApexBand;
   apexDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ApexAdvocacyCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalApexAdvocacyCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: ApexAdvocacyCouplingBand;
+  apexDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ReengagementThrustBand = 'stalled' | 'patchy' | 'building' | 'surging';
+
+export interface NationalReengagementThrustOutlook {
+  turn: number;
+  thrustIndex: number;
+  band: ReengagementThrustBand;
+  sustainDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectPinnacleReadinessBand = 'below_pinnacle' | 'approaching' | 'pinnacle_ready' | 'summit_locked';
+
+export interface NationalSubjectPinnacleReadinessBrief {
+  turn: number;
+  pinnacleIndex: number;
+  band: SubjectPinnacleReadinessBand;
+  pinnacleDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforcePinnacleBand = 'fragile' | 'thin' | 'elevated' | 'summit';
+
+export interface NationalWorkforcePinnacleIndex {
+  turn: number;
+  pinnacleIndex: number;
+  band: WorkforcePinnacleBand;
+  pinnacleDrag: number;
   summary: string;
   stewardNote: string;
 }

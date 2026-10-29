@@ -114,6 +114,10 @@ import { computeNationalCulminationMentorshipCouplingBrief } from './culmination
 import { computeNationalOnboardingSustainOutlook } from './onboarding-sustain-outlook';
 import { computeNationalSubjectApexReadinessBrief } from './subject-apex-readiness-brief';
 import { computeNationalWorkforceApexIndex } from './national-workforce-apex-index';
+import { computeNationalApexAdvocacyCouplingBrief } from './apex-advocacy-coupling-brief';
+import { computeNationalReengagementThrustOutlook } from './reengagement-thrust-outlook';
+import { computeNationalSubjectPinnacleReadinessBrief } from './subject-pinnacle-readiness-brief';
+import { computeNationalWorkforcePinnacleIndex } from './national-workforce-pinnacle-index';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -804,6 +808,25 @@ export function computeNationalLaborDemographics(
     state.onboardingSustainOutlook,
     state.subjectApexReadinessBrief
   );
+  state.apexAdvocacyCouplingBrief = computeNationalApexAdvocacyCouplingBrief(
+    state,
+    state.nationalWorkforceApexIndex
+  );
+  state.reengagementThrustOutlook = computeNationalReengagementThrustOutlook(
+    state,
+    state.onboardingSustainOutlook
+  );
+  state.subjectPinnacleReadinessBrief = computeNationalSubjectPinnacleReadinessBrief(
+    state,
+    state.subjectApexReadinessBrief,
+    state.nationalWorkforceApexIndex
+  );
+  state.nationalWorkforcePinnacleIndex = computeNationalWorkforcePinnacleIndex(
+    state,
+    state.apexAdvocacyCouplingBrief,
+    state.reengagementThrustOutlook,
+    state.subjectPinnacleReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -1318,6 +1341,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceApexIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.apexAdvocacyCouplingBrief?.band === 'decoupled' ||
+      state.apexAdvocacyCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.apexAdvocacyCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.reengagementThrustOutlook?.band === 'stalled' ||
+      state.reengagementThrustOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.reengagementThrustOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectPinnacleReadinessBrief?.band === 'below_pinnacle' ||
+      state.subjectPinnacleReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectPinnacleReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforcePinnacleIndex?.band === 'fragile' ||
+      state.nationalWorkforcePinnacleIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforcePinnacleIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
