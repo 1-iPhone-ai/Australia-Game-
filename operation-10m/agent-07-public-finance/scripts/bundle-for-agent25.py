@@ -26,6 +26,15 @@ ORDER = [
     "infrastructure-financing/compute.ts",
     "reconciliation/reconcile.ts",
     "reconciliation/self-tests.ts",
+    "recurring-commitments/types.ts",
+    "recurring-commitments/compute.ts",
+    "recurring-commitments/self-tests.ts",
+    "fiscal-resilience/types.ts",
+    "fiscal-resilience/compute.ts",
+    "fiscal-resilience/self-tests.ts",
+    "debt-rollover/types.ts",
+    "debt-rollover/compute.ts",
+    "debt-rollover/self-tests.ts",
 ]
 
 
