@@ -373,6 +373,10 @@ export interface NationalLaborDemographicsState {
   resolveResilienceOutlook?: NationalResolveResilienceOutlook;
   subjectResolveReadinessBrief?: NationalSubjectResolveReadinessBrief;
   nationalWorkforceResolveDepthIndex?: NationalWorkforceResolveDepthIndex;
+  resolveSteadfastCouplingBrief?: NationalResolveSteadfastCouplingBrief;
+  steadfastResilienceOutlook?: NationalSteadfastResilienceOutlook;
+  subjectSteadfastReadinessBrief?: NationalSubjectSteadfastReadinessBrief;
+  nationalWorkforceSteadfastDepthIndex?: NationalWorkforceSteadfastDepthIndex;
 }
 
 export type MigrationShockKind =
@@ -2477,6 +2481,54 @@ export interface NationalWorkforceResolveDepthIndex {
   stewardNote: string;
 }
 
+export type ResolveSteadfastCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalResolveSteadfastCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: ResolveSteadfastCouplingBand;
+  resolveDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SteadfastResilienceBand = 'ebbing' | 'patchy' | 'rising' | 'fortified';
+
+export interface NationalSteadfastResilienceOutlook {
+  turn: number;
+  resilienceIndex: number;
+  band: SteadfastResilienceBand;
+  resolveDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectSteadfastReadinessBand =
+  | 'below_steadfast'
+  | 'approaching'
+  | 'steadfast_ready'
+  | 'resolve_locked';
+
+export interface NationalSubjectSteadfastReadinessBrief {
+  turn: number;
+  steadfastIndex: number;
+  band: SubjectSteadfastReadinessBand;
+  steadfastDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceSteadfastDepthBand = 'fragile' | 'thin' | 'elevated' | 'steadfast';
+
+export interface NationalWorkforceSteadfastDepthIndex {
+  turn: number;
+  steadfastIndex: number;
+  band: WorkforceSteadfastDepthBand;
+  steadfastDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -3727,7 +3779,11 @@ export type LaborGiQueryTopic =
   | 'grit_resolve_coupling'
   | 'resolve_resilience'
   | 'subject_resolve_readiness'
-  | 'workforce_resolve_depth';
+  | 'workforce_resolve_depth'
+  | 'resolve_steadfast_coupling'
+  | 'steadfast_resilience'
+  | 'subject_steadfast_readiness'
+  | 'workforce_steadfast_depth';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -3797,6 +3853,7 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(subject commit readiness|commit readiness subject)/.test(q)) return 'subject_commit_readiness';
   if (/\b(workforce grit depth|grit depth index labor)/.test(q)) return 'workforce_grit_depth';
   if (/\b(workforce resolve depth|resolve depth index labor)/.test(q)) return 'workforce_resolve_depth';
+  if (/\b(workforce steadfast depth|steadfast depth index labor)/.test(q)) return 'workforce_steadfast_depth';
   if (/\b(workforce perseverance depth|perseverance depth index labor)/.test(q)) return 'workforce_perseverance_depth';
   if (/\b(workforce tenacity depth|tenacity depth index labor)/.test(q)) return 'workforce_tenacity_depth';
   if (/\b(workforce tenacity|tenacity index labor)/.test(q)) return 'workforce_tenacity';
@@ -3940,6 +3997,9 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(grit resolve|grit-resolve coupling)/.test(q)) return 'grit_resolve_coupling';
   if (/\b(resolve resilience)/.test(q)) return 'resolve_resilience';
   if (/\b(subject resolve readiness)/.test(q)) return 'subject_resolve_readiness';
+  if (/\b(resolve steadfast|resolve-steadfast coupling)/.test(q)) return 'resolve_steadfast_coupling';
+  if (/\b(steadfast resilience)/.test(q)) return 'steadfast_resilience';
+  if (/\b(subject steadfast readiness)/.test(q)) return 'subject_steadfast_readiness';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -5431,6 +5491,38 @@ export function answerLaborDemographicsQuestion(
         inference: state.nationalWorkforceResolveDepthIndex?.stewardNote || state.summary,
         projection: 'Resolve depth synthesizes grit-resolve coupling, resilience, and subject resolve.'
       };
+    case 'resolve_steadfast_coupling':
+      return {
+        topic,
+        headline: state.resolveSteadfastCouplingBrief?.summary || 'Resolve-steadfast coupling unavailable.',
+        fact: `Coupling band ${state.resolveSteadfastCouplingBrief?.band ?? 'unknown'}; resolve drag ${Math.round(state.resolveSteadfastCouplingBrief?.resolveDrag ?? 0)}.`,
+        inference: state.resolveSteadfastCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce resolve depth with steadfast levers — bounded indices only.'
+      };
+    case 'steadfast_resilience':
+      return {
+        topic,
+        headline: state.steadfastResilienceOutlook?.summary || 'Steadfast resilience unavailable.',
+        fact: `Resilience band ${state.steadfastResilienceOutlook?.band ?? 'unknown'}; resolve drag ${Math.round(state.steadfastResilienceOutlook?.resolveDrag ?? 0)}.`,
+        inference: state.steadfastResilienceOutlook?.stewardNote || state.outlook,
+        projection: 'Resilience outlook tracks resolve resilience against steadfast levers for wave 51 depth.'
+      };
+    case 'subject_steadfast_readiness':
+      return {
+        topic,
+        headline: state.subjectSteadfastReadinessBrief?.summary || 'Subject steadfast readiness unavailable.',
+        fact: `Steadfast band ${state.subjectSteadfastReadinessBrief?.band ?? 'unknown'}; steadfast drag ${Math.round(state.subjectSteadfastReadinessBrief?.steadfastDrag ?? 0)}.`,
+        inference: state.subjectSteadfastReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject steadfast readiness gates subject resolve against resolve depth for O10-233 wave 51.'
+      };
+    case 'workforce_steadfast_depth':
+      return {
+        topic,
+        headline: state.nationalWorkforceSteadfastDepthIndex?.summary || 'Workforce steadfast depth unavailable.',
+        fact: `Steadfast band ${state.nationalWorkforceSteadfastDepthIndex?.band ?? 'unknown'}; steadfast drag ${Math.round(state.nationalWorkforceSteadfastDepthIndex?.steadfastDrag ?? 0)}.`,
+        inference: state.nationalWorkforceSteadfastDepthIndex?.stewardNote || state.summary,
+        projection: 'Steadfast depth synthesizes resolve-steadfast coupling, resilience, and subject steadfast.'
+      };
     default:
       return {
         topic: 'national_summary',
@@ -6773,6 +6865,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceResolveDepthIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceResolveDepthIndex.stewardNote);
+  }
+  if (
+    state.resolveSteadfastCouplingBrief?.band === 'decoupled' ||
+    state.resolveSteadfastCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.resolveSteadfastCouplingBrief.stewardNote);
+  }
+  if (
+    state.steadfastResilienceOutlook?.band === 'ebbing' ||
+    state.steadfastResilienceOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.steadfastResilienceOutlook.stewardNote);
+  }
+  if (
+    state.subjectSteadfastReadinessBrief?.band === 'below_steadfast' ||
+    state.subjectSteadfastReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectSteadfastReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceSteadfastDepthIndex?.band === 'fragile' ||
+    state.nationalWorkforceSteadfastDepthIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceSteadfastDepthIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -20711,6 +20827,366 @@ export function resolveEaseForRegion(
 }
 
 
+// --- source: resolve-steadfast-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalResolveSteadfastCouplingBrief,
+  type NationalWorkforceResolveDepthIndex,
+  type ResolveSteadfastCouplingBand
+} from './types';
+
+function couplingBand(index: number): ResolveSteadfastCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-51 / wave-51 resolve-steadfast coupling — resolve depth × steadfast (O10-233). */
+export function computeNationalResolveSteadfastCouplingBrief(
+  state: NationalLaborDemographicsState,
+  resolveDepth: NationalWorkforceResolveDepthIndex | null | undefined
+): NationalResolveSteadfastCouplingBrief {
+  if (!state.enabled || !resolveDepth) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      resolveDrag: 0,
+      summary: 'Resolve-steadfast coupling idle — workforce resolve depth unavailable.',
+      stewardNote: 'Compute workforce resolve depth before steadfast coupling guidance.'
+    };
+  }
+
+  let steadfastLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    steadfastLift += steadfastEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  steadfastLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const resolveDrag = v1014laborClamp(
+    resolveDepth.resolveDrag * 0.46 +
+      (resolveDepth.band === 'fragile' || resolveDepth.band === 'thin' ? 11 : 3)
+  );
+  const depthLift =
+    resolveDepth.band === 'elevated' || resolveDepth.band === 'resolve'
+      ? resolveDepth.resolveIndex * 0.22
+      : resolveDepth.resolveIndex * 0.11;
+
+  const couplingIndex = v1014laborClamp(22 + steadfastLift * 21 + depthLift - resolveDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained resolve-steadfast link — deploy steadfast levers before wave-51 commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard steadfast resilience spikes that drain resolve buffers.'
+        : 'Amplified coupling — pair steadfast packs with subject steadfast readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    resolveDrag,
+    summary: `Resolve-steadfast coupling ${band} (index ${Math.round(couplingIndex)}); resolve drag ${Math.round(resolveDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: steadfast-resilience-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalResolveResilienceOutlook,
+  type NationalSteadfastResilienceOutlook,
+  type SteadfastResilienceBand
+} from './types';
+
+function resilienceBand(index: number): SteadfastResilienceBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'fortified';
+}
+
+/** Round-51 / wave-51 steadfast resilience — resolve resilience × steadfast levers (O10-233). */
+export function computeNationalSteadfastResilienceOutlook(
+  state: NationalLaborDemographicsState,
+  resolveResilience: NationalResolveResilienceOutlook | null | undefined
+): NationalSteadfastResilienceOutlook {
+  if (!state.enabled || !resolveResilience) {
+    return {
+      turn: state.turn,
+      resilienceIndex: 50,
+      band: 'patchy',
+      resolveDrag: 0,
+      summary: 'Steadfast resilience idle — resolve resilience unavailable.',
+      stewardNote: 'Compute resolve resilience before steadfast resilience guidance.'
+    };
+  }
+
+  let steadfastLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    steadfastLift += steadfastEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  steadfastLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const resolveDrag = v1014laborClamp(
+    resolveResilience.gritDrag * 0.44 +
+      (resolveResilience.band === 'ebbing' || resolveResilience.band === 'patchy' ? 10 : 3)
+  );
+  const resilienceLift =
+    resolveResilience.band === 'rising' || resolveResilience.band === 'fortified'
+      ? resolveResilience.resilienceIndex * 0.18
+      : resolveResilience.resilienceIndex * 0.09;
+
+  const resilienceIndex = v1014laborClamp(24 + steadfastLift * 22 + resilienceLift - resolveDrag);
+  const band = resilienceBand(resilienceIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy steadfast resilience — deploy steadfast levers before subject steadfast assembly.'
+      : band === 'fortified'
+        ? 'Fortified band — verify resolve-steadfast coupling before auto workforce pushes.'
+        : 'Rising resilience — align with resolve resilience outlook checks.';
+
+  return {
+    turn: state.turn,
+    resilienceIndex,
+    band,
+    resolveDrag,
+    summary: `National steadfast resilience ${band} (index ${Math.round(resilienceIndex)}); resolve drag ${Math.round(resolveDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-steadfast-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectResolveReadinessBrief,
+  type NationalSubjectSteadfastReadinessBrief,
+  type NationalWorkforceResolveDepthIndex,
+  type SubjectSteadfastReadinessBand
+} from './types';
+
+function steadfastBand(index: number): SubjectSteadfastReadinessBand {
+  if (index <= 34) return 'below_steadfast';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'steadfast_ready';
+  return 'resolve_locked';
+}
+
+/** Round-51 / wave-51 subject steadfast readiness — subject resolve × resolve depth (O10-233). */
+export function computeNationalSubjectSteadfastReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectResolve: NationalSubjectResolveReadinessBrief | null | undefined,
+  resolveDepth: NationalWorkforceResolveDepthIndex | null | undefined
+): NationalSubjectSteadfastReadinessBrief {
+  if (!state.enabled || !subjectResolve || !resolveDepth) {
+    return {
+      turn: state.turn,
+      steadfastIndex: 50,
+      band: 'approaching',
+      steadfastDrag: 0,
+      summary: 'Subject steadfast readiness idle — subject resolve or resolve depth unavailable.',
+      stewardNote: 'Compute subject resolve and resolve depth before steadfast guidance.'
+    };
+  }
+
+  const steadfastDrag = v1014laborClamp(
+    subjectResolve.resolveDrag * 0.36 +
+      resolveDepth.resolveDrag * 0.36 +
+      (subjectResolve.band === 'below_resolve' || resolveDepth.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectResolve.band === 'resolve_ready' || subjectResolve.band === 'grit_locked'
+      ? subjectResolve.resolveIndex * 0.25
+      : subjectResolve.resolveIndex * 0.13;
+  const depthLift =
+    resolveDepth.band === 'elevated' || resolveDepth.band === 'resolve'
+      ? resolveDepth.resolveIndex * 0.23
+      : resolveDepth.resolveIndex * 0.12;
+
+  const steadfastIndex = v1014laborClamp(20 + subjectLift + depthLift - steadfastDrag);
+  const band = steadfastBand(steadfastIndex);
+
+  const stewardNote =
+    band === 'below_steadfast' || band === 'approaching'
+      ? 'Approaching steadfast — hold O10-233 wave-51 scale until resolve-steadfast syncs.'
+      : band === 'resolve_locked'
+        ? 'Resolve-locked steadfast — still monitor steadfast resilience during corridor peaks.'
+        : 'Steadfast-ready — pair with workforce steadfast depth index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    steadfastIndex,
+    band,
+    steadfastDrag,
+    summary: `Subject steadfast readiness ${band} (index ${Math.round(steadfastIndex)}); steadfast drag ${Math.round(steadfastDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-steadfast-depth-index.ts ---
+  type NationalLaborDemographicsState,
+  type NationalResolveSteadfastCouplingBrief,
+  type NationalSteadfastResilienceOutlook,
+  type NationalSubjectSteadfastReadinessBrief,
+  type NationalWorkforceSteadfastDepthIndex,
+  type WorkforceSteadfastDepthBand
+} from './types';
+
+function depthBand(index: number): WorkforceSteadfastDepthBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'steadfast';
+}
+
+export function computeNationalWorkforceSteadfastDepthIndex(
+  state: NationalLaborDemographicsState,
+  resolveSteadfast: NationalResolveSteadfastCouplingBrief | null | undefined,
+  steadfastResilience: NationalSteadfastResilienceOutlook | null | undefined,
+  subjectSteadfast: NationalSubjectSteadfastReadinessBrief | null | undefined
+): NationalWorkforceSteadfastDepthIndex {
+  if (!state.enabled || !resolveSteadfast || !steadfastResilience || !subjectSteadfast) {
+    return {
+      turn: state.turn,
+      steadfastIndex: 50,
+      band: 'thin',
+      steadfastDrag: 0,
+      summary: 'Workforce steadfast depth idle — coupling, resilience, or subject steadfast unavailable.',
+      stewardNote: 'Compute O10-233 wave-51 depth stack before steadfast guidance.'
+    };
+  }
+
+  const steadfastDrag = v1014laborClamp(
+    subjectSteadfast.steadfastDrag * 0.35 +
+      resolveSteadfast.resolveDrag * 0.3 +
+      steadfastResilience.resolveDrag * 0.25 +
+      (subjectSteadfast.band === 'below_steadfast' || resolveSteadfast.band === 'decoupled' ? 8 : 2)
+  );
+  const couplingLift =
+    resolveSteadfast.band === 'amplified' || resolveSteadfast.band === 'elevated'
+      ? resolveSteadfast.couplingIndex * 0.2
+      : resolveSteadfast.couplingIndex * 0.1;
+  const resilienceLift =
+    steadfastResilience.band === 'rising' || steadfastResilience.band === 'fortified'
+      ? steadfastResilience.resilienceIndex * 0.18
+      : steadfastResilience.resilienceIndex * 0.09;
+  const subjectLift =
+    subjectSteadfast.band === 'steadfast_ready' || subjectSteadfast.band === 'resolve_locked'
+      ? subjectSteadfast.steadfastIndex * 0.22
+      : subjectSteadfast.steadfastIndex * 0.11;
+
+  const steadfastIndex = v1014laborClamp(18 + couplingLift + resilienceLift + subjectLift - steadfastDrag);
+  const band = depthBand(steadfastIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce steadfast depth — sequence resolve-steadfast, resilience, and subject steadfast before post-a32b2b15 tranche.'
+      : band === 'steadfast'
+        ? 'Steadfast band — avoid corridor overload that breaks subject steadfast bands.'
+        : 'Elevated steadfast depth — refresh subject steadfast checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    steadfastIndex,
+    band,
+    steadfastDrag,
+    summary: `National workforce steadfast depth ${band} (index ${Math.round(steadfastIndex)}); steadfast drag ${Math.round(steadfastDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: catalog/workforce-steadfast-levers.ts ---
+
+export type WorkforceSteadfastLeverKind =
+  | 'steadfast_coaching_lane'
+  | 'shift_steadfast_pack'
+  | 'resolve_forum_band'
+  | 'continuity_steadfast_cell'
+  | 'peer_steadfast_circle';
+
+export interface WorkforceSteadfastLever {
+  id: string;
+  kind: WorkforceSteadfastLeverKind;
+  targetIndustry: StrategicIndustryKind;
+  hostRegions: readonly string[];
+  steadfastStrength: number;
+  label: string;
+  narrative: string;
+}
+
+export const WORKFORCE_STEADFAST_LEVERS: WorkforceSteadfastLever[] = [
+  {
+    id: 'steadfast_manufacturing_vic',
+    kind: 'shift_steadfast_pack',
+    targetIndustry: 'manufacturing',
+    hostRegions: ['VIC', 'SA'],
+    steadfastStrength: 0.7,
+    label: 'Manufacturing steadfast pack',
+    narrative: 'Steadfast packs stabilize resolve depth without literal attrition counts.'
+  },
+  {
+    id: 'steadfast_health_nsw',
+    kind: 'steadfast_coaching_lane',
+    targetIndustry: 'research',
+    hostRegions: ['NSW', 'ACT'],
+    steadfastStrength: 0.73,
+    label: 'Capital steadfast coaching lane',
+    narrative: 'Coaching lanes reinforce resolve-steadfast coupling outlooks.'
+  },
+  {
+    id: 'steadfast_agri_tas',
+    kind: 'continuity_steadfast_cell',
+    targetIndustry: 'agriculture',
+    hostRegions: ['TAS', 'VIC'],
+    steadfastStrength: 0.68,
+    label: 'Tasmanian continuity steadfast cell',
+    narrative: 'Steadfast cells ease seasonal resolve drag on steadfast indices.'
+  },
+  {
+    id: 'steadfast_tech_nsw_vic',
+    kind: 'peer_steadfast_circle',
+    targetIndustry: 'technology',
+    hostRegions: ['NSW', 'VIC'],
+    steadfastStrength: 0.76,
+    label: 'Tech steadfast circle',
+    narrative: 'Circles pair with subject steadfast readiness checks.'
+  },
+  {
+    id: 'steadfast_mining_wa',
+    kind: 'resolve_forum_band',
+    targetIndustry: 'mining',
+    hostRegions: ['WA', 'QLD'],
+    steadfastStrength: 0.71,
+    label: 'Frontier steadfast forum',
+    narrative: 'Forums bound steadfast resilience outlook spikes.'
+  }
+];
+
+export function lookupWorkforceSteadfastLever(id: string): WorkforceSteadfastLever | undefined {
+  return WORKFORCE_STEADFAST_LEVERS.find(lever => lever.id === id);
+}
+
+export function steadfastEaseForRegion(
+  regionId: string,
+  dominantIndustry: StrategicIndustryKind | null | undefined
+): number {
+  if (!dominantIndustry) return 0.08;
+  let best = 0;
+  for (const lever of WORKFORCE_STEADFAST_LEVERS) {
+    if (!lever.hostRegions.includes(regionId)) continue;
+    if (lever.targetIndustry !== dominantIndustry) continue;
+    best = Math.max(best, lever.steadfastStrength);
+  }
+  return best > 0 ? best : 0.06;
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -22028,6 +22504,25 @@ export function computeNationalLaborDemographics(
     state.resolveResilienceOutlook,
     state.subjectResolveReadinessBrief
   );
+  state.resolveSteadfastCouplingBrief = computeNationalResolveSteadfastCouplingBrief(
+    state,
+    state.nationalWorkforceResolveDepthIndex
+  );
+  state.steadfastResilienceOutlook = computeNationalSteadfastResilienceOutlook(
+    state,
+    state.resolveResilienceOutlook
+  );
+  state.subjectSteadfastReadinessBrief = computeNationalSubjectSteadfastReadinessBrief(
+    state,
+    state.subjectResolveReadinessBrief,
+    state.nationalWorkforceResolveDepthIndex
+  );
+  state.nationalWorkforceSteadfastDepthIndex = computeNationalWorkforceSteadfastDepthIndex(
+    state,
+    state.resolveSteadfastCouplingBrief,
+    state.steadfastResilienceOutlook,
+    state.subjectSteadfastReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -23211,6 +23706,33 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceResolveDepthIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.resolveSteadfastCouplingBrief?.band === 'decoupled' ||
+      state.resolveSteadfastCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.resolveSteadfastCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.steadfastResilienceOutlook?.band === 'ebbing' || state.steadfastResilienceOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.steadfastResilienceOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectSteadfastReadinessBrief?.band === 'below_steadfast' ||
+      state.subjectSteadfastReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectSteadfastReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceSteadfastDepthIndex?.band === 'fragile' ||
+      state.nationalWorkforceSteadfastDepthIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceSteadfastDepthIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -26263,7 +26785,78 @@ export function runV1014LaborDemographicsSelfTests(): {
   );
   check('R5016', resolveEaseForRegion('NSW', 'technology') > 0, 'resolve ease for region');
 
-  for (let i = 19; i <= 50; i++) {
+  check('R5101', Boolean(r1.state.resolveSteadfastCouplingBrief?.band), 'resolve steadfast on state');
+  check(
+    'R5102',
+    (r1.state.resolveSteadfastCouplingBrief?.resolveDrag ?? 0) >= 0,
+    'resolve steadfast drag'
+  );
+  check('R5103', Boolean(r1.state.steadfastResilienceOutlook?.band), 'steadfast resilience on state');
+  check(
+    'R5104',
+    (r1.state.steadfastResilienceOutlook?.resolveDrag ?? 0) >= 0,
+    'steadfast resilience resolve drag'
+  );
+  check('R5105', Boolean(r1.state.subjectSteadfastReadinessBrief?.band), 'subject steadfast on state');
+  check(
+    'R5106',
+    Boolean(r1.state.nationalWorkforceSteadfastDepthIndex?.band),
+    'workforce steadfast depth on state'
+  );
+  check(
+    'R5107',
+    detectLaborDemographicsQuery('resolve steadfast coupling') === 'resolve_steadfast_coupling',
+    'GI resolve steadfast detect'
+  );
+  check(
+    'R5108',
+    detectLaborDemographicsQuery('steadfast resilience') === 'steadfast_resilience',
+    'GI steadfast resilience detect'
+  );
+  check(
+    'R5109',
+    detectLaborDemographicsQuery('subject steadfast readiness') === 'subject_steadfast_readiness',
+    'GI subject steadfast detect'
+  );
+  check(
+    'R5110',
+    detectLaborDemographicsQuery('workforce steadfast depth') === 'workforce_steadfast_depth',
+    'GI workforce steadfast depth detect'
+  );
+  check(
+    'R5111',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_steadfast_depth').headline.length > 5,
+    'GI workforce steadfast depth answer'
+  );
+  const resolveSteadfastOnly = computeNationalResolveSteadfastCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceResolveDepthIndex
+  );
+  check('R5112', resolveSteadfastOnly.summary.length > 10, 'resolve steadfast standalone summary');
+  const steadfastResilienceOnly = computeNationalSteadfastResilienceOutlook(
+    r1.state,
+    r1.state.resolveResilienceOutlook
+  );
+  check('R5113', steadfastResilienceOnly.band.length > 3, 'steadfast resilience band string');
+  const subjectSteadfastOnly = computeNationalSubjectSteadfastReadinessBrief(
+    r1.state,
+    r1.state.subjectResolveReadinessBrief,
+    r1.state.nationalWorkforceResolveDepthIndex
+  );
+  check('R5114', subjectSteadfastOnly.steadfastDrag >= 0, 'subject steadfast drag');
+  check(
+    'R5115',
+    computeNationalWorkforceSteadfastDepthIndex(
+      rHhBad.state,
+      rHhBad.state.resolveSteadfastCouplingBrief,
+      rHhBad.state.steadfastResilienceOutlook,
+      rHhBad.state.subjectSteadfastReadinessBrief
+    ).stewardNote.length > 8,
+    'steadfast depth steward note'
+  );
+  check('R5116', steadfastEaseForRegion('NSW', 'technology') > 0, 'steadfast ease for region');
+
+  for (let i = 19; i <= 51; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
     check(`LD${String(i).padStart(2, '0')}`, ok, `invariant bundle ${i}`);
   }
