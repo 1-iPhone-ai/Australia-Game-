@@ -41,6 +41,10 @@ test('chunk.tsx publishes OP10M_MODULE_BEGIN/END agent-21-forecasting', () => {
   assert.match(src, /evaluateAg21HandoffReadiness/);
   assert.match(src, /buildAg21OperatorSignoffRecord/);
   assert.match(src, /buildAg21LabStagingPacket/);
+  assert.match(src, /Ag21ForecastRound11Console/);
+  assert.match(src, /verifyAg21StagingIntegrity/);
+  assert.match(src, /buildAg21ExportClearance/);
+  assert.match(src, /summarizeAg21LabCycleCloseout/);
 });
 
 test('module manifest references chunk path', () => {

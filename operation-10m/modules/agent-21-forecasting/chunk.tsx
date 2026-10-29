@@ -102,7 +102,7 @@ export function ag21Provenance(
   };
 }
 
-export const O10M_AGENT21_MODULE_VERSION = '2.2.0';
+export const O10M_AGENT21_MODULE_VERSION = '2.3.0';
 export const O10M_AGENT21_MODULE_ID = 'forecasting_policy_lab';
 
 // --- bundled from counterfactual-experiments.ts ---
@@ -4242,6 +4242,288 @@ export const Ag21ForecastRound10Console: React.FC<{ seed?: number }> = ({ seed =
   );
 };
 
+// --- bundled from forecast-staging-verification.ts ---
+/**
+ * Agent 21 — staging packet integrity vs handoff + signoff (read-only round 11).
+ */
+
+
+export type Ag21StagingVerificationStatus = 'verified' | 'warning' | 'failed';
+
+export interface Ag21StagingVerificationReport {
+  status: Ag21StagingVerificationStatus;
+  findings: string[];
+  stagingPacketId: string;
+  stagingPhase: ReturnType<typeof buildAg21LabStagingPacket>['phase'];
+  signoffMayStage: boolean;
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+function ag21TagValue(tags: string[], prefix: string): string | undefined {
+  const hit = tags.find(t => t.startsWith(`${prefix}:`));
+  return hit?.slice(prefix.length + 1);
+}
+
+/** Verify staging packet tags align with live handoff and signoff records (round 11). */
+export function verifyAg21StagingIntegrity(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21StagingVerificationReport {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.75),
+      actorDebt: baseCtx.actorDebt + 195
+    } satisfies Ag21ForecastContext);
+
+  const staging = buildAg21LabStagingPacket(baseCtx, candidate);
+  const handoff = buildAg21LabIntegrationHandoff(baseCtx, candidate);
+  const signoff = buildAg21OperatorSignoffRecord(baseCtx, candidate);
+
+  const findings: string[] = [];
+  const tagHandoff = ag21TagValue(staging.stagingTags, 'handoff');
+  const tagSignoff = ag21TagValue(staging.stagingTags, 'signoff');
+
+  if (tagHandoff !== handoff.handoffId) {
+    findings.push(`handoff tag mismatch ${tagHandoff} vs ${handoff.handoffId}`);
+  }
+  if (tagSignoff !== signoff.signoffId) {
+    findings.push(`signoff tag mismatch ${tagSignoff} vs ${signoff.signoffId}`);
+  }
+  if (staging.handoffId !== handoff.handoffId) {
+    findings.push('staging handoffId diverges from integration handoff');
+  }
+  if (staging.signoffId !== signoff.signoffId) {
+    findings.push('staging signoffId diverges from signoff record');
+  }
+  if (staging.phase === 'staged' && !signoff.mayStage) {
+    findings.push('staged phase but signoff mayStage false');
+  }
+
+  let status: Ag21StagingVerificationStatus = 'verified';
+  if (findings.length >= 2 || staging.phase === 'rejected') status = 'failed';
+  else if (findings.length === 1 || staging.phase === 'draft') status = 'warning';
+
+  return {
+    status,
+    findings,
+    stagingPacketId: staging.packetId,
+    stagingPhase: staging.phase,
+    signoffMayStage: signoff.mayStage,
+    disclaimer: '(Non-authoritative forecast.) Staging verification for modular dry-run only.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'verified' ? 'low' : status === 'warning' ? 'moderate' : 'high',
+      [`verify=${status}`, `findings=${findings.length}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21StagingVerificationSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 18, seed: 55, actorCash: 990, actorDebt: 105, regionsControlled: 3 };
+  const report = verifyAg21StagingIntegrity(ctx);
+
+  push('verify_status', ['verified', 'warning', 'failed'].includes(report.status), report.status);
+  push('verify_packet', report.stagingPacketId.startsWith('ag21_stage_'), report.stagingPacketId);
+  push('verify_findings', Array.isArray(report.findings), String(report.findings.length));
+  push('verify_non_auth', report.authoritative === false, report.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-export-clearance.ts ---
+/**
+ * Agent 21 — export clearance for history / replay modules (read-only round 11).
+ */
+
+
+export type Ag21ExportClearanceLevel = 'denied' | 'conditional' | 'cleared';
+
+export interface Ag21ExportClearance {
+  level: Ag21ExportClearanceLevel;
+  replaySeedId: string;
+  verificationStatus: ReturnType<typeof verifyAg21StagingIntegrity>['status'];
+  readinessStatus: ReturnType<typeof evaluateAg21HandoffReadiness>['status'];
+  clearanceNotes: string[];
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Resolve whether lab outputs may export to Agent 24 history wiring (round 11). */
+export function buildAg21ExportClearance(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21ExportClearance {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.74),
+      actorDebt: baseCtx.actorDebt + 205
+    } satisfies Ag21ForecastContext);
+
+  const verification = verifyAg21StagingIntegrity(baseCtx, candidate);
+  const readiness = evaluateAg21HandoffReadiness(baseCtx, candidate);
+  const replay = buildAg21LabReplaySeed(baseCtx, candidate);
+
+  const clearanceNotes: string[] = [];
+  if (verification.status === 'failed') clearanceNotes.push('staging verification failed');
+  if (readiness.status === 'blocked') clearanceNotes.push('handoff readiness blocked');
+  if (verification.findings.length > 0) {
+    clearanceNotes.push(`${verification.findings.length} staging finding(s)`);
+  }
+
+  let level: Ag21ExportClearanceLevel = 'cleared';
+  if (readiness.status === 'blocked' || verification.status === 'failed') level = 'denied';
+  else if (readiness.status === 'hold' || verification.status === 'warning') level = 'conditional';
+
+  return {
+    level,
+    replaySeedId: replay.seedId,
+    verificationStatus: verification.status,
+    readinessStatus: readiness.status,
+    clearanceNotes,
+    disclaimer: '(Non-authoritative forecast.) Export clearance for history modules only.',
+    overallUncertainty: ag21LabelUncertainty(
+      level === 'cleared' ? 'low' : level === 'conditional' ? 'moderate' : 'high',
+      [`clearance=${level}`, `notes=${clearanceNotes.length}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21ExportClearanceSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 10, seed: 28, actorCash: 720, actorDebt: 210, regionsControlled: 2 };
+  const clearance = buildAg21ExportClearance(ctx);
+
+  push('clearance_level', ['denied', 'conditional', 'cleared'].includes(clearance.level), clearance.level);
+  push('clearance_replay', clearance.replaySeedId.startsWith('ag21_lab_seed_'), clearance.replaySeedId);
+  push('clearance_notes', Array.isArray(clearance.clearanceNotes), String(clearance.clearanceNotes.length));
+  push('clearance_non_auth', clearance.authoritative === false, clearance.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-lab-cycle-closeout.ts ---
+/**
+ * Agent 21 — lab cycle closeout rollup for scale-wave checkpoints (read-only round 11).
+ */
+
+
+export interface Ag21LabCycleCloseout {
+  closeoutId: string;
+  moduleVersion: string;
+  exportLevel: ReturnType<typeof buildAg21ExportClearance>['level'];
+  stagingPhase: ReturnType<typeof buildAg21LabStagingPacket>['phase'];
+  verificationStatus: ReturnType<typeof verifyAg21StagingIntegrity>['status'];
+  summaryBullets: string[];
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Summarize round 10–11 staging path for operator closeout logs (round 11). */
+export function summarizeAg21LabCycleCloseout(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21LabCycleCloseout {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.73),
+      actorDebt: baseCtx.actorDebt + 215
+    } satisfies Ag21ForecastContext);
+
+  const staging = buildAg21LabStagingPacket(baseCtx, candidate);
+  const verification = verifyAg21StagingIntegrity(baseCtx, candidate);
+  const clearance = buildAg21ExportClearance(baseCtx, candidate);
+
+  const closeoutId = `ag21_closeout_${baseCtx.turn}_${baseCtx.seed}_${clearance.level}`;
+
+  const summaryBullets = [
+    `staging phase ${staging.phase}`,
+    `verification ${verification.status} (${verification.findings.length} findings)`,
+    `export clearance ${clearance.level}`,
+    `replay seed ${clearance.replaySeedId}`
+  ];
+
+  return {
+    closeoutId,
+    moduleVersion: O10M_AGENT21_MODULE_VERSION,
+    exportLevel: clearance.level,
+    stagingPhase: staging.phase,
+    verificationStatus: verification.status,
+    summaryBullets,
+    disclaimer: '(Non-authoritative forecast.) Lab cycle closeout for Operation 10M checkpoints only.',
+    overallUncertainty: ag21LabelUncertainty(
+      clearance.level === 'cleared' && verification.status === 'verified' ? 'low' : 'moderate',
+      [`closeout=${closeoutId}`, `export=${clearance.level}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21LabCycleCloseoutSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 26, seed: 9, actorCash: 1420, actorDebt: 48, regionsControlled: 5 };
+  const closeout = summarizeAg21LabCycleCloseout(ctx);
+
+  push('closeout_id', closeout.closeoutId.startsWith('ag21_closeout_'), closeout.closeoutId);
+  push('closeout_bullets', closeout.summaryBullets.length === 4, String(closeout.summaryBullets.length));
+  push('closeout_version', closeout.moduleVersion === O10M_AGENT21_MODULE_VERSION, closeout.moduleVersion);
+  push('closeout_non_auth', closeout.authoritative === false, closeout.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-round11-console.tsx ---
+/**
+ * Agent 21 — scale wave round 11 console (verification + export clearance + closeout).
+ */
+
+
+export const Ag21ForecastRound11Console: React.FC<{ seed?: number }> = ({ seed = 81 }) => {
+  const base = useMemo(() => createDefaultAg21ForecastContext({ seed, turn: 23 }), [seed]);
+  const stressed = useMemo(
+    () => ({ ...base, actorCash: Math.round(base.actorCash * 0.65), actorDebt: base.actorDebt + 340 }),
+    [base]
+  );
+
+  const verification = useMemo(() => verifyAg21StagingIntegrity(base, stressed), [base, stressed]);
+  const clearance = useMemo(() => buildAg21ExportClearance(base, stressed), [base, stressed]);
+  const closeout = useMemo(() => summarizeAg21LabCycleCloseout(base, stressed), [base, stressed]);
+
+  return (
+    <div className="border border-teal-500/30 rounded-lg p-3 bg-slate-950/85 text-xs space-y-2" data-testid="ag21-round11-console">
+      <div className="font-bold text-teal-200">
+        🔬 Forecast Lab Round 11 <span className="text-[10px] font-normal opacity-70">(non-authoritative)</span>
+      </div>
+      <div data-testid="ag21-round11-verification">
+        Verify · {verification.status} · findings {verification.findings.length}
+      </div>
+      <div data-testid="ag21-round11-clearance">
+        Export · {clearance.level} · {clearance.replaySeedId.slice(0, 24)}…
+      </div>
+      <div data-testid="ag21-round11-closeout">
+        Closeout · {closeout.exportLevel} · {closeout.closeoutId.slice(0, 28)}…
+      </div>
+    </div>
+  );
+};
+
 
 
 /** Agent 25 — modular self-tests (subset of npm run test:ag21). */
@@ -4339,6 +4621,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21LabStagingPacketSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21StagingVerificationSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21ExportClearanceSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21LabCycleCloseoutSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({
