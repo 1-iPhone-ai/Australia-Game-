@@ -195,6 +195,9 @@ import { buildPacingDeferredNovDayCoach } from '../engine/pacing-deferred-nov-da
 import { buildFifteenthUnlockHeadlineDayCoach } from '../engine/fifteenth-unlock-headline-day-coach.js';
 import { buildTredecimDeferredQueueDayCoach } from '../engine/tredecim-deferred-queue-day-coach.js';
 import { buildPacingDeferredDecDayCoach } from '../engine/pacing-deferred-dec-day-coach.js';
+import { buildSixteenthUnlockHeadlineDayCoach } from '../engine/sixteenth-unlock-headline-day-coach.js';
+import { buildQuattuordecimDeferredQueueDayCoach } from '../engine/quattuordecim-deferred-queue-day-coach.js';
+import { buildPacingDeferredJanDayCoach } from '../engine/pacing-deferred-jan-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -398,6 +401,9 @@ export interface DayAdvanceUiEvolutionResult {
   fifteenthUnlockHeadlineDayCoachCopy: string | null;
   tredecimDeferredQueueDayCoachCopy: string | null;
   pacingDeferredDecDayCoachCopy: string | null;
+  sixteenthUnlockHeadlineDayCoachCopy: string | null;
+  quattuordecimDeferredQueueDayCoachCopy: string | null;
+  pacingDeferredJanDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1496,6 +1502,22 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const sixteenthUnlockHeadlineDayCoach = buildSixteenthUnlockHeadlineDayCoach({
+    newlyUnlockedPanelIds,
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const quattuordecimDeferredQueueDayCoach = buildQuattuordecimDeferredQueueDayCoach({
+    combinedQueueDepth: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const pacingDeferredJanDayCoach = buildPacingDeferredJanDayCoach({
+    pacingDeferredCount: pacing.deferredCount,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1700,6 +1722,9 @@ export function tickEvolvingUiOnDayAdvance(
     fifteenthUnlockHeadlineDayCoachCopy: fifteenthUnlockHeadlineDayCoach.coachCopy,
     tredecimDeferredQueueDayCoachCopy: tredecimDeferredQueueDayCoach.coachCopy,
     pacingDeferredDecDayCoachCopy: pacingDeferredDecDayCoach.coachCopy,
+    sixteenthUnlockHeadlineDayCoachCopy: sixteenthUnlockHeadlineDayCoach.coachCopy,
+    quattuordecimDeferredQueueDayCoachCopy: quattuordecimDeferredQueueDayCoach.coachCopy,
+    pacingDeferredJanDayCoachCopy: pacingDeferredJanDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

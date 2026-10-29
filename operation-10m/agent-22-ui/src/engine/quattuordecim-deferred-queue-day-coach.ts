@@ -1,17 +1,17 @@
-export interface QuattuorjanimDeferredQueueDayCoach {
+export interface QuattuordecimDeferredQueueDayCoach {
   queueDepth: number;
   coachCopy: string | null;
 }
 
-export function buildQuattuorjanimDeferredQueueDayCoach(input: {
+export function buildQuattuordecimDeferredQueueDayCoach(input: {
   combinedQueueDepth: number;
   nextGameDay: number;
-}): QuattuorjanimDeferredQueueDayCoach {
-  if (input.combinedQueueDepth !== 13) {
+}): QuattuordecimDeferredQueueDayCoach {
+  if (input.combinedQueueDepth !== 14) {
     return { queueDepth: input.combinedQueueDepth, coachCopy: null };
   }
   return {
-    queueDepth: 13,
-    coachCopy: `Day ${input.nextGameDay}: Thirteen coach announcements remain queued — day-advance pacing will drip them across upcoming ticks.`,
+    queueDepth: 14,
+    coachCopy: `Day ${input.nextGameDay}: Fourteen coach announcements remain queued — day-advance pacing will drip them across upcoming ticks.`,
   };
 }

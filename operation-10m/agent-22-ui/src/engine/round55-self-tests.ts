@@ -5,7 +5,7 @@ import {
   tickEvolvingUiOnDayAdvance,
 } from '../sim/evolution-hooks.js';
 import { buildSixteenthUnlockHeadlineDayCoach } from './sixteenth-unlock-headline-day-coach.js';
-import { buildQuattuorjanimDeferredQueueDayCoach } from './quattuorjanim-deferred-queue-day-coach.js';
+import { buildQuattuordecimDeferredQueueDayCoach } from './quattuordecim-deferred-queue-day-coach.js';
 import { buildPreviewCoverageBreadthDayCoach } from './preview-coverage-breadth-day-coach.js';
 import { buildPacingDeferredJanDayCoach } from './pacing-deferred-jan-day-coach.js';
 
@@ -35,10 +35,10 @@ export function runAgent22Round55SelfTests(): {
   );
 
   check(
-    'r55_quattuorjanim_deferred',
-    'quattuorjanim deferred queue day coach',
+    'r55_quattuordecim_deferred',
+    'quattuordecim deferred queue day coach',
     (() => {
-      const coach = buildQuattuorjanimDeferredQueueDayCoach({ combinedQueueDepth: 14, nextGameDay: 18 });
+      const coach = buildQuattuordecimDeferredQueueDayCoach({ combinedQueueDepth: 14, nextGameDay: 18 });
       return coach.queueDepth === 14 && Boolean(coach.coachCopy?.includes('Day 18'));
     })()
   );
@@ -91,8 +91,8 @@ export function runAgent22Round55SelfTests(): {
   );
 
   check(
-    'r55_tick_quattuorjanim_deferred',
-    'tick exposes quattuorjanim deferred queue day coach field',
+    'r55_tick_quattuordecim_deferred',
+    'tick exposes quattuordecim deferred queue day coach field',
     (() => {
       const r = tickEvolvingUiOnDayAdvance(
         { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
@@ -101,7 +101,7 @@ export function runAgent22Round55SelfTests(): {
         createDefaultEvolvingUiPersistedState(),
         { phase: 'human_turn' }
       );
-      return typeof r.quattuorjanimDeferredQueueDayCoachCopy === 'string' || r.quattuorjanimDeferredQueueDayCoachCopy === null;
+      return typeof r.quattuordecimDeferredQueueDayCoachCopy === 'string' || r.quattuordecimDeferredQueueDayCoachCopy === null;
     })()
   );
 
@@ -152,10 +152,10 @@ export function runAgent22Round55SelfTests(): {
   );
 
   check(
-    'r55_quattuorjanim_not_ten',
-    'quattuorjanim deferred null when depth not ten',
+    'r55_quattuordecim_not_ten',
+    'quattuordecim deferred null when depth not ten',
     (() => {
-      const coach = buildQuattuorjanimDeferredQueueDayCoach({ combinedQueueDepth: 9, nextGameDay: 1 });
+      const coach = buildQuattuordecimDeferredQueueDayCoach({ combinedQueueDepth: 9, nextGameDay: 1 });
       return coach.coachCopy === null;
     })()
   );
