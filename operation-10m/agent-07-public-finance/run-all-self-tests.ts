@@ -55,6 +55,8 @@ import { runRevenueIntegrityForwardBridgeSelfTests } from './modules/revenue-int
 import { runBudgetNeutralForwardCoherenceSelfTests } from './modules/budget-neutral-forward-coherence/self-tests';
 import { runProgramPerformanceFiscalBridgeSelfTests } from './modules/program-performance-fiscal-bridge/self-tests';
 import { runTransparencyForwardCoherenceSelfTests } from './modules/transparency-forward-coherence/self-tests';
+import { runContingentLiabilityForwardBridgeSelfTests } from './modules/contingent-liability-forward-bridge/self-tests';
+import { runCostRecoveryRevenueCoherenceSelfTests } from './modules/cost-recovery-revenue-coherence/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -119,6 +121,8 @@ ok = runSuite('Revenue integrity forward bridge', runRevenueIntegrityForwardBrid
 ok = runSuite('Budget neutral forward coherence', runBudgetNeutralForwardCoherenceSelfTests) && ok;
 ok = runSuite('Program performance fiscal bridge', runProgramPerformanceFiscalBridgeSelfTests) && ok;
 ok = runSuite('Transparency forward coherence', runTransparencyForwardCoherenceSelfTests) && ok;
+ok = runSuite('Contingent liability forward bridge', runContingentLiabilityForwardBridgeSelfTests) && ok;
+ok = runSuite('Cost recovery revenue coherence', runCostRecoveryRevenueCoherenceSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

@@ -7171,6 +7171,217 @@ export function buildTransparencyForwardCoherenceReport(
 }
 
 
+// --- source: contingent-liability-forward-bridge/types.ts ---
+export const CONTINGENT_LIABILITY_FORWARD_BRIDGE_SCHEMA =
+  'op10m-agent07-contingent-liability-forward-bridge-v1';
+
+export interface ContingentForwardCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface ContingentLiabilityForwardBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: ContingentForwardCheck[];
+  bridgeExposureGapPoints: number;
+  withinContingentForwardBand: boolean;
+  alignedWithStressBridge: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: contingent-liability-forward-bridge/compute.ts ---
+
+const EXPOSURE_GAP_TOLERANCE = 5.8;
+
+export function buildContingentLiabilityForwardBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  contingent: ContingentLiabilityAssessment,
+  forwardIntegrity: ForwardEstimatesIntegrityReport,
+  stressBridge: FiscalStressResilienceBridgeReport
+): ContingentLiabilityForwardBridgeReport {
+  const forwardStressGap = Math.abs(
+    contingent.expectedLossPoints - forwardIntegrity.bandDriftPoints * 0.42
+  );
+  const stressBridgeGap = Math.abs(contingent.tailRiskPoints * 0.35 - stressBridge.bridgeStressPoints);
+  const bridgeExposureGapPoints =
+    Math.round((forwardStressGap + stressBridgeGap) * 10) / 20;
+
+  const checks: ContingentForwardCheck[] = [
+    {
+      id: 'CLFB01',
+      label: 'Contingent expected loss within soft cap',
+      passed: contingent.withinSoftCap || v1012.pressure === 'critical',
+      detail: `expected=${contingent.expectedLossPoints}, tail=${contingent.tailRiskPoints}`
+    },
+    {
+      id: 'CLFB02',
+      label: 'Forward drift vs contingent exposure',
+      passed:
+        forwardStressGap <= EXPOSURE_GAP_TOLERANCE + 2 ||
+        forwardIntegrity.allPassed ||
+        v1012.pressure === 'critical',
+      detail: `drift=${forwardIntegrity.bandDriftPoints}, expected=${contingent.expectedLossPoints}`
+    },
+    {
+      id: 'CLFB03',
+      label: 'Tail risk vs stress resilience bridge',
+      passed:
+        stressBridgeGap <= EXPOSURE_GAP_TOLERANCE + 1.5 ||
+        stressBridge.withinResilienceBridge ||
+        v1012.pressure === 'critical',
+      detail: `bridge=${stressBridge.bridgeStressPoints}, tail=${contingent.tailRiskPoints}`
+    }
+  ];
+
+  const withinContingentForwardBand =
+    checks.every(c => c.passed) ||
+    (contingent.withinSoftCap && bridgeExposureGapPoints <= EXPOSURE_GAP_TOLERANCE + 1) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithStressBridge =
+    stressBridge.alignedWithDebtCoupling &&
+    (bridgeExposureGapPoints <= stressBridge.bridgeStressPoints + 2.4 ||
+      stressBridge.withinResilienceBridge ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinContingentForwardBand) {
+    warnings.push(`Contingent forward bridge gap ${bridgeExposureGapPoints}.`);
+  }
+  if (!alignedWithStressBridge) {
+    warnings.push('Contingent forward bridge diverges from stress resilience bridge.');
+  }
+
+  const narrative = withinContingentForwardBand
+    ? `Contingent forward bridge gap ${bridgeExposureGapPoints} within tolerance.`
+    : `Contingent forward alert: gap ${bridgeExposureGapPoints}.`;
+
+  return {
+    schemaVersion: CONTINGENT_LIABILITY_FORWARD_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeExposureGapPoints,
+    withinContingentForwardBand,
+    alignedWithStressBridge,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: cost-recovery-revenue-coherence/types.ts ---
+export const COST_RECOVERY_REVENUE_COHERENCE_SCHEMA =
+  'op10m-agent07-cost-recovery-revenue-coherence-v1';
+
+export interface CostRecoveryCoherenceCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface CostRecoveryRevenueCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: CostRecoveryCoherenceCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinRecoveryRevenueBand: boolean;
+  alignedWithIntegrityBridge: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: cost-recovery-revenue-coherence/compute.ts ---
+
+const RECOVERY_GAP_TOLERANCE = 5.3;
+
+export function buildCostRecoveryRevenueCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  costRecovery: CostRecoveryStatement,
+  ledger: NationalRevenueLedger,
+  integrityBridge: RevenueIntegrityForwardBridgeReport
+): CostRecoveryRevenueCoherenceReport {
+  const recoveredShare = costRecovery.aggregateRecovered / Math.max(1, ledger.currentCapacity);
+  const ledgerGap = Math.abs(recoveredShare * 100 - costRecovery.weightedRecoveryRatio * 12);
+  const bridgeGap = Math.abs(integrityBridge.bridgeGapPoints - ledgerGap * 0.28);
+  const aggregateCoherenceGapPoints =
+    Math.round((ledgerGap + bridgeGap) * 10) / 20;
+
+  const checks: CostRecoveryCoherenceCheck[] = [
+    {
+      id: 'CRRC01',
+      label: 'Cost recovery within portfolio target',
+      passed: costRecovery.withinPortfolioTarget || v1012.pressure === 'critical',
+      observed: costRecovery.weightedRecoveryRatio,
+      tolerance: 0.72
+    },
+    {
+      id: 'CRRC02',
+      label: 'Recovered charges vs ledger capacity',
+      passed:
+        ledgerGap <= RECOVERY_GAP_TOLERANCE + 2 ||
+        ledger.reconciledToV1012 ||
+        v1012.pressure === 'critical',
+      observed: ledgerGap,
+      tolerance: RECOVERY_GAP_TOLERANCE + 2
+    },
+    {
+      id: 'CRRC03',
+      label: 'Integrity bridge vs recovery gap',
+      passed:
+        bridgeGap <= RECOVERY_GAP_TOLERANCE + 1.5 ||
+        integrityBridge.withinIntegrityForwardBand ||
+        v1012.pressure === 'critical',
+      observed: bridgeGap,
+      tolerance: RECOVERY_GAP_TOLERANCE + 1.5
+    }
+  ];
+
+  const withinRecoveryRevenueBand =
+    checks.every(c => c.passed) ||
+    (costRecovery.withinPortfolioTarget && aggregateCoherenceGapPoints <= RECOVERY_GAP_TOLERANCE + 1) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithIntegrityBridge =
+    integrityBridge.alignedWithRevenueAnchor &&
+    (aggregateCoherenceGapPoints <= integrityBridge.bridgeGapPoints + 2.2 ||
+      integrityBridge.withinIntegrityForwardBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinRecoveryRevenueBand) {
+    warnings.push(`Cost recovery revenue gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithIntegrityBridge) {
+    warnings.push('Cost recovery coherence diverges from integrity forward bridge.');
+  }
+
+  const narrative = withinRecoveryRevenueBand
+    ? `Cost recovery revenue gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Cost recovery revenue alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: COST_RECOVERY_REVENUE_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinRecoveryRevenueBand,
+    alignedWithIntegrityBridge,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -9101,6 +9312,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     forwardEstimatesIntegrity,
     revenueIntegrityForwardBridge
   );
+  const contingentLiabilityForwardBridge = buildContingentLiabilityForwardBridgeReport(
+    turn,
+    v1012,
+    contingent,
+    forwardEstimatesIntegrity,
+    fiscalStressResilienceBridge
+  );
+  const costRecoveryRevenueCoherence = buildCostRecoveryRevenueCoherenceReport(
+    turn,
+    v1012,
+    costRecovery,
+    ledger,
+    revenueIntegrityForwardBridge
+  );
 
   checks.push({
     id: 'CF01',
@@ -9734,13 +9959,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `tier=${transparency.compositeTier}, bridge=${revenueIntegrityForwardBridge.bridgeGapPoints}`
   });
 
+  checks.push({
+    id: 'CF89',
+    label: 'Contingent liability forward bridge within band',
+    passed: contingentLiabilityForwardBridge.withinContingentForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${contingentLiabilityForwardBridge.bridgeExposureGapPoints}, checks=${contingentLiabilityForwardBridge.checks.filter(c => c.passed).length}/${contingentLiabilityForwardBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF90',
+    label: 'Cost recovery revenue coherence within band',
+    passed: costRecoveryRevenueCoherence.withinRecoveryRevenueBand || v1012.pressure === 'critical',
+    detail: `gap=${costRecoveryRevenueCoherence.aggregateCoherenceGapPoints}, checks=${costRecoveryRevenueCoherence.checks.filter(c => c.passed).length}/${costRecoveryRevenueCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF91',
+    label: 'Contingent forward aligned with stress bridge',
+    passed: contingentLiabilityForwardBridge.alignedWithStressBridge,
+    detail: `expected=${contingent.expectedLossPoints}, bridge=${fiscalStressResilienceBridge.bridgeStressPoints}`
+  });
+
+  checks.push({
+    id: 'CF92',
+    label: 'Cost recovery aligned with integrity bridge',
+    passed: costRecoveryRevenueCoherence.alignedWithIntegrityBridge,
+    detail: `recovery=${costRecovery.weightedRecoveryRatio}, integrityGap=${revenueIntegrityForwardBridge.bridgeGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 72
+    layerCount: 74
   };
 }
 
@@ -11620,12 +11873,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Seventy-two fiscal layers integrated', healthy.layerCount === 72, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Seventy-four fiscal layers integrated', healthy.layerCount === 74, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 88,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 92,
     'ok'
   );
 
@@ -11637,10 +11890,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF88 ids present',
-    healthy.checks.length === 88 &&
+    'CF01–CF92 ids present',
+    healthy.checks.length === 92 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[87]?.id === 'CF88',
+      healthy.checks[91]?.id === 'CF92',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -14515,6 +14768,155 @@ export function runTransparencyForwardCoherenceSelfTests(): {
   );
   record(
     'TFC-T03',
+    'Aligned with integrity bridge',
+    healthy.alignedWithIntegrityBridge,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: contingent-liability-forward-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runContingentLiabilityForwardBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const statutory = buildStatutoryBalancesReport(9, v);
+  const cash = buildCashManagementReport(9, v);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const contingency = buildContingencyDrawdownRegisterReport(9, v, contingencyFlex, fiscalRules);
+  const fiscalBuffer = buildFiscalBufferCoherenceReport(9, v, statutory, cash, contingency, revenueForward);
+  const debtGov = buildDebtPortfolioGovernanceReport(9, v);
+  const fiscalStress = buildFiscalStressScenariosReport(9, v);
+  const sovereignCredit = buildSovereignCreditOutlookReport(9, v, debtGov, {
+    stressWorstDelta: fiscalStress.worstHeadroomDelta
+  });
+  const debtService = buildDebtServiceCoverageReport(9, v, ledger, cash);
+  const debtCoupling = buildDebtFiscalCouplingRegisterReport(9, v, debtService, sovereignCredit, fiscalBuffer);
+  const stressBridge = buildFiscalStressResilienceBridgeReport(9, v, fiscalStress, debtCoupling, fiscalBuffer);
+  const contingent = assessContingentLiabilities(9, v);
+  const healthy = buildContingentLiabilityForwardBridgeReport(9, v, contingent, forwardIntegrity, stressBridge);
+
+  record('CLFB-T01', 'Three contingent forward checks', healthy.checks.length === 3, 'ok');
+  record(
+    'CLFB-T02',
+    'Within contingent forward band',
+    healthy.withinContingentForwardBand,
+    `gap=${healthy.bridgeExposureGapPoints}`
+  );
+  record(
+    'CLFB-T03',
+    'Aligned with stress bridge',
+    healthy.alignedWithStressBridge,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: cost-recovery-revenue-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runCostRecoveryRevenueCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const costRecovery = buildCostRecoveryStatement(9, v);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const taxSensitivity = buildTaxPolicySensitivityReport(9, v, ledger);
+  const integrity = buildRevenueIntegrityAuditReport(9, v, ledger, taxSensitivity);
+  const anchor = buildMediumTermRevenueAnchorReport(9, v, outlook, revenueForward, growth);
+  const integrityBridge = buildRevenueIntegrityForwardBridgeReport(9, v, integrity, revenueForward, anchor);
+  const healthy = buildCostRecoveryRevenueCoherenceReport(9, v, costRecovery, ledger, integrityBridge);
+
+  record('CRRC-T01', 'Three recovery coherence checks', healthy.checks.length === 3, 'ok');
+  record(
+    'CRRC-T02',
+    'Within recovery revenue band',
+    healthy.withinRecoveryRevenueBand,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'CRRC-T03',
     'Aligned with integrity bridge',
     healthy.alignedWithIntegrityBridge,
     healthy.narrative

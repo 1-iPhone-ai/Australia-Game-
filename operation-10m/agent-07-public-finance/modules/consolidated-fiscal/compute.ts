@@ -47,6 +47,8 @@ import { buildRevenueIntegrityForwardBridgeReport } from '../revenue-integrity-f
 import { buildBudgetNeutralForwardCoherenceReport } from '../budget-neutral-forward-coherence/compute';
 import { buildProgramPerformanceFiscalBridgeReport } from '../program-performance-fiscal-bridge/compute';
 import { buildTransparencyForwardCoherenceReport } from '../transparency-forward-coherence/compute';
+import { buildContingentLiabilityForwardBridgeReport } from '../contingent-liability-forward-bridge/compute';
+import { buildCostRecoveryRevenueCoherenceReport } from '../cost-recovery-revenue-coherence/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -287,6 +289,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     v1012,
     transparency,
     forwardEstimatesIntegrity,
+    revenueIntegrityForwardBridge
+  );
+  const contingentLiabilityForwardBridge = buildContingentLiabilityForwardBridgeReport(
+    turn,
+    v1012,
+    contingent,
+    forwardEstimatesIntegrity,
+    fiscalStressResilienceBridge
+  );
+  const costRecoveryRevenueCoherence = buildCostRecoveryRevenueCoherenceReport(
+    turn,
+    v1012,
+    costRecovery,
+    ledger,
     revenueIntegrityForwardBridge
   );
 
@@ -922,12 +938,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `tier=${transparency.compositeTier}, bridge=${revenueIntegrityForwardBridge.bridgeGapPoints}`
   });
 
+  checks.push({
+    id: 'CF89',
+    label: 'Contingent liability forward bridge within band',
+    passed: contingentLiabilityForwardBridge.withinContingentForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${contingentLiabilityForwardBridge.bridgeExposureGapPoints}, checks=${contingentLiabilityForwardBridge.checks.filter(c => c.passed).length}/${contingentLiabilityForwardBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF90',
+    label: 'Cost recovery revenue coherence within band',
+    passed: costRecoveryRevenueCoherence.withinRecoveryRevenueBand || v1012.pressure === 'critical',
+    detail: `gap=${costRecoveryRevenueCoherence.aggregateCoherenceGapPoints}, checks=${costRecoveryRevenueCoherence.checks.filter(c => c.passed).length}/${costRecoveryRevenueCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF91',
+    label: 'Contingent forward aligned with stress bridge',
+    passed: contingentLiabilityForwardBridge.alignedWithStressBridge,
+    detail: `expected=${contingent.expectedLossPoints}, bridge=${fiscalStressResilienceBridge.bridgeStressPoints}`
+  });
+
+  checks.push({
+    id: 'CF92',
+    label: 'Cost recovery aligned with integrity bridge',
+    passed: costRecoveryRevenueCoherence.alignedWithIntegrityBridge,
+    detail: `recovery=${costRecovery.weightedRecoveryRatio}, integrityGap=${revenueIntegrityForwardBridge.bridgeGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 72
+    layerCount: 74
   };
 }
