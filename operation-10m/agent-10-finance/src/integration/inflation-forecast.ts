@@ -256,6 +256,14 @@ import {
   assessTransportFreightInflationCongestionCascade,
   type TransportFreightInflationCongestionCascadeBand,
 } from '../inflation/transport-freight-inflation-congestion-cascade.js';
+import {
+  assessEventsStagedInflationShockPersistence,
+  type EventsStagedInflationShockPersistenceBand,
+} from '../inflation/events-staged-inflation-shock-persistence.js';
+import {
+  assessModesSandboxInflationStressCascade,
+  type ModesSandboxInflationStressCascadeBand,
+} from '../inflation/modes-sandbox-inflation-stress-cascade.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -328,6 +336,8 @@ export interface InflationForecastPoint {
   dashboardHeatmapInflationOverlayCascadeBand: DashboardHeatmapInflationOverlayCascadeBand;
   commandCenterInflationFusionLatchBand: CommandCenterInflationFusionLatchBand;
   transportFreightInflationCongestionCascadeBand: TransportFreightInflationCongestionCascadeBand;
+  eventsStagedInflationShockPersistenceBand: EventsStagedInflationShockPersistenceBand;
+  modesSandboxInflationStressCascadeBand: ModesSandboxInflationStressCascadeBand;
 }
 
 export interface InflationForecastPath {
@@ -939,6 +949,26 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const eventShockPersistence = assessEventsStagedInflationShockPersistence({
+      inflationShockEventActive: inputs.highInflationScenario,
+      supplyDisruptionSeverity: inputs.creditShockActive ? 'national' : inputs.fiscalPressure === 'critical' ? 'localized' : 'none',
+      confidenceShockBand: inputs.publicStability < 42 ? 'severe' : inputs.creditShockActive ? 'uneasy' : 'calm',
+      wave37EventInflationLatch: inputs.creditShockActive,
+      stagedShockPersistenceBand:
+        inputs.fiscalPressure === 'critical' ? 'entrenched' : inputs.highInflationScenario ? 'building' : 'none',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const sandboxStressCascade = assessModesSandboxInflationStressCascade({
+      scenarioInflationBias: inputs.highInflationScenario ? 'extreme' : inputs.householdInflationScenarioActive ? 'inflationary' : 'neutral',
+      sandboxStressModeActive: inputs.householdInflationScenarioActive,
+      difficultyCostMultiplier: inputs.inflationSettingMultiplier ?? 1,
+      wave37SandboxInflationLatch: inputs.householdInflationScenarioActive,
+      scenarioBiasCascadeBand:
+        inputs.fiscalPressure === 'critical' ? 'runaway' : inputs.creditShockActive ? 'stressed' : 'routine',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -1011,6 +1041,8 @@ export function projectInflationForecastPath(
       dashboardHeatmapInflationOverlayCascadeBand: heatmapOverlay.cascadeBand,
       commandCenterInflationFusionLatchBand: commandFusionLatch.latchBand,
       transportFreightInflationCongestionCascadeBand: freightCascade.cascadeBand,
+      eventsStagedInflationShockPersistenceBand: eventShockPersistence.persistenceBand,
+      modesSandboxInflationStressCascadeBand: sandboxStressCascade.cascadeBand,
     });
   }
 

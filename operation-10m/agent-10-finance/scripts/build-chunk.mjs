@@ -99,6 +99,8 @@ const FILES = [
   'inflation/dashboard-heatmap-inflation-overlay-cascade.ts',
   'inflation/command-center-inflation-fusion-latch.ts',
   'inflation/transport-freight-inflation-congestion-cascade.ts',
+  'inflation/events-staged-inflation-shock-persistence.ts',
+  'inflation/modes-sandbox-inflation-stress-cascade.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -169,6 +171,7 @@ const FILES = [
   'react/MemoryAutomationInflationPanel.tsx',
   'react/UiDashboardInflationPanel.tsx',
   'react/CommandTransportInflationPanel.tsx',
+  'react/EventsModesInflationPanel.tsx',
 ];
 
 function stripModulePreamble(source) {

@@ -11,6 +11,10 @@ export interface Agent04ModesSnapshot {
   difficultyInflationCascade?: boolean;
   /** Round 26: sandbox stress inflation band. */
   sandboxStressInflationBand?: 'routine' | 'stressed' | 'extreme';
+  /** Round 37: wave sandbox inflation latch. */
+  wave37SandboxInflationLatch?: boolean;
+  /** Round 37: scenario bias cascade band. */
+  scenarioBiasCascadeBand?: 'routine' | 'stressed' | 'runaway';
 }
 
 export function mergeAgent04IntoMacroFinancialInputs(
@@ -42,6 +46,13 @@ export function mergeAgent04IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
   } else if (snapshot.sandboxStressInflationBand === 'stressed' && snapshot.sandboxStressModeActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave37SandboxInflationLatch && snapshot.scenarioBiasCascadeBand === 'runaway') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.scenarioBiasCascadeBand === 'stressed' && snapshot.scenarioInflationBias === 'extreme') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
