@@ -104,6 +104,7 @@ export {
   institutionalPermanenceRankingBonus,
   generationalContinuityRankingBonus,
   civilizationalEnduranceRankingBonus,
+  transcendentLegacyRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -259,6 +260,16 @@ export {
   applyCivilizationalEnduranceMandateBonus,
 } from './engine/coalition-civilizational-endurance.ts';
 
+export { coalitionTranscendentLegacyStreakIssues } from './engine/coalition-transcendent-legacy-gates.ts';
+
+export {
+  TRANSCENDENT_COALITION_LEGACY_THRESHOLD,
+  advanceCoalitionTranscendentLegacyStreak,
+  resetCoalitionTranscendentLegacyStreak,
+  isTranscendentCoalitionLegacy,
+  applyTranscendentLegacyMandateBonus,
+} from './engine/coalition-transcendent-legacy.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '2.6.0';
+export const AGENT_01_MODULE_VERSION = '2.7.0';

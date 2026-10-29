@@ -138,3 +138,13 @@ export function civilizationalEnduranceRankingBonus(
   if (streak >= action.minCoalitionCivilizationalEnduranceStreakDays) return 9;
   return 2;
 }
+
+export function transcendentLegacyRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionTranscendentLegacyStreakDays === undefined) return 0;
+  const streak = state.coalitionTranscendentLegacyStreakDays ?? 0;
+  if (streak >= action.minCoalitionTranscendentLegacyStreakDays) return 10;
+  return 2;
+}

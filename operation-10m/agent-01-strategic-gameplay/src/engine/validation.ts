@@ -36,6 +36,7 @@ import { coalitionAnchoredGovernanceStreakIssues } from './coalition-anchored-go
 import { coalitionInstitutionalPermanenceStreakIssues } from './coalition-institutional-permanence-gates.ts';
 import { coalitionGenerationalContinuityStreakIssues } from './coalition-generational-continuity-gates.ts';
 import { coalitionCivilizationalEnduranceStreakIssues } from './coalition-civilizational-endurance-gates.ts';
+import { coalitionTranscendentLegacyStreakIssues } from './coalition-transcendent-legacy-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -295,6 +296,7 @@ export function validateAction(
     issues.push(...coalitionInstitutionalPermanenceStreakIssues(action, state));
     issues.push(...coalitionGenerationalContinuityStreakIssues(action, state));
     issues.push(...coalitionCivilizationalEnduranceStreakIssues(action, state));
+    issues.push(...coalitionTranscendentLegacyStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

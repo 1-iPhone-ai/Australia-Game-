@@ -102,7 +102,7 @@ describe('scale wave round 13 — anchored coalition governance', () => {
       coalitionAnchoredGovernanceStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(14);
+    expect(save.version).toBe(15);
     expect(save.coalitionAnchoredGovernanceStreakDays).toBe(5);
   });
 });

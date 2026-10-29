@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-01-strategic-gameplay
-// content-sha256-prefix: 1ba9e403eee0ecca
+// content-sha256-prefix: ae0d9fff9f2e9ded
 // Operation 10M — Agent 01 Strategic Gameplay
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -273,6 +273,8 @@ export interface TurnStrategicBriefing {
   coalitionGenerationalContinuityStreakDays: number;
   civilizationalCoalitionEndurance: boolean;
   coalitionCivilizationalEnduranceStreakDays: number;
+  transcendentCoalitionLegacy: boolean;
+  coalitionTranscendentLegacyStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;
@@ -359,6 +361,8 @@ export interface StrategicActionDefinition {
   minCoalitionGenerationalContinuityStreakDays?: number;
   /** Action requires civilizational endurance streak after generational continuity. */
   minCoalitionCivilizationalEnduranceStreakDays?: number;
+  /** Action requires transcendent legacy streak after civilizational endurance. */
+  minCoalitionTranscendentLegacyStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -410,7 +414,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_anchored_governance_streak'; minDays: number }
   | { kind: 'min_coalition_institutional_permanence_streak'; minDays: number }
   | { kind: 'min_coalition_generational_continuity_streak'; minDays: number }
-  | { kind: 'min_coalition_civilizational_endurance_streak'; minDays: number };
+  | { kind: 'min_coalition_civilizational_endurance_streak'; minDays: number }
+  | { kind: 'min_coalition_transcendent_legacy_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -476,6 +481,8 @@ export interface StrategicGameplayState {
   coalitionGenerationalContinuityStreakDays?: number;
   /** Days generational continuity held civilizational endurance eligibility. */
   coalitionCivilizationalEnduranceStreakDays?: number;
+  /** Days civilizational endurance held transcendent legacy eligibility. */
+  coalitionTranscendentLegacyStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;
@@ -1075,6 +1082,16 @@ export function civilizationalEnduranceRankingBonus(
   return 2;
 }
 
+export function transcendentLegacyRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionTranscendentLegacyStreakDays === undefined) return 0;
+  const streak = state.coalitionTranscendentLegacyStreakDays ?? 0;
+  if (streak >= action.minCoalitionTranscendentLegacyStreakDays) return 10;
+  return 2;
+}
+
 // --- src/engine/mandate-idle-drift.ts ---
 
 const IDLE_GRACE_DAYS = 3;
@@ -1650,6 +1667,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionGenerationalContinuityStreakDays: number;
   civilizationalCoalitionEndurance: boolean;
   coalitionCivilizationalEnduranceStreakDays: number;
+  transcendentCoalitionLegacy: boolean;
+  coalitionTranscendentLegacyStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -1676,6 +1695,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionGenerationalContinuityStreakDays: state.coalitionGenerationalContinuityStreakDays ?? 0,
     civilizationalCoalitionEndurance: isCivilizationalCoalitionEndurance(state),
     coalitionCivilizationalEnduranceStreakDays: state.coalitionCivilizationalEnduranceStreakDays ?? 0,
+    transcendentCoalitionLegacy: isTranscendentCoalitionLegacy(state),
+    coalitionTranscendentLegacyStreakDays: state.coalitionTranscendentLegacyStreakDays ?? 0,
   };
 }
 
@@ -1702,6 +1723,8 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionGenerationalContinuityStreakDays: raw?.coalitionGenerationalContinuityStreakDays ?? 0,
     civilizationalCoalitionEndurance: raw?.civilizationalCoalitionEndurance ?? false,
     coalitionCivilizationalEnduranceStreakDays: raw?.coalitionCivilizationalEnduranceStreakDays ?? 0,
+    transcendentCoalitionLegacy: raw?.transcendentCoalitionLegacy ?? false,
+    coalitionTranscendentLegacyStreakDays: raw?.coalitionTranscendentLegacyStreakDays ?? 0,
   };
 }
 
@@ -2310,6 +2333,109 @@ export function coalitionCivilizationalEnduranceStreakIssues(
   ];
 }
 
+// --- src/engine/coalition-transcendent-legacy.ts ---
+
+export const TRANSCENDENT_COALITION_LEGACY_THRESHOLD = 4;
+const TRANSCENDENT_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isTranscendentCoalitionLegacy(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionTranscendentLegacyStreakDays ?? 0) >= TRANSCENDENT_COALITION_LEGACY_THRESHOLD
+  );
+}
+
+function transcendentLegacyEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const endurance = state.coalitionCivilizationalEnduranceStreakDays ?? 0;
+  return (
+    isCivilizationalCoalitionEndurance(state) ||
+    endurance >= CIVILIZATIONAL_COALITION_ENDURANCE_THRESHOLD
+  );
+}
+
+/** Transcendent legacy streak after civilizational endurance is sustained. */
+export function advanceCoalitionTranscendentLegacyStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!transcendentLegacyEligible(state)) {
+    if ((state.coalitionTranscendentLegacyStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionTranscendentLegacyStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionTranscendentLegacyStreakDays:
+      (state.coalitionTranscendentLegacyStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionTranscendentLegacyStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionTranscendentLegacyStreakDays: 0 };
+}
+
+export function applyTranscendentLegacyMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isTranscendentCoalitionLegacy(state)) return state;
+
+  const bonusTotal = daysAdvanced * TRANSCENDENT_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-transcendent-legacy-gates.ts ---
+
+export function coalitionTranscendentLegacyStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionTranscendentLegacyStreakDays === undefined) return [];
+
+  const streak = state.coalitionTranscendentLegacyStreakDays ?? 0;
+  if (streak >= action.minCoalitionTranscendentLegacyStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_TRANSCENDENT_LEGACY_STREAK_TOO_SHORT',
+      message: `Transcendent legacy streak ${streak} below required ${action.minCoalitionTranscendentLegacyStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_transcendent_legacy_streak',
+        minDays: action.minCoalitionTranscendentLegacyStreakDays,
+      },
+    },
+  ];
+}
+
 // --- src/engine/coalition-gates.ts ---
 
 export function coalitionBalanceIssues(
@@ -2471,6 +2597,11 @@ export interface StrategicGameplaySaveV14 extends Omit<StrategicGameplaySaveV13,
   coalitionCivilizationalEnduranceStreakDays: number;
 }
 
+export interface StrategicGameplaySaveV15 extends Omit<StrategicGameplaySaveV14, 'version'> {
+  version: 15;
+  coalitionTranscendentLegacyStreakDays: number;
+}
+
 export type StrategicGameplaySaveBlob =
   | StrategicGameplaySaveV1
   | StrategicGameplaySaveV2
@@ -2485,13 +2616,14 @@ export type StrategicGameplaySaveBlob =
   | StrategicGameplaySaveV11
   | StrategicGameplaySaveV12
   | StrategicGameplaySaveV13
-  | StrategicGameplaySaveV14;
+  | StrategicGameplaySaveV14
+  | StrategicGameplaySaveV15;
 
 export function serializeStrategicGameplayState(
   state: StrategicGameplayState,
-): StrategicGameplaySaveV14 {
+): StrategicGameplaySaveV15 {
   return {
-    version: 14,
+    version: 15,
     day: state.day,
     completedActionIds: [...state.completedActionIds],
     pendingDelayed: state.pendingDelayed.map((p) => ({ ...p, effects: { ...p.effects } })),
@@ -2516,6 +2648,7 @@ export function serializeStrategicGameplayState(
     coalitionInstitutionalPermanenceStreakDays: state.coalitionInstitutionalPermanenceStreakDays ?? 0,
     coalitionGenerationalContinuityStreakDays: state.coalitionGenerationalContinuityStreakDays ?? 0,
     coalitionCivilizationalEnduranceStreakDays: state.coalitionCivilizationalEnduranceStreakDays ?? 0,
+    coalitionTranscendentLegacyStreakDays: state.coalitionTranscendentLegacyStreakDays ?? 0,
   };
 }
 
@@ -2546,6 +2679,7 @@ export function deserializeStrategicGameplayState(
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
       coalitionCivilizationalEnduranceStreakDays: 0,
+      coalitionTranscendentLegacyStreakDays: 0,
     };
   }
   if (save.version === 2) {
@@ -2572,6 +2706,7 @@ export function deserializeStrategicGameplayState(
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
       coalitionCivilizationalEnduranceStreakDays: 0,
+      coalitionTranscendentLegacyStreakDays: 0,
     };
   }
   if (save.version === 3) {
@@ -2598,6 +2733,7 @@ export function deserializeStrategicGameplayState(
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
       coalitionCivilizationalEnduranceStreakDays: 0,
+      coalitionTranscendentLegacyStreakDays: 0,
     };
   }
   if (save.version === 4) {
@@ -2624,6 +2760,7 @@ export function deserializeStrategicGameplayState(
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
       coalitionCivilizationalEnduranceStreakDays: 0,
+      coalitionTranscendentLegacyStreakDays: 0,
     };
   }
   if (save.version === 5) {
@@ -2650,6 +2787,7 @@ export function deserializeStrategicGameplayState(
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
       coalitionCivilizationalEnduranceStreakDays: 0,
+      coalitionTranscendentLegacyStreakDays: 0,
     };
   }
   if (save.version === 6) {
@@ -2676,6 +2814,7 @@ export function deserializeStrategicGameplayState(
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
       coalitionCivilizationalEnduranceStreakDays: 0,
+      coalitionTranscendentLegacyStreakDays: 0,
     };
   }
   if (save.version === 7) {
@@ -2702,6 +2841,7 @@ export function deserializeStrategicGameplayState(
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
       coalitionCivilizationalEnduranceStreakDays: 0,
+      coalitionTranscendentLegacyStreakDays: 0,
     };
   }
   if (save.version === 8) {
@@ -2728,6 +2868,7 @@ export function deserializeStrategicGameplayState(
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
       coalitionCivilizationalEnduranceStreakDays: 0,
+      coalitionTranscendentLegacyStreakDays: 0,
     };
   }
   if (save.version === 9) {
@@ -2754,6 +2895,7 @@ export function deserializeStrategicGameplayState(
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
       coalitionCivilizationalEnduranceStreakDays: 0,
+      coalitionTranscendentLegacyStreakDays: 0,
     };
   }
   if (save.version === 10) {
@@ -2780,6 +2922,7 @@ export function deserializeStrategicGameplayState(
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
       coalitionCivilizationalEnduranceStreakDays: 0,
+      coalitionTranscendentLegacyStreakDays: 0,
     };
   }
   if (save.version === 11) {
@@ -2806,6 +2949,7 @@ export function deserializeStrategicGameplayState(
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
       coalitionCivilizationalEnduranceStreakDays: 0,
+      coalitionTranscendentLegacyStreakDays: 0,
     };
   }
   if (save.version === 12) {
@@ -2832,6 +2976,7 @@ export function deserializeStrategicGameplayState(
       coalitionInstitutionalPermanenceStreakDays: save.coalitionInstitutionalPermanenceStreakDays,
       coalitionGenerationalContinuityStreakDays: 0,
       coalitionCivilizationalEnduranceStreakDays: 0,
+      coalitionTranscendentLegacyStreakDays: 0,
     };
   }
   if (save.version === 13) {
@@ -2858,9 +3003,37 @@ export function deserializeStrategicGameplayState(
       coalitionInstitutionalPermanenceStreakDays: save.coalitionInstitutionalPermanenceStreakDays,
       coalitionGenerationalContinuityStreakDays: save.coalitionGenerationalContinuityStreakDays,
       coalitionCivilizationalEnduranceStreakDays: 0,
+      coalitionTranscendentLegacyStreakDays: 0,
     };
   }
-  if (save.version !== 14) {
+  if (save.version === 14) {
+    return {
+    day: save.day,
+    completedActionIds: [...save.completedActionIds],
+    pendingDelayed: save.pendingDelayed.slice(),
+    journal: save.journal.slice(),
+    priorityMomentum: { ...save.priorityMomentum },
+    actionCooldowns: { ...save.actionCooldowns },
+    activeChoice: save.activeChoice ? { ...save.activeChoice } : null,
+    mandateProgress: { ...save.mandateProgress },
+    stakeholderSentiment: { ...save.stakeholderSentiment },
+    lastAlignedActionDay: save.lastAlignedActionDay,
+    coalitionCrisisStreakDays: save.coalitionCrisisStreakDays,
+    coalitionRecoveryStreakDays: save.coalitionRecoveryStreakDays,
+    coalitionVolatilityEvents: save.coalitionVolatilityEvents,
+    coalitionStabilizationStreakDays: save.coalitionStabilizationStreakDays,
+    coalitionLockInStreakDays: save.coalitionLockInStreakDays,
+    crossModuleSyncStreakDays: save.crossModuleSyncStreakDays,
+    integratedCoalitionMaturityStreakDays: save.integratedCoalitionMaturityStreakDays,
+    coalitionStewardshipStreakDays: save.coalitionStewardshipStreakDays,
+    coalitionAnchoredGovernanceStreakDays: save.coalitionAnchoredGovernanceStreakDays,
+    coalitionInstitutionalPermanenceStreakDays: save.coalitionInstitutionalPermanenceStreakDays,
+    coalitionGenerationalContinuityStreakDays: save.coalitionGenerationalContinuityStreakDays,
+    coalitionCivilizationalEnduranceStreakDays: save.coalitionCivilizationalEnduranceStreakDays,
+    coalitionTranscendentLegacyStreakDays: 0,
+  };
+  }
+  if (save.version !== 15) {
     throw new Error(`Unsupported strategic save version: ${(save as { version: number }).version}`);
   }
   return {
@@ -2886,6 +3059,7 @@ export function deserializeStrategicGameplayState(
     coalitionInstitutionalPermanenceStreakDays: save.coalitionInstitutionalPermanenceStreakDays,
     coalitionGenerationalContinuityStreakDays: save.coalitionGenerationalContinuityStreakDays,
     coalitionCivilizationalEnduranceStreakDays: save.coalitionCivilizationalEnduranceStreakDays,
+    coalitionTranscendentLegacyStreakDays: save.coalitionTranscendentLegacyStreakDays,
   };
 }
 
@@ -3239,6 +3413,7 @@ export function validateAction(
     issues.push(...coalitionInstitutionalPermanenceStreakIssues(action, state));
     issues.push(...coalitionGenerationalContinuityStreakIssues(action, state));
     issues.push(...coalitionCivilizationalEnduranceStreakIssues(action, state));
+    issues.push(...coalitionTranscendentLegacyStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({
@@ -3358,7 +3533,8 @@ export function rankStrategicActions(
         anchoredGovernanceRankingBonus(state, action) +
         institutionalPermanenceRankingBonus(state, action) +
         generationalContinuityRankingBonus(state, action) +
-        civilizationalEnduranceRankingBonus(state, action),
+        civilizationalEnduranceRankingBonus(state, action) +
+        transcendentLegacyRankingBonus(state, action),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });
@@ -3417,6 +3593,8 @@ export function buildTurnStrategicBriefing(
     coalitionGenerationalContinuityStreakDays: state.coalitionGenerationalContinuityStreakDays ?? 0,
     civilizationalCoalitionEndurance: isCivilizationalCoalitionEndurance(state),
     coalitionCivilizationalEnduranceStreakDays: state.coalitionCivilizationalEnduranceStreakDays ?? 0,
+    transcendentCoalitionLegacy: isTranscendentCoalitionLegacy(state),
+    coalitionTranscendentLegacyStreakDays: state.coalitionTranscendentLegacyStreakDays ?? 0,
     mandateDriftRisk: classifyMandateDriftRisk(state),
     completedActionCount: state.completedActionIds.length,
     activeChoiceId: state.activeChoice?.choiceId ?? null,
@@ -3579,6 +3757,8 @@ export function advanceStrategicGameplayCalendar(
   next = applyGenerationalContinuityMandateBonus(next, daysAdvanced);
   next = advanceCoalitionCivilizationalEnduranceStreak(next, daysAdvanced);
   next = applyCivilizationalEnduranceMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionTranscendentLegacyStreak(next, daysAdvanced);
+  next = applyTranscendentLegacyMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 
@@ -3610,6 +3790,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     coalitionInstitutionalPermanenceStreakDays: 0,
     coalitionGenerationalContinuityStreakDays: 0,
     coalitionCivilizationalEnduranceStreakDays: 0,
+    coalitionTranscendentLegacyStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -3812,6 +3993,12 @@ export function executeStrategicAction(
   }
   if (action.id === 'sga_coalition_civilizational_heritage_covenant') {
     nextState = resetCoalitionCivilizationalEnduranceStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_transcendent_legacy_charter') {
+    nextState = resetCoalitionTranscendentLegacyStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_transcendent_enduring_covenant') {
+    nextState = resetCoalitionTranscendentLegacyStreak(nextState);
   }
 
   contracts.ui.pushToast({
@@ -4771,6 +4958,51 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
     },
     delayedTradeOffs: [],
   },
+  'sga_coalition_transcendent_legacy_charter': {
+    id: 'sga_coalition_transcendent_legacy_charter',
+    title: 'Transcendent Coalition Legacy Charter',
+    category: 'governance',
+    apCost: 2,
+    cashCost: 25_000,
+    treasuryCost: 88_000,
+    minApproval: 59,
+    alignedPriorities: ['economic_diversification', 'freight_modernization'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'transcendent_legacy', 'charter'],
+    repeatable: false,
+    minCoalitionBalanceIndex: 80,
+    maxCoalitionVolatilityEvents: 0,
+    minCoalitionCivilizationalEnduranceStreakDays: 4,
+    minCoalitionTranscendentLegacyStreakDays: 4,
+    immediateEffects: {
+      economy: { cashDelta: -25_000, treasuryDelta: -88_000, netWorthMultiplier: 1.01 },
+      government: { approvalDelta: 8, directiveSlotsDelta: 1, regulatoryBurdenDelta: -4 },
+      population: { publicStabilityDelta: 7, migrationDelta: 4 },
+    },
+    delayedTradeOffs: [],
+  },
+  'sga_coalition_transcendent_enduring_covenant': {
+    id: 'sga_coalition_transcendent_enduring_covenant',
+    title: 'Transcendent Coalition Enduring Covenant',
+    category: 'investment',
+    apCost: 1,
+    cashCost: 18_000,
+    treasuryCost: 64_000,
+    minApproval: 55,
+    alignedPriorities: ['supply_chain_security', 'water_security'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'transcendent', 'covenant'],
+    repeatable: true,
+    maxCoalitionVolatilityEvents: 0,
+    minCoalitionTranscendentLegacyStreakDays: 2,
+    cooldownDays: 4,
+    immediateEffects: {
+      economy: { cashDelta: -18_000, treasuryDelta: -64_000 },
+      government: { approvalDelta: 5 },
+      population: { publicStabilityDelta: 6, essentialAccessDelta: 3 },
+    },
+    delayedTradeOffs: [],
+  },
 };
 
 export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefinition> = {
@@ -5307,7 +5539,7 @@ export function createMemoryStrategicContracts(
 
 export const AGENT_01_MODULE_ID = 'operation-10m/agent-01-strategic-gameplay';
 
-export const AGENT_01_MODULE_VERSION = '2.6.0';
+export const AGENT_01_MODULE_VERSION = '2.7.0';
 
 
 
@@ -5329,7 +5561,7 @@ export function runOp10mAgent01StrategicGameplaySelfTests(): {
 
     name: 'strategic action catalog non-empty',
 
-    passed: listStrategicActions().length >= 34,
+    passed: listStrategicActions().length >= 36,
 
   });
 

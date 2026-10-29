@@ -34,6 +34,10 @@ import {
   advanceCoalitionCivilizationalEnduranceStreak,
   applyCivilizationalEnduranceMandateBonus,
 } from './coalition-civilizational-endurance.ts';
+import {
+  advanceCoalitionTranscendentLegacyStreak,
+  applyTranscendentLegacyMandateBonus,
+} from './coalition-transcendent-legacy.ts';
 import { advanceCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 import type { StakeholderGroupId, StakeholderSentiment } from '../types/coalition-mandate.ts';
@@ -105,6 +109,8 @@ export function advanceStrategicGameplayCalendar(
   next = applyGenerationalContinuityMandateBonus(next, daysAdvanced);
   next = advanceCoalitionCivilizationalEnduranceStreak(next, daysAdvanced);
   next = applyCivilizationalEnduranceMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionTranscendentLegacyStreak(next, daysAdvanced);
+  next = applyTranscendentLegacyMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 

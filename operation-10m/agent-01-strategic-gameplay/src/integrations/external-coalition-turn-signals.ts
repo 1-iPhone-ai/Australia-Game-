@@ -11,6 +11,7 @@ import { isAnchoredCoalitionGovernance } from '../engine/coalition-anchored-gove
 import { isInstitutionalCoalitionPermanence } from '../engine/coalition-institutional-permanence.ts';
 import { isGenerationalCoalitionContinuity } from '../engine/coalition-generational-continuity.ts';
 import { isCivilizationalCoalitionEndurance } from '../engine/coalition-civilizational-endurance.ts';
+import { isTranscendentCoalitionLegacy } from '../engine/coalition-transcendent-legacy.ts';
 
 /** Outbound coalition telemetry for Agent 02 / Agent 05 assembly hooks (round 10+). */
 export interface ExternalCoalitionTurnSignals {
@@ -33,6 +34,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionGenerationalContinuityStreakDays: number;
   civilizationalCoalitionEndurance: boolean;
   coalitionCivilizationalEnduranceStreakDays: number;
+  transcendentCoalitionLegacy: boolean;
+  coalitionTranscendentLegacyStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -59,6 +62,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionGenerationalContinuityStreakDays: state.coalitionGenerationalContinuityStreakDays ?? 0,
     civilizationalCoalitionEndurance: isCivilizationalCoalitionEndurance(state),
     coalitionCivilizationalEnduranceStreakDays: state.coalitionCivilizationalEnduranceStreakDays ?? 0,
+    transcendentCoalitionLegacy: isTranscendentCoalitionLegacy(state),
+    coalitionTranscendentLegacyStreakDays: state.coalitionTranscendentLegacyStreakDays ?? 0,
   };
 }
 
@@ -85,5 +90,7 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionGenerationalContinuityStreakDays: raw?.coalitionGenerationalContinuityStreakDays ?? 0,
     civilizationalCoalitionEndurance: raw?.civilizationalCoalitionEndurance ?? false,
     coalitionCivilizationalEnduranceStreakDays: raw?.coalitionCivilizationalEnduranceStreakDays ?? 0,
+    transcendentCoalitionLegacy: raw?.transcendentCoalitionLegacy ?? false,
+    coalitionTranscendentLegacyStreakDays: raw?.coalitionTranscendentLegacyStreakDays ?? 0,
   };
 }
