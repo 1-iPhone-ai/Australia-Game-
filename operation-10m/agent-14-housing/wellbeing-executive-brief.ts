@@ -20,6 +20,9 @@ import type {
   StabilizationTrajectorySnapshot,
   ReliefFulfillmentSnapshot,
   WellbeingRecoveryReadinessBrief,
+  ReadinessTrajectorySnapshot,
+  FulfillmentAgingMonitor,
+  PortfolioResumptionPlan,
   WellbeingTurnForecastPoint,
 } from './types.ts';
 
@@ -46,6 +49,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   stabilizationTrajectory?: StabilizationTrajectorySnapshot;
   reliefFulfillment?: ReliefFulfillmentSnapshot;
   wellbeingRecoveryReadinessBrief?: WellbeingRecoveryReadinessBrief;
+  readinessTrajectory?: ReadinessTrajectorySnapshot;
+  fulfillmentAgingMonitor?: FulfillmentAgingMonitor;
+  portfolioResumptionPlan?: PortfolioResumptionPlan;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -137,6 +143,17 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   if (args.wellbeingRecoveryReadinessBrief?.shouldResumePortfolioGrowth) {
     giNotes.push(args.wellbeingRecoveryReadinessBrief.summary);
   }
+  if (args.readinessTrajectory?.trajectory === 'deteriorating') {
+    giNotes.push(
+      `Readiness gap ${args.readinessTrajectory.trajectory} (EMA ${args.readinessTrajectory.readinessGapEma})`
+    );
+  }
+  if (args.fulfillmentAgingMonitor?.shouldExpediteAging) {
+    giNotes.push(args.fulfillmentAgingMonitor.summary);
+  }
+  if (args.portfolioResumptionPlan?.shouldHoldNewCommits) {
+    giNotes.push(args.portfolioResumptionPlan.summary);
+  }
 
   const headlineParts: string[] = [];
   if (args.coupling.band === 'critical' || args.coupling.band === 'strained') {
@@ -158,6 +175,8 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
     headlineParts.push('portfolio stabilization blocked');
   } else if (args.wellbeingRecoveryReadinessBrief?.readinessBand === 'ready') {
     headlineParts.push('recovery readiness clear');
+  } else if (args.portfolioResumptionPlan?.shouldHoldNewCommits) {
+    headlineParts.push('portfolio resumption on hold');
   }
 
   return {

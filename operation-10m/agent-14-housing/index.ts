@@ -32,4 +32,7 @@ export * from './portfolio-stabilization-brief.ts';
 export * from './stabilization-trajectory.ts';
 export * from './relief-fulfillment-tracker.ts';
 export * from './wellbeing-recovery-readiness-brief.ts';
+export * from './readiness-trajectory.ts';
+export * from './fulfillment-aging-monitor.ts';
+export * from './portfolio-resumption-plan.ts';
 export { runAgent14WellbeingSelfTests } from './self-tests.ts';

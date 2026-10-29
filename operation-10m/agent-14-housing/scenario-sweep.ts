@@ -30,7 +30,9 @@ export type Agent14HousingScenarioId =
   | 'coordination_trajectory_arc'
   | 'relief_execution_stress'
   | 'stabilization_recovery_arc'
-  | 'relief_fulfillment_backlog_stress';
+  | 'relief_fulfillment_backlog_stress'
+  | 'readiness_trajectory_arc'
+  | 'fulfillment_aging_stress';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -234,6 +236,28 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
       'ps_h_NSW_social_accel',
     ],
   },
+  {
+    id: 'readiness_trajectory_arc',
+    label: 'Readiness trajectory arc',
+    baseInputs: { fiscalHeadroom: 50, stateCapacityLoad: 50, workforceReadiness: 'balanced' },
+    launchProgramIds: [
+      'ps_xp_ACT_readiness_cohesion',
+      'ps_h_ACT_density',
+      'ps_he_NSW_primary_care',
+    ],
+  },
+  {
+    id: 'fulfillment_aging_stress',
+    label: 'Fulfillment aging stress',
+    baseInputs: { fiscalHeadroom: 16, stateCapacityLoad: 94, workforceReadiness: 'blocking', workforceSpecialistGap: 80 },
+    launchProgramIds: [
+      'ps_xp_WA_resumption_planning',
+      'ps_h_WA_remote_housing',
+      'ps_he_VIC_hospital_backlog',
+      'ps_ed_WA_regional_schools',
+      'ps_h_QLD_regional_release',
+    ],
+  },
 ];
 
 export { commitmentFromProgramStub } from './program-stub-commitments.ts';
@@ -257,6 +281,7 @@ export function simulateAgent14HousingScenario(
   let coordinationTrajectoryPersisted = null;
   let stabilizationTrajectoryPersisted = null;
   let reliefFulfillmentPersisted = null;
+  let readinessTrajectoryPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -278,6 +303,7 @@ export function simulateAgent14HousingScenario(
       coordinationTrajectoryPersisted,
       stabilizationTrajectoryPersisted,
       reliefFulfillmentPersisted,
+      readinessTrajectoryPersisted,
       newCommitments,
       enforceCapacity: true,
     });
@@ -290,6 +316,7 @@ export function simulateAgent14HousingScenario(
     coordinationTrajectoryPersisted = result.coordinationTrajectoryPersisted;
     stabilizationTrajectoryPersisted = result.stabilizationTrajectoryPersisted;
     reliefFulfillmentPersisted = result.reliefFulfillmentPersisted;
+    readinessTrajectoryPersisted = result.readinessTrajectoryPersisted;
     turns.push(result.inputs);
   }
 

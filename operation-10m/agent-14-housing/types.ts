@@ -1,6 +1,6 @@
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.10-scale-wave-10' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.11-scale-wave-11' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -113,6 +113,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   stabilizationTrajectory?: StabilizationTrajectorySnapshot;
   reliefFulfillment?: ReliefFulfillmentSnapshot;
   wellbeingRecoveryReadinessBrief?: WellbeingRecoveryReadinessBrief;
+  readinessTrajectory?: ReadinessTrajectorySnapshot;
+  fulfillmentAgingMonitor?: FulfillmentAgingMonitor;
+  portfolioResumptionPlan?: PortfolioResumptionPlan;
 }
 
 export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
@@ -399,6 +402,51 @@ export interface WellbeingRecoveryReadinessBrief {
   readinessBand: WellbeingRecoveryReadinessBand;
   shouldResumePortfolioGrowth: boolean;
   headlines: string[];
+  summary: string;
+}
+
+export type ReadinessGapBand = 'narrow' | 'moderate' | 'wide';
+
+export interface ReadinessTrajectorySnapshot {
+  turn: number;
+  readinessGapEma: number;
+  instantaneousGap: number;
+  band: ReadinessGapBand;
+  trajectory: CouplingTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface ReadinessTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  readinessGapEma: number;
+  priorEma?: number;
+}
+
+export interface FulfillmentAgingMonitor {
+  turn: number;
+  openCount: number;
+  overdueCount: number;
+  averageAgeTurns: number;
+  maxAgeTurns: number;
+  shouldExpediteAging: boolean;
+  summary: string;
+}
+
+export interface PortfolioResumptionAction {
+  programId: string;
+  regionId: string;
+  pillar: PublicServicePillar;
+  priority: number;
+  rationale: string;
+}
+
+export interface PortfolioResumptionPlan {
+  turn: number;
+  shouldHoldNewCommits: boolean;
+  recommendedResumeTurn: number;
+  actions: PortfolioResumptionAction[];
   summary: string;
 }
 

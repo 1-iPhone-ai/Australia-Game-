@@ -74,6 +74,13 @@ import {
   sanitizeReliefFulfillment,
 } from './relief-fulfillment-tracker.ts';
 import { composeWellbeingRecoveryReadinessBrief } from './wellbeing-recovery-readiness-brief.ts';
+import {
+  advanceReadinessTrajectory,
+  createInitialReadinessTrajectory,
+  sanitizeReadinessTrajectory,
+} from './readiness-trajectory.ts';
+import { buildFulfillmentAgingMonitor } from './fulfillment-aging-monitor.ts';
+import { buildPortfolioResumptionPlan } from './portfolio-resumption-plan.ts';
 import { AGENT14_WELLBEING_SCHEMA_VERSION } from './types.ts';
 
 export interface Agent14SelfTestResult {
@@ -575,8 +582,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Twenty-two housing scenarios registered',
-    listAgent14ScenarioIds().length === 22,
+    'Twenty-four housing scenarios registered',
+    listAgent14ScenarioIds().length === 24,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -804,8 +811,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave5_schema_version',
-    'Wellbeing schema version is wave 10',
-    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.10-scale-wave-10',
+    'Wellbeing schema version is wave 11',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.11-scale-wave-11',
     AGENT14_WELLBEING_SCHEMA_VERSION
   );
 
@@ -1698,6 +1705,175 @@ export function runAgent14WellbeingSelfTests(): {
       'Stabilization trajectory advance updates persisted turn',
       snap.persisted.lastTurn === 3 && snap.snapshot.stabilizationStressEma > 0,
       `ema=${snap.snapshot.stabilizationStressEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 5, fiscalHeadroom: 42, stateCapacityLoad: 68, workforceReadiness: 'strained' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      readinessTrajectoryPersisted: createInitialReadinessTrajectory(),
+    });
+    check(
+      results,
+      'wave11_readiness_trajectory',
+      'Turn advance attaches readiness trajectory',
+      adv.inputs.readinessTrajectory !== undefined &&
+        adv.readinessTrajectoryPersisted.lastTurn === 5 &&
+        adv.inputs.readinessTrajectory!.readinessGapEma > 0,
+      `band=${adv.inputs.readinessTrajectory?.band} ema=${adv.inputs.readinessTrajectory?.readinessGapEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 6, fiscalHeadroom: 20, stateCapacityLoad: 90, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave11_fulfillment_aging_monitor',
+      'Fulfillment aging monitor populated under stress',
+      adv.inputs.fulfillmentAgingMonitor !== undefined &&
+        adv.inputs.fulfillmentAgingMonitor!.summary.length > 8,
+      adv.inputs.fulfillmentAgingMonitor?.summary.slice(0, 72)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 48, stateCapacityLoad: 56, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave11_portfolio_resumption_plan',
+      'Portfolio resumption plan includes summary',
+      adv.inputs.portfolioResumptionPlan !== undefined &&
+        adv.inputs.portfolioResumptionPlan!.summary.length > 10,
+      `hold=${adv.inputs.portfolioResumptionPlan?.shouldHoldNewCommits}`
+    );
+  }
+
+  {
+    const raw = sanitizeReadinessTrajectory({
+      schemaVersion: '10.14.10-scale-wave-10' as any,
+      lastTurn: 2,
+      emaAlpha: 0.3,
+      readinessGapEma: 49,
+    });
+    check(
+      results,
+      'wave11_readiness_sanitize',
+      'Readiness trajectory sanitize upgrades schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.readinessGapEma === 49,
+      `schema=${raw.schemaVersion}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('readiness_trajectory_arc', 10);
+    const last = sim.turns[9];
+    check(
+      results,
+      'wave11_readiness_arc_scenario',
+      'Readiness arc wires trajectory, aging, and resumption plan',
+      last.readinessTrajectory !== undefined &&
+        last.fulfillmentAgingMonitor !== undefined &&
+        last.portfolioResumptionPlan !== undefined,
+      `gap=${last.readinessTrajectory?.band} hold=${last.portfolioResumptionPlan?.shouldHoldNewCommits}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('fulfillment_aging_stress', 8);
+    const last = sim.turns[7];
+    check(
+      results,
+      'wave11_aging_stress_scenario',
+      'Aging stress surfaces overdue backlog or resumption hold',
+      last.fulfillmentAgingMonitor !== undefined &&
+        (last.fulfillmentAgingMonitor!.shouldExpediteAging ||
+          last.fulfillmentAgingMonitor!.overdueCount > 0 ||
+          last.portfolioResumptionPlan!.shouldHoldNewCommits),
+      `overdue=${last.fulfillmentAgingMonitor?.overdueCount} hold=${last.portfolioResumptionPlan?.shouldHoldNewCommits}`
+    );
+  }
+
+  check(
+    results,
+    'wave11_cohesion_stub_catalog',
+    'Wave 11 cohesion stubs present',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_WA_resumption_planning') &&
+      AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_ACT_readiness_cohesion'),
+    `n=${AGENT14_HEALTH_ED_PROGRAM_STUBS.length}`
+  );
+
+  check(
+    results,
+    'wave11_scenario_catalog',
+    'Scenario catalog includes wave 11 scenarios',
+    listAgent14ScenarioIds().includes('readiness_trajectory_arc') &&
+      listAgent14ScenarioIds().includes('fulfillment_aging_stress'),
+    `count=${listAgent14ScenarioIds().length}`
+  );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 7, fiscalHeadroom: 25, stateCapacityLoad: 86, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const plan = buildPortfolioResumptionPlan({
+      turn: 7,
+      recoveryBrief: adv.inputs.wellbeingRecoveryReadinessBrief!,
+      readinessTrajectory: adv.inputs.readinessTrajectory,
+      fulfillmentAging: adv.inputs.fulfillmentAgingMonitor!,
+      interventionQueue: adv.inputs.interventionPriorityQueue,
+    });
+    check(
+      results,
+      'wave11_resumption_composer',
+      'Standalone resumption composer returns summary',
+      plan.summary.length > 10,
+      plan.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 3, fiscalHeadroom: 40, stateCapacityLoad: 65, workforceReadiness: 'weak' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const aging = buildFulfillmentAgingMonitor({
+      turn: 3,
+      reliefFulfillment: adv.inputs.reliefFulfillment!,
+      persisted: adv.reliefFulfillmentPersisted ?? createInitialReliefFulfillment(),
+    });
+    check(
+      results,
+      'wave11_aging_composer',
+      'Standalone aging composer returns summary',
+      aging.summary.length > 8,
+      aging.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 44, stateCapacityLoad: 60, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const snap = advanceReadinessTrajectory(
+      4,
+      adv.inputs.wellbeingRecoveryReadinessBrief!,
+      createInitialReadinessTrajectory()
+    );
+    check(
+      results,
+      'wave11_readiness_advance_unit',
+      'Readiness trajectory advance updates persisted turn',
+      snap.persisted.lastTurn === 4 && snap.snapshot.readinessGapEma > 0,
+      `ema=${snap.snapshot.readinessGapEma}`
     );
   }
 
