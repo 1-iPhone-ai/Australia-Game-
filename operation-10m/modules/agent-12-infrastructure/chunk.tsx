@@ -433,8 +433,14 @@ export type RemotePathologySupplyStagingPolicy = 'baseline' | 'surge';
 
 export type AirportDroneCargoLogisticsPolicy = 'baseline' | 'expand';
 
+export type EWasteCriticalMineralsRecoveryExportPolicy = 'baseline' | 'accelerate';
+
+export type RegionalOncologyRadiotherapySupplyStagingPolicy = 'baseline' | 'surge';
+
+export type PortAutonomousTugBerthingLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/47';
+  schemaVersion: 'agent12/48';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -776,6 +782,14 @@ export interface TransportInfrastructureState {
   airportDroneCargoLogisticsShare: number;
   nationalAirportDroneCargoLogisticsThroughputIndex: number;
   airportDroneCargoLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalEWasteCriticalMineralsRecoveryExportIndex: number;
+  eWasteCriticalMineralsRecoveryExportByRegion: Record<AuRegionCode, number>;
+  regionalOncologyRadiotherapySupplyStagingShare: number;
+  nationalRegionalOncologyRadiotherapySupplyStagingIndex: number;
+  regionalOncologyRadiotherapySupplyStagingByRegion: Record<AuRegionCode, number>;
+  portAutonomousTugBerthingLogisticsShare: number;
+  nationalPortAutonomousTugBerthingLogisticsThroughputIndex: number;
+  portAutonomousTugBerthingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -907,6 +921,9 @@ export interface TransportInfrastructureOptions {
   recycledSteelExportPolicy?: RecycledSteelExportPolicy;
   remotePathologySupplyStagingPolicy?: RemotePathologySupplyStagingPolicy;
   airportDroneCargoLogisticsPolicy?: AirportDroneCargoLogisticsPolicy;
+  eWasteCriticalMineralsRecoveryExportPolicy?: EWasteCriticalMineralsRecoveryExportPolicy;
+  regionalOncologyRadiotherapySupplyStagingPolicy?: RegionalOncologyRadiotherapySupplyStagingPolicy;
+  portAutonomousTugBerthingLogisticsPolicy?: PortAutonomousTugBerthingLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -2898,6 +2915,48 @@ export const TRANSPORT_CORRIDORS_ROUND46: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round47.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND47: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_qld_nsw_e_waste',
+    name: 'QLD–NSW E-Waste Critical Minerals',
+    networkKind: 'trade',
+    regionSequence: ['QLD', 'NSW'],
+    requiredTagsByRegion: {
+      QLD: ['e_waste_critical_minerals', 'urban_mining_export', 'circular_electronics_logistics'],
+      NSW: ['e_waste_critical_minerals', 'urban_mining_export', 'circular_electronics_logistics'],
+    },
+    productivitySynergyPoints: 7.1,
+    logisticsRelief: 0.042,
+  },
+  {
+    id: 'corr_wa_sa_regional_oncology',
+    name: 'WA–SA Regional Oncology',
+    networkKind: 'mobility',
+    regionSequence: ['WA', 'SA'],
+    requiredTagsByRegion: {
+      WA: ['regional_oncology_supply', 'radiotherapy_staging', 'cancer_care_logistics'],
+      SA: ['regional_oncology_supply', 'radiotherapy_staging', 'cancer_care_logistics'],
+    },
+    productivitySynergyPoints: 6.9,
+    logisticsRelief: 0.036,
+  },
+  {
+    id: 'corr_vic_tas_autonomous_tug',
+    name: 'VIC–TAS Autonomous Tug',
+    networkKind: 'freight',
+    regionSequence: ['VIC', 'TAS'],
+    requiredTagsByRegion: {
+      VIC: ['port_autonomous_tug', 'smart_berthing_tug', 'harbour_robotics_logistics'],
+      TAS: ['port_autonomous_tug', 'smart_berthing_tug', 'harbour_robotics_logistics'],
+    },
+    productivitySynergyPoints: 6.8,
+    logisticsRelief: 0.039,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -3091,6 +3150,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND44,
   ...TRANSPORT_CORRIDORS_ROUND45,
   ...TRANSPORT_CORRIDORS_ROUND46,
+  ...TRANSPORT_CORRIDORS_ROUND47,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -5699,6 +5759,62 @@ export const TRANSPORT_SCENARIOS_ROUND46: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round47.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND47: TransportStressScenario[] = [
+  {
+    id: 'scn_qld_e_waste_export_surge',
+    label: 'Queensland E-Waste Export Surge',
+    description: 'Urban mining restart overloads Brisbane berths.',
+    targetRegions: ['QLD', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_nsw_electronics_feed_delay',
+    label: 'NSW Electronics Feed Delay',
+    description: 'Heat slows Silverwater circular electronics feed.',
+    targetRegions: ['NSW', 'QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail', 'road'],
+  },
+  {
+    id: 'scn_wa_oncology_resupply',
+    label: 'WA Oncology Resupply',
+    description: 'Demand surge strains Fremantle radiotherapy hub.',
+    targetRegions: ['WA', 'SA'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.3,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_vic_autonomous_tug_peak',
+    label: 'VIC Autonomous Tug Peak',
+    description: 'Container peak loads Melbourne tug terminal.',
+    targetRegions: ['VIC', 'TAS'],
+    networkKind: 'freight',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_tas_harbour_robotics_backlog',
+    label: 'TAS Harbour Robotics Backlog',
+    description: 'Weather hold delays Hobart tug depot.',
+    targetRegions: ['TAS', 'VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics', 'rail'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -5906,6 +6022,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND44,
   ...TRANSPORT_SCENARIOS_ROUND45,
   ...TRANSPORT_SCENARIOS_ROUND46,
+  ...TRANSPORT_SCENARIOS_ROUND47,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -17126,6 +17243,265 @@ export const SCALE_WAVE_ROUND46_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round47-assets.ts ---
+
+export const ROUND47_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_qld_brisbane_e_waste_haul',
+    category: 'road',
+    name: 'Brisbane E-Waste Haul',
+    description: 'QLD urban mining export staging road.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['e_waste_critical_minerals', 'urban_mining_export', 'circular_electronics_logistics'],
+    laneKilometres: 27,
+    designSpeedKmh: 87,
+    freightShare: 0.31,
+    urbanShare: 0.14,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_newcastle_e_waste_feed',
+    category: 'road',
+    name: 'Newcastle E-Waste Feed',
+    description: 'NSW circular electronics logistics connector.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade'],
+    tags: ['e_waste_critical_minerals', 'urban_mining_export', 'circular_electronics_logistics'],
+    laneKilometres: 25,
+    designSpeedKmh: 85,
+    freightShare: 0.29,
+    urbanShare: 0.13,
+    tollRoad: false,
+  },
+  {
+    id: 'road_wa_geraldton_oncology_access',
+    category: 'road',
+    name: 'Geraldton Oncology Access',
+    description: 'WA radiotherapy staging road.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['mobility'],
+    tags: ['regional_oncology_supply', 'radiotherapy_staging', 'cancer_care_logistics'],
+    laneKilometres: 21,
+    designSpeedKmh: 76,
+    freightShare: 0.07,
+    urbanShare: 0.17,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_port_lincoln_oncology_staging',
+    category: 'road',
+    name: 'Port Lincoln Oncology Staging',
+    description: 'SA cancer care logistics connector.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['regional_oncology_supply', 'radiotherapy_staging', 'cancer_care_logistics'],
+    laneKilometres: 19,
+    designSpeedKmh: 74,
+    freightShare: 0.06,
+    urbanShare: 0.16,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_geelong_autonomous_tug_feed',
+    category: 'road',
+    name: 'Geelong Autonomous Tug Feed',
+    description: 'VIC harbour robotics logistics road.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'TAS'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_autonomous_tug', 'smart_berthing_tug', 'harbour_robotics_logistics'],
+    laneKilometres: 22,
+    designSpeedKmh: 82,
+    freightShare: 0.28,
+    urbanShare: 0.1,
+    tollRoad: false,
+  },
+  {
+    id: 'road_tas_burnie_tug_staging',
+    category: 'road',
+    name: 'Burnie Tug Staging',
+    description: 'TAS smart berthing tug connector.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['trade'],
+    tags: ['port_autonomous_tug', 'smart_berthing_tug', 'harbour_robotics_logistics'],
+    laneKilometres: 17,
+    designSpeedKmh: 78,
+    freightShare: 0.26,
+    urbanShare: 0.11,
+    tollRoad: false,
+  },
+];
+
+export const ROUND47_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_qld_south_e_waste_rail',
+    category: 'rail',
+    name: 'South Queensland E-Waste Rail',
+    description: 'QLD urban mining export feed.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 6.0,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['e_waste_critical_minerals', 'urban_mining_export', 'circular_electronics_logistics'],
+    trackKilometres: 38,
+    dualTrackShare: 0.45,
+    electrifiedShare: 0.43,
+    designFreightTonnesPerYear: 3_700_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_wa_midwest_oncology_rail',
+    category: 'rail',
+    name: 'Midwest Oncology Rail',
+    description: 'WA radiotherapy supply rail feed.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.7,
+    strategicNetworks: ['mobility'],
+    tags: ['regional_oncology_supply', 'radiotherapy_staging', 'cancer_care_logistics'],
+    trackKilometres: 32,
+    dualTrackShare: 0.42,
+    electrifiedShare: 0.38,
+    designFreightTonnesPerYear: 1_600_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_vic_port_phillip_tug_rail',
+    category: 'rail',
+    name: 'Port Phillip Tug Rail',
+    description: 'VIC autonomous tug logistics feed.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'TAS'],
+    baseProductivityPoints: 5.8,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['port_autonomous_tug', 'smart_berthing_tug', 'harbour_robotics_logistics'],
+    trackKilometres: 24,
+    dualTrackShare: 0.52,
+    electrifiedShare: 0.55,
+    designFreightTonnesPerYear: 2_100_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND47_PORTS: PortAsset[] = [
+  {
+    id: 'port_qld_brisbane_e_waste_export',
+    category: 'port',
+    name: 'Brisbane E-Waste Export',
+    description: 'Queensland circular electronics export port.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 6.3,
+    strategicNetworks: ['trade'],
+    tags: ['e_waste_critical_minerals', 'urban_mining_export', 'circular_electronics_logistics'],
+    berthCount: 3,
+    maxDraftMetres: 12.5,
+    teuCapacityPerYear: 96_000,
+    automationLevel: 2,
+    bulkShare: 0.38,
+  },
+  {
+    id: 'port_wa_fremantle_oncology_hub',
+    category: 'port',
+    name: 'Fremantle Oncology Hub',
+    description: 'WA regional oncology logistics port.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.9,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['regional_oncology_supply', 'radiotherapy_staging', 'cancer_care_logistics'],
+    berthCount: 2,
+    maxDraftMetres: 11.8,
+    teuCapacityPerYear: 118_000,
+    automationLevel: 1,
+    bulkShare: 0.09,
+  },
+  {
+    id: 'port_vic_melbourne_autonomous_tug_terminal',
+    category: 'port',
+    name: 'Melbourne Autonomous Tug Terminal',
+    description: 'VIC smart berthing tug staging.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'TAS'],
+    baseProductivityPoints: 6.1,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_autonomous_tug', 'smart_berthing_tug', 'harbour_robotics_logistics'],
+    berthCount: 4,
+    maxDraftMetres: 13.1,
+    teuCapacityPerYear: 192_000,
+    automationLevel: 3,
+    bulkShare: 0.05,
+  },
+];
+
+export const ROUND47_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_nsw_silverwater_e_waste_stores',
+    category: 'logistics',
+    name: 'Silverwater E-Waste Stores',
+    description: 'NSW urban mining consolidation yard.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['trade'],
+    tags: ['e_waste_critical_minerals', 'urban_mining_export', 'circular_electronics_logistics'],
+    warehouseSqm: 49_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'port', 'rail'],
+    lastMileCoveragePct: 43,
+  },
+  {
+    id: 'log_sa_adelaide_oncology_stores',
+    category: 'logistics',
+    name: 'Adelaide Oncology Stores',
+    description: 'SA radiotherapy supply consolidation yard.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['mobility'],
+    tags: ['regional_oncology_supply', 'radiotherapy_staging', 'cancer_care_logistics'],
+    warehouseSqm: 30_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 46,
+  },
+  {
+    id: 'log_tas_hobart_tug_depot',
+    category: 'logistics',
+    name: 'Hobart Tug Depot',
+    description: 'TAS harbour robotics logistics depot.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_autonomous_tug', 'smart_berthing_tug', 'harbour_robotics_logistics'],
+    warehouseSqm: 36_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 52,
+  },
+];
+
+export const SCALE_WAVE_ROUND47_ASSETS = [
+  ...ROUND47_ROADS,
+  ...ROUND47_RAIL,
+  ...ROUND47_PORTS,
+  ...ROUND47_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -17180,6 +17556,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND44_ASSETS,
     ...SCALE_WAVE_ROUND45_ASSETS,
     ...SCALE_WAVE_ROUND46_ASSETS,
+    ...SCALE_WAVE_ROUND47_ASSETS,
   ];
 }
 
@@ -19811,6 +20188,67 @@ export function nationalRecycledSteelExportIndex(byRegion: Record<AuRegionCode, 
 export function recycledSteelExportProductivityMultiplier(
   index: number,
   policy: RecycledSteelExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.03 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.033 + policyBoost, 0.93, 1.09);
+}
+
+
+// --- source: network/e-waste-critical-minerals-recovery-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type EWasteCriticalMineralsRecoveryExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 e-waste critical minerals recovery export throughput by region. */
+export function computeEWasteCriticalMineralsRecoveryExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) =>
+        t === 'e_waste_critical_minerals' ||
+        t === 'urban_mining_export' ||
+        t === 'circular_electronics_logistics',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.88 + asset.maxDraftMetres * 0.33;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 64_000 + asset.intermodalLinks.length * 0.59;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 428;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 8_100_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalEWasteCriticalMineralsRecoveryExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.47 + max * 0.53, 5, 72) * 10) / 10;
+}
+
+export function eWasteCriticalMineralsRecoveryExportProductivityMultiplier(
+  index: number,
+  policy: EWasteCriticalMineralsRecoveryExportPolicy = 'baseline',
 ): number {
   const policyBoost = policy === 'accelerate' ? 0.03 : 0;
   const normalized = (index - 5) / 100;
@@ -23315,6 +23753,96 @@ export function computeRemotePathologySupplyStagingShare(
 export function remotePathologySupplyStagingProductivityMultiplier(
   share: number,
   policy: RemotePathologySupplyStagingPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.011 : 1;
+  return (1 + (share - 0.04) * 0.016) * bias;
+}
+
+
+// --- source: operations/regional-oncology-radiotherapy-supply-staging-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RegionalOncologyRadiotherapySupplyStagingPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 regional oncology radiotherapy supply staging readiness by region. */
+export function computeRegionalOncologyRadiotherapySupplyStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'regional_oncology_supply' ||
+          t === 'radiotherapy_staging' ||
+          t === 'cancer_care_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 56_000 + (asset.coldChainCapable ? 1.32 : 0.73);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 398;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.84;
+    }
+    if (asset.category === 'rail' && 'passengerCapable' in asset && asset.passengerCapable) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 232;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.023 - stress * 0.016), 5, 74) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRegionalOncologyRadiotherapySupplyStagingIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 6, 72) * 10) / 10;
+}
+
+export function computeRegionalOncologyRadiotherapySupplyStagingShare(
+  operationalAssets: TransportAsset[],
+  policy: RegionalOncologyRadiotherapySupplyStagingPolicy = 'baseline',
+): number {
+  let oncologyUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('regional_oncology_supply') || asset.tags.includes('cancer_care_logistics')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 51_000;
+        oncologyUnits += (asset.warehouseSqm / 51_000) * 0.51;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 362;
+        oncologyUnits += (asset.laneKilometres / 362) * 0.43;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.03;
+  const policyBoost = policy === 'surge' ? 0.019 : 0;
+  return Math.round(clamp(oncologyUnits / totalUnits + policyBoost, 0.029, 0.18) * 1000) / 1000;
+}
+
+export function regionalOncologyRadiotherapySupplyStagingProductivityMultiplier(
+  share: number,
+  policy: RegionalOncologyRadiotherapySupplyStagingPolicy,
 ): number {
   const bias = policy === 'surge' ? 1.011 : 1;
   return (1 + (share - 0.04) * 0.016) * bias;
@@ -27089,6 +27617,102 @@ export function nationalAirportDroneCargoLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/port-autonomous-tug-berthing-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type PortAutonomousTugBerthingLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of port logistics supporting autonomous tug berthing. */
+export function computePortAutonomousTugBerthingLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: PortAutonomousTugBerthingLogisticsPolicy = 'baseline',
+): number {
+  let tugUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) =>
+          t === 'port_autonomous_tug' ||
+          t === 'smart_berthing_tug' ||
+          t === 'harbour_robotics_logistics',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 0.93 + asset.teuCapacityPerYear / 415_000;
+        tugUnits += (asset.berthCount * 0.93) * 0.51;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 48_000;
+        tugUnits += (asset.warehouseSqm / 48_000) * 0.48;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 335;
+        tugUnits += (asset.laneKilometres / 335) * 0.4;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.033;
+  const policyBoost = policy === 'expand' ? 0.021 : 0;
+  return Math.round(clamp(tugUnits / totalUnits + policyBoost, 0.032, 0.19) * 1000) / 1000;
+}
+
+export function portAutonomousTugBerthingLogisticsProductivityMultiplier(
+  share: number,
+  policy: PortAutonomousTugBerthingLogisticsPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.013 : 1;
+  return (1 + (share - 0.05) * 0.017) * bias;
+}
+
+export function computePortAutonomousTugBerthingLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'port_autonomous_tug' ||
+          t === 'smart_berthing_tug' ||
+          t === 'harbour_robotics_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 44_000 + asset.lastMileCoveragePct / 94;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 342;
+    }
+    if (asset.category === 'rail' && 'trackKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 205;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalPortAutonomousTugBerthingLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.51 + max * 0.49, 2, 47) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -27858,6 +28482,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   computeAirportDroneCargoLogisticsThroughputByRegion,
   nationalAirportDroneCargoLogisticsThroughputIndex,
 } from './airport-drone-cargo-logistics-index.ts';
+  computeEWasteCriticalMineralsRecoveryExportByRegion,
+  eWasteCriticalMineralsRecoveryExportProductivityMultiplier,
+  nationalEWasteCriticalMineralsRecoveryExportIndex,
+} from '../network/e-waste-critical-minerals-recovery-export-index.ts';
+  computeRegionalOncologyRadiotherapySupplyStagingByRegion,
+  computeRegionalOncologyRadiotherapySupplyStagingShare,
+  nationalRegionalOncologyRadiotherapySupplyStagingIndex,
+  regionalOncologyRadiotherapySupplyStagingProductivityMultiplier,
+} from '../operations/regional-oncology-radiotherapy-supply-staging-index.ts';
+  computePortAutonomousTugBerthingLogisticsShare,
+  computePortAutonomousTugBerthingLogisticsThroughputByRegion,
+  nationalPortAutonomousTugBerthingLogisticsThroughputIndex,
+  portAutonomousTugBerthingLogisticsProductivityMultiplier,
+} from './port-autonomous-tug-berthing-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -29361,6 +29999,42 @@ export function computeTransportInfrastructureState(
     airportDroneCargoLogisticsShare,
     options?.airportDroneCargoLogisticsPolicy ?? 'baseline',
   );
+  const eWasteCriticalMineralsRecoveryExportByRegion =
+    computeEWasteCriticalMineralsRecoveryExportByRegion(ops);
+  const nationalEWaste = nationalEWasteCriticalMineralsRecoveryExportIndex(
+    eWasteCriticalMineralsRecoveryExportByRegion,
+  );
+  const eWasteMult = eWasteCriticalMineralsRecoveryExportProductivityMultiplier(
+    nationalEWaste,
+    options?.eWasteCriticalMineralsRecoveryExportPolicy ?? 'baseline',
+  );
+  const regionalOncologyRadiotherapySupplyStagingByRegion =
+    computeRegionalOncologyRadiotherapySupplyStagingByRegion(ops, networkStress);
+  const nationalOncology = nationalRegionalOncologyRadiotherapySupplyStagingIndex(
+    regionalOncologyRadiotherapySupplyStagingByRegion,
+  );
+  const regionalOncologyRadiotherapySupplyStagingShare =
+    computeRegionalOncologyRadiotherapySupplyStagingShare(
+      ops,
+      options?.regionalOncologyRadiotherapySupplyStagingPolicy ?? 'baseline',
+    );
+  const oncologyMult = regionalOncologyRadiotherapySupplyStagingProductivityMultiplier(
+    regionalOncologyRadiotherapySupplyStagingShare,
+    options?.regionalOncologyRadiotherapySupplyStagingPolicy ?? 'baseline',
+  );
+  const portAutonomousTugBerthingLogisticsThroughputByRegion =
+    computePortAutonomousTugBerthingLogisticsThroughputByRegion(ops);
+  const nationalAutonomousTug = nationalPortAutonomousTugBerthingLogisticsThroughputIndex(
+    portAutonomousTugBerthingLogisticsThroughputByRegion,
+  );
+  const portAutonomousTugBerthingLogisticsShare = computePortAutonomousTugBerthingLogisticsShare(
+    ops,
+    options?.portAutonomousTugBerthingLogisticsPolicy ?? 'baseline',
+  );
+  const autonomousTugMult = portAutonomousTugBerthingLogisticsProductivityMultiplier(
+    portAutonomousTugBerthingLogisticsShare,
+    options?.portAutonomousTugBerthingLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -29456,6 +30130,9 @@ export function computeTransportInfrastructureState(
     const recycledSteelBoost = (recycledSteelExportByRegion[code] - 5) * 0.0022;
     const pathologyBoost = (remotePathologySupplyStagingByRegion[code] - 6) * 0.0018;
     const droneCargoBoost = (airportDroneCargoLogisticsThroughputByRegion[code] - 2) * 0.0014;
+    const eWasteBoost = (eWasteCriticalMineralsRecoveryExportByRegion[code] - 5) * 0.0021;
+    const oncologyBoost = (regionalOncologyRadiotherapySupplyStagingByRegion[code] - 6) * 0.0017;
+    const autonomousTugBoost = (portAutonomousTugBerthingLogisticsThroughputByRegion[code] - 2) * 0.0013;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -29550,7 +30227,10 @@ export function computeTransportInfrastructureState(
         batterySwapBoost +
         recycledSteelBoost +
         pathologyBoost +
-        droneCargoBoost) *
+        droneCargoBoost +
+        eWasteBoost +
+        oncologyBoost +
+        autonomousTugBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -29643,7 +30323,10 @@ export function computeTransportInfrastructureState(
       batterySwapMult *
       recycledSteelMult *
       pathologyMult *
-      droneCargoMult;
+      droneCargoMult *
+      eWasteMult *
+      oncologyMult *
+      autonomousTugMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -29759,7 +30442,10 @@ export function computeTransportInfrastructureState(
     nationalBatterySwap * 0.003 +
     nationalRecycledSteel * 0.003 +
     nationalPathology * 0.003 +
-    nationalDroneCargo * 0.003;
+    nationalDroneCargo * 0.003 +
+    nationalEWaste * 0.003 +
+    nationalOncology * 0.003 +
+    nationalAutonomousTug * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -29774,7 +30460,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/47',
+    schemaVersion: 'agent12/48',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -30116,6 +30802,14 @@ export function computeTransportInfrastructureState(
     airportDroneCargoLogisticsShare,
     nationalAirportDroneCargoLogisticsThroughputIndex: nationalDroneCargo,
     airportDroneCargoLogisticsThroughputByRegion,
+    nationalEWasteCriticalMineralsRecoveryExportIndex: nationalEWaste,
+    eWasteCriticalMineralsRecoveryExportByRegion,
+    regionalOncologyRadiotherapySupplyStagingShare,
+    nationalRegionalOncologyRadiotherapySupplyStagingIndex: nationalOncology,
+    regionalOncologyRadiotherapySupplyStagingByRegion,
+    portAutonomousTugBerthingLogisticsShare,
+    nationalPortAutonomousTugBerthingLogisticsThroughputIndex: nationalAutonomousTug,
+    portAutonomousTugBerthingLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -30198,7 +30892,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/47' &&
+      infra.schemaVersion === 'agent12/48' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -30359,8 +31053,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalRecycledSteelExportIndex >= 5 &&
       infra.nationalRemotePathologySupplyStagingIndex >= 6 &&
       infra.airportDroneCargoLogisticsShare >= 0.03 &&
-      infra.nationalAirportDroneCargoLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} steel=${infra.nationalRecycledSteelExportIndex.toFixed(1)} pathology=${infra.nationalRemotePathologySupplyStagingIndex.toFixed(1)} drone=${infra.nationalAirportDroneCargoLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalAirportDroneCargoLogisticsThroughputIndex >= 2 &&
+      infra.nationalEWasteCriticalMineralsRecoveryExportIndex >= 5 &&
+      infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex >= 6 &&
+      infra.portAutonomousTugBerthingLogisticsShare >= 0.03 &&
+      infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} eWaste=${infra.nationalEWasteCriticalMineralsRecoveryExportIndex.toFixed(1)} oncology=${infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex.toFixed(1)} tug=${infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;
