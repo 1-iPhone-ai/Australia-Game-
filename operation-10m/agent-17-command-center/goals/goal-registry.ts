@@ -611,6 +611,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Loose compact or shattered unity yields sovereignAccordBlocksCompact.',
     severity: 'major',
   },
+  {
+    id: 'G17-088',
+    title: 'Crown index on planning depth',
+    category: 'telemetry',
+    acceptance: 'crownIndex reports crownScore 0–100 with invested/pending/uncrowned band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-089',
+    title: 'Imperial accord edicts complete',
+    category: 'telemetry',
+    acceptance: 'imperialAccord exposes ≥5 edicts and imperialScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-090',
+    title: 'Uncrowned crown dissolves imperial accord',
+    category: 'integration',
+    acceptance: 'Uncrowned crown or abdicated sovereign yields imperialAccordBlocksCrown.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

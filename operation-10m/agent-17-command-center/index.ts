@@ -55,6 +55,8 @@ export * from './planning/pact-index.ts';
 export * from './planning/unity-accord.ts';
 export * from './planning/compact-index.ts';
 export * from './planning/sovereign-accord.ts';
+export * from './planning/crown-index.ts';
+export * from './planning/imperial-accord.ts';
 export * from './planning/planning-orchestrator.ts';
 export * from './planning/ops-state.ts';
 export * from './evaluation/operations-evaluator.ts';
@@ -86,6 +88,7 @@ export * from './harness/run-command-depth-tests.ts';
 export * from './harness/run-alliance-depth-tests.ts';
 export * from './harness/run-pact-depth-tests.ts';
 export * from './harness/run-compact-depth-tests.ts';
+export * from './harness/run-crown-depth-tests.ts';
 
 export const AGENT17_MODULE_ROOT = 'operation-10m/agent-17-command-center';
 export const AGENT17_ASSEMBLY_ANCHOR = '// SECTION 15: AI COMMAND CENTER';

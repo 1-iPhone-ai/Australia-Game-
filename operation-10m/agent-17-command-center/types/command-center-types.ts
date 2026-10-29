@@ -225,6 +225,8 @@ export interface Agent17PlanningDepthSnapshot {
   unityAccord: Agent17UnityAccordSnapshot;
   compactIndex: Agent17CompactIndexSnapshot;
   sovereignAccord: Agent17SovereignAccordSnapshot;
+  crownIndex: Agent17CrownIndexSnapshot;
+  imperialAccord: Agent17ImperialAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -931,6 +933,40 @@ export interface Agent17SovereignAccordSnapshot {
   compactBand: Agent17CompactIndexSnapshot['band'];
   commandBand: Agent17CommandIndexSnapshot['band'];
   sovereigntyCrowned: boolean;
+  headline: string;
+}
+
+export interface Agent17CrownJewel {
+  id: string;
+  label: string;
+  set: boolean;
+  weight: number;
+}
+
+export interface Agent17CrownIndexSnapshot {
+  crownScore: number;
+  band: 'invested' | 'pending' | 'uncrowned';
+  jewels: Agent17CrownJewel[];
+  sovereignBand: Agent17SovereignAccordSnapshot['band'];
+  allianceBand: Agent17AllianceIndexSnapshot['band'];
+  crownInvested: boolean;
+  headline: string;
+}
+
+export interface Agent17ImperialEdict {
+  id: string;
+  label: string;
+  proclaimed: boolean;
+  weight: number;
+}
+
+export interface Agent17ImperialAccordSnapshot {
+  imperialScore: number;
+  band: 'empire' | 'domain' | 'dissolved';
+  edicts: Agent17ImperialEdict[];
+  crownBand: Agent17CrownIndexSnapshot['band'];
+  compactBand: Agent17CompactIndexSnapshot['band'];
+  empireProclaimed: boolean;
   headline: string;
 }
 
