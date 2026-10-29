@@ -761,6 +761,23 @@ export type {
   TransitionSettlementBand,
 } from './production-transition-settlement';
 
+export {
+  AGENT08_TRANSITION_RETIREMENT_SCHEMA_VERSION,
+  buildFirmProductionTransitionRetirement,
+  classifyNationalRetirementBand,
+  computeNationalRetirementPressure,
+  computeNationalProductionTransitionRetirement,
+  summarizeRegionalTransitionRetirement,
+  runAgent08TransitionRetirementSelfTests,
+} from './production-transition-retirement';
+
+export type {
+  FirmProductionTransitionRetirement,
+  NationalProductionTransitionRetirement,
+  RegionalTransitionRetirementSummary,
+  TransitionRetirementBand,
+} from './production-transition-retirement';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -806,6 +823,7 @@ import { runAgent08TransitionClosureSelfTests } from './production-transition-cl
 import { runAgent08TransitionCompletionSelfTests } from './production-transition-completion';
 import { runAgent08TransitionResolutionSelfTests } from './production-transition-resolution';
 import { runAgent08TransitionSettlementSelfTests } from './production-transition-settlement';
+import { runAgent08TransitionRetirementSelfTests } from './production-transition-retirement';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -1035,6 +1053,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionRetirement = runAgent08TransitionRetirementSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -1081,5 +1104,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionCompletion,
     ...transitionResolution,
     ...transitionSettlement,
+    ...transitionRetirement,
   ];
 }
