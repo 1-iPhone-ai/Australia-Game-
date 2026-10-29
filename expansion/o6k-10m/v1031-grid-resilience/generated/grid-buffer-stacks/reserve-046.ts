@@ -1,0 +1,31 @@
+import type { V1031GresGridBufferEdge } from '../../types/core.ts';
+
+/** Grid buffer graph shard 046 (extreme_heat/drought/dust corridor coupling). */
+export const V1031_GRES_GRID_BUFFER_SHARD_046: readonly V1031GresGridBufferEdge[] = [
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.542, lagTurns: 3, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.548, lagTurns: 4, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.554, lagTurns: 5, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.56, lagTurns: 6, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.566, lagTurns: 3, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.572, lagTurns: 4, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.578, lagTurns: 5, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.584, lagTurns: 6, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.59, lagTurns: 3, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.596, lagTurns: 4, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.602, lagTurns: 5, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.608, lagTurns: 6, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.614, lagTurns: 3, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.62, lagTurns: 4, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.524, lagTurns: 5, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.53, lagTurns: 6, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.536, lagTurns: 3, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.542, lagTurns: 4, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.548, lagTurns: 5, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.554, lagTurns: 6, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.56, lagTurns: 3, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.566, lagTurns: 4, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.572, lagTurns: 5, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.578, lagTurns: 6, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.584, lagTurns: 3, nodeId: 'substation_zone_22' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.59, lagTurns: 4, nodeId: 'substation_zone_22' },
+];

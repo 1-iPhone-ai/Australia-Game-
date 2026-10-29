@@ -1,0 +1,31 @@
+import type { V1031GresGridBufferEdge } from '../../types/core.ts';
+
+/** Grid buffer graph shard 082 (extreme_heat/drought/dust corridor coupling). */
+export const V1031_GRES_GRID_BUFFER_SHARD_082: readonly V1031GresGridBufferEdge[] = [
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.66, lagTurns: 3, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.666, lagTurns: 4, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.672, lagTurns: 5, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.678, lagTurns: 6, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.684, lagTurns: 3, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.588, lagTurns: 4, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.594, lagTurns: 5, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.6, lagTurns: 6, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.606, lagTurns: 3, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.612, lagTurns: 4, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.618, lagTurns: 5, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.624, lagTurns: 6, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.63, lagTurns: 3, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.636, lagTurns: 4, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.642, lagTurns: 5, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.648, lagTurns: 6, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.654, lagTurns: 3, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.66, lagTurns: 4, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.666, lagTurns: 5, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.672, lagTurns: 6, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.678, lagTurns: 3, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.684, lagTurns: 4, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.588, lagTurns: 5, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.594, lagTurns: 6, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.6, lagTurns: 3, nodeId: 'substation_zone_10' },
+  { fromChannel: 'substation_zone', toChannel: 'specialist_referral', weight: 0.606, lagTurns: 4, nodeId: 'substation_zone_10' },
+];

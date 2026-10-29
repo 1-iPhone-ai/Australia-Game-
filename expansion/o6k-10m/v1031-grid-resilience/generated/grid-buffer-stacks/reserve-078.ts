@@ -1,0 +1,31 @@
+import type { V1031GresGridBufferEdge } from '../../types/core.ts';
+
+/** Grid buffer graph shard 078 (extreme_heat/drought/dust corridor coupling). */
+export const V1031_GRES_GRID_BUFFER_SHARD_078: readonly V1031GresGridBufferEdge[] = [
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.526, lagTurns: 8, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.532, lagTurns: 9, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.538, lagTurns: 10, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.544, lagTurns: 11, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.55, lagTurns: 8, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.556, lagTurns: 9, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.46, lagTurns: 10, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.466, lagTurns: 11, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.472, lagTurns: 8, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.478, lagTurns: 9, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.484, lagTurns: 10, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.49, lagTurns: 11, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.496, lagTurns: 8, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.502, lagTurns: 9, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.508, lagTurns: 10, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.514, lagTurns: 11, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.52, lagTurns: 8, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.526, lagTurns: 9, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.532, lagTurns: 10, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.538, lagTurns: 11, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.544, lagTurns: 8, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.55, lagTurns: 9, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.556, lagTurns: 10, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.46, lagTurns: 11, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.466, lagTurns: 8, nodeId: 'substation_zone_06' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.472, lagTurns: 9, nodeId: 'substation_zone_06' },
+];
