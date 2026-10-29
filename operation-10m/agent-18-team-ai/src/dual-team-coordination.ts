@@ -125,6 +125,9 @@ import { combineDualTeamFusionStackResonance } from './fusion-stack-resonance-in
 import { combineDualTeamConvergenceStackSynthesis } from './convergence-stack-synthesis-index.ts';
 import { combineDualTeamStackSynthesisPressure } from './stack-synthesis-pressure-index.ts';
 import { combineDualTeamFusionResonanceStack } from './fusion-resonance-stack-index.ts';
+import { combineDualTeamSynthesisPressureConvergence } from './synthesis-pressure-convergence-index.ts';
+import { combineDualTeamPressureFusionStack } from './pressure-fusion-stack-index.ts';
+import { combineDualTeamResonanceSynthesisFusion } from './resonance-synthesis-fusion-index.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -267,6 +270,9 @@ export interface DualTeamMultiAgentResult {
   convergenceStackSynthesisCombined: number;
   stackSynthesisPressureCombined: number;
   fusionResonanceStackCombined: number;
+  synthesisPressureConvergenceCombined: number;
+  pressureFusionStackCombined: number;
+  resonanceSynthesisFusionCombined: number;
 }
 
 /**
@@ -425,6 +431,9 @@ export function evaluateDualTeamMultiAgentLayers(
       convergenceStackSynthesisCombined: friendly.state.meta.convergenceStackSynthesisIndex ?? 0,
       stackSynthesisPressureCombined: friendly.state.meta.stackSynthesisPressureIndex ?? 0,
       fusionResonanceStackCombined: friendly.state.meta.fusionResonanceStackIndex ?? 0,
+      synthesisPressureConvergenceCombined: friendly.state.meta.synthesisPressureConvergenceIndex ?? 0,
+      pressureFusionStackCombined: friendly.state.meta.pressureFusionStackIndex ?? 0,
+      resonanceSynthesisFusionCombined: friendly.state.meta.resonanceSynthesisFusionIndex ?? 0,
     };
   }
 
@@ -1008,6 +1017,18 @@ export function evaluateDualTeamMultiAgentLayers(
     fusionResonanceStackCombined: combineDualTeamFusionResonanceStack(
       friendly.state.meta.fusionResonanceStackIndex ?? 0,
       enemy.state.meta.fusionResonanceStackIndex ?? 0,
+    ),
+    synthesisPressureConvergenceCombined: combineDualTeamSynthesisPressureConvergence(
+      friendly.state.meta.synthesisPressureConvergenceIndex ?? 0,
+      enemy.state.meta.synthesisPressureConvergenceIndex ?? 0,
+    ),
+    pressureFusionStackCombined: combineDualTeamPressureFusionStack(
+      friendly.state.meta.pressureFusionStackIndex ?? 0,
+      enemy.state.meta.pressureFusionStackIndex ?? 0,
+    ),
+    resonanceSynthesisFusionCombined: combineDualTeamResonanceSynthesisFusion(
+      friendly.state.meta.resonanceSynthesisFusionIndex ?? 0,
+      enemy.state.meta.resonanceSynthesisFusionIndex ?? 0,
     ),
   };
 }
