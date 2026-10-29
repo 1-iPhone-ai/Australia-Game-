@@ -42,6 +42,12 @@ const FILES = [
   'federal-state/types.ts',
   'federal-state/catalog/state-profiles.ts',
   'federal-state/reconcile.ts',
+  'tax-expenditure/types.ts',
+  'tax-expenditure/catalog/measures.ts',
+  'tax-expenditure/compute.ts',
+  'medium-term-outlook/types.ts',
+  'medium-term-outlook/compute.ts',
+  'consolidated-fiscal/compute.ts',
   'reconciliation/reconcile.ts',
   'fiscal-outcomes/react/FiscalOutcomesInspector.tsx',
   'fiscal-outcomes/self-tests.ts',
@@ -50,7 +56,10 @@ const FILES = [
   'fiscal-resilience/self-tests.ts',
   'debt-rollover/self-tests.ts',
   'budget-lines/self-tests.ts',
-  'federal-state/self-tests.ts'
+  'federal-state/self-tests.ts',
+  'tax-expenditure/self-tests.ts',
+  'medium-term-outlook/self-tests.ts',
+  'consolidated-fiscal/self-tests.ts'
 ];
 
 function stripModulePreamble(source) {

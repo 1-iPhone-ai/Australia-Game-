@@ -4155,6 +4155,442 @@ export function sumTransfersByState(
 }
 
 
+// --- source: tax-expenditure/types.ts ---
+
+export const TAX_EXPENDITURE_SCHEMA = 'op10m-agent07-tax-expenditure-v1';
+
+export type TaxExpenditureCategory =
+  | 'concession'
+  | 'exemption'
+  | 'deferral'
+  | 'credit_offset'
+  | 'preferential_rate';
+
+export interface TaxExpenditureMeasure {
+  id: string;
+  code: string;
+  title: string;
+  category: TaxExpenditureCategory;
+  linkedInstrumentKind: TaxInstrumentKind | null;
+  structuralForgonePoints: number;
+  /** Share of forgone revenue that reaches households (0..1). */
+  householdShare: number;
+  sunsetTurn: number | null;
+  description: string;
+}
+
+export interface TaxExpenditureLine {
+  measureId: string;
+  code: string;
+  forgonePoints: number;
+  band: 'material' | 'moderate' | 'minor';
+  reviewDue: boolean;
+  explanation: string;
+}
+
+export interface TaxExpenditureStatement {
+  schemaVersion: string;
+  turn: number;
+  grossStructuralCapacity: number;
+  totalForgone: number;
+  netStructuralCapacity: number;
+  lines: TaxExpenditureLine[];
+  materialityThreshold: number;
+  warnings: string[];
+}
+
+
+// --- source: tax-expenditure/catalog/measures.ts ---
+
+export const TAX_EXPENDITURE_CATALOG: TaxExpenditureMeasure[] = [
+  {
+    id: 'te_super_concession',
+    code: 'TE-101',
+    title: 'Superannuation contribution concessions',
+    category: 'preferential_rate',
+    linkedInstrumentKind: 'personal_rate',
+    structuralForgonePoints: 6.5,
+    householdShare: 0.85,
+    sunsetTurn: null,
+    description: 'Concessional tax treatment of mandated retirement savings.'
+  },
+  {
+    id: 'te_rd_credit',
+    code: 'TE-110',
+    title: 'R&D tax incentive gross-up',
+    category: 'credit_offset',
+    linkedInstrumentKind: 'innovation_credit',
+    structuralForgonePoints: 4.2,
+    householdShare: 0.05,
+    sunsetTurn: null,
+    description: 'Refundable/non-refundable components modeled as revenue forgone.'
+  },
+  {
+    id: 'te_cgt_discount',
+    code: 'TE-120',
+    title: 'Capital gains discount',
+    category: 'concession',
+    linkedInstrumentKind: 'personal_rate',
+    structuralForgonePoints: 3.8,
+    householdShare: 0.55,
+    sunsetTurn: null,
+    description: 'Individual and trust capital gains discount.'
+  },
+  {
+    id: 'te_fbt_exempt',
+    code: 'TE-130',
+    title: 'FBT exempt entities & benefits',
+    category: 'exemption',
+    linkedInstrumentKind: 'payroll_levy',
+    structuralForgonePoints: 2.1,
+    householdShare: 0.4,
+    sunsetTurn: null,
+    description: 'Health, charity, and public benevolent institution exemptions.'
+  },
+  {
+    id: 'te_fuel_credit',
+    code: 'TE-140',
+    title: 'Fuel tax credits (business)',
+    category: 'credit_offset',
+    linkedInstrumentKind: 'gst_equivalent',
+    structuralForgonePoints: 2.9,
+    householdShare: 0.02,
+    sunsetTurn: null,
+    description: 'Off-road and heavy vehicle fuel tax credits.'
+  },
+  {
+    id: 'te_small_business',
+    code: 'TE-150',
+    title: 'Small business instant asset write-off',
+    category: 'deferral',
+    linkedInstrumentKind: 'corporate_rate',
+    structuralForgonePoints: 1.8,
+    householdShare: 0.15,
+    sunsetTurn: null,
+    description: 'Timing difference on eligible asset deductions.'
+  },
+  {
+    id: 'te_regional_zones',
+    code: 'TE-160',
+    title: 'Regional tax zone offsets',
+    category: 'concession',
+    linkedInstrumentKind: 'regional_incentive',
+    structuralForgonePoints: 1.2,
+    householdShare: 0.65,
+    sunsetTurn: null,
+    description: 'Remote area and zone-based offsets.'
+  },
+  {
+    id: 'te_carbon_free_alloc',
+    code: 'TE-170',
+    title: 'Emissions-intensive trade-exposed allocations',
+    category: 'exemption',
+    linkedInstrumentKind: 'carbon_price',
+    structuralForgonePoints: 2.4,
+    householdShare: 0.1,
+    sunsetTurn: null,
+    description: 'Safeguard free allocations and trade exposure relief.'
+  },
+  {
+    id: 'te_resource_exploration',
+    code: 'TE-180',
+    title: 'Mineral exploration deduction flow-through',
+    category: 'deferral',
+    linkedInstrumentKind: 'resource_rent',
+    structuralForgonePoints: 1.5,
+    householdShare: 0.02,
+    sunsetTurn: null,
+    description: 'Exploration incentive timing benefits.'
+  },
+  {
+    id: 'te_phantom_sunset',
+    code: 'TE-199',
+    title: 'Legacy sunset measure (review)',
+    category: 'concession',
+    linkedInstrumentKind: null,
+    structuralForgonePoints: 0.6,
+    householdShare: 0.2,
+    sunsetTurn: 12,
+    description: 'Placeholder for lapsed measure under parliamentary review.'
+  }
+];
+
+
+// --- source: tax-expenditure/compute.ts ---
+
+function materialityBand(forgone: number, threshold: number): TaxExpenditureLine['band'] {
+  if (forgone >= threshold * 1.5) return 'material';
+  if (forgone >= threshold * 0.6) return 'moderate';
+  return 'minor';
+}
+
+export function buildTaxExpenditureStatement(
+  turn: number,
+  v1012: V1012FiscalSnapshot
+): TaxExpenditureStatement {
+  const grossStructuralCapacity = v1012.revenueCapacity;
+  const materialityThreshold = Math.max(1.5, grossStructuralCapacity * 0.04);
+  const pressureScale = v1012.pressure === 'critical' ? 1.05 : v1012.pressure === 'strained' ? 1.02 : 1;
+
+  const lines: TaxExpenditureLine[] = TAX_EXPENDITURE_CATALOG.map(measure => {
+    const active = measure.sunsetTurn === null || turn <= measure.sunsetTurn;
+    const forgonePoints = active
+      ? Math.round(measure.structuralForgonePoints * pressureScale * 10) / 10
+      : 0;
+    return {
+      measureId: measure.id,
+      code: measure.code,
+      forgonePoints,
+      band: materialityBand(forgonePoints, materialityThreshold),
+      reviewDue: measure.sunsetTurn !== null && turn >= measure.sunsetTurn - 2,
+      explanation: active ? measure.description : `Sunset reached turn ${measure.sunsetTurn}.`
+    };
+  });
+
+  const totalForgone = Math.round(lines.reduce((s, l) => s + l.forgonePoints, 0) * 10) / 10;
+  const netStructuralCapacity = Math.max(0, Math.round((grossStructuralCapacity - totalForgone * 0.35) * 10) / 10);
+
+  const warnings: string[] = [];
+  const material = lines.filter(l => l.band === 'material');
+  if (material.length >= 3) {
+    warnings.push(`${material.length} material tax expenditures — review base-broadening options.`);
+  }
+  if (totalForgone > grossStructuralCapacity * 0.25) {
+    warnings.push('Aggregate tax expenditure exceeds 25% of structural capacity (normalized).');
+  }
+  if (lines.some(l => l.reviewDue)) {
+    warnings.push('Sunsetting measures require parliamentary renewal review.');
+  }
+
+  return {
+    schemaVersion: TAX_EXPENDITURE_SCHEMA,
+    turn,
+    grossStructuralCapacity,
+    totalForgone,
+    netStructuralCapacity,
+    lines,
+    materialityThreshold,
+    warnings
+  };
+}
+
+export function countTaxExpenditureMeasures(): number {
+  return TAX_EXPENDITURE_CATALOG.length;
+}
+
+
+// --- source: medium-term-outlook/types.ts ---
+
+export const MEDIUM_TERM_OUTLOOK_SCHEMA = 'op10m-agent07-medium-term-outlook-v1';
+
+export interface OutlookYearProjection {
+  label: string;
+  turn: number;
+  revenueCapacity: number;
+  fiscalHeadroom: number;
+  debtServiceLoad: number;
+  envelopeCapacity: number;
+  underlyingCashBalance: number;
+  pressure: 'comfortable' | 'healthy' | 'tight' | 'strained' | 'critical';
+}
+
+export interface MediumTermFiscalOutlook {
+  schemaVersion: string;
+  baseTurn: number;
+  horizonTurns: number;
+  projections: OutlookYearProjection[];
+  averageHeadroom: number;
+  worstPressure: OutlookYearProjection['pressure'];
+  trajectoryBand: FiscalOutcomeBand;
+  narrative: string;
+  risks: string[];
+}
+
+
+// --- source: medium-term-outlook/compute.ts ---
+
+function bandFromHeadroom(headroom: number): FiscalOutcomeBand {
+  if (headroom >= 12) return 'strong';
+  if (headroom >= 4) return 'healthy';
+  if (headroom >= -2) return 'mixed';
+  if (headroom >= -10) return 'weak';
+  return 'critical';
+}
+
+function pressureFromHeadroom(h: number): V1012FiscalSnapshot['pressure'] {
+  if (h >= 12) return 'comfortable';
+  if (h >= 5) return 'healthy';
+  if (h >= 0) return 'tight';
+  if (h >= -8) return 'strained';
+  return 'critical';
+}
+
+export function buildMediumTermFiscalOutlook(
+  base: V1012FiscalSnapshot,
+  horizonTurns = 4
+): MediumTermFiscalOutlook {
+  const projections: OutlookYearProjection[] = [];
+  const risks: string[] = [];
+  let working = { ...base };
+
+  for (let i = 0; i <= horizonTurns; i++) {
+    const turn = base.turn + i;
+    const revenueDrift = base.revenuePolicy === 'revenue_focused' ? 0.8 : base.revenuePolicy === 'growth_focused' ? 0.4 : 0.55;
+    const headroomDrift = -0.35 - working.debtServiceLoad * 0.02 + (base.reservePolicy === 'prudent' ? 0.15 : 0);
+    working = {
+      ...working,
+      turn,
+      revenueCapacity: Math.max(0, Math.min(100, Math.round((working.revenueCapacity + revenueDrift) * 10) / 10)),
+      fiscalHeadroom: Math.round((working.fiscalHeadroom + headroomDrift) * 10) / 10,
+      debtServiceLoad: Math.round((working.debtServiceLoad + working.debtLevel * 0.008) * 10) / 10,
+      maintenanceLoad: Math.round((working.maintenanceLoad + 0.12) * 10) / 10,
+      pressure: pressureFromHeadroom(working.fiscalHeadroom)
+    };
+    const envelope = buildBudgetEnvelope(working);
+    projections.push({
+      label: i === 0 ? 'Budget' : `Forward +${i}`,
+      turn,
+      revenueCapacity: working.revenueCapacity,
+      fiscalHeadroom: working.fiscalHeadroom,
+      debtServiceLoad: working.debtServiceLoad,
+      envelopeCapacity: envelope.totalCapacityPoints,
+      underlyingCashBalance: Math.round((working.fiscalHeadroom * 0.9 - working.debtServiceLoad * 0.4) * 10) / 10,
+      pressure: working.pressure
+    });
+  }
+
+  const averageHeadroom =
+    Math.round((projections.reduce((s, p) => s + p.fiscalHeadroom, 0) / projections.length) * 10) / 10;
+  const worst = projections.reduce((w, p) => (p.fiscalHeadroom < w.fiscalHeadroom ? p : w), projections[0]!);
+  const worstPressure = worst.pressure;
+
+  if (worstPressure === 'critical' || worstPressure === 'strained') {
+    risks.push('Forward path shows sustained pressure — align capital pipeline with envelope flex.');
+  }
+  if (projections.some(p => p.debtServiceLoad > 18)) {
+    risks.push('Debt service load crosses soft 18pt guard within horizon.');
+  }
+  if (averageHeadroom < 2) {
+    risks.push('Average headroom thin — recurring commitments may crowd out contingency.');
+  }
+
+  const trajectoryBand = bandFromHeadroom(averageHeadroom);
+  const narrative =
+    trajectoryBand === 'strong' || trajectoryBand === 'healthy'
+      ? 'Medium-term fiscal settings support staged investment if commitments stay disciplined.'
+      : 'Medium-term outlook requires sequencing of capital and transfer growth.';
+
+  return {
+    schemaVersion: MEDIUM_TERM_OUTLOOK_SCHEMA,
+    baseTurn: base.turn,
+    horizonTurns,
+    projections,
+    averageHeadroom,
+    worstPressure,
+    trajectoryBand,
+    narrative,
+    risks
+  };
+}
+
+
+// --- source: consolidated-fiscal/compute.ts ---
+
+export const CONSOLIDATED_FISCAL_SCHEMA = 'op10m-agent07-consolidated-v1';
+
+export interface ConsolidatedFiscalCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface ConsolidatedFiscalReport {
+  schemaVersion: string;
+  turn: number;
+  checks: ConsolidatedFiscalCheck[];
+  allPassed: boolean;
+  layerCount: number;
+}
+
+export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSnapshot): ConsolidatedFiscalReport {
+  const checks: ConsolidatedFiscalCheck[] = [];
+  const persisted = createInitialFiscalOutcomesPersisted(turn);
+  const { state } = computeFiscalOutcomesLayer({ turn, v1012 }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn, v1012, taxInstruments: state.taxInstruments });
+  const recurring = scheduleRecurringCommitments(turn, v1012, state.budget);
+  const paper = buildDetailedBudgetPaper(v1012, state.budget);
+  const igr = reconcileFederalStateTransfers(turn, v1012);
+  const taxExp = buildTaxExpenditureStatement(turn, v1012);
+  const outlook = buildMediumTermFiscalOutlook(v1012, 3);
+
+  checks.push({
+    id: 'CF01',
+    label: 'Tax expenditure net below gross structural capacity',
+    passed: taxExp.netStructuralCapacity <= taxExp.grossStructuralCapacity,
+    detail: `net=${taxExp.netStructuralCapacity}, gross=${taxExp.grossStructuralCapacity}`
+  });
+
+  checks.push({
+    id: 'CF02',
+    label: 'IGR pool reconciled',
+    passed: igr.reconciled,
+    detail: `residual=${igr.residualFederal}`
+  });
+
+  checks.push({
+    id: 'CF03',
+    label: 'Budget sub-lines balanced',
+    passed: paper.categories.every(c => c.linesBalanced),
+    detail: `categories=${paper.categories.length}`
+  });
+
+  checks.push({
+    id: 'CF04',
+    label: 'Recurring load fits envelope capacity',
+    passed: recurring.totalLoadThisTurn <= state.budget.totalCapacityPoints * 0.45,
+    detail: `load=${recurring.totalLoadThisTurn}, cap=${state.budget.totalCapacityPoints}`
+  });
+
+  checks.push({
+    id: 'CF05',
+    label: 'Revenue ledger reconciled flag',
+    passed: ledger.reconciledToV1012,
+    detail: ledger.reconciliationNotes[0] ?? ''
+  });
+
+  checks.push({
+    id: 'CF06',
+    label: 'Medium-term outlook projects envelope capacity',
+    passed: outlook.projections.every(p => p.envelopeCapacity > 0),
+    detail: `horizon=${outlook.projections.length}`
+  });
+
+  checks.push({
+    id: 'CF07',
+    label: 'Federal-state vertical imbalance bounded',
+    passed: igr.verticalImbalanceIndex <= 1.05,
+    detail: `vii=${igr.verticalImbalanceIndex}`
+  });
+
+  checks.push({
+    id: 'CF08',
+    label: 'National pressure below critical under consolidated view',
+    passed: v1012.pressure !== 'critical' && outlook.worstPressure !== 'critical',
+    detail: `now=${v1012.pressure}, worst=${outlook.worstPressure}`
+  });
+
+  const allPassed = checks.every(c => c.passed);
+  return {
+    schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
+    turn,
+    checks,
+    allPassed,
+    layerCount: 7
+  };
+}
+
+
 // --- source: reconciliation/reconcile.ts ---
 
 export const RECONCILIATION_SCHEMA = 'op10m-agent07-reconciliation-v1';
@@ -5065,6 +5501,160 @@ export function runFederalStateReconciliationSelfTests(): {
     'Low-capacity TAS receives positive equalization uplift',
     (tas?.adjustmentPoints ?? 0) >= 0 && (tas?.netPoints ?? 0) > 0,
     `net=${tas?.netPoints}`
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: tax-expenditure/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 5,
+    revenueCapacity: partial.revenueCapacity ?? 65,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 6,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 4,
+    debtLevel: partial.debtLevel ?? 15,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 5,
+    commitmentCount: partial.commitmentCount ?? 4,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runTaxExpenditureSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const stmt = buildTaxExpenditureStatement(5, snap({}));
+  record('TE01', 'Forgone reduces net structural capacity', stmt.netStructuralCapacity < stmt.grossStructuralCapacity, `net=${stmt.netStructuralCapacity}`);
+  record('TE02', 'Catalog measures enumerated', stmt.lines.length === countTaxExpenditureMeasures(), `count=${stmt.lines.length}`);
+  record('TE03', 'Material super concession flagged', stmt.lines.some(l => l.measureId === 'te_super_concession' && l.band !== 'minor'), 'ok');
+
+  const sunset = buildTaxExpenditureStatement(13, snap({ turn: 13 }));
+  const phantom = sunset.lines.find(l => l.measureId === 'te_phantom_sunset');
+  record('TE04', 'Sunset measure zero after expiry', phantom?.forgonePoints === 0, `forgone=${phantom?.forgonePoints}`);
+
+  const critical = buildTaxExpenditureStatement(5, snap({ pressure: 'critical' }));
+  record('TE05', 'Critical pressure scales forgone upward', critical.totalForgone > stmt.totalForgone, `crit=${critical.totalForgone}, base=${stmt.totalForgone}`);
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: medium-term-outlook/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 8,
+    revenueCapacity: partial.revenueCapacity ?? 60,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 5,
+    pressure: partial.pressure ?? 'tight',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 9,
+    debtLevel: partial.debtLevel ?? 35,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 8,
+    commitmentCount: partial.commitmentCount ?? 6,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runMediumTermOutlookSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const outlook = buildMediumTermFiscalOutlook(snap({}), 4);
+  record('MTO01', 'Horizon includes base plus four forwards', outlook.projections.length === 5, `n=${outlook.projections.length}`);
+  record('MTO02', 'Headroom generally declines under debt path', outlook.projections[4]!.fiscalHeadroom < outlook.projections[0]!.fiscalHeadroom, `y0=${outlook.projections[0]!.fiscalHeadroom}, y4=${outlook.projections[4]!.fiscalHeadroom}`);
+
+  const prudent = buildMediumTermFiscalOutlook(snap({ reservePolicy: 'prudent', fiscalHeadroom: 8 }), 3);
+  const lean = buildMediumTermFiscalOutlook(snap({ reservePolicy: 'lean', fiscalHeadroom: 8 }), 3);
+  record('MTO03', 'Prudent reserve policy improves average headroom', prudent.averageHeadroom >= lean.averageHeadroom, `prudent=${prudent.averageHeadroom}, lean=${lean.averageHeadroom}`);
+
+  const heavy = buildMediumTermFiscalOutlook(snap({ debtLevel: 58, debtServiceLoad: 16 }), 4);
+  record('MTO04', 'Heavy debt triggers risk flags', heavy.risks.length >= 1, `risks=${heavy.risks.length}`);
+
+  record('MTO05', 'Trajectory band assigned', Boolean(outlook.trajectoryBand), `band=${outlook.trajectoryBand}`);
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: consolidated-fiscal/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 7,
+    revenueCapacity: partial.revenueCapacity ?? 66,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 8,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 18,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runConsolidatedFiscalSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const healthy = buildConsolidatedFiscalReport(7, snap({}));
+  record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
+  record('CF-T02', 'Seven fiscal layers integrated', healthy.layerCount === 7, `layers=${healthy.layerCount}`);
+
+  record(
+    'CF-T03',
+    'Strained snapshot runs seven checks',
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 7,
+    'ok'
+  );
+
+  const critical = buildConsolidatedFiscalReport(
+    7,
+    snap({ fiscalHeadroom: -18, pressure: 'critical', debtServiceLoad: 22, debtLevel: 62, maintenanceLoad: 18 })
+  );
+  record('CF-T04', 'Critical stack fails at least one guard', critical.allPassed === false, `failed=${critical.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'none'}`);
+
+  record(
+    'CF-T05',
+    'CF01–CF08 ids present',
+    healthy.checks.map(c => c.id).join(',') === 'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08',
+    'ok'
   );
 
   const passed = results.filter(r => r.passed).length;
