@@ -4483,6 +4483,62 @@ export const TRANSPORT_SCENARIOS_ROUND35: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round36.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND36: TransportStressScenario[] = [
+  {
+    id: 'scn_tas_cable_export_surge',
+    label: 'Tasmania Cable Export Surge',
+    description: 'Offshore wind build overloads Bell Bay cable berths.',
+    targetRegions: ['TAS', 'VIC'],
+    networkKind: 'trade',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_vic_hvdc_feed_delay',
+    label: 'Victoria HVDC Feed Delay',
+    description: 'Weather delays Portland cable staging.',
+    targetRegions: ['VIC', 'TAS'],
+    networkKind: 'trade',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'road'],
+  },
+  {
+    id: 'scn_nt_medevac_surge',
+    label: 'NT Medevac Surge',
+    description: 'Remote clinic demand strains Darwin heli base.',
+    targetRegions: ['NT', 'WA'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_qld_reef_supply_peak',
+    label: 'Queensland Reef Supply Peak',
+    description: 'Restoration season peaks Cairns reef staging.',
+    targetRegions: ['QLD', 'TAS'],
+    networkKind: 'trade',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_tas_eco_staging_hold',
+    label: 'Tasmania Eco Staging Hold',
+    description: 'Weather hold backs Hobart reef handoff.',
+    targetRegions: ['TAS', 'QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.2,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -13388,6 +13444,233 @@ export const SCALE_WAVE_ROUND35_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round36-assets.ts ---
+
+export const ROUND36_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_tas_burnie_cable_haul',
+    category: 'road',
+    name: 'Burnie Cable Haul',
+    description: 'Tasmanian offshore wind cable staging road.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['offshore_wind_cable_export', 'subsea_hvdc_feed', 'renewable_export_rail'],
+    laneKilometres: 22,
+    designSpeedKmh: 78,
+    freightShare: 0.31,
+    urbanShare: 0.12,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_portland_cable_feed',
+    category: 'road',
+    name: 'Portland Cable Feed',
+    description: 'Victorian HVDC export road connector.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'TAS'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['trade'],
+    tags: ['offshore_wind_cable_export', 'subsea_hvdc_feed', 'renewable_export_rail'],
+    laneKilometres: 18,
+    designSpeedKmh: 76,
+    freightShare: 0.28,
+    urbanShare: 0.14,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nt_darwin_medevac_access',
+    category: 'road',
+    name: 'Darwin Medevac Access',
+    description: 'NT remote clinic airlift road feed.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'WA'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['mobility'],
+    tags: ['medevac_heli_staging', 'remote_clinic_airlift', 'emergency_rotary_logistics'],
+    laneKilometres: 16,
+    designSpeedKmh: 74,
+    freightShare: 0.11,
+    urbanShare: 0.22,
+    tollRoad: false,
+  },
+  {
+    id: 'road_wa_broome_medevac_staging',
+    category: 'road',
+    name: 'Broome Medevac Staging',
+    description: 'WA emergency rotary logistics connector.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'NT'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['medevac_heli_staging', 'remote_clinic_airlift', 'emergency_rotary_logistics'],
+    laneKilometres: 14,
+    designSpeedKmh: 72,
+    freightShare: 0.1,
+    urbanShare: 0.18,
+    tollRoad: false,
+  },
+];
+
+export const ROUND36_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_tas_northwest_cable_rail',
+    category: 'rail',
+    name: 'Tasmania Northwest Cable Rail',
+    description: 'Offshore wind subsea cable export feed.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['offshore_wind_cable_export', 'subsea_hvdc_feed', 'renewable_export_rail'],
+    trackKilometres: 44,
+    dualTrackShare: 0.42,
+    electrifiedShare: 0.35,
+    designFreightTonnesPerYear: 3_600_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_vic_warrnambool_cable_link',
+    category: 'rail',
+    name: 'Warrnambool Cable Link',
+    description: 'Victorian renewable export rail handoff.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'TAS'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['trade'],
+    tags: ['offshore_wind_cable_export', 'subsea_hvdc_feed', 'renewable_export_rail'],
+    trackKilometres: 32,
+    dualTrackShare: 0.48,
+    electrifiedShare: 0.52,
+    designFreightTonnesPerYear: 2_800_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_qld_cairns_reef_supply',
+    category: 'rail',
+    name: 'Cairns Reef Supply Rail',
+    description: 'GBR restoration logistics rail feed.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'TAS'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['reef_restoration_logistics', 'marine_reef_supply', 'coastal_eco_staging'],
+    trackKilometres: 38,
+    dualTrackShare: 0.45,
+    electrifiedShare: 0.28,
+    designFreightTonnesPerYear: 2_400_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND36_PORTS: PortAsset[] = [
+  {
+    id: 'port_tas_bell_bay_cable_export',
+    category: 'port',
+    name: 'Bell Bay Cable Export',
+    description: 'Tasmanian subsea HVDC cable export port.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade'],
+    tags: ['offshore_wind_cable_export', 'subsea_hvdc_feed', 'renewable_export_rail'],
+    berthCount: 3,
+    maxDraftMetres: 12.8,
+    teuCapacityPerYear: 102_000,
+    automationLevel: 2,
+    bulkShare: 0.35,
+  },
+  {
+    id: 'port_qld_cairns_reef_staging',
+    category: 'port',
+    name: 'Cairns Reef Staging',
+    description: 'Queensland marine reef restoration supply port.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'TAS'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade', 'mobility'],
+    tags: ['reef_restoration_logistics', 'marine_reef_supply', 'coastal_eco_staging'],
+    berthCount: 3,
+    maxDraftMetres: 12.2,
+    teuCapacityPerYear: 188_000,
+    automationLevel: 1,
+    bulkShare: 0.16,
+  },
+  {
+    id: 'port_tas_hobart_reef_eco_handoff',
+    category: 'port',
+    name: 'Hobart Reef Eco Handoff',
+    description: 'Tasmanian coastal eco staging for reef programs.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'QLD'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['trade'],
+    tags: ['reef_restoration_logistics', 'marine_reef_supply', 'coastal_eco_staging'],
+    berthCount: 2,
+    maxDraftMetres: 11.8,
+    teuCapacityPerYear: 95_000,
+    automationLevel: 1,
+    bulkShare: 0.12,
+  },
+];
+
+export const ROUND36_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_nt_darwin_medevac_base',
+    category: 'logistics',
+    name: 'Darwin Medevac Base',
+    description: 'NT helicopter medevac staging and cold chain.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'WA'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['mobility'],
+    tags: ['medevac_heli_staging', 'remote_clinic_airlift', 'emergency_rotary_logistics'],
+    warehouseSqm: 32_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 55,
+  },
+  {
+    id: 'log_wa_karratha_medevac_stores',
+    category: 'logistics',
+    name: 'Karratha Medevac Stores',
+    description: 'WA remote clinic airlift consolidation.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'NT'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['medevac_heli_staging', 'remote_clinic_airlift', 'emergency_rotary_logistics'],
+    warehouseSqm: 28_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 48,
+  },
+  {
+    id: 'log_qld_townsville_reef_eco_stores',
+    category: 'logistics',
+    name: 'Townsville Reef Stores',
+    description: 'QLD marine reef supply consolidation yard.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'TAS'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['trade'],
+    tags: ['reef_restoration_logistics', 'marine_reef_supply', 'coastal_eco_staging'],
+    warehouseSqm: 46_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 52,
+  },
+];
+
+export const SCALE_WAVE_ROUND36_ASSETS = [
+  ...ROUND36_ROADS,
+  ...ROUND36_RAIL,
+  ...ROUND36_PORTS,
+  ...ROUND36_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -15405,6 +15688,64 @@ export function siliconSolarWaferExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.035 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.04 + policyBoost, 0.93, 1.1);
+}
+
+
+// --- source: network/offshore-wind-cable-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type OffshoreWindCableExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 offshore wind cable and HVDC export throughput by region. */
+export function computeOffshoreWindCableExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) => t === 'offshore_wind_cable_export' || t === 'subsea_hvdc_feed' || t === 'renewable_export_rail',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.1 + asset.maxDraftMetres * 0.38;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 78_000 + asset.intermodalLinks.length * 0.76;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 510;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 9_800_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalOffshoreWindCableExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.47 + max * 0.53, 5, 75) * 10) / 10;
+}
+
+export function offshoreWindCableExportProductivityMultiplier(
+  index: number,
+  policy: OffshoreWindCableExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.036 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.041 + policyBoost, 0.93, 1.1);
 }
 
 
@@ -17918,6 +18259,93 @@ export function railCoalPhaseoutStagingProductivityMultiplier(
 ): number {
   const bias = policy === 'accelerate' ? 1.022 : 1;
   return (1 + (share - 0.052) * 0.026) * bias;
+}
+
+
+// --- source: operations/medevac-helicopter-staging-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type MedevacHelicopterStagingPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 medevac helicopter staging readiness by region. */
+export function computeMedevacHelicopterStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'medevac_heli_staging' || t === 'remote_clinic_airlift' || t === 'emergency_rotary_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 72_000 + (asset.coldChainCapable ? 1.4 : 0.8);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 480;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.95;
+    }
+    if (asset.category === 'rail' && 'passengerCapable' in asset && asset.passengerCapable) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 280;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.041 - stress * 0.025), 5, 79) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalMedevacHelicopterStagingIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 6, 77) * 10) / 10;
+}
+
+export function computeMedevacHelicopterStagingShare(
+  operationalAssets: TransportAsset[],
+  policy: MedevacHelicopterStagingPolicy = 'baseline',
+): number {
+  let medevacUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('medevac_heli_staging') || asset.tags.includes('emergency_rotary_logistics')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 65_000;
+        medevacUnits += (asset.warehouseSqm / 65_000) * 0.57;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 450;
+        medevacUnits += (asset.laneKilometres / 450) * 0.51;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.038;
+  const policyBoost = policy === 'surge' ? 0.029 : 0;
+  return Math.round(clamp(medevacUnits / totalUnits + policyBoost, 0.037, 0.27) * 1000) / 1000;
+}
+
+export function medevacHelicopterStagingProductivityMultiplier(
+  share: number,
+  policy: MedevacHelicopterStagingPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.021 : 1;
+  return (1 + (share - 0.054) * 0.026) * bias;
 }
 
 
@@ -20676,6 +21104,92 @@ export function nationalAirportBaggageRobotLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/reef-restoration-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type ReefRestorationLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of coastal logistics supporting reef restoration supply. */
+export function computeReefRestorationLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: ReefRestorationLogisticsPolicy = 'baseline',
+): number {
+  let reefUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) => t === 'reef_restoration_logistics' || t === 'marine_reef_supply' || t === 'coastal_eco_staging',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.3 + asset.teuCapacityPerYear / 340_000;
+        reefUnits += (asset.berthCount * 1.3) * 0.63;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 59_000;
+        reefUnits += (asset.warehouseSqm / 59_000) * 0.58;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.039;
+  const policyBoost = policy === 'expand' ? 0.031 : 0;
+  return Math.round(clamp(reefUnits / totalUnits + policyBoost, 0.038, 0.3) * 1000) / 1000;
+}
+
+export function reefRestorationLogisticsProductivityMultiplier(
+  share: number,
+  policy: ReefRestorationLogisticsPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.023 : 1;
+  return (1 + (share - 0.06) * 0.027) * bias;
+}
+
+export function computeReefRestorationLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'reef_restoration_logistics' || t === 'marine_reef_supply' || t === 'coastal_eco_staging',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.7 + asset.teuCapacityPerYear / 310_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 64_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 440;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalReefRestorationLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.51 + max * 0.49, 2, 56) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -22641,7 +23155,10 @@ export function computeTransportInfrastructureState(
         livestockYardBoost +
         siliconWaferBoost +
         coalPhaseoutBoost +
-        baggageRobotBoost) *
+        baggageRobotBoost +
+        windCableBoost +
+        medevacHeliBoost +
+        reefLogisticsBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -22701,7 +23218,10 @@ export function computeTransportInfrastructureState(
       livestockYardMult *
       siliconWaferMult *
       coalPhaseoutMult *
-      baggageRobotMult;
+      baggageRobotMult *
+      windCableMult *
+      medevacHeliMult *
+      reefLogisticsMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -22784,7 +23304,10 @@ export function computeTransportInfrastructureState(
     nationalLivestockYard * 0.003 +
     nationalSiliconWafer * 0.003 +
     nationalCoalPhaseout * 0.003 +
-    nationalBaggageRobot * 0.003;
+    nationalBaggageRobot * 0.003 +
+    nationalWindCable * 0.003 +
+    nationalMedevacHeli * 0.003 +
+    nationalReefLogistics * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -22799,7 +23322,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/36',
+    schemaVersion: 'agent12/37',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -23053,6 +23576,14 @@ export function computeTransportInfrastructureState(
     airportBaggageRobotLogisticsShare,
     nationalAirportBaggageRobotLogisticsThroughputIndex: nationalBaggageRobot,
     airportBaggageRobotLogisticsThroughputByRegion,
+    nationalOffshoreWindCableExportIndex: nationalWindCable,
+    offshoreWindCableExportByRegion,
+    medevacHelicopterStagingShare,
+    nationalMedevacHelicopterStagingIndex: nationalMedevacHeli,
+    medevacHelicopterStagingByRegion,
+    reefRestorationLogisticsShare,
+    nationalReefRestorationLogisticsThroughputIndex: nationalReefLogistics,
+    reefRestorationLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -23261,8 +23792,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalSiliconSolarWaferExportIndex >= 5 &&
       infra.nationalRailCoalPhaseoutStagingIndex >= 6 &&
       infra.airportBaggageRobotLogisticsShare >= 0.03 &&
-      infra.nationalAirportBaggageRobotLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} wafer=${infra.nationalSiliconSolarWaferExportIndex.toFixed(1)} coal=${infra.nationalRailCoalPhaseoutStagingIndex.toFixed(1)} baggage=${infra.nationalAirportBaggageRobotLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalAirportBaggageRobotLogisticsThroughputIndex >= 2 &&
+      infra.nationalOffshoreWindCableExportIndex >= 5 &&
+      infra.nationalMedevacHelicopterStagingIndex >= 6 &&
+      infra.reefRestorationLogisticsShare >= 0.03 &&
+      infra.nationalReefRestorationLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} cable=${infra.nationalOffshoreWindCableExportIndex.toFixed(1)} medevac=${infra.nationalMedevacHelicopterStagingIndex.toFixed(1)} reef=${infra.nationalReefRestorationLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;

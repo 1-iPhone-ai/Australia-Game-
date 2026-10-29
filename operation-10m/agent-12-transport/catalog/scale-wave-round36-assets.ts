@@ -201,7 +201,7 @@ export const ROUND36_LOGISTICS: LogisticsNodeAsset[] = [
     lastMileCoveragePct: 48,
   },
   {
-    id: 'log_qld_townsville_reef_stores',
+    id: 'log_qld_townsville_reef_eco_stores',
     category: 'logistics',
     name: 'Townsville Reef Stores',
     description: 'QLD marine reef supply consolidation yard.',
