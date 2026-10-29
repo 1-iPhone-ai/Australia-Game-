@@ -1,0 +1,31 @@
+import type { V1023CladDroughtBufferEdge } from '../../types/core.ts';
+
+/** Drought buffer graph shard 004 (heat/flood/drought corridor coupling). */
+export const V1023_CLAD_DROUGHT_BUFFER_SHARD_004: readonly V1023CladDroughtBufferEdge[] = [
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.274, lagTurns: 6, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.28, lagTurns: 7, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.286, lagTurns: 8, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.292, lagTurns: 9, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.298, lagTurns: 6, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.304, lagTurns: 7, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.31, lagTurns: 8, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.316, lagTurns: 9, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.322, lagTurns: 6, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.328, lagTurns: 7, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.334, lagTurns: 8, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.34, lagTurns: 9, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.346, lagTurns: 6, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.352, lagTurns: 7, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.358, lagTurns: 8, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.364, lagTurns: 9, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.268, lagTurns: 6, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.274, lagTurns: 7, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.28, lagTurns: 8, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.286, lagTurns: 9, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.292, lagTurns: 6, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.298, lagTurns: 7, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.304, lagTurns: 8, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.31, lagTurns: 9, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.316, lagTurns: 6, nodeId: 'flood_node_04' },
+  { fromChannel: 'student', toChannel: 'remote', weight: 0.322, lagTurns: 7, nodeId: 'flood_node_04' },
+];
