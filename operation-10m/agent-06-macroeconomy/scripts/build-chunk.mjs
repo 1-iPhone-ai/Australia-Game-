@@ -209,6 +209,8 @@ const FILES = [
   'scenario-wave50-integration-rank.ts',
   'bridge-v1024-replay-wave-round51-export.ts',
   'bridge-v1025-integration-health-wave-round51-export.ts',
+  'bridge-v1026-replay-wave-round52-export.ts',
+  'bridge-v1027-integration-health-wave-round52-export.ts',
   'scenario-wave51-integration-rank.ts',
   'regression-harness.ts',
   'cycle-memory.ts',
@@ -274,6 +276,7 @@ const FILES = [
   'round49-self-tests.ts',
   'round50-self-tests.ts',
   'round51-self-tests.ts',
+  'round52-self-tests.ts',
   'self-tests.ts',
   'react/MacroEconomyInspectorLab.tsx'
 ];

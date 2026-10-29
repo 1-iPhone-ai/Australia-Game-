@@ -230,3 +230,5 @@ export * from './action-alignment.ts';
 export * from './catalog/stress-scenarios.ts';
 export * from './self-tests.ts';
 export { MacroEconomyInspectorLab } from './react/MacroEconomyInspectorLab.tsx';
+export * from './bridge-v1026-replay-wave-round52-export.ts';
+export * from './bridge-v1027-integration-health-wave-round52-export.ts';
