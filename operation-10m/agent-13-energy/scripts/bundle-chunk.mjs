@@ -71,6 +71,7 @@ const FILES = [
   'renewable-export-continuity-sovereign-security-federation-ledger.ts',
   'national-export-orchestration-sovereign-continuity-federation-ledger.ts',
   'sovereign-export-resilience-national-security-federation-ledger.ts',
+  'national-security-strategic-reserve-defence-industrial-federation-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -320,6 +321,9 @@ const EXPORT_MANIFEST = [
   'runAgent13SovereignExportResilienceNationalSecurityScaleSelfTests',
   'runAgent13SovereignExportResilienceNationalSecurityTurnScenario',
   'V1014_SOVEREIGN_EXPORT_RESILIENCE_NATIONAL_SECURITY_TURN_SCENARIOS',
+  'runAgent13NationalSecurityStrategicReserveDefenceIndustrialScaleSelfTests',
+  'runAgent13NationalSecurityStrategicReserveDefenceIndustrialTurnScenario',
+  'V1014_NATIONAL_SECURITY_STRATEGIC_RESERVE_DEFENCE_INDUSTRIAL_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

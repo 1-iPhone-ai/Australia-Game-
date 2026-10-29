@@ -240,6 +240,11 @@ import {
   V1014_SOVEREIGN_EXPORT_RESILIENCE_NATIONAL_SECURITY_TURN_SCENARIOS,
 } from '../modules/sovereign-export-resilience-national-security-federation-ledger.ts';
 import {
+  runAgent13NationalSecurityStrategicReserveDefenceIndustrialScaleSelfTests,
+  runAgent13NationalSecurityStrategicReserveDefenceIndustrialTurnScenario,
+  V1014_NATIONAL_SECURITY_STRATEGIC_RESERVE_DEFENCE_INDUSTRIAL_TURN_SCENARIOS,
+} from '../modules/national-security-strategic-reserve-defence-industrial-federation-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -635,6 +640,14 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const sovereignResilienceTurn = runAgent13SovereignExportResilienceNationalSecurityTurnScenario(V1014_SOVEREIGN_EXPORT_RESILIENCE_NATIONAL_SECURITY_TURN_SCENARIOS[0]);
   ok(sovereignResilienceTurn.passed);
+
+  const strategicReserve = runAgent13NationalSecurityStrategicReserveDefenceIndustrialScaleSelfTests();
+  ok(strategicReserve.failed === 0 && strategicReserve.passed >= 5);
+
+  const strategicReserveTurn = runAgent13NationalSecurityStrategicReserveDefenceIndustrialTurnScenario(
+    V1014_NATIONAL_SECURITY_STRATEGIC_RESERVE_DEFENCE_INDUSTRIAL_TURN_SCENARIOS[0],
+  );
+  ok(strategicReserveTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
