@@ -128,6 +128,13 @@ import {
   type V1014RegionalSeasonalStorageArbitrageLedger,
 } from './pumped-hydro-seasonal-storage-ledger';
 import {
+  advanceRegionalVppOrchestration,
+  computeRegionalCommunityMicrogridLedger,
+  scoreAgent13MicrogridVppGIAlignment,
+  type V1014RegionalCommunityMicrogridLedger,
+  type V1014RegionalVppOrchestrationLedger,
+} from './community-microgrid-vpp-orchestration-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25648,6 +25655,10 @@ export interface V1014RegionalEnergyProfile {
   pumpedHydroRelief: number;
   seasonalStorageArbitrageBand: string;
   seasonalArbitrageRelief: number;
+  communityMicrogridBand: string;
+  communityMicrogridRelief: number;
+  vppOrchestrationBand: string;
+  vppOrchestrationRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25716,6 +25727,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalBioenergyGridFlexLedgers: Record<string, V1014RegionalBioenergyGridFlexLedger>;
   regionalPumpedHydroExpansionLedgers: Record<string, V1014RegionalPumpedHydroExpansionLedger>;
   regionalSeasonalStorageArbitrageLedgers: Record<string, V1014RegionalSeasonalStorageArbitrageLedger>;
+  regionalCommunityMicrogridLedgers: Record<string, V1014RegionalCommunityMicrogridLedger>;
+  regionalVppOrchestrationLedgers: Record<string, V1014RegionalVppOrchestrationLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25755,6 +25768,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalBioFlexMemory: Record<string, { firmingIndex: number }>;
   regionalPumpedHydroMemory: Record<string, { reservoirBalance: number; hydroIndex: number }>;
   regionalSeasonalArbitrageMemory: Record<string, { arbitrageIndex: number }>;
+  regionalMicrogridMemory: Record<string, { resilienceBalance: number; microgridIndex: number }>;
+  regionalVppMemory: Record<string, { orchestrationIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25806,6 +25821,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalBioFlexMemory: {},
     regionalPumpedHydroMemory: {},
     regionalSeasonalArbitrageMemory: {},
+    regionalMicrogridMemory: {},
+    regionalVppMemory: {},
     history: [],
   };
 }
@@ -25876,6 +25893,9 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalSeasonalArbitrageMemory === 'object' && raw.regionalSeasonalArbitrageMemory
         ? raw.regionalSeasonalArbitrageMemory
         : {},
+    regionalMicrogridMemory:
+      typeof raw.regionalMicrogridMemory === 'object' && raw.regionalMicrogridMemory ? raw.regionalMicrogridMemory : {},
+    regionalVppMemory: typeof raw.regionalVppMemory === 'object' && raw.regionalVppMemory ? raw.regionalVppMemory : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -26014,6 +26034,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalBioenergyGridFlexLedgers: {},
       regionalPumpedHydroExpansionLedgers: {},
       regionalSeasonalStorageArbitrageLedgers: {},
+      regionalCommunityMicrogridLedgers: {},
+      regionalVppOrchestrationLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26056,6 +26078,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const bioenergyGridFlexLedgers: Record<string, V1014RegionalBioenergyGridFlexLedger> = {};
   const pumpedHydroExpansionLedgers: Record<string, V1014RegionalPumpedHydroExpansionLedger> = {};
   const seasonalStorageArbitrageLedgers: Record<string, V1014RegionalSeasonalStorageArbitrageLedger> = {};
+  const communityMicrogridLedgers: Record<string, V1014RegionalCommunityMicrogridLedger> = {};
+  const vppOrchestrationLedgers: Record<string, V1014RegionalVppOrchestrationLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26115,6 +26139,10 @@ export function computeIndustrialEnergyEnvironmentalState(
   const nextSeasonalArbitrageMemory: Record<string, { arbitrageIndex: number }> = {
     ...persisted.regionalSeasonalArbitrageMemory,
   };
+  const nextMicrogridMemory: Record<string, { resilienceBalance: number; microgridIndex: number }> = {
+    ...persisted.regionalMicrogridMemory,
+  };
+  const nextVppMemory: Record<string, { orchestrationIndex: number }> = { ...persisted.regionalVppMemory };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
 
@@ -26499,6 +26527,29 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextSeasonalArbitrageMemory[regionId] = seasonalArbStep.next;
     seasonalStorageArbitrageLedgers[regionId] = seasonalArbStep.ledger;
 
+    const microgridStep = computeRegionalCommunityMicrogridLedger({
+      regionId,
+      bushfireGridRelief: bushfireStep.ledger.bushfireGridRelief,
+      rooftopDerRelief: derStep.ledger.rooftopDerRelief,
+      seasonalArbitrageRelief: seasonalArbStep.ledger.seasonalArbitrageRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextMicrogridMemory[regionId] || null,
+    });
+    nextMicrogridMemory[regionId] = microgridStep.next;
+    communityMicrogridLedgers[regionId] = microgridStep.ledger;
+
+    const vppStep = advanceRegionalVppOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      microgridBand: microgridStep.ledger.band,
+      evV2gGridRelief: v2gStep.ledger.evV2gGridRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextVppMemory[regionId] || null,
+    });
+    nextVppMemory[regionId] = vppStep.next;
+    vppOrchestrationLedgers[regionId] = vppStep.ledger;
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -26536,6 +26587,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= bioFlexStep.ledger.bioenergyGridFlexRelief;
     pressure -= pumpedHydroStep.ledger.pumpedHydroRelief;
     pressure -= seasonalArbStep.ledger.seasonalArbitrageRelief;
+    pressure -= microgridStep.ledger.communityMicrogridRelief;
+    pressure -= vppStep.ledger.vppOrchestrationRelief;
     if (biodiversityStep.ledger.band === 'critical_loss') pressure += 5;
     pressure -= gridRecovery.pressureRelief;
     pressure -= storageFlex.gridStressRelief;
@@ -26598,6 +26651,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       bioFlexStep.ledger.summary,
       pumpedHydroStep.ledger.summary,
       seasonalArbStep.ledger.summary,
+      microgridStep.ledger.summary,
+      vppStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -26738,6 +26793,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       pumpedHydroRelief: pumpedHydroStep.ledger.pumpedHydroRelief,
       seasonalStorageArbitrageBand: seasonalArbStep.ledger.band,
       seasonalArbitrageRelief: seasonalArbStep.ledger.seasonalArbitrageRelief,
+      communityMicrogridBand: microgridStep.ledger.band,
+      communityMicrogridRelief: microgridStep.ledger.communityMicrogridRelief,
+      vppOrchestrationBand: vppStep.ledger.band,
+      vppOrchestrationRelief: vppStep.ledger.vppOrchestrationRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -26835,6 +26894,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalBioenergyGridFlexLedgers: bioenergyGridFlexLedgers,
     regionalPumpedHydroExpansionLedgers: pumpedHydroExpansionLedgers,
     regionalSeasonalStorageArbitrageLedgers: seasonalStorageArbitrageLedgers,
+    regionalCommunityMicrogridLedgers: communityMicrogridLedgers,
+    regionalVppOrchestrationLedgers: vppOrchestrationLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -26874,6 +26935,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalBioFlexMemory: nextBioFlexMemory,
     regionalPumpedHydroMemory: nextPumpedHydroMemory,
     regionalSeasonalArbitrageMemory: nextSeasonalArbitrageMemory,
+    regionalMicrogridMemory: nextMicrogridMemory,
+    regionalVppMemory: nextVppMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -27437,6 +27500,49 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     arbBand: rr17.state.regions.NSW?.seasonalStorageArbitrageBand,
   });
   check('PHES SEASONAL GI alignment', giPhes.relevanceDelta > 0.5, giPhes.reason || '');
+
+  const mgInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'fire_season_microgrid',
+      'bushfire_line_hardening',
+      'rapid_grid_islanding',
+      'rooftop_solar_der_cluster',
+      'home_battery_vpp',
+      'commercial_der_hub',
+      'municipal_ev_v2g_fleet',
+      'fleet_depot_bidirectional',
+      'suburban_islanded_resilience_cluster',
+      'industrial_park_microgrid_orchestration',
+      'rooftop_solar_aggregation_pool',
+      'fleet_v2g_orchestration_hub',
+      'community_demand_flex_market',
+      'bushfire_aware_vpp_dispatch',
+      'summer_winter_shift_orchestration',
+    ],
+  };
+  const rr18 = computeIndustrialEnergyEnvironmentalState(mgInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check(
+    'MICROGRID ledger tracked',
+    !!rr18.state.regionalCommunityMicrogridLedgers.NSW?.band,
+    rr18.state.regionalCommunityMicrogridLedgers.NSW?.band || '',
+  );
+  check(
+    'VPP orchestration relief',
+    (rr18.state.regions.NSW?.vppOrchestrationRelief || 0) > 0,
+    String(rr18.state.regions.NSW?.vppOrchestrationRelief),
+  );
+  check(
+    'MICROGRID memory persisted',
+    !!rr18.persisted.regionalMicrogridMemory.NSW,
+    String(rr18.persisted.regionalMicrogridMemory.NSW?.microgridIndex),
+  );
+  const giMg = scoreAgent13MicrogridVppGIAlignment({
+    actionText: 'Suburban microgrid with rooftop aggregation and fleet V2G orchestration hub',
+    microgridBand: rr18.state.regions.NSW?.communityMicrogridBand,
+    vppBand: rr18.state.regions.NSW?.vppOrchestrationBand,
+  });
+  check('MICROGRID VPP GI alignment', giMg.relevanceDelta > 0.5, giMg.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

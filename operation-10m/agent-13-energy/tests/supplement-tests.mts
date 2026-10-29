@@ -70,6 +70,11 @@ import {
   V1014_PUMPED_HYDRO_SEASONAL_TURN_SCENARIOS,
 } from '../modules/pumped-hydro-seasonal-storage-ledger.ts';
 import {
+  runAgent13MicrogridVppScaleSelfTests,
+  runAgent13MicrogridVppTurnScenario,
+  V1014_MICROGRID_VPP_TURN_SCENARIOS,
+} from '../modules/community-microgrid-vpp-orchestration-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -261,6 +266,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const phesTurn = runAgent13PumpedHydroSeasonalTurnScenario(V1014_PUMPED_HYDRO_SEASONAL_TURN_SCENARIOS[0]);
   ok(phesTurn.passed);
+
+  const microVpp = runAgent13MicrogridVppScaleSelfTests();
+  ok(microVpp.failed === 0 && microVpp.passed >= 7);
+
+  const mgTurn = runAgent13MicrogridVppTurnScenario(V1014_MICROGRID_VPP_TURN_SCENARIOS[0]);
+  ok(mgTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

@@ -37,6 +37,7 @@ const FILES = [
   'drought-desal-water-energy-ledger.ts',
   'bioenergy-sustainable-feedstock-ledger.ts',
   'pumped-hydro-seasonal-storage-ledger.ts',
+  'community-microgrid-vpp-orchestration-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -71,6 +72,8 @@ const EXPORT_MANIFEST = [
   'V1014_BIOENERGY_GRID_FLEX_CATALOG',
   'V1014_PUMPED_HYDRO_EXPANSION_CATALOG',
   'V1014_SEASONAL_ARBITRAGE_CATALOG',
+  'V1014_COMMUNITY_MICROGRID_CATALOG',
+  'V1014_VPP_ORCHESTRATION_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -128,6 +131,9 @@ const EXPORT_MANIFEST = [
   'runAgent13PumpedHydroSeasonalScaleSelfTests',
   'runAgent13PumpedHydroSeasonalTurnScenario',
   'V1014_PUMPED_HYDRO_SEASONAL_TURN_SCENARIOS',
+  'runAgent13MicrogridVppScaleSelfTests',
+  'runAgent13MicrogridVppTurnScenario',
+  'V1014_MICROGRID_VPP_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];
