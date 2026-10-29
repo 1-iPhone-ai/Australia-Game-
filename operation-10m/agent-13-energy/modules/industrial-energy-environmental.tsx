@@ -149,6 +149,13 @@ import {
   type V1014RegionalSyntheticInertiaLedger,
 } from './grid-forming-inertia-orchestration-ledger';
 import {
+  advanceRegionalSecondLifeStorage,
+  computeRegionalBatteryRecyclingLedger,
+  scoreAgent13BatterySecondLifeGIAlignment,
+  type V1014RegionalBatteryRecyclingLedger,
+  type V1014RegionalSecondLifeStorageLedger,
+} from './battery-recycling-second-life-storage-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25681,6 +25688,10 @@ export interface V1014RegionalEnergyProfile {
   gridFormingRelief: number;
   syntheticInertiaBand: string;
   syntheticInertiaRelief: number;
+  batteryRecyclingBand: string;
+  batteryRecyclingRelief: number;
+  secondLifeStorageBand: string;
+  secondLifeStorageRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25755,6 +25766,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalThermalStorageDispatchLedgers: Record<string, V1014RegionalThermalStorageDispatchLedger>;
   regionalGridFormingInverterLedgers: Record<string, V1014RegionalGridFormingInverterLedger>;
   regionalSyntheticInertiaLedgers: Record<string, V1014RegionalSyntheticInertiaLedger>;
+  regionalBatteryRecyclingLedgers: Record<string, V1014RegionalBatteryRecyclingLedger>;
+  regionalSecondLifeStorageLedgers: Record<string, V1014RegionalSecondLifeStorageLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25800,6 +25813,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalThermalDispatchMemory: Record<string, { dispatchIndex: number }>;
   regionalGridFormingMemory: Record<string, { strengthBalance: number; formingIndex: number }>;
   regionalSyntheticInertiaMemory: Record<string, { inertiaIndex: number }>;
+  regionalBatteryRecyclingMemory: Record<string, { recoveryBalance: number; recyclingIndex: number }>;
+  regionalSecondLifeMemory: Record<string, { reuseIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25857,6 +25872,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalThermalDispatchMemory: {},
     regionalGridFormingMemory: {},
     regionalSyntheticInertiaMemory: {},
+    regionalBatteryRecyclingMemory: {},
+    regionalSecondLifeMemory: {},
     history: [],
   };
 }
@@ -25941,6 +25958,12 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalSyntheticInertiaMemory === 'object' && raw.regionalSyntheticInertiaMemory
         ? raw.regionalSyntheticInertiaMemory
         : {},
+    regionalBatteryRecyclingMemory:
+      typeof raw.regionalBatteryRecyclingMemory === 'object' && raw.regionalBatteryRecyclingMemory
+        ? raw.regionalBatteryRecyclingMemory
+        : {},
+    regionalSecondLifeMemory:
+      typeof raw.regionalSecondLifeMemory === 'object' && raw.regionalSecondLifeMemory ? raw.regionalSecondLifeMemory : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -26085,6 +26108,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalThermalStorageDispatchLedgers: {},
       regionalGridFormingInverterLedgers: {},
       regionalSyntheticInertiaLedgers: {},
+      regionalBatteryRecyclingLedgers: {},
+      regionalSecondLifeStorageLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26133,6 +26158,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const thermalStorageDispatchLedgers: Record<string, V1014RegionalThermalStorageDispatchLedger> = {};
   const gridFormingInverterLedgers: Record<string, V1014RegionalGridFormingInverterLedger> = {};
   const syntheticInertiaLedgers: Record<string, V1014RegionalSyntheticInertiaLedger> = {};
+  const batteryRecyclingLedgers: Record<string, V1014RegionalBatteryRecyclingLedger> = {};
+  const secondLifeStorageLedgers: Record<string, V1014RegionalSecondLifeStorageLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26206,6 +26233,10 @@ export function computeIndustrialEnergyEnvironmentalState(
   const nextSyntheticInertiaMemory: Record<string, { inertiaIndex: number }> = {
     ...persisted.regionalSyntheticInertiaMemory,
   };
+  const nextBatteryRecyclingMemory: Record<string, { recoveryBalance: number; recyclingIndex: number }> = {
+    ...persisted.regionalBatteryRecyclingMemory,
+  };
+  const nextSecondLifeMemory: Record<string, { reuseIndex: number }> = { ...persisted.regionalSecondLifeMemory };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
 
@@ -26658,6 +26689,29 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextSyntheticInertiaMemory[regionId] = syntheticInertiaStep.next;
     syntheticInertiaLedgers[regionId] = syntheticInertiaStep.ledger;
 
+    const batteryRecyclingStep = computeRegionalBatteryRecyclingLedger({
+      regionId,
+      circularRecoveryRelief: circularStep.ledger.circularRecoveryRelief,
+      mineralsSupplyRelief: mineralsStep.ledger.mineralsSupplyRelief,
+      gridFormingRelief: gridFormingStep.ledger.gridFormingRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextBatteryRecyclingMemory[regionId] || null,
+    });
+    nextBatteryRecyclingMemory[regionId] = batteryRecyclingStep.next;
+    batteryRecyclingLedgers[regionId] = batteryRecyclingStep.ledger;
+
+    const secondLifeStep = advanceRegionalSecondLifeStorage({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      recyclingBand: batteryRecyclingStep.ledger.band,
+      syntheticInertiaRelief: syntheticInertiaStep.ledger.syntheticInertiaRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextSecondLifeMemory[regionId] || null,
+    });
+    nextSecondLifeMemory[regionId] = secondLifeStep.next;
+    secondLifeStorageLedgers[regionId] = secondLifeStep.ledger;
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -26701,6 +26755,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= thermalDispatchStep.ledger.thermalStorageDispatchRelief;
     pressure -= gridFormingStep.ledger.gridFormingRelief;
     pressure -= syntheticInertiaStep.ledger.syntheticInertiaRelief;
+    pressure -= batteryRecyclingStep.ledger.batteryRecyclingRelief;
+    pressure -= secondLifeStep.ledger.secondLifeStorageRelief;
     if (biodiversityStep.ledger.band === 'critical_loss') pressure += 5;
     pressure -= gridRecovery.pressureRelief;
     pressure -= storageFlex.gridStressRelief;
@@ -26769,6 +26825,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       thermalDispatchStep.ledger.summary,
       gridFormingStep.ledger.summary,
       syntheticInertiaStep.ledger.summary,
+      batteryRecyclingStep.ledger.summary,
+      secondLifeStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -26921,6 +26979,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       gridFormingRelief: gridFormingStep.ledger.gridFormingRelief,
       syntheticInertiaBand: syntheticInertiaStep.ledger.band,
       syntheticInertiaRelief: syntheticInertiaStep.ledger.syntheticInertiaRelief,
+      batteryRecyclingBand: batteryRecyclingStep.ledger.band,
+      batteryRecyclingRelief: batteryRecyclingStep.ledger.batteryRecyclingRelief,
+      secondLifeStorageBand: secondLifeStep.ledger.band,
+      secondLifeStorageRelief: secondLifeStep.ledger.secondLifeStorageRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -27024,6 +27086,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalThermalStorageDispatchLedgers: thermalStorageDispatchLedgers,
     regionalGridFormingInverterLedgers: gridFormingInverterLedgers,
     regionalSyntheticInertiaLedgers: syntheticInertiaLedgers,
+    regionalBatteryRecyclingLedgers: batteryRecyclingLedgers,
+    regionalSecondLifeStorageLedgers: secondLifeStorageLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -27069,6 +27133,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalThermalDispatchMemory: nextThermalDispatchMemory,
     regionalGridFormingMemory: nextGridFormingMemory,
     regionalSyntheticInertiaMemory: nextSyntheticInertiaMemory,
+    regionalBatteryRecyclingMemory: nextBatteryRecyclingMemory,
+    regionalSecondLifeMemory: nextSecondLifeMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -27758,6 +27824,46 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     inertiaBand: rr20.state.regions.SA?.syntheticInertiaBand,
   });
   check('GRID INERTIA GI alignment', giGf.relevanceDelta > 0.5, giGf.reason || '');
+
+  const brInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'industrial_symbiosis',
+      'waste_to_energy',
+      'lithium_processing',
+      'nickel_processing',
+      'battery_grid_forming_inverter_fleet',
+      'virtual_inertia_orchestration_loop',
+      'ev_battery_pack_recovery_corridor',
+      'grid_scale_battery_dismantling_hub',
+      'black_mass_hydromet_refinery',
+      'critical_mineral_reclaim_loop',
+      'industrial_peak_shave_second_life',
+      'weak_grid_buffer_repurposing',
+    ],
+  };
+  const rr21 = computeIndustrialEnergyEnvironmentalState(brInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check(
+    'BATTERY RECYCLING ledger tracked',
+    !!rr21.state.regionalBatteryRecyclingLedgers.SA?.band,
+    rr21.state.regionalBatteryRecyclingLedgers.SA?.band || '',
+  );
+  check(
+    'SECOND LIFE storage relief',
+    (rr21.state.regions.SA?.secondLifeStorageRelief || 0) > 0,
+    String(rr21.state.regions.SA?.secondLifeStorageRelief),
+  );
+  check(
+    'BATTERY RECYCLING memory persisted',
+    !!rr21.persisted.regionalBatteryRecyclingMemory.SA,
+    String(rr21.persisted.regionalBatteryRecyclingMemory.SA?.recyclingIndex),
+  );
+  const giBr = scoreAgent13BatterySecondLifeGIAlignment({
+    actionText: 'EV battery pack recovery with black mass refinery and industrial second life peak shave',
+    recyclingBand: rr21.state.regions.SA?.batteryRecyclingBand,
+    secondLifeBand: rr21.state.regions.SA?.secondLifeStorageBand,
+  });
+  check('BATTERY SECOND LIFE GI alignment', giBr.relevanceDelta > 0.5, giBr.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

@@ -85,6 +85,11 @@ import {
   V1014_GRID_INERTIA_TURN_SCENARIOS,
 } from '../modules/grid-forming-inertia-orchestration-ledger.ts';
 import {
+  runAgent13BatterySecondLifeScaleSelfTests,
+  runAgent13BatterySecondLifeTurnScenario,
+  V1014_BATTERY_SECOND_LIFE_TURN_SCENARIOS,
+} from '../modules/battery-recycling-second-life-storage-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -294,6 +299,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const gfTurn = runAgent13GridInertiaTurnScenario(V1014_GRID_INERTIA_TURN_SCENARIOS[0]);
   ok(gfTurn.passed);
+
+  const batterySecondLife = runAgent13BatterySecondLifeScaleSelfTests();
+  ok(batterySecondLife.failed === 0 && batterySecondLife.passed >= 7);
+
+  const brTurn = runAgent13BatterySecondLifeTurnScenario(V1014_BATTERY_SECOND_LIFE_TURN_SCENARIOS[0]);
+  ok(brTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
