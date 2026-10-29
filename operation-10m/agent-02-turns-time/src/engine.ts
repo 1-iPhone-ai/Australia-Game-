@@ -72,6 +72,28 @@ import {
   type PipelineStageCoverageReport,
 } from './pipeline-stage-coverage.js';
 import {
+  gateExternalDayPlanWindow,
+  type ExternalDayPlanWindowGateResult,
+} from './external-day-plan-window-gate.js';
+import {
+  computePipelineStageCoverageDelta,
+  type PipelineStageCoverageDelta,
+} from './pipeline-coverage-delta.js';
+import {
+  stepTurnsWithBudgetObservability,
+  buildBatchAdvanceObservabilityRollup,
+  type BatchAdvanceObservabilityRollup,
+  type BatchAdvanceWithObservability,
+} from './batch-advance-observability.js';
+import {
+  buildBatchHorizonReconcileReport,
+  type BatchHorizonReconcileReport,
+} from './batch-horizon-reconcile-report.js';
+import {
+  buildBatchStepPipelineReports,
+  type BatchStepPipelineReportRow,
+} from './batch-step-pipeline-reports.js';
+import {
   stepTurnsWithBudget,
   type BatchAdvanceResult,
 } from './batch-advance.js';
@@ -230,6 +252,44 @@ export class TurnTimeEngine {
 
   stepTurnsWithBudget(maxSteps: number, budget: TurnAdvanceBudgetState): BatchAdvanceResult {
     return stepTurnsWithBudget(this, maxSteps, budget);
+  }
+
+  gateExternalDayPlanWindow(
+    fromTurn: number,
+    toTurn: number,
+    externalByTurn: Readonly<Record<number, readonly string[]>>,
+    strict = true,
+  ): ExternalDayPlanWindowGateResult {
+    return gateExternalDayPlanWindow(this.snapshot(), fromTurn, toTurn, externalByTurn, strict);
+  }
+
+  getPipelineStageCoverageDelta(before: TurnTimeSnapshot): PipelineStageCoverageDelta {
+    return computePipelineStageCoverageDelta(before, this.snapshot());
+  }
+
+  buildBatchHorizonReconcileReport(
+    before: TurnTimeSnapshot,
+    batch: BatchAdvanceResult,
+  ): BatchHorizonReconcileReport {
+    return buildBatchHorizonReconcileReport(before, this.snapshot(), batch);
+  }
+
+  buildBatchStepPipelineReports(before: TurnTimeSnapshot, batch: BatchAdvanceResult): BatchStepPipelineReportRow[] {
+    return buildBatchStepPipelineReports(before, batch);
+  }
+
+  buildBatchAdvanceObservabilityRollup(
+    before: TurnTimeSnapshot,
+    batch: BatchAdvanceResult,
+  ): BatchAdvanceObservabilityRollup {
+    return buildBatchAdvanceObservabilityRollup(before, this.snapshot(), batch);
+  }
+
+  stepTurnsWithBudgetObservability(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+  ): BatchAdvanceWithObservability {
+    return stepTurnsWithBudgetObservability(this, maxSteps, budget);
   }
 
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {

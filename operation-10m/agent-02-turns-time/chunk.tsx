@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
 // @ts-nocheck
-// content-sha256-prefix: 4681aa137f6bb18c
+// content-sha256-prefix: 3510724afc126ba3
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -1253,6 +1253,48 @@ export function mergeExternalDayPlanWindow(
   };
 }
 
+// --- src/external-day-plan-window-gate.ts ---
+
+export interface ExternalDayPlanWindowGateResult {
+  merge: ExternalDayPlanWindowMergeResult;
+  incompletePipelineTurns: number[];
+  turnsWithIncompletePipeline: number[];
+  pipelineReady: boolean;
+  ok: boolean;
+}
+
+function turnsInWindow(fromTurn: number, toTurn: number): number[] {
+  const from = Math.max(1, Math.floor(fromTurn));
+  const to = Math.max(from, Math.floor(toTurn));
+  const turns: number[] = [];
+  for (let t = from; t <= to; t += 1) turns.push(t);
+  return turns;
+}
+
+/**
+ * XS-02 gate: narrative window merge must pass and completed turns in the window must have full pipeline rolls.
+ */
+export function gateExternalDayPlanWindow(
+  snapshot: TurnTimeSnapshot,
+  fromTurn: number,
+  toTurn: number,
+  externalByTurn: Readonly<Record<number, readonly string[]>>,
+  strict = true,
+): ExternalDayPlanWindowGateResult {
+  const merge = mergeExternalDayPlanWindow(snapshot, fromTurn, toTurn, externalByTurn, strict);
+  const incomplete = incompletePipelineTurns(snapshot.trace, snapshot.clock.turnIndex);
+  const windowTurns = turnsInWindow(fromTurn, toTurn).filter((t) => t < snapshot.clock.turnIndex);
+  const turnsWithIncompletePipeline = windowTurns.filter((t) => incomplete.includes(t));
+  const pipelineReady = turnsWithIncompletePipeline.length === 0;
+  return {
+    merge,
+    incompletePipelineTurns: incomplete,
+    turnsWithIncompletePipeline,
+    pipelineReady,
+    ok: merge.ok && pipelineReady,
+  };
+}
+
 // --- src/pipeline-stage-coverage.ts ---
 
 export interface PipelineStageCoverageReport {
@@ -1280,6 +1322,38 @@ export function computePipelineStageCoverage(snapshot: TurnTimeSnapshot): Pipeli
     observedStageIds,
     missingStageIds,
     hitCounts,
+  };
+}
+
+// --- src/pipeline-coverage-delta.ts ---
+
+export interface PipelineStageCoverageDelta {
+  before: PipelineStageCoverageReport;
+  after: PipelineStageCoverageReport;
+  newlyObservedStageIds: Op10mAgent02PipelineStageId[];
+  hitCountDelta: Partial<Record<Op10mAgent02PipelineStageId, number>>;
+}
+
+export function computePipelineStageCoverageDelta(
+  before: TurnTimeSnapshot,
+  after: TurnTimeSnapshot,
+): PipelineStageCoverageDelta {
+  const beforeReport = computePipelineStageCoverage(before);
+  const afterReport = computePipelineStageCoverage(after);
+  const beforeObserved = new Set(beforeReport.observedStageIds);
+  const newlyObservedStageIds = afterReport.observedStageIds.filter((id) => !beforeObserved.has(id));
+
+  const hitCountDelta: Partial<Record<Op10mAgent02PipelineStageId, number>> = {};
+  for (const id of afterReport.observedStageIds) {
+    const delta = (afterReport.hitCounts[id] ?? 0) - (beforeReport.hitCounts[id] ?? 0);
+    if (delta !== 0) hitCountDelta[id] = delta;
+  }
+
+  return {
+    before: beforeReport,
+    after: afterReport,
+    newlyObservedStageIds,
+    hitCountDelta,
   };
 }
 
@@ -1820,6 +1894,44 @@ export class TurnTimeEngine {
     return stepTurnsWithBudget(this, maxSteps, budget);
   }
 
+  gateExternalDayPlanWindow(
+    fromTurn: number,
+    toTurn: number,
+    externalByTurn: Readonly<Record<number, readonly string[]>>,
+    strict = true,
+  ): ExternalDayPlanWindowGateResult {
+    return gateExternalDayPlanWindow(this.snapshot(), fromTurn, toTurn, externalByTurn, strict);
+  }
+
+  getPipelineStageCoverageDelta(before: TurnTimeSnapshot): PipelineStageCoverageDelta {
+    return computePipelineStageCoverageDelta(before, this.snapshot());
+  }
+
+  buildBatchHorizonReconcileReport(
+    before: TurnTimeSnapshot,
+    batch: BatchAdvanceResult,
+  ): BatchHorizonReconcileReport {
+    return buildBatchHorizonReconcileReport(before, this.snapshot(), batch);
+  }
+
+  buildBatchStepPipelineReports(before: TurnTimeSnapshot, batch: BatchAdvanceResult): BatchStepPipelineReportRow[] {
+    return buildBatchStepPipelineReports(before, batch);
+  }
+
+  buildBatchAdvanceObservabilityRollup(
+    before: TurnTimeSnapshot,
+    batch: BatchAdvanceResult,
+  ): BatchAdvanceObservabilityRollup {
+    return buildBatchAdvanceObservabilityRollup(before, this.snapshot(), batch);
+  }
+
+  stepTurnsWithBudgetObservability(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+  ): BatchAdvanceWithObservability {
+    return stepTurnsWithBudgetObservability(this, maxSteps, budget);
+  }
+
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {
     return buildAgent02TurnPipelineReport(this.snapshot(), before);
   }
@@ -2209,6 +2321,132 @@ export function stepTurnsWithBudgetPipelineReport(
   return { batch, report };
 }
 
+// --- src/batch-horizon-reconcile-report.ts ---
+
+export interface BatchHorizonReconcileReport {
+  steppedTurnCount: number;
+  stepHorizonOk: boolean[];
+  rangeReport: HorizonReconcileReport;
+  allStepHorizonOk: boolean;
+  ok: boolean;
+}
+
+export function buildBatchHorizonReconcileReport(
+  initial: TurnTimeSnapshot,
+  final: TurnTimeSnapshot,
+  batch: BatchAdvanceResult,
+): BatchHorizonReconcileReport {
+  const stepHorizonOk = batch.horizonReconcileOk ?? [];
+  const steppedTurns = batch.steps
+    .filter((s) => !s.blockedByPause)
+    .map((s) => s.clockBefore.turnIndex);
+  const fromTurn = steppedTurns[0] ?? initial.clock.turnIndex;
+  const toTurn = steppedTurns[steppedTurns.length - 1] ?? fromTurn;
+  const rangeReport =
+    steppedTurns.length > 0
+      ? reconcileHorizonThroughTurns(initial, final, fromTurn, toTurn)
+      : { ok: true, rows: [] };
+  const allStepHorizonOk = stepHorizonOk.every(Boolean);
+  return {
+    steppedTurnCount: steppedTurns.length,
+    stepHorizonOk,
+    rangeReport,
+    allStepHorizonOk,
+    ok: allStepHorizonOk && rangeReport.ok,
+  };
+}
+
+// --- src/batch-step-pipeline-reports.ts ---
+
+export interface BatchStepPipelineReportRow {
+  turnIndex: number;
+  report: Agent02TurnPipelineReport;
+  coverageDelta: PipelineStageCoverageDelta;
+}
+
+function syntheticSnapshotAfterStep(
+  base: TurnTimeSnapshot,
+  clock: TurnClock,
+  trace: TurnTimeSnapshot['trace'],
+): TurnTimeSnapshot {
+  return {
+    ...base,
+    clock,
+    trace,
+  };
+}
+
+export function buildBatchStepPipelineReports(
+  before: TurnTimeSnapshot,
+  batch: BatchAdvanceResult,
+): BatchStepPipelineReportRow[] {
+  const rows: BatchStepPipelineReportRow[] = [];
+  let trace = [...before.trace];
+  let prev = before;
+
+  for (const step of batch.steps) {
+    trace = [...trace, ...step.traceEntries];
+    const afterStep = syntheticSnapshotAfterStep(before, step.clockAfter, trace);
+    const report = buildAgent02TurnPipelineReport(afterStep, prev);
+    const coverageDelta = computePipelineStageCoverageDelta(prev, afterStep);
+    rows.push({
+      turnIndex: step.clockBefore.turnIndex,
+      report,
+      coverageDelta,
+    });
+    prev = afterStep;
+  }
+
+  return rows;
+}
+
+// --- src/batch-advance-observability.ts ---
+
+export interface BatchAdvanceObservabilityRollup {
+  batch: BatchAdvanceResult;
+  pipeline: BatchAdvancePipelineReport;
+  horizon: BatchHorizonReconcileReport;
+  stepRows: BatchStepPipelineReportRow[];
+  finalCoverageDelta: PipelineStageCoverageDelta;
+  ok: boolean;
+}
+
+export function buildBatchAdvanceObservabilityRollup(
+  before: TurnTimeSnapshot,
+  after: TurnTimeSnapshot,
+  batch: BatchAdvanceResult,
+): BatchAdvanceObservabilityRollup {
+  const pipeline = buildBatchAdvancePipelineReport(before, after, batch);
+  const horizon = buildBatchHorizonReconcileReport(before, after, batch);
+  const stepRows = buildBatchStepPipelineReports(before, batch);
+  const finalCoverageDelta = computePipelineStageCoverageDelta(before, after);
+  return {
+    batch,
+    pipeline,
+    horizon,
+    stepRows,
+    finalCoverageDelta,
+    ok: pipeline.allHorizonReconcileOk && horizon.ok && pipeline.incompleteTurns.length === 0,
+  };
+}
+
+export interface BatchAdvanceWithObservability {
+  batch: BatchAdvanceResult;
+  rollup: BatchAdvanceObservabilityRollup;
+}
+
+export function stepTurnsWithBudgetObservability(
+  engine: TurnTimeEngine,
+  maxSteps: number,
+  budget: TurnAdvanceBudgetState,
+): BatchAdvanceWithObservability {
+  const before = engine.snapshot();
+  const batch = stepTurnsWithBudget(engine, maxSteps, budget);
+  const after = engine.snapshot();
+  const rollup = buildBatchAdvanceObservabilityRollup(before, after, batch);
+  return { batch, rollup };
+}
+
 // --- src/fast-forward.ts ---
 
 export interface FastForwardResult {
@@ -2359,7 +2597,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '1.6.0';
+export const AGENT_02_MODULE_VERSION = '1.7.0';
 
 
 
@@ -2534,6 +2772,36 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
     name: 'external day plan window merge ok when aligned',
 
     passed: windowPlan.mergeExternalDayPlanWindow(1, 2, { 1: ['w1'], 2: ['w2'] }).ok,
+
+  });
+
+  const gatePlan = new TurnTimeEngine();
+
+  gatePlan.scheduleEvent({ id: 'g1', dueTurn: 1, kind: 'g' });
+
+  results.push({
+
+    id: 'agent02_day_plan_gate',
+
+    name: 'XS-02 window gate ok before turn advance',
+
+    passed: gatePlan.gateExternalDayPlanWindow(1, 1, { 1: ['g1'] }).ok,
+
+  });
+
+  const obs = new TurnTimeEngine();
+
+  obs.registerObligation({ id: 'obs1', dueTurn: 1, kind: 'k' });
+
+  const obsRun = obs.stepTurnsWithBudgetObservability(1, createTurnAdvanceBudget(2));
+
+  results.push({
+
+    id: 'agent02_batch_observability',
+
+    name: 'batch observability rollup ok after one step',
+
+    passed: obsRun.rollup.ok && obsRun.rollup.stepRows.length === 1,
 
   });
 
