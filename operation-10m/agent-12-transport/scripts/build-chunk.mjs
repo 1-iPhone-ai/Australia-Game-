@@ -1,0 +1,65 @@
+#!/usr/bin/env node
+/**
+ * Bundles operation-10m/agent-12-transport sources into
+ * operation-10m/modules/agent-12-infrastructure/chunk.tsx (no import lines).
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, '../../..');
+const srcRoot = path.join(repoRoot, 'operation-10m/agent-12-transport');
+const outDir = path.join(repoRoot, 'operation-10m/modules/agent-12-infrastructure');
+const outFile = path.join(outDir, 'chunk.tsx');
+
+const MODULE_ID = 'agent-12-infrastructure';
+
+const FILES = [
+  'types.ts',
+  'productivity/formulas.ts',
+  'catalog/roads-catalog.ts',
+  'catalog/rail-catalog.ts',
+  'catalog/ports-catalog.ts',
+  'catalog/logistics-catalog.ts',
+  'catalog/all-catalog.ts',
+  'productivity/compute-national-productivity.ts',
+  'run-self-checks.ts',
+];
+
+function stripModulePreamble(source) {
+  return source
+    .split('\n')
+    .filter((line) => {
+      const t = line.trim();
+      if (t.startsWith('import ')) return false;
+      if (t.startsWith('export * from')) return false;
+      return true;
+    })
+    .join('\n');
+}
+
+const parts = [
+  `// OP10M_MODULE_BEGIN ${MODULE_ID}`,
+  '// Agent 12 — Transportation / infrastructure productivity (generated; source: operation-10m/agent-12-transport/)',
+  '',
+];
+
+for (const rel of FILES) {
+  const abs = path.join(srcRoot, rel);
+  if (!fs.existsSync(abs)) {
+    console.error('Missing source file:', rel);
+    process.exit(1);
+  }
+  parts.push(`// --- source: ${rel} ---`);
+  parts.push(stripModulePreamble(fs.readFileSync(abs, 'utf8')));
+  parts.push('');
+}
+
+parts.push(`// OP10M_MODULE_END ${MODULE_ID}`);
+parts.push('');
+
+fs.mkdirSync(outDir, { recursive: true });
+const body = parts.join('\n');
+fs.writeFileSync(outFile, body);
+console.log('Wrote', outFile, `(${body.split('\n').length} lines)`);

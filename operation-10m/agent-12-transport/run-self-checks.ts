@@ -1,5 +1,4 @@
 import { getAgent12TransportCatalog, getCatalogIntegrityReport, getDefaultOperationalAssetIds } from './catalog/all-catalog.ts';
-import { deriveOperationalAssetsFromProjects } from './integration/v94-productivity-bridge.ts';
 import { computeNationalTransportProductivity } from './productivity/compute-national-productivity.ts';
 
 export interface SelfCheckResult {
@@ -30,10 +29,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   });
 
   const waBefore = baseline.byRegion.WA.productivityIndexBonus;
-  const withProject = deriveOperationalAssetsFromProjects(
-    [{ id: 'infra_v93_wa_freight_rail', projectType: 'freight_rail_upgrade', regionId: 'WA', status: 'active' }],
-    2,
-  );
+  const withProject = computeNationalTransportProductivity({
+    turn: 2,
+    assets: getAgent12TransportCatalog(),
+    operationalAssetIds: getDefaultOperationalAssetIds(),
+    activeProjectIds: new Set(['infra_v93_wa_freight_rail']),
+  });
   const waAfter = withProject.byRegion.WA.productivityIndexBonus;
   results.push({
     id: 'active_project_boosts_wa',

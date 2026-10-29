@@ -46,3 +46,17 @@ Catalog entries may set `linkedProjectId` to receive a **1.22×** productivity m
 ## Version
 
 `AGENT12_CATALOG_VERSION = 2026-10-29.1`
+
+## Assembly chunk (Agent 25)
+
+| Artifact | Marker |
+|----------|--------|
+| `operation-10m/modules/agent-12-infrastructure/chunk.tsx` | `OP10M_MODULE_BEGIN agent-12-infrastructure` |
+
+Regenerate (excludes V9.4 bridge and test harness imports):
+
+```bash
+npm run build:agent12-chunk
+```
+
+Optional pre-assembly bridge (not in chunk): `integration/v94-productivity-bridge.ts`

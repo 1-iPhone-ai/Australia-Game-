@@ -22,7 +22,10 @@ Roads, rail, ports, and logistics nodes with **measurable productivity effects**
 ```bash
 npm run test:agent12
 npm run selfcheck:agent12
+npm run build:agent12-chunk
 ```
+
+Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
 ## Assembly
 
