@@ -129,6 +129,9 @@ import { op10mA11ComputeSettlementExistentialUltimateNullitySeal } from './settl
 import { op10mA11ComputeRegionalCollapseAbsoluteSingularityApex } from './regional-collapse-absolute-singularity-apex.ts';
 import { op10mA11ComputeInterregionalVoidCompleteErosionTerminality } from './interregional-void-complete-erosion-terminality.ts';
 import { op10mA11ComputeSettlementExistentialFinalNullityClosure } from './settlement-existential-final-nullity-closure.ts';
+import { op10mA11ComputeRegionalCollapseUltimateSingularityZenith } from './regional-collapse-ultimate-singularity-zenith.ts';
+import { op10mA11ComputeInterregionalVoidTotalErosionFinality } from './interregional-void-total-erosion-finality.ts';
+import { op10mA11ComputeSettlementExistentialAbsoluteNullityVerdict } from './settlement-existential-absolute-nullity-verdict.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -455,7 +458,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.28',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.29',
     composite.state.schemaVersion,
   );
 
@@ -615,7 +618,10 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastExistentialUltimateNullitySealIndex === composite.state.nationalExistentialUltimateNullitySealIndex &&
       composite.persisted.lastCollapseAbsoluteSingularityApexIndex === composite.state.nationalCollapseAbsoluteSingularityApexIndex &&
       composite.persisted.lastVoidCompleteErosionTerminalityIndex === composite.state.nationalVoidCompleteErosionTerminalityIndex &&
-      composite.persisted.lastExistentialFinalNullityClosureIndex === composite.state.nationalExistentialFinalNullityClosureIndex,
+      composite.persisted.lastExistentialFinalNullityClosureIndex === composite.state.nationalExistentialFinalNullityClosureIndex &&
+      composite.persisted.lastCollapseUltimateSingularityZenithIndex === composite.state.nationalCollapseUltimateSingularityZenithIndex &&
+      composite.persisted.lastVoidTotalErosionFinalityIndex === composite.state.nationalVoidTotalErosionFinalityIndex &&
+      composite.persisted.lastExistentialAbsoluteNullityVerdictIndex === composite.state.nationalExistentialAbsoluteNullityVerdictIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -2686,6 +2692,90 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_257',
     composite.state.existentialFinalNullityClosure.every((c) => c.narrative.includes('existential final nullity closure')),
     composite.state.existentialFinalNullityClosure[0]?.band ?? 'none',
+  );
+
+  const collapseUltimateSingularityZenith = op10mA11ComputeRegionalCollapseUltimateSingularityZenith({
+    collapseAbsoluteSingularityApex: composite.state.collapseAbsoluteSingularityApex,
+    voidCompleteErosionTerminality: composite.state.voidCompleteErosionTerminality,
+    existentialFinalNullityClosure: composite.state.existentialFinalNullityClosure,
+  });
+  push(
+    out,
+    'a11_258',
+    composite.state.collapseUltimateSingularityZenith.length === 8 &&
+      composite.state.nationalCollapseUltimateSingularityZenithIndex === collapseUltimateSingularityZenith.nationalIndex,
+    `singularity zenith ${composite.state.nationalCollapseUltimateSingularityZenithIndex}`,
+  );
+
+  const voidTotalErosionFinality = op10mA11ComputeInterregionalVoidTotalErosionFinality({
+    voidCompleteErosionTerminality: composite.state.voidCompleteErosionTerminality,
+    collapseAbsoluteSingularityApex: composite.state.collapseAbsoluteSingularityApex,
+    voidExistenceAnnihilationFront: composite.state.voidExistenceAnnihilationFront,
+  });
+  push(
+    out,
+    'a11_259',
+    composite.state.voidTotalErosionFinality.length === 8 &&
+      composite.state.nationalVoidTotalErosionFinalityIndex === voidTotalErosionFinality.nationalIndex,
+    `total finality ${composite.state.nationalVoidTotalErosionFinalityIndex}`,
+  );
+
+  const existentialAbsoluteNullityVerdict = op10mA11ComputeSettlementExistentialAbsoluteNullityVerdict({
+    existentialFinalNullityClosure: composite.state.existentialFinalNullityClosure,
+    collapseAbsoluteSingularityApex: composite.state.collapseAbsoluteSingularityApex,
+    existentialUltimateNullitySeal: composite.state.existentialUltimateNullitySeal,
+  });
+  push(
+    out,
+    'a11_260',
+    composite.state.existentialAbsoluteNullityVerdict.length === 8 &&
+      composite.state.nationalExistentialAbsoluteNullityVerdictIndex === existentialAbsoluteNullityVerdict.nationalIndex,
+    `nullity verdict ${composite.state.nationalExistentialAbsoluteNullityVerdictIndex}`,
+  );
+
+  push(
+    out,
+    'a11_261',
+    composite.state.collapseUltimateSingularityZenith.every((z) => z.narrative.includes('collapse ultimate singularity zenith')),
+    composite.state.collapseUltimateSingularityZenith[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_262',
+    composite.derived.some((d) => d.kind === 'collapse_ultimate_singularity_zenith') ||
+      composite.state.collapseUltimateSingularityZenith.some((z) => z.band === 'total' || z.band === 'zenith'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_263',
+    composite.derived.some((d) => d.kind === 'void_total_erosion_finality') ||
+      composite.state.voidTotalErosionFinality.some((f) => f.band === 'final' || f.band === 'total_finality'),
+    composite.state.voidTotalErosionFinality[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_264',
+    composite.persisted.lastVoidTotalErosionFinalityIndex === composite.state.nationalVoidTotalErosionFinalityIndex,
+    `persisted finality ${composite.persisted.lastVoidTotalErosionFinalityIndex}`,
+  );
+
+  push(
+    out,
+    'a11_265',
+    composite.derived.some((d) => d.kind === 'existential_absolute_nullity_verdict') ||
+      composite.state.existentialAbsoluteNullityVerdict.some((v) => v.band === 'absolute' || v.band === 'total_verdict'),
+    composite.state.existentialAbsoluteNullityVerdict[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_266',
+    composite.state.existentialAbsoluteNullityVerdict.every((v) => v.narrative.includes('existential absolute nullity verdict')),
+    composite.state.existentialAbsoluteNullityVerdict[0]?.band ?? 'none',
   );
 
   return out;
