@@ -345,6 +345,10 @@ export interface NationalLaborDemographicsState {
   schedulingPulseOutlook?: NationalSchedulingPulseOutlook;
   subjectSchedulingReadinessBrief?: NationalSubjectSchedulingReadinessBrief;
   nationalWorkforceSchedulingIndex?: NationalWorkforceSchedulingIndex;
+  schedulingSafetyCouplingBrief?: NationalSchedulingSafetyCouplingBrief;
+  safetyCalibrationOutlook?: NationalSafetyCalibrationOutlook;
+  subjectSafetyReadinessBrief?: NationalSubjectSafetyReadinessBrief;
+  nationalWorkforceSafetyIndex?: NationalWorkforceSafetyIndex;
 }
 
 export type MigrationShockKind =
@@ -2165,6 +2169,54 @@ export interface NationalWorkforceSchedulingIndex {
   schedulingIndex: number;
   band: WorkforceSchedulingBand;
   schedulingDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SchedulingSafetyCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalSchedulingSafetyCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: SchedulingSafetyCouplingBand;
+  schedulingDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SafetyCalibrationBand = 'ebbing' | 'patchy' | 'rising' | 'calibrated';
+
+export interface NationalSafetyCalibrationOutlook {
+  turn: number;
+  calibrationIndex: number;
+  band: SafetyCalibrationBand;
+  schedulingDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectSafetyReadinessBand =
+  | 'below_safety'
+  | 'approaching'
+  | 'safety_ready'
+  | 'scheduling_locked';
+
+export interface NationalSubjectSafetyReadinessBrief {
+  turn: number;
+  safetyIndex: number;
+  band: SubjectSafetyReadinessBand;
+  safetyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceSafetyBand = 'fragile' | 'thin' | 'elevated' | 'safety';
+
+export interface NationalWorkforceSafetyIndex {
+  turn: number;
+  safetyIndex: number;
+  band: WorkforceSafetyBand;
+  safetyDrag: number;
   summary: string;
   stewardNote: string;
 }

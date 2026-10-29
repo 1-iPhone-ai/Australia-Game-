@@ -230,6 +230,10 @@ import { computeNationalCoordinationSchedulingCouplingBrief } from './coordinati
 import { computeNationalSchedulingPulseOutlook } from './scheduling-pulse-outlook';
 import { computeNationalSubjectSchedulingReadinessBrief } from './subject-scheduling-readiness-brief';
 import { computeNationalWorkforceSchedulingIndex } from './national-workforce-scheduling-index';
+import { computeNationalSchedulingSafetyCouplingBrief } from './scheduling-safety-coupling-brief';
+import { computeNationalSafetyCalibrationOutlook } from './safety-calibration-outlook';
+import { computeNationalSubjectSafetyReadinessBrief } from './subject-safety-readiness-brief';
+import { computeNationalWorkforceSafetyIndex } from './national-workforce-safety-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -2807,6 +2811,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'scheduling steward note'
   );
   check('R4416', schedulingEaseForRegion('NSW', 'technology') > 0, 'scheduling ease for region');
+
+  check('R4501', Boolean(r1.state.schedulingSafetyCouplingBrief?.band), 'scheduling safety on state');
+  check(
+    'R4502',
+    (r1.state.schedulingSafetyCouplingBrief?.schedulingDrag ?? 0) >= 0,
+    'scheduling safety drag'
+  );
+  check('R4503', Boolean(r1.state.safetyCalibrationOutlook?.band), 'safety calibration on state');
+  check(
+    'R4504',
+    (r1.state.safetyCalibrationOutlook?.schedulingDrag ?? 0) >= 0,
+    'safety calibration scheduling drag'
+  );
+  check('R4505', Boolean(r1.state.subjectSafetyReadinessBrief?.band), 'subject safety on state');
+  check('R4506', Boolean(r1.state.nationalWorkforceSafetyIndex?.band), 'workforce safety on state');
+  check(
+    'R4507',
+    detectLaborDemographicsQuery('scheduling safety coupling') === 'scheduling_safety_coupling',
+    'GI scheduling safety detect'
+  );
+  check(
+    'R4508',
+    detectLaborDemographicsQuery('safety calibration') === 'safety_calibration',
+    'GI safety calibration detect'
+  );
+  check(
+    'R4509',
+    detectLaborDemographicsQuery('subject safety readiness') === 'subject_safety_readiness',
+    'GI subject safety detect'
+  );
+  check(
+    'R4510',
+    detectLaborDemographicsQuery('workforce safety') === 'workforce_safety',
+    'GI workforce safety detect'
+  );
+  check(
+    'R4511',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_safety').headline.length > 5,
+    'GI workforce safety answer'
+  );
+  const schedulingSafetyOnly = computeNationalSchedulingSafetyCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceSchedulingIndex
+  );
+  check('R4512', schedulingSafetyOnly.summary.length > 10, 'scheduling safety standalone summary');
+  const safetyCalibrationOnly = computeNationalSafetyCalibrationOutlook(
+    r1.state,
+    r1.state.schedulingPulseOutlook
+  );
+  check('R4513', safetyCalibrationOnly.band.length > 3, 'safety calibration band string');
+  const subjectSafetyOnly = computeNationalSubjectSafetyReadinessBrief(
+    r1.state,
+    r1.state.subjectSchedulingReadinessBrief,
+    r1.state.nationalWorkforceSchedulingIndex
+  );
+  check('R4514', subjectSafetyOnly.safetyDrag >= 0, 'subject safety drag');
+  check(
+    'R4515',
+    computeNationalWorkforceSafetyIndex(
+      rHhBad.state,
+      rHhBad.state.schedulingSafetyCouplingBrief,
+      rHhBad.state.safetyCalibrationOutlook,
+      rHhBad.state.subjectSafetyReadinessBrief
+    ).stewardNote.length > 8,
+    'safety steward note'
+  );
+  check('R4516', safetyEaseForRegion('NSW', 'technology') > 0, 'safety ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

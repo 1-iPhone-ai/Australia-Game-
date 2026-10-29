@@ -349,6 +349,10 @@ export interface NationalLaborDemographicsState {
   schedulingPulseOutlook?: NationalSchedulingPulseOutlook;
   subjectSchedulingReadinessBrief?: NationalSubjectSchedulingReadinessBrief;
   nationalWorkforceSchedulingIndex?: NationalWorkforceSchedulingIndex;
+  schedulingSafetyCouplingBrief?: NationalSchedulingSafetyCouplingBrief;
+  safetyCalibrationOutlook?: NationalSafetyCalibrationOutlook;
+  subjectSafetyReadinessBrief?: NationalSubjectSafetyReadinessBrief;
+  nationalWorkforceSafetyIndex?: NationalWorkforceSafetyIndex;
 }
 
 export type MigrationShockKind =
@@ -2173,6 +2177,54 @@ export interface NationalWorkforceSchedulingIndex {
   stewardNote: string;
 }
 
+export type SchedulingSafetyCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalSchedulingSafetyCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: SchedulingSafetyCouplingBand;
+  schedulingDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SafetyCalibrationBand = 'ebbing' | 'patchy' | 'rising' | 'calibrated';
+
+export interface NationalSafetyCalibrationOutlook {
+  turn: number;
+  calibrationIndex: number;
+  band: SafetyCalibrationBand;
+  schedulingDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectSafetyReadinessBand =
+  | 'below_safety'
+  | 'approaching'
+  | 'safety_ready'
+  | 'scheduling_locked';
+
+export interface NationalSubjectSafetyReadinessBrief {
+  turn: number;
+  safetyIndex: number;
+  band: SubjectSafetyReadinessBand;
+  safetyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceSafetyBand = 'fragile' | 'thin' | 'elevated' | 'safety';
+
+export interface NationalWorkforceSafetyIndex {
+  turn: number;
+  safetyIndex: number;
+  band: WorkforceSafetyBand;
+  safetyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -3399,7 +3451,11 @@ export type LaborGiQueryTopic =
   | 'coordination_scheduling_coupling'
   | 'scheduling_pulse'
   | 'subject_scheduling_readiness'
-  | 'workforce_scheduling';
+  | 'workforce_scheduling'
+  | 'scheduling_safety_coupling'
+  | 'safety_calibration'
+  | 'subject_safety_readiness'
+  | 'workforce_safety';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -3586,6 +3642,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_scheduling_readiness';
   }
   if (/\b(workforce scheduling|scheduling index labor workforce)/.test(q)) return 'workforce_scheduling';
+  if (/\b(scheduling safety|scheduling-safety coupling)/.test(q)) return 'scheduling_safety_coupling';
+  if (/\b(safety calibration|safety pipeline calibration)/.test(q)) return 'safety_calibration';
+  if (/\b(subject safety readiness|safety readiness subject)/.test(q)) {
+    return 'subject_safety_readiness';
+  }
+  if (/\b(workforce safety|safety index labor workforce)/.test(q)) return 'workforce_safety';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -4885,6 +4947,38 @@ export function answerLaborDemographicsQuestion(
         inference: state.nationalWorkforceSchedulingIndex?.stewardNote || state.summary,
         projection: 'Workforce scheduling synthesizes coordination-scheduling coupling, scheduling pulse, and subject scheduling.'
       };
+    case 'scheduling_safety_coupling':
+      return {
+        topic,
+        headline: state.schedulingSafetyCouplingBrief?.summary || 'Scheduling-safety coupling unavailable.',
+        fact: `Coupling band ${state.schedulingSafetyCouplingBrief?.band ?? 'unknown'}; scheduling drag ${Math.round(state.schedulingSafetyCouplingBrief?.schedulingDrag ?? 0)}.`,
+        inference: state.schedulingSafetyCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce scheduling with safety levers — wave 45 / O10-221 depth.'
+      };
+    case 'safety_calibration':
+      return {
+        topic,
+        headline: state.safetyCalibrationOutlook?.summary || 'Safety calibration unavailable.',
+        fact: `Calibration band ${state.safetyCalibrationOutlook?.band ?? 'unknown'}; scheduling drag ${Math.round(state.safetyCalibrationOutlook?.schedulingDrag ?? 0)}.`,
+        inference: state.safetyCalibrationOutlook?.stewardNote || state.outlook,
+        projection: 'Calibration blends safety levers with scheduling pulse — bounded indices only.'
+      };
+    case 'subject_safety_readiness':
+      return {
+        topic,
+        headline: state.subjectSafetyReadinessBrief?.summary || 'Subject safety readiness unavailable.',
+        fact: `Safety band ${state.subjectSafetyReadinessBrief?.band ?? 'unknown'}; safety drag ${Math.round(state.subjectSafetyReadinessBrief?.safetyDrag ?? 0)}.`,
+        inference: state.subjectSafetyReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject safety readiness gates subject scheduling against workforce scheduling for O10-221 wave 45.'
+      };
+    case 'workforce_safety':
+      return {
+        topic,
+        headline: state.nationalWorkforceSafetyIndex?.summary || 'Workforce safety unavailable.',
+        fact: `Safety band ${state.nationalWorkforceSafetyIndex?.band ?? 'unknown'}; safety drag ${Math.round(state.nationalWorkforceSafetyIndex?.safetyDrag ?? 0)}.`,
+        inference: state.nationalWorkforceSafetyIndex?.stewardNote || state.summary,
+        projection: 'Workforce safety synthesizes scheduling-safety coupling, safety calibration, and subject safety.'
+      };
     default:
       return {
         topic: 'national_summary',
@@ -6089,6 +6183,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceSchedulingIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceSchedulingIndex.stewardNote);
+  }
+  if (
+    state.schedulingSafetyCouplingBrief?.band === 'decoupled' ||
+    state.schedulingSafetyCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.schedulingSafetyCouplingBrief.stewardNote);
+  }
+  if (
+    state.safetyCalibrationOutlook?.band === 'ebbing' ||
+    state.safetyCalibrationOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.safetyCalibrationOutlook.stewardNote);
+  }
+  if (
+    state.subjectSafetyReadinessBrief?.band === 'below_safety' ||
+    state.subjectSafetyReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectSafetyReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceSafetyIndex?.band === 'fragile' ||
+    state.nationalWorkforceSafetyIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceSafetyIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -18046,6 +18164,278 @@ export function computeNationalWorkforceSchedulingIndex(
 }
 
 
+// --- source: scheduling-safety-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalSchedulingSafetyCouplingBrief,
+  type NationalWorkforceSchedulingIndex,
+  type SchedulingSafetyCouplingBand
+} from './types';
+
+function couplingBand(index: number): SchedulingSafetyCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-45 / wave-45 scheduling-safety coupling — scheduling × safety (O10-221). */
+export function computeNationalSchedulingSafetyCouplingBrief(
+  state: NationalLaborDemographicsState,
+  scheduling: NationalWorkforceSchedulingIndex | null | undefined
+): NationalSchedulingSafetyCouplingBrief {
+  if (!state.enabled || !scheduling) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      schedulingDrag: 0,
+      summary: 'Scheduling-safety coupling idle — workforce scheduling unavailable.',
+      stewardNote: 'Compute workforce scheduling before safety coupling guidance.'
+    };
+  }
+
+  let safetyLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    safetyLift += safetyEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  safetyLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const schedulingDrag = v1014laborClamp(
+    scheduling.schedulingDrag * 0.48 + (scheduling.band === 'fragile' || scheduling.band === 'thin' ? 11 : 3)
+  );
+  const schedulingLift =
+    scheduling.band === 'elevated' || scheduling.band === 'scheduling'
+      ? scheduling.schedulingIndex * 0.24
+      : scheduling.schedulingIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + safetyLift * 21 + schedulingLift - schedulingDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained scheduling-safety link — deploy safety levers before wave-45 safety commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard safety calibration spikes that drain scheduling buffers.'
+        : 'Amplified coupling — pair safety packs with subject safety readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    schedulingDrag,
+    summary: `Scheduling-safety coupling ${band} (index ${Math.round(couplingIndex)}); scheduling drag ${Math.round(schedulingDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: safety-calibration-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalSafetyCalibrationOutlook,
+  type NationalSchedulingPulseOutlook,
+  type SafetyCalibrationBand
+} from './types';
+
+function calibrationBand(index: number): SafetyCalibrationBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'calibrated';
+}
+
+export function computeNationalSafetyCalibrationOutlook(
+  state: NationalLaborDemographicsState,
+  schedulingPulse: NationalSchedulingPulseOutlook | null | undefined
+): NationalSafetyCalibrationOutlook {
+  if (!state.enabled || !schedulingPulse) {
+    return {
+      turn: state.turn,
+      calibrationIndex: 50,
+      band: 'patchy',
+      schedulingDrag: 0,
+      summary: 'Safety calibration idle — scheduling pulse unavailable.',
+      stewardNote: 'Compute scheduling pulse before safety calibration guidance.'
+    };
+  }
+
+  let safetyLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    safetyLift += safetyEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  safetyLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const schedulingDrag = v1014laborClamp(
+    schedulingPulse.coordinationDrag * 0.46 +
+      (schedulingPulse.band === 'ebbing' || schedulingPulse.band === 'patchy' ? 10 : 3)
+  );
+  const pulseLift =
+    schedulingPulse.band === 'rising' || schedulingPulse.band === 'pulsing'
+      ? schedulingPulse.pulseIndex * 0.2
+      : schedulingPulse.pulseIndex * 0.1;
+
+  const calibrationIndex = v1014laborClamp(24 + safetyLift * 22 + pulseLift - schedulingDrag);
+  const band = calibrationBand(calibrationIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy safety calibration — deploy safety levers before subject safety assembly.'
+      : band === 'calibrated'
+        ? 'Calibrated band — verify scheduling-safety coupling before auto workforce pushes.'
+        : 'Rising calibration — align with scheduling pulse outlook checks.';
+
+  return {
+    turn: state.turn,
+    calibrationIndex,
+    band,
+    schedulingDrag,
+    summary: `National safety calibration ${band} (index ${Math.round(calibrationIndex)}); scheduling drag ${Math.round(schedulingDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-safety-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectSafetyReadinessBrief,
+  type NationalSubjectSchedulingReadinessBrief,
+  type NationalWorkforceSchedulingIndex,
+  type SubjectSafetyReadinessBand
+} from './types';
+
+function safetyBand(index: number): SubjectSafetyReadinessBand {
+  if (index <= 34) return 'below_safety';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'safety_ready';
+  return 'scheduling_locked';
+}
+
+/** Round-45 / wave-45 subject safety readiness — scheduling × workforce scheduling (O10-221). */
+export function computeNationalSubjectSafetyReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectScheduling: NationalSubjectSchedulingReadinessBrief | null | undefined,
+  workforceScheduling: NationalWorkforceSchedulingIndex | null | undefined
+): NationalSubjectSafetyReadinessBrief {
+  if (!state.enabled || !subjectScheduling || !workforceScheduling) {
+    return {
+      turn: state.turn,
+      safetyIndex: 50,
+      band: 'approaching',
+      safetyDrag: 0,
+      summary: 'Subject safety readiness idle — subject scheduling or workforce scheduling unavailable.',
+      stewardNote: 'Compute subject scheduling and workforce scheduling before safety guidance.'
+    };
+  }
+
+  const safetyDrag = v1014laborClamp(
+    subjectScheduling.schedulingDrag * 0.38 +
+      workforceScheduling.schedulingDrag * 0.38 +
+      (subjectScheduling.band === 'below_scheduling' || workforceScheduling.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectScheduling.band === 'scheduling_ready' || subjectScheduling.band === 'coordination_locked'
+      ? subjectScheduling.schedulingIndex * 0.27
+      : subjectScheduling.schedulingIndex * 0.14;
+  const workforceLift =
+    workforceScheduling.band === 'elevated' || workforceScheduling.band === 'scheduling'
+      ? workforceScheduling.schedulingIndex * 0.25
+      : workforceScheduling.schedulingIndex * 0.12;
+
+  const safetyIndex = v1014laborClamp(20 + subjectLift + workforceLift - safetyDrag);
+  const band = safetyBand(safetyIndex);
+
+  const stewardNote =
+    band === 'below_safety' || band === 'approaching'
+      ? 'Approaching safety — hold O10-221 wave-45 scale until scheduling-safety syncs.'
+      : band === 'scheduling_locked'
+        ? 'Scheduling-locked safety — still monitor safety calibration during corridor peaks.'
+        : 'Safety-ready — pair with workforce safety index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    safetyIndex,
+    band,
+    safetyDrag,
+    summary: `Subject safety readiness ${band} (index ${Math.round(safetyIndex)}); safety drag ${Math.round(safetyDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-safety-index.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSafetyCalibrationOutlook,
+  type NationalSchedulingSafetyCouplingBrief,
+  type NationalSubjectSafetyReadinessBrief,
+  type NationalWorkforceSafetyIndex,
+  type WorkforceSafetyBand
+} from './types';
+
+function safetyBand(index: number): WorkforceSafetyBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'safety';
+}
+
+export function computeNationalWorkforceSafetyIndex(
+  state: NationalLaborDemographicsState,
+  safetyCoupling: NationalSchedulingSafetyCouplingBrief | null | undefined,
+  safetyCalibration: NationalSafetyCalibrationOutlook | null | undefined,
+  subjectSafety: NationalSubjectSafetyReadinessBrief | null | undefined
+): NationalWorkforceSafetyIndex {
+  if (!state.enabled || !safetyCoupling || !safetyCalibration || !subjectSafety) {
+    return {
+      turn: state.turn,
+      safetyIndex: 50,
+      band: 'thin',
+      safetyDrag: 0,
+      summary: 'Workforce safety idle — safety coupling, calibration, or subject safety unavailable.',
+      stewardNote: 'Compute O10-221 wave-45 depth stack before safety guidance.'
+    };
+  }
+
+  const safetyDrag = v1014laborClamp(
+    subjectSafety.safetyDrag * 0.35 +
+      safetyCoupling.schedulingDrag * 0.3 +
+      safetyCalibration.schedulingDrag * 0.25 +
+      (subjectSafety.band === 'below_safety' || safetyCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const couplingLift =
+    safetyCoupling.band === 'amplified' || safetyCoupling.band === 'elevated'
+      ? safetyCoupling.couplingIndex * 0.2
+      : safetyCoupling.couplingIndex * 0.1;
+  const calibrationLift =
+    safetyCalibration.band === 'rising' || safetyCalibration.band === 'calibrated'
+      ? safetyCalibration.calibrationIndex * 0.18
+      : safetyCalibration.calibrationIndex * 0.09;
+  const subjectLift =
+    subjectSafety.band === 'safety_ready' || subjectSafety.band === 'scheduling_locked'
+      ? subjectSafety.safetyIndex * 0.22
+      : subjectSafety.safetyIndex * 0.11;
+
+  const safetyIndex = v1014laborClamp(18 + couplingLift + calibrationLift + subjectLift - safetyDrag);
+  const band = safetyBand(safetyIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce safety — sequence scheduling-safety, safety calibration, and subject safety before post-98bcd652 tranche.'
+      : band === 'safety'
+        ? 'Safety band — avoid corridor overload that breaks subject safety bands.'
+        : 'Elevated safety — refresh subject safety checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    safetyIndex,
+    band,
+    safetyDrag,
+    summary: `National workforce safety ${band} (index ${Math.round(safetyIndex)}); safety drag ${Math.round(safetyDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -19249,6 +19639,25 @@ export function computeNationalLaborDemographics(
     state.schedulingPulseOutlook,
     state.subjectSchedulingReadinessBrief
   );
+  state.schedulingSafetyCouplingBrief = computeNationalSchedulingSafetyCouplingBrief(
+    state,
+    state.nationalWorkforceSchedulingIndex
+  );
+  state.safetyCalibrationOutlook = computeNationalSafetyCalibrationOutlook(
+    state,
+    state.schedulingPulseOutlook
+  );
+  state.subjectSafetyReadinessBrief = computeNationalSubjectSafetyReadinessBrief(
+    state,
+    state.subjectSchedulingReadinessBrief,
+    state.nationalWorkforceSchedulingIndex
+  );
+  state.nationalWorkforceSafetyIndex = computeNationalWorkforceSafetyIndex(
+    state,
+    state.schedulingSafetyCouplingBrief,
+    state.safetyCalibrationOutlook,
+    state.subjectSafetyReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -20267,6 +20676,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceSchedulingIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.schedulingSafetyCouplingBrief?.band === 'decoupled' ||
+      state.schedulingSafetyCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.schedulingSafetyCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.safetyCalibrationOutlook?.band === 'ebbing' ||
+      state.safetyCalibrationOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.safetyCalibrationOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectSafetyReadinessBrief?.band === 'below_safety' ||
+      state.subjectSafetyReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectSafetyReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceSafetyIndex?.band === 'fragile' ||
+      state.nationalWorkforceSafetyIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceSafetyIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -22913,6 +23350,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'scheduling steward note'
   );
   check('R4416', schedulingEaseForRegion('NSW', 'technology') > 0, 'scheduling ease for region');
+
+  check('R4501', Boolean(r1.state.schedulingSafetyCouplingBrief?.band), 'scheduling safety on state');
+  check(
+    'R4502',
+    (r1.state.schedulingSafetyCouplingBrief?.schedulingDrag ?? 0) >= 0,
+    'scheduling safety drag'
+  );
+  check('R4503', Boolean(r1.state.safetyCalibrationOutlook?.band), 'safety calibration on state');
+  check(
+    'R4504',
+    (r1.state.safetyCalibrationOutlook?.schedulingDrag ?? 0) >= 0,
+    'safety calibration scheduling drag'
+  );
+  check('R4505', Boolean(r1.state.subjectSafetyReadinessBrief?.band), 'subject safety on state');
+  check('R4506', Boolean(r1.state.nationalWorkforceSafetyIndex?.band), 'workforce safety on state');
+  check(
+    'R4507',
+    detectLaborDemographicsQuery('scheduling safety coupling') === 'scheduling_safety_coupling',
+    'GI scheduling safety detect'
+  );
+  check(
+    'R4508',
+    detectLaborDemographicsQuery('safety calibration') === 'safety_calibration',
+    'GI safety calibration detect'
+  );
+  check(
+    'R4509',
+    detectLaborDemographicsQuery('subject safety readiness') === 'subject_safety_readiness',
+    'GI subject safety detect'
+  );
+  check(
+    'R4510',
+    detectLaborDemographicsQuery('workforce safety') === 'workforce_safety',
+    'GI workforce safety detect'
+  );
+  check(
+    'R4511',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_safety').headline.length > 5,
+    'GI workforce safety answer'
+  );
+  const schedulingSafetyOnly = computeNationalSchedulingSafetyCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceSchedulingIndex
+  );
+  check('R4512', schedulingSafetyOnly.summary.length > 10, 'scheduling safety standalone summary');
+  const safetyCalibrationOnly = computeNationalSafetyCalibrationOutlook(
+    r1.state,
+    r1.state.schedulingPulseOutlook
+  );
+  check('R4513', safetyCalibrationOnly.band.length > 3, 'safety calibration band string');
+  const subjectSafetyOnly = computeNationalSubjectSafetyReadinessBrief(
+    r1.state,
+    r1.state.subjectSchedulingReadinessBrief,
+    r1.state.nationalWorkforceSchedulingIndex
+  );
+  check('R4514', subjectSafetyOnly.safetyDrag >= 0, 'subject safety drag');
+  check(
+    'R4515',
+    computeNationalWorkforceSafetyIndex(
+      rHhBad.state,
+      rHhBad.state.schedulingSafetyCouplingBrief,
+      rHhBad.state.safetyCalibrationOutlook,
+      rHhBad.state.subjectSafetyReadinessBrief
+    ).stewardNote.length > 8,
+    'safety steward note'
+  );
+  check('R4516', safetyEaseForRegion('NSW', 'technology') > 0, 'safety ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

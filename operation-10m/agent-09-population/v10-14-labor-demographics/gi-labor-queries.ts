@@ -163,7 +163,11 @@ export type LaborGiQueryTopic =
   | 'coordination_scheduling_coupling'
   | 'scheduling_pulse'
   | 'subject_scheduling_readiness'
-  | 'workforce_scheduling';
+  | 'workforce_scheduling'
+  | 'scheduling_safety_coupling'
+  | 'safety_calibration'
+  | 'subject_safety_readiness'
+  | 'workforce_safety';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -350,6 +354,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_scheduling_readiness';
   }
   if (/\b(workforce scheduling|scheduling index labor workforce)/.test(q)) return 'workforce_scheduling';
+  if (/\b(scheduling safety|scheduling-safety coupling)/.test(q)) return 'scheduling_safety_coupling';
+  if (/\b(safety calibration|safety pipeline calibration)/.test(q)) return 'safety_calibration';
+  if (/\b(subject safety readiness|safety readiness subject)/.test(q)) {
+    return 'subject_safety_readiness';
+  }
+  if (/\b(workforce safety|safety index labor workforce)/.test(q)) return 'workforce_safety';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1648,6 +1658,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Scheduling band ${state.nationalWorkforceSchedulingIndex?.band ?? 'unknown'}; scheduling drag ${Math.round(state.nationalWorkforceSchedulingIndex?.schedulingDrag ?? 0)}.`,
         inference: state.nationalWorkforceSchedulingIndex?.stewardNote || state.summary,
         projection: 'Workforce scheduling synthesizes coordination-scheduling coupling, scheduling pulse, and subject scheduling.'
+      };
+    case 'scheduling_safety_coupling':
+      return {
+        topic,
+        headline: state.schedulingSafetyCouplingBrief?.summary || 'Scheduling-safety coupling unavailable.',
+        fact: `Coupling band ${state.schedulingSafetyCouplingBrief?.band ?? 'unknown'}; scheduling drag ${Math.round(state.schedulingSafetyCouplingBrief?.schedulingDrag ?? 0)}.`,
+        inference: state.schedulingSafetyCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce scheduling with safety levers — wave 45 / O10-221 depth.'
+      };
+    case 'safety_calibration':
+      return {
+        topic,
+        headline: state.safetyCalibrationOutlook?.summary || 'Safety calibration unavailable.',
+        fact: `Calibration band ${state.safetyCalibrationOutlook?.band ?? 'unknown'}; scheduling drag ${Math.round(state.safetyCalibrationOutlook?.schedulingDrag ?? 0)}.`,
+        inference: state.safetyCalibrationOutlook?.stewardNote || state.outlook,
+        projection: 'Calibration blends safety levers with scheduling pulse — bounded indices only.'
+      };
+    case 'subject_safety_readiness':
+      return {
+        topic,
+        headline: state.subjectSafetyReadinessBrief?.summary || 'Subject safety readiness unavailable.',
+        fact: `Safety band ${state.subjectSafetyReadinessBrief?.band ?? 'unknown'}; safety drag ${Math.round(state.subjectSafetyReadinessBrief?.safetyDrag ?? 0)}.`,
+        inference: state.subjectSafetyReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject safety readiness gates subject scheduling against workforce scheduling for O10-221 wave 45.'
+      };
+    case 'workforce_safety':
+      return {
+        topic,
+        headline: state.nationalWorkforceSafetyIndex?.summary || 'Workforce safety unavailable.',
+        fact: `Safety band ${state.nationalWorkforceSafetyIndex?.band ?? 'unknown'}; safety drag ${Math.round(state.nationalWorkforceSafetyIndex?.safetyDrag ?? 0)}.`,
+        inference: state.nationalWorkforceSafetyIndex?.stewardNote || state.summary,
+        projection: 'Workforce safety synthesizes scheduling-safety coupling, safety calibration, and subject safety.'
       };
     default:
       return {

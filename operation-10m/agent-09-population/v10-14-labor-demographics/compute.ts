@@ -186,6 +186,10 @@ import { computeNationalCoordinationSchedulingCouplingBrief } from './coordinati
 import { computeNationalSchedulingPulseOutlook } from './scheduling-pulse-outlook';
 import { computeNationalSubjectSchedulingReadinessBrief } from './subject-scheduling-readiness-brief';
 import { computeNationalWorkforceSchedulingIndex } from './national-workforce-scheduling-index';
+import { computeNationalSchedulingSafetyCouplingBrief } from './scheduling-safety-coupling-brief';
+import { computeNationalSafetyCalibrationOutlook } from './safety-calibration-outlook';
+import { computeNationalSubjectSafetyReadinessBrief } from './subject-safety-readiness-brief';
+import { computeNationalWorkforceSafetyIndex } from './national-workforce-safety-index';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -1218,6 +1222,25 @@ export function computeNationalLaborDemographics(
     state.schedulingPulseOutlook,
     state.subjectSchedulingReadinessBrief
   );
+  state.schedulingSafetyCouplingBrief = computeNationalSchedulingSafetyCouplingBrief(
+    state,
+    state.nationalWorkforceSchedulingIndex
+  );
+  state.safetyCalibrationOutlook = computeNationalSafetyCalibrationOutlook(
+    state,
+    state.schedulingPulseOutlook
+  );
+  state.subjectSafetyReadinessBrief = computeNationalSubjectSafetyReadinessBrief(
+    state,
+    state.subjectSchedulingReadinessBrief,
+    state.nationalWorkforceSchedulingIndex
+  );
+  state.nationalWorkforceSafetyIndex = computeNationalWorkforceSafetyIndex(
+    state,
+    state.schedulingSafetyCouplingBrief,
+    state.safetyCalibrationOutlook,
+    state.subjectSafetyReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -2236,6 +2259,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceSchedulingIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.schedulingSafetyCouplingBrief?.band === 'decoupled' ||
+      state.schedulingSafetyCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.schedulingSafetyCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.safetyCalibrationOutlook?.band === 'ebbing' ||
+      state.safetyCalibrationOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.safetyCalibrationOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectSafetyReadinessBrief?.band === 'below_safety' ||
+      state.subjectSafetyReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectSafetyReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceSafetyIndex?.band === 'fragile' ||
+      state.nationalWorkforceSafetyIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceSafetyIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
