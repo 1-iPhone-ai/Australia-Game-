@@ -18,6 +18,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     scenario_packs_paths,
     ai_fidelity_paths,
     workforce_migration_paths,
+    national_resilience_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -31,6 +32,7 @@ ENERGY_MARKER = "export function V1014_ENERGY_DEPTH_turnHook"
 SCENARIO_MARKER = "export function runV1014ScenarioV2SelfTests"
 AI_FIDELITY_MARKER = "export function runV1014AiFidelityTurn"
 WORKFORCE_MARKER = "export function runV1014WorkforceMigrationTurn"
+NRES_MARKER = "export function runV1016NresTurn"
 
 TRADE_SECTION = (
     "// ============================================================================\n"
@@ -73,6 +75,13 @@ WORKFORCE_SECTION = (
     "// ============================================================================\n"
     "// SECTION 20BF: V10.14 WORKFORCE MIGRATION v2 — SKILLS GRAPH & 20AJ SCENARIOS (O6K-25)\n"
     "// Renumbered from shard 20BD (canonical 20BD = scenario packs, 20BE = AI fidelity)\n"
+    "// ============================================================================\n"
+)
+
+NRES_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20BH: V10.16 NATIONAL RESILIENCE — SUPPLY SHOCK & CONTINUITY (O6K-33)\n"
+    "// Renumbered from shard 20BG (canonical 20BG = T6 mega cross-domain depth, push #9)\n"
     "// ============================================================================\n"
 )
 
@@ -767,6 +776,126 @@ def push_workforce(text: str) -> str:
     return text
 
 
+NRES_HELPERS = """
+function V1016_NRES_readPersistedFromGameState(gs: any): V1016NresPersisted | null {
+  const raw = (gs?.save?.meta?.v1016 as any)?.national_resilience;
+  return raw ? sanitizeV1016NresPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1016_NRES_applyToGameState(gs: any, out: V1016NresTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1016 = { ...(meta.v1016 || {}) };
+  v1016.national_resilience = out.persisted;
+  meta.v1016 = v1016;
+  save.meta = meta;
+  return { ...gs, save, v1016NationalResilience: out.state };
+}
+
+export function buildV1016NresTurnInputFromGameState(gs: any, turn: number): V1016NresTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 4242;
+  const inp = buildV1016NresTurnInputFromGameStateStub(turn, seed);
+  const supply = gs?.v1014SupplyChain ?? null;
+  const trade = gs?.v1014TradeDepth ?? null;
+  const energy = gs?.energyDepth ?? null;
+  const workforce = gs?.v1014WorkforceV2 ?? gs?.v1014Workforce ?? null;
+  return {
+    ...inp,
+    supply20bb: {
+      ...inp.supply20bb,
+      turn,
+      bottleneckPressure: Number(supply?.bottleneckPressure ?? inp.supply20bb.bottleneckPressure),
+    },
+    trade20ba: {
+      ...inp.trade20ba,
+      turn,
+      sanctionsPressure: Number(trade?.sanctionsPressure ?? inp.trade20ba.sanctionsPressure),
+    },
+    energy20bc: {
+      ...inp.energy20bc,
+      turn,
+      gridStability: Number(energy?.gridStability ?? inp.energy20bc.gridStability),
+    },
+    workforce20bf: {
+      ...inp.workforce20bf,
+      turn,
+      nationalReadiness: Number(workforce?.nationalResilienceScore ?? workforce?.nationalReadiness ?? inp.workforce20bf.nationalReadiness),
+    },
+    persisted: null,
+  };
+}
+"""
+
+NRES_DAY_HOOK = """
+      if (typeof runV1016NresTurn === 'function') {
+        try {
+          const nresIn = buildV1016NresTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          nresIn.persisted = V1016_NRES_readPersistedFromGameState(mergedGameState);
+          const nresOut = runV1016NresTurn(nresIn);
+          mergedGameState = V1016_NRES_applyToGameState(mergedGameState, nresOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_nres_day_hook(text: str) -> str:
+    marker = "runV1016NresTurn(nresIn)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:26000]
+    if marker in day_slice:
+        print("skip nres day hook (present)")
+        return text
+    mega_tail = """      if (typeof runV1014T6MegaDepthTurn === 'function') {
+        try {
+          const megaIn = buildV1014T6MegaDepthTurnInputFromGameState(
+            mergedGameState,
+            passCtx.turnCounter,
+            settings?.t6MegaDepthEnabled !== false,
+          );
+          megaIn.persisted = V1014_T6MEGA_readPersistedFromGameState(mergedGameState);
+          const megaOut = runV1014T6MegaDepthTurn(megaIn);
+          mergedGameState = V1014_T6MEGA_applyToGameState(mergedGameState, megaOut);
+        } catch (_) { /* isolated */ }
+      }"""
+    if mega_tail not in text:
+        raise SystemExit("T6 mega day hook anchor missing for nres hook")
+    return text.replace(mega_tail, mega_tail + NRES_DAY_HOOK, 1)
+
+
+def wire_nres_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState) {\n    const megaRaw = (migrated.gameState as any)?.save?.meta?.v1014?.t6_mega_depth;"
+    patch = (
+        "  if (migrated.gameState && typeof sanitizeV1016NresPersisted === 'function') {\n"
+        "    const nresRaw = (migrated.gameState as any)?.save?.meta?.v1016?.national_resilience;\n"
+        "    if (nresRaw) {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1016 = { ...(meta.v1016 || {}) };\n"
+        "      v1016.national_resilience = sanitizeV1016NresPersisted(nresRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1016 = v1016;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1016.national_resilience = sanitizeV1016NresPersisted" in text:
+        print("skip nres §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("T6 mega §6 anchor missing for nres migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
+def push_nres(text: str) -> str:
+    block = NRES_SECTION + bundle_local_files(national_resilience_paths()) + NRES_HELPERS
+    text = insert_before(text, block, NRES_MARKER, "T6 push #10 v1016-national-resilience (PR #341)")
+    text = wire_nres_day_hook(text)
+    text = wire_nres_migration(text)
+    lab = """  { id: 'v1016_national_resilience', label: 'V10.16 National resilience (20BH supply shock & continuity)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1016NresSelfTestsForLab().map((r) => ({ id: r.id, name: r.name, passed: r.passed, detail: r.detail })) },
+"""
+    text = wire_lab(text, lab, "v1016_national_resilience")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -781,7 +910,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -800,6 +929,8 @@ def main() -> None:
         text = push_ai_fidelity(text)
     elif args.push == 8:
         text = push_workforce(text)
+    elif args.push == 10:
+        text = push_nres(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")

@@ -98,6 +98,44 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  createEmptyV1014WorkforceMigrationPersisted,\n  v1014WorkforceMigrationInputHash,\n  sanitizeV1014WorkforceMigrationPersisted,",
             "  createEmptyV1014WorkforceMigrationPersisted,\n  v1014WorkforceMigrationInputHash,",
         )
+    if "national-resilience-utils.ts" in name:
+        src = re.sub(
+            r"export function V1016_NRES_propagationGraphHash",
+            "export function V1016_NRES_utilPropagationGraphHash",
+            src,
+        )
+        src = re.sub(
+            r"V1016_NRES_propagationGraphHash\(",
+            "V1016_NRES_utilPropagationGraphHash(",
+            src,
+        )
+    if "national-resilience-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1016NresPersisted, sanitizeV1016NresPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1016_NRES_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1016_NRES_ORCH_REGIONS.forEach", src)
+    if "v1016-national-resilience/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"const REGIONS:", "const V1016_NRES_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1016_NRES_MIG_REGIONS", src)
+        src = re.sub(r"function clampNum\(", "function v1016NresClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1016NresClampNum(", src)
+    if "run-v1016-nres-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1016NresSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1016NresSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1016NresBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1016NresBaseInput(", src)
+        src = src.replace(
+            "  sanitizeV1016NresPersisted,\n} from '../engine/national-resilience-orchestrator';",
+            "} from '../engine/national-resilience-orchestrator';\nimport {\n  createEmptyV1016NresPersisted,\n  sanitizeV1016NresPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1016NresPersisted,\n  v1016NresInputHash,\n  sanitizeV1016NresPersisted,",
+            "  createEmptyV1016NresPersisted,\n  v1016NresInputHash,",
+        )
     return src
 
 
@@ -314,6 +352,51 @@ def workforce_migration_paths() -> list[str]:
             if p.name != "index.ts"
             and "/scripts/" not in str(p)
             and p.name != "run-self-tests.ts"
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def national_resilience_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1016-national-resilience"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/continuity-nodes/" in s:
+            return (2, s)
+        if "propagation-graph/graph-utils" in s:
+            return (3, s)
+        if "/supply-shock-scenarios/" in s:
+            return (4, s)
+        if "/propagation-graph/edge-" in s or "/generated/propagation-graph/" in s:
+            return (5, s)
+        if "supply-shock-registry" in s:
+            return (6, s)
+        if "propagation-graph-bundle" in s:
+            return (7, s)
+        if "national-resilience-utils" in s:
+            return (8, s)
+        if "/adapters/" in s:
+            return (9, s)
+        if "national-resilience-orchestrator" in s:
+            return (10, s)
+        if "/self-tests/" in s:
+            return (11, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
         ),
         key=sort_key,
     )
