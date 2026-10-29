@@ -64,6 +64,10 @@ import {
   OP10M_AGENT25_BUNDLE_CATALOG_SEALED_FLAG,
   OP10M_SCALE_WAVE_CATALOG_COMMIT_FLAG,
 } from './compute-turn-scale-wave-catalog-commit-coordinator.ts';
+import {
+  OP10M_AGENT25_ORIGIN_WAVE_ATTESTED_FLAG,
+  OP10M_SCALE_WAVE_ORIGIN_GATE_FLAG,
+} from './compute-turn-scale-wave-origin-gate-coordinator.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -374,6 +378,16 @@ export function evaluateRequirements(
       case 'agent25_bundle_catalog_sealed':
         if (!sim.flags[OP10M_AGENT25_BUNDLE_CATALOG_SEALED_FLAG]) {
           return { ok: false, reason: 'agent25 bundle catalog not sealed' };
+        }
+        break;
+      case 'scale_wave_origin_gate':
+        if (!sim.flags[OP10M_SCALE_WAVE_ORIGIN_GATE_FLAG]) {
+          return { ok: false, reason: 'scale wave origin gate not set' };
+        }
+        break;
+      case 'agent25_origin_wave_attested':
+        if (!sim.flags[OP10M_AGENT25_ORIGIN_WAVE_ATTESTED_FLAG]) {
+          return { ok: false, reason: 'agent25 origin wave not attested' };
         }
         break;
       default:

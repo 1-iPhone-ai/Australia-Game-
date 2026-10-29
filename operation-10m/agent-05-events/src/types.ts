@@ -329,6 +329,14 @@ export interface Op10mTriggerRequireAgent25BundleCatalogSealed {
   k: 'agent25_bundle_catalog_sealed';
 }
 
+export interface Op10mTriggerRequireScaleWaveOriginGate {
+  k: 'scale_wave_origin_gate';
+}
+
+export interface Op10mTriggerRequireAgent25OriginWaveAttested {
+  k: 'agent25_origin_wave_attested';
+}
+
 export type Op10mComputeTurnStage =
   | 'pre_simulation'
   | 'post_simulation'
@@ -403,7 +411,9 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequireScaleWaveBundleLatch
   | Op10mTriggerRequireAgent25AssemblyWaveReady
   | Op10mTriggerRequireScaleWaveCatalogCommit
-  | Op10mTriggerRequireAgent25BundleCatalogSealed;
+  | Op10mTriggerRequireAgent25BundleCatalogSealed
+  | Op10mTriggerRequireScaleWaveOriginGate
+  | Op10mTriggerRequireAgent25OriginWaveAttested;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -515,6 +525,8 @@ export interface Op10mNarrativeEngineState {
     agent25AssemblyWaveReadyPasses: number;
     scaleWaveCatalogCommits: number;
     agent25BundleCatalogSealedPasses: number;
+    scaleWaveOriginGates: number;
+    agent25OriginWaveAttestedPasses: number;
   };
   regional?: Op10mRegionalContagionLedger;
   turnCompute?: Op10mTurnComputeLedger;

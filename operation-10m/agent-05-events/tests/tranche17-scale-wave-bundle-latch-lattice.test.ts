@@ -18,12 +18,12 @@ describe('Tranche 17 scale-wave-bundle-latch lattice catalog', () => {
   it('adds 320 scale-wave-bundle-latch lattice chains', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE17_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche17Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 5960);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 6280);
   });
 
   it('uses op10m_t17 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 5960);
+    assert.equal(ids.size, 6280);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE17) {
       assert.match(c.chainId, /^op10m_t17_/);
     }

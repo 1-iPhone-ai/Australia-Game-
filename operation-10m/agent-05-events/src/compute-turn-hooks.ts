@@ -27,6 +27,7 @@ import { evaluateComputeTurnInlineAssemblyLockCoordination } from './compute-tur
 import { evaluateComputeTurnPostCrisisSlotCommitCoordination } from './compute-turn-post-crisis-slot-commit-coordinator.ts';
 import { evaluateComputeTurnScaleWaveBundleLatchCoordination } from './compute-turn-scale-wave-bundle-latch-coordinator.ts';
 import { evaluateComputeTurnScaleWaveCatalogCommitCoordination } from './compute-turn-scale-wave-catalog-commit-coordinator.ts';
+import { evaluateComputeTurnScaleWaveOriginGateCoordination } from './compute-turn-scale-wave-origin-gate-coordinator.ts';
 import type {
   Op10mChainDescriptor,
   Op10mComputeTurnStage,
@@ -264,6 +265,15 @@ export function executeOp10mNarrativeComputeTurnHook(
   simulation = catalogCommitPass.simulation;
   narrative = catalogCommitPass.narrative;
   log.push(...catalogCommitPass.log);
+
+  const originGatePass = evaluateComputeTurnScaleWaveOriginGateCoordination(
+    simulation,
+    narrative,
+    params.day
+  );
+  simulation = originGatePass.simulation;
+  narrative = originGatePass.narrative;
+  log.push(...originGatePass.log);
 
   const postSettle = settleOp10mComputeTurnDriftAfterReconcile(simulation, narrative);
   simulation = postSettle.simulation;
