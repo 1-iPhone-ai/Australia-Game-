@@ -105,6 +105,11 @@ import {
   V1014_TRANSMISSION_MERCHANT_TURN_SCENARIOS,
 } from '../modules/transmission-congestion-merchant-storage-ledger.ts';
 import {
+  runAgent13NatureCoexistenceScaleSelfTests,
+  runAgent13NatureCoexistenceTurnScenario,
+  V1014_NATURE_COEXISTENCE_TURN_SCENARIOS,
+} from '../modules/nature-positive-siting-biodiversity-coexistence-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -338,6 +343,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const tmTurn = runAgent13TransmissionMerchantTurnScenario(V1014_TRANSMISSION_MERCHANT_TURN_SCENARIOS[0]);
   ok(tmTurn.passed);
+
+  const natureCoexistence = runAgent13NatureCoexistenceScaleSelfTests();
+  ok(natureCoexistence.failed === 0 && natureCoexistence.passed >= 7);
+
+  const ncTurn = runAgent13NatureCoexistenceTurnScenario(V1014_NATURE_COEXISTENCE_TURN_SCENARIOS[0]);
+  ok(ncTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

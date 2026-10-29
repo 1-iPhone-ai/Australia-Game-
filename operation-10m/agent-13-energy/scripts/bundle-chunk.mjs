@@ -44,6 +44,7 @@ const FILES = [
   'curtailment-recovery-flex-load-ledger.ts',
   'precinct-zero-carbon-embedded-network-ledger.ts',
   'transmission-congestion-merchant-storage-ledger.ts',
+  'nature-positive-siting-biodiversity-coexistence-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -92,6 +93,8 @@ const EXPORT_MANIFEST = [
   'V1014_EMBEDDED_NETWORK_CATALOG',
   'V1014_TRANSMISSION_CONGESTION_CATALOG',
   'V1014_MERCHANT_STORAGE_CATALOG',
+  'V1014_NATURE_POSITIVE_SITING_CATALOG',
+  'V1014_BIODIVERSITY_COEXISTENCE_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -170,6 +173,9 @@ const EXPORT_MANIFEST = [
   'runAgent13TransmissionMerchantScaleSelfTests',
   'runAgent13TransmissionMerchantTurnScenario',
   'V1014_TRANSMISSION_MERCHANT_TURN_SCENARIOS',
+  'runAgent13NatureCoexistenceScaleSelfTests',
+  'runAgent13NatureCoexistenceTurnScenario',
+  'V1014_NATURE_COEXISTENCE_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

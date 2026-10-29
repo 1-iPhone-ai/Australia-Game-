@@ -177,6 +177,13 @@ import {
   type V1014RegionalTransmissionCongestionLedger,
 } from './transmission-congestion-merchant-storage-ledger';
 import {
+  advanceRegionalBiodiversityCoexistenceOrchestration,
+  computeRegionalNaturePositiveSitingLedger,
+  scoreAgent13NatureCoexistenceGIAlignment,
+  type V1014RegionalBiodiversityCoexistenceLedger,
+  type V1014RegionalNaturePositiveSitingLedger,
+} from './nature-positive-siting-biodiversity-coexistence-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25725,6 +25732,10 @@ export interface V1014RegionalEnergyProfile {
   transmissionCongestionRelief: number;
   merchantStorageBand: string;
   merchantStorageRelief: number;
+  naturePositiveSitingBand: string;
+  naturePositiveSitingRelief: number;
+  biodiversityCoexistenceBand: string;
+  biodiversityCoexistenceRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25807,6 +25818,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalEmbeddedNetworkLedgers: Record<string, V1014RegionalEmbeddedNetworkLedger>;
   regionalTransmissionCongestionLedgers: Record<string, V1014RegionalTransmissionCongestionLedger>;
   regionalMerchantStorageLedgers: Record<string, V1014RegionalMerchantStorageLedger>;
+  regionalNaturePositiveSitingLedgers: Record<string, V1014RegionalNaturePositiveSitingLedger>;
+  regionalBiodiversityCoexistenceLedgers: Record<string, V1014RegionalBiodiversityCoexistenceLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25860,6 +25873,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalEmbeddedNetworkMemory: Record<string, { networkIndex: number }>;
   regionalTransmissionCongestionMemory: Record<string, { flowBalance: number; congestionIndex: number }>;
   regionalMerchantStorageMemory: Record<string, { merchantIndex: number }>;
+  regionalNaturePositiveSitingMemory: Record<string, { regenerationBalance: number; sitingIndex: number }>;
+  regionalBiodiversityCoexistenceMemory: Record<string, { coexistenceIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25925,6 +25940,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalEmbeddedNetworkMemory: {},
     regionalTransmissionCongestionMemory: {},
     regionalMerchantStorageMemory: {},
+    regionalNaturePositiveSitingMemory: {},
+    regionalBiodiversityCoexistenceMemory: {},
     history: [],
   };
 }
@@ -26033,6 +26050,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
     regionalMerchantStorageMemory:
       typeof raw.regionalMerchantStorageMemory === 'object' && raw.regionalMerchantStorageMemory
         ? raw.regionalMerchantStorageMemory
+        : {},
+    regionalNaturePositiveSitingMemory:
+      typeof raw.regionalNaturePositiveSitingMemory === 'object' && raw.regionalNaturePositiveSitingMemory
+        ? raw.regionalNaturePositiveSitingMemory
+        : {},
+    regionalBiodiversityCoexistenceMemory:
+      typeof raw.regionalBiodiversityCoexistenceMemory === 'object' && raw.regionalBiodiversityCoexistenceMemory
+        ? raw.regionalBiodiversityCoexistenceMemory
         : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
@@ -26186,6 +26211,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalEmbeddedNetworkLedgers: {},
       regionalTransmissionCongestionLedgers: {},
       regionalMerchantStorageLedgers: {},
+      regionalNaturePositiveSitingLedgers: {},
+      regionalBiodiversityCoexistenceLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26242,6 +26269,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const embeddedNetworkLedgers: Record<string, V1014RegionalEmbeddedNetworkLedger> = {};
   const transmissionCongestionLedgers: Record<string, V1014RegionalTransmissionCongestionLedger> = {};
   const merchantStorageLedgers: Record<string, V1014RegionalMerchantStorageLedger> = {};
+  const naturePositiveSitingLedgers: Record<string, V1014RegionalNaturePositiveSitingLedger> = {};
+  const biodiversityCoexistenceLedgers: Record<string, V1014RegionalBiodiversityCoexistenceLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26334,6 +26363,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextMerchantStorageMemory: Record<string, { merchantIndex: number }> = {
     ...persisted.regionalMerchantStorageMemory,
+  };
+  const nextNaturePositiveSitingMemory: Record<string, { regenerationBalance: number; sitingIndex: number }> = {
+    ...persisted.regionalNaturePositiveSitingMemory,
+  };
+  const nextBiodiversityCoexistenceMemory: Record<string, { coexistenceIndex: number }> = {
+    ...persisted.regionalBiodiversityCoexistenceMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -26879,6 +26914,19 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextMerchantStorageMemory[regionId] = merchantStorageStep.next;
     merchantStorageLedgers[regionId] = merchantStorageStep.ledger;
 
+    const naturePositiveSitingStep = computeRegionalNaturePositiveSitingLedger({
+      regionId,
+      landStewardshipRelief: biodiversityStep.ledger.landStewardshipRelief,
+      agrivoltaicsLandRelief: agriStep.ledger.agrivoltaicsLandRelief,
+      blueCarbonCoastalRelief: blueCarbonStep.ledger.blueCarbonCoastalRelief,
+      zeroCarbonPrecinctRelief: zeroCarbonPrecinctStep.ledger.zeroCarbonPrecinctRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextNaturePositiveSitingMemory[regionId] || null,
+    });
+    nextNaturePositiveSitingMemory[regionId] = naturePositiveSitingStep.next;
+    naturePositiveSitingLedgers[regionId] = naturePositiveSitingStep.ledger;
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -26930,11 +26978,25 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= embeddedNetworkStep.ledger.embeddedNetworkRelief;
     pressure -= transmissionCongestionStep.ledger.transmissionCongestionRelief;
     pressure -= merchantStorageStep.ledger.merchantStorageRelief;
+    pressure -= naturePositiveSitingStep.ledger.naturePositiveSitingRelief;
     if (biodiversityStep.ledger.band === 'critical_loss') pressure += 5;
     pressure -= gridRecovery.pressureRelief;
     pressure -= storageFlex.gridStressRelief;
     pressure -= activeRules.reduce((a, r) => a + r.renewableRelief * Math.min(1, renewableShareScore / 55), 0) * 12;
     pressure += sites.filter(s => s.environmentalRisk === 'high').length * 4;
+    pressure = v1014Clamp(pressure, 0, 100);
+
+    const biodiversityCoexistenceStep = advanceRegionalBiodiversityCoexistenceOrchestration({
+      regionId,
+      environmentalPressure: pressure,
+      sitingBand: naturePositiveSitingStep.ledger.band,
+      transmissionCongestionRelief: transmissionCongestionStep.ledger.transmissionCongestionRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextBiodiversityCoexistenceMemory[regionId] || null,
+    });
+    nextBiodiversityCoexistenceMemory[regionId] = biodiversityCoexistenceStep.next;
+    biodiversityCoexistenceLedgers[regionId] = biodiversityCoexistenceStep.ledger;
+    pressure -= biodiversityCoexistenceStep.ledger.biodiversityCoexistenceRelief;
     pressure = v1014Clamp(pressure, 0, 100);
 
     nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
@@ -27006,6 +27068,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       embeddedNetworkStep.ledger.summary,
       transmissionCongestionStep.ledger.summary,
       merchantStorageStep.ledger.summary,
+      naturePositiveSitingStep.ledger.summary,
+      biodiversityCoexistenceStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -27174,6 +27238,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       transmissionCongestionRelief: transmissionCongestionStep.ledger.transmissionCongestionRelief,
       merchantStorageBand: merchantStorageStep.ledger.band,
       merchantStorageRelief: merchantStorageStep.ledger.merchantStorageRelief,
+      naturePositiveSitingBand: naturePositiveSitingStep.ledger.band,
+      naturePositiveSitingRelief: naturePositiveSitingStep.ledger.naturePositiveSitingRelief,
+      biodiversityCoexistenceBand: biodiversityCoexistenceStep.ledger.band,
+      biodiversityCoexistenceRelief: biodiversityCoexistenceStep.ledger.biodiversityCoexistenceRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -27285,6 +27353,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalEmbeddedNetworkLedgers: embeddedNetworkLedgers,
     regionalTransmissionCongestionLedgers: transmissionCongestionLedgers,
     regionalMerchantStorageLedgers: merchantStorageLedgers,
+    regionalNaturePositiveSitingLedgers: naturePositiveSitingLedgers,
+    regionalBiodiversityCoexistenceLedgers: biodiversityCoexistenceLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -27338,6 +27408,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalEmbeddedNetworkMemory: nextEmbeddedNetworkMemory,
     regionalTransmissionCongestionMemory: nextTransmissionCongestionMemory,
     regionalMerchantStorageMemory: nextMerchantStorageMemory,
+    regionalNaturePositiveSitingMemory: nextNaturePositiveSitingMemory,
+    regionalBiodiversityCoexistenceMemory: nextBiodiversityCoexistenceMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -28183,6 +28255,44 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     merchantBand: rr24.state.regions.QLD?.merchantStorageBand,
   });
   check('TRANSMISSION MERCHANT GI alignment', giTm.relevanceDelta > 0.5, giTm.reason || '');
+
+  const ncInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'nature_positive_rez_siting_master_plan',
+      'dual_use_renewable_paddock_mesh',
+      'habitat_buffer_orchestration_layer',
+      'biodiversity_offset_stacking_hub',
+      'net_gain_monitoring_mesh',
+      'regeneration_corridor_siting_loop',
+      'species_sensitive_routing_corridor',
+      'indigenous_stewardship_coexistence_tie',
+      'dynamic_line_rating_corridor',
+      'broadacre_agrivoltaics',
+    ],
+  };
+  const rr25 = computeIndustrialEnergyEnvironmentalState(ncInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check(
+    'NATURE POSITIVE siting ledger tracked',
+    !!rr25.state.regionalNaturePositiveSitingLedgers.QLD?.band,
+    rr25.state.regionalNaturePositiveSitingLedgers.QLD?.band || '',
+  );
+  check(
+    'BIODIVERSITY coexistence relief',
+    (rr25.state.regions.QLD?.biodiversityCoexistenceRelief || 0) > 0,
+    String(rr25.state.regions.QLD?.biodiversityCoexistenceRelief),
+  );
+  check(
+    'NATURE POSITIVE memory persisted',
+    !!rr25.persisted.regionalNaturePositiveSitingMemory.QLD,
+    String(rr25.persisted.regionalNaturePositiveSitingMemory.QLD?.sitingIndex),
+  );
+  const giNc = scoreAgent13NatureCoexistenceGIAlignment({
+    actionText: 'Nature-positive REZ siting with biodiversity offset stacking and net gain monitoring',
+    sitingBand: rr25.state.regions.QLD?.naturePositiveSitingBand,
+    coexistenceBand: rr25.state.regions.QLD?.biodiversityCoexistenceBand,
+  });
+  check('NATURE COEXISTENCE GI alignment', giNc.relevanceDelta > 0.5, giNc.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');
