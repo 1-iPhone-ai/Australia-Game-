@@ -144,6 +144,12 @@ import { nrDashBuildSnippetSaturationShare } from '../core/snippet-saturation-sh
 import { nrDashBuildPulseAsymmetryGap } from '../core/pulse-asymmetry-gap.ts';
 import { nrDashBuildRegionalOwnerSkew } from '../core/regional-owner-skew.ts';
 import { nrDashBuildCombinedDerivedHistoryGap } from '../core/combined-derived-history-gap.ts';
+import { nrDashBuildMeaningfulDerivedTurnSpan } from '../core/meaningful-derived-turn-span.ts';
+import { nrDashBuildNationalSnippetSaturationGap } from '../core/national-snippet-saturation-gap.ts';
+import { nrDashBuildCorridorPulseAsymmetry } from '../core/corridor-pulse-asymmetry.ts';
+import { nrDashBuildNeutralOwnerPortfolioSkew } from '../core/neutral-owner-portfolio-skew.ts';
+import { nrDashBuildMultiTierNeedsConcentration } from '../core/multi-tier-needs-concentration.ts';
+import { nrDashBuildLrNsHistoryOverlapGap } from '../core/lr-ns-history-overlap-gap.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -491,6 +497,42 @@ export const NrDashOverviewTab: React.FC<{
       return ownerSkew ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-regional-owner-skew">
           Regional owner skew {ownerSkew.ownershipSkew} · you {ownerSkew.youShare} · rival {ownerSkew.rivalShare}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const neutralSkew = nrDashBuildNeutralOwnerPortfolioSkew(snap);
+      return neutralSkew ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-neutral-owner-portfolio-skew">
+          Neutral owner portfolio skew {neutralSkew.portfolioSkew} · neutral {neutralSkew.neutralShare} · you{' '}
+          {neutralSkew.youShare}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const tierConc = nrDashBuildMultiTierNeedsConcentration(lrView);
+      return tierConc ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-multi-tier-needs-concentration">
+          Multi-tier needs concentration {tierConc.concentrationIndex} · {tierConc.activeTierCount} tiers ·{' '}
+          {tierConc.openNeedCount} open
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const satGap = nrDashBuildNationalSnippetSaturationGap(snap);
+      return satGap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-snippet-saturation-gap">
+          National snippet saturation gap {satGap.saturationGap} · headroom {satGap.headroomShare} · {satGap.snippetCount}/
+          {satGap.maxSnippets}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const overlapGap = nrDashBuildLrNsHistoryOverlapGap(lrView, nsState);
+      return overlapGap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-lr-ns-history-overlap-gap">
+          LR–NS history overlap gap {overlapGap.overlapGap} · {overlapGap.totalEntries} entries · {overlapGap.uniqueTurnCount}{' '}
+          unique turns
         </div>
       ) : null;
     })()}
@@ -1214,6 +1256,18 @@ export const NrDashTrendsTab: React.FC<{
           </div>
         ) : null;
       })()}
+      {(() => {
+        const meaningfulTurnSpan = nrDashBuildMeaningfulDerivedTurnSpan(lrView);
+        return meaningfulTurnSpan ? (
+          <div className="text-xs mb-3 rounded border border-slate-600/50 p-2" data-testid="nr-dash-meaningful-derived-turn-span">
+            <div className="font-semibold mb-1">Meaningful derived turn span</div>
+            <div>
+              turn spread {meaningfulTurnSpan.turnSpread} · min R{meaningfulTurnSpan.minTurn} · max R{meaningfulTurnSpan.maxTurn} ·{' '}
+              {meaningfulTurnSpan.eventCount} events
+            </div>
+          </div>
+        ) : null;
+      })()}
       {movers.length > 0 && (
         <div className="text-xs mb-3" data-testid="nr-dash-trend-movers">
           <div className="font-semibold mb-1">Largest momentum history deltas (authoritative)</div>
@@ -1351,6 +1405,15 @@ export const NrDashMapTab: React.FC<{
           <p className="text-[10px] opacity-75" data-testid="nr-dash-corridor-pulse-spread">
             Corridor pulse spread σ {corridorPulse.stdDev} · μ blend {corridorPulse.meanBlend} · {corridorPulse.corridorCount}{' '}
             corridors
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const corridorAsym = nrDashBuildCorridorPulseAsymmetry(nsState, baseNodes);
+        return corridorAsym && corridorAsym.maxEndpointDelta > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-corridor-pulse-asymmetry">
+            Corridor pulse asymmetry μΔ {corridorAsym.meanEndpointDelta} · peak {corridorAsym.maxEndpointDelta} ·{' '}
+            {corridorAsym.corridorCount} corridors
           </p>
         ) : null;
       })()}

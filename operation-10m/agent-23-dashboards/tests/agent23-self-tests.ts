@@ -140,6 +140,12 @@ import { nrDashBuildSnippetSaturationShare } from '../core/snippet-saturation-sh
 import { nrDashBuildPulseAsymmetryGap } from '../core/pulse-asymmetry-gap.ts';
 import { nrDashBuildRegionalOwnerSkew } from '../core/regional-owner-skew.ts';
 import { nrDashBuildCombinedDerivedHistoryGap } from '../core/combined-derived-history-gap.ts';
+import { nrDashBuildMeaningfulDerivedTurnSpan } from '../core/meaningful-derived-turn-span.ts';
+import { nrDashBuildNationalSnippetSaturationGap } from '../core/national-snippet-saturation-gap.ts';
+import { nrDashBuildCorridorPulseAsymmetry } from '../core/corridor-pulse-asymmetry.ts';
+import { nrDashBuildNeutralOwnerPortfolioSkew } from '../core/neutral-owner-portfolio-skew.ts';
+import { nrDashBuildMultiTierNeedsConcentration } from '../core/multi-tier-needs-concentration.ts';
+import { nrDashBuildLrNsHistoryOverlapGap } from '../core/lr-ns-history-overlap-gap.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -1096,6 +1102,47 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     const snap = nrDashBuildAuthSnapshot(5, lr, ns, null)!;
     const gap = nrDashBuildCombinedDerivedHistoryGap(lr, ns, snap)!;
     return gap.combinedSourceCount === 3 && gap.surfacedSnippetCount === 2 && gap.gap === 1;
+  });
+
+  check('a23_meaningful_derived_turn_span', 'Meaningful derived turn span spans fixture ticks', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.derived.push({ turn: 2, text: 'Soft shift', significance: 'meaningful' });
+    lr.state.derived.push({ turn: 6, text: 'Late note', significance: 'meaningful' });
+    const span = nrDashBuildMeaningfulDerivedTurnSpan(lr)!;
+    return span.eventCount === 2 && span.turnSpread === 4 && span.minTurn === 2;
+  });
+
+  check('a23_national_snippet_saturation_gap', 'National snippet saturation gap requires merged LR+NS snapshot', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const gap = nrDashBuildNationalSnippetSaturationGap(snap)!;
+    return gap.saturationGap === 6 && gap.headroomShare === 0.75 && gap.maxSnippets === 8;
+  });
+
+  check('a23_corridor_pulse_asymmetry', 'Corridor pulse asymmetry is positive on merged map fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const asym = nrDashBuildCorridorPulseAsymmetry(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
+    return asym.corridorCount > 0 && asym.maxEndpointDelta > 0.01;
+  });
+
+  check('a23_neutral_owner_portfolio_skew', 'Neutral owner portfolio skew tracks neutral VIC fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { VIC: 'neutral' })!;
+    const skew = nrDashBuildNeutralOwnerPortfolioSkew(snap)!;
+    return skew.neutralShare === 0.125 && skew.portfolioSkew === 0.125;
+  });
+
+  check('a23_multi_tier_needs_concentration', 'Multi-tier needs concentration splits mixed severities', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.regions.NSW!.needs.push({ category: 'energy', status: 'open', severity: 'critical' });
+    lr.state.regions.VIC!.needs[0]!.severity = 'low';
+    const conc = nrDashBuildMultiTierNeedsConcentration(lr)!;
+    return conc.activeTierCount === 3 && conc.concentrationIndex < 0.9 && conc.openNeedCount === 9;
+  });
+
+  check('a23_lr_ns_history_overlap_gap', 'LR–NS history overlap gap counts duplicate turns', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.derived.push({ turn: 5, text: 'Same turn echo', significance: 'meaningful' });
+    const gap = nrDashBuildLrNsHistoryOverlapGap(lr, createAgent23NsFixture())!;
+    return gap.totalEntries === 3 && gap.uniqueTurnCount === 2 && gap.overlapGap === 1;
   });
 
   return results;
