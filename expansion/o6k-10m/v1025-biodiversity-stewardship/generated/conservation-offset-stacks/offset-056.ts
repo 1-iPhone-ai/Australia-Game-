@@ -1,0 +1,31 @@
+import type { V1025BioConservationOffsetEdge } from '../../types/core.ts';
+
+/** Conservation offset graph shard 056 (species/habitat/offset corridor coupling). */
+export const V1025_BIO_CONSERVATION_OFFSET_SHARD_056: readonly V1025BioConservationOffsetEdge[] = [
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.384, lagTurns: 4, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.39, lagTurns: 5, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.396, lagTurns: 6, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.3, lagTurns: 7, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.306, lagTurns: 4, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.312, lagTurns: 5, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.318, lagTurns: 6, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.324, lagTurns: 7, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.33, lagTurns: 4, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.336, lagTurns: 5, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.342, lagTurns: 6, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.348, lagTurns: 7, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.354, lagTurns: 4, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.36, lagTurns: 5, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.366, lagTurns: 6, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.372, lagTurns: 7, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.378, lagTurns: 4, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.384, lagTurns: 5, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.39, lagTurns: 6, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.396, lagTurns: 7, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.3, lagTurns: 4, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.306, lagTurns: 5, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.312, lagTurns: 6, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.318, lagTurns: 7, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.324, lagTurns: 4, nodeId: 'protected_area_08' },
+  { fromChannel: 'urban_green', toChannel: 'remote', weight: 0.33, lagTurns: 5, nodeId: 'protected_area_08' },
+];

@@ -1,0 +1,31 @@
+import type { V1025BioConservationOffsetEdge } from '../../types/core.ts';
+
+/** Conservation offset graph shard 021 (species/habitat/offset corridor coupling). */
+export const V1025_BIO_CONSERVATION_OFFSET_SHARD_021: readonly V1025BioConservationOffsetEdge[] = [
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.274, lagTurns: 5, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.28, lagTurns: 6, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.286, lagTurns: 7, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.292, lagTurns: 8, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.298, lagTurns: 5, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.304, lagTurns: 6, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.31, lagTurns: 7, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.316, lagTurns: 8, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.322, lagTurns: 5, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.328, lagTurns: 6, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.334, lagTurns: 7, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.34, lagTurns: 8, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.346, lagTurns: 5, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.352, lagTurns: 6, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.358, lagTurns: 7, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.364, lagTurns: 8, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.268, lagTurns: 5, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.274, lagTurns: 6, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.28, lagTurns: 7, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.286, lagTurns: 8, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.292, lagTurns: 5, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.298, lagTurns: 6, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.304, lagTurns: 7, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.31, lagTurns: 8, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.316, lagTurns: 5, nodeId: 'protected_area_21' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.322, lagTurns: 6, nodeId: 'protected_area_21' },
+];
