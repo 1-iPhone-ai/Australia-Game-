@@ -68,6 +68,9 @@ import { computeNationalIntegratedLaborReadinessOutlook } from './integrated-lab
 import { computeNationalHybridRemoteParticipationOutlook } from './hybrid-remote-participation-outlook';
 import { computeNationalCorridorCapacityStressBrief } from './corridor-capacity-stress-brief';
 import { computeNationalStewardInterventionPriorityBrief } from './steward-intervention-priority-brief';
+import { computeNationalEssentialWorkerParticipationOutlook } from './essential-worker-participation-outlook';
+import { computeNationalWageAutomationCouplingBrief } from './wage-automation-coupling-brief';
+import { computeNationalLaborCohesionIndex } from './national-labor-cohesion-index';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -543,6 +546,23 @@ export function computeNationalLaborDemographics(
     state.laborMarketStabilityOutlook,
     state.laborRebalancingStressBrief
   );
+  state.essentialWorkerParticipationOutlook = computeNationalEssentialWorkerParticipationOutlook(
+    state,
+    state.participationPressureBrief,
+    state.migrationShockParticipationBufferOutlook
+  );
+  state.wageAutomationCouplingBrief = computeNationalWageAutomationCouplingBrief(
+    state,
+    state.wageParticipationSpilloverBrief,
+    state.wageCompetitivenessIndex,
+    state.automationParticipationResilienceOutlook
+  );
+  state.nationalLaborCohesionIndex = computeNationalLaborCohesionIndex(
+    state,
+    state.laborMarketStabilityOutlook,
+    state.intergenerationalWorkforceBalanceOutlook,
+    state.capacityParticipationAlignmentBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -735,6 +755,27 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.stewardInterventionPriorityBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.essentialWorkerParticipationOutlook?.band === 'strained' ||
+      state.essentialWorkerParticipationOutlook?.band === 'mixed') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.essentialWorkerParticipationOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.wageAutomationCouplingBrief?.band === 'disruptive' ||
+      state.wageAutomationCouplingBrief?.band === 'tense') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.wageAutomationCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalLaborCohesionIndex?.band === 'fragmented' ||
+      state.nationalLaborCohesionIndex?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalLaborCohesionIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);

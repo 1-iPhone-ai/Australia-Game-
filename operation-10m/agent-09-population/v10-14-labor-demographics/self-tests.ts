@@ -100,6 +100,15 @@ import {
 import { computeNationalHybridRemoteParticipationOutlook } from './hybrid-remote-participation-outlook';
 import { computeNationalCorridorCapacityStressBrief } from './corridor-capacity-stress-brief';
 import { computeNationalStewardInterventionPriorityBrief } from './steward-intervention-priority-brief';
+import {
+  WORKFORCE_SAFETY_LEVERS,
+  lookupWorkforceSafetyLever,
+  safetyEaseForRegion,
+  safetyLeversForIndustry
+} from './catalog/workforce-safety-levers';
+import { computeNationalEssentialWorkerParticipationOutlook } from './essential-worker-participation-outlook';
+import { computeNationalWageAutomationCouplingBrief } from './wage-automation-coupling-brief';
+import { computeNationalLaborCohesionIndex } from './national-labor-cohesion-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -882,6 +891,65 @@ export function runV1014LaborDemographicsSelfTests(): {
       rHhBad.state.laborRebalancingStressBrief
     ).stewardNote.length > 8,
     'intervention steward note'
+  );
+
+  check('R1501', WORKFORCE_SAFETY_LEVERS.length >= 8, 'safety lever catalog');
+  check('R1502', Boolean(lookupWorkforceSafetyLever('safe_tech_nsw_vic')?.narrative), 'safety lever lookup');
+  check('R1503', safetyLeversForIndustry('technology').length >= 1, 'technology safety levers');
+  check('R1504', safetyEaseForRegion('NSW', 'technology') > 0, 'regional safety ease');
+  check('R1505', Boolean(r1.state.essentialWorkerParticipationOutlook?.band), 'essential worker on state');
+  check('R1506', (r1.state.essentialWorkerParticipationOutlook?.shockDrag ?? 0) >= 0, 'essential shock drag');
+  check('R1507', Boolean(r1.state.wageAutomationCouplingBrief?.band), 'wage automation on state');
+  check('R1508', Boolean(r1.state.nationalLaborCohesionIndex?.band), 'labor cohesion on state');
+  check(
+    'R1509',
+    detectLaborDemographicsQuery('essential worker participation') === 'essential_worker_participation',
+    'GI essential detect'
+  );
+  check(
+    'R1510',
+    detectLaborDemographicsQuery('wage automation coupling') === 'wage_automation_coupling',
+    'GI wage automation detect'
+  );
+  check(
+    'R1511',
+    detectLaborDemographicsQuery('national labor cohesion') === 'national_labor_cohesion',
+    'GI cohesion detect'
+  );
+  check(
+    'R1512',
+    answerLaborDemographicsQuestion(r1.state, 'national_labor_cohesion').headline.length > 5,
+    'GI cohesion answer'
+  );
+  const essentialOnly = computeNationalEssentialWorkerParticipationOutlook(
+    r1.state,
+    r1.state.participationPressureBrief,
+    r1.state.migrationShockParticipationBufferOutlook
+  );
+  check('R1513', essentialOnly.summary.length > 10, 'essential standalone summary');
+  const wageAutoOnly = computeNationalWageAutomationCouplingBrief(
+    r1.state,
+    r1.state.wageParticipationSpilloverBrief,
+    r1.state.wageCompetitivenessIndex,
+    r1.state.automationParticipationResilienceOutlook
+  );
+  check('R1514', wageAutoOnly.band.length > 3, 'wage automation band string');
+  const cohesionOnly = computeNationalLaborCohesionIndex(
+    r1.state,
+    r1.state.laborMarketStabilityOutlook,
+    r1.state.intergenerationalWorkforceBalanceOutlook,
+    r1.state.capacityParticipationAlignmentBrief
+  );
+  check('R1515', cohesionOnly.stabilityDrag >= 0, 'cohesion stability drag');
+  check(
+    'R1516',
+    computeNationalLaborCohesionIndex(
+      rHhBad.state,
+      rHhBad.state.laborMarketStabilityOutlook,
+      rHhBad.state.intergenerationalWorkforceBalanceOutlook,
+      rHhBad.state.capacityParticipationAlignmentBrief
+    ).stewardNote.length > 8,
+    'cohesion steward note'
   );
 
   for (let i = 19; i <= 50; i++) {

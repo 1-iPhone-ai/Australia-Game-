@@ -45,7 +45,10 @@ export type LaborGiQueryTopic =
   | 'integrated_labor_readiness'
   | 'hybrid_remote_participation'
   | 'corridor_capacity_stress'
-  | 'steward_intervention_priority';
+  | 'steward_intervention_priority'
+  | 'essential_worker_participation'
+  | 'wage_automation_coupling'
+  | 'national_labor_cohesion';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -86,6 +89,11 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(hybrid remote participation|remote work participation outlook)/.test(q)) return 'hybrid_remote_participation';
   if (/\b(corridor capacity stress|corridor stress capacity)/.test(q)) return 'corridor_capacity_stress';
   if (/\b(steward intervention priority|intervention priority steward)/.test(q)) return 'steward_intervention_priority';
+  if (/\b(essential worker participation|essential services participation)/.test(q)) {
+    return 'essential_worker_participation';
+  }
+  if (/\b(wage automation coupling|automation wage coupling)/.test(q)) return 'wage_automation_coupling';
+  if (/\b(national labor cohesion|labor cohesion index)/.test(q)) return 'national_labor_cohesion';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -440,6 +448,30 @@ export function answerLaborDemographicsQuestion(
         fact: `Priority band ${state.stewardInterventionPriorityBrief?.band ?? 'unknown'}; readiness drag ${Math.round(state.stewardInterventionPriorityBrief?.readinessDrag ?? 0)}.`,
         inference: state.stewardInterventionPriorityBrief?.stewardNote || state.summary,
         projection: 'Intervention priority synthesizes readiness, stability, and rebalancing stress for steward nudges.'
+      };
+    case 'essential_worker_participation':
+      return {
+        topic,
+        headline: state.essentialWorkerParticipationOutlook?.summary || 'Essential-worker participation unavailable.',
+        fact: `Essential band ${state.essentialWorkerParticipationOutlook?.band ?? 'unknown'}; shock drag ${Math.round(state.essentialWorkerParticipationOutlook?.shockDrag ?? 0)}.`,
+        inference: state.essentialWorkerParticipationOutlook?.stewardNote || state.outlook,
+        projection: 'Essential outlook blends access shocks, buffers, safety, and participation — bounded indices only.'
+      };
+    case 'wage_automation_coupling':
+      return {
+        topic,
+        headline: state.wageAutomationCouplingBrief?.summary || 'Wage-automation coupling unavailable.',
+        fact: `Coupling band ${state.wageAutomationCouplingBrief?.band ?? 'unknown'}; automation drag ${Math.round(state.wageAutomationCouplingBrief?.automationDrag ?? 0)}.`,
+        inference: state.wageAutomationCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling blends spillover, competitiveness, and automation resilience — not literal payroll automation counts.'
+      };
+    case 'national_labor_cohesion':
+      return {
+        topic,
+        headline: state.nationalLaborCohesionIndex?.summary || 'National labor cohesion unavailable.',
+        fact: `Cohesion band ${state.nationalLaborCohesionIndex?.band ?? 'unknown'}; stability drag ${Math.round(state.nationalLaborCohesionIndex?.stabilityDrag ?? 0)}.`,
+        inference: state.nationalLaborCohesionIndex?.stewardNote || state.summary,
+        projection: 'Cohesion synthesizes stability, intergenerational balance, alignment, and coordination — steward guidance only.'
       };
     default:
       return {

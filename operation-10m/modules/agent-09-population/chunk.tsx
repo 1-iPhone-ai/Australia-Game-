@@ -231,6 +231,9 @@ export interface NationalLaborDemographicsState {
   hybridRemoteParticipationOutlook?: NationalHybridRemoteParticipationOutlook;
   corridorCapacityStressBrief?: NationalCorridorCapacityStressBrief;
   stewardInterventionPriorityBrief?: NationalStewardInterventionPriorityBrief;
+  essentialWorkerParticipationOutlook?: NationalEssentialWorkerParticipationOutlook;
+  wageAutomationCouplingBrief?: NationalWageAutomationCouplingBrief;
+  nationalLaborCohesionIndex?: NationalLaborCohesionIndex;
 }
 
 export type MigrationShockKind =
@@ -705,6 +708,39 @@ export interface NationalStewardInterventionPriorityBrief {
   priorityIndex: number;
   band: StewardInterventionBand;
   readinessDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type EssentialWorkerParticipationBand = 'strained' | 'mixed' | 'supported' | 'resilient';
+
+export interface NationalEssentialWorkerParticipationOutlook {
+  turn: number;
+  essentialIndex: number;
+  band: EssentialWorkerParticipationBand;
+  shockDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WageAutomationCouplingBand = 'disruptive' | 'tense' | 'balanced' | 'harmonized';
+
+export interface NationalWageAutomationCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: WageAutomationCouplingBand;
+  automationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type LaborCohesionBand = 'fragmented' | 'patchy' | 'cohesive' | 'unified';
+
+export interface NationalLaborCohesionIndex {
+  turn: number;
+  cohesionIndex: number;
+  band: LaborCohesionBand;
+  stabilityDrag: number;
   summary: string;
   stewardNote: string;
 }
@@ -1817,7 +1853,10 @@ export type LaborGiQueryTopic =
   | 'integrated_labor_readiness'
   | 'hybrid_remote_participation'
   | 'corridor_capacity_stress'
-  | 'steward_intervention_priority';
+  | 'steward_intervention_priority'
+  | 'essential_worker_participation'
+  | 'wage_automation_coupling'
+  | 'national_labor_cohesion';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -1858,6 +1897,11 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(hybrid remote participation|remote work participation outlook)/.test(q)) return 'hybrid_remote_participation';
   if (/\b(corridor capacity stress|corridor stress capacity)/.test(q)) return 'corridor_capacity_stress';
   if (/\b(steward intervention priority|intervention priority steward)/.test(q)) return 'steward_intervention_priority';
+  if (/\b(essential worker participation|essential services participation)/.test(q)) {
+    return 'essential_worker_participation';
+  }
+  if (/\b(wage automation coupling|automation wage coupling)/.test(q)) return 'wage_automation_coupling';
+  if (/\b(national labor cohesion|labor cohesion index)/.test(q)) return 'national_labor_cohesion';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -2212,6 +2256,30 @@ export function answerLaborDemographicsQuestion(
         fact: `Priority band ${state.stewardInterventionPriorityBrief?.band ?? 'unknown'}; readiness drag ${Math.round(state.stewardInterventionPriorityBrief?.readinessDrag ?? 0)}.`,
         inference: state.stewardInterventionPriorityBrief?.stewardNote || state.summary,
         projection: 'Intervention priority synthesizes readiness, stability, and rebalancing stress for steward nudges.'
+      };
+    case 'essential_worker_participation':
+      return {
+        topic,
+        headline: state.essentialWorkerParticipationOutlook?.summary || 'Essential-worker participation unavailable.',
+        fact: `Essential band ${state.essentialWorkerParticipationOutlook?.band ?? 'unknown'}; shock drag ${Math.round(state.essentialWorkerParticipationOutlook?.shockDrag ?? 0)}.`,
+        inference: state.essentialWorkerParticipationOutlook?.stewardNote || state.outlook,
+        projection: 'Essential outlook blends access shocks, buffers, safety, and participation — bounded indices only.'
+      };
+    case 'wage_automation_coupling':
+      return {
+        topic,
+        headline: state.wageAutomationCouplingBrief?.summary || 'Wage-automation coupling unavailable.',
+        fact: `Coupling band ${state.wageAutomationCouplingBrief?.band ?? 'unknown'}; automation drag ${Math.round(state.wageAutomationCouplingBrief?.automationDrag ?? 0)}.`,
+        inference: state.wageAutomationCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling blends spillover, competitiveness, and automation resilience — not literal payroll automation counts.'
+      };
+    case 'national_labor_cohesion':
+      return {
+        topic,
+        headline: state.nationalLaborCohesionIndex?.summary || 'National labor cohesion unavailable.',
+        fact: `Cohesion band ${state.nationalLaborCohesionIndex?.band ?? 'unknown'}; stability drag ${Math.round(state.nationalLaborCohesionIndex?.stabilityDrag ?? 0)}.`,
+        inference: state.nationalLaborCohesionIndex?.stewardNote || state.summary,
+        projection: 'Cohesion synthesizes stability, intergenerational balance, alignment, and coordination — steward guidance only.'
       };
     default:
       return {
@@ -2709,6 +2777,24 @@ export function buildStewardLaborBrief(
     state.stewardInterventionPriorityBrief?.band === 'urgent'
   ) {
     hints.push(state.stewardInterventionPriorityBrief.stewardNote);
+  }
+  if (
+    state.essentialWorkerParticipationOutlook?.band === 'strained' ||
+    state.essentialWorkerParticipationOutlook?.band === 'mixed'
+  ) {
+    hints.push(state.essentialWorkerParticipationOutlook.stewardNote);
+  }
+  if (
+    state.wageAutomationCouplingBrief?.band === 'disruptive' ||
+    state.wageAutomationCouplingBrief?.band === 'tense'
+  ) {
+    hints.push(state.wageAutomationCouplingBrief.stewardNote);
+  }
+  if (
+    state.nationalLaborCohesionIndex?.band === 'fragmented' ||
+    state.nationalLaborCohesionIndex?.band === 'patchy'
+  ) {
+    hints.push(state.nationalLaborCohesionIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -4278,6 +4364,121 @@ export function mentorshipEaseForRegion(
   );
   if (!matches.length) return 0;
   return matches.reduce((a, l) => a + l.mentorshipStrength, 0) / matches.length;
+}
+
+
+// --- source: catalog/workforce-safety-levers.ts ---
+
+export type WorkforceSafetyLeverKind =
+  | 'site_safety_pack'
+  | 'heat_stress_mitigation'
+  | 'equipment_guard_band'
+  | 'wellbeing_check_lane'
+  | 'incident_prevention_forum';
+
+export interface WorkforceSafetyLever {
+  id: string;
+  kind: WorkforceSafetyLeverKind;
+  targetIndustry: StrategicIndustryKind;
+  hostRegions: readonly string[];
+  safetyStrength: number;
+  label: string;
+  narrative: string;
+}
+
+export const WORKFORCE_SAFETY_LEVERS: WorkforceSafetyLever[] = [
+  {
+    id: 'safe_manufacturing_vic',
+    kind: 'equipment_guard_band',
+    targetIndustry: 'manufacturing',
+    hostRegions: ['VIC', 'SA'],
+    safetyStrength: 0.71,
+    label: 'Manufacturing guard band',
+    narrative: 'Guard bands stabilize participation without literal incident counts.'
+  },
+  {
+    id: 'safe_health_nsw',
+    kind: 'wellbeing_check_lane',
+    targetIndustry: 'research',
+    hostRegions: ['NSW', 'ACT'],
+    safetyStrength: 0.74,
+    label: 'Capital health wellbeing lane',
+    narrative: 'Wellbeing lanes reinforce hybrid-remote participation outlooks.'
+  },
+  {
+    id: 'safe_agri_tas',
+    kind: 'heat_stress_mitigation',
+    targetIndustry: 'agriculture',
+    hostRegions: ['TAS', 'SA', 'VIC'],
+    safetyStrength: 0.63,
+    label: 'Regional agri heat mitigation',
+    narrative: 'Heat mitigation eases seasonal essential-worker participation drag.'
+  },
+  {
+    id: 'safe_tourism_qld',
+    kind: 'site_safety_pack',
+    targetIndustry: 'tourism',
+    hostRegions: ['QLD', 'NSW'],
+    safetyStrength: 0.66,
+    label: 'Coastal tourism safety pack',
+    narrative: 'Safety packs support migration-shock participation buffers.'
+  },
+  {
+    id: 'safe_tech_nsw_vic',
+    kind: 'incident_prevention_forum',
+    targetIndustry: 'technology',
+    hostRegions: ['NSW', 'VIC'],
+    safetyStrength: 0.75,
+    label: 'Tech prevention forum',
+    narrative: 'Forums align wage-automation coupling with mentorship levers.'
+  },
+  {
+    id: 'safe_mining_wa',
+    kind: 'site_safety_pack',
+    targetIndustry: 'mining',
+    hostRegions: ['WA', 'QLD', 'NT'],
+    safetyStrength: 0.72,
+    label: 'Frontier mining safety pack',
+    narrative: 'Safety packs offset corridor capacity stress in resource regions.'
+  },
+  {
+    id: 'safe_energy_nt',
+    kind: 'equipment_guard_band',
+    targetIndustry: 'energy',
+    hostRegions: ['NT', 'QLD'],
+    safetyStrength: 0.67,
+    label: 'Energy equipment guard band',
+    narrative: 'Guard bands reinforce national labor cohesion indices.'
+  },
+  {
+    id: 'safe_trade_sa',
+    kind: 'wellbeing_check_lane',
+    targetIndustry: 'trade',
+    hostRegions: ['SA', 'WA'],
+    safetyStrength: 0.62,
+    label: 'Trade logistics wellbeing lane',
+    narrative: 'Wellbeing lanes smooth steward intervention priorities.'
+  }
+];
+
+export function lookupWorkforceSafetyLever(id: string): WorkforceSafetyLever | undefined {
+  return WORKFORCE_SAFETY_LEVERS.find(l => l.id === id);
+}
+
+export function safetyLeversForIndustry(industry: StrategicIndustryKind): WorkforceSafetyLever[] {
+  return WORKFORCE_SAFETY_LEVERS.filter(l => l.targetIndustry === industry);
+}
+
+export function safetyEaseForRegion(
+  regionId: string,
+  dominantIndustry: StrategicIndustryKind | null | undefined
+): number {
+  if (!dominantIndustry) return 0;
+  const matches = WORKFORCE_SAFETY_LEVERS.filter(
+    l => l.targetIndustry === dominantIndustry && l.hostRegions.includes(regionId)
+  );
+  if (!matches.length) return 0;
+  return matches.reduce((a, l) => a + l.safetyStrength, 0) / matches.length;
 }
 
 
@@ -6409,6 +6610,220 @@ export function computeNationalStewardInterventionPriorityBrief(
 }
 
 
+// --- source: essential-worker-participation-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type EssentialWorkerParticipationBand,
+  type NationalEssentialWorkerParticipationOutlook,
+  type NationalLaborDemographicsState,
+  type NationalMigrationShockParticipationBufferOutlook,
+  type NationalParticipationPressureBrief
+} from './types';
+
+function essentialBand(index: number): EssentialWorkerParticipationBand {
+  if (index <= 34) return 'strained';
+  if (index <= 48) return 'mixed';
+  if (index <= 62) return 'supported';
+  return 'resilient';
+}
+
+export function computeNationalEssentialWorkerParticipationOutlook(
+  state: NationalLaborDemographicsState,
+  participation: NationalParticipationPressureBrief | null | undefined,
+  buffer: NationalMigrationShockParticipationBufferOutlook | null | undefined
+): NationalEssentialWorkerParticipationOutlook {
+  if (!state.enabled || !participation || !buffer) {
+    return {
+      turn: state.turn,
+      essentialIndex: 50,
+      band: 'mixed',
+      shockDrag: 0,
+      summary: 'Essential-worker participation idle — participation or buffer unavailable.',
+      stewardNote: 'Compute participation and migration buffer before essential-worker guidance.'
+    };
+  }
+
+  let safetyLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    safetyLift += safetyEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  safetyLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const essentialShocks =
+    (state.activeMigrationShocks || []).filter(s => s.kind === 'essential_access_outflow').length;
+  const shockDrag = v1014laborClamp(buffer.activeShockDrag * 0.55 + essentialShocks * 8);
+  const participationLift = participation.participationIndex * 0.3;
+  const bufferLift =
+    buffer.band === 'cushioned' || buffer.band === 'adequate' ? buffer.bufferIndex * 0.2 : 0;
+
+  const essentialIndex = v1014laborClamp(30 + participationLift + bufferLift + safetyLift * 20 - shockDrag);
+  const band = essentialBand(essentialIndex);
+
+  const stewardNote =
+    band === 'strained' || band === 'mixed'
+      ? 'Mixed essential-worker participation — deploy safety levers before stacking migration shocks.'
+      : band === 'resilient'
+        ? 'Resilient essential band — avoid corridor overload that erodes shock buffers.'
+        : 'Supported essential participation — monitor equity gaps in access-strained regions.';
+
+  return {
+    turn: state.turn,
+    essentialIndex,
+    band,
+    shockDrag,
+    summary: `Essential-worker participation ${band} (index ${Math.round(essentialIndex)}); shock drag ${Math.round(shockDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: wage-automation-coupling-brief.ts ---
+  NationalAutomationParticipationResilienceOutlook,
+  NationalLaborDemographicsState,
+  NationalWageAutomationCouplingBrief,
+  NationalWageCompetitivenessIndex,
+  NationalWageParticipationSpilloverBrief,
+  WageAutomationCouplingBand
+} from './types';
+
+function couplingBand(index: number): WageAutomationCouplingBand {
+  if (index <= 34) return 'disruptive';
+  if (index <= 48) return 'tense';
+  if (index <= 62) return 'balanced';
+  return 'harmonized';
+}
+
+export function computeNationalWageAutomationCouplingBrief(
+  state: NationalLaborDemographicsState,
+  spillover: NationalWageParticipationSpilloverBrief | null | undefined,
+  competitiveness: NationalWageCompetitivenessIndex | null | undefined,
+  automationResilience: NationalAutomationParticipationResilienceOutlook | null | undefined
+): NationalWageAutomationCouplingBrief {
+  if (!state.enabled || !spillover || !competitiveness || !automationResilience) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'tense',
+      automationDrag: 0,
+      summary: 'Wage-automation coupling idle — spillover, competitiveness, or resilience unavailable.',
+      stewardNote: 'Compute wage spillover and automation resilience before coupling guidance.'
+    };
+  }
+
+  const automationDrag = v1014laborClamp(
+    automationResilience.automationPressureDrag * 0.6 +
+      (automationResilience.band === 'fragile' ? 10 : automationResilience.band === 'strained' ? 6 : 0)
+  );
+  const spilloverLift =
+    spillover.band === 'supportive' || spillover.band === 'amplifying'
+      ? spillover.spilloverIndex * 0.24
+      : spillover.spilloverIndex * 0.12;
+  const competitivenessEase =
+    competitiveness.band === 'premium' || competitiveness.band === 'balanced'
+      ? competitiveness.competitivenessIndex * 0.22
+      : 0;
+  const wageDrag =
+    spillover.band === 'suppressive' ? 12 : competitiveness.band === 'cost_burden' ? 10 : 0;
+
+  const couplingIndex = v1014laborClamp(32 + spilloverLift + competitivenessEase - automationDrag - wageDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'disruptive' || band === 'tense'
+      ? 'Tense wage-automation coupling — slow automation before wage competitiveness pushes.'
+      : band === 'harmonized'
+        ? 'Harmonized coupling — guard against corridor stress that flips spillover bands.'
+        : 'Balanced coupling — align mentorship with automation resilience outlook.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    automationDrag,
+    summary: `Wage-automation coupling ${band} (index ${Math.round(couplingIndex)}); automation drag ${Math.round(automationDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-labor-cohesion-index.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type LaborCohesionBand,
+  type NationalCapacityParticipationAlignmentBrief,
+  type NationalIntergenerationalWorkforceBalanceOutlook,
+  type NationalLaborCohesionIndex,
+  type NationalLaborDemographicsState,
+  type NationalLaborMarketStabilityOutlook
+} from './types';
+
+function cohesionBand(index: number): LaborCohesionBand {
+  if (index <= 34) return 'fragmented';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'cohesive';
+  return 'unified';
+}
+
+export function computeNationalLaborCohesionIndex(
+  state: NationalLaborDemographicsState,
+  stability: NationalLaborMarketStabilityOutlook | null | undefined,
+  intergenerational: NationalIntergenerationalWorkforceBalanceOutlook | null | undefined,
+  alignment: NationalCapacityParticipationAlignmentBrief | null | undefined
+): NationalLaborCohesionIndex {
+  if (!state.enabled || !stability || !intergenerational || !alignment) {
+    return {
+      turn: state.turn,
+      cohesionIndex: 50,
+      band: 'patchy',
+      stabilityDrag: 0,
+      summary: 'National labor cohesion idle — stability, balance, or alignment unavailable.',
+      stewardNote: 'Compute stability, intergenerational balance, and alignment before cohesion guidance.'
+    };
+  }
+
+  let coordinationLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    coordinationLift += coordinationEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  coordinationLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const stabilityDrag =
+    stability.band === 'volatile'
+      ? 16
+      : stability.band === 'fragile'
+        ? 10
+        : stability.stressDrag * 0.4;
+  const balanceLift =
+    intergenerational.band === 'balanced' || intergenerational.band === 'renewal'
+      ? intergenerational.balanceIndex * 0.28
+      : intergenerational.balanceIndex * 0.14;
+  const alignmentLift =
+    alignment.band === 'aligned' || alignment.band === 'reinforcing'
+      ? alignment.alignmentIndex * 0.26
+      : alignment.alignmentIndex * 0.12;
+  const gapDrag = intergenerational.pipelineGap * 0.12;
+
+  const cohesionIndex = v1014laborClamp(
+    28 + balanceLift + alignmentLift + coordinationLift * 20 - stabilityDrag - gapDrag
+  );
+  const band = cohesionBand(cohesionIndex);
+
+  const stewardNote =
+    band === 'fragmented' || band === 'patchy'
+      ? 'Patchy labor cohesion — deploy coordination and safety levers before corridor moves.'
+      : band === 'unified'
+        ? 'Unified cohesion — avoid stacked shocks that thin essential-worker buffers.'
+        : 'Cohesive band — maintain intergenerational balance while scaling participation.';
+
+  return {
+    turn: state.turn,
+    cohesionIndex,
+    band,
+    stabilityDrag,
+    summary: `National labor cohesion ${band} (index ${Math.round(cohesionIndex)}); stability drag ${Math.round(stabilityDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -7055,6 +7470,23 @@ export function computeNationalLaborDemographics(
     state.laborMarketStabilityOutlook,
     state.laborRebalancingStressBrief
   );
+  state.essentialWorkerParticipationOutlook = computeNationalEssentialWorkerParticipationOutlook(
+    state,
+    state.participationPressureBrief,
+    state.migrationShockParticipationBufferOutlook
+  );
+  state.wageAutomationCouplingBrief = computeNationalWageAutomationCouplingBrief(
+    state,
+    state.wageParticipationSpilloverBrief,
+    state.wageCompetitivenessIndex,
+    state.automationParticipationResilienceOutlook
+  );
+  state.nationalLaborCohesionIndex = computeNationalLaborCohesionIndex(
+    state,
+    state.laborMarketStabilityOutlook,
+    state.intergenerationalWorkforceBalanceOutlook,
+    state.capacityParticipationAlignmentBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -7248,6 +7680,27 @@ export function computeNationalLaborDemographics(
   ) {
     state.evidence.push(state.stewardInterventionPriorityBrief.summary.slice(0, 120));
   }
+  if (
+    (state.essentialWorkerParticipationOutlook?.band === 'strained' ||
+      state.essentialWorkerParticipationOutlook?.band === 'mixed') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.essentialWorkerParticipationOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.wageAutomationCouplingBrief?.band === 'disruptive' ||
+      state.wageAutomationCouplingBrief?.band === 'tense') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.wageAutomationCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalLaborCohesionIndex?.band === 'fragmented' ||
+      state.nationalLaborCohesionIndex?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalLaborCohesionIndex.summary.slice(0, 120));
+  }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
   }
@@ -7316,6 +7769,11 @@ export function computeNationalLaborDemographics(
   mentorshipEaseForRegion,
   mentorshipLeversForIndustry
 } from './catalog/workforce-mentorship-levers';
+  WORKFORCE_SAFETY_LEVERS,
+  lookupWorkforceSafetyLever,
+  safetyEaseForRegion,
+  safetyLeversForIndustry
+} from './catalog/workforce-safety-levers';
   STRATEGIC_INDUSTRIES,
   V1014_LABOR_CORE_REGIONS,
   V1014_LABOR_INDUSTRY_LABOR_WEIGHT,
@@ -8088,6 +8546,65 @@ export function runV1014LaborDemographicsSelfTests(): {
       rHhBad.state.laborRebalancingStressBrief
     ).stewardNote.length > 8,
     'intervention steward note'
+  );
+
+  check('R1501', WORKFORCE_SAFETY_LEVERS.length >= 8, 'safety lever catalog');
+  check('R1502', Boolean(lookupWorkforceSafetyLever('safe_tech_nsw_vic')?.narrative), 'safety lever lookup');
+  check('R1503', safetyLeversForIndustry('technology').length >= 1, 'technology safety levers');
+  check('R1504', safetyEaseForRegion('NSW', 'technology') > 0, 'regional safety ease');
+  check('R1505', Boolean(r1.state.essentialWorkerParticipationOutlook?.band), 'essential worker on state');
+  check('R1506', (r1.state.essentialWorkerParticipationOutlook?.shockDrag ?? 0) >= 0, 'essential shock drag');
+  check('R1507', Boolean(r1.state.wageAutomationCouplingBrief?.band), 'wage automation on state');
+  check('R1508', Boolean(r1.state.nationalLaborCohesionIndex?.band), 'labor cohesion on state');
+  check(
+    'R1509',
+    detectLaborDemographicsQuery('essential worker participation') === 'essential_worker_participation',
+    'GI essential detect'
+  );
+  check(
+    'R1510',
+    detectLaborDemographicsQuery('wage automation coupling') === 'wage_automation_coupling',
+    'GI wage automation detect'
+  );
+  check(
+    'R1511',
+    detectLaborDemographicsQuery('national labor cohesion') === 'national_labor_cohesion',
+    'GI cohesion detect'
+  );
+  check(
+    'R1512',
+    answerLaborDemographicsQuestion(r1.state, 'national_labor_cohesion').headline.length > 5,
+    'GI cohesion answer'
+  );
+  const essentialOnly = computeNationalEssentialWorkerParticipationOutlook(
+    r1.state,
+    r1.state.participationPressureBrief,
+    r1.state.migrationShockParticipationBufferOutlook
+  );
+  check('R1513', essentialOnly.summary.length > 10, 'essential standalone summary');
+  const wageAutoOnly = computeNationalWageAutomationCouplingBrief(
+    r1.state,
+    r1.state.wageParticipationSpilloverBrief,
+    r1.state.wageCompetitivenessIndex,
+    r1.state.automationParticipationResilienceOutlook
+  );
+  check('R1514', wageAutoOnly.band.length > 3, 'wage automation band string');
+  const cohesionOnly = computeNationalLaborCohesionIndex(
+    r1.state,
+    r1.state.laborMarketStabilityOutlook,
+    r1.state.intergenerationalWorkforceBalanceOutlook,
+    r1.state.capacityParticipationAlignmentBrief
+  );
+  check('R1515', cohesionOnly.stabilityDrag >= 0, 'cohesion stability drag');
+  check(
+    'R1516',
+    computeNationalLaborCohesionIndex(
+      rHhBad.state,
+      rHhBad.state.laborMarketStabilityOutlook,
+      rHhBad.state.intergenerationalWorkforceBalanceOutlook,
+      rHhBad.state.capacityParticipationAlignmentBrief
+    ).stewardNote.length > 8,
+    'cohesion steward note'
   );
 
   for (let i = 19; i <= 50; i++) {
