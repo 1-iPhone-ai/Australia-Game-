@@ -1,0 +1,27 @@
+import { EVOLVING_UI_PANEL_BY_ID } from '../registry/panel-definitions.js';
+import type { ProgressionSignalSnapshot } from '../types/progression.js';
+import { buildCoachHeadline } from './unlock-hint-formatter.js';
+
+export interface SecondUnlockHeadlineDayCoach {
+  panelId: string | null;
+  coachCopy: string | null;
+}
+
+export function buildSecondUnlockHeadlineDayCoach(input: {
+  newlyUnlockedPanelIds: string[];
+  signals: ProgressionSignalSnapshot;
+  nextGameDay: number;
+}): SecondUnlockHeadlineDayCoach {
+  const panelId = input.newlyUnlockedPanelIds[1];
+  if (!panelId) {
+    return { panelId: null, coachCopy: null };
+  }
+  const panel = EVOLVING_UI_PANEL_BY_ID[panelId];
+  if (!panel) {
+    return { panelId, coachCopy: null };
+  }
+  return {
+    panelId,
+    coachCopy: `Day ${input.nextGameDay}: Also unlocked — ${buildCoachHeadline(panel, input.signals)}`,
+  };
+}

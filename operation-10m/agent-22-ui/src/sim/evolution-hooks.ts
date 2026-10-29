@@ -141,6 +141,10 @@ import { buildFirstUnlockHeadlineDayCoach } from '../engine/first-unlock-headlin
 import { buildMilestoneForecastBreadthDayCoach } from '../engine/milestone-forecast-breadth-day-coach.js';
 import { buildNotificationLaneSuppressedDayCoach } from '../engine/notification-lane-suppressed-day-coach.js';
 import { buildSingleDeferredCoachLineDayCoach } from '../engine/single-deferred-coach-line-day-coach.js';
+import { buildSecondUnlockHeadlineDayCoach } from '../engine/second-unlock-headline-day-coach.js';
+import { buildActiveNotificationLaneCountDayCoach } from '../engine/active-notification-lane-count-day-coach.js';
+import { buildVisiblePanelSnapshotDayCoach } from '../engine/visible-panel-snapshot-day-coach.js';
+import { buildNearestMilestoneEtaDayCoach } from '../engine/nearest-milestone-eta-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -290,6 +294,10 @@ export interface DayAdvanceUiEvolutionResult {
   milestoneForecastBreadthDayCoachCopy: string | null;
   notificationLaneSuppressedDayCoachCopy: string | null;
   singleDeferredCoachLineDayCoachCopy: string | null;
+  secondUnlockHeadlineDayCoachCopy: string | null;
+  activeNotificationLaneCountDayCoachCopy: string | null;
+  visiblePanelSnapshotDayCoachCopy: string | null;
+  nearestMilestoneEtaDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1101,6 +1109,28 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const secondUnlockHeadlineDayCoach = buildSecondUnlockHeadlineDayCoach({
+    newlyUnlockedPanelIds,
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const activeNotificationLaneCountDayCoach = buildActiveNotificationLaneCountDayCoach({
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const visiblePanelSnapshotDayCoach = buildVisiblePanelSnapshotDayCoach({
+    visiblePanelCount,
+    totalPanelCount: EVOLVING_UI_PANEL_REGISTRY.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const nearestMilestoneEtaDayCoach = buildNearestMilestoneEtaDayCoach({
+    entries: milestoneEntries,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1251,6 +1281,10 @@ export function tickEvolvingUiOnDayAdvance(
     milestoneForecastBreadthDayCoachCopy: milestoneForecastBreadthDayCoach.coachCopy,
     notificationLaneSuppressedDayCoachCopy: notificationLaneSuppressedDayCoach.coachCopy,
     singleDeferredCoachLineDayCoachCopy: singleDeferredCoachLineDayCoach.coachCopy,
+    secondUnlockHeadlineDayCoachCopy: secondUnlockHeadlineDayCoach.coachCopy,
+    activeNotificationLaneCountDayCoachCopy: activeNotificationLaneCountDayCoach.coachCopy,
+    visiblePanelSnapshotDayCoachCopy: visiblePanelSnapshotDayCoach.coachCopy,
+    nearestMilestoneEtaDayCoachCopy: nearestMilestoneEtaDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

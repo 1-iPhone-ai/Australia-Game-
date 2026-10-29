@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 356dab57652e9d0a
+// content-sha256-prefix: b0c3ea6dc7d804b5
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -979,6 +979,10 @@ export interface DayAdvanceUiEvolutionResult {
   milestoneForecastBreadthDayCoachCopy: string | null;
   notificationLaneSuppressedDayCoachCopy: string | null;
   singleDeferredCoachLineDayCoachCopy: string | null;
+  secondUnlockHeadlineDayCoachCopy: string | null;
+  activeNotificationLaneCountDayCoachCopy: string | null;
+  visiblePanelSnapshotDayCoachCopy: string | null;
+  nearestMilestoneEtaDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1790,6 +1794,28 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const secondUnlockHeadlineDayCoach = buildSecondUnlockHeadlineDayCoach({
+    newlyUnlockedPanelIds,
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const activeNotificationLaneCountDayCoach = buildActiveNotificationLaneCountDayCoach({
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const visiblePanelSnapshotDayCoach = buildVisiblePanelSnapshotDayCoach({
+    visiblePanelCount,
+    totalPanelCount: EVOLVING_UI_PANEL_REGISTRY.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const nearestMilestoneEtaDayCoach = buildNearestMilestoneEtaDayCoach({
+    entries: milestoneEntries,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1940,6 +1966,10 @@ export function tickEvolvingUiOnDayAdvance(
     milestoneForecastBreadthDayCoachCopy: milestoneForecastBreadthDayCoach.coachCopy,
     notificationLaneSuppressedDayCoachCopy: notificationLaneSuppressedDayCoach.coachCopy,
     singleDeferredCoachLineDayCoachCopy: singleDeferredCoachLineDayCoach.coachCopy,
+    secondUnlockHeadlineDayCoachCopy: secondUnlockHeadlineDayCoach.coachCopy,
+    activeNotificationLaneCountDayCoachCopy: activeNotificationLaneCountDayCoach.coachCopy,
+    visiblePanelSnapshotDayCoachCopy: visiblePanelSnapshotDayCoach.coachCopy,
+    nearestMilestoneEtaDayCoachCopy: nearestMilestoneEtaDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -7558,6 +7588,281 @@ export function buildSingleDeferredCoachLineDayCoach(input: {
     queueDepth: 1,
     coachCopy: `Day ${input.nextGameDay}: One coach announcement remains queued for a later delivery tick.`,
   };
+}
+
+// --- source: engine/second-unlock-headline-day-coach.ts ---
+export interface SecondUnlockHeadlineDayCoach {
+  panelId: string | null;
+  coachCopy: string | null;
+}
+
+export function buildSecondUnlockHeadlineDayCoach(input: {
+  newlyUnlockedPanelIds: string[];
+  signals: ProgressionSignalSnapshot;
+  nextGameDay: number;
+}): SecondUnlockHeadlineDayCoach {
+  const panelId = input.newlyUnlockedPanelIds[1];
+  if (!panelId) {
+    return { panelId: null, coachCopy: null };
+  }
+  const panel = EVOLVING_UI_PANEL_BY_ID[panelId];
+  if (!panel) {
+    return { panelId, coachCopy: null };
+  }
+  return {
+    panelId,
+    coachCopy: `Day ${input.nextGameDay}: Also unlocked — ${buildCoachHeadline(panel, input.signals)}`,
+  };
+}
+
+// --- source: engine/active-notification-lane-count-day-coach.ts ---
+export interface ActiveNotificationLaneCountDayCoach {
+  activeCount: number;
+  totalLanes: number;
+  coachCopy: string | null;
+}
+
+export function buildActiveNotificationLaneCountDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  nextGameDay: number;
+  onboardingEnabled?: boolean;
+}): ActiveNotificationLaneCountDayCoach {
+  const totalLanes = NOTIFICATION_LANE_PROGRESSION.length;
+  const activeCount = countActiveNotificationLanes(
+    input.signals,
+    input.onboardingEnabled !== false
+  );
+  if (activeCount >= totalLanes || activeCount === 0) {
+    return { activeCount, totalLanes, coachCopy: null };
+  }
+  return {
+    activeCount,
+    totalLanes,
+    coachCopy: `Day ${input.nextGameDay}: ${activeCount} of ${totalLanes} notification lanes are live; others stay gated by progression.`,
+  };
+}
+
+// --- source: engine/visible-panel-snapshot-day-coach.ts ---
+export interface VisiblePanelSnapshotDayCoach {
+  visibleCount: number;
+  totalPanels: number;
+  coachCopy: string | null;
+}
+
+export function buildVisiblePanelSnapshotDayCoach(input: {
+  visiblePanelCount: number;
+  totalPanelCount: number;
+  nextGameDay: number;
+}): VisiblePanelSnapshotDayCoach {
+  if (input.nextGameDay > 12 || input.visiblePanelCount === 0) {
+    return {
+      visibleCount: input.visiblePanelCount,
+      totalPanels: input.totalPanelCount,
+      coachCopy: null,
+    };
+  }
+  return {
+    visibleCount: input.visiblePanelCount,
+    totalPanels: input.totalPanelCount,
+    coachCopy: `Day ${input.nextGameDay}: ${input.visiblePanelCount} of ${input.totalPanelCount} evolving UI panels are visible today.`,
+  };
+}
+
+// --- source: engine/nearest-milestone-eta-day-coach.ts ---
+export interface NearestMilestoneEtaDayCoach {
+  milestoneId: string | null;
+  daysAway: number | null;
+  coachCopy: string | null;
+}
+
+export function buildNearestMilestoneEtaDayCoach(input: {
+  entries: MilestoneForecastEntry[];
+  nextGameDay: number;
+}): NearestMilestoneEtaDayCoach {
+  const nearest = input.entries.find(e => e.estimatedDaysAway != null && e.estimatedDaysAway > 0);
+  if (!nearest || nearest.estimatedDaysAway == null) {
+    return { milestoneId: null, daysAway: null, coachCopy: null };
+  }
+  const days = nearest.estimatedDaysAway;
+  const dayWord = days === 1 ? 'day' : 'days';
+  return {
+    milestoneId: nearest.milestoneId,
+    daysAway: days,
+    coachCopy: `Day ${input.nextGameDay}: "${nearest.title}" may arrive in about ${days} ${dayWord}.`,
+  };
+}
+
+// --- source: engine/round41-self-tests.ts ---
+export function runAgent22Round41SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r41_second_unlock',
+    'second unlock headline day coach',
+    (() => {
+      const coach = buildSecondUnlockHeadlineDayCoach({
+        newlyUnlockedPanelIds: ['nav_map', 'nav_market'],
+        signals: { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        nextGameDay: 4,
+      });
+      return coach.panelId === 'nav_market' && Boolean(coach.coachCopy?.includes('Day 4'));
+    })()
+  );
+
+  check(
+    'r41_active_lane_count',
+    'active notification lane count day coach',
+    (() => {
+      const coach = buildActiveNotificationLaneCountDayCoach({
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        nextGameDay: 2,
+      });
+      return coach.activeCount > 0 && coach.activeCount < coach.totalLanes && Boolean(coach.coachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r41_visible_snapshot',
+    'visible panel snapshot day coach',
+    (() => {
+      const coach = buildVisiblePanelSnapshotDayCoach({
+        visiblePanelCount: 5,
+        totalPanelCount: EVOLVING_UI_PANEL_REGISTRY.length,
+        nextGameDay: 6,
+      });
+      return Boolean(coach.coachCopy?.includes('Day 6')) && Boolean(coach.coachCopy?.includes('5 of'));
+    })()
+  );
+
+  check(
+    'r41_nearest_eta',
+    'nearest milestone eta day coach',
+    (() => {
+      const entries = forecastUpcomingMilestones(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        4
+      );
+      const coach = buildNearestMilestoneEtaDayCoach({ entries, nextGameDay: 1 });
+      return Boolean(coach.daysAway) && Boolean(coach.coachCopy?.includes('Day 1'));
+    })()
+  );
+
+  check(
+    'r41_tick_second_unlock',
+    'tick exposes second unlock headline day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.secondUnlockHeadlineDayCoachCopy === 'string' || r.secondUnlockHeadlineDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r41_tick_lane_count',
+    'tick exposes active notification lane count day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.activeNotificationLaneCountDayCoachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r41_tick_visible_snapshot',
+    'tick exposes visible panel snapshot day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.visiblePanelSnapshotDayCoachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r41_tick_nearest_eta',
+    'tick exposes nearest milestone eta day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.nearestMilestoneEtaDayCoachCopy === 'string' || r.nearestMilestoneEtaDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r41_second_unlock_single',
+    'second unlock null with one unlock',
+    (() => {
+      const coach = buildSecondUnlockHeadlineDayCoach({
+        newlyUnlockedPanelIds: ['nav_map'],
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        nextGameDay: 2,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r41_visible_late',
+    'visible snapshot null after day 12',
+    (() => {
+      const coach = buildVisiblePanelSnapshotDayCoach({
+        visiblePanelCount: 8,
+        totalPanelCount: 20,
+        nextGameDay: 15,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r41_lane_all_active',
+    'lane count null when all lanes active',
+    (() => {
+      const coach = buildActiveNotificationLaneCountDayCoach({
+        signals: { gameDay: 40, turnCount: 40, interfaceLevel: 'expert' },
+        nextGameDay: 40,
+      });
+      return coach.coachCopy === null || coach.activeCount < coach.totalLanes;
+    })()
+  );
+
+  check(
+    'r41_eta_empty',
+    'nearest eta null with empty forecast',
+    (() => {
+      const coach = buildNearestMilestoneEtaDayCoach({ entries: [], nextGameDay: 3 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round40-self-tests.ts ---
@@ -15198,6 +15503,18 @@ export function SimulationUiEvolutionBridge({
       {result.singleDeferredCoachLineDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-single-deferred-day">{result.singleDeferredCoachLineDayCoachCopy}</div>
       ) : null}
+      {result.secondUnlockHeadlineDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-second-unlock-headline-day">{result.secondUnlockHeadlineDayCoachCopy}</div>
+      ) : null}
+      {result.activeNotificationLaneCountDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-active-lane-count-day">{result.activeNotificationLaneCountDayCoachCopy}</div>
+      ) : null}
+      {result.visiblePanelSnapshotDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-visible-panel-snapshot-day">{result.visiblePanelSnapshotDayCoachCopy}</div>
+      ) : null}
+      {result.nearestMilestoneEtaDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-nearest-milestone-eta-day">{result.nearestMilestoneEtaDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -17335,8 +17652,96 @@ export function SingleDeferredCoachLineDayCoachStrip({
   );
 }
 
+// --- source: react/SecondUnlockHeadlineDayCoachStrip.tsx ---
+export function SecondUnlockHeadlineDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: SecondUnlockHeadlineDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="second-unlock-headline-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-emerald-700/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/ActiveNotificationLaneCountDayCoachStrip.tsx ---
+export function ActiveNotificationLaneCountDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: ActiveNotificationLaneCountDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="active-notification-lane-count-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-sky-600/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/VisiblePanelSnapshotDayCoachStrip.tsx ---
+export function VisiblePanelSnapshotDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: VisiblePanelSnapshotDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="visible-panel-snapshot-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-amber-600/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/NearestMilestoneEtaDayCoachStrip.tsx ---
+export function NearestMilestoneEtaDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: NearestMilestoneEtaDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="nearest-milestone-eta-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-violet-600/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.40.0';
+export const AGENT_22_MODULE_VERSION = '1.41.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -17487,6 +17892,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round41 = runAgent22Round41SelfTests();
+  for (const r of round41.results) {
+    check(`agent22_round41_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round40 = runAgent22Round40SelfTests();

@@ -175,6 +175,11 @@ const FILES = [
   'engine/milestone-forecast-breadth-day-coach.ts',
   'engine/notification-lane-suppressed-day-coach.ts',
   'engine/single-deferred-coach-line-day-coach.ts',
+  'engine/second-unlock-headline-day-coach.ts',
+  'engine/active-notification-lane-count-day-coach.ts',
+  'engine/visible-panel-snapshot-day-coach.ts',
+  'engine/nearest-milestone-eta-day-coach.ts',
+  'engine/round41-self-tests.ts',
   'engine/round40-self-tests.ts',
   'engine/round39-self-tests.ts',
   'engine/round38-self-tests.ts',
@@ -298,6 +303,10 @@ const FILES = [
   'react/MilestoneForecastBreadthDayCoachStrip.tsx',
   'react/NotificationLaneSuppressedDayCoachStrip.tsx',
   'react/SingleDeferredCoachLineDayCoachStrip.tsx',
+  'react/SecondUnlockHeadlineDayCoachStrip.tsx',
+  'react/ActiveNotificationLaneCountDayCoachStrip.tsx',
+  'react/VisiblePanelSnapshotDayCoachStrip.tsx',
+  'react/NearestMilestoneEtaDayCoachStrip.tsx',
 ];
 
 function stripModulePreamble(source) {
@@ -339,7 +348,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.40.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.41.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -492,6 +501,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
     check(\`agent22_round22_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
+  const round41 = runAgent22Round41SelfTests();
+  for (const r of round41.results) {
+    check(\`agent22_round41_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
   const round40 = runAgent22Round40SelfTests();
   for (const r of round40.results) {
     check(\`agent22_round40_\${r.id}\`, r.name, r.passed, r.detail);
@@ -608,7 +622,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.40.0',
+  moduleVersion: '1.41.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),
