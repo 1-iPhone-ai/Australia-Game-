@@ -19,6 +19,10 @@ export interface Agent08CorporateSnapshot {
   wave39SurvivalPricingLatch?: boolean;
   /** Round 39: corporate markup escalation band. */
   corporateMarkupEscalationBand?: 'contained' | 'building' | 'dominant';
+  /** Round 47: corporate capacity inflation latch. */
+  wave47CorporateCapacityLatch?: boolean;
+  /** Round 47: capacity markup surge band. */
+  capacityMarkupSurgeBand?: 'contained' | 'building' | 'ruptured';
 }
 
 export function mergeAgent08IntoMacroFinancialInputs(
@@ -62,6 +66,13 @@ export function mergeAgent08IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.corporateMarkupEscalationBand === 'building' && snapshot.passThroughIntent === 'full') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave47CorporateCapacityLatch && snapshot.capacityMarkupSurgeBand === 'ruptured') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.capacityMarkupSurgeBand === 'building' && snapshot.pricingPowerBand === 'dominant') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 

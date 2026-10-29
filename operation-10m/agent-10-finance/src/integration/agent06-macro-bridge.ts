@@ -16,6 +16,10 @@ export interface Agent06MacroSnapshot {
   macroDemandOverheatLatch?: boolean;
   /** Round 27: transmission slippage band. */
   transmissionSlippageBand?: 'stable' | 'slipping' | 'dislocated';
+  /** Round 47: macro output-gap inflation latch. */
+  wave47MacroOutputGapLatch?: boolean;
+  /** Round 47: output-gap escalation band. */
+  outputGapEscalationBand?: 'stable' | 'elevated' | 'critical';
 }
 
 export function mergeAgent06IntoMacroFinancialInputs(
@@ -52,16 +56,25 @@ export function mergeAgent06IntoMacroFinancialInputs(
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
+  let highInflationScenario =
+    base.highInflationScenario ||
+    snapshot.transmissionStabilityFragile === true ||
+    snapshot.macroRecoveryRankStressActive === true;
+
+  if (snapshot.wave47MacroOutputGapLatch && snapshot.outputGapEscalationBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.outputGapEscalationBand === 'elevated' && snapshot.outputGap > 0.35) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
   return {
     ...base,
     turn: Math.max(base.turn, snapshot.turn),
     inflationSettingMultiplier,
     actorCreditStressIndex,
     fiscalPressure,
-    highInflationScenario:
-      base.highInflationScenario ||
-      snapshot.transmissionStabilityFragile === true ||
-      snapshot.macroRecoveryRankStressActive === true,
+    highInflationScenario,
     systemicLiquidityBand:
       snapshot.transmissionStabilityFragile &&
       base.systemicLiquidityBand !== 'critical' &&

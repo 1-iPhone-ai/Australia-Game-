@@ -336,6 +336,14 @@ import {
   assessHouseholdWageInflationStressSurge,
   type HouseholdWageInflationStressSurgeBand,
 } from '../inflation/household-wage-inflation-stress-surge.js';
+import {
+  assessMacroOutputGapInflationPressureLatch,
+  type MacroOutputGapInflationPressureLatchBand,
+} from '../inflation/macro-output-gap-inflation-pressure-latch.js';
+import {
+  assessCorporateCapacityMarkupInflationSurge,
+  type CorporateCapacityMarkupInflationSurgeBand,
+} from '../inflation/corporate-capacity-markup-inflation-surge.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -428,6 +436,8 @@ export interface InflationForecastPoint {
   modesSandboxInflationPressureSurgeBand: ModesSandboxInflationPressureSurgeBand;
   fiscalConsolidatedInflationPressureLatchBand: FiscalConsolidatedInflationPressureLatchBand;
   householdWageInflationStressSurgeBand: HouseholdWageInflationStressSurgeBand;
+  macroOutputGapInflationPressureLatchBand: MacroOutputGapInflationPressureLatchBand;
+  corporateCapacityMarkupInflationSurgeBand: CorporateCapacityMarkupInflationSurgeBand;
 }
 
 export interface InflationForecastPath {
@@ -1258,6 +1268,24 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const macroOutputGapLatch = assessMacroOutputGapInflationPressureLatch({
+      gdpGrowthBand: inputs.highInflationScenario ? 'strong' : inputs.creditShockActive ? 'steady' : 'slow',
+      outputGap: inputs.householdInflationScenarioActive ? 0.48 : inputs.highInflationScenario ? 0.32 : 0.08,
+      wave47MacroOutputGapLatch: inputs.householdInflationScenarioActive,
+      outputGapEscalationBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'critical' : inputs.fiscalPressure === 'critical' ? 'elevated' : 'stable',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const corporateCapacitySurge = assessCorporateCapacityMarkupInflationSurge({
+      pricingPowerBand: inputs.highInflationScenario ? 'dominant' : inputs.creditShockActive ? 'strong' : 'moderate',
+      marginCompression: inputs.fiscalPressure === 'critical' ? 'mild' : 'none',
+      wave47CorporateCapacityLatch: inputs.creditShockActive,
+      capacityMarkupSurgeBand:
+        inputs.fiscalPressure === 'critical' ? 'ruptured' : inputs.systemicLiquidityBand === 'critical' ? 'building' : 'contained',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -1350,6 +1378,8 @@ export function projectInflationForecastPath(
       modesSandboxInflationPressureSurgeBand: modesSandboxPressure.surgeBand,
       fiscalConsolidatedInflationPressureLatchBand: fiscalConsolidatedPressure.latchBand,
       householdWageInflationStressSurgeBand: householdWageStress.surgeBand,
+      macroOutputGapInflationPressureLatchBand: macroOutputGapLatch.latchBand,
+      corporateCapacityMarkupInflationSurgeBand: corporateCapacitySurge.surgeBand,
     });
   }
 

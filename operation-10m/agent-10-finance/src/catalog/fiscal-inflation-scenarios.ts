@@ -1705,6 +1705,48 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'fiscal', 'household', 'round46'],
   },
+  {
+    id: 'macro_output_gap_latch_stack',
+    label: 'Macro output-gap latch stack',
+    description: 'Output-gap escalation under macro demand latch.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.51,
+      publicStability: 26,
+    },
+    tags: ['inflation', 'macro', 'round47'],
+  },
+  {
+    id: 'corporate_capacity_markup_surge_stress',
+    label: 'Corporate capacity markup surge stress',
+    description: 'Capacity constraint markup surge under pricing power.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.48,
+      publicStability: 22,
+    },
+    tags: ['inflation', 'corporate', 'round47'],
+  },
+  {
+    id: 'macro_corporate_wave47_fusion_stress',
+    label: 'Macro & corporate wave 47 fusion stress',
+    description: 'Output-gap latch colliding with capacity markup surge.',
+    patch: {
+      inflationSettingMultiplier: 1.58,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 14,
+    },
+    tags: ['inflation', 'macro', 'corporate', 'round47'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
