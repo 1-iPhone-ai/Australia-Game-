@@ -194,6 +194,12 @@ import { nrDashBuildBorderPulseAsymmetry } from '../core/border-pulse-asymmetry.
 import { nrDashBuildNsSnippetSourceGap } from '../core/ns-snippet-source-gap.ts';
 import { nrDashBuildHubLinkSaturationShare } from '../core/hub-link-saturation-share.ts';
 import { nrDashBuildMeaningfulHistoryOverlapGap } from '../core/meaningful-history-overlap-gap.ts';
+import { nrDashBuildYouOpenNeedsSkewGap } from '../core/you-open-needs-skew-gap.ts';
+import { nrDashBuildNationalPeakTierSpread } from '../core/national-peak-tier-spread.ts';
+import { nrDashBuildChokepointCorridorSaturationShare } from '../core/chokepoint-corridor-saturation-share.ts';
+import { nrDashBuildLrDerivedSnippetSourceGap } from '../core/lr-derived-snippet-source-gap.ts';
+import { nrDashBuildPeripheralLinkSaturationShare } from '../core/peripheral-link-saturation-share.ts';
+import { nrDashBuildNsMajorHistoryOverlapGap } from '../core/ns-major-history-overlap-gap.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -1532,6 +1538,47 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     const lr = createAgent23LrFixture();
     lr.state.derived.push({ turn: 5, text: 'Echo', significance: 'meaningful' });
     const gap = nrDashBuildMeaningfulHistoryOverlapGap(lr, createAgent23NsFixture())!;
+    return gap.sharedTurnCount === 1 && gap.overlapGap === 1;
+  });
+
+  check('a23_you_open_needs_skew_gap', 'You open-needs skew gap tracks NSW player fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { NSW: 'you' })!;
+    const gap = nrDashBuildYouOpenNeedsSkewGap(snap)!;
+    return gap.youRegionCount === 1 && gap.openNeedsSkewGap >= 0 && gap.ownershipSkew === 0;
+  });
+
+  check('a23_national_peak_tier_spread', 'National peak tier spread separates critical NSW fixture', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.regions.NSW!.needs[0]!.severity = 'critical';
+    lr.state.regions.VIC!.needs[0]!.severity = 'low';
+    const spread = nrDashBuildNationalPeakTierSpread(lr)!;
+    return spread.tierSpread === 2 && spread.maxPeakRank === 3 && spread.minPeakRank === 1;
+  });
+
+  check('a23_chokepoint_corridor_saturation_share', 'Chokepoint corridor saturation share is below one on fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const sat = nrDashBuildChokepointCorridorSaturationShare(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
+    return sat.chokepointCount === 3 && sat.saturationShare > 0 && sat.saturationShare < 1;
+  });
+
+  check('a23_lr_derived_snippet_source_gap', 'LR derived snippet source gap counts unsurfaced derived events', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.derived.push({ turn: 2, text: 'Early', significance: 'meaningful' });
+    const snap = nrDashBuildAuthSnapshot(5, lr, null, null)!;
+    const gap = nrDashBuildLrDerivedSnippetSourceGap(lr, snap)!;
+    return gap.derivedSourceCount === 2 && gap.matchedSnippetCount === 1 && gap.sourceGap === 1;
+  });
+
+  check('a23_peripheral_link_saturation_share', 'Peripheral link saturation share is below one on fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const sat = nrDashBuildPeripheralLinkSaturationShare(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
+    return sat.peripheralLinkCount > 0 && sat.saturationShare > 0 && sat.saturationShare <= 1;
+  });
+
+  check('a23_ns_major_history_overlap_gap', 'NS major history overlap gap counts shared turn five on fixture', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.derived.push({ turn: 5, text: 'National beat', significance: 'major' });
+    const gap = nrDashBuildNsMajorHistoryOverlapGap(lr, createAgent23NsFixture())!;
     return gap.sharedTurnCount === 1 && gap.overlapGap === 1;
   });
 

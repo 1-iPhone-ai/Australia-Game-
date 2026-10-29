@@ -198,6 +198,12 @@ import { nrDashBuildBorderPulseAsymmetry } from '../core/border-pulse-asymmetry.
 import { nrDashBuildNsSnippetSourceGap } from '../core/ns-snippet-source-gap.ts';
 import { nrDashBuildHubLinkSaturationShare } from '../core/hub-link-saturation-share.ts';
 import { nrDashBuildMeaningfulHistoryOverlapGap } from '../core/meaningful-history-overlap-gap.ts';
+import { nrDashBuildYouOpenNeedsSkewGap } from '../core/you-open-needs-skew-gap.ts';
+import { nrDashBuildNationalPeakTierSpread } from '../core/national-peak-tier-spread.ts';
+import { nrDashBuildChokepointCorridorSaturationShare } from '../core/chokepoint-corridor-saturation-share.ts';
+import { nrDashBuildLrDerivedSnippetSourceGap } from '../core/lr-derived-snippet-source-gap.ts';
+import { nrDashBuildPeripheralLinkSaturationShare } from '../core/peripheral-link-saturation-share.ts';
+import { nrDashBuildNsMajorHistoryOverlapGap } from '../core/ns-major-history-overlap-gap.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -330,6 +336,15 @@ export const NrDashOverviewTab: React.FC<{
       return needsShare ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-owned-open-needs-share">
           Owned open-needs share {needsShare.ownedShare} · {needsShare.ownedOpenNeeds}/{needsShare.totalOpenNeeds}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const youNeedsSkew = nrDashBuildYouOpenNeedsSkewGap(snap);
+      return youNeedsSkew ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-you-open-needs-skew-gap">
+          You open-needs skew gap {youNeedsSkew.openNeedsSkewGap} · ownership skew {youNeedsSkew.ownershipSkew} · you μ{' '}
+          {youNeedsSkew.youMeanOpenNeeds} vs national μ {youNeedsSkew.nationalMeanOpenNeeds}
         </div>
       ) : null;
     })()}
@@ -744,6 +759,15 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const peakTierSpread = nrDashBuildNationalPeakTierSpread(lrView);
+      return peakTierSpread && peakTierSpread.tierSpread > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-peak-tier-spread">
+          National peak tier spread {peakTierSpread.tierSpread} · peak rank {peakTierSpread.minPeakRank}–
+          {peakTierSpread.maxPeakRank}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const lowConc = nrDashBuildLowTierNeedsConcentration(lrView);
       return lowConc ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-low-tier-needs-concentration">
@@ -843,11 +867,29 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const lrDerivedSourceGap = nrDashBuildLrDerivedSnippetSourceGap(lrView, snap);
+      return lrDerivedSourceGap && lrDerivedSourceGap.sourceGap > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-lr-derived-snippet-source-gap">
+          LR derived snippet source gap {lrDerivedSourceGap.sourceGap} · derived {lrDerivedSourceGap.derivedSourceCount} ·
+          matched {lrDerivedSourceGap.matchedSnippetCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const majorHistGap = nrDashBuildMajorHistoryOverlapGap(lrView, nsState);
       return majorHistGap && majorHistGap.overlapGap > 0 ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-major-history-overlap-gap">
           Major-history overlap gap {majorHistGap.overlapGap} · shared turns {majorHistGap.sharedTurnCount} · NS{' '}
           {majorHistGap.nsEntryCount} · majors {majorHistGap.majorEntryCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const nsMajorHistGap = nrDashBuildNsMajorHistoryOverlapGap(lrView, nsState);
+      return nsMajorHistGap && nsMajorHistGap.overlapGap > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-ns-major-history-overlap-gap">
+          NS major history overlap gap {nsMajorHistGap.overlapGap} · shared {nsMajorHistGap.sharedTurnCount} · NS{' '}
+          {nsMajorHistGap.nsEntryCount} · majors {nsMajorHistGap.majorEntryCount}
         </div>
       ) : null;
     })()}
@@ -1855,6 +1897,15 @@ export const NrDashMapTab: React.FC<{
         ) : null;
       })()}
       {(() => {
+        const peripheralLinkSat = nrDashBuildPeripheralLinkSaturationShare(nsState, baseNodes);
+        return peripheralLinkSat && peripheralLinkSat.saturationShare > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-peripheral-link-saturation-share">
+            Peripheral link saturation share {peripheralLinkSat.saturationShare} · μ {peripheralLinkSat.meanBlend} · peak{' '}
+            {peripheralLinkSat.peakBlend}
+          </p>
+        ) : null;
+      })()}
+      {(() => {
         const hubPeripheralSat = nrDashBuildHubPeripheralSaturationShare(nsState);
         return hubPeripheralSat && hubPeripheralSat.saturationShare > 0 ? (
           <p className="text-[10px] opacity-75" data-testid="nr-dash-hub-peripheral-saturation-share">
@@ -1914,6 +1965,15 @@ export const NrDashMapTab: React.FC<{
           <p className="text-[10px] opacity-75" data-testid="nr-dash-chokepoint-pulse-asymmetry">
             Chokepoint pulse asymmetry μΔ {chokeAsym.meanEndpointDelta} · peak {chokeAsym.maxEndpointDelta} ·{' '}
             {chokeAsym.chokepointCount} deps
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const chokeCorridorSat = nrDashBuildChokepointCorridorSaturationShare(nsState, baseNodes);
+        return chokeCorridorSat && chokeCorridorSat.saturationShare > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-chokepoint-corridor-saturation-share">
+            Chokepoint corridor saturation share {chokeCorridorSat.saturationShare} · μ {chokeCorridorSat.meanBlend} · peak{' '}
+            {chokeCorridorSat.peakBlend}
           </p>
         ) : null;
       })()}

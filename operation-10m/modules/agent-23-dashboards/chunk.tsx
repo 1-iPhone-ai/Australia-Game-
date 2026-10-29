@@ -6752,6 +6752,216 @@ export function nrDashBuildMeaningfulHistoryOverlapGap(
   };
 }
 
+// --- bundled from core/you-open-needs-skew-gap.ts ---
+export interface NrDashYouOpenNeedsSkewGap {
+  youRegionCount: number;
+  youMeanOpenNeeds: number;
+  nationalMeanOpenNeeds: number;
+  ownershipSkew: number;
+  openNeedsSkewGap: number;
+}
+
+/** Open-needs and ownership skew gap on player-owned snapshot rows. */
+export function nrDashBuildYouOpenNeedsSkewGap(
+  snap: NrDashAuthSnapshot | null
+): NrDashYouOpenNeedsSkewGap | null {
+  if (!snap?.regions.length) return null;
+  const you = snap.regions.filter(r => r.owner === 'you');
+  if (!you.length) return null;
+  const regionCount = snap.regions.length;
+  const nationalMeanOpenNeeds = snap.regions.reduce((s, r) => s + r.openNeeds, 0) / regionCount;
+  const youMeanOpenNeeds = you.reduce((s, r) => s + r.openNeeds, 0) / you.length;
+  const totalOpenNeeds = snap.regions.reduce((s, r) => s + r.openNeeds, 0);
+  const youOpenNeeds = you.reduce((s, r) => s + r.openNeeds, 0);
+  const youShare = you.length / regionCount;
+  const needsShareSkew =
+    totalOpenNeeds > 0 ? Math.abs(youOpenNeeds / totalOpenNeeds - youShare) : 0;
+  const ownershipSkew = Math.round(needsShareSkew * 1000) / 1000;
+  const openNeedsSkewGap =
+    Math.round((Math.abs(youMeanOpenNeeds - nationalMeanOpenNeeds) + needsShareSkew) * 1000) / 1000;
+  return {
+    youRegionCount: you.length,
+    youMeanOpenNeeds: Math.round(youMeanOpenNeeds * 1000) / 1000,
+    nationalMeanOpenNeeds: Math.round(nationalMeanOpenNeeds * 1000) / 1000,
+    ownershipSkew,
+    openNeedsSkewGap,
+  };
+}
+
+// --- bundled from core/national-peak-tier-spread.ts ---
+const SEVERITY_ORD: Record<RegionalNeed['severity'], number> = {
+  low: 0,
+  moderate: 1,
+  high: 2,
+  critical: 3,
+};
+
+export interface NrDashNationalPeakTierSpread {
+  regionCount: number;
+  minPeakRank: number;
+  maxPeakRank: number;
+  tierSpread: number;
+}
+
+/** Spread of peak open-need severity ordinals across LR regions (national view). */
+export function nrDashBuildNationalPeakTierSpread(
+  lr: LivingRegionsWorldView | null
+): NrDashNationalPeakTierSpread | null {
+  if (!lr?.state.regions) return null;
+  const regionIds = Object.keys(lr.state.regions);
+  const peaks = regionIds.map(id => {
+    const open = lr.state.regions[id]!.needs.filter(n => n.status === 'open');
+    if (!open.length) return 0;
+    return Math.max(...open.map(n => SEVERITY_ORD[n.severity]));
+  });
+  const contributing = peaks.filter(p => p > 0);
+  if (contributing.length <= 1) return null;
+  const minPeakRank = Math.min(...contributing);
+  const maxPeakRank = Math.max(...contributing);
+  const tierSpread = maxPeakRank - minPeakRank;
+  if (tierSpread <= 0) return null;
+  return {
+    regionCount: regionIds.length,
+    minPeakRank,
+    maxPeakRank,
+    tierSpread: Math.round(tierSpread * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/chokepoint-corridor-saturation-share.ts ---
+export interface NrDashChokepointCorridorSaturationShare {
+  chokepointCount: number;
+  meanBlend: number;
+  peakBlend: number;
+  saturationShare: number;
+}
+
+/** Mean dependency chokepoint pulse blend relative to the hottest chokepoint corridor. */
+export function nrDashBuildChokepointCorridorSaturationShare(
+  ns: NationalSystemsState | null,
+  nodes: RegionMapNode[]
+): NrDashChokepointCorridorSaturationShare | null {
+  const rows = nrDashBuildDependencyChokepoints(ns);
+  if (!rows.length) return null;
+  const pulseById = new Map(nrDashBuildMapPulseRows(nodes).map(p => [p.regionId, p.intensity]));
+  const blends = rows.map(row => {
+    const consumer = pulseById.get(row.consumerRegionId) ?? 0;
+    const provider = pulseById.get(row.providerRegionId) ?? 0;
+    return (consumer + provider) / 2;
+  });
+  const peakBlend = Math.max(...blends);
+  if (peakBlend <= 0) return null;
+  const meanBlend = blends.reduce((s, v) => s + v, 0) / blends.length;
+  return {
+    chokepointCount: blends.length,
+    meanBlend: Math.round(meanBlend * 1000) / 1000,
+    peakBlend: Math.round(peakBlend * 1000) / 1000,
+    saturationShare: Math.round((meanBlend / peakBlend) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/lr-derived-snippet-source-gap.ts ---
+export interface NrDashLrDerivedSnippetSourceGap {
+  derivedSourceCount: number;
+  matchedSnippetCount: number;
+  sourceGap: number;
+}
+
+function snippetTurn(snippet: string): number | null {
+  const match = snippet.match(/^R(\d+):/);
+  if (!match) return null;
+  const turn = Number(match[1]);
+  return Number.isFinite(turn) ? turn : null;
+}
+
+/** Unmatched LR derived entries vs merged snapshot snippet labels at derived turns. */
+export function nrDashBuildLrDerivedSnippetSourceGap(
+  lr: LivingRegionsWorldView | null,
+  snap: NrDashAuthSnapshot | null
+): NrDashLrDerivedSnippetSourceGap | null {
+  if (!lr?.state.derived.length || !snap) return null;
+  const derivedTurnSet = new Set(lr.state.derived.map(d => d.turn).filter(t => Number.isFinite(t)));
+  if (!derivedTurnSet.size) return null;
+  const matchedSnippetCount = snap.historySnippets
+    .map(snippetTurn)
+    .filter((t): t is number => t != null && derivedTurnSet.has(t)).length;
+  return {
+    derivedSourceCount: lr.state.derived.length,
+    matchedSnippetCount,
+    sourceGap: lr.state.derived.length - matchedSnippetCount,
+  };
+}
+
+// --- bundled from core/peripheral-link-saturation-share.ts ---
+export interface NrDashPeripheralLinkSaturationShare {
+  hubRegionId: string | null;
+  peripheralLinkCount: number;
+  meanBlend: number;
+  peakBlend: number;
+  saturationShare: number;
+}
+
+/** Mean pulse blend on non-hub links relative to the peak peripheral corridor blend. */
+export function nrDashBuildPeripheralLinkSaturationShare(
+  ns: NationalSystemsState | null,
+  nodes: RegionMapNode[]
+): NrDashPeripheralLinkSaturationShare | null {
+  const hubRegionId = nrDashPrimaryMapHub(ns);
+  if (!hubRegionId || !ns) return null;
+  const merged = nrDashMergeMapLinks(
+    nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+    nrDashBuildDependencyLinks(ns, AGENT23_REGION_MAP_LAYOUT)
+  );
+  const peripheral = merged.filter(l => l.fromId !== hubRegionId && l.toId !== hubRegionId);
+  if (!peripheral.length) return null;
+  const pulseById = new Map(nrDashBuildMapPulseRows(nodes).map(p => [p.regionId, p.intensity]));
+  const blends = peripheral.map(link => {
+    const a = pulseById.get(link.fromId) ?? 0;
+    const b = pulseById.get(link.toId) ?? 0;
+    return (a + b) / 2;
+  });
+  const peakBlend = Math.max(...blends);
+  if (peakBlend <= 0) return null;
+  const meanBlend = blends.reduce((s, v) => s + v, 0) / blends.length;
+  return {
+    hubRegionId,
+    peripheralLinkCount: blends.length,
+    meanBlend: Math.round(meanBlend * 1000) / 1000,
+    peakBlend: Math.round(peakBlend * 1000) / 1000,
+    saturationShare: Math.round((meanBlend / peakBlend) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/ns-major-history-overlap-gap.ts ---
+export interface NrDashNsMajorHistoryOverlapGap {
+  nsEntryCount: number;
+  majorEntryCount: number;
+  sharedTurnCount: number;
+  overlapGap: number;
+}
+
+/** Duplicate-turn pressure between NS history and LR major derived events. */
+export function nrDashBuildNsMajorHistoryOverlapGap(
+  lr: LivingRegionsWorldView | null,
+  ns: NationalSystemsState | null
+): NrDashNsMajorHistoryOverlapGap | null {
+  if (!ns?.history.length) return null;
+  const majorTurns =
+    lr?.state.derived.filter(d => d.significance === 'major').map(d => d.turn).filter(t => Number.isFinite(t)) ?? [];
+  if (!majorTurns.length) return null;
+  const nsTurns = ns.history.map(h => h.turn).filter(t => Number.isFinite(t));
+  const nsSet = new Set(nsTurns);
+  const sharedTurnCount = majorTurns.filter(t => nsSet.has(t)).length;
+  const combined = [...nsTurns, ...majorTurns];
+  const uniqueTurnCount = new Set(combined).size;
+  return {
+    nsEntryCount: nsTurns.length,
+    majorEntryCount: majorTurns.length,
+    sharedTurnCount,
+    overlapGap: combined.length - uniqueTurnCount,
+  };
+}
+
 // --- bundled from tests/fixtures.ts ---
 function emptyNetworks(): Record<NationalNetworkKind, NationalRegionSystemsState['networks']['freight']> {
   const base = { utilization: 0.4, condition: 'healthy' as const };
@@ -7558,6 +7768,15 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const youNeedsSkew = nrDashBuildYouOpenNeedsSkewGap(snap);
+      return youNeedsSkew ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-you-open-needs-skew-gap">
+          You open-needs skew gap {youNeedsSkew.openNeedsSkewGap} · ownership skew {youNeedsSkew.ownershipSkew} · you μ{' '}
+          {youNeedsSkew.youMeanOpenNeeds} vs national μ {youNeedsSkew.nationalMeanOpenNeeds}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const skewGap = nrDashBuildOwnedOpenNeedsMomentumSkewGap(snap);
       return skewGap ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-owned-open-needs-momentum-skew-gap">
@@ -7968,6 +8187,15 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const peakTierSpread = nrDashBuildNationalPeakTierSpread(lrView);
+      return peakTierSpread && peakTierSpread.tierSpread > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-peak-tier-spread">
+          National peak tier spread {peakTierSpread.tierSpread} · peak rank {peakTierSpread.minPeakRank}–
+          {peakTierSpread.maxPeakRank}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const lowConc = nrDashBuildLowTierNeedsConcentration(lrView);
       return lowConc ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-low-tier-needs-concentration">
@@ -8067,11 +8295,29 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const lrDerivedSourceGap = nrDashBuildLrDerivedSnippetSourceGap(lrView, snap);
+      return lrDerivedSourceGap && lrDerivedSourceGap.sourceGap > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-lr-derived-snippet-source-gap">
+          LR derived snippet source gap {lrDerivedSourceGap.sourceGap} · derived {lrDerivedSourceGap.derivedSourceCount} ·
+          matched {lrDerivedSourceGap.matchedSnippetCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const majorHistGap = nrDashBuildMajorHistoryOverlapGap(lrView, nsState);
       return majorHistGap && majorHistGap.overlapGap > 0 ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-major-history-overlap-gap">
           Major-history overlap gap {majorHistGap.overlapGap} · shared turns {majorHistGap.sharedTurnCount} · NS{' '}
           {majorHistGap.nsEntryCount} · majors {majorHistGap.majorEntryCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const nsMajorHistGap = nrDashBuildNsMajorHistoryOverlapGap(lrView, nsState);
+      return nsMajorHistGap && nsMajorHistGap.overlapGap > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-ns-major-history-overlap-gap">
+          NS major history overlap gap {nsMajorHistGap.overlapGap} · shared {nsMajorHistGap.sharedTurnCount} · NS{' '}
+          {nsMajorHistGap.nsEntryCount} · majors {nsMajorHistGap.majorEntryCount}
         </div>
       ) : null;
     })()}
@@ -9079,6 +9325,15 @@ export const NrDashMapTab: React.FC<{
         ) : null;
       })()}
       {(() => {
+        const peripheralLinkSat = nrDashBuildPeripheralLinkSaturationShare(nsState, baseNodes);
+        return peripheralLinkSat && peripheralLinkSat.saturationShare > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-peripheral-link-saturation-share">
+            Peripheral link saturation share {peripheralLinkSat.saturationShare} · μ {peripheralLinkSat.meanBlend} · peak{' '}
+            {peripheralLinkSat.peakBlend}
+          </p>
+        ) : null;
+      })()}
+      {(() => {
         const hubPeripheralSat = nrDashBuildHubPeripheralSaturationShare(nsState);
         return hubPeripheralSat && hubPeripheralSat.saturationShare > 0 ? (
           <p className="text-[10px] opacity-75" data-testid="nr-dash-hub-peripheral-saturation-share">
@@ -9138,6 +9393,15 @@ export const NrDashMapTab: React.FC<{
           <p className="text-[10px] opacity-75" data-testid="nr-dash-chokepoint-pulse-asymmetry">
             Chokepoint pulse asymmetry μΔ {chokeAsym.meanEndpointDelta} · peak {chokeAsym.maxEndpointDelta} ·{' '}
             {chokeAsym.chokepointCount} deps
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const chokeCorridorSat = nrDashBuildChokepointCorridorSaturationShare(nsState, baseNodes);
+        return chokeCorridorSat && chokeCorridorSat.saturationShare > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-chokepoint-corridor-saturation-share">
+            Chokepoint corridor saturation share {chokeCorridorSat.saturationShare} · μ {chokeCorridorSat.meanBlend} · peak{' '}
+            {chokeCorridorSat.peakBlend}
           </p>
         ) : null;
       })()}
@@ -10589,6 +10853,47 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     const lr = createAgent23LrFixture();
     lr.state.derived.push({ turn: 5, text: 'Echo', significance: 'meaningful' });
     const gap = nrDashBuildMeaningfulHistoryOverlapGap(lr, createAgent23NsFixture())!;
+    return gap.sharedTurnCount === 1 && gap.overlapGap === 1;
+  });
+
+  check('a23_you_open_needs_skew_gap', 'You open-needs skew gap tracks NSW player fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { NSW: 'you' })!;
+    const gap = nrDashBuildYouOpenNeedsSkewGap(snap)!;
+    return gap.youRegionCount === 1 && gap.openNeedsSkewGap >= 0 && gap.ownershipSkew === 0;
+  });
+
+  check('a23_national_peak_tier_spread', 'National peak tier spread separates critical NSW fixture', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.regions.NSW!.needs[0]!.severity = 'critical';
+    lr.state.regions.VIC!.needs[0]!.severity = 'low';
+    const spread = nrDashBuildNationalPeakTierSpread(lr)!;
+    return spread.tierSpread === 2 && spread.maxPeakRank === 3 && spread.minPeakRank === 1;
+  });
+
+  check('a23_chokepoint_corridor_saturation_share', 'Chokepoint corridor saturation share is below one on fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const sat = nrDashBuildChokepointCorridorSaturationShare(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
+    return sat.chokepointCount === 3 && sat.saturationShare > 0 && sat.saturationShare < 1;
+  });
+
+  check('a23_lr_derived_snippet_source_gap', 'LR derived snippet source gap counts unsurfaced derived events', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.derived.push({ turn: 2, text: 'Early', significance: 'meaningful' });
+    const snap = nrDashBuildAuthSnapshot(5, lr, null, null)!;
+    const gap = nrDashBuildLrDerivedSnippetSourceGap(lr, snap)!;
+    return gap.derivedSourceCount === 2 && gap.matchedSnippetCount === 1 && gap.sourceGap === 1;
+  });
+
+  check('a23_peripheral_link_saturation_share', 'Peripheral link saturation share is below one on fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const sat = nrDashBuildPeripheralLinkSaturationShare(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
+    return sat.peripheralLinkCount > 0 && sat.saturationShare > 0 && sat.saturationShare <= 1;
+  });
+
+  check('a23_ns_major_history_overlap_gap', 'NS major history overlap gap counts shared turn five on fixture', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.derived.push({ turn: 5, text: 'National beat', significance: 'major' });
+    const gap = nrDashBuildNsMajorHistoryOverlapGap(lr, createAgent23NsFixture())!;
     return gap.sharedTurnCount === 1 && gap.overlapGap === 1;
   });
 
