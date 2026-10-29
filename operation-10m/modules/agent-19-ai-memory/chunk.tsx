@@ -11704,6 +11704,293 @@ export function paramountRecoveryOrchestratorWithinCap(report: ParamountRecovery
 }
 
 
+// --- source: match-explainability-pinnacle-bundle.ts ---
+  auditMatchExplainabilityPinnacleGate,
+  matchExplainabilityPinnacleAllowed,
+} from './match-explainability-pinnacle-gate.ts';
+  buildMatchExplainabilityParamountBundle,
+  matchExplainabilityParamountReady,
+} from './match-explainability-paramount-bundle.ts';
+  buildSessionParamountExportBundle,
+  sessionParamountExportShipped,
+} from './session-paramount-export-bundle.ts';
+
+export const AGENT19_PINNACLE_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityPinnacleBundle {
+  pinnacleReady: boolean;
+  pinnacleAllowed: boolean;
+  paramountReady: boolean;
+  paramountExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type PinnacleParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Pinnacle bundle: pinnacle gate and paramount export must both be green. */
+export function buildMatchExplainabilityPinnacleBundle(
+  packs: TurnExplainabilityPack[],
+  params: PinnacleParams,
+): MatchExplainabilityPinnacleBundle {
+  const pinnacle = auditMatchExplainabilityPinnacleGate(packs, params);
+  const paramount = buildMatchExplainabilityParamountBundle(packs, params);
+  const paramountExport = buildSessionParamountExportBundle(packs, params);
+  const pinnacleAllowed = matchExplainabilityPinnacleAllowed(pinnacle);
+  const paramountReady = matchExplainabilityParamountReady(paramount);
+  const paramountExportShipped = sessionParamountExportShipped(paramountExport);
+  const pinnacleReady = pinnacleAllowed && paramountReady && paramountExportShipped;
+  const narrativeLines = [
+    `Match explainability pinnacle bundle: ${pinnacleReady ? 'READY' : 'PENDING'} (gate ${pinnacleAllowed ? 'ok' : 'fail'}, paramount ${paramountReady ? 'ok' : 'fail'}).`,
+    ...pinnacle.narrativeLines.slice(0, 2),
+    ...paramount.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_PINNACLE_NARRATIVE_CAP);
+  return {
+    pinnacleReady,
+    pinnacleAllowed,
+    paramountReady,
+    paramountExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityPinnacleReady(bundle: MatchExplainabilityPinnacleBundle): boolean {
+  return bundle.pinnacleReady;
+}
+
+
+// --- source: session-pinnacle-export-bundle.ts ---
+  buildSessionParamountExportBundle,
+  type SessionParamountExportBundle,
+} from './session-paramount-export-bundle.ts';
+  buildMatchExplainabilityPinnacleBundle,
+  matchExplainabilityPinnacleReady,
+} from './match-explainability-pinnacle-bundle.ts';
+
+export interface SessionPinnacleExportBundle extends SessionParamountExportBundle {
+  pinnacleReady: boolean;
+  pinnacleSchema: string;
+}
+
+/** Pinnacle export wraps paramount export when pinnacle bundle is ready. */
+export function buildSessionPinnacleExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionPinnacleExportBundle {
+  const base = buildSessionParamountExportBundle(packs, params);
+  const pinnacle = buildMatchExplainabilityPinnacleBundle(packs, params);
+  const pinnacleReady = matchExplainabilityPinnacleReady(pinnacle);
+  const exports = pinnacleReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    pinnacleReady,
+    pinnacleSchema: 'agent19.pinnacle.v1',
+    releaseReady: pinnacleReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Pinnacle export: ${pinnacleReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionPinnacleExportShipped(bundle: SessionPinnacleExportBundle): boolean {
+  return (
+    bundle.pinnacleReady &&
+    bundle.exports.length > 0 &&
+    bundle.pinnacleSchema === 'agent19.pinnacle.v1'
+  );
+}
+
+
+// --- source: paramount-pinnacle-bridge.ts ---
+  buildMatchExplainabilityPinnacleBundle,
+  matchExplainabilityPinnacleReady,
+} from './match-explainability-pinnacle-bundle.ts';
+  buildMatchExplainabilityParamountBundle,
+  matchExplainabilityParamountReady,
+} from './match-explainability-paramount-bundle.ts';
+
+export interface ParamountPinnacleBridgeReport {
+  aligned: boolean;
+  pinnacleReady: boolean;
+  paramountReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Pinnacle-ready should match paramount-ready when paramount export stack passes. */
+export function auditParamountPinnacleBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): ParamountPinnacleBridgeReport {
+  const pinnacle = buildMatchExplainabilityPinnacleBundle(packs, params);
+  const paramount = buildMatchExplainabilityParamountBundle(packs, params);
+  const pinnacleReady = matchExplainabilityPinnacleReady(pinnacle);
+  const paramountReady = matchExplainabilityParamountReady(paramount);
+  const aligned = pinnacleReady === paramountReady;
+  const narrativeLines = [
+    `Paramount/pinnacle bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (pinnacle ${pinnacleReady ? 'ok' : 'fail'}, paramount ${paramountReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, pinnacleReady, paramountReady, narrativeLines };
+}
+
+export function paramountPinnacleBridgeHealthy(report: ParamountPinnacleBridgeReport): boolean {
+  return report.pinnacleReady && report.paramountReady && report.aligned;
+}
+
+
+// --- source: match-explainability-apex-gate.ts ---
+  buildMatchExplainabilityPinnacleBundle,
+  matchExplainabilityPinnacleReady,
+} from './match-explainability-pinnacle-bundle.ts';
+  buildSessionPinnacleExportBundle,
+  sessionPinnacleExportShipped,
+} from './session-pinnacle-export-bundle.ts';
+
+export interface MatchExplainabilityApexGateReport {
+  apexAllowed: boolean;
+  pinnacleReady: boolean;
+  pinnacleExportShipped: boolean;
+  paramountPinnacleHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Apex gate: pinnacle bundle + pinnacle export + paramount/pinnacle bridge. */
+export function auditMatchExplainabilityApexGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityApexGateReport {
+  const pinnacle = buildMatchExplainabilityPinnacleBundle(packs, params);
+  const pinnacleExport = buildSessionPinnacleExportBundle(packs, params);
+  const bridge = auditParamountPinnacleBridge(packs, params);
+  const pinnacleReady = matchExplainabilityPinnacleReady(pinnacle);
+  const pinnacleExportShipped = sessionPinnacleExportShipped(pinnacleExport);
+  const paramountPinnacleHealthy = paramountPinnacleBridgeHealthy(bridge);
+  const apexAllowed = pinnacleReady && pinnacleExportShipped && paramountPinnacleHealthy;
+  const narrativeLines = [
+    `Match explainability apex: ${apexAllowed ? 'ALLOWED' : 'DENIED'} (pinnacle ${pinnacleReady ? 'ok' : 'fail'}, export ${pinnacleExportShipped ? 'ok' : 'fail'}).`,
+    ...pinnacle.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    apexAllowed,
+    pinnacleReady,
+    pinnacleExportShipped,
+    paramountPinnacleHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityApexAllowed(report: MatchExplainabilityApexGateReport): boolean {
+  return report.apexAllowed;
+}
+
+
+// --- source: pinnacle-recovery-orchestrator.ts ---
+  auditMatchExplainabilityPinnacleGate,
+  matchExplainabilityPinnacleAllowed,
+} from './match-explainability-pinnacle-gate.ts';
+
+export const AGENT19_PINNACLE_RECOVERY_CAP = 10;
+
+export interface PinnacleRecoveryOrchestratorReport {
+  pinnacleBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when pinnacle gate blocks apex rollout. */
+export function buildPinnacleRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): PinnacleRecoveryOrchestratorReport {
+  const pinnacle = auditMatchExplainabilityPinnacleGate(packs, params);
+  const pinnacleBlocked = !matchExplainabilityPinnacleAllowed(pinnacle);
+  const steps: string[] = [];
+  if (pinnacleBlocked) {
+    if (!pinnacle.paramountReady) {
+      steps.push('Restore paramount bundle: preeminence and paramount export must pass.');
+    }
+    if (!pinnacle.paramountExportShipped) {
+      steps.push('Emit session paramount export before pinnacle clearance.');
+    }
+    if (!pinnacle.preeminenceParamountHealthy) {
+      steps.push('Reconcile preeminence/paramount bridge before pinnacle.');
+    }
+    steps.push(...buildParamountRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const paramount = buildMatchExplainabilityParamountBundle(packs, params);
+    if (!paramount.paramountReady) {
+      steps.push('Re-run paramount readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Pinnacle gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_PINNACLE_RECOVERY_CAP);
+  return {
+    pinnacleBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Pinnacle recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function pinnacleRecoveryOrchestratorWithinCap(report: PinnacleRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_PINNACLE_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -12296,6 +12583,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityPinnacleGate,
   matchExplainabilityPinnacleAllowed,
 } from '../match-explainability-pinnacle-gate.ts';
+  buildMatchExplainabilityPinnacleBundle,
+  matchExplainabilityPinnacleReady,
+} from '../match-explainability-pinnacle-bundle.ts';
+  buildSessionPinnacleExportBundle,
+  sessionPinnacleExportShipped,
+} from '../session-pinnacle-export-bundle.ts';
+  buildPinnacleRecoveryOrchestrator,
+  pinnacleRecoveryOrchestratorWithinCap,
+} from '../pinnacle-recovery-orchestrator.ts';
+  auditMatchExplainabilityApexGate,
+  matchExplainabilityApexAllowed,
+} from '../match-explainability-apex-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
