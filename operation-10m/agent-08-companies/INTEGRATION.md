@@ -38,7 +38,7 @@ Recommended placement: adjacent to existing V10.14 private sector block (SECTION
 
 ## Agent 25 merge steps
 
-1. Inline `v1014-private-sector-core.tsx` + `tax-labor-capacity-linkage.ts` (or merge linkage into core).
-2. Remove `upstream-stubs.ts` imports; use canonical V9.4 types.
+1. Inline `operation-10m/modules/agent-08-companies/chunk.tsx` (or regenerate via `npm run build:agent08-chunk`) at `O6K_AGENT08_INTEGRATION_ANCHOR`.
+2. Remove stub types duplicated from V9.4; use canonical types.
 3. Register `runAgent08ModuleSelfTests` in SECTION 21B reliability suite if not already present.
 4. Confirm `privateSectorInputHash` includes workforce + fiscal revision fields when overlay enabled.

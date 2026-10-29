@@ -4,6 +4,6 @@ Worker modules live under `operation-10m/agent-NN-*`. Only **Agent 25** merges i
 
 | Agent | Module root | Status |
 |-------|-------------|--------|
-| 08 | [agent-08-companies](./agent-08-companies/) | V10.14 private sector + tax/labor capacity overlay |
+| 08 | [agent-08-companies](./agent-08-companies/) | V10.14 private sector + tax/labor + supply depth; assembly [modules/agent-08-companies/chunk.tsx](./modules/agent-08-companies/chunk.tsx) |
 
 See each module's `INTEGRATION.md` for anchors and export wiring.

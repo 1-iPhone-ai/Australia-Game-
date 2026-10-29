@@ -19,6 +19,14 @@ Operation 10M module root for **V10.14 private sector simulation**: regional fir
 npm run test:agent08
 ```
 
+## Assembly chunk (Agent 25)
+
+```bash
+npm run build:agent08-chunk
+```
+
+Output: `operation-10m/modules/agent-08-companies/chunk.tsx` (`OP10M_MODULE_BEGIN agent-08-companies`).
+
 ## Merge
 
 See [INTEGRATION.md](./INTEGRATION.md). **Do not edit V9.4 on this branch.**
