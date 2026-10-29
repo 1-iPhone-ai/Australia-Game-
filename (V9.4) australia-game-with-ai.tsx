@@ -10923,6 +10923,7 @@ export function canonicalStateFromLiveRuntime(
     stateCapacity: sanitizeStateCapacityPersisted((liveState as any).stateCapacity || (gameState as any)?.stateCapacity),
     publicFinance: sanitizePublicFinancePersisted((liveState as any).publicFinance || (gameState as any)?.publicFinance),
     householdEconomy: ((liveState as any).householdEconomy || (gameState as any)?.householdEconomy) ? sanitizeHouseholdEconomyPersisted((liveState as any).householdEconomy || (gameState as any)?.householdEconomy) : null,
+    populationDynamics: ((liveState as any).populationDynamics || (gameState as any)?.populationDynamics) ? sanitizePopulationDynamicsPersisted((liveState as any).populationDynamics || (gameState as any)?.populationDynamics) : null,
     contentState: sanitizeMatchContentState((liveState as any).contentState || (gameState as any)?.contentState),
     lastMigrationResult: liveState.lastMigrationResult || null,
     determinismReports: liveState.determinismReports || null,
@@ -14359,6 +14360,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   stateCapacityEnabled: true,
   publicFinanceEnabled: true,
   householdsEnabled: true,
+  populationDynamicsEnabled: true,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -26927,6 +26929,8 @@ export type GameSettingsState = {
   publicFinanceEnabled?: boolean;
   /** V10.13 Households, Living Standards & Domestic Demand (needs National Systems; off = no households layer, V10.0–V10.12 unchanged). */
   householdsEnabled?: boolean;
+  /** V10.14 Population Dynamics & Demographic Momentum (needs National Systems; off = no demographic momentum layer, V10.0–V10.13 unchanged). */
+  populationDynamicsEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -36758,6 +36762,8 @@ export const initialGameState = {
   publicFinance: null as any,
   /** V10.13: household-economy lifecycle memory (band hysteresis, pinned concerns, transitions, history). Living standards and demand are derived. */
   householdEconomy: null as any,
+  /** V10.14: population-dynamics lifecycle memory (band hysteresis, transitions, history). Derived state is recomputed. */
+  populationDynamics: null as any,
   /** V9.3 per-match content state (profile, budgets, cooldowns, bounded history). Not AI memory. */
   contentState: null as MatchContentState | null,
   // Regional Factions initialise from Living Regions / contracts / standing on the first live pass.
@@ -80973,6 +80979,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.publicFinance = sanitizePublicFinancePersisted(migrated.gameState.publicFinance);
   // V10.13: pre-V10.13 saves carry NO household-economy memory (null) — current living standards and domestic demand are derived on load.
   if (migrated.gameState) migrated.gameState.householdEconomy = migrated.gameState.householdEconomy ? sanitizeHouseholdEconomyPersisted(migrated.gameState.householdEconomy) : null;
+  // V10.14: pre-V10.14 saves carry NO population-dynamics memory (null) — current demographic momentum bands are derived on load.
+  if (migrated.gameState) migrated.gameState.populationDynamics = migrated.gameState.populationDynamics ? sanitizePopulationDynamicsPersisted(migrated.gameState.populationDynamics) : null;
   if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
@@ -134060,7 +134068,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'strategicCapitalEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'populationDynamicsEnabled', 'strategicCapitalEnabled'
 ] as const;
 
 /**
@@ -134424,6 +134432,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         stateCapacity: sanitizeStateCapacityPersisted(stateData.stateCapacity || raw.gameState?.stateCapacity),
         publicFinance: sanitizePublicFinancePersisted(stateData.publicFinance || raw.gameState?.publicFinance),
         householdEconomy: (stateData.householdEconomy || raw.gameState?.householdEconomy) ? sanitizeHouseholdEconomyPersisted(stateData.householdEconomy || raw.gameState?.householdEconomy) : null,
+        populationDynamics: (stateData.populationDynamics || raw.gameState?.populationDynamics) ? sanitizePopulationDynamicsPersisted(stateData.populationDynamics || raw.gameState?.populationDynamics) : null,
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -136510,6 +136519,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1011', label: 'V10.11 Adaptive Governance & State Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1011AdaptiveGovernanceSelfTests() },
   { id: 'v1012', label: 'V10.12 Public Finance & Fiscal Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1012PublicFinanceSelfTests() },
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
+  { id: 'v1014', label: 'V10.14 Population Dynamics & Demographic Momentum', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014PopulationDynamicsSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
@@ -181925,6 +181935,616 @@ export function triggerJsonFileDownload(filename: string, data: unknown): boolea
 }
 
 // ============================================================================
+// SECTION 20AG: V10.14 POPULATION DYNAMICS & DEMOGRAPHIC MOMENTUM
+// ============================================================================
+// Derived demographic momentum layer — band-only abstractions (no headcounts).
+// Reads Living Regions (regional condition), V10.10 workforce pressure, and V10.13 household bands.
+// Never relocates population, never mints literal population / unemployment / payroll fields.
+
+export const V1014_SCHEMA_VERSION = '10.14.0';
+
+export const V1014_CORE_REGIONS: readonly string[] = V1013_CORE_REGIONS;
+
+export const V1014_LIMITS = {
+  maxHistory: 24,
+  maxTransitions: 16,
+  hysteresisDeadband: 2.5
+} as const;
+
+export type AgeStructureBand = 'youthful' | 'balanced' | 'mature' | 'aging' | 'super_aging';
+export type MigrationIntentBand = 'outward' | 'neutral' | 'inward' | 'strong_inward';
+export type DemographicVitalityBand = 'declining' | 'stable' | 'growing' | 'dynamic';
+export type PopulationTrajectoryBand = 'improving' | 'stable' | 'weakening' | 'stressed';
+
+export const V1014_AGE_LABELS: Record<AgeStructureBand, string> = {
+  youthful: 'YOUTHFUL',
+  balanced: 'BALANCED',
+  mature: 'MATURE',
+  aging: 'AGING',
+  super_aging: 'SUPER-AGING'
+};
+
+export const V1014_MIGRATION_LABELS: Record<MigrationIntentBand, string> = {
+  outward: 'OUTWARD',
+  neutral: 'NEUTRAL',
+  inward: 'INWARD',
+  strong_inward: 'STRONG INWARD'
+};
+
+export const V1014_VITALITY_LABELS: Record<DemographicVitalityBand, string> = {
+  declining: 'DECLINING',
+  stable: 'STABLE',
+  growing: 'GROWING',
+  dynamic: 'DYNAMIC'
+};
+
+export const V1014_TRAJECTORY_LABELS: Record<PopulationTrajectoryBand, string> = {
+  improving: 'IMPROVING',
+  stable: 'STABLE',
+  weakening: 'WEAKENING',
+  stressed: 'STRESSED'
+};
+
+const V1014_AGE_RANK: Record<AgeStructureBand, number> = {
+  youthful: 0,
+  balanced: 1,
+  mature: 2,
+  aging: 3,
+  super_aging: 4
+};
+
+const V1014_MIGRATION_RANK: Record<MigrationIntentBand, number> = {
+  outward: 0,
+  neutral: 1,
+  inward: 2,
+  strong_inward: 3
+};
+
+const V1014_VITALITY_RANK: Record<DemographicVitalityBand, number> = {
+  declining: 0,
+  stable: 1,
+  growing: 2,
+  dynamic: 3
+};
+
+function v1014Clamp(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function v1014ScoreToAgeBand(score: number): AgeStructureBand {
+  if (score >= 78) return 'youthful';
+  if (score >= 62) return 'balanced';
+  if (score >= 46) return 'mature';
+  if (score >= 30) return 'aging';
+  return 'super_aging';
+}
+
+function v1014ScoreToMigrationBand(score: number): MigrationIntentBand {
+  if (score >= 72) return 'strong_inward';
+  if (score >= 55) return 'inward';
+  if (score >= 42) return 'neutral';
+  return 'outward';
+}
+
+function v1014ScoreToVitalityBand(score: number): DemographicVitalityBand {
+  if (score >= 72) return 'dynamic';
+  if (score >= 56) return 'growing';
+  if (score >= 40) return 'stable';
+  return 'declining';
+}
+
+function v1014ScoreToTrajectoryBand(score: number): PopulationTrajectoryBand {
+  if (score >= 68) return 'improving';
+  if (score >= 48) return 'stable';
+  if (score >= 32) return 'weakening';
+  return 'stressed';
+}
+
+export interface PopulationDynamicsRegionInputs {
+  regionId: string;
+  lrDevelopment?: number;
+  lrMomentum?: number;
+  housingPressure?: HousingPressureBand;
+  employmentOpportunity?: EmploymentOpportunityBand;
+  prosperity?: LivingStandardsBand;
+  workforcePressure?: WorkforcePressureBand;
+}
+
+export interface PopulationDynamicsInputs {
+  turn: number;
+  enabled: boolean;
+  regions: Record<string, PopulationDynamicsRegionInputs>;
+}
+
+export interface PopulationDynamicsTransition {
+  id: string;
+  turn: number;
+  regionId: string | 'national';
+  kind: 'vitality' | 'migration' | 'age_structure' | 'trajectory';
+  fromBand: string;
+  toBand: string;
+  reason: string;
+}
+
+export interface PopulationDynamicsPersisted {
+  schemaVersion: string;
+  version: string;
+  revision: number;
+  lastComputedTurn: number;
+  lastInputHash: string;
+  pinnedNationalVitality?: DemographicVitalityBand;
+  pinnedNationalMigration?: MigrationIntentBand;
+  history: Array<{
+    turn: number;
+    nationalVitality: DemographicVitalityBand;
+    nationalMigration: MigrationIntentBand;
+    nationalTrajectory: PopulationTrajectoryBand;
+    summary: string;
+  }>;
+  transitions: PopulationDynamicsTransition[];
+}
+
+export interface PopulationDynamicsRegionState {
+  regionId: string;
+  ageStructure: AgeStructureBand;
+  migrationIntent: MigrationIntentBand;
+  vitality: DemographicVitalityBand;
+  trajectory: PopulationTrajectoryBand;
+  summary: string;
+}
+
+export interface NationalPopulationDynamicsState {
+  schemaVersion: string;
+  revision: number;
+  lastUpdatedTurn: number;
+  lastInputHash: string;
+  enabled: boolean;
+  national: {
+    ageStructure: AgeStructureBand;
+    migrationIntent: MigrationIntentBand;
+    vitality: DemographicVitalityBand;
+    trajectory: PopulationTrajectoryBand;
+  };
+  regions: Record<string, PopulationDynamicsRegionState>;
+  transitions: PopulationDynamicsTransition[];
+  history: PopulationDynamicsPersisted['history'];
+}
+
+export function createInitialPopulationDynamicsPersisted(turn = 1): PopulationDynamicsPersisted {
+  return {
+    schemaVersion: V1014_SCHEMA_VERSION,
+    version: V1014_SCHEMA_VERSION,
+    revision: 0,
+    lastComputedTurn: Math.max(1, turn),
+    lastInputHash: '',
+    history: [],
+    transitions: []
+  };
+}
+
+export function sanitizePopulationDynamicsPersisted(raw: unknown, turn = 1): PopulationDynamicsPersisted {
+  const base = createInitialPopulationDynamicsPersisted(turn);
+  if (!raw || typeof raw !== 'object') return base;
+  const r = raw as Partial<PopulationDynamicsPersisted>;
+  return {
+    ...base,
+    schemaVersion: typeof r.schemaVersion === 'string' ? r.schemaVersion : V1014_SCHEMA_VERSION,
+    version: typeof r.version === 'string' ? r.version : V1014_SCHEMA_VERSION,
+    revision: Math.max(0, Math.floor(Number(r.revision) || 0)),
+    lastComputedTurn: Math.max(1, Math.floor(Number(r.lastComputedTurn) || turn)),
+    lastInputHash: typeof r.lastInputHash === 'string' ? r.lastInputHash : '',
+    pinnedNationalVitality: r.pinnedNationalVitality,
+    pinnedNationalMigration: r.pinnedNationalMigration,
+    history: Array.isArray(r.history)
+      ? r.history.slice(-V1014_LIMITS.maxHistory).map((h: any) => ({
+          turn: Math.max(1, Math.floor(Number(h?.turn) || 1)),
+          nationalVitality: (h?.nationalVitality as DemographicVitalityBand) || 'stable',
+          nationalMigration: (h?.nationalMigration as MigrationIntentBand) || 'neutral',
+          nationalTrajectory: (h?.nationalTrajectory as PopulationTrajectoryBand) || 'stable',
+          summary: String(h?.summary || '')
+        }))
+      : [],
+    transitions: Array.isArray(r.transitions)
+      ? r.transitions.slice(-V1014_LIMITS.maxTransitions).map((t: any, i: number) => ({
+          id: String(t?.id || `pd_tr_${i}`),
+          turn: Math.max(1, Math.floor(Number(t?.turn) || 1)),
+          regionId: t?.regionId === 'national' ? 'national' : String(t?.regionId || 'NSW'),
+          kind: (t?.kind as PopulationDynamicsTransition['kind']) || 'vitality',
+          fromBand: String(t?.fromBand || ''),
+          toBand: String(t?.toBand || ''),
+          reason: String(t?.reason || '')
+        }))
+      : []
+  };
+}
+
+export function populationDynamicsInputHash(inputs: PopulationDynamicsInputs): string {
+  const keys = Object.keys(inputs.regions || {}).sort();
+  const parts = keys.map((k) => {
+    const r = inputs.regions[k];
+    return [
+      k,
+      r.lrDevelopment ?? 0,
+      r.lrMomentum ?? 0,
+      r.housingPressure ?? '',
+      r.employmentOpportunity ?? '',
+      r.prosperity ?? '',
+      r.workforcePressure ?? ''
+    ].join(':');
+  });
+  return `v1014|${inputs.turn}|${inputs.enabled ? 1 : 0}|${parts.join('|')}`;
+}
+
+export function buildPopulationDynamicsInputs(params: {
+  turn: number;
+  gameSettings?: any;
+  livingRegions?: any;
+  workforce?: NationalWorkforceState | null;
+  households?: NationalHouseholdEconomyState | null;
+}): PopulationDynamicsInputs {
+  const gset = params.gameSettings || {};
+  const enabled = gset.populationDynamicsEnabled !== false && gset.nationalSystemsEnabled !== false;
+  const lr = params.livingRegions;
+  const wf = params.workforce;
+  const hh = params.households;
+  const regions: Record<string, PopulationDynamicsRegionInputs> = {};
+  for (const regionId of V1014_CORE_REGIONS) {
+    const lrReg = lr?.regions?.[regionId];
+    const hhReg = hh?.regions?.[regionId];
+    const wfReg = wf?.regions?.[regionId];
+    regions[regionId] = {
+      regionId,
+      lrDevelopment: lrReg ? Number(lrReg.developmentScore ?? lrReg.development ?? 50) : 50,
+      lrMomentum: lrReg ? Number(lrReg.momentumScore ?? lrReg.momentum ?? 50) : 50,
+      housingPressure: hhReg?.housingPressure,
+      employmentOpportunity: hhReg?.employmentOpportunity,
+      prosperity: hhReg?.prosperity,
+      workforcePressure: wfReg?.pressureBand
+    };
+  }
+  return {
+    turn: Math.max(1, Math.floor(Number(params.turn) || 1)),
+    enabled,
+    regions
+  };
+}
+
+function v1014ApplyHysteresisBand<T extends string>(
+  rawBand: T,
+  pinned: T | undefined,
+  rankMap: Record<string, number>,
+  deadband: number,
+  rawScore: number,
+  pinScore: number
+): T {
+  if (!pinned) return rawBand;
+  const delta = rawScore - pinScore;
+  if (Math.abs(delta) < deadband) return pinned;
+  return rawBand;
+}
+
+function computeRegionPopulationDynamics(inp: PopulationDynamicsRegionInputs): PopulationDynamicsRegionState {
+  const dev = v1014Clamp(inp.lrDevelopment ?? 50, 0, 100);
+  const mom = v1014Clamp(inp.lrMomentum ?? 50, 0, 100);
+  const empRank = inp.employmentOpportunity ? V1013_EMPLOYMENT_RANK[inp.employmentOpportunity] : 2;
+  const houseRank = inp.housingPressure ? V1014_VITALITY_RANK[
+    inp.housingPressure === 'severe' || inp.housingPressure === 'high' ? 'declining' : 'stable'
+  ] : 1;
+  const wfRank = inp.workforcePressure
+    ? WORKFORCE_PRESSURE_BANDS.indexOf(inp.workforcePressure)
+    : 2;
+
+  const vitalityScore = v1014Clamp(dev * 0.35 + mom * 0.35 + empRank * 12 + (3 - houseRank) * 8, 0, 100);
+  const migrationScore = v1014Clamp(
+    empRank * 18 + (inp.prosperity ? V1013_PROSPERITY_RANK[inp.prosperity] * 10 : 20) - (inp.housingPressure === 'severe' ? 22 : inp.housingPressure === 'high' ? 12 : 0),
+    0,
+    100
+  );
+  const ageScore = v1014Clamp(72 - wfRank * 9 + (inp.prosperity ? V1013_PROSPERITY_RANK[inp.prosperity] * 4 : 0), 0, 100);
+  const trajectoryScore = v1014Clamp(vitalityScore * 0.45 + migrationScore * 0.35 + mom * 0.2, 0, 100);
+
+  const vitality = v1014ScoreToVitalityBand(vitalityScore);
+  const migrationIntent = v1014ScoreToMigrationBand(migrationScore);
+  const ageStructure = v1014ScoreToAgeBand(ageScore);
+  const trajectory = v1014ScoreToTrajectoryBand(trajectoryScore);
+
+  return {
+    regionId: inp.regionId,
+    ageStructure,
+    migrationIntent,
+    vitality,
+    trajectory,
+    summary: `${inp.regionId}: ${V1014_VITALITY_LABELS[vitality]} vitality, ${V1014_MIGRATION_LABELS[migrationIntent]} migration intent, ${V1014_AGE_LABELS[ageStructure]} age profile.`
+  };
+}
+
+export function computeNationalPopulationDynamics(
+  inputs: PopulationDynamicsInputs,
+  persistedIn: PopulationDynamicsPersisted,
+  prevState: NationalPopulationDynamicsState | null
+): { state: NationalPopulationDynamicsState; persisted: PopulationDynamicsPersisted } {
+  const persisted = sanitizePopulationDynamicsPersisted(persistedIn, inputs.turn);
+  const inputHash = populationDynamicsInputHash(inputs);
+  if (!inputs.enabled) {
+    const off: NationalPopulationDynamicsState = {
+      schemaVersion: V1014_SCHEMA_VERSION,
+      revision: persisted.revision,
+      lastUpdatedTurn: inputs.turn,
+      lastInputHash: inputHash,
+      enabled: false,
+      national: {
+        ageStructure: 'balanced',
+        migrationIntent: 'neutral',
+        vitality: 'stable',
+        trajectory: 'stable'
+      },
+      regions: {},
+      transitions: persisted.transitions,
+      history: persisted.history
+    };
+    return { state: off, persisted: { ...persisted, lastInputHash: inputHash, lastComputedTurn: inputs.turn } };
+  }
+
+  if (persisted.lastInputHash === inputHash && prevState && prevState.lastInputHash === inputHash) {
+    return { state: prevState, persisted };
+  }
+
+  const regionStates: Record<string, PopulationDynamicsRegionState> = {};
+  const regionKeys = Object.keys(inputs.regions).length ? Object.keys(inputs.regions) : [...V1014_CORE_REGIONS];
+  for (const rid of regionKeys) {
+    const inp = inputs.regions[rid] || { regionId: rid };
+    regionStates[rid] = computeRegionPopulationDynamics({ ...inp, regionId: rid });
+  }
+
+  const avg = (fn: (r: PopulationDynamicsRegionState) => number) => {
+    const vals = Object.values(regionStates).map(fn);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 1;
+  };
+
+  const rawVitality = v1014ScoreToVitalityBand(avg((r) => V1014_VITALITY_RANK[r.vitality] * 25 + 12));
+  const rawMigration = v1014ScoreToMigrationBand(avg((r) => V1014_MIGRATION_RANK[r.migrationIntent] * 25 + 12));
+  const rawAge = v1014ScoreToAgeBand(avg((r) => (4 - V1014_AGE_RANK[r.ageStructure]) * 22 + 20));
+  const rawTrajectory = v1014ScoreToTrajectoryBand(avg((r) => {
+    const t = r.trajectory;
+    return t === 'improving' ? 75 : t === 'stable' ? 55 : t === 'weakening' ? 38 : 22;
+  }));
+
+  const vitality = v1014ApplyHysteresisBand(
+    rawVitality,
+    persisted.pinnedNationalVitality,
+    V1014_VITALITY_RANK,
+    V1014_LIMITS.hysteresisDeadband,
+    V1014_VITALITY_RANK[rawVitality],
+    persisted.pinnedNationalVitality ? V1014_VITALITY_RANK[persisted.pinnedNationalVitality] : V1014_VITALITY_RANK[rawVitality]
+  );
+  const migrationIntent = v1014ApplyHysteresisBand(
+    rawMigration,
+    persisted.pinnedNationalMigration,
+    V1014_MIGRATION_RANK,
+    V1014_LIMITS.hysteresisDeadband,
+    V1014_MIGRATION_RANK[rawMigration],
+    persisted.pinnedNationalMigration ? V1014_MIGRATION_RANK[persisted.pinnedNationalMigration] : V1014_MIGRATION_RANK[rawMigration]
+  );
+
+  const transitions = [...persisted.transitions];
+  const pushTransition = (regionId: string | 'national', kind: PopulationDynamicsTransition['kind'], fromBand: string, toBand: string, reason: string) => {
+    if (fromBand === toBand) return;
+    transitions.push({
+      id: `pd_${kind}_${inputs.turn}_${regionId}_${transitions.length}`,
+      turn: inputs.turn,
+      regionId,
+      kind,
+      fromBand,
+      toBand,
+      reason
+    });
+  };
+
+  if (prevState?.national.vitality && prevState.national.vitality !== vitality) {
+    pushTransition('national', 'vitality', prevState.national.vitality, vitality, 'National vitality band shift from regional conditions.');
+  }
+  if (prevState?.national.migrationIntent && prevState.national.migrationIntent !== migrationIntent) {
+    pushTransition('national', 'migration', prevState.national.migrationIntent, migrationIntent, 'National migration intent shift from employment and affordability signals.');
+  }
+
+  const history = [
+    ...persisted.history,
+    {
+      turn: inputs.turn,
+      nationalVitality: vitality,
+      nationalMigration: migrationIntent,
+      nationalTrajectory: rawTrajectory,
+      summary: `National demographic momentum: ${V1014_VITALITY_LABELS[vitality]}, ${V1014_MIGRATION_LABELS[migrationIntent]}.`
+    }
+  ].slice(-V1014_LIMITS.maxHistory);
+
+  const nextPersisted: PopulationDynamicsPersisted = {
+    ...persisted,
+    revision: persisted.revision + 1,
+    lastComputedTurn: inputs.turn,
+    lastInputHash: inputHash,
+    pinnedNationalVitality: vitality,
+    pinnedNationalMigration: migrationIntent,
+    history,
+    transitions: transitions.slice(-V1014_LIMITS.maxTransitions)
+  };
+
+  const state: NationalPopulationDynamicsState = {
+    schemaVersion: V1014_SCHEMA_VERSION,
+    revision: nextPersisted.revision,
+    lastUpdatedTurn: inputs.turn,
+    lastInputHash: inputHash,
+    enabled: true,
+    national: {
+      ageStructure: rawAge,
+      migrationIntent,
+      vitality,
+      trajectory: rawTrajectory
+    },
+    regions: regionStates,
+    transitions: nextPersisted.transitions,
+    history: nextPersisted.history
+  };
+
+  return { state, persisted: nextPersisted };
+}
+
+export interface V1014MobilityContext {
+  regionId: string;
+  boundedModifier: number;
+  relocatesPopulation: false;
+  explanation: string;
+}
+
+export function computePopulationMobilityModifier(
+  state: NationalPopulationDynamicsState | null | undefined,
+  regionId: string
+): V1014MobilityContext {
+  const reg = state?.regions?.[regionId];
+  if (!reg || !state?.enabled) {
+    return {
+      regionId,
+      boundedModifier: 0,
+      relocatesPopulation: false,
+      explanation: `Neutral demographic mobility modifier for ${regionId}.`
+    };
+  }
+  let mod = 0;
+  if (V1014_MIGRATION_RANK[reg.migrationIntent] >= 2) mod += 0.35;
+  if (V1014_VITALITY_RANK[reg.vitality] >= 2) mod += 0.25;
+  if (reg.trajectory === 'stressed') mod -= 0.45;
+  else if (reg.trajectory === 'weakening') mod -= 0.2;
+  if (reg.ageStructure === 'super_aging') mod -= 0.15;
+  const boundedModifier = v1014Clamp(Number(mod.toFixed(2)), -1, 1);
+  return {
+    regionId,
+    boundedModifier,
+    relocatesPopulation: false,
+    explanation: `${regionId} demographic momentum (${V1014_VITALITY_LABELS[reg.vitality]}, ${V1014_MIGRATION_LABELS[reg.migrationIntent]}) yields bounded modifier ${boundedModifier >= 0 ? `+${boundedModifier}` : boundedModifier} (no physical population relocation).`
+  };
+}
+
+export function populationDynamicsActionAlignment(
+  state: NationalPopulationDynamicsState | null | undefined,
+  action: { id?: string; title?: string; regionId?: string | null }
+): { relevanceDelta: number; reason: string | null } {
+  if (!state?.enabled || !action?.regionId) return { relevanceDelta: 0, reason: null };
+  const reg = state.regions[action.regionId];
+  if (!reg) return { relevanceDelta: 0, reason: null };
+  if (reg.trajectory === 'stressed' && /housing|urban|settlement/i.test(String(action.title || action.id || ''))) {
+    return { relevanceDelta: 1.5, reason: 'eases demographic stress in a strained region' };
+  }
+  if (V1014_MIGRATION_RANK[reg.migrationIntent] >= 2 && /skills|training|education/i.test(String(action.title || action.id || ''))) {
+    return { relevanceDelta: 1.25, reason: 'supports inward talent momentum' };
+  }
+  return { relevanceDelta: 0, reason: null };
+}
+
+function makeDefaultV1014TestInputs(overrides?: Partial<PopulationDynamicsInputs>): PopulationDynamicsInputs {
+  const regions: Record<string, PopulationDynamicsRegionInputs> = {};
+  for (const regionId of V1014_CORE_REGIONS) {
+    regions[regionId] = {
+      regionId,
+      lrDevelopment: 55,
+      lrMomentum: 52,
+      housingPressure: 'manageable',
+      employmentOpportunity: 'balanced',
+      prosperity: 'moderate',
+      workforcePressure: 'healthy'
+    };
+  }
+  regions.NSW = { ...regions.NSW, lrDevelopment: 72, lrMomentum: 68, employmentOpportunity: 'strong', prosperity: 'strong' };
+  regions.VIC = { ...regions.VIC, housingPressure: 'severe', employmentOpportunity: 'strong', prosperity: 'strong' };
+  return {
+    turn: 4,
+    enabled: true,
+    regions,
+    ...overrides
+  };
+}
+
+export function runV1014PopulationDynamicsSelfTests(): {
+  passed: number;
+  failed: number;
+  total: number;
+  results: Array<{ id: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; passed: boolean; detail: string }> = [];
+  const check = (id: string, passed: boolean, detail = '') => results.push({ id, passed, detail: detail || (passed ? 'ok' : 'fail') });
+
+  const init = createInitialPopulationDynamicsPersisted(1);
+  const baseInp = makeDefaultV1014TestInputs();
+  const base = computeNationalPopulationDynamics(baseInp, init, null);
+  check('pd01', base.state.enabled && base.state.revision === 1, `revision=${base.state.revision}`);
+  check('pd02', Object.keys(base.state.regions).length === V1014_CORE_REGIONS.length);
+  check('pd03', base.state.national.vitality !== 'declining' || base.state.national.migrationIntent !== 'outward');
+
+  const off = computeNationalPopulationDynamics({ ...baseInp, enabled: false }, init, null);
+  check('pd04', !off.state.enabled && off.state.regions && Object.keys(off.state.regions).length === 0);
+
+  const detA = computeNationalPopulationDynamics(baseInp, init, null);
+  const detB = computeNationalPopulationDynamics(baseInp, init, null);
+  check('pd05', JSON.stringify(detA.state) === JSON.stringify(detB.state));
+
+  const vicMod = computePopulationMobilityModifier(base.state, 'VIC');
+  check('pd06', vicMod.relocatesPopulation === false && vicMod.boundedModifier >= -1 && vicMod.boundedModifier <= 1);
+
+  const nswMod = computePopulationMobilityModifier(base.state, 'NSW');
+  check('pd07', nswMod.relocatesPopulation === false);
+
+  const forbiddenKeys = ['population', 'unemploymentRate', 'workerAgents', 'payrollCost', 'wageBill', 'migrationQuota', 'populationCount'];
+  check(
+    'pd08',
+    forbiddenKeys.every((k) => !(k in base.state) && !(k in base.state.national)),
+    'forbidden literal demographic keys absent'
+  );
+
+  const restored = sanitizePopulationDynamicsPersisted(JSON.parse(JSON.stringify(base.persisted)));
+  check('pd09', restored.lastInputHash === base.persisted.lastInputHash);
+
+  const legacy = sanitizePopulationDynamicsPersisted(undefined);
+  check('pd10', legacy.schemaVersion === V1014_SCHEMA_VERSION);
+
+  const hashStable = populationDynamicsInputHash(baseInp) === populationDynamicsInputHash(baseInp);
+  check('pd11', hashStable);
+
+  const built = buildPopulationDynamicsInputs({
+    turn: 3,
+    gameSettings: { nationalSystemsEnabled: true, populationDynamicsEnabled: true },
+    livingRegions: null,
+    workforce: null,
+    households: null
+  });
+  check('pd12', built.enabled && Object.keys(built.regions).length === V1014_CORE_REGIONS.length);
+
+  const align = populationDynamicsActionAlignment(base.state, { title: 'Expand urban housing program', regionId: 'VIC' });
+  check('pd13', align.relevanceDelta >= 0);
+
+  let pers = base.persisted;
+  let prev: NationalPopulationDynamicsState | null = base.state;
+  for (let i = 0; i < 20; i++) {
+    const inp = makeDefaultV1014TestInputs({ turn: 5 + i });
+    const r = computeNationalPopulationDynamics(inp, pers, prev);
+    pers = r.persisted;
+    prev = r.state;
+  }
+  check('pd14', (pers.history.length || 0) <= V1014_LIMITS.maxHistory);
+
+  const startMs = Date.now();
+  pers = createInitialPopulationDynamicsPersisted();
+  prev = null;
+  for (let i = 0; i < 25; i++) {
+    const r = computeNationalPopulationDynamics(makeDefaultV1014TestInputs({ turn: i + 1 }), pers, prev);
+    pers = r.persisted;
+    prev = r.state;
+  }
+  check('pd15', Date.now() - startMs < 250, `perfMs=${Date.now() - startMs}`);
+
+  const passed = results.filter((r) => r.passed).length;
+  return { passed, failed: results.length - passed, total: results.length, results };
+}
+
+// ============================================================================
 // SECTION 21B: RELIABILITY UPGRADE — FOCUSED REGRESSION SELF-TESTS
 // ----------------------------------------------------------------------------
 // One check per substantive reliability fix (crash, accounting, lifecycle, determinism, gating).
@@ -214781,6 +215401,38 @@ function dispatchGameSettingsChange(
     return { state: hh13State, persisted: hh13Persisted, inputs: hh13Inputs };
   }, [hh13State, hh13Persisted, hh13Inputs]);
   if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, households: hh13Enabled ? hh13View : null };
+
+  const pd14Enabled = Boolean(nsEnabled && gameSettings.populationDynamicsEnabled !== false);
+  const pd14StoredRaw = (gameState as any).populationDynamics;
+  const pd14Persisted = useMemo(() => sanitizePopulationDynamicsPersisted(pd14StoredRaw, lrInputs.turn), [pd14StoredRaw, lrInputs.turn]);
+  const pd14PersistedRef = useRef<PopulationDynamicsPersisted>(pd14Persisted); pd14PersistedRef.current = pd14Persisted;
+  const pd14Inputs = useMemo<PopulationDynamicsInputs | null>(() => {
+    if (!pd14Enabled || !nsState) return null;
+    return buildPopulationDynamicsInputs({
+      turn: lrInputs.turn,
+      gameSettings,
+      livingRegions: lrState,
+      workforce: wfEnabled ? wfState : null,
+      households: hh13Enabled ? hh13State : null
+    });
+  }, [pd14Enabled, nsState, lrInputs.turn, lrState, wfEnabled, wfState, hh13Enabled, hh13State, gameSettings.populationDynamicsEnabled, gameSettings.nationalSystemsEnabled, pd14Persisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pd14Hash = useMemo(() => (pd14Inputs ? populationDynamicsInputHash(pd14Inputs) : ''), [pd14Inputs]);
+  const pd14StateRef = useRef<NationalPopulationDynamicsState | null>(null);
+  const pd14State = useMemo<NationalPopulationDynamicsState | null>(() => {
+    if (!pd14Inputs) return null;
+    return computeNationalPopulationDynamics(pd14Inputs, pd14PersistedRef.current, pd14StateRef.current).state;
+  }, [pd14Hash, pd14Inputs, pd14Persisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
+  pd14StateRef.current = pd14State;
+  useEffect(() => {
+    if (!pd14Enabled || !pd14Inputs || gameState.gameMode !== 'game') return;
+    const prev = pd14PersistedRef.current;
+    if (prev && prev.lastInputHash === pd14Hash) return;
+    const res = computeNationalPopulationDynamics(pd14Inputs, prev, pd14StateRef.current);
+    pd14PersistedRef.current = res.persisted;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { populationDynamics: res.persisted, populationDynamicsState: res.state } as any });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pd14Hash, pd14Enabled, gameState.gameMode]);
+  if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, populationDynamics: pd14Enabled ? pd14State : null };
 
   const swrViewerId = String(player?.id || 'player');
   const swrViewerTeamId = player?.teamId ? String(player.teamId) : null;
