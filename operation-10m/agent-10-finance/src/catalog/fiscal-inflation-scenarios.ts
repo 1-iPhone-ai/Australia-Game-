@@ -55,6 +55,41 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['fiscal', 'credit'],
   },
+  {
+    id: 'wage_spiral_services',
+    label: 'Wage–price spiral (services)',
+    description: 'Elevated inflation with severe household affordability — macro CPI channel only.',
+    patch: {
+      highInflationScenario: true,
+      householdAffordability: 'severe_pressure',
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.18,
+    },
+    tags: ['inflation', 'wage', 'round4'],
+  },
+  {
+    id: 'deanchoring_stress',
+    label: 'Expectations de-anchoring',
+    description: 'Runaway scenario flag with critical fiscal spillover.',
+    patch: {
+      highInflationScenario: true,
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.35,
+      publicStability: 30,
+    },
+    tags: ['inflation', 'expectations', 'round4'],
+  },
+  {
+    id: 'macro06_demand_overheat',
+    label: 'Macro demand overheat (Agent 06 bridge)',
+    description: 'Simulates merged Agent 06 demand pressure via multiplier stress.',
+    patch: {
+      inflationSettingMultiplier: 1.22,
+      actorCreditStressIndex: 0.55,
+      fiscalPressure: 'strained',
+    },
+    tags: ['integration', 'agent06', 'round4'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

@@ -36,6 +36,12 @@ import {
 } from './catalog/fiscal-inflation-scenarios.js';
 import { exportMacroFinancialSaveBridge, importMacroFinancialSaveBridge } from './integration/save-bridge.js';
 import { effectiveTierLoanRate } from './credit/tier-spreads.js';
+import { assessWagePriceSpiral, wageSpiralInflationScoreAdjustment } from './inflation/wage-price-spiral.js';
+import { recommendMonetaryStance, stanceDriftTowardRecommendation } from './rates/monetary-reaction.js';
+import { decomposeMacroCpiBasket, macroCpiBasketWeightSum } from './inflation/cpi-basket.js';
+import { stepInflationExpectations, initialInflationAnchoringScore } from './inflation/expectations-anchor.js';
+import { mergeAgent06IntoMacroFinancialInputs, agent06BridgeIntegrationNote } from './integration/agent06-macro-bridge.js';
+import { projectInflationForecastPath } from './integration/inflation-forecast.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -278,7 +284,7 @@ export function runAgent10FinanceSelfTests(): {
     computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state.regionalSpreads.some((r) => r.regionId === 'NSW'),
   );
 
-  check('a10_r3b_01', 'scenario preset count', MACRO_FINANCIAL_SCENARIO_PRESETS.length >= 6);
+  check('a10_r3b_01', 'scenario preset count', MACRO_FINANCIAL_SCENARIO_PRESETS.length >= 9);
   check(
     'a10_r3b_02',
     'apply credit shock preset',
@@ -310,6 +316,73 @@ export function runAgent10FinanceSelfTests(): {
     effectiveTierLoanRate('standard', 0.1, 1.2, 'frozen') > effectiveTierLoanRate('standard', 0.1, 1.2, 'accommodative'),
   );
   check('a10_r3b_07', 'get preset by id', getMacroFinancialScenarioPreset('liquidity_crisis')?.tags.includes('liquidity'));
+
+  // --- Round 4 scale wave ---
+  check('a10_r4_01', 'CPI basket weights sum', Math.abs(macroCpiBasketWeightSum() - 1) < 0.001);
+  {
+    const cpi = decomposeMacroCpiBasket('elevated', 5, 0.07);
+    check('a10_r4_02', 'CPI decompose excludes commodity', cpi.excludesCommodityQuotes === true && cpi.headlineIndex > 100);
+  }
+  {
+    const spiral = assessWagePriceSpiral({
+      inflationBand: 'high',
+      householdAffordability: 'severe_pressure',
+      fiscalPressure: 'critical',
+      wageGrowthPressureScore: 70,
+      turn: 3,
+    });
+    check('a10_r4_03', 'wage spiral elevated+', spiral.spiralRisk === 'elevated' || spiral.spiralRisk === 'critical');
+    check('a10_r4_04', 'wage spiral delta', wageSpiralInflationScoreAdjustment(spiral) > 0);
+  }
+  {
+    const rec = recommendMonetaryStance({
+      inflationBand: 'high',
+      creditBand: 'tight',
+      inflationScore: 78,
+      creditScore: 48,
+    });
+    check('a10_r4_05', 'monetary reaction tighten', rec.recommendedStance === 'tightening' || rec.recommendedStance === 'restrictive');
+    check(
+      'a10_r4_06',
+      'stance drift',
+      stanceDriftTowardRecommendation('neutral', rec.recommendedStance, 2) !== 'neutral' ||
+        rec.recommendedStance === 'neutral',
+    );
+  }
+  {
+    const exp = stepInflationExpectations({
+      currentBand: 'high',
+      priorAnchoringScore: initialInflationAnchoringScore(),
+      fiscalPressure: 'critical',
+      highInflationScenario: true,
+      turn: 2,
+    });
+    check('a10_r4_07', 'expectations deanchor risk', exp.deanchoringRisk !== 'low');
+  }
+  {
+    const merged = mergeAgent06IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 4,
+      gdpGrowthBand: 'contraction',
+      unemploymentBand: 'severe',
+      outputGap: -0.04,
+      nominalDemandPressure: 0.5,
+    });
+    check('a10_r4_08', 'agent06 bridge merge', (merged.inflationSettingMultiplier ?? 1) > 1 && merged.fiscalPressure !== 'healthy');
+    check('a10_r4_09', 'agent06 bridge note', agent06BridgeIntegrationNote().includes('commodity'));
+  }
+  {
+    const path = projectInflationForecastPath(8);
+    check('a10_r4_10', 'forecast path rows', path.points.length === 8);
+    check('a10_r4_11', 'forecast max cost', path.maxCostMultiplier >= 1);
+  }
+  check(
+    'a10_r4_12',
+    'round4 preset wage',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'wage_spiral_services');
+      return inp?.householdAffordability === 'severe_pressure' && inp.highInflationScenario === true;
+    })(),
+  );
 
   const passed = results.filter((r) => r.passed).length;
   const failed = results.length - passed;

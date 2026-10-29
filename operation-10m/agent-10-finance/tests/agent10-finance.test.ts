@@ -38,6 +38,12 @@ import { simulateMacroFinancialTurns } from '../src/integration/regression-harne
 import { applyMacroFinancialScenarioPreset } from '../src/catalog/fiscal-inflation-scenarios.js';
 import { effectiveTierLoanRate } from '../src/credit/tier-spreads.js';
 import { assessInvestmentClimateLink } from '../src/investment/climate-link.js';
+import { assessWagePriceSpiral } from '../src/inflation/wage-price-spiral.js';
+import { recommendMonetaryStance } from '../src/rates/monetary-reaction.js';
+import { decomposeMacroCpiBasket, macroCpiBasketWeightSum } from '../src/inflation/cpi-basket.js';
+import { stepInflationExpectations } from '../src/inflation/expectations-anchor.js';
+import { mergeAgent06IntoMacroFinancialInputs } from '../src/integration/agent06-macro-bridge.js';
+import { projectInflationForecastPath } from '../src/integration/inflation-forecast.js';
 
 describe('Agent 10 glossary & boundaries', () => {
   it('defines coherent finance terms', () => {
@@ -184,7 +190,7 @@ describe('Agent 10 scale-wave extensions', () => {
   it('runAgent10FinanceSelfTests all pass', () => {
     const r = runAgent10FinanceSelfTests();
     assert.equal(r.allPassed, true, r.results.filter((x) => !x.passed).map((x) => `${x.id}:${x.name}`).join('; '));
-    assert.ok(r.total >= 67);
+    assert.ok(r.total >= 79);
   });
 
   it('transmission channels activate under fiscal critical', () => {
@@ -229,5 +235,63 @@ describe('Agent 10 scale-wave extensions', () => {
 
   it('round-3 tier spread under frozen credit', () => {
     assert.ok(effectiveTierLoanRate('growth', 0.08, 1.3, 'frozen') > 0.15);
+  });
+
+  it('round-4 CPI basket weights sum to 1', () => {
+    assert.ok(Math.abs(macroCpiBasketWeightSum() - 1) < 0.001);
+    const d = decomposeMacroCpiBasket('anchored', 1);
+    assert.ok(d.headlineIndex >= 95 && d.headlineIndex <= 105);
+  });
+
+  it('round-4 wage spiral under stress', () => {
+    const s = assessWagePriceSpiral({
+      inflationBand: 'scenario_runaway',
+      householdAffordability: 'severe_pressure',
+      fiscalPressure: 'critical',
+      turn: 1,
+    });
+    assert.equal(s.spiralRisk, 'critical');
+  });
+
+  it('round-4 monetary reaction tightens when inflation high', () => {
+    const r = recommendMonetaryStance({
+      inflationBand: 'high',
+      creditBand: 'neutral',
+      inflationScore: 82,
+      creditScore: 50,
+    });
+    assert.ok(r.recommendedStance === 'tightening' || r.recommendedStance === 'restrictive');
+  });
+
+  it('round-4 expectations step', () => {
+    const e = stepInflationExpectations({
+      currentBand: 'elevated',
+      priorAnchoringScore: 72,
+      fiscalPressure: 'strained',
+      turn: 3,
+    });
+    assert.ok(e.anchoringScore > 0 && e.anchoringScore <= 100);
+  });
+
+  it('round-4 agent06 bridge', () => {
+    const m = mergeAgent06IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      gdpGrowthBand: 'strong',
+      unemploymentBand: 'low',
+      outputGap: 0.02,
+      nominalDemandPressure: 0.4,
+    });
+    assert.ok((m.inflationSettingMultiplier ?? 1) > 1);
+  });
+
+  it('round-4 inflation forecast path', () => {
+    const p = projectInflationForecastPath(5, makeDefaultMacroFinancialTestInputs({ highInflationScenario: true }));
+    assert.equal(p.points.length, 5);
+    assert.ok(p.maxCostMultiplier >= 1);
+  });
+
+  it('round-4 scenario preset deanchoring', () => {
+    const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'deanchoring_stress');
+    assert.ok(inp?.fiscalPressure === 'critical' && inp.highInflationScenario);
   });
 });

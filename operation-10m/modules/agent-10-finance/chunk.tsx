@@ -767,6 +767,362 @@ export function serviceCostPassThroughFromAffordability(
 }
 
 
+// --- source: inflation/wage-price-spiral.ts ---
+
+export interface WagePriceSpiralInputs {
+  inflationBand: InflationConditionsBand;
+  householdAffordability: 'healthy' | 'strained' | 'severe_pressure' | null | undefined;
+  fiscalPressure: 'healthy' | 'tight' | 'strained' | 'critical' | null | undefined;
+  /** 0–100 nominal wage growth pressure from labor module (read-only). */
+  wageGrowthPressureScore?: number;
+  turn: number;
+}
+
+export interface WagePriceSpiralAssessment {
+  spiralRisk: 'low' | 'moderate' | 'elevated' | 'critical';
+  wagePassThroughFraction: number;
+  impliedInflationScoreDelta: number;
+  narrative: string;
+  dampeningFactors: string[];
+}
+
+const BAND_BASE_RISK: Record<InflationConditionsBand, number> = {
+  disinflation: 0.05,
+  anchored: 0.12,
+  elevated: 0.28,
+  high: 0.45,
+  scenario_runaway: 0.72,
+};
+
+/** Deterministic wage–price feedback — does not mutate commodity resource prices. */
+export function assessWagePriceSpiral(inputs: WagePriceSpiralInputs): WagePriceSpiralAssessment {
+  const dampeningFactors: string[] = [];
+  let risk = BAND_BASE_RISK[inputs.inflationBand];
+
+  const wage = finClamp(inputs.wageGrowthPressureScore ?? 40, 0, 100);
+  risk += (wage - 40) * 0.004;
+
+  if (inputs.householdAffordability === 'severe_pressure') {
+    risk += 0.12;
+    dampeningFactors.push('household_affordability_cap');
+  } else if (inputs.householdAffordability === 'strained') {
+    risk += 0.05;
+  }
+
+  if (inputs.fiscalPressure === 'critical') {
+    risk += 0.08;
+    dampeningFactors.push('fiscal_austerity_dampener');
+  } else if (inputs.fiscalPressure === 'strained') {
+    risk += 0.03;
+  }
+
+  if (inflationBandSeverityRank(inputs.inflationBand) <= inflationBandSeverityRank('anchored')) {
+    risk *= 0.65;
+    dampeningFactors.push('anchored_inflation_band');
+  }
+
+  // Even turns slightly dampen narrative spiral (contractual lag)
+  if (inputs.turn % 2 === 0) {
+    risk *= 0.97;
+  }
+
+  const clampedRisk = finClamp(risk, 0, 1);
+  const spiralRisk: WagePriceSpiralAssessment['spiralRisk'] =
+    clampedRisk >= 0.62 ? 'critical' : clampedRisk >= 0.42 ? 'elevated' : clampedRisk >= 0.22 ? 'moderate' : 'low';
+
+  const wagePassThroughFraction = finRound(finClamp(clampedRisk * 0.35, 0, 0.28), 3);
+  const impliedInflationScoreDelta = finRound(wagePassThroughFraction * 100 * 0.55, 2);
+
+  const narrative =
+    spiralRisk === 'critical'
+      ? 'Wage settlements and service prices are reinforcing — macro CPI channel only.'
+      : spiralRisk === 'elevated'
+        ? 'Second-round wage pressure is building in services.'
+        : spiralRisk === 'moderate'
+          ? 'Mild wage pass-through; inflation expectations still manageable.'
+          : 'Wage–price loop contained.';
+
+  return {
+    spiralRisk,
+    wagePassThroughFraction,
+    impliedInflationScoreDelta,
+    narrative,
+    dampeningFactors,
+  };
+}
+
+export function wageSpiralInflationScoreAdjustment(assessment: WagePriceSpiralAssessment): number {
+  if (assessment.spiralRisk === 'low') return 0;
+  return finRound(assessment.impliedInflationScoreDelta, 2);
+}
+
+
+// --- source: inflation/cpi-basket.ts ---
+
+export interface CpiBasketCategory {
+  id: string;
+  label: string;
+  weight: number;
+  /** Excluded from macro CPI if true (commodity-linked). */
+  commodityLinked: boolean;
+}
+
+/** Non-commodity macro CPI weights (must sum to 1 for non-commodity slice). */
+export const MACRO_CPI_BASKET: readonly CpiBasketCategory[] = [
+  { id: 'housing_services', label: 'Housing services', weight: 0.22, commodityLinked: false },
+  { id: 'utilities', label: 'Utilities', weight: 0.08, commodityLinked: false },
+  { id: 'food_at_home', label: 'Food at home', weight: 0.11, commodityLinked: false },
+  { id: 'transport_services', label: 'Transport services', weight: 0.14, commodityLinked: false },
+  { id: 'health_education', label: 'Health & education', weight: 0.18, commodityLinked: false },
+  { id: 'recreation', label: 'Recreation', weight: 0.09, commodityLinked: false },
+  { id: 'other_services', label: 'Other services', weight: 0.18, commodityLinked: false },
+] as const;
+
+export interface CategoryInflationContribution {
+  categoryId: string;
+  label: string;
+  contribution: number;
+  band: InflationConditionsBand;
+}
+
+export interface CpiBasketDecomposition {
+  headlineIndex: number;
+  servicesShare: number;
+  goodsShare: number;
+  categories: CategoryInflationContribution[];
+  excludesCommodityQuotes: true;
+}
+
+const BAND_INDEX: Record<InflationConditionsBand, number> = {
+  disinflation: 96,
+  anchored: 100,
+  elevated: 106,
+  high: 114,
+  scenario_runaway: 128,
+};
+
+function categoryBand(base: InflationConditionsBand, categoryId: string, turn: number): InflationConditionsBand {
+  const jitter = (categoryId.charCodeAt(0) + turn) % 3;
+  const order: InflationConditionsBand[] = ['disinflation', 'anchored', 'elevated', 'high', 'scenario_runaway'];
+  const idx = finClamp(order.indexOf(base) + (jitter === 0 ? 0 : jitter === 1 ? 1 : -1), 0, order.length - 1);
+  return order[idx];
+}
+
+/** Builds a presentation-only CPI decomposition; resource market prices stay out of basket. */
+export function decomposeMacroCpiBasket(
+  inflationBand: InflationConditionsBand,
+  turn: number,
+  serviceCostPassThrough = 0,
+): CpiBasketDecomposition {
+  const categories: CategoryInflationContribution[] = [];
+  let headline = 0;
+  let services = 0;
+
+  for (const cat of MACRO_CPI_BASKET) {
+    if (cat.commodityLinked) continue;
+    const band = categoryBand(inflationBand, cat.id, turn);
+    let idx = BAND_INDEX[band];
+    if (cat.id.includes('services') || cat.id === 'other_services') {
+      idx += serviceCostPassThrough * 100;
+      services += cat.weight;
+    }
+    const contribution = finRound(idx * cat.weight, 3);
+    headline += contribution;
+    categories.push({
+      categoryId: cat.id,
+      label: cat.label,
+      contribution,
+      band,
+    });
+  }
+
+  const goodsShare = finRound(1 - services, 3);
+  return {
+    headlineIndex: finRound(headline, 2),
+    servicesShare: finRound(services, 3),
+    goodsShare,
+    categories,
+    excludesCommodityQuotes: true,
+  };
+}
+
+export function macroCpiBasketWeightSum(): number {
+  return finRound(
+    MACRO_CPI_BASKET.filter((c) => !c.commodityLinked).reduce((s, c) => s + c.weight, 0),
+    4,
+  );
+}
+
+
+// --- source: inflation/expectations-anchor.ts ---
+
+export interface InflationExpectationsState {
+  /** 0–100; higher = better anchored */
+  anchoringScore: number;
+  /** Expected inflation band one turn ahead (deterministic) */
+  expectedBand: InflationConditionsBand;
+  deanchoringRisk: 'low' | 'moderate' | 'high';
+  revisionFromPrior: number;
+}
+
+export interface ExpectationsStepInputs {
+  currentBand: InflationConditionsBand;
+  priorAnchoringScore: number;
+  fiscalPressure: 'healthy' | 'tight' | 'strained' | 'critical' | null | undefined;
+  highInflationScenario?: boolean;
+  turn: number;
+}
+
+const BAND_FORWARD: Record<InflationConditionsBand, InflationConditionsBand> = {
+  disinflation: 'disinflation',
+  anchored: 'anchored',
+  elevated: 'elevated',
+  high: 'high',
+  scenario_runaway: 'scenario_runaway',
+};
+
+/** One-step expectations update — persisted separately in Agent 25 merge. */
+export function stepInflationExpectations(inputs: ExpectationsStepInputs): InflationExpectationsState {
+  let score = finClamp(inputs.priorAnchoringScore || 72, 0, 100);
+
+  if (compareInflationBands(inputs.currentBand, 'elevated') >= 0) {
+    score -= 4.5;
+  } else if (compareInflationBands(inputs.currentBand, 'anchored') <= 0) {
+    score += 1.2;
+  }
+
+  if (inputs.highInflationScenario) {
+    score -= 6;
+  }
+  if (inputs.fiscalPressure === 'critical') {
+    score -= 2.5;
+  } else if (inputs.fiscalPressure === 'healthy') {
+    score += 0.8;
+  }
+
+  if (inputs.turn % 4 === 0) {
+    score += 0.5;
+  }
+
+  score = finClamp(score, 15, 98);
+  const revisionFromPrior = finRound(score - (inputs.priorAnchoringScore || 72), 2);
+
+  let expectedBand = BAND_FORWARD[inputs.currentBand];
+  if (score < 45 && compareInflationBands(inputs.currentBand, 'elevated') >= 0) {
+    expectedBand = 'high';
+  }
+  if (score < 30) {
+    expectedBand = 'scenario_runaway';
+  }
+
+  const deanchoringRisk: InflationExpectationsState['deanchoringRisk'] =
+    score >= 62 ? 'low' : score >= 45 ? 'moderate' : 'high';
+
+  return {
+    anchoringScore: finRound(score, 2),
+    expectedBand,
+    deanchoringRisk,
+    revisionFromPrior,
+  };
+}
+
+export function initialInflationAnchoringScore(): number {
+  return 72;
+}
+
+
+// --- source: rates/monetary-reaction.ts ---
+
+export interface MonetaryReactionInputs {
+  inflationBand: InflationConditionsBand;
+  creditBand: CreditConditionsBand;
+  inflationScore: number;
+  creditScore: number;
+  creditShockActive?: boolean;
+  targetInflationScore?: number;
+}
+
+export interface MonetaryReactionRecommendation {
+  recommendedStance: MonetaryPolicyStance;
+  inflationGap: number;
+  policyTightnessIndex: number;
+  rationale: string;
+  lagTurns: number;
+}
+
+const STANCE_ORDER: MonetaryPolicyStance[] = [
+  'emergency_easing',
+  'accommodative',
+  'neutral',
+  'tightening',
+  'restrictive',
+];
+
+function stanceIndex(s: MonetaryPolicyStance): number {
+  return STANCE_ORDER.indexOf(s);
+}
+
+function indexToStance(i: number): MonetaryPolicyStance {
+  return STANCE_ORDER[finClamp(Math.round(i), 0, STANCE_ORDER.length - 1)];
+}
+
+/** Simplified Taylor-style reaction — metadata for UI / co-pilot; does not execute trades. */
+export function recommendMonetaryStance(inputs: MonetaryReactionInputs): MonetaryReactionRecommendation {
+  const target = inputs.targetInflationScore ?? 45;
+  const inflationGap = finRound(inputs.inflationScore - target, 2);
+  let tightness = 2 + inflationGap * 0.035;
+
+  if (inflationBandSeverityRank(inputs.inflationBand) >= inflationBandSeverityRank('high')) {
+    tightness += 0.85;
+  } else if (inflationBandSeverityRank(inputs.inflationBand) >= inflationBandSeverityRank('elevated')) {
+    tightness += 0.35;
+  }
+
+  if (inputs.creditScore < 42 || inputs.creditBand === 'frozen') {
+    tightness -= 0.5;
+  }
+  if (inputs.creditShockActive) {
+    tightness += 0.25;
+  }
+
+  if (inputs.creditBand === 'accommodative' && inflationGap < 5) {
+    tightness -= 0.2;
+  }
+
+  tightness = finClamp(tightness, 0, STANCE_ORDER.length - 1);
+  const recommendedStance = indexToStance(tightness);
+
+  const lagTurns = inputs.creditShockActive ? 2 : 1;
+  const rationale =
+    inflationGap > 12
+      ? 'Inflation materially above target — tightening bias.'
+      : inflationGap < -8
+        ? 'Below-target inflation — easing bias.'
+        : 'Near target — neutral stance.';
+
+  return {
+    recommendedStance,
+    inflationGap,
+    policyTightnessIndex: finRound(tightness / (STANCE_ORDER.length - 1), 3),
+    rationale,
+    lagTurns,
+  };
+}
+
+export function stanceDriftTowardRecommendation(
+  current: MonetaryPolicyStance,
+  recommended: MonetaryPolicyStance,
+  turnsElapsed: number,
+): MonetaryPolicyStance {
+  const cur = stanceIndex(current);
+  const rec = stanceIndex(recommended);
+  if (cur === rec) return current;
+  const step = turnsElapsed >= 2 ? 1 : 0;
+  if (step === 0) return current;
+  return rec > cur ? indexToStance(cur + 1) : indexToStance(cur - 1);
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -1059,6 +1415,41 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       capitalFlexibility: 'very_low',
     },
     tags: ['fiscal', 'credit'],
+  },
+  {
+    id: 'wage_spiral_services',
+    label: 'Wage–price spiral (services)',
+    description: 'Elevated inflation with severe household affordability — macro CPI channel only.',
+    patch: {
+      highInflationScenario: true,
+      householdAffordability: 'severe_pressure',
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.18,
+    },
+    tags: ['inflation', 'wage', 'round4'],
+  },
+  {
+    id: 'deanchoring_stress',
+    label: 'Expectations de-anchoring',
+    description: 'Runaway scenario flag with critical fiscal spillover.',
+    patch: {
+      highInflationScenario: true,
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.35,
+      publicStability: 30,
+    },
+    tags: ['inflation', 'expectations', 'round4'],
+  },
+  {
+    id: 'macro06_demand_overheat',
+    label: 'Macro demand overheat (Agent 06 bridge)',
+    description: 'Simulates merged Agent 06 demand pressure via multiplier stress.',
+    patch: {
+      inflationSettingMultiplier: 1.22,
+      actorCreditStressIndex: 0.55,
+      fiscalPressure: 'strained',
+    },
+    tags: ['integration', 'agent06', 'round4'],
   },
 ] as const;
 
@@ -1802,6 +2193,117 @@ export function saveBridgeJsonSize(bridge: MacroFinancialSaveBridge): number {
 }
 
 
+// --- source: integration/agent06-macro-bridge.ts ---
+
+/** Read-only snapshot shape from Agent 06 macroeconomy module (contract only). */
+export interface Agent06MacroSnapshot {
+  turn: number;
+  gdpGrowthBand: 'contraction' | 'slow' | 'steady' | 'strong';
+  unemploymentBand: 'low' | 'moderate' | 'elevated' | 'severe';
+  outputGap: number;
+  nominalDemandPressure: number;
+}
+
+export function mergeAgent06IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent06MacroSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+  const demand = finClamp(snapshot.nominalDemandPressure, -1, 1);
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (demand > 0.35) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + demand * 0.08, 0.85, 1.45);
+  }
+
+  let actorCreditStressIndex = base.actorCreditStressIndex ?? 0.35;
+  if (snapshot.unemploymentBand === 'severe') {
+    actorCreditStressIndex = finClamp(actorCreditStressIndex + 0.12, 0, 1);
+  }
+
+  let fiscalPressure = base.fiscalPressure;
+  if (snapshot.gdpGrowthBand === 'contraction' && fiscalPressure === 'healthy') {
+    fiscalPressure = 'tight';
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    actorCreditStressIndex,
+    fiscalPressure,
+  };
+}
+
+export function agent06BridgeIntegrationNote(): string {
+  return 'Agent 06 macro snapshot adjusts inflation multiplier and credit stress only; commodity resourcePrices unchanged.';
+}
+
+
+// --- source: integration/inflation-forecast.ts ---
+
+export interface InflationForecastPoint {
+  turn: number;
+  inflationBand: InflationConditionsBand;
+  costMultiplier: number;
+  anchoringScore: number;
+  spiralRisk: ReturnType<typeof assessWagePriceSpiral>['spiralRisk'];
+  headlineCpiIndex: number;
+}
+
+export interface InflationForecastPath {
+  points: InflationForecastPoint[];
+  terminalBand: InflationConditionsBand;
+  maxCostMultiplier: number;
+}
+
+/** Deterministic forward path for dashboards / Agent 21 hooks (no RNG). */
+export function projectInflationForecastPath(
+  horizonTurns: number,
+  seedInputs?: ReturnType<typeof makeDefaultMacroFinancialTestInputs>,
+): InflationForecastPath {
+  const points: InflationForecastPoint[] = [];
+  let anchoring = initialInflationAnchoringScore();
+  let maxCost = 1;
+
+  for (let t = 1; t <= horizonTurns; t++) {
+    const inputs = { ...(seedInputs ?? makeDefaultMacroFinancialTestInputs()), turn: t };
+    const r = computeNationalMacroFinancialConditions(inputs, null, null);
+    const pass = serviceCostPassThroughFromAffordability(inputs.householdAffordability);
+    const spiral = assessWagePriceSpiral({
+      inflationBand: r.state.inflation,
+      householdAffordability: inputs.householdAffordability,
+      fiscalPressure: inputs.fiscalPressure,
+      wageGrowthPressureScore: 40 + t * 2,
+      turn: t,
+    });
+    const exp = stepInflationExpectations({
+      currentBand: r.state.inflation,
+      priorAnchoringScore: anchoring,
+      fiscalPressure: inputs.fiscalPressure,
+      highInflationScenario: inputs.highInflationScenario,
+      turn: t,
+    });
+    anchoring = exp.anchoringScore;
+    const cpi = decomposeMacroCpiBasket(r.state.inflation, t, pass);
+    maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
+    points.push({
+      turn: t,
+      inflationBand: r.state.inflation,
+      costMultiplier: r.state.modifiers.costOfLivingMultiplier,
+      anchoringScore: anchoring,
+      spiralRisk: spiral.spiralRisk,
+      headlineCpiIndex: cpi.headlineIndex,
+    });
+  }
+
+  return {
+    points,
+    terminalBand: points[points.length - 1]?.inflationBand ?? 'anchored',
+    maxCostMultiplier: maxCost,
+  };
+}
+
+
 // --- source: credit/tier-spreads.ts ---
 
 export type AdvancedLoanTierId = 'starter' | 'standard' | 'growth' | 'distressed';
@@ -2102,7 +2604,7 @@ export function runAgent10FinanceSelfTests(): {
     computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state.regionalSpreads.some((r) => r.regionId === 'NSW'),
   );
 
-  check('a10_r3b_01', 'scenario preset count', MACRO_FINANCIAL_SCENARIO_PRESETS.length >= 6);
+  check('a10_r3b_01', 'scenario preset count', MACRO_FINANCIAL_SCENARIO_PRESETS.length >= 9);
   check(
     'a10_r3b_02',
     'apply credit shock preset',
@@ -2134,6 +2636,73 @@ export function runAgent10FinanceSelfTests(): {
     effectiveTierLoanRate('standard', 0.1, 1.2, 'frozen') > effectiveTierLoanRate('standard', 0.1, 1.2, 'accommodative'),
   );
   check('a10_r3b_07', 'get preset by id', getMacroFinancialScenarioPreset('liquidity_crisis')?.tags.includes('liquidity'));
+
+  // --- Round 4 scale wave ---
+  check('a10_r4_01', 'CPI basket weights sum', Math.abs(macroCpiBasketWeightSum() - 1) < 0.001);
+  {
+    const cpi = decomposeMacroCpiBasket('elevated', 5, 0.07);
+    check('a10_r4_02', 'CPI decompose excludes commodity', cpi.excludesCommodityQuotes === true && cpi.headlineIndex > 100);
+  }
+  {
+    const spiral = assessWagePriceSpiral({
+      inflationBand: 'high',
+      householdAffordability: 'severe_pressure',
+      fiscalPressure: 'critical',
+      wageGrowthPressureScore: 70,
+      turn: 3,
+    });
+    check('a10_r4_03', 'wage spiral elevated+', spiral.spiralRisk === 'elevated' || spiral.spiralRisk === 'critical');
+    check('a10_r4_04', 'wage spiral delta', wageSpiralInflationScoreAdjustment(spiral) > 0);
+  }
+  {
+    const rec = recommendMonetaryStance({
+      inflationBand: 'high',
+      creditBand: 'tight',
+      inflationScore: 78,
+      creditScore: 48,
+    });
+    check('a10_r4_05', 'monetary reaction tighten', rec.recommendedStance === 'tightening' || rec.recommendedStance === 'restrictive');
+    check(
+      'a10_r4_06',
+      'stance drift',
+      stanceDriftTowardRecommendation('neutral', rec.recommendedStance, 2) !== 'neutral' ||
+        rec.recommendedStance === 'neutral',
+    );
+  }
+  {
+    const exp = stepInflationExpectations({
+      currentBand: 'high',
+      priorAnchoringScore: initialInflationAnchoringScore(),
+      fiscalPressure: 'critical',
+      highInflationScenario: true,
+      turn: 2,
+    });
+    check('a10_r4_07', 'expectations deanchor risk', exp.deanchoringRisk !== 'low');
+  }
+  {
+    const merged = mergeAgent06IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 4,
+      gdpGrowthBand: 'contraction',
+      unemploymentBand: 'severe',
+      outputGap: -0.04,
+      nominalDemandPressure: 0.5,
+    });
+    check('a10_r4_08', 'agent06 bridge merge', (merged.inflationSettingMultiplier ?? 1) > 1 && merged.fiscalPressure !== 'healthy');
+    check('a10_r4_09', 'agent06 bridge note', agent06BridgeIntegrationNote().includes('commodity'));
+  }
+  {
+    const path = projectInflationForecastPath(8);
+    check('a10_r4_10', 'forecast path rows', path.points.length === 8);
+    check('a10_r4_11', 'forecast max cost', path.maxCostMultiplier >= 1);
+  }
+  check(
+    'a10_r4_12',
+    'round4 preset wage',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'wage_spiral_services');
+      return inp?.householdAffordability === 'severe_pressure' && inp.highInflationScenario === true;
+    })(),
+  );
 
   const passed = results.filter((r) => r.passed).length;
   const failed = results.length - passed;
@@ -2211,6 +2780,62 @@ export function FinanceTransmissionPanel(props: FinanceTransmissionPanelProps) {
         {active.slice(0, 8).map((h) => (
           <li key={h.id}>
             {h.sourceDomain} → {h.targetDomain} (w={h.weight.toFixed(2)}): {h.activationReason}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+
+// --- source: react/InflationDiagnosticsPanel.tsx ---
+
+export interface InflationDiagnosticsPanelProps {
+  state: NationalMacroFinancialState;
+  inflationScore: number;
+  creditScore: number;
+  turn: number;
+  householdAffordability?: 'healthy' | 'strained' | 'severe_pressure' | null;
+  fiscalPressure?: 'healthy' | 'tight' | 'strained' | 'critical' | null;
+}
+
+export function InflationDiagnosticsPanel(props: InflationDiagnosticsPanelProps) {
+  const { state, inflationScore, creditScore, turn } = props;
+  const cpi = decomposeMacroCpiBasket(state.inflation, turn, 0);
+  const spiral = assessWagePriceSpiral({
+    inflationBand: state.inflation,
+    householdAffordability: props.householdAffordability,
+    fiscalPressure: props.fiscalPressure,
+    turn,
+  });
+  const stance = recommendMonetaryStance({
+    inflationBand: state.inflation,
+    creditBand: state.credit,
+    inflationScore,
+    creditScore,
+  });
+  const expectations = stepInflationExpectations({
+    currentBand: state.inflation,
+    priorAnchoringScore: initialInflationAnchoringScore(),
+    fiscalPressure: props.fiscalPressure,
+    turn,
+  });
+
+  return (
+    <div className="op10m-inflation-diagnostics" data-testid="inflation-diagnostics-panel">
+      <h4>Inflation diagnostics (macro CPI)</h4>
+      <p>
+        Headline index {cpi.headlineIndex.toFixed(1)} · services {Math.round(cpi.servicesShare * 100)}% · spiral{' '}
+        {spiral.spiralRisk}
+      </p>
+      <p>
+        Recommended stance {stance.recommendedStance} · anchoring {expectations.anchoringScore.toFixed(0)} (
+        {expectations.deanchoringRisk})
+      </p>
+      <ul>
+        {cpi.categories.slice(0, 4).map((c) => (
+          <li key={c.categoryId}>
+            {c.label}: {c.contribution.toFixed(2)} ({c.band})
           </li>
         ))}
       </ul>

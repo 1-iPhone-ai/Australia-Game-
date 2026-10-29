@@ -26,6 +26,10 @@ const FILES = [
   'shocks/catalog.ts',
   'shocks/scenario-runner.ts',
   'inflation/pass-through.ts',
+  'inflation/wage-price-spiral.ts',
+  'inflation/cpi-basket.ts',
+  'inflation/expectations-anchor.ts',
+  'rates/monetary-reaction.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -35,10 +39,13 @@ const FILES = [
   'integration/query-co-pilot.ts',
   'integration/regression-harness.ts',
   'integration/save-bridge.ts',
+  'integration/agent06-macro-bridge.ts',
+  'integration/inflation-forecast.ts',
   'credit/tier-spreads.ts',
   'self-tests.ts',
   'react/FinanceConditionsLab.tsx',
   'react/FinanceTransmissionPanel.tsx',
+  'react/InflationDiagnosticsPanel.tsx',
 ];
 
 function stripModulePreamble(source) {
