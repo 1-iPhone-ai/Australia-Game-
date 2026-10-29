@@ -1,4 +1,4 @@
-import { AGENT14_ALL_PROGRAM_STUBS, AGENT14_CORE_REGIONS } from './constants.ts';
+import { AGENT14_ALL_PROGRAM_STUBS, AGENT14_CORE_REGIONS, AGENT14_PILLARS } from './constants.ts';
 import type {
   EquityRebalancingAdvice,
   NationalHousingWellbeingSnapshot,
@@ -44,7 +44,7 @@ export function adviseEquityRebalancing(args: {
 
     if (urgency < 12) continue;
 
-    const weakestPillar = (['housing', 'healthcare', 'education'] as const).sort(
+    const weakestPillar = [...AGENT14_PILLARS].sort(
       (p1, p2) => (a?.pillars[p1].accessIndex ?? 50) - (a?.pillars[p2].accessIndex ?? 50)
     )[0];
 

@@ -1,19 +1,8 @@
-<<<<<<< HEAD
-# Operation 10M — Integration index
-
-Modular slices live under `operation-10m/agent-NN-*` until Agent 25 inlines them into `(V9.4) australia-game-with-ai.tsx` before the canonical anchor (`SECTION 21B` / module-specific markers).
-
-| Agent | Path | Status |
-|------:|------|--------|
-| 14 | [agent-14-housing](./agent-14-housing/INTEGRATION.md) | Public service capacity + delayed spending; assembly `modules/agent-14-housing/chunk.tsx` |
-
-Merge owner: Agent 25. Workers do not edit the canonical TSX directly during parallel Operation 10M work.
-=======
 # Operation 10M — Integration contracts
 
 **Canonical artifact:** `(V9.4) australia-game-with-ai.tsx` on branch `australia-game-upgrade`.
 
-**Only Agent 25** (Build Integration / Release) may modify the canonical TSX, and only via the controlled assembly pipeline on integration branches (`op10m/agent-25-integration`, `op10m/integration/*`). Module workers must not edit the canonical file.
+**Only Agent 25** (Build Integration / Release) may modify the canonical TSX, and only via the controlled assembly pipeline on integration branches (`op10m/agent-25-integration`, `op10m/integration/*`). Module workers must not edit the canonical file directly during parallel Operation 10M work.
 
 ## Audited functional LOC
 
@@ -116,4 +105,7 @@ No worker or coordinator **closes or triages** PRs. Agent 25 opens integration P
 | `operation-10m/assembly/assemble.mjs` | deterministic merge |
 | `operation-10m/assembly/audit-duplication.mjs` | baseline / CI duplication audit |
 | Project store `internal/source-map/` | section map and ownership (Agent 25) |
->>>>>>> 456efb92205c558a33ca9d8851a1cb5c1a05e0e0
+
+| Agent | Path | Status |
+|------:|------|--------|
+| 14 | [agent-14-housing](./agent-14-housing/INTEGRATION.md) | Public service capacity + delayed spending; assembly `modules/agent-14-housing/chunk.tsx` |

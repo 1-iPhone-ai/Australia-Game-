@@ -74,7 +74,7 @@ export const AGENT14_HOUSING_PROGRAM_STUBS: readonly {
 /** Healthcare and education program stubs (scale wave 4). */
 export const AGENT14_HEALTH_ED_PROGRAM_STUBS: readonly {
   id: string;
-  pillar: Exclude<PublicServicePillar, 'housing'>;
+  pillar: PublicServicePillar;
   regionId: Agent14CoreRegion;
   fiscalLoadPoints: number;
   durationTurns: number;
@@ -173,6 +173,9 @@ export const AGENT14_HEALTH_ED_PROGRAM_STUBS: readonly {
   { id: 'ps_xp_QLD_o10m222_gate', pillar: 'education', regionId: 'QLD', fiscalLoadPoints: 17, durationTurns: 4, baseImpact: 8, effectLagTurns: 2 },
   { id: 'ps_xp_NSW_wave46_projection', pillar: 'healthcare', regionId: 'NSW', fiscalLoadPoints: 17, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
   { id: 'ps_xp_WA_o10m224_gate', pillar: 'housing', regionId: 'WA', fiscalLoadPoints: 16, durationTurns: 4, baseImpact: 8, effectLagTurns: 2 },
+  { id: 'ps_xp_QLD_wave47_projection', pillar: 'education', regionId: 'QLD', fiscalLoadPoints: 17, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
+  { id: 'ps_xp_WA_o10m225_gate', pillar: 'housing', regionId: 'WA', fiscalLoadPoints: 16, durationTurns: 4, baseImpact: 8, effectLagTurns: 2 },
+  { id: 'ps_xp_QLD_o10m224_gate', pillar: 'healthcare', regionId: 'QLD', fiscalLoadPoints: 17, durationTurns: 4, baseImpact: 8, effectLagTurns: 2 },
 ];
 
 export const AGENT14_ALL_PROGRAM_STUBS = [
