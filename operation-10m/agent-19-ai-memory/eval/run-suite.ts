@@ -232,6 +232,26 @@ import {
   auditMatchExplainabilityFleetGate,
   matchExplainabilityFleetAllowed,
 } from '../match-explainability-fleet-gate.ts';
+import {
+  buildMatchExplainabilitySustainmentBundle,
+  matchExplainabilitySustainmentReady,
+} from '../match-explainability-sustainment-bundle.ts';
+import {
+  buildSessionSustainmentExportBundle,
+  sessionSustainmentExportShipped,
+} from '../session-sustainment-export-bundle.ts';
+import {
+  auditFleetSustainmentBridge,
+  fleetSustainmentBridgeHealthy,
+} from '../fleet-sustainment-bridge.ts';
+import {
+  buildFleetRecoveryOrchestrator,
+  fleetRecoveryOrchestratorWithinCap,
+} from '../fleet-recovery-orchestrator.ts';
+import {
+  auditMatchExplainabilityOrbitGate,
+  matchExplainabilityOrbitAllowed,
+} from '../match-explainability-orbit-gate.ts';
 import type { MemoryEvalResult } from '../types.ts';
 
 type Case = [string, string, () => boolean | string];
@@ -2590,6 +2610,138 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilityFleetAllowed(report) && !report.deploymentReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r16_sustainment_ready',
+        'Sustainment bundle ready when fleet and deployment export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilitySustainmentBundle([pack], params);
+          return matchExplainabilitySustainmentReady(bundle) && bundle.fleetAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r16_sustainment_held',
+        'Sustainment bundle pending when fleet fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 7, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilitySustainmentBundle([pack], {
+            memory: null,
+            currentTurn: 7,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilitySustainmentReady(bundle) && !bundle.fleetAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r16_fleet_recovery',
+        'Fleet recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 2, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 2, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildFleetRecoveryOrchestrator([pack], params);
+          return report.fleetBlocked && fleetRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r16_fleet_sustainment_bridge',
+        'Fleet sustainment bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditFleetSustainmentBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return fleetSustainmentBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r16_sustainment_export',
+        'Sustainment export shipped when sustainment ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionSustainmentExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionSustainmentExportShipped(bundle) && bundle.sustainmentSchema === 'agent19.sustainment.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r16_orbit_gate_ok',
+        'Orbit gate allowed on healthy sustainment stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityOrbitGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityOrbitAllowed(report) && report.sustainmentExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r16_orbit_gate_block',
+        'Orbit gate denied when sustainment pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 8, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityOrbitGate([pack], {
+            memory: null,
+            currentTurn: 8,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityOrbitAllowed(report) && !report.sustainmentReady || JSON.stringify(report);
         },
       ],
     ]),
