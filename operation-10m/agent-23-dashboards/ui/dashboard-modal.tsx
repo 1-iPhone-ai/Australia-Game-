@@ -66,6 +66,12 @@ import { nrDashBuildRegionalHeadroomSpread } from '../core/regional-headroom-spr
 import { nrDashBuildNationalNeedsPressure } from '../core/national-needs-pressure.ts';
 import { nrDashBuildDependencyConsumerLoad } from '../core/dependency-consumer-load.ts';
 import { nrDashBuildActivityWeightSpread } from '../core/activity-weight-spread.ts';
+import { nrDashBuildParityGapSpread } from '../core/parity-gap-spread.ts';
+import { nrDashBuildHeatStrainedDensity } from '../core/heat-strained-density.ts';
+import { nrDashBuildNetworkUtilConcentration } from '../core/network-util-concentration.ts';
+import { nrDashBuildDependencyProviderLoad } from '../core/dependency-provider-load.ts';
+import { nrDashBuildOwnedResilienceShare } from '../core/owned-resilience-share.ts';
+import { nrDashBuildMomentumBandDiversity } from '../core/momentum-band-diversity.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -156,6 +162,23 @@ export const NrDashOverviewTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-needs-pressure">
           National needs pressure {pressure.pressureIndex} · {pressure.totalOpenNeeds} open needs vs resilience{' '}
           {pressure.nationalResilience}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const utilConc = nrDashBuildNetworkUtilConcentration(snap);
+      return utilConc && nsState ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-network-util-concentration">
+          Network util concentration {utilConc.concentrationIndex} · top {utilConc.topNetwork ?? '—'} (
+          {Math.round(utilConc.topNetworkShare * 100)}%)
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const ownedRes = nrDashBuildOwnedResilienceShare(snap);
+      return ownedRes ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-owned-resilience-share">
+          Owned resilience share {ownedRes.ownedShare} · {ownedRes.ownedResilience}/{ownedRes.totalResilience}
         </div>
       ) : null;
     })()}
@@ -270,6 +293,23 @@ export const NrDashRegionsTab: React.FC<{
         </div>
       ) : null;
     })()}
+    {(() => {
+      const providers = nrDashBuildDependencyProviderLoad(nsState);
+      return providers ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dep-provider-load">
+          Dependency provider load σ {providers.stdDev} · μ {providers.meanEdgesPerProvider} edges/provider ({providers.edgeCount}{' '}
+          edges)
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const bands = nrDashBuildMomentumBandDiversity(snap);
+      return bands ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-momentum-band-diversity">
+          Momentum band diversity {bands.diversityIndex} · {bands.distinctBands} bands · dominant {bands.dominantBand ?? '—'}
+        </div>
+      ) : null;
+    })()}
     {nrDashTopTensionOutliers(snap, 3).length > 0 && (
       <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-tension-outliers">
         <div className="font-semibold mb-1">Momentum ↔ resilience tension</div>
@@ -357,6 +397,7 @@ export const NrDashNetworksTab: React.FC<{
   const constraintConc = nrDashBuildConstraintConcentration(ns);
   const bottleneckSpan = nrDashBuildBottleneckNetworkSpan(ns);
   const regionalHeadroom = nrDashBuildRegionalHeadroomSpread(ns);
+  const heatStrained = nrDashBuildHeatStrainedDensity(ns);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
       <NrDashUtilAlignmentStrip drift={utilDrift} />
@@ -402,6 +443,11 @@ export const NrDashNetworksTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-regional-headroom-spread">
           Regional headroom spread σ {regionalHeadroom.stdDev} · μ {regionalHeadroom.meanHeadroom}
           {regionalHeadroom.tightestRegionId ? ` · tightest ${regionalHeadroom.tightestRegionId}` : ''}
+        </div>
+      )}
+      {heatStrained && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-heat-strained-density">
+          Heat strained+ density {heatStrained.density} · {heatStrained.strainedPlusCount}/{heatStrained.cellCount} cells
         </div>
       )}
       {bottleneckConc && (
@@ -467,6 +513,7 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
   const historyVol = nrDashBuildMomentumHistoryVolatility(snap);
   const deltaSpread = nrDashBuildMomentumDeltaSpread(snap);
   const activitySpread = nrDashBuildActivityWeightSpread(snap);
+  const paritySpread = nrDashBuildParityGapSpread(snap);
   return (
     <div data-testid="nr-dash-tab-trends">
       <NrDashProvenanceStrip items={snap.provenance} />
@@ -503,6 +550,15 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
           <div>
             μ {activitySpread.meanWeight} · σ {activitySpread.stdDev}
             {activitySpread.outlierRegionId ? ` · outlier ${activitySpread.outlierRegionId}` : ''}
+          </div>
+        </div>
+      )}
+      {paritySpread && (
+        <div className="text-xs mb-3 rounded border border-slate-600/50 p-2" data-testid="nr-dash-parity-gap-spread">
+          <div className="font-semibold mb-1">Parity gap spread</div>
+          <div>
+            μ |gap| {paritySpread.meanAbsGap} · σ {paritySpread.stdDev}
+            {paritySpread.outlierRegionId ? ` · outlier ${paritySpread.outlierRegionId}` : ''}
           </div>
         </div>
       )}

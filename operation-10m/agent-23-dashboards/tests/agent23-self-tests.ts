@@ -62,6 +62,12 @@ import { nrDashBuildRegionalHeadroomSpread } from '../core/regional-headroom-spr
 import { nrDashBuildNationalNeedsPressure } from '../core/national-needs-pressure.ts';
 import { nrDashBuildDependencyConsumerLoad } from '../core/dependency-consumer-load.ts';
 import { nrDashBuildActivityWeightSpread } from '../core/activity-weight-spread.ts';
+import { nrDashBuildParityGapSpread } from '../core/parity-gap-spread.ts';
+import { nrDashBuildHeatStrainedDensity } from '../core/heat-strained-density.ts';
+import { nrDashBuildNetworkUtilConcentration } from '../core/network-util-concentration.ts';
+import { nrDashBuildDependencyProviderLoad } from '../core/dependency-provider-load.ts';
+import { nrDashBuildOwnedResilienceShare } from '../core/owned-resilience-share.ts';
+import { nrDashBuildMomentumBandDiversity } from '../core/momentum-band-diversity.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -581,6 +587,40 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
     const spread = nrDashBuildActivityWeightSpread(snap)!;
     return spread.regionCount === 8 && spread.meanWeight > 0 && spread.outlierRegionId === 'NSW';
+  });
+
+  check('a23_parity_gap_spread', 'Parity gap spread is flat on uniform fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const spread = nrDashBuildParityGapSpread(snap)!;
+    return spread.sampleSize === 8 && spread.meanAbsGap === 15 && spread.stdDev === 0;
+  });
+
+  check('a23_heat_strained_density', 'Heat strained density counts NSW and VIC cells', () => {
+    const density = nrDashBuildHeatStrainedDensity(createAgent23NsFixture())!;
+    return density.cellCount === 40 && density.strainedPlusCount === 2 && density.density === 0.05;
+  });
+
+  check('a23_network_util_conc', 'Network util concentration peaks on digital bar', () => {
+    const snap = nrDashBuildAuthSnapshot(5, null, createAgent23NsFixture(), null)!;
+    const conc = nrDashBuildNetworkUtilConcentration(snap)!;
+    return conc.networkCount === 5 && conc.topNetwork === 'digital' && conc.concentrationIndex > 0.2;
+  });
+
+  check('a23_dep_provider_load', 'Dependency provider load covers three providers', () => {
+    const load = nrDashBuildDependencyProviderLoad(createAgent23NsFixture())!;
+    return load.edgeCount === 3 && load.meanEdgesPerProvider === 1 && load.stdDev === 0;
+  });
+
+  check('a23_owned_resilience_share', 'Owned resilience share tracks NSW player portfolio', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), { NSW: 'you' })!;
+    const share = nrDashBuildOwnedResilienceShare(snap)!;
+    return share.ownedRegionCount === 1 && share.ownedShare === 0.125;
+  });
+
+  check('a23_momentum_band_diversity', 'Momentum band diversity is uniform stable fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const bands = nrDashBuildMomentumBandDiversity(snap)!;
+    return bands.distinctBands === 1 && bands.diversityIndex === 1;
   });
 
   return results;
