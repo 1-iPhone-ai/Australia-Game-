@@ -66,6 +66,7 @@ import {
   buildGuardianDepthCorroborationReport,
   buildGuardianDepthAuthenticationReport,
   buildGuardianDepthIdentificationReport,
+  buildGuardianDepthDelegationReport,
   runGuardianDepthUnitSelfTests,
 } from './guardian-depth.js';
 import type { AdvisoryRecommendation, Agent16SelfTestResult, AiSuggestedAction } from './types.js';
@@ -1984,6 +1985,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthIdentificationReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round47_metrics', 'Round 47 delegation envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.delegationStrainIndex >= 40 &&
+      snap.delegationIntegrityScore <= 100 &&
+      snap.governanceFlairScore <= 100
+    );
+  });
+
+  check(results, 'a16_delegation_report', 'Guardian depth delegation report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthDelegationReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 

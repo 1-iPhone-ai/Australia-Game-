@@ -208,6 +208,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   identificationStrainIndex: number;
   identificationIntegrityScore: number;
   governancePanacheScore: number;
+  delegationStrainIndex: number;
+  delegationIntegrityScore: number;
+  governanceFlairScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -3082,6 +3085,62 @@ export function buildGuardianDepthIdentificationReport(snapshot: GuardianCoPilot
   return lines.slice(0, 3);
 }
 
+export function computeDelegationStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governancePanacheScore < 50) load += Math.min(25, 50 - snapshot.governancePanacheScore);
+  if (snapshot.governancePanacheScore < 35) load += 10;
+  if (snapshot.identificationIntegrityScore < 45) load += 20;
+  if (snapshot.identificationIntegrityScore < 35) load += 10;
+  if (snapshot.identificationStrainIndex >= 55) load += 20;
+  if (snapshot.identificationStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeDelegationIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.delegationStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.delegationStrainIndex * 0.35));
+  if (snapshot.identificationIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.identificationIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governancePanacheScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceFlairScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.delegationStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.delegationStrainIndex * 0.32));
+  if (snapshot.delegationIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.delegationIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governancePanacheScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthDelegationReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.delegationStrainIndex >= 55) {
+    lines.push(
+      `Delegation strain ${snapshot.delegationStrainIndex} — stacked delegation review may exceed operator delegation capacity`
+    );
+  }
+  if (snapshot.delegationIntegrityScore < 45) {
+    lines.push(
+      `Delegation integrity ${snapshot.delegationIntegrityScore} — align Co-Pilot delegations with Guardian delegation posture`
+    );
+  }
+  if (snapshot.governanceFlairScore < 40) {
+    lines.push(
+      `Governance flair ${snapshot.governanceFlairScore} — little flair to sustain delegation oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -3573,9 +3632,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withIdentificationStrain: GuardianCoPilotMonitorSnapshot = { ...withVerve, identificationStrainIndex };
   const identificationIntegrityScore = computeIdentificationIntegrityScore(withIdentificationStrain);
   const withIdentification: GuardianCoPilotMonitorSnapshot = { ...withIdentificationStrain, identificationIntegrityScore };
-  return {
+  const withPanache: GuardianCoPilotMonitorSnapshot = {
     ...withIdentification,
     governancePanacheScore: computeGovernancePanacheScore(withIdentification),
+    delegationStrainIndex: 0,
+    delegationIntegrityScore: 100,
+    governanceFlairScore: 100,
+  };
+  const delegationStrainIndex = computeDelegationStrainIndex(withPanache);
+  const withDelegationStrain: GuardianCoPilotMonitorSnapshot = { ...withPanache, delegationStrainIndex };
+  const delegationIntegrityScore = computeDelegationIntegrityScore(withDelegationStrain);
+  const withDelegation: GuardianCoPilotMonitorSnapshot = { ...withDelegationStrain, delegationIntegrityScore };
+  return {
+    ...withDelegation,
+    governanceFlairScore: computeGovernanceFlairScore(withDelegation),
   };
 }
 
@@ -5122,6 +5192,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernancePanacheScore(snap) < 35;
+  });
+  ok('gd_delegation_strain', () => {
+    const snap = {
+      governancePanacheScore: 30,
+      identificationIntegrityScore: 32,
+      identificationStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeDelegationStrainIndex(snap) >= 70;
+  });
+  ok('gd_delegation_integrity', () => {
+    const snap = {
+      delegationStrainIndex: 72,
+      identificationIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governancePanacheScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeDelegationIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_flair', () => {
+    const snap = {
+      delegationStrainIndex: 78,
+      delegationIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governancePanacheScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceFlairScore(snap) < 35;
   });
   return out;
 }
@@ -11418,6 +11522,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_46: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_46_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_46.length;
 
 
+// --- source: monitor-rules-scale-wave-47.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_47: AdvisoryMonitorRule[] = [
+  {
+    id: 'delegation_strain_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Delegation Strain High',
+    detailTemplate: 'Delegation strain is in the high band — reduce overlapping warn-only delegation review demands',
+    evidenceFields: ['delegationStrainIndex', 'governancePanacheScore', 'delegationIntegrityScore'],
+    evaluate: s => s.delegationStrainIndex >= 70,
+  },
+  {
+    id: 'delegation_strain_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Delegation Strain Elevated',
+    detailTemplate: 'Delegation strain is elevated — expect slower delegation review across turns',
+    evidenceFields: ['delegationStrainIndex', 'identificationStrainIndex'],
+    evaluate: s => s.delegationStrainIndex >= 45 && s.delegationStrainIndex < 70,
+  },
+  {
+    id: 'delegation_integrity_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Delegation Integrity Low',
+    detailTemplate: 'Delegation integrity is critically low — defer stacked autonomous actions',
+    evidenceFields: ['delegationIntegrityScore', 'delegationStrainIndex', 'identificationIntegrityScore'],
+    evaluate: s => s.delegationIntegrityScore < 35,
+  },
+  {
+    id: 'delegation_integrity_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Delegation While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate delegation integrity',
+    evidenceFields: ['delegationIntegrityScore', 'copilotAutonomousActive', 'delegationStrainIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.delegationIntegrityScore >= 35 && s.delegationIntegrityScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_flair_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Flair Low',
+    detailTemplate: 'Little governance flair remains for warn-only delegation oversight across turns',
+    evidenceFields: ['governanceFlairScore', 'delegationStrainIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governanceFlairScore < 35,
+  },
+  {
+    id: 'governance_flair_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Flair While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance flair',
+    evidenceFields: ['governanceFlairScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governanceFlairScore >= 35 && s.governanceFlairScore < 55,
+  },
+  {
+    id: 'delegation_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Delegation Envelope Pressured',
+    detailTemplate: 'Delegation strain and low delegation integrity align in the pressured envelope band',
+    evidenceFields: ['delegationStrainIndex', 'delegationIntegrityScore', 'governanceFlairScore'],
+    evaluate: s => s.delegationStrainIndex >= 55 && s.delegationIntegrityScore < 50,
+  },
+  {
+    id: 'rival_delegation_strain',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Delegation Strain',
+    detailTemplate: 'Rival victory progress plus elevated delegation strain',
+    evidenceFields: ['rivalVictoryProgressPct', 'delegationStrainIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.delegationStrainIndex >= 50,
+  },
+  {
+    id: 'team_plan_delegation_strain',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Delegation Strain',
+    detailTemplate: 'Pending team plan while delegation strain is elevated',
+    evidenceFields: ['teamPlanPending', 'delegationStrainIndex', 'governanceFlairScore'],
+    evaluate: s => s.teamPlanPending && s.delegationStrainIndex >= 55,
+  },
+  {
+    id: 'guardian_delegation_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Delegation Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance flair',
+    evidenceFields: ['guardianRiskBand', 'governanceFlairScore', 'delegationStrainIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governanceFlairScore < 40,
+  },
+  {
+    id: 'copilot_delegation_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Delegation Strain',
+    detailTemplate: 'Autonomous Co-Pilot while delegation strain is high',
+    evidenceFields: ['copilotAutonomousActive', 'delegationStrainIndex', 'delegationIntegrityScore'],
+    evaluate: s => s.copilotAutonomousActive && s.delegationStrainIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_flair',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Flair',
+    detailTemplate: 'Expiring contracts while governance flair is low',
+    evidenceFields: ['expiringContractCount', 'governanceFlairScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governanceFlairScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_47_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_47.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -11693,6 +11930,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_44,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_45,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_46,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_47,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -12147,6 +12385,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     identificationStrainIndex: 0,
     identificationIntegrityScore: 100,
     governancePanacheScore: 100,
+    delegationStrainIndex: 0,
+    delegationIntegrityScore: 100,
+    governanceFlairScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -15535,6 +15776,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['identification_envelope_pressured', 'guardian_identification_envelope_critical'],
     notes: 'Pressured identification envelope with critical Guardian band',
   },
+  {
+    id: 'sc_delegation_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2260,
+      maxSpendPerAction: 10580,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['delegation_strain_high', 'delegation_integrity_low'],
+    notes: 'High delegation strain with critical delegation integrity',
+  },
+  {
+    id: 'sc_governance_flair_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 4,
+      minCashReserve: 500,
+      debt: 1380,
+      maxSpendPerAction: 8080,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_flair_low', 'contracts_governance_flair'],
+    notes: 'Low governance flair with expiring contracts',
+  },
+  {
+    id: 'sc_delegation_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2400,
+      maxSpendPerAction: 11200,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['delegation_envelope_pressured', 'guardian_delegation_envelope_critical'],
+    notes: 'Pressured delegation envelope with critical Guardian band',
+  },
 ];
 
 
@@ -17454,6 +17763,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthIdentificationReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round47_metrics', 'Round 47 delegation envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.delegationStrainIndex >= 40 &&
+      snap.delegationIntegrityScore <= 100 &&
+      snap.governanceFlairScore <= 100
+    );
+  });
+
+  check(results, 'a16_delegation_report', 'Guardian depth delegation report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthDelegationReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 

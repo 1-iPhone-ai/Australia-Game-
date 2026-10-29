@@ -204,6 +204,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   identificationStrainIndex: number;
   identificationIntegrityScore: number;
   governancePanacheScore: number;
+  delegationStrainIndex: number;
+  delegationIntegrityScore: number;
+  governanceFlairScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {

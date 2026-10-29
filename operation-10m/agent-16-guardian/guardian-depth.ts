@@ -2591,6 +2591,62 @@ export function buildGuardianDepthIdentificationReport(snapshot: GuardianCoPilot
   return lines.slice(0, 3);
 }
 
+export function computeDelegationStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governancePanacheScore < 50) load += Math.min(25, 50 - snapshot.governancePanacheScore);
+  if (snapshot.governancePanacheScore < 35) load += 10;
+  if (snapshot.identificationIntegrityScore < 45) load += 20;
+  if (snapshot.identificationIntegrityScore < 35) load += 10;
+  if (snapshot.identificationStrainIndex >= 55) load += 20;
+  if (snapshot.identificationStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeDelegationIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.delegationStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.delegationStrainIndex * 0.35));
+  if (snapshot.identificationIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.identificationIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governancePanacheScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceFlairScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.delegationStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.delegationStrainIndex * 0.32));
+  if (snapshot.delegationIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.delegationIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governancePanacheScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthDelegationReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.delegationStrainIndex >= 55) {
+    lines.push(
+      `Delegation strain ${snapshot.delegationStrainIndex} — stacked delegation review may exceed operator delegation capacity`
+    );
+  }
+  if (snapshot.delegationIntegrityScore < 45) {
+    lines.push(
+      `Delegation integrity ${snapshot.delegationIntegrityScore} — align Co-Pilot delegations with Guardian delegation posture`
+    );
+  }
+  if (snapshot.governanceFlairScore < 40) {
+    lines.push(
+      `Governance flair ${snapshot.governanceFlairScore} — little flair to sustain delegation oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -3082,9 +3138,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withIdentificationStrain: GuardianCoPilotMonitorSnapshot = { ...withVerve, identificationStrainIndex };
   const identificationIntegrityScore = computeIdentificationIntegrityScore(withIdentificationStrain);
   const withIdentification: GuardianCoPilotMonitorSnapshot = { ...withIdentificationStrain, identificationIntegrityScore };
-  return {
+  const withPanache: GuardianCoPilotMonitorSnapshot = {
     ...withIdentification,
     governancePanacheScore: computeGovernancePanacheScore(withIdentification),
+    delegationStrainIndex: 0,
+    delegationIntegrityScore: 100,
+    governanceFlairScore: 100,
+  };
+  const delegationStrainIndex = computeDelegationStrainIndex(withPanache);
+  const withDelegationStrain: GuardianCoPilotMonitorSnapshot = { ...withPanache, delegationStrainIndex };
+  const delegationIntegrityScore = computeDelegationIntegrityScore(withDelegationStrain);
+  const withDelegation: GuardianCoPilotMonitorSnapshot = { ...withDelegationStrain, delegationIntegrityScore };
+  return {
+    ...withDelegation,
+    governanceFlairScore: computeGovernanceFlairScore(withDelegation),
   };
 }
 
@@ -4631,6 +4698,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernancePanacheScore(snap) < 35;
+  });
+  ok('gd_delegation_strain', () => {
+    const snap = {
+      governancePanacheScore: 30,
+      identificationIntegrityScore: 32,
+      identificationStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeDelegationStrainIndex(snap) >= 70;
+  });
+  ok('gd_delegation_integrity', () => {
+    const snap = {
+      delegationStrainIndex: 72,
+      identificationIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governancePanacheScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeDelegationIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_flair', () => {
+    const snap = {
+      delegationStrainIndex: 78,
+      delegationIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governancePanacheScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceFlairScore(snap) < 35;
   });
   return out;
 }
