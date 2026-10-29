@@ -67,7 +67,11 @@ const SOURCE_FILES = [
   'operation-10m/agent-21-forecasting/forecast-manifest-confirmation.ts',
   'operation-10m/agent-21-forecasting/forecast-archive-audit-trail.ts',
   'operation-10m/agent-21-forecasting/forecast-lab-retention-policy.ts',
-  'operation-10m/agent-21-forecasting/forecast-round13-console.tsx'
+  'operation-10m/agent-21-forecasting/forecast-round13-console.tsx',
+  'operation-10m/agent-21-forecasting/forecast-retention-compliance.ts',
+  'operation-10m/agent-21-forecasting/forecast-archive-audit-rollup.ts',
+  'operation-10m/agent-21-forecasting/forecast-lab-governance-checkpoint.ts',
+  'operation-10m/agent-21-forecasting/forecast-round14-console.tsx'
 ];
 
 function stripModuleImports(src) {
@@ -213,6 +217,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21LabRetentionPolicySelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21RetentionComplianceSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21ArchiveAuditRollupSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21LabGovernanceCheckpointSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({
