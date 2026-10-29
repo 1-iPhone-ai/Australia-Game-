@@ -226,6 +226,10 @@ const FILES = [
   'fiscal-grant-reconciliation-outlook-bridge/compute.ts',
   'sovereign-fiscal-reconciliation-outlook-coherence/types.ts',
   'sovereign-fiscal-reconciliation-outlook-coherence/compute.ts',
+  'buffer-sovereign-reconciliation-outlook-bridge/types.ts',
+  'buffer-sovereign-reconciliation-outlook-bridge/compute.ts',
+  'fiscal-grant-reconciliation-outlook-coherence/types.ts',
+  'fiscal-grant-reconciliation-outlook-coherence/compute.ts',
   'sovereign-contingent-outlook-coherence/types.ts',
   'sovereign-contingent-outlook-coherence/compute.ts',
   'infrastructure-financing/types.ts',
@@ -379,7 +383,9 @@ const FILES = [
   'grant-sovereign-reconciliation-outlook-bridge/self-tests.ts',
   'buffer-fiscal-reconciliation-outlook-coherence/self-tests.ts',
   'fiscal-grant-reconciliation-outlook-bridge/self-tests.ts',
-  'sovereign-fiscal-reconciliation-outlook-coherence/self-tests.ts'
+  'sovereign-fiscal-reconciliation-outlook-coherence/self-tests.ts',
+  'buffer-sovereign-reconciliation-outlook-bridge/self-tests.ts',
+  'fiscal-grant-reconciliation-outlook-coherence/self-tests.ts'
 ];
 
 function stripModulePreamble(source) {
