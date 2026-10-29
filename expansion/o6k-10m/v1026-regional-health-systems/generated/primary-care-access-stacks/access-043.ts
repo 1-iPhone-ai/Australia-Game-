@@ -1,0 +1,31 @@
+import type { V1026RhsPrimaryCareAccessEdge } from '../../types/core.ts';
+
+/** Primary care access graph shard 043 (clinical/bed/primary-care corridor coupling). */
+export const V1026_RHS_PRIMARY_CARE_ACCESS_SHARD_043: readonly V1026RhsPrimaryCareAccessEdge[] = [
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.518, lagTurns: 9, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.524, lagTurns: 10, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.428, lagTurns: 11, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.434, lagTurns: 12, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.44, lagTurns: 9, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.446, lagTurns: 10, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.452, lagTurns: 11, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.458, lagTurns: 12, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.464, lagTurns: 9, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.47, lagTurns: 10, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.476, lagTurns: 11, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.482, lagTurns: 12, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.488, lagTurns: 9, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.494, lagTurns: 10, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.5, lagTurns: 11, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.506, lagTurns: 12, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.512, lagTurns: 9, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.518, lagTurns: 10, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.524, lagTurns: 11, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.428, lagTurns: 12, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.434, lagTurns: 9, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.44, lagTurns: 10, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.446, lagTurns: 11, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.452, lagTurns: 12, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.458, lagTurns: 9, nodeId: 'hospital_network_19' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.464, lagTurns: 10, nodeId: 'hospital_network_19' },
+];

@@ -1,0 +1,31 @@
+import type { V1026RhsPrimaryCareAccessEdge } from '../../types/core.ts';
+
+/** Primary care access graph shard 045 (clinical/bed/primary-care corridor coupling). */
+export const V1026_RHS_PRIMARY_CARE_ACCESS_SHARD_045: readonly V1026RhsPrimaryCareAccessEdge[] = [
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.534, lagTurns: 2, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.54, lagTurns: 3, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.546, lagTurns: 4, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.552, lagTurns: 5, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.558, lagTurns: 2, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.564, lagTurns: 3, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.57, lagTurns: 4, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.576, lagTurns: 5, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.582, lagTurns: 2, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.588, lagTurns: 3, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.492, lagTurns: 4, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.498, lagTurns: 5, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.504, lagTurns: 2, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.51, lagTurns: 3, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.516, lagTurns: 4, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.522, lagTurns: 5, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.528, lagTurns: 2, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.534, lagTurns: 3, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.54, lagTurns: 4, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.546, lagTurns: 5, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.552, lagTurns: 2, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.558, lagTurns: 3, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.564, lagTurns: 4, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.57, lagTurns: 5, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.576, lagTurns: 2, nodeId: 'hospital_network_21' },
+  { fromChannel: 'marine_protected', toChannel: 'regional', weight: 0.582, lagTurns: 3, nodeId: 'hospital_network_21' },
+];

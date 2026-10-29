@@ -1,0 +1,31 @@
+import type { V1026RhsPrimaryCareAccessEdge } from '../../types/core.ts';
+
+/** Primary care access graph shard 053 (clinical/bed/primary-care corridor coupling). */
+export const V1026_RHS_PRIMARY_CARE_ACCESS_SHARD_053: readonly V1026RhsPrimaryCareAccessEdge[] = [
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.258, lagTurns: 10, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.264, lagTurns: 11, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.27, lagTurns: 12, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.276, lagTurns: 13, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.282, lagTurns: 10, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.288, lagTurns: 11, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.294, lagTurns: 12, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.3, lagTurns: 13, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.204, lagTurns: 10, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.21, lagTurns: 11, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.216, lagTurns: 12, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.222, lagTurns: 13, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.228, lagTurns: 10, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.234, lagTurns: 11, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.24, lagTurns: 12, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.246, lagTurns: 13, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.252, lagTurns: 10, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.258, lagTurns: 11, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.264, lagTurns: 12, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.27, lagTurns: 13, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.276, lagTurns: 10, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.282, lagTurns: 11, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.288, lagTurns: 12, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.294, lagTurns: 13, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.3, lagTurns: 10, nodeId: 'hospital_network_05' },
+  { fromChannel: 'invasive_pressure', toChannel: 'urban_green', weight: 0.204, lagTurns: 11, nodeId: 'hospital_network_05' },
+];

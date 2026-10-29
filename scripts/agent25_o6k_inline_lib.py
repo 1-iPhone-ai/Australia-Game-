@@ -518,6 +518,49 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  createEmptyV1025BioPersisted,\n  v1025BioInputHash,\n  sanitizeV1025BioPersisted,\n} from '../engine/biodiversity-stewardship-orchestrator';",
             "  v1025BioInputHash,\n} from '../engine/biodiversity-stewardship-orchestrator';\nimport {\n  createEmptyV1025BioPersisted,\n  sanitizeV1025BioPersisted,\n} from '../persistence/migrations';",
         )
+    if "v1026-regional-health-systems" in name.replace("\\", "/"):
+        src = src.replace("SECTION 20BU", "SECTION 20BV")
+        src = src.replace("SECTION 20BT", "SECTION 20BV")
+        src = src.replace("SECTION 20BR", "SECTION 20BV")
+    if "regional-health-systems/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1026RhsClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1026RhsClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1026_RHS_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1026_RHS_MIG_REGIONS", src)
+    if "regional-health-systems-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1026RhsPersisted, sanitizeV1026RhsPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1026_RHS_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1026_RHS_ORCH_REGIONS.forEach", src)
+    if "regional-health-systems-utils.ts" in name:
+        src = re.sub(
+            r"export function V1026_RHS_primaryCareAccessGraphHash",
+            "export function V1026_RHS_utilPrimaryCareAccessGraphHash",
+            src,
+        )
+    if "v1026-regional-health-systems/primary-care-access-stacks/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"V1026_RHS_primaryCareAccessGraphHash as dgovGraphHashCore",
+            "V1026_RHS_utilPrimaryCareAccessGraphHash as dgovGraphHashCore",
+            src,
+        )
+    if "run-v1026-rhs-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1026RhsSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1026RhsSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1026RhsBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1026RhsBaseInput(", src)
+        src = src.replace(
+            "  runV1026RhsTurn,\n  createEmptyV1026RhsPersisted,\n  v1026RhsInputHash,\n  sanitizeV1026RhsPersisted,\n} from '../engine/regional-health-systems-orchestrator';",
+            "  runV1026RhsTurn,\n  v1026RhsInputHash,\n} from '../engine/regional-health-systems-orchestrator';\nimport {\n  createEmptyV1026RhsPersisted,\n  sanitizeV1026RhsPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1026RhsPersisted,\n  v1026RhsInputHash,\n  sanitizeV1026RhsPersisted,\n} from '../engine/regional-health-systems-orchestrator';",
+            "  v1026RhsInputHash,\n} from '../engine/regional-health-systems-orchestrator';\nimport {\n  createEmptyV1026RhsPersisted,\n  sanitizeV1026RhsPersisted,\n} from '../persistence/migrations';",
+        )
     return src
 
 
@@ -1186,6 +1229,62 @@ def biodiversity_stewardship_paths() -> list[str]:
             if p.name not in {"index.ts", "run-self-tests.ts"}
             and "/scripts/" not in str(p)
             and not (p.parent.name == "generated" and p.name == "index.ts")
+            and "stress-registry" not in str(p)
+            and "supply-pipeline" not in str(p)
+            and "drought-buffer-bundle" not in str(p)
+            and "hazard-registry" not in str(p)
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def regional_health_systems_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1026-regional-health-systems"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/primary-care-access-stacks/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/care-scenarios/" in s:
+            return (3, s)
+        if "/generated/primary-care-access-stacks/" in s:
+            return (4, s)
+        if "care-registry" in s or "primary-care-access-bundle" in s:
+            return (5, s)
+        if "/hospital-network-nodes/" in s:
+            return (6, s)
+        if "regional-health-systems-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "regional-health-systems-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
+        if "conservation-offset" in s or "recovery-registry" in s:
+            return (98, s)
+        if "stress-registry" in s or "supply-pipeline" in s:
+            return (98, s)
+        if "drought-buffer-bundle" in s or "hazard-registry" in s:
+            return (98, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+            and not (p.parent.name == "generated" and p.name == "index.ts")
+            and "conservation-offset" not in str(p)
+            and "recovery-registry" not in str(p)
             and "stress-registry" not in str(p)
             and "supply-pipeline" not in str(p)
             and "drought-buffer-bundle" not in str(p)

@@ -28,6 +28,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     climate_adaptation_paths,
     digital_governance_paths,
     biodiversity_stewardship_paths,
+    regional_health_systems_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -166,6 +167,15 @@ BIO_SECTION = (
 )
 
 BIO_MARKER = "export function runV1025BioTurn"
+
+RHS_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20BV: V10.26 REGIONAL HEALTH SYSTEMS — CAPACITY STRESS, HOSPITAL NETWORKS & PRIMARY CARE ACCESS (O6K-59)\n"
+    "// Renumbered from shard 20BU (canonical 20BU = biodiversity stewardship, push #23)\n"
+    "// ============================================================================\n"
+)
+
+RHS_MARKER = "export function runV1026RhsTurn"
 
 TRADE_HELPERS = """
 export function buildV1014TradeDepthTurnInputFromGameState(gs: any, turn: number): V1014TradeDepthTurnInput {
@@ -2263,6 +2273,167 @@ def push_bio(text: str) -> str:
     return text
 
 
+RHS_HELPERS = """
+function V1026_RHS_readPersistedFromGameState(gs: any): V1026RhsPersisted | null {
+  const raw = (gs?.save?.meta?.v1026 as any)?.regional_health_systems;
+  return raw ? sanitizeV1026RhsPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1026_RHS_applyToGameState(gs: any, out: V1026RhsTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1026 = { ...(meta.v1026 || {}) };
+  v1026.regional_health_systems = out.persisted;
+  meta.v1026 = v1026;
+  save.meta = meta;
+  return { ...gs, save, v1026RegionalHealthSystems: out.state };
+}
+
+export function buildV1026RhsTurnInputFromGameState(gs: any, turn: number): V1026RhsTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 10260;
+  const inp = buildV1026RhsTurnInputFromGameStateStub(turn, seed);
+  const trade = gs?.v1014TradeDepth ?? null;
+  const energy = gs?.energyDepth ?? null;
+  const supply = gs?.v1014SupplyChain ?? null;
+  const workforce = gs?.v1014WorkforceMigration ?? gs?.workforceHumanCapital ?? null;
+  const pubsvc = gs?.v1014PublicServicesCrosswalk ?? null;
+  const clad = gs?.v1023ClimateAdaptation ?? null;
+  const dgov = gs?.v1024DigitalGovernance ?? null;
+  return {
+    ...inp,
+    supply20bb: {
+      ...inp.supply20bb,
+      turn,
+      bottleneckPressure: Number(supply?.bottleneckPressure ?? inp.supply20bb.bottleneckPressure),
+      primaryCareAccessIndex: Number(supply?.primaryCareAccessIndex ?? inp.supply20bb.primaryCareAccessIndex),
+    },
+    trade20ba: {
+      ...inp.trade20ba,
+      turn,
+      sanctionsPressure: Number(trade?.sanctionsPressure ?? inp.trade20ba.sanctionsPressure),
+      exportLaneStability: Number(trade?.exportLaneStability ?? inp.trade20ba.exportLaneStability),
+      importDependencyRatio: Number(trade?.importDependencyRatio ?? inp.trade20ba.importDependencyRatio),
+    },
+    energy20bc: {
+      ...inp.energy20bc,
+      turn,
+      gridStability: Number(energy?.gridStability ?? inp.energy20bc.gridStability),
+      reserveMarginPct: Number(energy?.reserveMarginPct ?? inp.energy20bc.reserveMarginPct),
+      surgeRiskStress: Number(energy?.surgeRiskStress ?? inp.energy20bc.surgeRiskStress),
+    },
+    workforce20bf: {
+      ...inp.workforce20bf,
+      turn,
+      specialistGap: Number(workforce?.specialistGap ?? inp.workforce20bf.specialistGap),
+      nationalReadiness: Number(workforce?.nationalReadiness ?? inp.workforce20bf.nationalReadiness),
+      mismatchIndex: Number(workforce?.mismatchIndex ?? inp.workforce20bf.mismatchIndex),
+    },
+    publicServices20az: {
+      ...inp.publicServices20az,
+      turn,
+      clinicCapacityScore: Number(pubsvc?.clinicCapacityScore ?? inp.publicServices20az.clinicCapacityScore),
+      digitalServiceCoverage: Number(
+        pubsvc?.digitalServiceCoverage ?? inp.publicServices20az.digitalServiceCoverage,
+      ),
+      serviceDeliveryReadiness: Number(
+        pubsvc?.serviceDeliveryReadiness ?? inp.publicServices20az.serviceDeliveryReadiness,
+      ),
+    },
+    climateAdaptation20br: {
+      ...inp.climateAdaptation20br,
+      turn,
+      heatStressPressure: Number(clad?.heatStressPressure ?? inp.climateAdaptation20br.heatStressPressure),
+      grantStackLoad: Number(clad?.grantStackLoad ?? inp.climateAdaptation20br.grantStackLoad),
+      resilienceDriftTurns: Number(clad?.resilienceDriftTurns ?? inp.climateAdaptation20br.resilienceDriftTurns),
+    },
+    digitalGovernance20bt: {
+      ...inp.digitalGovernance20bt,
+      turn,
+      modelGovernancePressure: Number(dgov?.modelGovernancePressure ?? inp.digitalGovernance20bt.modelGovernancePressure),
+      grantStackLoad: Number(dgov?.grantStackLoad ?? inp.digitalGovernance20bt.grantStackLoad),
+      alignmentDriftTurns: Number(dgov?.alignmentDriftTurns ?? inp.digitalGovernance20bt.alignmentDriftTurns),
+    },
+    persisted: null,
+  };
+}
+"""
+
+RHS_DAY_HOOK = """
+      if (typeof runV1026RhsTurn === 'function') {
+        try {
+          const rhsIn = buildV1026RhsTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          rhsIn.persisted = V1026_RHS_readPersistedFromGameState(mergedGameState);
+          const rhsOut = runV1026RhsTurn(rhsIn);
+          mergedGameState = V1026_RHS_applyToGameState(mergedGameState, rhsOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_rhs_day_hook(text: str) -> str:
+    marker = "runV1026RhsTurn(rhsIn)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:52000] if "executeAgent02SingleDayBoundary" in text else ""
+    if marker in day_slice:
+        print("skip rhs day hook (present)")
+        return text
+    bio_tail = """      if (typeof runV1025BioTurn === 'function') {
+        try {
+          const bioIn = buildV1025BioTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          bioIn.persisted = V1025_BIO_readPersistedFromGameState(mergedGameState);
+          const bioOut = runV1025BioTurn(bioIn);
+          mergedGameState = V1025_BIO_applyToGameState(mergedGameState, bioOut);
+        } catch (_) { /* isolated */ }
+      }"""
+    if bio_tail not in text:
+        raise SystemExit("bio day hook anchor missing for rhs hook")
+    return text.replace(bio_tail, bio_tail + RHS_DAY_HOOK, 1)
+
+
+def wire_rhs_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState && typeof sanitizeV1025BioPersisted === 'function') {"
+    patch = (
+        "  if (migrated.gameState && typeof sanitizeV1026RhsPersisted === 'function') {\n"
+        "    const rhsRaw = (migrated.gameState as any)?.save?.meta?.v1026?.regional_health_systems;\n"
+        "    if (rhsRaw) {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1026 = { ...(meta.v1026 || {}) };\n"
+        "      v1026.regional_health_systems = sanitizeV1026RhsPersisted(rhsRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1026 = v1026;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1026.regional_health_systems = sanitizeV1026RhsPersisted" in text:
+        print("skip rhs §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("bio §6 anchor missing for rhs migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
+def push_rhs(text: str) -> str:
+    block = RHS_SECTION + bundle_local_files(regional_health_systems_paths()) + RHS_HELPERS
+    text = insert_before(text, block, RHS_MARKER, "T6 push #24 v1026-regional-health-systems (PR #350)")
+    text = wire_rhs_day_hook(text)
+    text = wire_rhs_migration(text)
+    lab = """  { id: 'v1026_regional_health_systems', label: 'V10.26 Regional health systems (20BV care & hospital networks)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1026RhsSelfTestsForLab() },
+"""
+    bio_lab = (
+        "  { id: 'v1025_biodiversity_stewardship', label: 'V10.25 Biodiversity stewardship (20BU recovery & conservation offsets)', "
+        "tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1025BioSelfTestsForLab() },"
+    )
+    if "{ id: 'v1026_regional_health_systems'" not in text:
+        if bio_lab in text:
+            text = text.replace(bio_lab, bio_lab + "\n" + lab.strip(), 1)
+            print("registered LAB v1026_regional_health_systems")
+        else:
+            text = wire_lab(text, lab, "v1026_regional_health_systems")
+            print("registered LAB v1026_regional_health_systems (fallback)")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -2277,7 +2448,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19, 21, 22, 23])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19, 21, 22, 23, 24])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -2316,6 +2487,8 @@ def main() -> None:
         text = push_dgov(text)
     elif args.push == 23:
         text = push_bio(text)
+    elif args.push == 24:
+        text = push_rhs(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")
