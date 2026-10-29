@@ -53,6 +53,8 @@ import { buildGrantClawbackForwardCoherenceReport } from '../grant-clawback-forw
 import { buildBalanceSheetFiscalCoherenceReport } from '../balance-sheet-fiscal-coherence/compute';
 import { buildFiscalRiskStressCoherenceReport } from '../fiscal-risk-stress-coherence/compute';
 import { buildSovereignIssuanceCouplingBridgeReport } from '../sovereign-issuance-coupling-bridge/compute';
+import { buildFederalStateGrantCoherenceReport } from '../federal-state-grant-coherence/compute';
+import { buildReconciliationResilienceBridgeReport } from '../reconciliation-resilience-bridge/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -336,6 +338,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     issuance,
     debtFiscalCouplingRegister,
     debtServiceCoverage
+  );
+  const federalStateGrantCoherence = buildFederalStateGrantCoherenceReport(
+    turn,
+    v1012,
+    igr,
+    igGrants,
+    grantClawbackForwardCoherence
+  );
+  const reconciliationResilienceBridge = buildReconciliationResilienceBridgeReport(
+    turn,
+    v1012,
+    fiscalReconciliation,
+    resilienceStack,
+    fiscalRiskStressCoherence
   );
 
   checks.push({
@@ -1054,12 +1070,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `coverage=${debtServiceCoverage.coverageRatio}, issued=${issuance.totalIssued}`
   });
 
+  checks.push({
+    id: 'CF101',
+    label: 'Federal state grant coherence within band',
+    passed: federalStateGrantCoherence.withinFederalGrantBand || v1012.pressure === 'critical',
+    detail: `gap=${federalStateGrantCoherence.aggregateCoherenceGapPoints}, checks=${federalStateGrantCoherence.checks.filter(c => c.passed).length}/${federalStateGrantCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF102',
+    label: 'Reconciliation resilience bridge within band',
+    passed: reconciliationResilienceBridge.withinReconciliationResilienceBand || v1012.pressure === 'critical',
+    detail: `gap=${reconciliationResilienceBridge.bridgeGapPoints}, checks=${reconciliationResilienceBridge.checks.filter(c => c.passed).length}/${reconciliationResilienceBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF103',
+    label: 'Federal grant aligned with clawback forward',
+    passed: federalStateGrantCoherence.alignedWithClawbackForward,
+    detail: `igr=${igr.residualFederal}, clawbackGap=${grantClawbackForwardCoherence.aggregateClawbackGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF104',
+    label: 'Reconciliation bridge aligned with risk stress',
+    passed: reconciliationResilienceBridge.alignedWithRiskStressCoherence,
+    detail: `recon=${fiscalReconciliation.allPassed}, riskGap=${fiscalRiskStressCoherence.aggregateRiskStressGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 78
+    layerCount: 80
   };
 }

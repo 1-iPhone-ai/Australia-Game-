@@ -7804,6 +7804,217 @@ export function buildSovereignIssuanceCouplingBridgeReport(
 }
 
 
+// --- source: federal-state-grant-coherence/types.ts ---
+export const FEDERAL_STATE_GRANT_COHERENCE_SCHEMA =
+  'op10m-agent07-federal-state-grant-coherence-v1';
+
+export interface FederalGrantCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface FederalStateGrantCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: FederalGrantCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinFederalGrantBand: boolean;
+  alignedWithClawbackForward: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: federal-state-grant-coherence/compute.ts ---
+
+const FEDERAL_GAP_TOLERANCE = 5.7;
+
+export function buildFederalStateGrantCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  igr: FederalStateReconciliation,
+  igGrants: IntergovernmentalGrantsReport,
+  clawbackForward: GrantClawbackForwardCoherenceReport
+): FederalStateGrantCoherenceReport {
+  const poolGap = Math.abs(igr.residualFederal - igGrants.netFederalOutlay * 0.08);
+  const clawbackGap = Math.abs(clawbackForward.aggregateClawbackGapPoints - Math.abs(igr.totalAdjustments) * 0.12);
+  const aggregateCoherenceGapPoints =
+    Math.round((poolGap + clawbackGap) * 10) / 20;
+
+  const checks: FederalGrantCheck[] = [
+    {
+      id: 'FSGC01',
+      label: 'IGR pool reconciled',
+      passed: igr.reconciled || v1012.pressure === 'critical',
+      detail: `residual=${igr.residualFederal}, pool=${igr.federalRevenuePool}`
+    },
+    {
+      id: 'FSGC02',
+      label: 'Grants reconciled to IGR pool',
+      passed: igGrants.reconciledToIgrPool || v1012.pressure === 'critical',
+      detail: `net=${igGrants.netFederalOutlay}, federal=${igGrants.totalFederal}`
+    },
+    {
+      id: 'FSGC03',
+      label: 'Federal residual vs clawback forward',
+      passed:
+        clawbackGap <= FEDERAL_GAP_TOLERANCE + 2 ||
+        clawbackForward.withinClawbackForwardBand ||
+        v1012.pressure === 'critical',
+      detail: `clawbackGap=${clawbackForward.aggregateClawbackGapPoints}, residual=${igr.residualFederal}`
+    }
+  ];
+
+  const withinFederalGrantBand =
+    checks.every(c => c.passed) ||
+    (igr.reconciled && igGrants.reconciledToIgrPool) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithClawbackForward =
+    clawbackForward.alignedWithGrantForward &&
+    (aggregateCoherenceGapPoints <= clawbackForward.aggregateClawbackGapPoints + 2.4 ||
+      clawbackForward.withinClawbackForwardBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinFederalGrantBand) {
+    warnings.push(`Federal state grant gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithClawbackForward) {
+    warnings.push('Federal grant coherence diverges from clawback forward.');
+  }
+
+  const narrative = withinFederalGrantBand
+    ? `Federal state grant gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Federal grant alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: FEDERAL_STATE_GRANT_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinFederalGrantBand,
+    alignedWithClawbackForward,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: reconciliation-resilience-bridge/types.ts ---
+export const RECONCILIATION_RESILIENCE_BRIDGE_SCHEMA =
+  'op10m-agent07-reconciliation-resilience-bridge-v1';
+
+export interface ReconciliationResilienceCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface ReconciliationResilienceBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: ReconciliationResilienceCheck[];
+  bridgeGapPoints: number;
+  withinReconciliationResilienceBand: boolean;
+  alignedWithRiskStressCoherence: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: reconciliation-resilience-bridge/compute.ts ---
+
+const BRIDGE_TOLERANCE = 6.3;
+
+export function buildReconciliationResilienceBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  reconciliation: FiscalReconciliationReport,
+  resilience: FiscalResilienceAssessment,
+  riskStress: FiscalRiskStressCoherenceReport
+): ReconciliationResilienceBridgeReport {
+  const failedChecks = reconciliation.checks.filter(c => !c.passed).length;
+  const resilienceStress =
+    resilience.compositeStressBand === 'critical' || resilience.compositeStressBand === 'weak' ? 2.5 : 1;
+  const reconGap = failedChecks * 1.8 * resilienceStress;
+  const riskGap = Math.abs(riskStress.aggregateRiskStressGapPoints - reconGap * 0.35);
+  const bridgeGapPoints = Math.round((reconGap + riskGap) * 10) / 20;
+
+  const checks: ReconciliationResilienceCheck[] = [
+    {
+      id: 'RRB01',
+      label: 'Cross-layer reconciliation passes',
+      passed: reconciliation.allPassed || v1012.pressure === 'critical',
+      observed: failedChecks,
+      tolerance: 0
+    },
+    {
+      id: 'RRB02',
+      label: 'Resilience reserve adequate under stress',
+      passed:
+        resilience.reserveAdequacy !== 'depleted' ||
+        (resilience.recoveryTurnsEstimate ?? 0) <= 12 ||
+        resilience.compositeStressBand !== 'critical' ||
+        resilience.baselinePressure === 'critical' ||
+        v1012.pressure === 'critical',
+      observed: resilience.recoveryTurnsEstimate ?? 0,
+      tolerance: 12
+    },
+    {
+      id: 'RRB03',
+      label: 'Reconciliation gap vs risk stress coherence',
+      passed:
+        riskGap <= BRIDGE_TOLERANCE + 2 ||
+        riskStress.withinRiskStressBand ||
+        v1012.pressure === 'critical',
+      observed: riskGap,
+      tolerance: BRIDGE_TOLERANCE + 2
+    }
+  ];
+
+  const withinReconciliationResilienceBand =
+    checks.every(c => c.passed) ||
+    (reconciliation.allPassed &&
+      (resilience.reserveAdequacy !== 'depleted' ||
+        (resilience.recoveryTurnsEstimate ?? 0) <= 12)) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithRiskStressCoherence =
+    riskStress.alignedWithContingentBridge &&
+    (bridgeGapPoints <= riskStress.aggregateRiskStressGapPoints + 2.8 ||
+      riskStress.withinRiskStressBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinReconciliationResilienceBand) {
+    warnings.push(`Reconciliation resilience bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithRiskStressCoherence) {
+    warnings.push('Reconciliation bridge diverges from risk stress coherence.');
+  }
+
+  const narrative = withinReconciliationResilienceBand
+    ? `Reconciliation resilience bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Reconciliation resilience alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: RECONCILIATION_RESILIENCE_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinReconciliationResilienceBand,
+    alignedWithRiskStressCoherence,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -9776,6 +9987,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     debtFiscalCouplingRegister,
     debtServiceCoverage
   );
+  const federalStateGrantCoherence = buildFederalStateGrantCoherenceReport(
+    turn,
+    v1012,
+    igr,
+    igGrants,
+    grantClawbackForwardCoherence
+  );
+  const reconciliationResilienceBridge = buildReconciliationResilienceBridgeReport(
+    turn,
+    v1012,
+    fiscalReconciliation,
+    resilienceStack,
+    fiscalRiskStressCoherence
+  );
 
   checks.push({
     id: 'CF01',
@@ -10493,13 +10718,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `coverage=${debtServiceCoverage.coverageRatio}, issued=${issuance.totalIssued}`
   });
 
+  checks.push({
+    id: 'CF101',
+    label: 'Federal state grant coherence within band',
+    passed: federalStateGrantCoherence.withinFederalGrantBand || v1012.pressure === 'critical',
+    detail: `gap=${federalStateGrantCoherence.aggregateCoherenceGapPoints}, checks=${federalStateGrantCoherence.checks.filter(c => c.passed).length}/${federalStateGrantCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF102',
+    label: 'Reconciliation resilience bridge within band',
+    passed: reconciliationResilienceBridge.withinReconciliationResilienceBand || v1012.pressure === 'critical',
+    detail: `gap=${reconciliationResilienceBridge.bridgeGapPoints}, checks=${reconciliationResilienceBridge.checks.filter(c => c.passed).length}/${reconciliationResilienceBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF103',
+    label: 'Federal grant aligned with clawback forward',
+    passed: federalStateGrantCoherence.alignedWithClawbackForward,
+    detail: `igr=${igr.residualFederal}, clawbackGap=${grantClawbackForwardCoherence.aggregateClawbackGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF104',
+    label: 'Reconciliation bridge aligned with risk stress',
+    passed: reconciliationResilienceBridge.alignedWithRiskStressCoherence,
+    detail: `recon=${fiscalReconciliation.allPassed}, riskGap=${fiscalRiskStressCoherence.aggregateRiskStressGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 78
+    layerCount: 80
   };
 }
 
@@ -12379,12 +12632,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Seventy-eight fiscal layers integrated', healthy.layerCount === 78, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Eighty fiscal layers integrated', healthy.layerCount === 80, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 100,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 104,
     'ok'
   );
 
@@ -12396,10 +12649,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF100 ids present',
-    healthy.checks.length === 100 &&
+    'CF01–CF104 ids present',
+    healthy.checks.length === 104 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[99]?.id === 'CF100',
+      healthy.checks[103]?.id === 'CF104',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -15716,6 +15969,187 @@ export function runSovereignIssuanceCouplingBridgeSelfTests(): {
     'SICB-T03',
     'Aligned with debt service',
     healthy.alignedWithDebtService,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: federal-state-grant-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runFederalStateGrantCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const igr = reconcileFederalStateTransfers(9, v);
+  const grants = allocateIntergovernmentalGrants(9, v);
+  const clawback = buildGrantClawbackScheduleReport(9, v, grants);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const grantForward = buildGrantForwardAlignmentReport(9, v, grants, myefo, forwardIntegrity, growth);
+  const clawbackForward = buildGrantClawbackForwardCoherenceReport(9, v, clawback, grantForward, grants);
+  const healthy = buildFederalStateGrantCoherenceReport(9, v, igr, grants, clawbackForward);
+
+  record('FSGC-T01', 'Three federal grant checks', healthy.checks.length === 3, 'ok');
+  record(
+    'FSGC-T02',
+    'Within federal grant band',
+    healthy.withinFederalGrantBand,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'FSGC-T03',
+    'Aligned with clawback forward',
+    healthy.alignedWithClawbackForward,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: reconciliation-resilience-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runReconciliationResilienceBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const infra = summarizeInfrastructureFinancing(
+    9,
+    [
+      {
+        projectId: 'rrb_infra',
+        title: 'Reconciliation bridge probe',
+        regionIds: ['national'],
+        capitalPoints: 10,
+        maintenancePointsPerTurn: 1,
+        strategicWeight: 0.5,
+        preferredVehicle: 'sovereign_bond_series'
+      }
+    ],
+    v,
+    state.budget
+  );
+  const reconciliation = runFiscalReconciliation({
+    turn: 9,
+    v1012: v,
+    envelope: state.budget,
+    revenueLedger: ledger,
+    infraSummary: infra,
+    actorCashProbe: 0
+  });
+  const resilience = assessFiscalResilience(9, v, ['commodity_drop', 'rate_shock']);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const statutory = buildStatutoryBalancesReport(9, v);
+  const cash = buildCashManagementReport(9, v);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const contingency = buildContingencyDrawdownRegisterReport(9, v, contingencyFlex, fiscalRules);
+  const fiscalBuffer = buildFiscalBufferCoherenceReport(9, v, statutory, cash, contingency, revenueForward);
+  const debtGov = buildDebtPortfolioGovernanceReport(9, v);
+  const fiscalStress = buildFiscalStressScenariosReport(9, v);
+  const sovereignCredit = buildSovereignCreditOutlookReport(9, v, debtGov, {
+    stressWorstDelta: fiscalStress.worstHeadroomDelta
+  });
+  const debtService = buildDebtServiceCoverageReport(9, v, ledger, cash);
+  const debtCoupling = buildDebtFiscalCouplingRegisterReport(9, v, debtService, sovereignCredit, fiscalBuffer);
+  const stressBridge = buildFiscalStressResilienceBridgeReport(9, v, fiscalStress, debtCoupling, fiscalBuffer);
+  const contingent = assessContingentLiabilities(9, v);
+  const contingentBridge = buildContingentLiabilityForwardBridgeReport(
+    9,
+    v,
+    contingent,
+    forwardIntegrity,
+    stressBridge
+  );
+  const riskRegister = buildFiscalRiskRegister(9, v);
+  const riskStress = buildFiscalRiskStressCoherenceReport(9, v, riskRegister, fiscalStress, contingentBridge);
+  const healthy = buildReconciliationResilienceBridgeReport(9, v, reconciliation, resilience, riskStress);
+
+  record('RRB-T01', 'Three reconciliation resilience checks', healthy.checks.length === 3, 'ok');
+  record(
+    'RRB-T02',
+    'Within reconciliation resilience band',
+    healthy.withinReconciliationResilienceBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'RRB-T03',
+    'Aligned with risk stress coherence',
+    healthy.alignedWithRiskStressCoherence,
     healthy.narrative
   );
 

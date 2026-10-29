@@ -61,6 +61,8 @@ import { runGrantClawbackForwardCoherenceSelfTests } from './modules/grant-clawb
 import { runBalanceSheetFiscalCoherenceSelfTests } from './modules/balance-sheet-fiscal-coherence/self-tests';
 import { runFiscalRiskStressCoherenceSelfTests } from './modules/fiscal-risk-stress-coherence/self-tests';
 import { runSovereignIssuanceCouplingBridgeSelfTests } from './modules/sovereign-issuance-coupling-bridge/self-tests';
+import { runFederalStateGrantCoherenceSelfTests } from './modules/federal-state-grant-coherence/self-tests';
+import { runReconciliationResilienceBridgeSelfTests } from './modules/reconciliation-resilience-bridge/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -131,6 +133,8 @@ ok = runSuite('Grant clawback forward coherence', runGrantClawbackForwardCoheren
 ok = runSuite('Balance sheet fiscal coherence', runBalanceSheetFiscalCoherenceSelfTests) && ok;
 ok = runSuite('Fiscal risk stress coherence', runFiscalRiskStressCoherenceSelfTests) && ok;
 ok = runSuite('Sovereign issuance coupling bridge', runSovereignIssuanceCouplingBridgeSelfTests) && ok;
+ok = runSuite('Federal state grant coherence', runFederalStateGrantCoherenceSelfTests) && ok;
+ok = runSuite('Reconciliation resilience bridge', runReconciliationResilienceBridgeSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);
