@@ -152,6 +152,9 @@ import { computeCascadeStackFusionIndex } from './cascade-stack-fusion-index.ts'
 import { computeSynthesisResonanceConvergenceIndex } from './synthesis-resonance-convergence-index.ts';
 import { computePressureStackFusionIndex } from './pressure-stack-fusion-index.ts';
 import { computeFusionStackSynthesisIndex } from './fusion-stack-synthesis-index.ts';
+import { computeResonanceConvergenceStackIndex } from './resonance-convergence-stack-index.ts';
+import { computePressureStackSynthesisIndex } from './pressure-stack-synthesis-index.ts';
+import { computeFusionStackResonanceIndex } from './fusion-stack-resonance-index.ts';
 import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
@@ -792,6 +795,18 @@ export function sanitizeTeamMultiAgentCoordinationState(
       fusionStackSynthesisIndex:
         typeof metaRaw.fusionStackSynthesisIndex === 'number'
           ? metaRaw.fusionStackSynthesisIndex
+          : undefined,
+      resonanceConvergenceStackIndex:
+        typeof metaRaw.resonanceConvergenceStackIndex === 'number'
+          ? metaRaw.resonanceConvergenceStackIndex
+          : undefined,
+      pressureStackSynthesisIndex:
+        typeof metaRaw.pressureStackSynthesisIndex === 'number'
+          ? metaRaw.pressureStackSynthesisIndex
+          : undefined,
+      fusionStackResonanceIndex:
+        typeof metaRaw.fusionStackResonanceIndex === 'number'
+          ? metaRaw.fusionStackResonanceIndex
           : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
@@ -1711,6 +1726,24 @@ export function evaluateTeamMultiAgentLayer(
     state.meta.coordinationCompositeScore ?? 100,
   );
   fusionStackSynthesis.notes.forEach(n => diagnostics.push(n));
+  const resonanceConvergenceStack = computeResonanceConvergenceStackIndex(
+    synthesisResonanceConvergence.convergenceIndex,
+    pressureStackFusion.fusionIndex,
+    state.meta.coordinationEscalationTier ?? 0,
+  );
+  resonanceConvergenceStack.notes.forEach(n => diagnostics.push(n));
+  const pressureStackSynthesis = computePressureStackSynthesisIndex(
+    pressureStackFusion.fusionIndex,
+    fusionStackSynthesis.synthesisIndex,
+    state.meta.auditPressureIndex ?? 0,
+  );
+  pressureStackSynthesis.notes.forEach(n => diagnostics.push(n));
+  const fusionStackResonance = computeFusionStackResonanceIndex(
+    fusionStackSynthesis.synthesisIndex,
+    synthesisResonanceConvergence.convergenceIndex,
+    state.meta.coordinationCompositeScore ?? 100,
+  );
+  fusionStackResonance.notes.forEach(n => diagnostics.push(n));
   state = {
     ...state,
     diagnostics,
@@ -1788,6 +1821,9 @@ export function evaluateTeamMultiAgentLayer(
       synthesisResonanceConvergenceIndex: synthesisResonanceConvergence.convergenceIndex,
       pressureStackFusionIndex: pressureStackFusion.fusionIndex,
       fusionStackSynthesisIndex: fusionStackSynthesis.synthesisIndex,
+      resonanceConvergenceStackIndex: resonanceConvergenceStack.stackIndex,
+      pressureStackSynthesisIndex: pressureStackSynthesis.synthesisIndex,
+      fusionStackResonanceIndex: fusionStackResonance.resonanceIndex,
     },
   };
 
