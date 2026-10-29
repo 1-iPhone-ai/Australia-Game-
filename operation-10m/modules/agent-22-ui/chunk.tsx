@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: cdcfdb73f2400d03
+// content-sha256-prefix: 8d95a1f7672389b5
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -236,6 +236,184 @@ export interface LegacyAccessResult {
   uiPatch: Record<string, boolean | string>;
   announce?: string;
 }
+
+// --- source: registry/modal-panel-definitions.ts ---
+const modal = (
+  id: string,
+  label: string,
+  tier: ProgressionTier,
+  unlock: EvolvingPanelDefinition['unlock'],
+  extra?: Partial<EvolvingPanelDefinition>
+): EvolvingPanelDefinition => ({
+  id,
+  label,
+  description: extra?.description ?? `${label} (modal surface).`,
+  category: extra?.category ?? 'core',
+  kind: 'modal',
+  progressionTier: tier,
+  unlock,
+  essential: extra?.essential,
+  railOrder: extra?.railOrder,
+  tags: extra?.tags,
+  legacyUiPatchKeys: extra?.legacyUiPatchKeys,
+});
+
+/** V9.4 GlobalUISurfaceManager modal ids with progression metadata (scale wave tranche). */
+export const MODAL_PANELS: EvolvingPanelDefinition[] = [
+  modal('modal_travel', 'Travel', 0, {}, { essential: true, legacyUiPatchKeys: ['showTravelModal'], category: 'core', railOrder: 11 }),
+  modal('modal_market', 'Market', 1, { minDay: 1 }, { legacyUiPatchKeys: ['showMarket'], category: 'economy', railOrder: 51 }),
+  modal('modal_resource_market', 'Resource Market', 1, { minDay: 2 }, { legacyUiPatchKeys: ['showResourceMarket'], category: 'economy' }),
+  modal('modal_shop', 'Shop', 1, { minDay: 2 }, { legacyUiPatchKeys: ['showShop'], category: 'economy' }),
+  modal('modal_workshop', 'Workshop', 1, { minDay: 1 }, { legacyUiPatchKeys: ['showWorkshop'], category: 'economy' }),
+  modal('modal_challenges', 'Challenges', 0, {}, { legacyUiPatchKeys: ['showChallenges'], category: 'regional' }),
+  modal('modal_regional_contracts', 'Regional Contracts', 2, { minDay: 3, minInterfaceLevel: 'guided' }, {
+    legacyUiPatchKeys: ['showRegionalContractsModal'],
+    category: 'regional',
+  }),
+  modal('modal_infrastructure_projects', 'Infrastructure Projects', 2, { minDay: 6 }, {
+    legacyUiPatchKeys: ['showInfrastructureProjectsModal'],
+    category: 'regional',
+  }),
+  modal('modal_expeditions_relics', 'Expeditions & Relics', 3, { minDay: 8, minInterfaceLevel: 'advanced' }, {
+    legacyUiPatchKeys: ['showExpeditionsRelicsModal'],
+    category: 'strategic',
+  }),
+  modal('modal_investments', 'Investments', 2, { minDay: 4, requiredConceptIds: ['capital_allocation'] }, {
+    legacyUiPatchKeys: ['showInvestments'],
+    category: 'strategic',
+  }),
+  modal('modal_ai_rivalry', 'AI Rivalry / Diplomacy', 3, { minDay: 10 }, {
+    legacyUiPatchKeys: ['showAiRivalryModal'],
+    category: 'social',
+  }),
+  modal('modal_sabotage', 'Sabotage', 3, { minDay: 12, minInterfaceLevel: 'advanced' }, {
+    legacyUiPatchKeys: ['showSabotage'],
+    category: 'strategic',
+  }),
+  modal('modal_ai_command_center', 'AI Command Center', 3, { minDay: 7, minInterfaceLevel: 'advanced' }, {
+    category: 'automation',
+    tags: ['ai', 'command'],
+  }),
+  modal('modal_crisis_management', 'Crisis Management', 2, { minDay: 5, requiredMilestoneIds: ['first_crisis'] }, {
+    category: 'regional',
+    essential: false,
+  }),
+  modal('modal_campaign_progression', 'Campaign Progression', 1, { minDay: 2 }, { category: 'core' }),
+  modal('modal_career_progression', 'Career Progression', 2, { minDay: 8 }, { category: 'core' }),
+  modal('modal_fog_of_war_intel', 'Fog of War Intel', 3, { minDay: 9, minInterfaceLevel: 'advanced' }, { category: 'strategic' }),
+  modal('modal_what_if_timelines', 'What-If Timelines', 4, { minInterfaceLevel: 'expert' }, { category: 'diagnostics' }),
+  modal('modal_scenario_builder', 'Scenario Builder', 4, { minInterfaceLevel: 'expert' }, { category: 'diagnostics' }),
+  modal('modal_stats', 'Stats', 2, { minDay: 4 }, { category: 'core' }),
+  modal('modal_save_load', 'Save / Load', 0, {}, { essential: true, category: 'core' }),
+  modal('modal_guardian_warning', 'Guardian Critical Warning', 0, {}, {
+    essential: true,
+    category: 'automation',
+    description: 'Never progression-gated; safety-critical surface.',
+  }),
+  modal('modal_major_transition_confirmation', 'Major Transition Confirmation', 1, { minDay: 3 }, { category: 'core' }),
+  modal('modal_determinism_audit', 'Determinism Audit', 5, { minInterfaceLevel: 'expert' }, { category: 'diagnostics' }),
+  modal('modal_save_migration', 'Save Migration', 0, {}, { essential: true, category: 'core' }),
+  modal('modal_campaign_select', 'Campaign Select', 0, {}, { essential: true, category: 'core', kind: 'modal' }),
+];
+
+export const MODAL_PANEL_BY_SURFACE_ID: Record<string, EvolvingPanelDefinition> = {
+  travel_modal: MODAL_PANELS[0],
+  market_modal: MODAL_PANELS[1],
+  resource_market_modal: MODAL_PANELS[2],
+  shop_modal: MODAL_PANELS[3],
+  workshop_modal: MODAL_PANELS[4],
+  challenges_modal: MODAL_PANELS[5],
+  regional_contracts_modal: MODAL_PANELS[6],
+  infrastructure_projects_modal: MODAL_PANELS[7],
+  expeditions_relics_modal: MODAL_PANELS[8],
+  investments_modal: MODAL_PANELS[9],
+  ai_rivalry_modal: MODAL_PANELS[10],
+  sabotage_modal: MODAL_PANELS[11],
+  ai_command_center_modal: MODAL_PANELS[12],
+  crisis_management_modal: MODAL_PANELS[13],
+  campaign_progression_modal: MODAL_PANELS[14],
+  career_progression_modal: MODAL_PANELS[15],
+  fog_of_war_intel_modal: MODAL_PANELS[16],
+  what_if_timelines_modal: MODAL_PANELS[17],
+  scenario_builder_modal: MODAL_PANELS[18],
+  stats_modal: MODAL_PANELS[19],
+  save_load_modal: MODAL_PANELS[20],
+  guardian_warning_modal: MODAL_PANELS[21],
+  major_transition_confirmation_modal: MODAL_PANELS[22],
+  determinism_audit_modal: MODAL_PANELS[23],
+  save_migration_modal: MODAL_PANELS[24],
+  campaign_select_modal: MODAL_PANELS[25],
+};
+
+export function listModalPanelForSurface(surfaceId: string): EvolvingPanelDefinition | undefined {
+  return MODAL_PANEL_BY_SURFACE_ID[surfaceId];
+}
+
+// --- source: registry/progression-milestones.ts ---
+export interface UiProgressionMilestone {
+  id: string;
+  title: string;
+  description: string;
+  unlocksPanelIds: string[];
+  rule: ProgressionUnlockRule;
+  coachCopy: string;
+}
+
+/** Milestones bridge campaign/onboarding ids to panel unlock expectations. */
+export const UI_PROGRESSION_MILESTONES: UiProgressionMilestone[] = [
+  {
+    id: 'first_market_visit',
+    title: 'First market visit',
+    description: 'Player opened the market at least once.',
+    unlocksPanelIds: ['nav_market', 'modal_market'],
+    rule: { minDay: 1 },
+    coachCopy: 'Markets unlock after your first day of play.',
+  },
+  {
+    id: 'first_contract',
+    title: 'First regional contract',
+    description: 'Completed or accepted first contract flow.',
+    unlocksPanelIds: ['nav_contracts', 'modal_regional_contracts'],
+    rule: { minDay: 3, minInterfaceLevel: 'guided' },
+    coachCopy: 'Contracts appear once you understand regional standing.',
+  },
+  {
+    id: 'capital_allocation_intro',
+    title: 'Capital allocation lesson',
+    description: 'Guided learning introduced capital allocation.',
+    unlocksPanelIds: ['nav_investments', 'modal_investments'],
+    rule: { requiredConceptIds: ['capital_allocation'], minDay: 4 },
+    coachCopy: 'Investments unlock after the capital allocation lesson.',
+  },
+  {
+    id: 'first_crisis',
+    title: 'First crisis response',
+    description: 'Player entered crisis management flow.',
+    unlocksPanelIds: ['modal_crisis_management'],
+    rule: { minDay: 5, requiredMilestoneIds: ['first_crisis'] },
+    coachCopy: 'Crisis tools stay available once a crisis begins.',
+  },
+  {
+    id: 'advanced_interface',
+    title: 'Advanced interface',
+    description: 'Player switched to Advanced layout or interface level.',
+    unlocksPanelIds: ['widget_strategy_planner', 'widget_ai_command', 'nav_expeditions'],
+    rule: { minInterfaceLevel: 'advanced', minDay: 6 },
+    coachCopy: 'Advanced tools unlock in the Advanced interface profile.',
+  },
+  {
+    id: 'expert_diagnostics',
+    title: 'Expert diagnostics',
+    description: 'Expert player accessing replay/determinism tooling.',
+    unlocksPanelIds: ['nav_diagnostics', 'nav_replay', 'modal_determinism_audit', 'modal_what_if_timelines'],
+    rule: { minInterfaceLevel: 'expert' },
+    coachCopy: 'Diagnostics surfaces are grouped under Expert settings.',
+  },
+];
+
+export const UI_MILESTONE_BY_ID: Record<string, UiProgressionMilestone> = Object.fromEntries(
+  UI_PROGRESSION_MILESTONES.map(m => [m.id, m])
+);
 
 // --- source: registry/panel-definitions.ts ---
 const core = (
@@ -596,6 +774,7 @@ export const EVOLVING_UI_PANEL_REGISTRY: EvolvingPanelDefinition[] = [
   ...NAV_TARGET_PANELS,
   ...FLOATING_WIDGET_PANELS,
   ...SETTINGS_TAB_PANELS,
+  ...MODAL_PANELS,
 ];
 
 export const EVOLVING_UI_PANEL_BY_ID: Record<string, EvolvingPanelDefinition> = Object.fromEntries(
@@ -680,6 +859,80 @@ export function deriveInterfaceLevelFromLayoutPreset(preset: string | undefined)
     default:
       return null;
   }
+}
+
+// --- source: engine/unlock-hint-formatter.ts ---
+export function formatUnlockRequirementLabel(key: string): string {
+  if (key.startsWith('day≥')) return `Reach ${key.replace('day≥', 'day ')}`;
+  if (key.startsWith('turn≥')) return `Complete ${key.replace('turn≥', 'turn ')}`;
+  if (key.startsWith('interface≥')) return `Use ${key.replace('interface≥', '')} interface`;
+  if (key.startsWith('concept:')) return `Learn: ${key.replace('concept:', '').replace(/_/g, ' ')}`;
+  if (key.startsWith('milestone:')) {
+    const id = key.replace('milestone:', '');
+    return UI_MILESTONE_BY_ID[id]?.title ?? id;
+  }
+  return key;
+}
+
+export function buildUnlockHintForPanel(
+  panel: EvolvingPanelDefinition,
+  signals: ProgressionSignalSnapshot
+): string {
+  const evalResult = evaluateUnlockRule(panel.unlock, signals);
+  if (evalResult.ok) return 'Unlocked';
+  if (evalResult.reasons.length === 0) return 'Keep playing to unlock';
+  return evalResult.reasons.map(formatUnlockRequirementLabel).join(' · ');
+}
+
+export function buildCoachHeadline(panel: EvolvingPanelDefinition, signals: ProgressionSignalSnapshot): string {
+  const hint = buildUnlockHintForPanel(panel, signals);
+  if (hint === 'Unlocked') return `${panel.label} is available.`;
+  return `${panel.label} unlocks when: ${hint}`;
+}
+
+// --- source: engine/phase-panel-policy.ts ---
+const PHASE_SUPPRESS_CATEGORIES: Partial<Record<V94StandardizedGamePhase, string[]>> = {
+  main_menu: ['economy', 'strategic', 'regional', 'automation'],
+  setup: ['strategic', 'diagnostics'],
+  save_load: ['economy', 'strategic', 'regional'],
+  replay: ['economy', 'regional'],
+  post_match: ['economy', 'automation'],
+  ai_turn: ['automation'],
+};
+
+const PHASE_ESSENTIAL_MODAL_IDS = new Set([
+  'modal_guardian_warning',
+  'modal_save_migration',
+  'modal_save_load',
+]);
+
+export function applyPhasePolicyToVisibility(
+  phase: V94StandardizedGamePhase,
+  panelId: string,
+  panelCategory: string,
+  baseState: PanelVisibilityState
+): { state: PanelVisibilityState; reason: string } {
+  if (PHASE_ESSENTIAL_MODAL_IDS.has(panelId)) {
+    return { state: baseState === 'hidden' ? 'visible' : baseState, reason: 'phase_essential_modal' };
+  }
+  const suppressed = PHASE_SUPPRESS_CATEGORIES[phase];
+  if (!suppressed || baseState === 'hidden') {
+    return { state: baseState, reason: 'phase_no_change' };
+  }
+  if (suppressed.includes(panelCategory)) {
+    if (baseState === 'visible') {
+      return { state: 'preview', reason: `phase_${phase}_preview` };
+    }
+  }
+  return { state: baseState, reason: 'phase_no_change' };
+}
+
+export function listPhasesThatSuppressCategory(category: string): V94StandardizedGamePhase[] {
+  const out: V94StandardizedGamePhase[] = [];
+  for (const [phase, cats] of Object.entries(PHASE_SUPPRESS_CATEGORIES)) {
+    if (cats?.includes(category)) out.push(phase as V94StandardizedGamePhase);
+  }
+  return out;
 }
 
 // --- source: engine/resolve-panel-visibility.ts ---
@@ -796,6 +1049,25 @@ export function sortPanelsForRail(
   return withMeta
     .sort((a, b) => rank(a.state) - rank(b.state) || a.tier - b.tier || a.order - b.order || a.id.localeCompare(b.id))
     .map(x => x.id);
+}
+
+export function resolveEvolvingPanelVisibilityWithPhase(
+  panelId: string,
+  phase: V94StandardizedGamePhase,
+  signals: ProgressionSignalSnapshot,
+  policy: EvolvingUiAccessPolicy,
+  config?: EvolvingUiProgressionConfig
+): PanelVisibilityResult {
+  const base = resolveEvolvingPanelVisibility(panelId, signals, policy, config);
+  const panel = EVOLVING_UI_PANEL_BY_ID[panelId];
+  if (!panel) return base;
+  const phased = applyPhasePolicyToVisibility(phase, panelId, panel.category, base.state);
+  if (phased.state === base.state && phased.reason === 'phase_no_change') return base;
+  return {
+    ...base,
+    state: phased.state,
+    reason: `${base.reason}|${phased.reason}`,
+  };
 }
 
 // --- source: engine/legacy-access.ts ---
@@ -915,6 +1187,145 @@ export function mergeEvolvingUiWithContextualHiding(
     return { show: false, reason: `evolving_ui:${vis.reason}` };
   }
   return { show: true, reason: vis.state === 'preview' ? 'evolving_ui_preview' : 'visible' };
+}
+
+// --- source: engine/progression-coach.ts ---
+export interface NextUnlockRecommendation {
+  panelId: string;
+  label: string;
+  hint: string;
+  headline: string;
+  progressionTier: number;
+  priority: number;
+}
+
+export function listNextUnlockRecommendations(
+  signals: ProgressionSignalSnapshot,
+  policy: EvolvingUiAccessPolicy,
+  limit = 5
+): NextUnlockRecommendation[] {
+  const candidates: NextUnlockRecommendation[] = [];
+  for (const panel of Object.values(EVOLVING_UI_PANEL_BY_ID)) {
+    const vis = resolveEvolvingPanelVisibility(panel.id, signals, policy);
+    if (vis.state === 'visible') continue;
+    const unlock = evaluateUnlockRule(panel.unlock, signals);
+    const missingRules = unlock.reasons.length;
+    const priority = panel.progressionTier * 10 + missingRules;
+    candidates.push({
+      panelId: panel.id,
+      label: panel.label,
+      hint: buildUnlockHintForPanel(panel, signals),
+      headline: buildCoachHeadline(panel, signals),
+      progressionTier: panel.progressionTier,
+      priority,
+    });
+  }
+  return candidates.sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label)).slice(0, limit);
+}
+
+export function listMilestonesApproaching(
+  signals: ProgressionSignalSnapshot,
+  limit = 3
+): Array<{ milestoneId: string; title: string; coachCopy: string; panels: string[] }> {
+  const approaching = UI_PROGRESSION_MILESTONES.filter(m => {
+    const ev = evaluateUnlockRule(m.rule, signals);
+    return !ev.ok && ev.reasons.length <= 2;
+  });
+  return approaching.slice(0, limit).map(m => ({
+    milestoneId: m.id,
+    title: m.title,
+    coachCopy: m.coachCopy,
+    panels: m.unlocksPanelIds,
+  }));
+}
+
+export function computeProgressionCoverage(
+  signals: ProgressionSignalSnapshot,
+  policy: EvolvingUiAccessPolicy
+): { visible: number; preview: number; hidden: number; total: number; coverageRatio: number } {
+  let visible = 0;
+  let preview = 0;
+  let hidden = 0;
+  const total = Object.keys(EVOLVING_UI_PANEL_BY_ID).length;
+  for (const id of Object.keys(EVOLVING_UI_PANEL_BY_ID)) {
+    const st = resolveEvolvingPanelVisibility(id, signals, policy).state;
+    if (st === 'visible') visible++;
+    else if (st === 'preview') preview++;
+    else hidden++;
+  }
+  return {
+    visible,
+    preview,
+    hidden,
+    total,
+    coverageRatio: total > 0 ? visible / total : 0,
+  };
+}
+
+export function pickCoachPanelForCategory(
+  category: EvolvingPanelDefinition['category'],
+  signals: ProgressionSignalSnapshot,
+  policy: EvolvingUiAccessPolicy
+): NextUnlockRecommendation | null {
+  const recs = listNextUnlockRecommendations(signals, policy, 50);
+  return recs.find(r => EVOLVING_UI_PANEL_BY_ID[r.panelId]?.category === category) ?? null;
+}
+
+// --- source: engine/scale-wave-self-tests.ts ---
+export function runAgent22ScaleWaveSelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'sw_modal_surface_map',
+    'modal surface travel maps to panel',
+    listModalPanelForSurface('travel_modal')?.id === 'modal_travel'
+  );
+
+  check(
+    'sw_milestone_catalog',
+    'UI milestones registered',
+    Object.keys(UI_MILESTONE_BY_ID).length >= 6
+  );
+
+  const signals = { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' as const };
+  const hint = buildUnlockHintForPanel(EVOLVING_UI_PANEL_BY_ID.nav_investments, {
+    ...signals,
+    guidedConceptStatuses: {},
+  });
+  check('sw_unlock_hint', 'investments hint mentions capital', hint.toLowerCase().includes('capital') || hint.includes('day'));
+
+  const phased = resolveEvolvingPanelVisibilityWithPhase(
+    'nav_market',
+    'main_menu',
+    signals,
+    DEFAULT_EVOLVING_UI_ACCESS_POLICY
+  );
+  check('sw_phase_main_menu', 'main menu downgrades market visibility', phased.state !== 'visible' || phased.reason.includes('phase'));
+
+  const coverage = computeProgressionCoverage(
+    { gameDay: 10, turnCount: 10, interfaceLevel: 'expert' },
+    DEFAULT_EVOLVING_UI_ACCESS_POLICY
+  );
+  check('sw_expert_coverage', 'expert coverage majority visible', coverage.coverageRatio >= 0.5);
+
+  const recs = listNextUnlockRecommendations(signals, DEFAULT_EVOLVING_UI_ACCESS_POLICY, 3);
+  check('sw_coach_recs', 'coach returns recommendations early game', recs.length > 0);
+
+  check(
+    'sw_guardian_phase',
+    'guardian warning modal stays visible in save_load phase policy',
+    applyPhasePolicyToVisibility('save_load', 'modal_guardian_warning', 'automation', 'hidden').state === 'visible'
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: a11y/aria-builders.ts ---
@@ -1256,11 +1667,30 @@ export const STORY_A11Y_HIGH_CONTRAST: EvolvingUiStoryFixture = {
   expectedLegacyNavAlwaysWorks: ['help'],
 };
 
+/** Scale wave: late guided player approaching expert tooling. */
+export const STORY_SCALE_WAVE_LATE_GUIDED: EvolvingUiStoryFixture = {
+  id: 'scale-wave-late-guided',
+  title: 'Late guided — modal + coach depth',
+  description: 'Day 9 guided with crisis milestone; infrastructure and fog intel in play.',
+  signals: {
+    gameDay: 9,
+    turnCount: 9,
+    interfaceLevel: 'guided',
+    layoutPreset: 'Assisted',
+    guidedConceptStatuses: { capital_allocation: 'mastered' },
+    completedMilestoneIds: ['first_crisis', 'first_contract'],
+  },
+  policy: { ...DEFAULT_EVOLVING_UI_ACCESS_POLICY },
+  expectedVisibleNavTargets: ['map', 'infrastructure', 'investments', 'contracts'],
+  expectedLegacyNavAlwaysWorks: ['expeditions', 'diplomacy'],
+};
+
 export const ALL_STORY_FIXTURES: EvolvingUiStoryFixture[] = [
   STORY_FRESH_PLAYER_SIMPLE,
   STORY_MID_GAME_GUIDED,
   STORY_EXPERT_SHOW_ALL,
   STORY_A11Y_HIGH_CONTRAST,
+  STORY_SCALE_WAVE_LATE_GUIDED,
 ];
 
 // --- source: react/ProgressionPanelShell.tsx ---
@@ -1425,8 +1855,95 @@ export function ShowAllPanelsToggle({ enabled, accessibility, onChange }: ShowAl
   );
 }
 
+// --- source: react/PanelUnlockCoach.tsx ---
+export interface PanelUnlockCoachProps {
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  onSelectPanel?: (panelId: string) => void;
+}
+
+export function PanelUnlockCoach({ signals, policy, onSelectPanel }: PanelUnlockCoachProps): React.ReactElement {
+  const recs = listNextUnlockRecommendations(signals, policy, 3);
+  const milestones = listMilestonesApproaching(signals, 2);
+  if (recs.length === 0 && milestones.length === 0) {
+    return (
+      <div data-testid="panel-unlock-coach" className="text-xs opacity-80">
+        All tracked panels unlocked for your current progression.
+      </div>
+    );
+  }
+  return (
+    <div data-testid="panel-unlock-coach" className="text-xs space-y-1" role="complementary" aria-label="Upcoming interface unlocks">
+      {recs.map(r => (
+        <button
+          key={r.panelId}
+          type="button"
+          className="block text-left underline"
+          onClick={() => onSelectPanel?.(r.panelId)}
+          data-testid={`coach-rec-${r.panelId}`}
+        >
+          {r.headline}
+        </button>
+      ))}
+      {milestones.map(m => (
+        <div key={m.milestoneId} data-testid={`coach-milestone-${m.milestoneId}`}>
+          {m.coachCopy}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// --- source: react/EvolvingUiProgressLab.tsx ---
+export interface EvolvingUiProgressLabProps {
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  onRunSelfTests?: () => void;
+  selfTestSummary?: string;
+}
+
+export function EvolvingUiProgressLab({
+  signals,
+  policy,
+  onRunSelfTests,
+  selfTestSummary,
+}: EvolvingUiProgressLabProps): React.ReactElement {
+  const coverage = computeProgressionCoverage(signals, policy);
+  const recs = listNextUnlockRecommendations(signals, policy, 5);
+  const vis = resolveAllPanelVisibilities(signals, policy);
+  const previewCount = vis.filter(v => v.state === 'preview').length;
+
+  return (
+    <div
+      data-testid="evolving-ui-progress-lab"
+      style={{ padding: 12, fontSize: 12, color: '#e2e8f0' }}
+      role="region"
+      aria-label="Evolving UI progression lab"
+    >
+      <strong style={{ color: '#22d3ee' }}>LAB — Agent 22 Evolving UI</strong>
+      <div>
+        Coverage: {(coverage.coverageRatio * 100).toFixed(0)}% visible ({coverage.visible}/{coverage.total}) · preview{' '}
+        {previewCount} · hidden {coverage.hidden}
+      </div>
+      <div style={{ marginTop: 8 }}>
+        {recs.map(r => (
+          <div key={r.panelId}>
+            {r.label}: {r.hint}
+          </div>
+        ))}
+      </div>
+      {onRunSelfTests && (
+        <button type="button" onClick={onRunSelfTests} style={{ marginTop: 8 }} data-testid="evolving-ui-run-self-tests">
+          Run Agent 22 Self-Tests
+        </button>
+      )}
+      {selfTestSummary && <div style={{ marginTop: 4 }}>{selfTestSummary}</div>}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.0.0';
+export const AGENT_22_MODULE_VERSION = '1.1.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -1472,6 +1989,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
         access.allowed && Object.keys(access.uiPatch).length > 0
       );
     }
+  }
+
+  const scale = runAgent22ScaleWaveSelfTests();
+  for (const r of scale.results) {
+    check(`agent22_scale_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;

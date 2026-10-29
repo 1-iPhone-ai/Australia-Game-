@@ -1,4 +1,6 @@
 import { EVOLVING_UI_PANEL_BY_ID } from '../registry/panel-definitions.js';
+import type { V94StandardizedGamePhase } from '../adapters/v94-phase-bridge.js';
+import { applyPhasePolicyToVisibility } from './phase-panel-policy.js';
 import type { EvolvingUiAccessPolicy } from '../types/access-policy.js';
 import {
   DEFAULT_EVOLVING_UI_PROGRESSION_CONFIG,
@@ -123,4 +125,23 @@ export function sortPanelsForRail(
   return withMeta
     .sort((a, b) => rank(a.state) - rank(b.state) || a.tier - b.tier || a.order - b.order || a.id.localeCompare(b.id))
     .map(x => x.id);
+}
+
+export function resolveEvolvingPanelVisibilityWithPhase(
+  panelId: string,
+  phase: V94StandardizedGamePhase,
+  signals: ProgressionSignalSnapshot,
+  policy: EvolvingUiAccessPolicy,
+  config?: EvolvingUiProgressionConfig
+): PanelVisibilityResult {
+  const base = resolveEvolvingPanelVisibility(panelId, signals, policy, config);
+  const panel = EVOLVING_UI_PANEL_BY_ID[panelId];
+  if (!panel) return base;
+  const phased = applyPhasePolicyToVisibility(phase, panelId, panel.category, base.state);
+  if (phased.state === base.state && phased.reason === 'phase_no_change') return base;
+  return {
+    ...base,
+    state: phased.state,
+    reason: `${base.reason}|${phased.reason}`,
+  };
 }

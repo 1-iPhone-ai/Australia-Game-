@@ -80,9 +80,28 @@ export const STORY_A11Y_HIGH_CONTRAST: EvolvingUiStoryFixture = {
   expectedLegacyNavAlwaysWorks: ['help'],
 };
 
+/** Scale wave: late guided player approaching expert tooling. */
+export const STORY_SCALE_WAVE_LATE_GUIDED: EvolvingUiStoryFixture = {
+  id: 'scale-wave-late-guided',
+  title: 'Late guided — modal + coach depth',
+  description: 'Day 9 guided with crisis milestone; infrastructure and fog intel in play.',
+  signals: {
+    gameDay: 9,
+    turnCount: 9,
+    interfaceLevel: 'guided',
+    layoutPreset: 'Assisted',
+    guidedConceptStatuses: { capital_allocation: 'mastered' },
+    completedMilestoneIds: ['first_crisis', 'first_contract'],
+  },
+  policy: { ...DEFAULT_EVOLVING_UI_ACCESS_POLICY },
+  expectedVisibleNavTargets: ['map', 'infrastructure', 'investments', 'contracts'],
+  expectedLegacyNavAlwaysWorks: ['expeditions', 'diplomacy'],
+};
+
 export const ALL_STORY_FIXTURES: EvolvingUiStoryFixture[] = [
   STORY_FRESH_PLAYER_SIMPLE,
   STORY_MID_GAME_GUIDED,
   STORY_EXPERT_SHOW_ALL,
   STORY_A11Y_HIGH_CONTRAST,
+  STORY_SCALE_WAVE_LATE_GUIDED,
 ];

@@ -17,11 +17,17 @@ const FILES = [
   'types/progression.ts',
   'types/accessibility.ts',
   'types/access-policy.ts',
+  'registry/modal-panel-definitions.ts',
+  'registry/progression-milestones.ts',
   'registry/panel-definitions.ts',
   'engine/progression-signals.ts',
+  'engine/unlock-hint-formatter.ts',
+  'engine/phase-panel-policy.ts',
   'engine/resolve-panel-visibility.ts',
   'engine/legacy-access.ts',
   'engine/merge-with-v94-contextual-hiding.ts',
+  'engine/progression-coach.ts',
+  'engine/scale-wave-self-tests.ts',
   'a11y/aria-builders.ts',
   'a11y/focus-management.ts',
   'a11y/live-region-controller.ts',
@@ -32,6 +38,8 @@ const FILES = [
   'react/EvolvingNavRail.tsx',
   'react/AccessibilityAnnouncer.tsx',
   'react/ShowAllPanelsToggle.tsx',
+  'react/PanelUnlockCoach.tsx',
+  'react/EvolvingUiProgressLab.tsx',
 ];
 
 function stripModulePreamble(source) {
@@ -73,7 +81,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.0.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.1.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -119,6 +127,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
         access.allowed && Object.keys(access.uiPatch).length > 0
       );
     }
+  }
+
+  const scale = runAgent22ScaleWaveSelfTests();
+  for (const r of scale.results) {
+    check(\`agent22_scale_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;

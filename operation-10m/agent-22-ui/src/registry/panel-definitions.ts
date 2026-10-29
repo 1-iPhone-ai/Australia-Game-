@@ -1,4 +1,5 @@
 import type { EvolvingPanelDefinition, ProgressionTier } from '../types/progression.js';
+import { MODAL_PANELS } from './modal-panel-definitions.js';
 
 const core = (
   partial: Omit<EvolvingPanelDefinition, 'progressionTier' | 'unlock'>
@@ -358,6 +359,7 @@ export const EVOLVING_UI_PANEL_REGISTRY: EvolvingPanelDefinition[] = [
   ...NAV_TARGET_PANELS,
   ...FLOATING_WIDGET_PANELS,
   ...SETTINGS_TAB_PANELS,
+  ...MODAL_PANELS,
 ];
 
 export const EVOLVING_UI_PANEL_BY_ID: Record<string, EvolvingPanelDefinition> = Object.fromEntries(
