@@ -102,7 +102,7 @@ export function ag21Provenance(
   };
 }
 
-export const O10M_AGENT21_MODULE_VERSION = '1.3.0';
+export const O10M_AGENT21_MODULE_VERSION = '1.4.0';
 export const O10M_AGENT21_MODULE_ID = 'forecasting_policy_lab';
 
 // --- bundled from counterfactual-experiments.ts ---
@@ -1111,6 +1111,329 @@ function mockExperiment(domain: string): Ag21PolicyExperimentResult {
   };
 }
 
+// --- bundled from forecast-policy-sensitivity.ts ---
+/**
+ * Agent 21 — policy sensitivity sweep (isolated context perturbations, non-authoritative).
+ */
+
+
+export interface Ag21PolicySensitivityRow {
+  lever: 'actorCash' | 'actorDebt' | 'regionsControlled' | 'nationalPriorityMomentum';
+  deltaLabel: string;
+  projectedCash: number;
+  projectedDebt: number;
+  regionsControlled: number;
+  sensitivityScore: number;
+  uncertainty: Ag21UncertaintyBand;
+}
+
+export interface Ag21PolicySensitivityReport {
+  baselineFingerprint: string;
+  rows: Ag21PolicySensitivityRow[];
+  dominantLever: Ag21PolicySensitivityRow['lever'] | 'none';
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritativeMutationDetected: boolean;
+}
+
+type Momentum = NonNullable<Ag21ForecastContext['nationalPriorityMomentum']>;
+
+const AG21_SENSITIVITY_PERTURBATIONS: Array<{
+  lever: Ag21PolicySensitivityRow['lever'];
+  deltaLabel: string;
+  apply: (c: Ag21ForecastContext) => void;
+}> = [
+  { lever: 'actorCash', deltaLabel: 'cash -15%', apply: c => { c.actorCash = Math.round(c.actorCash * 0.85); } },
+  { lever: 'actorCash', deltaLabel: 'cash +20%', apply: c => { c.actorCash = Math.round(c.actorCash * 1.2); } },
+  { lever: 'actorDebt', deltaLabel: 'debt +25%', apply: c => { c.actorDebt = Math.round(c.actorDebt * 1.25 + 40); } },
+  { lever: 'regionsControlled', deltaLabel: 'regions +1', apply: c => { c.regionsControlled += 1; } },
+  {
+    lever: 'nationalPriorityMomentum',
+    deltaLabel: 'momentum falling',
+    apply: c => { c.nationalPriorityMomentum = 'falling' as Momentum; }
+  },
+  {
+    lever: 'nationalPriorityMomentum',
+    deltaLabel: 'momentum rising',
+    apply: c => { c.nationalPriorityMomentum = 'rising' as Momentum; }
+  }
+];
+
+function ag21ProjectOneTurn(copy: Ag21ForecastContext): { cash: number; debt: number; regions: number } {
+  const income = 30 + copy.regionsControlled * 10 + (copy.seed % 5);
+  const spend = 18 + copy.actorDebt * 0.05;
+  const momentum = copy.nationalPriorityMomentum ?? 'stable';
+  const factor = momentum === 'rising' ? 1.05 : momentum === 'falling' ? 0.94 : 1;
+  const cash = Math.round((copy.actorCash + income - spend) * factor);
+  const debt = Math.max(0, Math.round(copy.actorDebt * 0.99));
+  return { cash, debt, regions: copy.regionsControlled };
+}
+
+function ag21SensitivityScore(baseline: ReturnType<typeof ag21ProjectOneTurn>, projected: ReturnType<typeof ag21ProjectOneTurn>): number {
+  const cashDelta = Math.abs(projected.cash - baseline.cash) / Math.max(1, Math.abs(baseline.cash));
+  const debtDelta = Math.abs(projected.debt - baseline.debt) / Math.max(1, Math.abs(baseline.debt));
+  const regionDelta = Math.abs(projected.regions - baseline.regions) * 0.15;
+  return Math.min(1, cashDelta * 0.55 + debtDelta * 0.35 + regionDelta);
+}
+
+function ag21BandFromScore(score: number): Ag21UncertaintyBand {
+  if (score > 0.45) return 'high';
+  if (score > 0.2) return 'moderate';
+  return 'low';
+}
+
+export function runAg21PolicySensitivitySweep(ctx: Ag21ForecastContext): Ag21PolicySensitivityReport {
+  const subject: Ag21ForecastContext = { ...ctx, nationalPriorityMomentum: ctx.nationalPriorityMomentum ?? 'stable' };
+  const baselineFingerprint = ag21FingerprintSnapshot(subject);
+  const rows: Ag21PolicySensitivityRow[] = [];
+
+  const iso = ag21VerifyIsolatedExperiment(subject, copy => {
+    const baseline = ag21ProjectOneTurn(copy);
+    for (const spec of AG21_SENSITIVITY_PERTURBATIONS) {
+      const fork: Ag21ForecastContext = { ...copy, nationalPriorityMomentum: copy.nationalPriorityMomentum ?? 'stable' };
+      spec.apply(fork);
+      const projected = ag21ProjectOneTurn(fork);
+      const sensitivityScore = ag21SensitivityScore(baseline, projected);
+      rows.push({
+        lever: spec.lever,
+        deltaLabel: spec.deltaLabel,
+        projectedCash: projected.cash,
+        projectedDebt: projected.debt,
+        regionsControlled: projected.regions,
+        sensitivityScore,
+        uncertainty: ag21BandFromScore(sensitivityScore)
+      });
+    }
+    return rows;
+  });
+
+  const resultRows = (iso.result || []) as Ag21PolicySensitivityRow[];
+  let dominant: Ag21PolicySensitivityRow | null = null;
+  for (const row of resultRows) {
+    if (!dominant || row.sensitivityScore > dominant.sensitivityScore) dominant = row;
+  }
+
+  const bands = resultRows.map(r => r.uncertainty);
+  const overallBand: Ag21UncertaintyBand = bands.includes('high')
+    ? 'high'
+    : bands.includes('moderate')
+      ? 'moderate'
+      : 'low';
+
+  return {
+    baselineFingerprint,
+    rows: resultRows,
+    dominantLever: dominant?.lever ?? 'none',
+    overallUncertainty: ag21LabelUncertainty(overallBand, [`perturbations=${resultRows.length}`]),
+    authoritativeMutationDetected: baselineFingerprint !== ag21FingerprintSnapshot(subject)
+  };
+}
+
+export function runAg21PolicySensitivitySelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 5, seed: 44, actorCash: 900, actorDebt: 120, regionsControlled: 2 };
+  const before = ag21FingerprintSnapshot(ctx);
+  const report = runAg21PolicySensitivitySweep(ctx);
+  push('sensitivity_rows', report.rows.length === AG21_SENSITIVITY_PERTURBATIONS.length, String(report.rows.length));
+  push('sensitivity_no_mutation', before === ag21FingerprintSnapshot(ctx), 'fp');
+  push('sensitivity_dominant', report.dominantLever !== 'none', report.dominantLever);
+  push('sensitivity_non_auth', report.overallUncertainty.playerFacing.includes('Non-authoritative'), 'copy');
+
+  return out;
+}
+
+// --- bundled from forecast-domain-matrix.ts ---
+/**
+ * Agent 21 — domain stress matrix (catalog-driven cross-domain lab grid).
+ */
+
+
+export interface Ag21DomainStressCell {
+  domain: string;
+  scenarioId: string;
+  title: string;
+  stressIndex: number;
+  uncertainty: Ag21UncertaintyBand;
+}
+
+export interface Ag21DomainStressMatrix {
+  domains: string[];
+  cells: Ag21DomainStressCell[];
+  matrixScore: number;
+  hotspots: string[];
+  evaluationGrade: ReturnType<typeof evaluateAg21ForecastRun>['grade'];
+  headline: string;
+  authoritative: false;
+}
+
+const AG21_DOMAIN_ORDER = ['balance', 'fiscal', 'workforce', 'capital', 'resilience', 'national_priority'] as const;
+
+const AG21_UNCERTAINTY_WEIGHT: Record<Ag21UncertaintyBand, number> = {
+  low: 0.15,
+  moderate: 0.35,
+  high: 0.65,
+  speculative: 0.9
+};
+
+function ag21PickScenarioForDomain(domain: string, offset: number): Ag21DomainStressCell | null {
+  const pool = AG21_FORECAST_SCENARIO_CATALOG.filter(s => s.domain === domain);
+  if (!pool.length) return null;
+  const entry = pool[offset % pool.length];
+  const stressIndex = AG21_UNCERTAINTY_WEIGHT[entry.defaultUncertainty] + (offset % 3) * 0.05;
+  return {
+    domain,
+    scenarioId: entry.id,
+    title: entry.title,
+    stressIndex: Math.min(1, stressIndex),
+    uncertainty: entry.defaultUncertainty
+  };
+}
+
+/** Build a fixed cross-domain stress matrix using catalog entries (read-only). */
+export function buildAg21DomainStressMatrix(samplePerDomain = 2): Ag21DomainStressMatrix {
+  const cells: Ag21DomainStressCell[] = [];
+  const domains: string[] = [];
+
+  for (const domain of AG21_DOMAIN_ORDER) {
+    let added = 0;
+    for (let i = 0; i < samplePerDomain; i++) {
+      const cell = ag21PickScenarioForDomain(domain, i);
+      if (!cell) continue;
+      cells.push(cell);
+      added++;
+    }
+    if (added) domains.push(domain);
+  }
+
+  const scenarios = cells.map(c => lookupAg21Scenario(c.scenarioId)).filter(Boolean) as NonNullable<
+    ReturnType<typeof lookupAg21Scenario>
+  >[];
+
+  const evaluation = evaluateAg21ForecastRun({
+    scenarioIds: scenarios.map(s => s.id),
+    scenarios,
+    experimentCount: 4,
+    overallUncertainty: 'moderate',
+    authoritativeMutationDetected: false,
+    isolatedCopyVerifiedRatio: 1
+  });
+
+  const matrixScore =
+    cells.reduce((sum, c) => sum + c.stressIndex, 0) / Math.max(1, cells.length);
+
+  const hotspots = cells
+    .filter(c => c.stressIndex >= 0.6)
+    .sort((a, b) => b.stressIndex - a.stressIndex)
+    .slice(0, 4)
+    .map(c => `${c.domain}:${c.scenarioId}`);
+
+  return {
+    domains,
+    cells,
+    matrixScore,
+    hotspots,
+    evaluationGrade: evaluation.grade,
+    headline: ag21LabelUncertainty(
+      matrixScore > 0.65 ? 'high' : matrixScore > 0.4 ? 'moderate' : 'low',
+      [`domains=${domains.length}`, `cells=${cells.length}`]
+    ).headline,
+    authoritative: false
+  };
+}
+
+export function runAg21DomainStressMatrixSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const matrix = buildAg21DomainStressMatrix(2);
+  push('domain_matrix_cells', matrix.cells.length >= 10, String(matrix.cells.length));
+  push('domain_matrix_domains', matrix.domains.length >= 5, String(matrix.domains.length));
+  push('domain_matrix_non_auth', matrix.authoritative === false, 'flag');
+  push('domain_matrix_score', matrix.matrixScore > 0 && matrix.matrixScore <= 1, String(matrix.matrixScore));
+
+  return out;
+}
+
+// --- bundled from forecast-audit-ledger.ts ---
+/**
+ * Agent 21 — in-memory forecast audit ledger (lab session trace; never canonical).
+ */
+
+
+export interface Ag21ForecastAuditEntry {
+  id: string;
+  atTurn: number;
+  kind: 'sensitivity' | 'domain_matrix' | 'projection' | 'batch';
+  summary: string;
+  fingerprint: string;
+  authoritative: false;
+}
+
+export interface Ag21ForecastAuditLedger {
+  entries: Ag21ForecastAuditEntry[];
+  maxEntries: number;
+}
+
+let AG21_AUDIT_SEQ = 0;
+
+export function createAg21ForecastAuditLedger(maxEntries = 32): Ag21ForecastAuditLedger {
+  return { entries: [], maxEntries };
+}
+
+export function appendAg21ForecastAuditEntry(
+  ledger: Ag21ForecastAuditLedger,
+  entry: Omit<Ag21ForecastAuditEntry, 'id' | 'fingerprint' | 'authoritative'> & { payload: unknown }
+): Ag21ForecastAuditEntry {
+  const record: Ag21ForecastAuditEntry = {
+    id: `ag21_audit_${++AG21_AUDIT_SEQ}`,
+    atTurn: entry.atTurn,
+    kind: entry.kind,
+    summary: entry.summary,
+    fingerprint: ag21FingerprintSnapshot({ kind: entry.kind, summary: entry.summary, payload: entry.payload }),
+    authoritative: false
+  };
+  ledger.entries.push(record);
+  if (ledger.entries.length > ledger.maxEntries) {
+    ledger.entries.splice(0, ledger.entries.length - ledger.maxEntries);
+  }
+  return record;
+}
+
+export function summarizeAg21ForecastAuditLedger(ledger: Ag21ForecastAuditLedger): {
+  count: number;
+  byKind: Record<string, number>;
+  latestSummary: string;
+  authoritative: false;
+} {
+  const byKind: Record<string, number> = {};
+  for (const e of ledger.entries) byKind[e.kind] = (byKind[e.kind] ?? 0) + 1;
+  return {
+    count: ledger.entries.length,
+    byKind,
+    latestSummary: ledger.entries[ledger.entries.length - 1]?.summary ?? 'empty',
+    authoritative: false
+  };
+}
+
+export function runAg21ForecastAuditSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ledger = createAg21ForecastAuditLedger(3);
+  appendAg21ForecastAuditEntry(ledger, { atTurn: 1, kind: 'projection', summary: 'a', payload: { x: 1 } });
+  appendAg21ForecastAuditEntry(ledger, { atTurn: 2, kind: 'batch', summary: 'b', payload: { x: 2 } });
+  appendAg21ForecastAuditEntry(ledger, { atTurn: 3, kind: 'sensitivity', summary: 'c', payload: { x: 3 } });
+  appendAg21ForecastAuditEntry(ledger, { atTurn: 4, kind: 'domain_matrix', summary: 'd', payload: { x: 4 } });
+
+  push('audit_trim', ledger.entries.length === 3, String(ledger.entries.length));
+  const summary = summarizeAg21ForecastAuditLedger(ledger);
+  push('audit_summary', summary.count === 3 && summary.authoritative === false, summary.latestSummary);
+  push('audit_kinds', (summary.byKind.sensitivity ?? 0) >= 1, JSON.stringify(summary.byKind));
+
+  return out;
+}
+
 // --- bundled from scenario-comparison-ui.tsx ---
 /**
  * Agent 21 — scenario comparison UI fragment (non-authoritative lab review).
@@ -1312,6 +1635,52 @@ export const Ag21ForecastDepthPanel: React.FC<{ seed?: number; compact?: boolean
   );
 };
 
+// --- bundled from forecast-round2-console.tsx ---
+/**
+ * Agent 21 — scale wave round 2 lab console (sensitivity + domain matrix + audit).
+ */
+
+
+export const Ag21ForecastRound2Console: React.FC<{ seed?: number }> = ({ seed = 23 }) => {
+  const ctx = useMemo(() => createDefaultAg21ForecastContext({ seed, turn: 10 }), [seed]);
+  const sensitivity = useMemo(() => runAg21PolicySensitivitySweep(ctx), [ctx]);
+  const matrix = useMemo(() => buildAg21DomainStressMatrix(2), []);
+
+  const audit = useMemo(() => {
+    const ledger = createAg21ForecastAuditLedger(8);
+    appendAg21ForecastAuditEntry(ledger, {
+      atTurn: ctx.turn,
+      kind: 'sensitivity',
+      summary: `dominant=${sensitivity.dominantLever}`,
+      payload: sensitivity.rows.slice(0, 2)
+    });
+    appendAg21ForecastAuditEntry(ledger, {
+      atTurn: ctx.turn,
+      kind: 'domain_matrix',
+      summary: matrix.headline,
+      payload: { hotspots: matrix.hotspots }
+    });
+    return summarizeAg21ForecastAuditLedger(ledger);
+  }, [ctx.turn, matrix.headline, matrix.hotspots, sensitivity.dominantLever, sensitivity.rows]);
+
+  return (
+    <div className="border border-sky-500/30 rounded-lg p-3 bg-slate-950/85 text-xs space-y-2" data-testid="ag21-round2-console">
+      <div className="font-bold text-sky-200">
+        📊 Forecast Lab Round 2 <span className="text-[10px] font-normal opacity-70">(non-authoritative)</span>
+      </div>
+      <div data-testid="ag21-round2-sensitivity">
+        Sensitivity · dominant lever {sensitivity.dominantLever} · rows {sensitivity.rows.length}
+      </div>
+      <div data-testid="ag21-round2-matrix">
+        Domain matrix · score {(matrix.matrixScore * 100).toFixed(0)}% · grade {matrix.evaluationGrade}
+      </div>
+      <div data-testid="ag21-round2-audit">
+        Audit · entries {audit.count} · latest {audit.latestSummary}
+      </div>
+    </div>
+  );
+};
+
 
 
 /** Agent 25 — modular self-tests (subset of npm run test:ag21). */
@@ -1328,6 +1697,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21ForecastLabDepthSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21PolicySensitivitySelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21DomainStressMatrixSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21ForecastAuditSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({

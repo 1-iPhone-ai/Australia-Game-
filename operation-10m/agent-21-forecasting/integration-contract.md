@@ -8,7 +8,7 @@
 ## Module identity
 
 - `O10M_AGENT21_MODULE_ID` = `forecasting_policy_lab`
-- `O10M_AGENT21_MODULE_VERSION` = `1.3.0`
+- `O10M_AGENT21_MODULE_VERSION` = `1.4.0`
 
 ## Assembly chunk
 
@@ -33,6 +33,9 @@
 | `buildAg21MultiHorizonProjection` / `runAg21ScenarioBatchComparison` | Multi-horizon ladder + batch scenario review |
 | `summarizeAg21ForecastBundleDepth` / `runAg21CounterfactualStressLadder` | Bundle depth rollup + stress ladder |
 | `Ag21ForecastDepthPanel` | Depth dashboard (`data-testid="ag21-forecast-depth-panel"`) |
+| `runAg21PolicySensitivitySweep` / `buildAg21DomainStressMatrix` | Round 2 policy sensitivity + domain stress matrix |
+| `appendAg21ForecastAuditEntry` / `summarizeAg21ForecastAuditLedger` | In-memory lab audit ledger |
+| `Ag21ForecastRound2Console` | Round 2 UI (`data-testid="ag21-round2-console"`) |
 
 ## Upstream dependencies (canonical only)
 
