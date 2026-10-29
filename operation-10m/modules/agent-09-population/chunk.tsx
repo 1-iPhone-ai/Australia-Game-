@@ -365,6 +365,10 @@ export interface NationalLaborDemographicsState {
   perseveranceResilienceOutlook?: NationalPerseveranceResilienceOutlook;
   subjectPerseveranceReadinessBrief?: NationalSubjectPerseveranceReadinessBrief;
   nationalWorkforcePerseveranceDepthIndex?: NationalWorkforcePerseveranceDepthIndex;
+  perseveranceGritCouplingBrief?: NationalPerseveranceGritCouplingBrief;
+  gritResilienceOutlook?: NationalGritResilienceOutlook;
+  subjectGritReadinessBrief?: NationalSubjectGritReadinessBrief;
+  nationalWorkforceGritDepthIndex?: NationalWorkforceGritDepthIndex;
 }
 
 export type MigrationShockKind =
@@ -2381,6 +2385,50 @@ export interface NationalWorkforcePerseveranceDepthIndex {
   stewardNote: string;
 }
 
+export type PerseveranceGritCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalPerseveranceGritCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: PerseveranceGritCouplingBand;
+  perseveranceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type GritResilienceBand = 'ebbing' | 'patchy' | 'rising' | 'fortified';
+
+export interface NationalGritResilienceOutlook {
+  turn: number;
+  resilienceIndex: number;
+  band: GritResilienceBand;
+  perseveranceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectGritReadinessBand = 'below_grit' | 'approaching' | 'grit_ready' | 'perseverance_locked';
+
+export interface NationalSubjectGritReadinessBrief {
+  turn: number;
+  gritIndex: number;
+  band: SubjectGritReadinessBand;
+  gritDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceGritDepthBand = 'fragile' | 'thin' | 'elevated' | 'grit';
+
+export interface NationalWorkforceGritDepthIndex {
+  turn: number;
+  gritIndex: number;
+  band: WorkforceGritDepthBand;
+  gritDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -3623,7 +3671,11 @@ export type LaborGiQueryTopic =
   | 'tenacity_perseverance_coupling'
   | 'perseverance_resilience'
   | 'subject_perseverance_readiness'
-  | 'workforce_perseverance_depth';
+  | 'workforce_perseverance_depth'
+  | 'perseverance_grit_coupling'
+  | 'grit_resilience'
+  | 'subject_grit_readiness'
+  | 'workforce_grit_depth';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -3691,6 +3743,7 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(endurance flexibility|endurance-flexibility coupling)/.test(q)) return 'endurance_flexibility_coupling';
   if (/\b(inclusion resilience|inclusion labor resilience)/.test(q)) return 'inclusion_resilience';
   if (/\b(subject commit readiness|commit readiness subject)/.test(q)) return 'subject_commit_readiness';
+  if (/\b(workforce grit depth|grit depth index labor)/.test(q)) return 'workforce_grit_depth';
   if (/\b(workforce perseverance depth|perseverance depth index labor)/.test(q)) return 'workforce_perseverance_depth';
   if (/\b(workforce tenacity depth|tenacity depth index labor)/.test(q)) return 'workforce_tenacity_depth';
   if (/\b(workforce tenacity|tenacity index labor)/.test(q)) return 'workforce_tenacity';
@@ -3828,6 +3881,9 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(tenacity perseverance|tenacity-perseverance coupling)/.test(q)) return 'tenacity_perseverance_coupling';
   if (/\b(perseverance resilience)/.test(q)) return 'perseverance_resilience';
   if (/\b(subject perseverance readiness)/.test(q)) return 'subject_perseverance_readiness';
+  if (/\b(perseverance grit|perseverance-grit coupling)/.test(q)) return 'perseverance_grit_coupling';
+  if (/\b(grit resilience)/.test(q)) return 'grit_resilience';
+  if (/\b(subject grit readiness)/.test(q)) return 'subject_grit_readiness';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -5255,6 +5311,38 @@ export function answerLaborDemographicsQuestion(
         inference: state.nationalWorkforcePerseveranceDepthIndex?.stewardNote || state.summary,
         projection: 'Perseverance depth synthesizes tenacity-perseverance coupling, resilience, and subject perseverance.'
       };
+    case 'perseverance_grit_coupling':
+      return {
+        topic,
+        headline: state.perseveranceGritCouplingBrief?.summary || 'Perseverance-grit coupling unavailable.',
+        fact: `Coupling band ${state.perseveranceGritCouplingBrief?.band ?? 'unknown'}; perseverance drag ${Math.round(state.perseveranceGritCouplingBrief?.perseveranceDrag ?? 0)}.`,
+        inference: state.perseveranceGritCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce perseverance depth with grit levers — bounded indices only.'
+      };
+    case 'grit_resilience':
+      return {
+        topic,
+        headline: state.gritResilienceOutlook?.summary || 'Grit resilience unavailable.',
+        fact: `Resilience band ${state.gritResilienceOutlook?.band ?? 'unknown'}; perseverance drag ${Math.round(state.gritResilienceOutlook?.perseveranceDrag ?? 0)}.`,
+        inference: state.gritResilienceOutlook?.stewardNote || state.outlook,
+        projection: 'Resilience outlook tracks perseverance resilience against grit levers for wave 49 depth.'
+      };
+    case 'subject_grit_readiness':
+      return {
+        topic,
+        headline: state.subjectGritReadinessBrief?.summary || 'Subject grit readiness unavailable.',
+        fact: `Grit band ${state.subjectGritReadinessBrief?.band ?? 'unknown'}; grit drag ${Math.round(state.subjectGritReadinessBrief?.gritDrag ?? 0)}.`,
+        inference: state.subjectGritReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject grit readiness gates subject perseverance against perseverance depth for O10-229 wave 49.'
+      };
+    case 'workforce_grit_depth':
+      return {
+        topic,
+        headline: state.nationalWorkforceGritDepthIndex?.summary || 'Workforce grit depth unavailable.',
+        fact: `Grit band ${state.nationalWorkforceGritDepthIndex?.band ?? 'unknown'}; grit drag ${Math.round(state.nationalWorkforceGritDepthIndex?.gritDrag ?? 0)}.`,
+        inference: state.nationalWorkforceGritDepthIndex?.stewardNote || state.summary,
+        projection: 'Grit depth synthesizes perseverance-grit coupling, resilience, and subject grit.'
+      };
     default:
       return {
         topic: 'national_summary',
@@ -6555,6 +6643,27 @@ export function buildStewardLaborBrief(
     state.nationalWorkforcePerseveranceDepthIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforcePerseveranceDepthIndex.stewardNote);
+  }
+  if (
+    state.perseveranceGritCouplingBrief?.band === 'decoupled' ||
+    state.perseveranceGritCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.perseveranceGritCouplingBrief.stewardNote);
+  }
+  if (state.gritResilienceOutlook?.band === 'ebbing' || state.gritResilienceOutlook?.band === 'patchy') {
+    hints.push(state.gritResilienceOutlook.stewardNote);
+  }
+  if (
+    state.subjectGritReadinessBrief?.band === 'below_grit' ||
+    state.subjectGritReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectGritReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceGritDepthIndex?.band === 'fragile' ||
+    state.nationalWorkforceGritDepthIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceGritDepthIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -19773,6 +19882,366 @@ export function perseveranceEaseForRegion(
 }
 
 
+// --- source: perseverance-grit-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalPerseveranceGritCouplingBrief,
+  type NationalWorkforcePerseveranceDepthIndex,
+  type PerseveranceGritCouplingBand
+} from './types';
+
+function couplingBand(index: number): PerseveranceGritCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-49 / wave-49 perseverance-grit coupling — perseverance depth × grit (O10-229). */
+export function computeNationalPerseveranceGritCouplingBrief(
+  state: NationalLaborDemographicsState,
+  perseveranceDepth: NationalWorkforcePerseveranceDepthIndex | null | undefined
+): NationalPerseveranceGritCouplingBrief {
+  if (!state.enabled || !perseveranceDepth) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      perseveranceDrag: 0,
+      summary: 'Perseverance-grit coupling idle — workforce perseverance depth unavailable.',
+      stewardNote: 'Compute workforce perseverance depth before grit coupling guidance.'
+    };
+  }
+
+  let gritLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    gritLift += gritEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  gritLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const perseveranceDrag = v1014laborClamp(
+    perseveranceDepth.perseveranceDrag * 0.46 +
+      (perseveranceDepth.band === 'fragile' || perseveranceDepth.band === 'thin' ? 11 : 3)
+  );
+  const depthLift =
+    perseveranceDepth.band === 'elevated' || perseveranceDepth.band === 'perseverance'
+      ? perseveranceDepth.perseveranceIndex * 0.22
+      : perseveranceDepth.perseveranceIndex * 0.11;
+
+  const couplingIndex = v1014laborClamp(22 + gritLift * 21 + depthLift - perseveranceDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained perseverance-grit link — deploy grit levers before wave-49 commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard grit resilience spikes that drain perseverance buffers.'
+        : 'Amplified coupling — pair grit packs with subject grit readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    perseveranceDrag,
+    summary: `Perseverance-grit coupling ${band} (index ${Math.round(couplingIndex)}); perseverance drag ${Math.round(perseveranceDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: grit-resilience-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type GritResilienceBand,
+  type NationalGritResilienceOutlook,
+  type NationalLaborDemographicsState,
+  type NationalPerseveranceResilienceOutlook
+} from './types';
+
+function resilienceBand(index: number): GritResilienceBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'fortified';
+}
+
+/** Round-49 / wave-49 grit resilience — perseverance resilience × grit levers (O10-229). */
+export function computeNationalGritResilienceOutlook(
+  state: NationalLaborDemographicsState,
+  perseveranceResilience: NationalPerseveranceResilienceOutlook | null | undefined
+): NationalGritResilienceOutlook {
+  if (!state.enabled || !perseveranceResilience) {
+    return {
+      turn: state.turn,
+      resilienceIndex: 50,
+      band: 'patchy',
+      perseveranceDrag: 0,
+      summary: 'Grit resilience idle — perseverance resilience unavailable.',
+      stewardNote: 'Compute perseverance resilience before grit resilience guidance.'
+    };
+  }
+
+  let gritLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    gritLift += gritEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  gritLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const perseveranceDrag = v1014laborClamp(
+    perseveranceResilience.tenacityDrag * 0.44 +
+      (perseveranceResilience.band === 'ebbing' || perseveranceResilience.band === 'patchy' ? 10 : 3)
+  );
+  const resilienceLift =
+    perseveranceResilience.band === 'rising' || perseveranceResilience.band === 'fortified'
+      ? perseveranceResilience.resilienceIndex * 0.18
+      : perseveranceResilience.resilienceIndex * 0.09;
+
+  const resilienceIndex = v1014laborClamp(24 + gritLift * 22 + resilienceLift - perseveranceDrag);
+  const band = resilienceBand(resilienceIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy grit resilience — deploy grit levers before subject grit assembly.'
+      : band === 'fortified'
+        ? 'Fortified band — verify perseverance-grit coupling before auto workforce pushes.'
+        : 'Rising resilience — align with perseverance resilience outlook checks.';
+
+  return {
+    turn: state.turn,
+    resilienceIndex,
+    band,
+    perseveranceDrag,
+    summary: `National grit resilience ${band} (index ${Math.round(resilienceIndex)}); perseverance drag ${Math.round(perseveranceDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-grit-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectGritReadinessBrief,
+  type NationalSubjectPerseveranceReadinessBrief,
+  type NationalWorkforcePerseveranceDepthIndex,
+  type SubjectGritReadinessBand
+} from './types';
+
+function gritBand(index: number): SubjectGritReadinessBand {
+  if (index <= 34) return 'below_grit';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'grit_ready';
+  return 'perseverance_locked';
+}
+
+/** Round-49 / wave-49 subject grit readiness — subject perseverance × perseverance depth (O10-229). */
+export function computeNationalSubjectGritReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectPerseverance: NationalSubjectPerseveranceReadinessBrief | null | undefined,
+  perseveranceDepth: NationalWorkforcePerseveranceDepthIndex | null | undefined
+): NationalSubjectGritReadinessBrief {
+  if (!state.enabled || !subjectPerseverance || !perseveranceDepth) {
+    return {
+      turn: state.turn,
+      gritIndex: 50,
+      band: 'approaching',
+      gritDrag: 0,
+      summary: 'Subject grit readiness idle — subject perseverance or perseverance depth unavailable.',
+      stewardNote: 'Compute subject perseverance and perseverance depth before grit guidance.'
+    };
+  }
+
+  const gritDrag = v1014laborClamp(
+    subjectPerseverance.perseveranceDrag * 0.36 +
+      perseveranceDepth.perseveranceDrag * 0.36 +
+      (subjectPerseverance.band === 'below_perseverance' || perseveranceDepth.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectPerseverance.band === 'perseverance_ready' || subjectPerseverance.band === 'tenacity_locked'
+      ? subjectPerseverance.perseveranceIndex * 0.25
+      : subjectPerseverance.perseveranceIndex * 0.13;
+  const depthLift =
+    perseveranceDepth.band === 'elevated' || perseveranceDepth.band === 'perseverance'
+      ? perseveranceDepth.perseveranceIndex * 0.23
+      : perseveranceDepth.perseveranceIndex * 0.12;
+
+  const gritIndex = v1014laborClamp(20 + subjectLift + depthLift - gritDrag);
+  const band = gritBand(gritIndex);
+
+  const stewardNote =
+    band === 'below_grit' || band === 'approaching'
+      ? 'Approaching grit — hold O10-229 wave-49 scale until perseverance-grit syncs.'
+      : band === 'perseverance_locked'
+        ? 'Perseverance-locked grit — still monitor grit resilience during corridor peaks.'
+        : 'Grit-ready — pair with workforce grit depth index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    gritIndex,
+    band,
+    gritDrag,
+    summary: `Subject grit readiness ${band} (index ${Math.round(gritIndex)}); grit drag ${Math.round(gritDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-grit-depth-index.ts ---
+  type NationalGritResilienceOutlook,
+  type NationalLaborDemographicsState,
+  type NationalPerseveranceGritCouplingBrief,
+  type NationalSubjectGritReadinessBrief,
+  type NationalWorkforceGritDepthIndex,
+  type WorkforceGritDepthBand
+} from './types';
+
+function depthBand(index: number): WorkforceGritDepthBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'grit';
+}
+
+export function computeNationalWorkforceGritDepthIndex(
+  state: NationalLaborDemographicsState,
+  perseveranceGrit: NationalPerseveranceGritCouplingBrief | null | undefined,
+  gritResilience: NationalGritResilienceOutlook | null | undefined,
+  subjectGrit: NationalSubjectGritReadinessBrief | null | undefined
+): NationalWorkforceGritDepthIndex {
+  if (!state.enabled || !perseveranceGrit || !gritResilience || !subjectGrit) {
+    return {
+      turn: state.turn,
+      gritIndex: 50,
+      band: 'thin',
+      gritDrag: 0,
+      summary: 'Workforce grit depth idle — coupling, resilience, or subject grit unavailable.',
+      stewardNote: 'Compute O10-229 wave-49 depth stack before grit guidance.'
+    };
+  }
+
+  const gritDrag = v1014laborClamp(
+    subjectGrit.gritDrag * 0.35 +
+      perseveranceGrit.perseveranceDrag * 0.3 +
+      gritResilience.perseveranceDrag * 0.25 +
+      (subjectGrit.band === 'below_grit' || perseveranceGrit.band === 'decoupled' ? 8 : 2)
+  );
+  const couplingLift =
+    perseveranceGrit.band === 'amplified' || perseveranceGrit.band === 'elevated'
+      ? perseveranceGrit.couplingIndex * 0.2
+      : perseveranceGrit.couplingIndex * 0.1;
+  const resilienceLift =
+    gritResilience.band === 'rising' || gritResilience.band === 'fortified'
+      ? gritResilience.resilienceIndex * 0.18
+      : gritResilience.resilienceIndex * 0.09;
+  const subjectLift =
+    subjectGrit.band === 'grit_ready' || subjectGrit.band === 'perseverance_locked'
+      ? subjectGrit.gritIndex * 0.22
+      : subjectGrit.gritIndex * 0.11;
+
+  const gritIndex = v1014laborClamp(18 + couplingLift + resilienceLift + subjectLift - gritDrag);
+  const band = depthBand(gritIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce grit depth — sequence perseverance-grit, resilience, and subject grit before post-73e5e01 tranche.'
+      : band === 'grit'
+        ? 'Grit band — avoid corridor overload that breaks subject grit bands.'
+        : 'Elevated grit depth — refresh subject grit checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    gritIndex,
+    band,
+    gritDrag,
+    summary: `National workforce grit depth ${band} (index ${Math.round(gritIndex)}); grit drag ${Math.round(gritDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: catalog/workforce-grit-levers.ts ---
+
+export type WorkforceGritLeverKind =
+  | 'grit_coaching_lane'
+  | 'shift_grit_pack'
+  | 'resolve_forum_band'
+  | 'continuity_grit_cell'
+  | 'peer_grit_circle';
+
+export interface WorkforceGritLever {
+  id: string;
+  kind: WorkforceGritLeverKind;
+  targetIndustry: StrategicIndustryKind;
+  hostRegions: readonly string[];
+  gritStrength: number;
+  label: string;
+  narrative: string;
+}
+
+export const WORKFORCE_GRIT_LEVERS: WorkforceGritLever[] = [
+  {
+    id: 'grit_manufacturing_vic',
+    kind: 'shift_grit_pack',
+    targetIndustry: 'manufacturing',
+    hostRegions: ['VIC', 'SA'],
+    gritStrength: 0.7,
+    label: 'Manufacturing grit pack',
+    narrative: 'Grit packs stabilize resolve without literal attrition counts.'
+  },
+  {
+    id: 'grit_health_nsw',
+    kind: 'grit_coaching_lane',
+    targetIndustry: 'research',
+    hostRegions: ['NSW', 'ACT'],
+    gritStrength: 0.73,
+    label: 'Capital grit coaching lane',
+    narrative: 'Coaching lanes reinforce perseverance-grit coupling outlooks.'
+  },
+  {
+    id: 'grit_agri_tas',
+    kind: 'continuity_grit_cell',
+    targetIndustry: 'agriculture',
+    hostRegions: ['TAS', 'VIC'],
+    gritStrength: 0.68,
+    label: 'Tasmanian continuity grit cell',
+    narrative: 'Grit cells ease seasonal perseverance drag on grit indices.'
+  },
+  {
+    id: 'grit_tech_nsw_vic',
+    kind: 'peer_grit_circle',
+    targetIndustry: 'technology',
+    hostRegions: ['NSW', 'VIC'],
+    gritStrength: 0.76,
+    label: 'Tech grit circle',
+    narrative: 'Circles pair with subject grit readiness checks.'
+  },
+  {
+    id: 'grit_mining_wa',
+    kind: 'resolve_forum_band',
+    targetIndustry: 'mining',
+    hostRegions: ['WA', 'QLD'],
+    gritStrength: 0.71,
+    label: 'Frontier grit forum',
+    narrative: 'Forums bound grit resilience outlook spikes.'
+  }
+];
+
+export function lookupWorkforceGritLever(id: string): WorkforceGritLever | undefined {
+  return WORKFORCE_GRIT_LEVERS.find(lever => lever.id === id);
+}
+
+export function gritEaseForRegion(
+  regionId: string,
+  dominantIndustry: StrategicIndustryKind | null | undefined
+): number {
+  if (!dominantIndustry) return 0.08;
+  let best = 0;
+  for (const lever of WORKFORCE_GRIT_LEVERS) {
+    if (!lever.hostRegions.includes(regionId)) continue;
+    if (lever.targetIndustry !== dominantIndustry) continue;
+    best = Math.max(best, lever.gritStrength);
+  }
+  return best > 0 ? best : 0.06;
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -21052,6 +21521,25 @@ export function computeNationalLaborDemographics(
     state.perseveranceResilienceOutlook,
     state.subjectPerseveranceReadinessBrief
   );
+  state.perseveranceGritCouplingBrief = computeNationalPerseveranceGritCouplingBrief(
+    state,
+    state.nationalWorkforcePerseveranceDepthIndex
+  );
+  state.gritResilienceOutlook = computeNationalGritResilienceOutlook(
+    state,
+    state.perseveranceResilienceOutlook
+  );
+  state.subjectGritReadinessBrief = computeNationalSubjectGritReadinessBrief(
+    state,
+    state.subjectPerseveranceReadinessBrief,
+    state.nationalWorkforcePerseveranceDepthIndex
+  );
+  state.nationalWorkforceGritDepthIndex = computeNationalWorkforceGritDepthIndex(
+    state,
+    state.perseveranceGritCouplingBrief,
+    state.gritResilienceOutlook,
+    state.subjectGritReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -22181,6 +22669,33 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforcePerseveranceDepthIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.perseveranceGritCouplingBrief?.band === 'decoupled' ||
+      state.perseveranceGritCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.perseveranceGritCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.gritResilienceOutlook?.band === 'ebbing' || state.gritResilienceOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.gritResilienceOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectGritReadinessBrief?.band === 'below_grit' ||
+      state.subjectGritReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectGritReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceGritDepthIndex?.band === 'fragile' ||
+      state.nationalWorkforceGritDepthIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceGritDepthIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -25101,6 +25616,70 @@ export function runV1014LaborDemographicsSelfTests(): {
     'perseverance depth steward note'
   );
   check('R4816', perseveranceEaseForRegion('NSW', 'technology') > 0, 'perseverance ease for region');
+
+  check('R4901', Boolean(r1.state.perseveranceGritCouplingBrief?.band), 'perseverance grit on state');
+  check(
+    'R4902',
+    (r1.state.perseveranceGritCouplingBrief?.perseveranceDrag ?? 0) >= 0,
+    'perseverance grit drag'
+  );
+  check('R4903', Boolean(r1.state.gritResilienceOutlook?.band), 'grit resilience on state');
+  check(
+    'R4904',
+    (r1.state.gritResilienceOutlook?.perseveranceDrag ?? 0) >= 0,
+    'grit resilience perseverance drag'
+  );
+  check('R4905', Boolean(r1.state.subjectGritReadinessBrief?.band), 'subject grit on state');
+  check('R4906', Boolean(r1.state.nationalWorkforceGritDepthIndex?.band), 'workforce grit depth on state');
+  check(
+    'R4907',
+    detectLaborDemographicsQuery('perseverance grit coupling') === 'perseverance_grit_coupling',
+    'GI perseverance grit detect'
+  );
+  check(
+    'R4908',
+    detectLaborDemographicsQuery('grit resilience') === 'grit_resilience',
+    'GI grit resilience detect'
+  );
+  check(
+    'R4909',
+    detectLaborDemographicsQuery('subject grit readiness') === 'subject_grit_readiness',
+    'GI subject grit detect'
+  );
+  check(
+    'R4910',
+    detectLaborDemographicsQuery('workforce grit depth') === 'workforce_grit_depth',
+    'GI workforce grit depth detect'
+  );
+  check(
+    'R4911',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_grit_depth').headline.length > 5,
+    'GI workforce grit depth answer'
+  );
+  const perseveranceGritOnly = computeNationalPerseveranceGritCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforcePerseveranceDepthIndex
+  );
+  check('R4912', perseveranceGritOnly.summary.length > 10, 'perseverance grit standalone summary');
+  const gritResilienceOnly = computeNationalGritResilienceOutlook(r1.state, r1.state.perseveranceResilienceOutlook);
+  check('R4913', gritResilienceOnly.band.length > 3, 'grit resilience band string');
+  const subjectGritOnly = computeNationalSubjectGritReadinessBrief(
+    r1.state,
+    r1.state.subjectPerseveranceReadinessBrief,
+    r1.state.nationalWorkforcePerseveranceDepthIndex
+  );
+  check('R4914', subjectGritOnly.gritDrag >= 0, 'subject grit drag');
+  check(
+    'R4915',
+    computeNationalWorkforceGritDepthIndex(
+      rHhBad.state,
+      rHhBad.state.perseveranceGritCouplingBrief,
+      rHhBad.state.gritResilienceOutlook,
+      rHhBad.state.subjectGritReadinessBrief
+    ).stewardNote.length > 8,
+    'grit depth steward note'
+  );
+  check('R4916', gritEaseForRegion('NSW', 'technology') > 0, 'grit ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

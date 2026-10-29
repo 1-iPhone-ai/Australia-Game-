@@ -361,6 +361,10 @@ export interface NationalLaborDemographicsState {
   perseveranceResilienceOutlook?: NationalPerseveranceResilienceOutlook;
   subjectPerseveranceReadinessBrief?: NationalSubjectPerseveranceReadinessBrief;
   nationalWorkforcePerseveranceDepthIndex?: NationalWorkforcePerseveranceDepthIndex;
+  perseveranceGritCouplingBrief?: NationalPerseveranceGritCouplingBrief;
+  gritResilienceOutlook?: NationalGritResilienceOutlook;
+  subjectGritReadinessBrief?: NationalSubjectGritReadinessBrief;
+  nationalWorkforceGritDepthIndex?: NationalWorkforceGritDepthIndex;
 }
 
 export type MigrationShockKind =
@@ -2373,6 +2377,50 @@ export interface NationalWorkforcePerseveranceDepthIndex {
   perseveranceIndex: number;
   band: WorkforcePerseveranceDepthBand;
   perseveranceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type PerseveranceGritCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalPerseveranceGritCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: PerseveranceGritCouplingBand;
+  perseveranceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type GritResilienceBand = 'ebbing' | 'patchy' | 'rising' | 'fortified';
+
+export interface NationalGritResilienceOutlook {
+  turn: number;
+  resilienceIndex: number;
+  band: GritResilienceBand;
+  perseveranceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectGritReadinessBand = 'below_grit' | 'approaching' | 'grit_ready' | 'perseverance_locked';
+
+export interface NationalSubjectGritReadinessBrief {
+  turn: number;
+  gritIndex: number;
+  band: SubjectGritReadinessBand;
+  gritDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceGritDepthBand = 'fragile' | 'thin' | 'elevated' | 'grit';
+
+export interface NationalWorkforceGritDepthIndex {
+  turn: number;
+  gritIndex: number;
+  band: WorkforceGritDepthBand;
+  gritDrag: number;
   summary: string;
   stewardNote: string;
 }

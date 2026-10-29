@@ -202,6 +202,10 @@ import { computeNationalTenacityPerseveranceCouplingBrief } from './tenacity-per
 import { computeNationalPerseveranceResilienceOutlook } from './perseverance-resilience-outlook';
 import { computeNationalSubjectPerseveranceReadinessBrief } from './subject-perseverance-readiness-brief';
 import { computeNationalWorkforcePerseveranceDepthIndex } from './national-workforce-perseverance-depth-index';
+import { computeNationalPerseveranceGritCouplingBrief } from './perseverance-grit-coupling-brief';
+import { computeNationalGritResilienceOutlook } from './grit-resilience-outlook';
+import { computeNationalSubjectGritReadinessBrief } from './subject-grit-readiness-brief';
+import { computeNationalWorkforceGritDepthIndex } from './national-workforce-grit-depth-index';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -1309,6 +1313,25 @@ export function computeNationalLaborDemographics(
     state.tenacityPerseveranceCouplingBrief,
     state.perseveranceResilienceOutlook,
     state.subjectPerseveranceReadinessBrief
+  );
+  state.perseveranceGritCouplingBrief = computeNationalPerseveranceGritCouplingBrief(
+    state,
+    state.nationalWorkforcePerseveranceDepthIndex
+  );
+  state.gritResilienceOutlook = computeNationalGritResilienceOutlook(
+    state,
+    state.perseveranceResilienceOutlook
+  );
+  state.subjectGritReadinessBrief = computeNationalSubjectGritReadinessBrief(
+    state,
+    state.subjectPerseveranceReadinessBrief,
+    state.nationalWorkforcePerseveranceDepthIndex
+  );
+  state.nationalWorkforceGritDepthIndex = computeNationalWorkforceGritDepthIndex(
+    state,
+    state.perseveranceGritCouplingBrief,
+    state.gritResilienceOutlook,
+    state.subjectGritReadinessBrief
   );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
@@ -2439,6 +2462,33 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforcePerseveranceDepthIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.perseveranceGritCouplingBrief?.band === 'decoupled' ||
+      state.perseveranceGritCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.perseveranceGritCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.gritResilienceOutlook?.band === 'ebbing' || state.gritResilienceOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.gritResilienceOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectGritReadinessBrief?.band === 'below_grit' ||
+      state.subjectGritReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectGritReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceGritDepthIndex?.band === 'fragile' ||
+      state.nationalWorkforceGritDepthIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceGritDepthIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
