@@ -1,6 +1,6 @@
 {
   "smokeId": "cross-system-smoke-dry-run",
-  "ranAt": "2026-10-29T08:35:57.618Z",
+  "ranAt": "2026-10-29T08:39:47.457Z",
   "mode": "dry-run-export-presence",
   "artifact": "/workspace/build/tranche-full-chunks-projection.tsx",
   "canonicalModified": false,
