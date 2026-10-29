@@ -136011,6 +136011,8 @@ export interface V95InvariantInput {
   gameSettings?: any;
   actorsById?: Record<string, any> | null;
   notifications?: any[] | null;
+  /** When validating a CanonicalGameState root (stress / replay), enables F15 nesting checks. */
+  canonicalRoot?: unknown;
 }
 
 export function validateCriticalGameInvariants(s: V95InvariantInput): V95InvariantViolation[] {
@@ -136065,7 +136067,107 @@ export function validateCriticalGameInvariants(s: V95InvariantInput): V95Invaria
     try { consent = isPersistenceConsentActive(loadPersistencePolicy()); } catch { consent = false; }
     if (!consent) add('persistence_consent', 'CRITICAL', 'Persistent AI Memory', 'Persistent AI Memory is on without verified consent', 'off without consent', true);
   }
+  validateStructuralStateInvariants(s).forEach(v => out.push(v));
   return out;
+}
+
+// ---- O111 Agent 81: structural / canonical shape invariants (F15 nesting, actor drift) --------------------
+/** Extra nested match+gameState layers inside canonical.gameState (F15 regression signal). */
+export function measureCanonicalGameStateNestingDepth(root: unknown): number {
+  if (!root || typeof root !== 'object') return 0;
+  const r = root as Record<string, unknown>;
+  if (!r.match || typeof r.match !== 'object' || !r.gameState || typeof r.gameState !== 'object') return 0;
+  let depth = 0;
+  let node: any = r.gameState;
+  while (node && typeof node === 'object') {
+    if (node.match && typeof node.match === 'object' && node.gameState && typeof node.gameState === 'object' && node.gameState !== node) {
+      depth += 1;
+      node = node.gameState;
+    } else break;
+  }
+  return depth;
+}
+
+export function detectCanonicalNestingViolation(root: unknown): { extraLayers: number; ok: boolean } {
+  const extraLayers = measureCanonicalGameStateNestingDepth(root);
+  return { extraLayers, ok: extraLayers === 0 };
+}
+
+export function validateStructuralStateInvariants(s: V95InvariantInput & { canonicalRoot?: unknown }): V95InvariantViolation[] {
+  const out: V95InvariantViolation[] = [];
+  const add = (id: string, severity: V95Severity, system: string, message: string, expected: string, actual: unknown) =>
+    out.push({ id, severity, system, message, expected, actual: v95Fmt(actual) });
+  const root = s.canonicalRoot;
+  if (root) {
+    const nest = detectCanonicalNestingViolation(root);
+    if (!nest.ok) add('canonical_f15_nesting', 'CRITICAL', 'Canonical shape', 'Canonical state has nested match/gameState layers (F15 regression)', '0 extra layers', nest.extraLayers);
+    const r = root as any;
+    if (r.match && r.gameState) {
+      const md = Number(r.match.day);
+      const gd = Number(r.gameState.day);
+      if (Number.isFinite(md) && Number.isFinite(gd) && md !== gd) {
+        add('canonical_day_parity', 'MAJOR', 'Turn flow', 'match.day disagrees with gameState.day', 'equal', `${md} vs ${gd}`);
+      }
+    }
+  }
+  const gs = s.gameState;
+  if (gs && typeof gs === 'object' && gs.match && typeof gs.match === 'object' && gs.gameState && typeof gs.gameState === 'object' && gs.gameState !== gs) {
+    add('save_gameState_nested_canonical', 'CRITICAL', 'Canonical shape', 'gameState embeds a full canonical root (double nesting)', 'flat GameStateSnapshot', 'match+gameState inside gameState');
+  }
+  const ab = s.actorsById;
+  if (ab && s.player && ab.player && Number(ab.player.money) !== Number(s.player.money)) {
+    add('actors_player_money_drift', 'MAJOR', 'Actors', 'actorsById.player.money differs from player slice', 'equal cash', `${ab.player.money} vs ${s.player.money}`);
+  }
+  if (ab && s.aiPlayer && ab.ai && Number(ab.ai.money) !== Number(s.aiPlayer.money)) {
+    add('actors_ai_money_drift', 'MAJOR', 'Actors', 'actorsById.ai.money differs from aiPlayer slice', 'equal cash', `${ab.ai.money} vs ${s.aiPlayer.money}`);
+  }
+  return out;
+}
+
+/** Operation 111 Agent 81 — state invariant regression suite (V9.4 baseline). */
+export function runO111Agent81StateInvariantSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  check('o111_i81_f15_no_nesting_on_actions', 'F15: repeated canonical actions do not deepen gameState nesting', () => {
+    let state: any = createTuningMatchState(8151, false);
+    for (let i = 0; i < 40; i++) {
+      const r = reduceGameAction(state, { type: 'region_deposit', actorId: 'player', targetRegion: 'NSW', investmentAmount: 1 } as unknown as GameAction);
+      if (r?.nextState) state = r.nextState;
+      state = canonicalStateFromLiveRuntime(state);
+      const nest = detectCanonicalNestingViolation(state);
+      if (!nest.ok) return `extraLayers=${nest.extraLayers} after iteration ${i}`;
+    }
+    return detectCanonicalNestingViolation(state).ok || `extraLayers=${detectCanonicalNestingViolation(state).extraLayers}`;
+  });
+  check('o111_i81_f15_detects_artificial', 'F15 detector flags artificial gameState.gameState nesting', () => {
+    const base: any = createTuningMatchState(81, false);
+    const bad: any = JSON.parse(JSON.stringify(base));
+    bad.gameState = { match: { matchId: 'nested', day: bad.gameState?.day ?? 1 }, gameState: bad.gameState };
+    const v = validateStructuralStateInvariants({ player: bad.player, aiPlayer: bad.aiPlayer, gameState: bad.gameState, canonicalRoot: bad });
+    return v.some(x => x.id === 'canonical_f15_nesting' || x.id === 'save_gameState_nested_canonical') || v.map(x => x.id).join(',') || 'no violation';
+  });
+  check('o111_i81_canonical_idempotent', 'canonicalStateFromLiveRuntime is idempotent on canonical input', () => {
+    const a: any = createTuningMatchState(8181, false);
+    const b: any = canonicalStateFromLiveRuntime(a);
+    const c: any = canonicalStateFromLiveRuntime(b);
+    const nb = detectCanonicalNestingViolation(b);
+    const nc = detectCanonicalNestingViolation(c);
+    return (nb.ok && nc.ok && b.gameState?.day === c.gameState?.day) || `b=${nb.extraLayers} c=${nc.extraLayers} days ${b.gameState?.day}/${c.gameState?.day}`;
+  });
+  check('o111_i81_structural_on_fixture', 'Structural + critical invariants pass on the V95 save fixture', () => {
+    const f: any = createV95SaveFixture();
+    const x = validateCriticalGameInvariants({ player: f.player, aiPlayer: f.aiPlayer, gameState: f.gameState, gameSettings: f.gameSettings, notifications: f.notifications });
+    return x.length === 0 || x.map(y => `${y.id}:${y.actual}`).join(', ');
+  });
+  check('o111_i81_stress_nesting_bounded', 'Long-match stress keeps canonical nesting at zero extra layers', () => {
+    const s = v95WithIsolatedGlobals(() => runV95LongMatchStress({ seed: 8181, turns: 24, sampleEvery: 8 }));
+    return (s.errors.length === 0 && !s.violations.some(v => v.id === 'canonical_f15_nesting' || v.id === 'save_gameState_nested_canonical'))
+      || `${s.errors.join('|')} ${s.violations.slice(0, 2).map(v => v.id).join(',')}`;
+  });
+  return results;
 }
 
 // ---- Replay integrity + first-divergence classification ---------------------------------------------------
@@ -136336,7 +136438,7 @@ function v95StressSlice(opts: { seed?: number; turns?: number; sampleEvery?: num
           }
         }
       }
-      const v = validateCriticalGameInvariants({ player: (state as any).player || state.actorsById?.player, aiPlayer: (state as any).aiPlayer || state.actorsById?.ai, gameState: state.gameState, gameSettings: state.gameSettings, actorsById: state.actorsById as any });
+      const v = validateCriticalGameInvariants({ player: (state as any).player || state.actorsById?.player, aiPlayer: (state as any).aiPlayer || state.actorsById?.ai, gameState: state.gameState, gameSettings: state.gameSettings, actorsById: state.actorsById as any, canonicalRoot: state });
       v.forEach(x => { if (res.violations.length < 20) res.violations.push({ ...x, message: `turn ${turn}: ${x.message}` }); });
       if (turn % every === 0) { try { res.sizes.push({ turn, bytes: JSON.stringify(state).length }); } catch { res.errors.push(`turn ${turn}: state not serializable`); } }
       res.turns = turn;
@@ -136533,6 +136635,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'intent', label: 'Player Intent', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runPlayerIntentLayerSelfTests() },
   { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
   { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
+  { id: 'o111_i81', label: 'O111 Agent 81 — State invariants', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runO111Agent81StateInvariantSelfTests() },
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
     ...runAiMemoryPhase1SelfTests().results, ...runAiMemoryPhase2SelfTests().results, ...runAiMemoryPhase3SelfTests().results,
@@ -181945,6 +182048,16 @@ export function runReliabilityUpgradeSelfTests(): V9SelfTestResult[] {
   const infraState = (): any => ({ turn: 4, day: 4, actorsById: { player: { id: 'player', money: 10000, teamId: TEAM_PLAYER_ID, actionsUsedThisTurn: 0 } },
     infrastructureProjects: { p_rail: { id: 'p_rail', title: 'Inland Rail', projectType: 'logistics_hub', status: 'unlocked', totalCost: 8000, laborTurnsRequired: 6, assignedWorkers: [], totalInvestedMoney: 0, regionId: 'NSW' } } });
 
+  check('ru_f15_canonical_nesting', 'F15: canonicalStateFromLiveRuntime does not nest gameState on repeated reduceGameAction (Agent 81)', () => {
+    let state: any = createTuningMatchState(8151, false);
+    for (let i = 0; i < 12; i++) {
+      const r = reduceGameAction(state, { type: 'region_deposit', actorId: 'player', targetRegion: 'NSW', investmentAmount: 1 } as unknown as GameAction);
+      if (r?.nextState) state = r.nextState;
+      state = canonicalStateFromLiveRuntime(state);
+      if (!detectCanonicalNestingViolation(state).ok) return `extraLayers after ${i}`;
+    }
+    return detectCanonicalNestingViolation(state).ok || 'nested';
+  });
   check('ru_capacity_null_weakest', 'State Capacity tolerates a healthy national summary (weakestSystem: null) — the match-start crash', () => {
     const r = computeNationalStateCapacity({ turn: 3, viewerId: 'player', programs: [], crises: [], stakeholders: [],
       nationalSystems: { revision: 1, bottlenecks: [], dependencies: [], national: nationalOk() } } as any, null);
