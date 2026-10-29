@@ -181,6 +181,9 @@ import { computeConvergenceSynthesisResonanceIndex } from './convergence-synthes
 import { computeSynthesisConvergencePressureIndex } from './synthesis-convergence-pressure-index.ts';
 import { computeConvergencePressureSynthesisIndex } from './convergence-pressure-synthesis-index.ts';
 import { computePressureSynthesisConvergenceIndex } from './pressure-synthesis-convergence-index.ts';
+import { computeConvergenceSynthesisPressureIndex } from './convergence-synthesis-pressure-index.ts';
+import { computeSynthesisPressureResonanceIndex } from './synthesis-pressure-resonance-index.ts';
+import { computePressureResonanceConvergenceIndex } from './pressure-resonance-convergence-index.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -4051,6 +4054,56 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
     const state = { ...ev.state, meta: { ...ev.state.meta, synthesisConvergencePressureIndex: 77 } };
     const findings = auditTeamMultiAgentLayer(state, baseInputs());
     return findings.some(f => f.severity === 'warning' && /Synthesis–convergence pressure/.test(f.message));
+  });
+
+  check(results, 'a18_convergence_synthesis_pressure', 'Convergence–synthesis pressure: pressure synthesis plus synthesis convergence scores high', () => {
+    const report = computeConvergenceSynthesisPressureIndex(50, 48, 3);
+    return report.pressureIndex >= 48;
+  });
+
+  check(results, 'a18_synthesis_pressure_resonance', 'Synthesis–pressure resonance: synthesis convergence plus pressure synthesis scores high', () => {
+    const report = computeSynthesisPressureResonanceIndex(48, 50, 3);
+    return report.resonanceIndex >= 48;
+  });
+
+  check(results, 'a18_pressure_resonance_convergence', 'Pressure–resonance convergence: pressure synthesis plus convergence synthesis scores high', () => {
+    const report = computePressureResonanceConvergenceIndex(48, 50, 48);
+    return report.convergenceIndex >= 46;
+  });
+
+  check(results, 'a18_eval_round52_meta', 'Layer: round-52 meta exposes convergence synthesis pressure, synthesis resonance, pressure convergence', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.convergenceSynthesisPressureIndex === 'number' &&
+      typeof m.synthesisPressureResonanceIndex === 'number' &&
+      typeof m.pressureResonanceConvergenceIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_convergence_synthesis_pressure', 'Audit: convergence–synthesis pressure surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, convergenceSynthesisPressureIndex: 77 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /Convergence–synthesis pressure/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round52_combined', 'Dual team: round-52 combined pressure, resonance, convergence exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.convergenceSynthesisPressureCombined === 'number' &&
+      typeof dual.synthesisPressureResonanceCombined === 'number' &&
+      typeof dual.pressureResonanceConvergenceCombined === 'number'
+    );
   });
 
   check(results, 'a18_dual_round51_combined', 'Dual team: round-51 combined pressure, synthesis, convergence exposed', () => {

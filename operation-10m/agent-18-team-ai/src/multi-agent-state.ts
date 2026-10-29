@@ -173,6 +173,9 @@ import { computeConvergenceSynthesisResonanceIndex } from './convergence-synthes
 import { computeSynthesisConvergencePressureIndex } from './synthesis-convergence-pressure-index.ts';
 import { computeConvergencePressureSynthesisIndex } from './convergence-pressure-synthesis-index.ts';
 import { computePressureSynthesisConvergenceIndex } from './pressure-synthesis-convergence-index.ts';
+import { computeConvergenceSynthesisPressureIndex } from './convergence-synthesis-pressure-index.ts';
+import { computeSynthesisPressureResonanceIndex } from './synthesis-pressure-resonance-index.ts';
+import { computePressureResonanceConvergenceIndex } from './pressure-resonance-convergence-index.ts';
 import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
@@ -1942,6 +1945,24 @@ export function evaluateTeamMultiAgentLayer(
     state.meta.coordinationCompositeScore ?? 100,
   );
   pressureSynthesisConvergence.notes.forEach(n => diagnostics.push(n));
+  const convergenceSynthesisPressureR52 = computeConvergenceSynthesisPressureIndex(
+    convergencePressureSynthesis.synthesisIndex,
+    synthesisConvergencePressure.pressureIndex,
+    state.meta.coordinationEscalationTier ?? 0,
+  );
+  convergenceSynthesisPressureR52.notes.forEach(n => diagnostics.push(n));
+  const synthesisPressureResonanceR52 = computeSynthesisPressureResonanceIndex(
+    synthesisConvergencePressure.pressureIndex,
+    pressureSynthesisConvergence.convergenceIndex,
+    state.meta.coordinationEscalationTier ?? 0,
+  );
+  synthesisPressureResonanceR52.notes.forEach(n => diagnostics.push(n));
+  const pressureResonanceConvergenceR52 = computePressureResonanceConvergenceIndex(
+    pressureSynthesisConvergence.convergenceIndex,
+    convergenceSynthesisPressureR52.pressureIndex,
+    state.meta.coordinationCompositeScore ?? 100,
+  );
+  pressureResonanceConvergenceR52.notes.forEach(n => diagnostics.push(n));
   state = {
     ...state,
     diagnostics,
@@ -2040,6 +2061,9 @@ export function evaluateTeamMultiAgentLayer(
       synthesisConvergencePressureIndex: synthesisConvergencePressure.pressureIndex,
       convergencePressureSynthesisIndex: convergencePressureSynthesis.synthesisIndex,
       pressureSynthesisConvergenceIndex: pressureSynthesisConvergence.convergenceIndex,
+      convergenceSynthesisPressureIndex: convergenceSynthesisPressureR52.pressureIndex,
+      synthesisPressureResonanceIndex: synthesisPressureResonanceR52.resonanceIndex,
+      pressureResonanceConvergenceIndex: pressureResonanceConvergenceR52.convergenceIndex,
     },
   };
 
