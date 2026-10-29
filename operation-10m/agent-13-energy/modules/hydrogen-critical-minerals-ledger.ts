@@ -323,5 +323,163 @@ export function runAgent13HydrogenMineralsScaleSelfTests(): { passed: number; fa
   });
   ok(persistB.next.securityIndex >= persistA.next.securityIndex * 0.82);
 
+  const turnSc = runAgent13HydrogenMineralsTurnScenario(V1014_HYDROGEN_MINERALS_TURN_SCENARIOS[0]);
+  ok(turnSc.passed && turnSc.lastHydrogenRelief >= 5);
+
+  const giH2 = scoreAgent13HydrogenMineralsGIAlignment({
+    actionText: 'Fund lithium hydroxide and green ammonia export terminal',
+    hydrogenBand: 'export_ready',
+    mineralsBand: 'secure',
+  });
+  ok(giH2.relevanceDelta > 1 && !!giH2.reason);
+
   return { passed, failed, total: passed + failed };
+}
+
+export interface Agent13HydrogenMineralsTurnStep {
+  turn: number;
+  regionId: string;
+  renewableShareScore: number;
+  gridStressPoints: number;
+  circularRecoveryRelief: number;
+  extractionScore: number;
+  miningIndustryStrength: number;
+  completedProjectTypes: string[];
+}
+
+export interface Agent13HydrogenMineralsTurnScenario {
+  id: string;
+  label: string;
+  steps: Agent13HydrogenMineralsTurnStep[];
+  expect: {
+    minHydrogenGridReliefOnLast?: number;
+    minMineralsReliefOnLast?: number;
+    lastHydrogenBand?: V1014HydrogenExportBand;
+  };
+}
+
+export const V1014_HYDROGEN_MINERALS_TURN_SCENARIOS: readonly Agent13HydrogenMineralsTurnScenario[] = [
+  {
+    id: 'sc_h2_hub_buildout_sa',
+    label: 'SA green hydrogen hub build-out across turns',
+    steps: [
+      {
+        turn: 1,
+        regionId: 'SA',
+        renewableShareScore: 38,
+        gridStressPoints: 12,
+        circularRecoveryRelief: 1.5,
+        extractionScore: 22,
+        miningIndustryStrength: 28,
+        completedProjectTypes: ['green_hydrogen_hub'],
+      },
+      {
+        turn: 2,
+        regionId: 'SA',
+        renewableShareScore: 52,
+        gridStressPoints: 10,
+        circularRecoveryRelief: 2.2,
+        extractionScore: 24,
+        miningIndustryStrength: 32,
+        completedProjectTypes: ['green_hydrogen_hub', 'ammonia_export_terminal'],
+      },
+      {
+        turn: 3,
+        regionId: 'SA',
+        renewableShareScore: 68,
+        gridStressPoints: 8,
+        circularRecoveryRelief: 3,
+        extractionScore: 26,
+        miningIndustryStrength: 36,
+        completedProjectTypes: ['green_hydrogen_hub', 'ammonia_export_terminal', 'hydrogen_industrial_heat', 'lithium_processing'],
+      },
+    ],
+    expect: { minHydrogenGridReliefOnLast: 5, minMineralsReliefOnLast: 0.65, lastHydrogenBand: 'export_ready' },
+  },
+] as const;
+
+export function runAgent13HydrogenMineralsTurnScenario(
+  scenario: Agent13HydrogenMineralsTurnScenario,
+): { passed: boolean; detail: string; lastHydrogenRelief: number; lastMineralsRelief: number } {
+  let h2Mem: V1014HydrogenPersistedSlice | null = null;
+  let minMem: V1014MineralsPersistedSlice | null = null;
+  let lastHydrogenRelief = 0;
+  let lastMineralsRelief = 0;
+  let lastBand: V1014HydrogenExportBand = 'nascent';
+
+  for (const step of scenario.steps) {
+    const h2 = computeRegionalHydrogenLedger({
+      regionId: step.regionId,
+      renewableShareScore: step.renewableShareScore,
+      gridStressPoints: step.gridStressPoints,
+      circularRecoveryRelief: step.circularRecoveryRelief,
+      completedProjectTypes: step.completedProjectTypes,
+      prev: h2Mem,
+    });
+    h2Mem = h2.next;
+    lastHydrogenRelief = h2.ledger.hydrogenGridRelief;
+    lastBand = h2.ledger.band;
+
+    const min = advanceRegionalMineralsSupply({
+      regionId: step.regionId,
+      extractionScore: step.extractionScore,
+      miningIndustryStrength: step.miningIndustryStrength,
+      hydrogenBand: h2.ledger.band,
+      completedProjectTypes: step.completedProjectTypes,
+      prev: minMem,
+    });
+    minMem = min.next;
+    lastMineralsRelief = min.ledger.mineralsSupplyRelief;
+  }
+
+  if (scenario.expect.minHydrogenGridReliefOnLast != null && lastHydrogenRelief < scenario.expect.minHydrogenGridReliefOnLast) {
+    return {
+      passed: false,
+      detail: `hydrogen relief ${lastHydrogenRelief} < ${scenario.expect.minHydrogenGridReliefOnLast}`,
+      lastHydrogenRelief,
+      lastMineralsRelief,
+    };
+  }
+  if (scenario.expect.minMineralsReliefOnLast != null && lastMineralsRelief < scenario.expect.minMineralsReliefOnLast) {
+    return {
+      passed: false,
+      detail: `minerals relief ${lastMineralsRelief} < ${scenario.expect.minMineralsReliefOnLast}`,
+      lastHydrogenRelief,
+      lastMineralsRelief,
+    };
+  }
+  if (scenario.expect.lastHydrogenBand != null) {
+    const allowed: V1014HydrogenExportBand[] = [scenario.expect.lastHydrogenBand];
+    if (scenario.expect.lastHydrogenBand === 'export_ready') allowed.push('hub_leader');
+    if (!allowed.includes(lastBand)) {
+      return { passed: false, detail: `band ${lastBand} not allowed`, lastHydrogenRelief, lastMineralsRelief };
+    }
+  }
+
+  return { passed: true, detail: 'ok', lastHydrogenRelief, lastMineralsRelief };
+}
+
+export function scoreAgent13HydrogenMineralsGIAlignment(params: {
+  actionText: string;
+  hydrogenBand?: string;
+  mineralsBand?: string;
+}): { relevanceDelta: number; reason: string | null } {
+  const text = params.actionText.toLowerCase();
+  const hits = ['hydrogen', 'ammonia', 'lithium', 'electrolyser', 'nickel', 'rare earth'].filter(k => text.includes(k));
+  if (!hits.length) return { relevanceDelta: 0, reason: null };
+  let delta = clamp(hits.length * 0.45, 0, 2);
+  if (params.hydrogenBand === 'hub_leader' || params.hydrogenBand === 'export_ready') {
+    delta += hits.some(h => h === 'hydrogen' || h === 'ammonia') ? 0.7 : 0.3;
+  }
+  if (params.mineralsBand === 'strategic_reserve' || params.mineralsBand === 'secure') {
+    delta += hits.some(h => h.includes('lithium') || h.includes('nickel')) ? 0.5 : 0.2;
+  }
+  if (params.mineralsBand === 'exposed' && hits.some(h => h.includes('lithium'))) {
+    delta -= 0.35;
+  }
+  delta = clamp(delta, -1, 2.5);
+  return {
+    relevanceDelta: delta,
+    reason: delta > 0.25 ? `Hydrogen/minerals GI: ${hits.slice(0, 2).join(', ')} aligns with regional supply chain depth.` : null,
+  };
 }

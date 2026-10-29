@@ -19,6 +19,8 @@ const REQUIRED_EXPORTS = [
   'runAgent13EmissionsWaterScaleSelfTests',
   'runAgent13BiodiversityCircularScaleSelfTests',
   'runAgent13HydrogenMineralsScaleSelfTests',
+  'runAgent13HydrogenMineralsTurnScenario',
+  'V1014_HYDROGEN_MINERALS_TURN_SCENARIOS',
   'executeAgent13IndustrialEnergyTurnHook',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_REGIONAL_GRID_SCENARIOS',

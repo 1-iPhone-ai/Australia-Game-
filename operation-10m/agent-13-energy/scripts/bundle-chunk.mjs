@@ -59,7 +59,9 @@ const EXPORT_MANIFEST = [
   'runAgent13StoragePermitScaleSelfTests',
   'runAgent13EmissionsWaterScaleSelfTests',
   'runAgent13BiodiversityCircularScaleSelfTests',
-  'runAgent13HydrogenMineralsScaleSelfTests',
+  '  runAgent13HydrogenMineralsScaleSelfTests',
+  'runAgent13HydrogenMineralsTurnScenario',
+  'V1014_HYDROGEN_MINERALS_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

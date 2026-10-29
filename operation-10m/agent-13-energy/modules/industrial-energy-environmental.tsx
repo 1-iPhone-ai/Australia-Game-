@@ -46,6 +46,7 @@ import {
 import {
   advanceRegionalMineralsSupply,
   computeRegionalHydrogenLedger,
+  scoreAgent13HydrogenMineralsGIAlignment,
   type V1014RegionalHydrogenLedger,
   type V1014RegionalMineralsLedger,
 } from './hydrogen-critical-minerals-ledger';
@@ -26379,6 +26380,12 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     !!rh6.persisted.regionalHydrogenMemory.SA,
     String(rh6.persisted.regionalHydrogenMemory.SA?.exportIndex),
   );
+  const giH2 = scoreAgent13HydrogenMineralsGIAlignment({
+    actionText: 'Green hydrogen hub and lithium chain investment',
+    hydrogenBand: rh6.state.regions.SA?.hydrogenExportBand,
+    mineralsBand: rh6.state.regions.SA?.mineralsSecurityBand,
+  });
+  check('HYDROGEN GI alignment', giH2.relevanceDelta > 0.5, giH2.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');
