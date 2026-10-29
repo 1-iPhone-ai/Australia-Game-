@@ -1,0 +1,31 @@
+import type { V1028DresEvacuationCapacityEdge } from '../../types/core.ts';
+
+/** Evacuation capacity graph shard 007 (flood/bushfire/cyclone corridor coupling). */
+export const V1028_DRES_EVACUATION_CAPACITY_SHARD_007: readonly V1028DresEvacuationCapacityEdge[] = [
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.4, lagTurns: 9, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.406, lagTurns: 10, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.412, lagTurns: 11, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.418, lagTurns: 12, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.424, lagTurns: 9, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.43, lagTurns: 10, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.436, lagTurns: 11, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.442, lagTurns: 12, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.448, lagTurns: 9, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.454, lagTurns: 10, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.46, lagTurns: 11, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.364, lagTurns: 12, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.37, lagTurns: 9, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.376, lagTurns: 10, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.382, lagTurns: 11, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.388, lagTurns: 12, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.394, lagTurns: 9, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.4, lagTurns: 10, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.406, lagTurns: 11, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.412, lagTurns: 12, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.418, lagTurns: 9, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.424, lagTurns: 10, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.43, lagTurns: 11, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.436, lagTurns: 12, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.442, lagTurns: 9, nodeId: 'emergency_response_07' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.448, lagTurns: 10, nodeId: 'emergency_response_07' },
+];

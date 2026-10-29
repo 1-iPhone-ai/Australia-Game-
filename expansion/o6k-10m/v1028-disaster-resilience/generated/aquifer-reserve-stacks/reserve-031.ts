@@ -1,0 +1,31 @@
+import type { V1028DresEvacuationCapacityEdge } from '../../types/core.ts';
+
+/** Evacuation capacity graph shard 031 (flood/bushfire/cyclone corridor coupling). */
+export const V1028_DRES_EVACUATION_CAPACITY_SHARD_031: readonly V1028DresEvacuationCapacityEdge[] = [
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.66, lagTurns: 6, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.666, lagTurns: 7, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.672, lagTurns: 8, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.678, lagTurns: 9, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.684, lagTurns: 6, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.588, lagTurns: 7, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.594, lagTurns: 8, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.6, lagTurns: 9, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.606, lagTurns: 6, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.612, lagTurns: 7, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.618, lagTurns: 8, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.624, lagTurns: 9, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.63, lagTurns: 6, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.636, lagTurns: 7, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.642, lagTurns: 8, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.648, lagTurns: 9, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.654, lagTurns: 6, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.66, lagTurns: 7, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.666, lagTurns: 8, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.672, lagTurns: 9, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.678, lagTurns: 6, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.684, lagTurns: 7, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.588, lagTurns: 8, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.594, lagTurns: 9, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.6, lagTurns: 6, nodeId: 'emergency_response_07' },
+  { fromChannel: 'primary_access', toChannel: 'rural_clinic', weight: 0.606, lagTurns: 7, nodeId: 'emergency_response_07' },
+];
