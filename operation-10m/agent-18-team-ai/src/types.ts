@@ -375,6 +375,9 @@ export interface TeamMultiAgentCoordinationMeta {
   stackFusionResonanceIndex?: number;
   fusionSynthesisPressureIndex?: number;
   synthesisCascadeConvergenceIndex?: number;
+  fusionResonanceSynthesisIndex?: number;
+  pressureCascadeConvergenceIndex?: number;
+  cascadeStackFusionIndex?: number;
 }
 
 export const AGENT18_LIMITS = {
