@@ -221,6 +221,9 @@ export interface NationalLaborDemographicsState {
   laborMarketStabilityOutlook?: NationalLaborMarketStabilityOutlook;
   intergenerationalWorkforceBalanceOutlook?: NationalIntergenerationalWorkforceBalanceOutlook;
   capacityParticipationAlignmentBrief?: NationalCapacityParticipationAlignmentBrief;
+  participationVelocityCouplingBrief?: NationalParticipationVelocityCouplingBrief;
+  skillsTightnessCoherenceOutlook?: NationalSkillsTightnessCoherenceOutlook;
+  integratedLaborReadinessOutlook?: NationalIntegratedLaborReadinessOutlook;
 }
 
 export type MigrationShockKind =
@@ -629,6 +632,39 @@ export interface NationalCapacityParticipationAlignmentBrief {
   alignmentIndex: number;
   band: CapacityParticipationAlignmentBand;
   capacityGapDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ParticipationVelocityCouplingBand = 'divergent' | 'lagging' | 'synced' | 'momentum';
+
+export interface NationalParticipationVelocityCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: ParticipationVelocityCouplingBand;
+  velocityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SkillsTightnessCoherenceBand = 'incoherent' | 'strained' | 'coherent' | 'aligned';
+
+export interface NationalSkillsTightnessCoherenceOutlook {
+  turn: number;
+  coherenceIndex: number;
+  band: SkillsTightnessCoherenceBand;
+  mismatchDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type IntegratedLaborReadinessBand = 'unprepared' | 'caution' | 'ready' | 'primed';
+
+export interface NationalIntegratedLaborReadinessOutlook {
+  turn: number;
+  readinessIndex: number;
+  band: IntegratedLaborReadinessBand;
+  stabilityDrag: number;
   summary: string;
   stewardNote: string;
 }

@@ -39,7 +39,10 @@ export type LaborGiQueryTopic =
   | 'migration_participation_buffer'
   | 'labor_market_stability'
   | 'intergenerational_balance'
-  | 'capacity_participation_alignment';
+  | 'capacity_participation_alignment'
+  | 'participation_velocity_coupling'
+  | 'skills_tightness_coherence'
+  | 'integrated_labor_readiness';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -72,6 +75,11 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(capacity participation alignment|capacity alignment participation)/.test(q)) {
     return 'capacity_participation_alignment';
   }
+  if (/\b(participation velocity coupling|velocity participation sync)/.test(q)) {
+    return 'participation_velocity_coupling';
+  }
+  if (/\b(skills tightness coherence|skill tightness alignment)/.test(q)) return 'skills_tightness_coherence';
+  if (/\b(integrated labor readiness|labor readiness outlook)/.test(q)) return 'integrated_labor_readiness';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -378,6 +386,30 @@ export function answerLaborDemographicsQuestion(
         fact: `Alignment band ${state.capacityParticipationAlignmentBrief?.band ?? 'unknown'}; capacity drag ${Math.round(state.capacityParticipationAlignmentBrief?.capacityGapDrag ?? 0)}.`,
         inference: state.capacityParticipationAlignmentBrief?.stewardNote || state.outlook,
         projection: 'Alignment blends capacity gaps, equity, absorption, and linkage — not literal headcount targets.'
+      };
+    case 'participation_velocity_coupling':
+      return {
+        topic,
+        headline: state.participationVelocityCouplingBrief?.summary || 'Participation-velocity coupling unavailable.',
+        fact: `Coupling band ${state.participationVelocityCouplingBrief?.band ?? 'unknown'}; velocity drag ${Math.round(state.participationVelocityCouplingBrief?.velocityDrag ?? 0)}.`,
+        inference: state.participationVelocityCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling blends participation, velocity, and advocacy — not literal churn counts.'
+      };
+    case 'skills_tightness_coherence':
+      return {
+        topic,
+        headline: state.skillsTightnessCoherenceOutlook?.summary || 'Skills-tightness coherence unavailable.',
+        fact: `Coherence band ${state.skillsTightnessCoherenceOutlook?.band ?? 'unknown'}; mismatch drag ${Math.round(state.skillsTightnessCoherenceOutlook?.mismatchDrag ?? 0)}.`,
+        inference: state.skillsTightnessCoherenceOutlook?.stewardNote || state.summary,
+        projection: 'Coherence blends mismatch, tightness, and credential mobility — bounded indices only.'
+      };
+    case 'integrated_labor_readiness':
+      return {
+        topic,
+        headline: state.integratedLaborReadinessOutlook?.summary || 'Integrated labor readiness unavailable.',
+        fact: `Readiness band ${state.integratedLaborReadinessOutlook?.band ?? 'unknown'}; stability drag ${Math.round(state.integratedLaborReadinessOutlook?.stabilityDrag ?? 0)}.`,
+        inference: state.integratedLaborReadinessOutlook?.stewardNote || state.outlook,
+        projection: 'Readiness blends stability, alignment, buffers, and resilience — steward guidance only.'
       };
     default:
       return {

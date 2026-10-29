@@ -82,6 +82,15 @@ import {
 import { computeNationalLaborMarketStabilityOutlook } from './labor-market-stability-outlook';
 import { computeNationalIntergenerationalWorkforceBalanceOutlook } from './intergenerational-workforce-balance-outlook';
 import { computeNationalCapacityParticipationAlignmentBrief } from './capacity-participation-alignment-brief';
+import {
+  WORKFORCE_ADVOCACY_LEVERS,
+  advocacyEaseForRegion,
+  advocacyLeversForIndustry,
+  lookupWorkforceAdvocacyLever
+} from './catalog/workforce-advocacy-levers';
+import { computeNationalParticipationVelocityCouplingBrief } from './participation-velocity-coupling-brief';
+import { computeNationalSkillsTightnessCoherenceOutlook } from './skills-tightness-coherence-outlook';
+import { computeNationalIntegratedLaborReadinessOutlook } from './integrated-labor-readiness-outlook';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -744,6 +753,67 @@ export function runV1014LaborDemographicsSelfTests(): {
       rHhBad.state.regionalLaborAbsorptionBrief
     ).stewardNote.length > 8,
     'alignment steward note'
+  );
+
+  check('R1301', WORKFORCE_ADVOCACY_LEVERS.length >= 8, 'advocacy lever catalog');
+  check('R1302', Boolean(lookupWorkforceAdvocacyLever('adv_tech_nsw_vic')?.narrative), 'advocacy lever lookup');
+  check('R1303', advocacyLeversForIndustry('technology').length >= 1, 'technology advocacy levers');
+  check('R1304', advocacyEaseForRegion('NSW', 'technology') > 0, 'regional advocacy ease');
+  check('R1305', Boolean(r1.state.participationVelocityCouplingBrief?.band), 'velocity coupling on state');
+  check('R1306', (r1.state.participationVelocityCouplingBrief?.velocityDrag ?? 0) >= 0, 'velocity drag');
+  check('R1307', Boolean(r1.state.skillsTightnessCoherenceOutlook?.band), 'skills coherence on state');
+  check('R1308', Boolean(r1.state.integratedLaborReadinessOutlook?.band), 'integrated readiness on state');
+  check(
+    'R1309',
+    detectLaborDemographicsQuery('participation velocity coupling') === 'participation_velocity_coupling',
+    'GI velocity coupling detect'
+  );
+  check(
+    'R1310',
+    detectLaborDemographicsQuery('skills tightness coherence') === 'skills_tightness_coherence',
+    'GI coherence detect'
+  );
+  check(
+    'R1311',
+    detectLaborDemographicsQuery('integrated labor readiness') === 'integrated_labor_readiness',
+    'GI readiness detect'
+  );
+  check(
+    'R1312',
+    answerLaborDemographicsQuestion(r1.state, 'integrated_labor_readiness').headline.length > 5,
+    'GI readiness answer'
+  );
+  const velocityCouplingOnly = computeNationalParticipationVelocityCouplingBrief(
+    r1.state,
+    r1.state.participationPressureBrief,
+    r1.state.laborMarketVelocityIndex
+  );
+  check('R1313', velocityCouplingOnly.summary.length > 10, 'velocity coupling standalone summary');
+  const coherenceOnly = computeNationalSkillsTightnessCoherenceOutlook(
+    r1.state,
+    r1.state.skillMismatchIndex,
+    r1.state.laborMarketTightnessBrief,
+    r1.state.credentialMobilityOutlook
+  );
+  check('R1314', coherenceOnly.band.length > 3, 'coherence band string');
+  const readinessOnly = computeNationalIntegratedLaborReadinessOutlook(
+    r1.state,
+    r1.state.laborMarketStabilityOutlook,
+    r1.state.capacityParticipationAlignmentBrief,
+    r1.state.migrationShockParticipationBufferOutlook,
+    r1.state.laborResilienceScorecard
+  );
+  check('R1315', readinessOnly.stabilityDrag >= 0, 'readiness stability drag');
+  check(
+    'R1316',
+    computeNationalIntegratedLaborReadinessOutlook(
+      rHhBad.state,
+      rHhBad.state.laborMarketStabilityOutlook,
+      rHhBad.state.capacityParticipationAlignmentBrief,
+      rHhBad.state.migrationShockParticipationBufferOutlook,
+      rHhBad.state.laborResilienceScorecard
+    ).stewardNote.length > 8,
+    'readiness steward note'
   );
 
   for (let i = 19; i <= 50; i++) {

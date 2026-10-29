@@ -62,6 +62,9 @@ import { computeNationalMigrationShockParticipationBufferOutlook } from './migra
 import { computeNationalLaborMarketStabilityOutlook } from './labor-market-stability-outlook';
 import { computeNationalIntergenerationalWorkforceBalanceOutlook } from './intergenerational-workforce-balance-outlook';
 import { computeNationalCapacityParticipationAlignmentBrief } from './capacity-participation-alignment-brief';
+import { computeNationalParticipationVelocityCouplingBrief } from './participation-velocity-coupling-brief';
+import { computeNationalSkillsTightnessCoherenceOutlook } from './skills-tightness-coherence-outlook';
+import { computeNationalIntegratedLaborReadinessOutlook } from './integrated-labor-readiness-outlook';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -502,6 +505,24 @@ export function computeNationalLaborDemographics(
     state.participationEquityGapBrief,
     state.regionalLaborAbsorptionBrief
   );
+  state.participationVelocityCouplingBrief = computeNationalParticipationVelocityCouplingBrief(
+    state,
+    state.participationPressureBrief,
+    state.laborMarketVelocityIndex
+  );
+  state.skillsTightnessCoherenceOutlook = computeNationalSkillsTightnessCoherenceOutlook(
+    state,
+    state.skillMismatchIndex,
+    state.laborMarketTightnessBrief,
+    state.credentialMobilityOutlook
+  );
+  state.integratedLaborReadinessOutlook = computeNationalIntegratedLaborReadinessOutlook(
+    state,
+    state.laborMarketStabilityOutlook,
+    state.capacityParticipationAlignmentBrief,
+    state.migrationShockParticipationBufferOutlook,
+    state.laborResilienceScorecard
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -652,6 +673,27 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.capacityParticipationAlignmentBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.participationVelocityCouplingBrief?.band === 'divergent' ||
+      state.participationVelocityCouplingBrief?.band === 'lagging') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.participationVelocityCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.skillsTightnessCoherenceOutlook?.band === 'incoherent' ||
+      state.skillsTightnessCoherenceOutlook?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.skillsTightnessCoherenceOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.integratedLaborReadinessOutlook?.band === 'unprepared' ||
+      state.integratedLaborReadinessOutlook?.band === 'caution') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.integratedLaborReadinessOutlook.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
