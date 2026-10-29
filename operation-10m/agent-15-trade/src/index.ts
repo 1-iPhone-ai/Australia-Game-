@@ -97,5 +97,7 @@ export * from './cleared-wave-handoff-continuity.ts';
 export * from './bilateral-handed-wave-cycle-priming-gate.ts';
 export * from './handed-wave-cycle-priming-continuity.ts';
 export * from './bilateral-primed-handoff-arc-opening-gate.ts';
+export * from './primed-handoff-arc-opening-continuity.ts';
+export * from './bilateral-engaged-arc-forward-admission-gate.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';

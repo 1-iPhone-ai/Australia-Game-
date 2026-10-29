@@ -409,6 +409,16 @@ import {
   createEmptyBilateralPrimedHandoffArcOpeningGateSnapshot,
   bilateralPrimedHandoffArcOpeningGateExportScale,
 } from './bilateral-primed-handoff-arc-opening-gate.ts';
+import {
+  computePrimedHandoffArcOpeningContinuitySnapshot,
+  createEmptyPrimedHandoffArcOpeningContinuitySnapshot,
+  primedHandoffArcOpeningContinuityExportScale,
+} from './primed-handoff-arc-opening-continuity.ts';
+import {
+  computeBilateralEngagedArcForwardAdmissionGateSnapshot,
+  createEmptyBilateralEngagedArcForwardAdmissionGateSnapshot,
+  bilateralEngagedArcForwardAdmissionGateExportScale,
+} from './bilateral-engaged-arc-forward-admission-gate.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -2752,6 +2762,63 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
       bilateralPrimedHandoffArcOpeningGateExportScale(opened) >=
         bilateralPrimedHandoffArcOpeningGateExportScale(sealed),
       'expected primed handoff arc opening scale lift',
+    );
+  });
+
+  ok('primed handoff arc opening continuity improves when opening gate is opened', () => {
+    const gate = {
+      ...createEmptyBilateralPrimedHandoffArcOpeningGateSnapshot(),
+      score: 0.95,
+      band: 'opened' as const,
+    };
+    const priming = {
+      ...createEmptyHandedWaveCyclePrimingContinuitySnapshot(),
+      score: 0.93,
+      band: 'settled' as const,
+    };
+    const engaged = computePrimedHandoffArcOpeningContinuitySnapshot({
+      bilateralPrimedHandoffArcOpeningGate: gate,
+      handedWaveCyclePrimingContinuity: priming,
+      persisted: { ...createEmptyGTELPersisted(), primedHandoffArcOpeningContinuitySmoothing: 0.98 },
+    }).snapshot;
+    const broken = computePrimedHandoffArcOpeningContinuitySnapshot({
+      bilateralPrimedHandoffArcOpeningGate: { ...gate, score: 0.1, band: 'sealed' },
+      handedWaveCyclePrimingContinuity: { ...priming, score: 0.08, band: 'void' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(engaged.score > broken.score, 'expected engaged arc opening continuity');
+    gtelAssert(
+      primedHandoffArcOpeningContinuityExportScale(engaged) >= primedHandoffArcOpeningContinuityExportScale(broken),
+      'expected arc opening continuity scale lift',
+    );
+  });
+
+  ok('bilateral engaged arc forward admission gate improves when opening continuity is engaged', () => {
+    const continuity = {
+      ...createEmptyPrimedHandoffArcOpeningContinuitySnapshot(),
+      score: 0.96,
+      band: 'engaged' as const,
+    };
+    const admission = {
+      ...createEmptyBilateralForwardCommitmentAdmissionSnapshot(),
+      score: 0.9,
+      band: 'admitted' as const,
+    };
+    const admitted = computeBilateralEngagedArcForwardAdmissionGateSnapshot({
+      primedHandoffArcOpeningContinuity: continuity,
+      bilateralForwardCommitmentAdmission: admission,
+      persisted: { ...createEmptyGTELPersisted(), bilateralEngagedArcForwardAdmissionGateSmoothing: 0.99 },
+    }).snapshot;
+    const blocked = computeBilateralEngagedArcForwardAdmissionGateSnapshot({
+      primedHandoffArcOpeningContinuity: { ...continuity, score: 0.11, band: 'broken' },
+      bilateralForwardCommitmentAdmission: { ...admission, score: 0.08, band: 'closed' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(admitted.score > blocked.score, 'expected forward admission when engaged');
+    gtelAssert(
+      bilateralEngagedArcForwardAdmissionGateExportScale(admitted) >=
+        bilateralEngagedArcForwardAdmissionGateExportScale(blocked),
+      'expected engaged arc admission scale lift',
     );
   });
 

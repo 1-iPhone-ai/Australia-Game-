@@ -234,6 +234,8 @@ export interface GTELPersisted {
   bilateralHandedWaveCyclePrimingGateSmoothing?: number;
   handedWaveCyclePrimingContinuitySmoothing?: number;
   bilateralPrimedHandoffArcOpeningGateSmoothing?: number;
+  primedHandoffArcOpeningContinuitySmoothing?: number;
+  bilateralEngagedArcForwardAdmissionGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -337,6 +339,8 @@ export interface GTELState {
   bilateralHandedWaveCyclePrimingGate: GTELBilateralHandedWaveCyclePrimingGateSnapshot;
   handedWaveCyclePrimingContinuity: GTELHandedWaveCyclePrimingContinuitySnapshot;
   bilateralPrimedHandoffArcOpeningGate: GTELBilateralPrimedHandoffArcOpeningGateSnapshot;
+  primedHandoffArcOpeningContinuity: GTELPrimedHandoffArcOpeningContinuitySnapshot;
+  bilateralEngagedArcForwardAdmissionGate: GTELBilateralEngagedArcForwardAdmissionGateSnapshot;
   inputHash: string;
 }
 
@@ -1361,6 +1365,26 @@ export interface GTELBilateralPrimedHandoffArcOpeningGateSnapshot {
   band: GTELBilateralPrimedHandoffArcOpeningGateBand;
   continuityFeed: number;
   arcOpeningLift: number;
+  summary: string;
+}
+
+export type GTELPrimedHandoffArcOpeningContinuityBand = 'engaged' | 'holding' | 'slipping' | 'broken';
+
+export interface GTELPrimedHandoffArcOpeningContinuitySnapshot {
+  score: number;
+  band: GTELPrimedHandoffArcOpeningContinuityBand;
+  openingGateSupport: number;
+  primingAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralEngagedArcForwardAdmissionGateBand = 'admitted' | 'ramping' | 'queued' | 'blocked';
+
+export interface GTELBilateralEngagedArcForwardAdmissionGateSnapshot {
+  score: number;
+  band: GTELBilateralEngagedArcForwardAdmissionGateBand;
+  continuityFeed: number;
+  forwardAdmissionLift: number;
   summary: string;
 }
 
