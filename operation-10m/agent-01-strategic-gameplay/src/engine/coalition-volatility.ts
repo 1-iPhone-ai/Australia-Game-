@@ -14,3 +14,10 @@ export function incrementCoalitionVolatilityEvents(
     coalitionVolatilityEvents: (state.coalitionVolatilityEvents ?? 0) + 1,
   };
 }
+
+export function decrementCoalitionVolatilityEvents(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  const current = state.coalitionVolatilityEvents ?? 0;
+  return { ...state, coalitionVolatilityEvents: Math.max(0, current - 1) };
+}

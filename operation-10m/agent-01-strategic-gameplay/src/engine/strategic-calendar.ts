@@ -5,6 +5,8 @@ import { applyMandateIdleDrift } from './mandate-idle-drift.ts';
 import { advanceCoalitionCrisisStreak } from './coalition-crisis.ts';
 import { applyProlongedCrisisMandatePressure } from './coalition-crisis-pressure.ts';
 import { applySustainedRecoveryMandateBonus } from './coalition-recovery-pressure.ts';
+import { applyElevatedVolatilityMandateDrag } from './coalition-volatility-pressure.ts';
+import { advanceCoalitionStabilizationStreak } from './coalition-stabilization.ts';
 import { advanceCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 import type { StakeholderGroupId, StakeholderSentiment } from '../types/coalition-mandate.ts';
@@ -60,6 +62,8 @@ export function advanceStrategicGameplayCalendar(
   next = applyProlongedCrisisMandatePressure(next, daysAdvanced);
   next = advanceCoalitionRecoveryStreak(next, daysAdvanced);
   next = applySustainedRecoveryMandateBonus(next, daysAdvanced);
+  next = applyElevatedVolatilityMandateDrag(next, daysAdvanced);
+  next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 
   return { state: next, firedTradeOffCount: fired.length };

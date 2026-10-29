@@ -27,7 +27,8 @@ import { applyStakeholderReaction } from './stakeholder-coalition.ts';
 import { touchLastAlignedActionDay } from './mandate-idle-drift.ts';
 import { resetCoalitionCrisisStreak } from './coalition-crisis.ts';
 import { resetCoalitionRecoveryStreak } from './coalition-recovery.ts';
-import { resetCoalitionVolatilityEvents } from './coalition-volatility.ts';
+import { resetCoalitionVolatilityEvents, decrementCoalitionVolatilityEvents } from './coalition-volatility.ts';
+import { resetCoalitionStabilizationStreak } from './coalition-stabilization.ts';
 import {
   scoreNationalPriorityAlignment,
   validateAction,
@@ -51,6 +52,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     coalitionCrisisStreakDays: 0,
     coalitionRecoveryStreakDays: 0,
     coalitionVolatilityEvents: 0,
+    coalitionStabilizationStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -203,6 +205,13 @@ export function executeStrategicAction(
   }
   if (action.id === 'sga_coalition_volatility_review') {
     nextState = resetCoalitionVolatilityEvents(nextState);
+  }
+  if (action.id === 'sga_coalition_volatility_mediation') {
+    nextState = decrementCoalitionVolatilityEvents(nextState);
+  }
+  if (action.id === 'sga_coalition_stabilization_accord') {
+    nextState = resetCoalitionVolatilityEvents(nextState);
+    nextState = resetCoalitionStabilizationStreak(nextState);
   }
 
   contracts.ui.pushToast({

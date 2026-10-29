@@ -40,19 +40,25 @@ export interface StrategicGameplaySaveV6 extends Omit<StrategicGameplaySaveV5, '
   coalitionVolatilityEvents: number;
 }
 
+export interface StrategicGameplaySaveV7 extends Omit<StrategicGameplaySaveV6, 'version'> {
+  version: 7;
+  coalitionStabilizationStreakDays: number;
+}
+
 export type StrategicGameplaySaveBlob =
   | StrategicGameplaySaveV1
   | StrategicGameplaySaveV2
   | StrategicGameplaySaveV3
   | StrategicGameplaySaveV4
   | StrategicGameplaySaveV5
-  | StrategicGameplaySaveV6;
+  | StrategicGameplaySaveV6
+  | StrategicGameplaySaveV7;
 
 export function serializeStrategicGameplayState(
   state: StrategicGameplayState,
-): StrategicGameplaySaveV6 {
+): StrategicGameplaySaveV7 {
   return {
-    version: 6,
+    version: 7,
     day: state.day,
     completedActionIds: [...state.completedActionIds],
     pendingDelayed: state.pendingDelayed.map((p) => ({ ...p, effects: { ...p.effects } })),
@@ -68,6 +74,7 @@ export function serializeStrategicGameplayState(
     coalitionCrisisStreakDays: state.coalitionCrisisStreakDays ?? 0,
     coalitionRecoveryStreakDays: state.coalitionRecoveryStreakDays ?? 0,
     coalitionVolatilityEvents: state.coalitionVolatilityEvents ?? 0,
+    coalitionStabilizationStreakDays: state.coalitionStabilizationStreakDays ?? 0,
   };
 }
 
@@ -89,6 +96,7 @@ export function deserializeStrategicGameplayState(
       coalitionCrisisStreakDays: 0,
       coalitionRecoveryStreakDays: 0,
       coalitionVolatilityEvents: 0,
+      coalitionStabilizationStreakDays: 0,
     };
   }
   if (save.version === 2) {
@@ -106,6 +114,7 @@ export function deserializeStrategicGameplayState(
       coalitionCrisisStreakDays: 0,
       coalitionRecoveryStreakDays: 0,
       coalitionVolatilityEvents: 0,
+      coalitionStabilizationStreakDays: 0,
     };
   }
   if (save.version === 3) {
@@ -123,6 +132,7 @@ export function deserializeStrategicGameplayState(
       coalitionCrisisStreakDays: 0,
       coalitionRecoveryStreakDays: 0,
       coalitionVolatilityEvents: 0,
+      coalitionStabilizationStreakDays: 0,
     };
   }
   if (save.version === 4) {
@@ -140,6 +150,7 @@ export function deserializeStrategicGameplayState(
       coalitionCrisisStreakDays: save.coalitionCrisisStreakDays,
       coalitionRecoveryStreakDays: 0,
       coalitionVolatilityEvents: 0,
+      coalitionStabilizationStreakDays: 0,
     };
   }
   if (save.version === 5) {
@@ -157,9 +168,28 @@ export function deserializeStrategicGameplayState(
       coalitionCrisisStreakDays: save.coalitionCrisisStreakDays,
       coalitionRecoveryStreakDays: save.coalitionRecoveryStreakDays,
       coalitionVolatilityEvents: 0,
+      coalitionStabilizationStreakDays: 0,
     };
   }
-  if (save.version !== 6) {
+  if (save.version === 6) {
+    return {
+      day: save.day,
+      completedActionIds: [...save.completedActionIds],
+      pendingDelayed: save.pendingDelayed.slice(),
+      journal: save.journal.slice(),
+      priorityMomentum: { ...save.priorityMomentum },
+      actionCooldowns: { ...save.actionCooldowns },
+      activeChoice: save.activeChoice ? { ...save.activeChoice } : null,
+      mandateProgress: { ...save.mandateProgress },
+      stakeholderSentiment: { ...save.stakeholderSentiment },
+      lastAlignedActionDay: save.lastAlignedActionDay,
+      coalitionCrisisStreakDays: save.coalitionCrisisStreakDays,
+      coalitionRecoveryStreakDays: save.coalitionRecoveryStreakDays,
+      coalitionVolatilityEvents: save.coalitionVolatilityEvents,
+      coalitionStabilizationStreakDays: 0,
+    };
+  }
+  if (save.version !== 7) {
     throw new Error(`Unsupported strategic save version: ${(save as { version: number }).version}`);
   }
   return {
@@ -176,6 +206,7 @@ export function deserializeStrategicGameplayState(
     coalitionCrisisStreakDays: save.coalitionCrisisStreakDays,
     coalitionRecoveryStreakDays: save.coalitionRecoveryStreakDays,
     coalitionVolatilityEvents: save.coalitionVolatilityEvents,
+    coalitionStabilizationStreakDays: save.coalitionStabilizationStreakDays,
   };
 }
 

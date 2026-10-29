@@ -48,3 +48,13 @@ export function sustainedRecoveryRankingBonus(
   if (streak >= 4) return 4;
   return 0;
 }
+
+export function stabilizationRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionStabilizationStreakDays === undefined) return 0;
+  const streak = state.coalitionStabilizationStreakDays ?? 0;
+  if (streak >= action.minCoalitionStabilizationStreakDays) return 5;
+  return 2;
+}

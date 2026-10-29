@@ -95,6 +95,7 @@ export {
   coalitionBalanceRankingBonus,
   coalitionRecoveryRankingBonus,
   sustainedRecoveryRankingBonus,
+  stabilizationRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -141,10 +142,26 @@ export {
 } from './engine/coalition-recovery.ts';
 
 export {
+  ELEVATED_COALITION_VOLATILITY_THRESHOLD,
+  isElevatedCoalitionVolatility,
+  applyElevatedVolatilityMandateDrag,
+} from './engine/coalition-volatility-pressure.ts';
+
+export { coalitionStabilizationStreakIssues } from './engine/coalition-stabilization-gates.ts';
+
+export {
+  COALITION_STABILIZATION_STREAK_THRESHOLD,
+  advanceCoalitionStabilizationStreak,
+  resetCoalitionStabilizationStreak,
+  isCoalitionStabilizationReady,
+} from './engine/coalition-stabilization.ts';
+
+export {
   resetCoalitionVolatilityEvents,
   incrementCoalitionVolatilityEvents,
+  decrementCoalitionVolatilityEvents,
 } from './engine/coalition-volatility.ts';
 
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '1.8.0';
+export const AGENT_01_MODULE_VERSION = '1.9.0';

@@ -27,6 +27,7 @@ import {
   coalitionRecoveryStreakIssues,
 } from './coalition-crisis-gates.ts';
 import { coalitionVolatilityIssues } from './coalition-volatility-gates.ts';
+import { coalitionStabilizationStreakIssues } from './coalition-stabilization-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -276,6 +277,7 @@ export function validateAction(
     issues.push(...coalitionCrisisStreakIssues(action, state));
     issues.push(...coalitionRecoveryStreakIssues(action, state));
     issues.push(...coalitionVolatilityIssues(action, state));
+    issues.push(...coalitionStabilizationStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

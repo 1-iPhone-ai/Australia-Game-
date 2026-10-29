@@ -38,6 +38,8 @@ export interface TurnStrategicBriefing {
   prolongedCoalitionCrisis: boolean;
   sustainedCoalitionRecovery: boolean;
   coalitionVolatilityEvents: number;
+  elevatedCoalitionVolatility: boolean;
+  coalitionStabilizationStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;

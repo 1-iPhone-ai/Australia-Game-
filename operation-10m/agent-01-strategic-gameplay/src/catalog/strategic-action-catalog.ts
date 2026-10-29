@@ -527,6 +527,58 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
     },
     delayedTradeOffs: [],
   },
+  'sga_coalition_volatility_mediation': {
+    id: 'sga_coalition_volatility_mediation',
+    title: 'Coalition Volatility Mediation',
+    category: 'governance',
+    apCost: 1,
+    cashCost: 9_000,
+    treasuryCost: 36_000,
+    minApproval: 46,
+    alignedPriorities: ['economic_diversification', 'supply_chain_security'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'volatility', 'mediation'],
+    repeatable: true,
+    minCoalitionVolatilityEvents: 2,
+    cooldownDays: 2,
+    immediateEffects: {
+      economy: { cashDelta: -9_000, treasuryDelta: -36_000 },
+      government: { approvalDelta: 2, regulatoryBurdenDelta: -1 },
+      population: { publicStabilityDelta: 2, affordabilityStressDelta: -1 },
+    },
+    delayedTradeOffs: [],
+  },
+  'sga_coalition_stabilization_accord': {
+    id: 'sga_coalition_stabilization_accord',
+    title: 'Coalition Stabilization Accord',
+    category: 'governance',
+    apCost: 2,
+    cashCost: 16_000,
+    treasuryCost: 58_000,
+    minApproval: 55,
+    alignedPriorities: ['freight_modernization', 'technology_competitiveness'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'stabilization', 'accord'],
+    repeatable: false,
+    minCoalitionBalanceIndex: 70,
+    minCoalitionVolatilityEvents: 1,
+    minCoalitionStabilizationStreakDays: 3,
+    immediateEffects: {
+      economy: { cashDelta: -16_000, treasuryDelta: -58_000, netWorthMultiplier: 1.004 },
+      government: { approvalDelta: 4, directiveSlotsDelta: 1, regulatoryBurdenDelta: -2 },
+      population: { publicStabilityDelta: 5, migrationDelta: 2 },
+    },
+    delayedTradeOffs: [
+      {
+        label: 'Accord compliance reviews',
+        warning: 'Quarterly accord reviews add modest treasury draw.',
+        effects: {
+          economy: { treasuryDelta: -14_000 },
+          government: { regulatoryBurdenDelta: 1 },
+        },
+      },
+    ],
+  },
 };
 
 export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefinition> = {
