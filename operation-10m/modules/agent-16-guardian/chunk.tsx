@@ -12467,6 +12467,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_50,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_51,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_52,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_53,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
