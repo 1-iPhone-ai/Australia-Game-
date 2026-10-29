@@ -9914,6 +9914,8 @@ export interface NarrativePopupState {
   currentChapterOutro: CampaignChapter | null;
   dialogueQueue: DialogueMessage[];
   isBlocking: boolean;
+  /** Operation 111 Agent 60: ids of emergent chronicle beats already shown (bounded, persisted). */
+  emergentBeatIds?: string[];
 }
 
 // PHASE 3: DYNAMIC NATIONAL EVENTS & CRISIS CHAINS TYPE DEFINITIONS
@@ -10096,7 +10098,8 @@ export function createDefaultNarrativePopupState(): NarrativePopupState {
     currentChapterIntro: null,
     currentChapterOutro: null,
     dialogueQueue: [],
-    isBlocking: false
+    isBlocking: false,
+    emergentBeatIds: []
   };
 }
 
@@ -14319,6 +14322,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   fogOfWarEnabled: false,
   whatIfTimelinesEnabled: false,
   narrativeEngineEnabled: false,
+  emergentNarrativeEnabled: false,
   publicStabilityEnabled: false,
   nationalEventsEnabled: false,
   // Phase 7 Master Feature Switches (all defaulting to false)
@@ -26858,6 +26862,7 @@ export type GameSettingsState = {
   whatIfTimelinesEnabled: boolean;
   campaignEngineEnabled: boolean;
   narrativeEngineEnabled: boolean;
+  emergentNarrativeEnabled: boolean;
   dynamicCrisisChainsEnabled: boolean;
   publicStabilityEnabled: boolean;
   nationalEventsEnabled: boolean;
@@ -64994,7 +64999,7 @@ export const SETTINGS_HUB_SECTION_INDEX: SettingsHubSectionMeta[] = [
   { id: 'advancedSystems.coPilotStartPhase', tab: 'replayDiag', title: 'Co-Pilot Start Box', tags: ['Advanced', 'UX', 'Co-Pilot'], chips: ['Off by default'], fieldKeys: ['coPilotStartPhaseOverlayEnabled'], keywords: 'copilot start box phase overlay debug hang settings_close' },
   { id: 'advancedSystems.postMatchDebrief', tab: 'replayDiag', title: '📊 Post-Match Debrief Analytics', tags: ['Advanced', 'UX'], chips: ['On by default'], fieldKeys: ['postMatchDebriefEnabled'] },
   { id: 'gameplay.matchVariety', tab: 'gameplay', title: '🎲 Match Variety', tags: ['Scenario', 'Gameplay'], fieldKeys: ['v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'v93ContentThemes', 'v93RecentRare'], keywords: 'match variety replayability content starting conditions package regional opening contracts abundance crisis intensity rare events dilemmas opportunities liquidity rich regional power resource heavy debt pressure development base' },
-  { id: 'gameplay.scenarioMode', tab: 'gameplay', title: '📜 Scenario Mode & Presets', tags: ['Scenario', 'Gameplay'], fieldKeys: ['scenarioModeEnabled', 'selectedScenarioId', 'scenarioEngineV73Enabled', 'customScenarioBuilderEnabled', 'campaignEngineEnabled', 'campaignModeEnabled', 'narrativeEngineEnabled', 'dynamicCrisisChainsEnabled', 'dynamicCrisesEnabled', 'publicStabilityEnabled', 'nationalEventsEnabled', 'careerProgressionEnabled', 'achievementsEnabled', 'fogOfWarEnabled', 'aiRivalryEnabled'], keywords: 'scenario mode presets forced seed objectives outback siege mining tycoon diplomatic blitz hyper inflation coastal supremacy career progression achievements fog of war rivalry' },
+  { id: 'gameplay.scenarioMode', tab: 'gameplay', title: '📜 Scenario Mode & Presets', tags: ['Scenario', 'Gameplay'], fieldKeys: ['scenarioModeEnabled', 'selectedScenarioId', 'scenarioEngineV73Enabled', 'customScenarioBuilderEnabled', 'campaignEngineEnabled', 'campaignModeEnabled', 'narrativeEngineEnabled', 'emergentNarrativeEnabled', 'dynamicCrisisChainsEnabled', 'dynamicCrisesEnabled', 'publicStabilityEnabled', 'nationalEventsEnabled', 'careerProgressionEnabled', 'achievementsEnabled', 'fogOfWarEnabled', 'aiRivalryEnabled'], keywords: 'scenario mode presets forced seed objectives outback siege mining tycoon diplomatic blitz hyper inflation coastal supremacy career progression achievements fog of war rivalry' },
   // SH2: Added 4 uncovered keys to advancedSystems.replaySafety
   { id: 'advancedSystems.replaySafety', tab: 'replayDiag', title: 'Replay Safety & Compatibility', tags: ['Replay', 'Advanced'], fieldKeys: ['randomnessMode', 'aiDeterministic', 'worldRngMode', 'aiReplayRecordingEnabled', 'aiReplayMaxEvents', 'aiDeterministicSeed', 'worldRngSeed', 'replayComparisonEnabled', 'replayComparisonToleranceThreshold', 'replayComparisonIgnoreMinorTiming', 'deterministicRngActive', 'whatIfTimelinesEnabled'] },
   { id: 'advancedSystems.humanAutomation', tab: 'automation', title: 'Human Player Automation', tags: ['Advanced'], chips: ['Off by default'], fieldKeys: ['humanAutomationEnabled', 'humanAutomationTransparencyEnabled', 'automationSequenceLaunchEnabled', 'automationSlotProgressionEnabled', 'automationRunHistoryEnabled', 'automationExtendedTriggersEnabled', 'automationExtendedActionsEnabled', 'automationConflictWarningsEnabled', 'automationDailyDigestEnabled', 'automationImportExportEnabled'] },
@@ -79856,6 +79861,9 @@ export function evaluateTurnMasterSwitches(gameState: GameStateSnapshot, setting
   }
   if (currentSettings?.campaignEngineEnabled) {
     nextState = evaluateCampaignChapterProgression(nextState);
+  }
+  if (currentSettings?.emergentNarrativeEnabled) {
+    nextState = evaluateEmergentNarrativeBeats(nextState);
   }
   return nextState;
 }
@@ -124791,6 +124799,238 @@ export function runStrategicWorldReactionSelfTests(): V9SelfTestResult[] {
   return results;
 }
 
+
+// ============================================================================
+// SECTION 20I-A60: EMERGENT NARRATIVE ENGINE (Operation 111 · Agent 60)
+// ============================================================================
+// Presentation layer: observable simulation signals → brief chronicle beats in
+// narrativePopup.dialogueQueue. Never changes rules, legality, or canonical economy.
+
+export const EMERGENT_NARRATIVE_LIMITS = { maxQueue: 6, maxBeatsPerDay: 2, deliveredIdCap: 48 };
+
+export type EmergentNarrativeSource = 'world_reaction' | 'regional_faction' | 'crisis_chain' | 'stability';
+
+export interface EmergentNarrativeSignal {
+  source: EmergentNarrativeSource;
+  sourceKey: string;
+  day: number;
+  turn: number;
+  title: string;
+  body: string;
+  speaker: string;
+  priority: number;
+}
+
+export function emergentNarrativeBeatId(signal: EmergentNarrativeSignal): string {
+  return `en60:${signal.source}:${signal.sourceKey}:d${signal.day}`;
+}
+
+export function collectEmergentNarrativeSignals(gameState: GameStateSnapshot, day: number): EmergentNarrativeSignal[] {
+  const out: EmergentNarrativeSignal[] = [];
+  const turn = Number(gameState.turnCounter || day);
+  const wr = gameState.worldReaction;
+  if (wr?.events?.length) {
+    wr.events.forEach(ev => {
+      if (ev.day !== day && ev.turn !== turn) return;
+      if (SWR_SIG_RANK[ev.significance] < SWR_SIG_RANK.meaningful) return;
+      if (!ev.strategicMeaning?.trim()) return;
+      out.push({
+        source: 'world_reaction',
+        sourceKey: ev.dedupeKey || ev.id,
+        day,
+        turn: ev.turn,
+        title: 'Strategic ripple',
+        body: ev.strategicMeaning.trim(),
+        speaker: 'World Chronicle',
+        priority: 40 + SWR_SIG_RANK[ev.significance] * 10 + Math.min(9, ev.reactionDepth)
+      });
+    });
+  }
+  const rf = gameState.regionalFactions;
+  if (rf?.factions) {
+    Object.values(rf.factions).forEach(f => {
+      const def = RF_DEF_BY_ID[f.id];
+      const name = def?.name || f.id;
+      (f.recentHistory || []).forEach(h => {
+        if (h.turn !== turn && h.turn !== day) return;
+        if (!h.text?.trim()) return;
+        out.push({
+          source: 'regional_faction',
+          sourceKey: `${f.id}:${h.turn}:${h.text.slice(0, 48)}`,
+          day,
+          turn: h.turn,
+          title: `${name} responds`,
+          body: h.text.trim(),
+          speaker: name,
+          priority: 35
+        });
+      });
+    });
+  }
+  const crises = gameState.crisisChainState?.activeCrisisChains?.filter(c => c.status === 'active') || [];
+  crises.forEach(c => {
+    const stageIdx = c.currentStageIndex ?? 0;
+    const stage = c.stages?.[stageIdx];
+    const label = stage?.title || c.title || c.id;
+    out.push({
+      source: 'crisis_chain',
+      sourceKey: `${c.id}:s${stageIdx}`,
+      day,
+      turn,
+      title: `Crisis watch — ${label}`,
+      body: `National crisis "${c.title || c.id}" is active (stage ${stageIdx + 1}). Observers report rising pressure on stability and regional supply lines.`,
+      speaker: 'Emergency Briefing',
+      priority: 52
+    });
+  });
+  const stab = gameState.publicStabilityState?.nationalStability;
+  if (typeof stab === 'number' && stab <= 35) {
+    out.push({
+      source: 'stability',
+      sourceKey: 'national_low',
+      day,
+      turn,
+      title: 'Public unease',
+      body: `National stability has fallen to ${Math.round(stab)}. Unrest may widen if conditions persist.`,
+      speaker: 'Civic Monitor',
+      priority: 45
+    });
+  }
+  return out.sort((a, b) => b.priority - a.priority || a.sourceKey.localeCompare(b.sourceKey));
+}
+
+export function applyEmergentNarrativeBeats(
+  gameState: GameStateSnapshot,
+  signals: EmergentNarrativeSignal[],
+  options?: { maxNew?: number }
+): GameStateSnapshot {
+  const maxNew = options?.maxNew ?? EMERGENT_NARRATIVE_LIMITS.maxBeatsPerDay;
+  const popup = gameState.narrativePopup || createDefaultNarrativePopupState();
+  if (popup.isOpen && popup.currentDecision) return gameState;
+  const delivered = new Set<string>(popup.emergentBeatIds || []);
+  const queue = [...(popup.dialogueQueue || [])];
+  const newIds: string[] = [];
+  let added = 0;
+  for (const sig of signals) {
+    if (added >= maxNew) break;
+    const id = emergentNarrativeBeatId(sig);
+    if (delivered.has(id)) continue;
+    delivered.add(id);
+    newIds.push(id);
+    queue.push({
+      id: `dlg_${id}`,
+      title: sig.title,
+      body: sig.body,
+      speaker: sig.speaker,
+      isBlocking: false
+    });
+    added += 1;
+  }
+  if (!newIds.length) return gameState;
+  const emergentBeatIds = [...delivered].slice(-EMERGENT_NARRATIVE_LIMITS.deliveredIdCap);
+  const trimmedQueue = queue.slice(-EMERGENT_NARRATIVE_LIMITS.maxQueue);
+  return {
+    ...gameState,
+    narrativePopup: {
+      ...popup,
+      dialogueQueue: trimmedQueue,
+      emergentBeatIds,
+      isBlocking: popup.isBlocking && trimmedQueue.some(m => m.isBlocking)
+    }
+  };
+}
+
+export function evaluateEmergentNarrativeBeats(gameState: GameStateSnapshot): GameStateSnapshot {
+  const day = Number(gameState.day || 1);
+  const signals = collectEmergentNarrativeSignals(gameState, day);
+  return applyEmergentNarrativeBeats(gameState, signals);
+}
+
+function en60SampleWorldEvent(day: number): StrategicWorldEvent {
+  return {
+    id: 'e1', turn: day, day, sourceSystem: 'test', sourceEventId: null, actorId: 'player', teamId: null,
+    kind: 'region_reinforced', subjectType: 'region', subjectId: 'NSW', magnitude: 1, significance: 'major',
+    visibility: 'public', observers: ['player'], evidence: [], before: {}, after: {}, delta: {},
+    strategicMeaning: 'Your NSW foothold is now the dominant regional position.',
+    affectedDomains: ['regions'], tags: [], layer: 'root', confidence: 'high', claimKind: 'fact',
+    causedByEventId: null, contributingCauses: [], rootEventId: 'e1', reactionDepth: 0, expiresTurn: null, dedupeKey: 'k1'
+  };
+}
+
+export function runO111EmergentNarrativeSelfTests(): Array<{ id: string; passed: boolean; detail?: string }> {
+  const results: Array<{ id: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, label: string, fn: () => boolean | string) => {
+    try {
+      const r = fn();
+      results.push({ id, passed: r === true, detail: r === true ? label : String(r) });
+    } catch (e) {
+      results.push({ id, passed: false, detail: `${label}: ${e instanceof Error ? e.message : String(e)}` });
+    }
+  };
+  check('en60_world', 'World Reaction meaningful event becomes a chronicle beat', () => {
+    const gs = {
+      day: 5,
+      turnCounter: 5,
+      narrativePopup: createDefaultNarrativePopupState(),
+      worldReaction: { ...createEmptyWorldReactionState(), events: [en60SampleWorldEvent(5)] }
+    } as GameStateSnapshot;
+    const next = evaluateEmergentNarrativeBeats(gs);
+    return next.narrativePopup!.dialogueQueue.length === 1 && /NSW/.test(next.narrativePopup!.dialogueQueue[0].body);
+  });
+  check('en60_dedupe', 'Same beat id is not delivered twice', () => {
+    const gs = {
+      day: 2,
+      turnCounter: 2,
+      narrativePopup: createDefaultNarrativePopupState(),
+      worldReaction: { ...createEmptyWorldReactionState(), events: [en60SampleWorldEvent(2)] }
+    } as GameStateSnapshot;
+    const once = evaluateEmergentNarrativeBeats(gs);
+    const twice = evaluateEmergentNarrativeBeats(once);
+    return once.narrativePopup!.dialogueQueue.length === 1 && twice.narrativePopup!.dialogueQueue.length === 1;
+  });
+  check('en60_blocking', 'Does not enqueue while a campaign decision modal is open', () => {
+    const gs = {
+      day: 3,
+      turnCounter: 3,
+      narrativePopup: {
+        ...createDefaultNarrativePopupState(),
+        isOpen: true,
+        currentDecision: { id: 'd1', chapterId: 'c1', title: 'T', prompt: 'P', choices: [], resolved: false }
+      },
+      worldReaction: { ...createEmptyWorldReactionState(), events: [en60SampleWorldEvent(3)] }
+    } as GameStateSnapshot;
+    const next = evaluateEmergentNarrativeBeats(gs);
+    return next.narrativePopup!.dialogueQueue.length === 0;
+  });
+  check('en60_cap', 'At most maxBeatsPerDay new beats per evaluation', () => {
+    const events = [en60SampleWorldEvent(4), { ...en60SampleWorldEvent(4), id: 'e2', dedupeKey: 'k2', strategicMeaning: 'Rival pressure rises in Victoria.' }, { ...en60SampleWorldEvent(4), id: 'e3', dedupeKey: 'k3', strategicMeaning: 'Queensland trade lanes tighten.' }];
+    const gs = {
+      day: 4,
+      turnCounter: 4,
+      narrativePopup: createDefaultNarrativePopupState(),
+      worldReaction: { ...createEmptyWorldReactionState(), events }
+    } as GameStateSnapshot;
+    const next = evaluateEmergentNarrativeBeats(gs);
+    return next.narrativePopup!.dialogueQueue.length === EMERGENT_NARRATIVE_LIMITS.maxBeatsPerDay;
+  });
+  check('en60_determinism', 'Identical inputs produce identical beat ids', () => {
+    const gs = {
+      day: 7,
+      turnCounter: 7,
+      narrativePopup: createDefaultNarrativePopupState(),
+      worldReaction: { ...createEmptyWorldReactionState(), events: [en60SampleWorldEvent(7)] }
+    } as GameStateSnapshot;
+    const a = evaluateEmergentNarrativeBeats(gs).narrativePopup!.emergentBeatIds || [];
+    const b = evaluateEmergentNarrativeBeatId(collectEmergentNarrativeSignals(gs, 7)[0]);
+    return a.length === 1 && a[0] === b;
+  });
+  return results;
+}
+
+function evaluateEmergentNarrativeBeatId(sig: EmergentNarrativeSignal): string {
+  return emergentNarrativeBeatId(sig);
+}
+
 // ============================================================================
 // SECTION 20J: LIVING REGIONS 2.0 — DYNAMIC REGIONAL STATE SYSTEM
 // ============================================================================
@@ -134705,6 +134945,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
 	        ? settingsData.whatIfTimelinesEnabled
 	        : DEFAULT_GAME_SETTINGS.whatIfTimelinesEnabled,
 	      narrativeEngineEnabled: typeof settingsData.narrativeEngineEnabled === 'boolean' ? settingsData.narrativeEngineEnabled : DEFAULT_GAME_SETTINGS.narrativeEngineEnabled,
+	      emergentNarrativeEnabled: typeof settingsData.emergentNarrativeEnabled === 'boolean' ? settingsData.emergentNarrativeEnabled : DEFAULT_GAME_SETTINGS.emergentNarrativeEnabled,
 	      publicStabilityEnabled: typeof settingsData.publicStabilityEnabled === 'boolean' ? settingsData.publicStabilityEnabled : DEFAULT_GAME_SETTINGS.publicStabilityEnabled,
 	      nationalEventsEnabled: typeof settingsData.nationalEventsEnabled === 'boolean' ? settingsData.nationalEventsEnabled : DEFAULT_GAME_SETTINGS.nationalEventsEnabled,
 	      careerProgressionEnabled: typeof settingsData.careerProgressionEnabled === 'boolean' ? settingsData.careerProgressionEnabled : DEFAULT_GAME_SETTINGS.careerProgressionEnabled,
@@ -136512,6 +136753,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
+  { id: 'o111_a60', label: 'O111 Emergent Narrative (Agent 60)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runO111EmergentNarrativeSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
@@ -199940,6 +200182,9 @@ function dispatchGameSettingsChange(
     if (gameSettings?.campaignEngineEnabled) {
       nextState = evaluateCampaignChapterProgression(nextState);
     }
+    if (gameSettings?.emergentNarrativeEnabled) {
+      nextState = evaluateEmergentNarrativeBeats(nextState);
+    }
     if (gameSettings?.fogOfWarEnabled) {
       nextState = evaluateFogOfWarAndIntel(nextState);
     }
@@ -219732,6 +219977,7 @@ function dispatchGameSettingsChange(
                         { key: 'campaignModeEnabled' as keyof GameSettingsState, label: 'Campaign Story Mode', desc: 'Multi-chapter narrative campaign mode' },
                         { key: 'campaignEngineEnabled' as keyof GameSettingsState, label: 'Campaign Engine (5 Chapters)', desc: 'Multi-chapter campaign progression' },
                         { key: 'narrativeEngineEnabled' as keyof GameSettingsState, label: 'Narrative Engine', desc: 'Story intros, outros & event choices' },
+                        { key: 'emergentNarrativeEnabled' as keyof GameSettingsState, label: 'Emergent Narrative', desc: 'Chronicle beats from world reaction, factions & crises' },
                         { key: 'dynamicCrisesEnabled' as keyof GameSettingsState, label: 'Dynamic Crises', desc: 'Escalating crisis events & stability management' },
                         { key: 'dynamicCrisisChainsEnabled' as keyof GameSettingsState, label: 'Dynamic Crisis Chains (4 Chains)', desc: 'Multi-turn escalating crisis events' },
                         { key: 'publicStabilityEnabled' as keyof GameSettingsState, label: 'Public Stability System', desc: 'National stability meter & unrest effects' },
