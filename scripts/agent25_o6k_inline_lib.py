@@ -650,6 +650,52 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  createEmptyV1028DresPersisted,\n  v1028DresInputHash,\n  sanitizeV1028DresPersisted,\n} from '../engine/disaster-resilience-orchestrator';",
             "  v1028DresInputHash,\n} from '../engine/disaster-resilience-orchestrator';\nimport {\n  createEmptyV1028DresPersisted,\n  sanitizeV1028DresPersisted,\n} from '../persistence/migrations';",
         )
+    if "v1029-coastal-resilience" in name.replace("\\", "/"):
+        src = src.replace("SECTION 20BX", "SECTION 20BY")
+        src = src.replace("SECTION 20BW", "SECTION 20BY")
+        src = src.replace("SECTION 20BV", "SECTION 20BY")
+        src = src.replace("SECTION 20BU", "SECTION 20BY")
+        src = src.replace("SECTION 20BT", "SECTION 20BY")
+        src = src.replace("SECTION 20BR", "SECTION 20BY")
+    if "coastal-resilience/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1029CresClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1029CresClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1029_CRES_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1029_CRES_MIG_REGIONS", src)
+    if "coastal-resilience-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1029CresPersisted, sanitizeV1029CresPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1029_CRES_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1029_CRES_ORCH_REGIONS.forEach", src)
+    if "coastal-resilience-utils.ts" in name:
+        src = re.sub(
+            r"export function V1029_CRES_adaptationBufferGraphHash",
+            "export function V1029_CRES_utilAdaptationBufferGraphHash",
+            src,
+        )
+    if "v1029-coastal-resilience/adaptation-buffer-stacks/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"V1029_CRES_adaptationBufferGraphHash as dgovGraphHashCore",
+            "V1029_CRES_utilAdaptationBufferGraphHash as dgovGraphHashCore",
+            src,
+        )
+    if "run-v1029-cres-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1029CresSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1029CresSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1029CresBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1029CresBaseInput(", src)
+        src = src.replace(
+            "  runV1029CresTurn,\n  createEmptyV1029CresPersisted,\n  v1029CresInputHash,\n  sanitizeV1029CresPersisted,\n} from '../engine/coastal-resilience-orchestrator';",
+            "  runV1029CresTurn,\n  v1029CresInputHash,\n} from '../engine/coastal-resilience-orchestrator';\nimport {\n  createEmptyV1029CresPersisted,\n  sanitizeV1029CresPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1029CresPersisted,\n  v1029CresInputHash,\n  sanitizeV1029CresPersisted,\n} from '../engine/coastal-resilience-orchestrator';",
+            "  v1029CresInputHash,\n} from '../engine/coastal-resilience-orchestrator';\nimport {\n  createEmptyV1029CresPersisted,\n  sanitizeV1029CresPersisted,\n} from '../persistence/migrations';",
+        )
     return src
 
 
@@ -1498,6 +1544,75 @@ def disaster_resilience_paths() -> list[str]:
             and "supply-pipeline" not in str(p)
             and "drought-buffer-bundle" not in str(p)
             and "distribution-network" not in str(p)
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def coastal_resilience_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1029-coastal-resilience"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s or "v1029-coastal-resilience-backup" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/adaptation-buffer-stacks/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/surge-scenarios/" in s:
+            return (3, s)
+        if "/generated/adaptation-buffer-stacks/" in s:
+            return (4, s)
+        if "surge-registry" in s or "adaptation-buffer-bundle" in s:
+            return (5, s)
+        if "/littoral-zone-nodes/" in s:
+            return (6, s)
+        if "coastal-resilience-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "coastal-resilience-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
+        if "distribution-network" in s or "emergency-response" in s:
+            return (98, s)
+        if "aquifer-reserve" in s or "basin-registry" in s:
+            return (98, s)
+        if "evacuation-capacity" in s or "hazard-registry" in s:
+            return (98, s)
+        if "conservation-offset" in s or "recovery-registry" in s or "primary-care" in s:
+            return (98, s)
+        if "stress-registry" in s or "supply-pipeline" in s:
+            return (98, s)
+        if "drought-buffer-bundle" in s:
+            return (98, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+            and "v1029-coastal-resilience-backup" not in str(p)
+            and not (p.parent.name == "generated" and p.name == "index.ts")
+            and "aquifer-reserve" not in str(p)
+            and "basin-registry" not in str(p)
+            and "evacuation-capacity" not in str(p)
+            and "hazard-registry" not in str(p)
+            and "conservation-offset" not in str(p)
+            and "recovery-registry" not in str(p)
+            and "primary-care" not in str(p)
+            and "stress-registry" not in str(p)
+            and "supply-pipeline" not in str(p)
+            and "drought-buffer-bundle" not in str(p)
+            and "distribution-network" not in str(p)
+            and "emergency-response" not in str(p)
         ),
         key=sort_key,
     )

@@ -31,6 +31,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     regional_health_systems_paths,
     water_security_paths,
     disaster_resilience_paths,
+    coastal_resilience_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -196,6 +197,15 @@ DRES_SECTION = (
 )
 
 DRES_MARKER = "export function runV1028DresTurn"
+
+CRES_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20BY: V10.29 COASTAL RESILIENCE — SEA-LEVEL EXPOSURE, LITTORAL ZONE NODES & ADAPTATION BUFFERS (O6K-64)\n"
+    "// Renumbered from shard 20BX (canonical 20BX = disaster resilience, push #26)\n"
+    "// ============================================================================\n"
+)
+
+CRES_MARKER = "export function runV1029CresTurn"
 
 TRADE_HELPERS = """
 export function buildV1014TradeDepthTurnInputFromGameState(gs: any, turn: number): V1014TradeDepthTurnInput {
@@ -2800,6 +2810,187 @@ def push_dres(text: str) -> str:
     return text
 
 
+CRES_HELPERS = """
+function V1029_CRES_readPersistedFromGameState(gs: any): V1029CresPersisted | null {
+  const raw = (gs?.save?.meta?.v1029 as any)?.coastal_resilience;
+  return raw ? sanitizeV1029CresPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1029_CRES_applyToGameState(gs: any, out: V1029CresTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1029 = { ...(meta.v1029 || {}) };
+  v1029.coastal_resilience = out.persisted;
+  meta.v1029 = v1029;
+  save.meta = meta;
+  return { ...gs, save, v1029CoastalResilience: out.state };
+}
+
+export function buildV1029CresTurnInputFromGameState(gs: any, turn: number): V1029CresTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 10290;
+  const inp = buildV1029CresTurnInputFromGameStateStub(turn, seed);
+  const trade = gs?.v1014TradeDepth ?? null;
+  const energy = gs?.energyDepth ?? null;
+  const supply = gs?.v1014SupplyChain ?? null;
+  const workforce = gs?.v1014WorkforceMigration ?? gs?.workforceHumanCapital ?? null;
+  const pubsvc = gs?.v1014PublicServicesCrosswalk ?? null;
+  const clad = gs?.v1023ClimateAdaptation ?? null;
+  const dgov = gs?.v1024DigitalGovernance ?? null;
+  const rhs = gs?.v1026RegionalHealthSystems ?? null;
+  return {
+    ...inp,
+    supply20bb: {
+      ...inp.supply20bb,
+      turn,
+      bottleneckPressure: Number(supply?.bottleneckPressure ?? inp.supply20bb.bottleneckPressure),
+      adaptationBufferIndex: Number(
+        supply?.adaptationBufferIndex ?? supply?.evacuationCapacityIndex ?? inp.supply20bb.adaptationBufferIndex,
+      ),
+      regionalStockDays: {
+        ...inp.supply20bb.regionalStockDays,
+        ...(supply?.regionalStockDays || {}),
+      },
+    },
+    trade20ba: {
+      ...inp.trade20ba,
+      turn,
+      sanctionsPressure: Number(trade?.sanctionsPressure ?? inp.trade20ba.sanctionsPressure),
+      exportLaneStability: Number(trade?.exportLaneStability ?? inp.trade20ba.exportLaneStability),
+      importDependencyRatio: Number(trade?.importDependencyRatio ?? inp.trade20ba.importDependencyRatio),
+    },
+    energy20bc: {
+      ...inp.energy20bc,
+      turn,
+      gridStability: Number(energy?.gridStability ?? inp.energy20bc.gridStability),
+      reserveMarginPct: Number(energy?.reserveMarginPct ?? inp.energy20bc.reserveMarginPct),
+      inundationRiskStress: Number(
+        energy?.inundationRiskStress ?? energy?.cascadeRiskStress ?? inp.energy20bc.inundationRiskStress,
+      ),
+    },
+    workforce20bf: {
+      ...inp.workforce20bf,
+      turn,
+      specialistGap: Number(workforce?.specialistGap ?? inp.workforce20bf.specialistGap),
+      nationalReadiness: Number(workforce?.nationalReadiness ?? inp.workforce20bf.nationalReadiness),
+      mismatchIndex: Number(workforce?.mismatchIndex ?? inp.workforce20bf.mismatchIndex),
+    },
+    publicServices20az: {
+      ...inp.publicServices20az,
+      turn,
+      clinicCapacityScore: Number(pubsvc?.clinicCapacityScore ?? inp.publicServices20az.clinicCapacityScore),
+      digitalServiceCoverage: Number(
+        pubsvc?.digitalServiceCoverage ?? inp.publicServices20az.digitalServiceCoverage,
+      ),
+      serviceDeliveryReadiness: Number(
+        pubsvc?.serviceDeliveryReadiness ?? inp.publicServices20az.serviceDeliveryReadiness,
+      ),
+    },
+    climateAdaptation20br: {
+      ...inp.climateAdaptation20br,
+      turn,
+      heatStressPressure: Number(clad?.heatStressPressure ?? inp.climateAdaptation20br.heatStressPressure),
+      grantStackLoad: Number(clad?.grantStackLoad ?? inp.climateAdaptation20br.grantStackLoad),
+      resilienceDriftTurns: Number(clad?.resilienceDriftTurns ?? inp.climateAdaptation20br.resilienceDriftTurns),
+    },
+    digitalGovernance20bt: {
+      ...inp.digitalGovernance20bt,
+      turn,
+      modelGovernancePressure: Number(dgov?.modelGovernancePressure ?? inp.digitalGovernance20bt.modelGovernancePressure),
+      grantStackLoad: Number(dgov?.grantStackLoad ?? inp.digitalGovernance20bt.grantStackLoad),
+      alignmentDriftTurns: Number(dgov?.alignmentDriftTurns ?? inp.digitalGovernance20bt.alignmentDriftTurns),
+    },
+    regionalHealthSystems20bv: {
+      ...inp.regionalHealthSystems20bv,
+      turn,
+      hospitalSurgePressure: Number(
+        rhs?.hospitalSurgePressure ?? inp.regionalHealthSystems20bv.hospitalSurgePressure,
+      ),
+      grantStackLoad: Number(rhs?.grantStackLoad ?? inp.regionalHealthSystems20bv.grantStackLoad),
+      bedCapacityDriftTurns: Number(
+        rhs?.bedCapacityDriftTurns ?? inp.regionalHealthSystems20bv.bedCapacityDriftTurns,
+      ),
+    },
+    persisted: null,
+  };
+}
+"""
+
+CRES_DAY_HOOK = """
+      if (typeof runV1029CresTurn === 'function') {
+        try {
+          const cresIn = buildV1029CresTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          cresIn.persisted = V1029_CRES_readPersistedFromGameState(mergedGameState);
+          const cresOut = runV1029CresTurn(cresIn);
+          mergedGameState = V1029_CRES_applyToGameState(mergedGameState, cresOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_cres_day_hook(text: str) -> str:
+    marker = "runV1029CresTurn(cresIn)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:64000] if "executeAgent02SingleDayBoundary" in text else ""
+    if marker in day_slice:
+        print("skip cres day hook (present)")
+        return text
+    dres_tail = """      if (typeof runV1028DresTurn === 'function') {
+        try {
+          const dresIn = buildV1028DresTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          dresIn.persisted = V1028_DRES_readPersistedFromGameState(mergedGameState);
+          const dresOut = runV1028DresTurn(dresIn);
+          mergedGameState = V1028_DRES_applyToGameState(mergedGameState, dresOut);
+        } catch (_) { /* isolated */ }
+      }"""
+    if dres_tail not in text:
+        raise SystemExit("dres day hook anchor missing for cres hook")
+    return text.replace(dres_tail, dres_tail + CRES_DAY_HOOK, 1)
+
+
+def wire_cres_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState && typeof sanitizeV1028DresPersisted === 'function') {"
+    patch = (
+        "  if (migrated.gameState && typeof sanitizeV1029CresPersisted === 'function') {\n"
+        "    const cresRaw = (migrated.gameState as any)?.save?.meta?.v1029?.coastal_resilience;\n"
+        "    if (cresRaw) {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1029 = { ...(meta.v1029 || {}) };\n"
+        "      v1029.coastal_resilience = sanitizeV1029CresPersisted(cresRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1029 = v1029;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1029.coastal_resilience = sanitizeV1029CresPersisted" in text:
+        print("skip cres §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("dres §6 anchor missing for cres migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
+def push_cres(text: str) -> str:
+    block = CRES_SECTION + bundle_local_files(coastal_resilience_paths()) + CRES_HELPERS
+    text = insert_before(text, block, CRES_MARKER, "T6 push #27 v1029-coastal-resilience (PR #354)")
+    text = wire_cres_day_hook(text)
+    text = wire_cres_migration(text)
+    lab = """  { id: 'v1029_coastal_resilience', label: 'V10.29 Coastal resilience (20BY surge & adaptation buffers)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1029CresSelfTestsForLab() },
+"""
+    dres_lab = (
+        "  { id: 'v1028_disaster_resilience', label: 'V10.28 Disaster resilience (20BX hazard & evacuation capacity)', "
+        "tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1028DresSelfTestsForLab() },"
+    )
+    if "{ id: 'v1029_coastal_resilience'" not in text:
+        if dres_lab in text:
+            text = text.replace(dres_lab, dres_lab + "\n" + lab.strip(), 1)
+            print("registered LAB v1029_coastal_resilience")
+        else:
+            text = wire_lab(text, lab, "v1029_coastal_resilience")
+            print("registered LAB v1029_coastal_resilience (fallback)")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -2814,7 +3005,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19, 21, 22, 23, 24, 25, 26])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19, 21, 22, 23, 24, 25, 26, 27])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -2859,6 +3050,8 @@ def main() -> None:
         text = push_wsec(text)
     elif args.push == 26:
         text = push_dres(text)
+    elif args.push == 27:
+        text = push_cres(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")
