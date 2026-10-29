@@ -96,6 +96,12 @@ import { nrDashBuildDependencyCriticalShare } from '../core/dependency-critical-
 import { nrDashBuildMomentumLeaderGap } from '../core/momentum-leader-gap.ts';
 import { nrDashBuildDerivedEventLoad } from '../core/derived-event-load.ts';
 import { nrDashBuildOwnerConcentrationIndex } from '../core/owner-concentration-index.ts';
+import { nrDashBuildOpenNeedsSpread } from '../core/open-needs-spread.ts';
+import { nrDashBuildCriticalNeedsShare } from '../core/critical-needs-share.ts';
+import { nrDashBuildNationalResilienceGap } from '../core/national-resilience-gap.ts';
+import { nrDashBuildDependencyHighShare } from '../core/dependency-high-share.ts';
+import { nrDashBuildBottleneckRegionSpan } from '../core/bottleneck-region-span.ts';
+import { nrDashBuildMomentumHistorySpan } from '../core/momentum-history-span.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -254,6 +260,30 @@ export const NrDashOverviewTab: React.FC<{
       return derivedLoad ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-derived-event-load">
           Derived event load {derivedLoad.eventCount} · {derivedLoad.majorCount} major · latest R{derivedLoad.latestTurn ?? '—'}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const criticalShare = nrDashBuildCriticalNeedsShare(lrView);
+      return criticalShare ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-critical-needs-share">
+          Critical needs share {criticalShare.criticalShare} · {criticalShare.criticalCount}/{criticalShare.openNeedCount} open
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const needsSpread = nrDashBuildOpenNeedsSpread(snap);
+      return needsSpread ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-open-needs-spread">
+          Open needs spread σ {needsSpread.stdDev} · μ {needsSpread.meanOpenNeeds} across {needsSpread.regionCount} regions
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const resGap = nrDashBuildNationalResilienceGap(snap);
+      return resGap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-resilience-gap">
+          National resilience gap {resGap.gap} · national {resGap.nationalScore} vs regional μ {resGap.regionalMean}
         </div>
       ) : null;
     })()}
@@ -647,6 +677,22 @@ export const NrDashNetworksTab: React.FC<{
           </div>
         ) : null;
       })()}
+      {(() => {
+        const highShare = nrDashBuildDependencyHighShare(ns);
+        return highShare ? (
+          <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-dep-high-share">
+            Dependency high+ share {highShare.highPlusShare} · {highShare.highPlusCount}/{highShare.edgeCount} edges
+          </div>
+        ) : null;
+      })()}
+      {(() => {
+        const regionSpan = nrDashBuildBottleneckRegionSpan(ns);
+        return regionSpan ? (
+          <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-bottleneck-region-span">
+            Bottleneck region span {regionSpan.spanRatio} · {regionSpan.distinctRegions}/{regionSpan.regionSlots} slots
+          </div>
+        ) : null;
+      })()}
       {bottleneckConc && (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-bottleneck-concentration">
           Bottleneck concentration {bottleneckConc.concentrationIndex} · top {bottleneckConc.topRegionId ?? '—'} (
@@ -768,6 +814,18 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
           </div>
         </div>
       )}
+      {(() => {
+        const histSpan = nrDashBuildMomentumHistorySpan(snap);
+        return histSpan ? (
+          <div className="text-xs mb-3 rounded border border-slate-600/50 p-2" data-testid="nr-dash-momentum-history-span">
+            <div className="font-semibold mb-1">Momentum history span</div>
+            <div>
+              length spread {histSpan.lengthSpread} · min {histSpan.minLength} · max {histSpan.maxLength} across{' '}
+              {histSpan.regionCount} regions
+            </div>
+          </div>
+        ) : null;
+      })()}
       {movers.length > 0 && (
         <div className="text-xs mb-3" data-testid="nr-dash-trend-movers">
           <div className="font-semibold mb-1">Largest momentum history deltas (authoritative)</div>

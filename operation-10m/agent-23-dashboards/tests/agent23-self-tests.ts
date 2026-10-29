@@ -92,6 +92,12 @@ import { nrDashBuildDependencyCriticalShare } from '../core/dependency-critical-
 import { nrDashBuildMomentumLeaderGap } from '../core/momentum-leader-gap.ts';
 import { nrDashBuildDerivedEventLoad } from '../core/derived-event-load.ts';
 import { nrDashBuildOwnerConcentrationIndex } from '../core/owner-concentration-index.ts';
+import { nrDashBuildOpenNeedsSpread } from '../core/open-needs-spread.ts';
+import { nrDashBuildCriticalNeedsShare } from '../core/critical-needs-share.ts';
+import { nrDashBuildNationalResilienceGap } from '../core/national-resilience-gap.ts';
+import { nrDashBuildDependencyHighShare } from '../core/dependency-high-share.ts';
+import { nrDashBuildBottleneckRegionSpan } from '../core/bottleneck-region-span.ts';
+import { nrDashBuildMomentumHistorySpan } from '../core/momentum-history-span.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -776,6 +782,39 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { NSW: 'rival' })!;
     const idx = nrDashBuildOwnerConcentrationIndex(snap)!;
     return idx.dominantOwner === 'unknown' && idx.concentrationIndex > 0.75;
+  });
+
+  check('a23_open_needs_spread', 'Open needs spread is zero on uniform fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const spread = nrDashBuildOpenNeedsSpread(snap)!;
+    return spread.totalOpenNeeds === 8 && spread.stdDev === 0;
+  });
+
+  check('a23_critical_needs_share', 'Critical needs share is zero on moderate fixture', () => {
+    const share = nrDashBuildCriticalNeedsShare(createAgent23LrFixture())!;
+    return share.openNeedCount === 8 && share.criticalCount === 0 && share.criticalShare === 0;
+  });
+
+  check('a23_national_resilience_gap', 'National resilience gap compares NS score to regional mean', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const gap = nrDashBuildNationalResilienceGap(snap)!;
+    return gap.nationalScore === 58 && gap.regionalMean === 55 && gap.gap === 3;
+  });
+
+  check('a23_dep_high_share', 'Dependency high share counts two of three edges', () => {
+    const share = nrDashBuildDependencyHighShare(createAgent23NsFixture())!;
+    return share.edgeCount === 3 && share.highPlusCount === 2 && share.highPlusShare > 0.6;
+  });
+
+  check('a23_bottleneck_region_span', 'Bottleneck region span touches NSW only', () => {
+    const span = nrDashBuildBottleneckRegionSpan(createAgent23NsFixture())!;
+    return span.distinctRegions === 1 && span.spanRatio === 0.125;
+  });
+
+  check('a23_momentum_history_span', 'Momentum history span is zero on uniform lengths', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const span = nrDashBuildMomentumHistorySpan(snap)!;
+    return span.minLength === 3 && span.maxLength === 3 && span.lengthSpread === 0;
   });
 
   return results;
