@@ -108,6 +108,12 @@ import { nrDashBuildNationalUtilizationGap } from '../core/national-utilization-
 import { nrDashBuildDependencyModerateShare } from '../core/dependency-moderate-share.ts';
 import { nrDashBuildBottleneckSeveritySpan } from '../core/bottleneck-severity-span.ts';
 import { nrDashBuildDevelopmentTierSpan } from '../core/development-tier-span.ts';
+import { nrDashBuildLowNeedsShare } from '../core/low-needs-share.ts';
+import { nrDashBuildCriticalRiskShare } from '../core/critical-risk-share.ts';
+import { nrDashBuildNationalConditionGap } from '../core/national-condition-gap.ts';
+import { nrDashBuildDependencyLowShare } from '../core/dependency-low-share.ts';
+import { nrDashBuildBottleneckNetworkSeverityLoadSpread } from '../core/bottleneck-network-severity-load-spread.ts';
+import { nrDashBuildMomentumBandSpan } from '../core/momentum-band-span.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -294,6 +300,22 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const lowShare = nrDashBuildLowNeedsShare(lrView);
+      return lowShare ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-low-needs-share">
+          Low needs share {lowShare.lowShare} · {lowShare.lowCount}/{lowShare.openNeedCount} open
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const critRisk = nrDashBuildCriticalRiskShare(lrView);
+      return critRisk ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-critical-risk-share">
+          Critical risk share {critRisk.criticalShare} · {critRisk.criticalCount}/{critRisk.riskCount} risks
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const needsSpread = nrDashBuildOpenNeedsSpread(snap);
       return needsSpread ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-open-needs-spread">
@@ -314,6 +336,15 @@ export const NrDashOverviewTab: React.FC<{
       return utilGap ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-utilization-gap">
           National utilization gap {utilGap.gap} · national μ {utilGap.nationalMean} vs regional μ {utilGap.regionalMean}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const condGap = nrDashBuildNationalConditionGap(nsState);
+      return condGap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-condition-gap">
+          National condition gap {condGap.gap} · national rank μ {condGap.nationalMeanRank} vs regional μ{' '}
+          {condGap.regionalMeanRank}
         </div>
       ) : null;
     })()}
@@ -749,6 +780,23 @@ export const NrDashNetworksTab: React.FC<{
           </div>
         ) : null;
       })()}
+      {(() => {
+        const lowDep = nrDashBuildDependencyLowShare(ns);
+        return lowDep ? (
+          <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-dep-low-share">
+            Dependency low share {lowDep.lowShare} · {lowDep.lowCount}/{lowDep.edgeCount} edges
+          </div>
+        ) : null;
+      })()}
+      {(() => {
+        const loadSpread = nrDashBuildBottleneckNetworkSeverityLoadSpread(ns);
+        return loadSpread ? (
+          <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-bottleneck-network-severity-load-spread">
+            Bottleneck network severity load spread σ {loadSpread.stdDev} · μ load {loadSpread.meanLoad} · top{' '}
+            {loadSpread.topNetwork ?? '—'}
+          </div>
+        ) : null;
+      })()}
       {bottleneckConc && (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-bottleneck-concentration">
           Bottleneck concentration {bottleneckConc.concentrationIndex} · top {bottleneckConc.topRegionId ?? '—'} (
@@ -878,6 +926,18 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
             <div>
               length spread {histSpan.lengthSpread} · min {histSpan.minLength} · max {histSpan.maxLength} across{' '}
               {histSpan.regionCount} regions
+            </div>
+          </div>
+        ) : null;
+      })()}
+      {(() => {
+        const bandSpan = nrDashBuildMomentumBandSpan(snap);
+        return bandSpan ? (
+          <div className="text-xs mb-3 rounded border border-slate-600/50 p-2" data-testid="nr-dash-momentum-band-span">
+            <div className="font-semibold mb-1">Momentum band span</div>
+            <div>
+              rank spread {bandSpan.rankSpread} · min {bandSpan.minRank} · max {bandSpan.maxRank} across{' '}
+              {bandSpan.regionCount} regions
             </div>
           </div>
         ) : null;

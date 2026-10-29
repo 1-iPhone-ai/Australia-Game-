@@ -104,6 +104,12 @@ import { nrDashBuildNationalUtilizationGap } from '../core/national-utilization-
 import { nrDashBuildDependencyModerateShare } from '../core/dependency-moderate-share.ts';
 import { nrDashBuildBottleneckSeveritySpan } from '../core/bottleneck-severity-span.ts';
 import { nrDashBuildDevelopmentTierSpan } from '../core/development-tier-span.ts';
+import { nrDashBuildLowNeedsShare } from '../core/low-needs-share.ts';
+import { nrDashBuildCriticalRiskShare } from '../core/critical-risk-share.ts';
+import { nrDashBuildNationalConditionGap } from '../core/national-condition-gap.ts';
+import { nrDashBuildDependencyLowShare } from '../core/dependency-low-share.ts';
+import { nrDashBuildBottleneckNetworkSeverityLoadSpread } from '../core/bottleneck-network-severity-load-spread.ts';
+import { nrDashBuildMomentumBandSpan } from '../core/momentum-band-span.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -853,6 +859,37 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
     const span = nrDashBuildDevelopmentTierSpan(snap)!;
     return span.rankSpread === 1 && span.regionCount === 8;
+  });
+
+  check('a23_low_needs_share', 'Low needs share is zero on moderate fixture', () => {
+    const share = nrDashBuildLowNeedsShare(createAgent23LrFixture())!;
+    return share.openNeedCount === 8 && share.lowCount === 0 && share.lowShare === 0;
+  });
+
+  check('a23_critical_risk_share', 'Critical risk share is zero on high-only NSW fixture', () => {
+    const share = nrDashBuildCriticalRiskShare(createAgent23LrFixture())!;
+    return share.riskCount === 1 && share.criticalCount === 0 && share.criticalShare === 0;
+  });
+
+  check('a23_national_condition_gap', 'National condition gap compares NS national and regional ranks', () => {
+    const gap = nrDashBuildNationalConditionGap(createAgent23NsFixture())!;
+    return gap.nationalMeanRank === 1 && gap.regionalMeanRank === 1.125 && gap.gap === -0.125;
+  });
+
+  check('a23_dep_low_share', 'Dependency low share is zero on mixed-importance fixture', () => {
+    const share = nrDashBuildDependencyLowShare(createAgent23NsFixture())!;
+    return share.edgeCount === 3 && share.lowCount === 0 && share.lowShare === 0;
+  });
+
+  check('a23_bottleneck_net_sev_load_spread', 'Bottleneck network severity load spread peaks on freight', () => {
+    const spread = nrDashBuildBottleneckNetworkSeverityLoadSpread(createAgent23NsFixture())!;
+    return spread.topNetwork === 'freight' && spread.stdDev === 0.4 && spread.meanLoad === 0.2;
+  });
+
+  check('a23_momentum_band_span', 'Momentum band span is zero on uniform stable fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const span = nrDashBuildMomentumBandSpan(snap)!;
+    return span.rankSpread === 0 && span.minRank === 2 && span.maxRank === 2;
   });
 
   return results;

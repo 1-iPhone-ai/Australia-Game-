@@ -4034,6 +4034,192 @@ export function nrDashBuildDevelopmentTierSpan(
   };
 }
 
+// --- bundled from core/low-needs-share.ts ---
+export interface NrDashLowNeedsShare {
+  openNeedCount: number;
+  lowCount: number;
+  lowShare: number;
+}
+
+/** Share of open LR needs marked low severity (authoritative needs list). */
+export function nrDashBuildLowNeedsShare(
+  lr: LivingRegionsWorldView | null
+): NrDashLowNeedsShare | null {
+  if (!lr?.state.regions) return null;
+  let openNeedCount = 0;
+  let lowCount = 0;
+  Object.values(lr.state.regions).forEach(reg => {
+    reg.needs.forEach(n => {
+      if (n.status !== 'open') return;
+      openNeedCount += 1;
+      if (n.severity === 'low') lowCount += 1;
+    });
+  });
+  if (openNeedCount <= 0) return null;
+  return {
+    openNeedCount,
+    lowCount,
+    lowShare: Math.round((lowCount / openNeedCount) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/critical-risk-share.ts ---
+export interface NrDashCriticalRiskShare {
+  riskCount: number;
+  criticalCount: number;
+  criticalShare: number;
+}
+
+/** Share of LR regional risks marked critical severity (authoritative risks list). */
+export function nrDashBuildCriticalRiskShare(
+  lr: LivingRegionsWorldView | null
+): NrDashCriticalRiskShare | null {
+  if (!lr?.state.regions) return null;
+  let riskCount = 0;
+  let criticalCount = 0;
+  Object.values(lr.state.regions).forEach(reg => {
+    reg.risks.forEach(r => {
+      riskCount += 1;
+      if (r.severity === 'critical') criticalCount += 1;
+    });
+  });
+  if (riskCount <= 0) return null;
+  return {
+    riskCount,
+    criticalCount,
+    criticalShare: Math.round((criticalCount / riskCount) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/national-condition-gap.ts ---
+export interface NrDashNationalConditionGap {
+  nationalMeanRank: number;
+  regionalMeanRank: number;
+  gap: number;
+  sampleCells: number;
+}
+
+function condRank(c: NationalNetworkCondition | undefined): number {
+  return NS_COND_RANK[c ?? 'healthy'] ?? 1;
+}
+
+/** Delta between mean NS national condition rank and mean regional cell condition rank. */
+export function nrDashBuildNationalConditionGap(
+  ns: NationalSystemsState | null
+): NrDashNationalConditionGap | null {
+  if (!ns?.national || !ns.regions) return null;
+  const nationalRanks = NATIONAL_NETWORKS.map(n => condRank(ns.national[n]?.condition));
+  if (!nationalRanks.length) return null;
+  const nationalMeanRank = nationalRanks.reduce((s, r) => s + r, 0) / nationalRanks.length;
+  const regionalRanks: number[] = [];
+  Object.values(ns.regions).forEach(reg => {
+    NATIONAL_NETWORKS.forEach(n => {
+      regionalRanks.push(condRank(reg.networks[n]?.condition));
+    });
+  });
+  if (!regionalRanks.length) return null;
+  const regionalMeanRank = regionalRanks.reduce((s, r) => s + r, 0) / regionalRanks.length;
+  return {
+    nationalMeanRank: Math.round(nationalMeanRank * 1000) / 1000,
+    regionalMeanRank: Math.round(regionalMeanRank * 1000) / 1000,
+    gap: Math.round((nationalMeanRank - regionalMeanRank) * 1000) / 1000,
+    sampleCells: regionalRanks.length,
+  };
+}
+
+// --- bundled from core/dependency-low-share.ts ---
+export interface NrDashDependencyLowShare {
+  edgeCount: number;
+  lowCount: number;
+  lowShare: number;
+}
+
+/** Share of NS dependency edges marked low importance. */
+export function nrDashBuildDependencyLowShare(
+  ns: NationalSystemsState | null
+): NrDashDependencyLowShare | null {
+  if (!ns?.dependencies?.length) return null;
+  const lowCount = ns.dependencies.filter(d => d.importance === 'low').length;
+  return {
+    edgeCount: ns.dependencies.length,
+    lowCount,
+    lowShare: Math.round((lowCount / ns.dependencies.length) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/bottleneck-network-severity-load-spread.ts ---
+const SEVERITY_WEIGHT: Record<string, number> = {
+  minor: 0.5,
+  meaningful: 1,
+  severe: 1.5,
+  critical: 2,
+};
+
+export interface NrDashBottleneckNetworkSeverityLoadSpread {
+  networkCount: number;
+  meanLoad: number;
+  stdDev: number;
+  topNetwork: NationalNetworkKind | null;
+}
+
+/** Dispersion of weighted bottleneck severity load across NS network kinds. */
+export function nrDashBuildBottleneckNetworkSeverityLoadSpread(
+  ns: NationalSystemsState | null
+): NrDashBottleneckNetworkSeverityLoadSpread | null {
+  if (!ns) return null;
+  const loads = NATIONAL_NETWORKS.map(network => {
+    let load = 0;
+    ns.bottlenecks.forEach(b => {
+      if (b.network === network) load += SEVERITY_WEIGHT[b.severity ?? ''] ?? 1;
+    });
+    return load;
+  });
+  const meanLoad = loads.reduce((s, l) => s + l, 0) / loads.length;
+  const variance = loads.reduce((s, l) => s + (l - meanLoad) ** 2, 0) / Math.max(loads.length, 1);
+  let topNetwork: NationalNetworkKind | null = null;
+  let topLoad = -1;
+  NATIONAL_NETWORKS.forEach((n, i) => {
+    if (loads[i] > topLoad) {
+      topLoad = loads[i];
+      topNetwork = n;
+    }
+  });
+  return {
+    networkCount: loads.length,
+    meanLoad: Math.round(meanLoad * 1000) / 1000,
+    stdDev: Math.round(Math.sqrt(variance) * 1000) / 1000,
+    topNetwork,
+  };
+}
+
+// --- bundled from core/momentum-band-span.ts ---
+const LR_MOM_BAND_RANK: Record<string, number> = Object.fromEntries(
+  (Object.keys(LR_MOMENTUM_LABEL) as LRMomentumBand[]).map(band => [LR_MOMENTUM_LABEL[band], NR_DASH_MOM_RANK[band]])
+);
+
+export interface NrDashMomentumBandSpan {
+  regionCount: number;
+  minRank: number;
+  maxRank: number;
+  rankSpread: number;
+}
+
+/** Spread of LR momentum band ordinals across snapshot rows. */
+export function nrDashBuildMomentumBandSpan(
+  snap: NrDashAuthSnapshot | null
+): NrDashMomentumBandSpan | null {
+  if (!snap?.regions.length) return null;
+  const ranks = snap.regions.map(r => LR_MOM_BAND_RANK[r.momentumBand] ?? 0);
+  const minRank = Math.min(...ranks);
+  const maxRank = Math.max(...ranks);
+  return {
+    regionCount: ranks.length,
+    minRank,
+    maxRank,
+    rankSpread: maxRank - minRank,
+  };
+}
+
 // --- bundled from tests/fixtures.ts ---
 function emptyNetworks(): Record<NationalNetworkKind, NationalRegionSystemsState['networks']['freight']> {
   const base = { utilization: 0.4, condition: 'healthy' as const };
@@ -4890,6 +5076,22 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const lowShare = nrDashBuildLowNeedsShare(lrView);
+      return lowShare ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-low-needs-share">
+          Low needs share {lowShare.lowShare} · {lowShare.lowCount}/{lowShare.openNeedCount} open
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const critRisk = nrDashBuildCriticalRiskShare(lrView);
+      return critRisk ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-critical-risk-share">
+          Critical risk share {critRisk.criticalShare} · {critRisk.criticalCount}/{critRisk.riskCount} risks
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const needsSpread = nrDashBuildOpenNeedsSpread(snap);
       return needsSpread ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-open-needs-spread">
@@ -4910,6 +5112,15 @@ export const NrDashOverviewTab: React.FC<{
       return utilGap ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-utilization-gap">
           National utilization gap {utilGap.gap} · national μ {utilGap.nationalMean} vs regional μ {utilGap.regionalMean}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const condGap = nrDashBuildNationalConditionGap(nsState);
+      return condGap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-condition-gap">
+          National condition gap {condGap.gap} · national rank μ {condGap.nationalMeanRank} vs regional μ{' '}
+          {condGap.regionalMeanRank}
         </div>
       ) : null;
     })()}
@@ -5345,6 +5556,23 @@ export const NrDashNetworksTab: React.FC<{
           </div>
         ) : null;
       })()}
+      {(() => {
+        const lowDep = nrDashBuildDependencyLowShare(ns);
+        return lowDep ? (
+          <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-dep-low-share">
+            Dependency low share {lowDep.lowShare} · {lowDep.lowCount}/{lowDep.edgeCount} edges
+          </div>
+        ) : null;
+      })()}
+      {(() => {
+        const loadSpread = nrDashBuildBottleneckNetworkSeverityLoadSpread(ns);
+        return loadSpread ? (
+          <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-bottleneck-network-severity-load-spread">
+            Bottleneck network severity load spread σ {loadSpread.stdDev} · μ load {loadSpread.meanLoad} · top{' '}
+            {loadSpread.topNetwork ?? '—'}
+          </div>
+        ) : null;
+      })()}
       {bottleneckConc && (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-bottleneck-concentration">
           Bottleneck concentration {bottleneckConc.concentrationIndex} · top {bottleneckConc.topRegionId ?? '—'} (
@@ -5474,6 +5702,18 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
             <div>
               length spread {histSpan.lengthSpread} · min {histSpan.minLength} · max {histSpan.maxLength} across{' '}
               {histSpan.regionCount} regions
+            </div>
+          </div>
+        ) : null;
+      })()}
+      {(() => {
+        const bandSpan = nrDashBuildMomentumBandSpan(snap);
+        return bandSpan ? (
+          <div className="text-xs mb-3 rounded border border-slate-600/50 p-2" data-testid="nr-dash-momentum-band-span">
+            <div className="font-semibold mb-1">Momentum band span</div>
+            <div>
+              rank spread {bandSpan.rankSpread} · min {bandSpan.minRank} · max {bandSpan.maxRank} across{' '}
+              {bandSpan.regionCount} regions
             </div>
           </div>
         ) : null;
@@ -6459,6 +6699,37 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
     const span = nrDashBuildDevelopmentTierSpan(snap)!;
     return span.rankSpread === 1 && span.regionCount === 8;
+  });
+
+  check('a23_low_needs_share', 'Low needs share is zero on moderate fixture', () => {
+    const share = nrDashBuildLowNeedsShare(createAgent23LrFixture())!;
+    return share.openNeedCount === 8 && share.lowCount === 0 && share.lowShare === 0;
+  });
+
+  check('a23_critical_risk_share', 'Critical risk share is zero on high-only NSW fixture', () => {
+    const share = nrDashBuildCriticalRiskShare(createAgent23LrFixture())!;
+    return share.riskCount === 1 && share.criticalCount === 0 && share.criticalShare === 0;
+  });
+
+  check('a23_national_condition_gap', 'National condition gap compares NS national and regional ranks', () => {
+    const gap = nrDashBuildNationalConditionGap(createAgent23NsFixture())!;
+    return gap.nationalMeanRank === 1 && gap.regionalMeanRank === 1.125 && gap.gap === -0.125;
+  });
+
+  check('a23_dep_low_share', 'Dependency low share is zero on mixed-importance fixture', () => {
+    const share = nrDashBuildDependencyLowShare(createAgent23NsFixture())!;
+    return share.edgeCount === 3 && share.lowCount === 0 && share.lowShare === 0;
+  });
+
+  check('a23_bottleneck_net_sev_load_spread', 'Bottleneck network severity load spread peaks on freight', () => {
+    const spread = nrDashBuildBottleneckNetworkSeverityLoadSpread(createAgent23NsFixture())!;
+    return spread.topNetwork === 'freight' && spread.stdDev === 0.4 && spread.meanLoad === 0.2;
+  });
+
+  check('a23_momentum_band_span', 'Momentum band span is zero on uniform stable fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const span = nrDashBuildMomentumBandSpan(snap)!;
+    return span.rankSpread === 0 && span.minRank === 2 && span.maxRank === 2;
   });
 
   return results;
