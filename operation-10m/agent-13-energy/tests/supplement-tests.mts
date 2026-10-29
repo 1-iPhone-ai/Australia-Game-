@@ -255,6 +255,17 @@ import {
   V1014_FEDERATED_NET_ZERO_EXPORT_CLIMATE_RESILIENCE_TURN_SCENARIOS,
 } from '../modules/federated-net-zero-export-climate-resilience-orchestration-ledger.ts';
 import {
+  runAgent13ContinentalSovereignNetZeroExportContinuityScaleSelfTests,
+  runAgent13ContinentalSovereignNetZeroExportContinuityTurnScenario,
+  V1014_CONTINENTAL_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_TRANSNATIONAL_MESH_TURN_SCENARIOS,
+} from '../modules/continental-sovereign-net-zero-export-continuity-orchestration-ledger.ts';
+import { runAgent13Agent25Wave55ProjectionHandoffBriefSelfTests } from '../modules/agent25-wave55-projection-handoff-brief.ts';
+import {
+  runAgent13ContinentalSovereignNetZeroExportContinuityScaleSelfTests,
+  runAgent13ContinentalSovereignNetZeroExportContinuityTurnScenario,
+  V1014_CONTINENTAL_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_TRANSNATIONAL_MESH_TURN_SCENARIOS,
+} from '../modules/continental-sovereign-net-zero-export-continuity-orchestration-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -674,6 +685,17 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
     V1014_FEDERATED_NET_ZERO_EXPORT_CLIMATE_RESILIENCE_TURN_SCENARIOS[0],
   );
   ok(netZeroClimateTurn.passed);
+
+  const continentalContinuity = runAgent13ContinentalSovereignNetZeroExportContinuityScaleSelfTests();
+  ok(continentalContinuity.failed === 0 && continentalContinuity.passed >= 5);
+
+  const continentalContinuityTurn = runAgent13ContinentalSovereignNetZeroExportContinuityTurnScenario(
+    V1014_CONTINENTAL_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_TRANSNATIONAL_MESH_TURN_SCENARIOS[0],
+  );
+  ok(continentalContinuityTurn.passed);
+
+  const wave55Handoff = runAgent13Agent25Wave55ProjectionHandoffBriefSelfTests();
+  ok(wave55Handoff.failed === 0 && wave55Handoff.passed >= 4);
 
   return { passed, failed, total: passed + failed };
 }

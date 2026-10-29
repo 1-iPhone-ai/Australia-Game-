@@ -74,6 +74,8 @@ const FILES = [
   'national-security-strategic-reserve-defence-industrial-federation-ledger.ts',
   'strategic-reserve-carbon-neutrality-sovereign-grid-federation-ledger.ts',
   'federated-net-zero-export-climate-resilience-orchestration-ledger.ts',
+  'continental-sovereign-net-zero-export-continuity-orchestration-ledger.ts',
+  'agent25-wave55-projection-handoff-brief.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -332,6 +334,11 @@ const EXPORT_MANIFEST = [
   'runAgent13FederatedNetZeroExportClimateResilienceScaleSelfTests',
   'runAgent13FederatedNetZeroExportClimateResilienceTurnScenario',
   'V1014_FEDERATED_NET_ZERO_EXPORT_CLIMATE_RESILIENCE_TURN_SCENARIOS',
+  'runAgent13ContinentalSovereignNetZeroExportContinuityScaleSelfTests',
+  'runAgent13ContinentalSovereignNetZeroExportContinuityTurnScenario',
+  'V1014_CONTINENTAL_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_TRANSNATIONAL_MESH_TURN_SCENARIOS',
+  'composeAgent25Wave55ProjectionHandoffBrief',
+  'runAgent13Agent25Wave55ProjectionHandoffBriefSelfTests',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

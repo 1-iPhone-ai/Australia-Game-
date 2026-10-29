@@ -60,6 +60,8 @@ operation-10m/agent-13-energy/
   modules/national-security-strategic-reserve-defence-industrial-federation-ledger.ts  # scale wave round 52 (O10-235)
   modules/strategic-reserve-carbon-neutrality-sovereign-grid-federation-ledger.ts  # scale wave round 53 (O10-237)
   modules/federated-net-zero-export-climate-resilience-orchestration-ledger.ts  # scale wave round 54 (O10-240)
+  modules/continental-sovereign-net-zero-export-continuity-orchestration-ledger.ts  # scale wave round 55 (O10-247)
+  modules/agent25-wave55-projection-handoff-brief.ts  # Agent 25 O10-247 / c4bbec67 projection handoff
   modules/climate-hazards.ts
   modules/household-industry-links.ts
   modules/v94-type-stubs.ts                    # drop on merge
@@ -131,3 +133,10 @@ Output: `chunk.tsx` wrapped with `// OP10M_MODULE_BEGIN agent-13-energy` … `//
 - Merge baseline: **`5bd043ad`** (O10-238 projection)
 - Module depth: `federated-net-zero-export-climate-resilience-orchestration-ledger.ts` stacks round-53 strategic reserve / sovereign green grid federation
 - Verification: `npm run test:agent-13` → **634/634** (254 manifest + 112 supplements + 268 core)
+
+## Wave 55 (O10-247)
+
+- Gate feat: `feat(op10m): O10-247 · wave 55 · round 55`
+- Merge baseline: **`c4bbec67`** (O10-241 projection @ **3,054,213**)
+- Module depth: `continental-sovereign-net-zero-export-continuity-orchestration-ledger.ts` stacks round-54 federated net-zero export / climate resilience export federation
+- Agent 25 handoff: `agent25-wave55-projection-handoff-brief.ts`

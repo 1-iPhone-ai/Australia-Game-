@@ -387,6 +387,13 @@ import {
   type V1014RegionalFederatedNetZeroExportLedger,
   type V1014RegionalClimateResilienceExportFederationLedger,
 } from './federated-net-zero-export-climate-resilience-orchestration-ledger';
+import {
+  advanceRegionalTransnationalClimateResilienceExportMeshOrchestration,
+  computeRegionalContinentalSovereignNetZeroExportContinuityLedger,
+  scoreAgent13ContinentalSovereignNetZeroExportContinuityGIAlignment,
+  type V1014RegionalContinentalSovereignNetZeroExportContinuityLedger,
+  type V1014RegionalTransnationalClimateResilienceExportMeshLedger,
+} from './continental-sovereign-net-zero-export-continuity-orchestration-ledger';
 
 
 
@@ -26059,6 +26066,10 @@ export interface V1014RegionalEnergyProfile {
   federatedNetZeroExportRelief: number;
   climateResilienceExportFederationBand: string;
   climateResilienceExportFederationRelief: number;
+  continentalSovereignNetZeroExportContinuityBand: string;
+  continentalSovereignNetZeroExportContinuityRelief: number;
+  transnationalClimateResilienceExportMeshBand: string;
+  transnationalClimateResilienceExportMeshRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -26201,6 +26212,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalSovereignGreenGridFederationLedgers: Record<string, V1014RegionalSovereignGreenGridFederationLedger>;
   regionalFederatedNetZeroExportLedgers: Record<string, V1014RegionalFederatedNetZeroExportLedger>;
   regionalClimateResilienceExportFederationLedgers: Record<string, V1014RegionalClimateResilienceExportFederationLedger>;
+  regionalContinentalSovereignNetZeroExportContinuityLedgers: Record<string, V1014RegionalContinentalSovereignNetZeroExportContinuityLedger>;
+  regionalTransnationalClimateResilienceExportMeshLedgers: Record<string, V1014RegionalTransnationalClimateResilienceExportMeshLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -27116,6 +27129,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const sovereignGreenGridFederationLedgers: Record<string, V1014RegionalSovereignGreenGridFederationLedger> = {};
   const federatedNetZeroExportLedgers: Record<string, V1014RegionalFederatedNetZeroExportLedger> = {};
   const climateResilienceExportFederationLedgers: Record<string, V1014RegionalClimateResilienceExportFederationLedger> = {};
+  const continentalSovereignNetZeroExportContinuityLedgers: Record<string, V1014RegionalContinentalSovereignNetZeroExportContinuityLedger> = {};
+  const transnationalClimateResilienceExportMeshLedgers: Record<string, V1014RegionalTransnationalClimateResilienceExportMeshLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -27388,6 +27403,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextClimateResilienceExportFederationMemory: Record<string, { resilienceIndex: number }> = {
     ...persisted.regionalClimateResilienceExportFederationMemory,
+  };
+  const nextContinentalSovereignNetZeroExportContinuityMemory: Record<string, { exportBalance: number; exportIndex: number }> = {
+    ...persisted.regionalContinentalSovereignNetZeroExportContinuityMemory,
+  };
+  const nextTransnationalClimateResilienceExportMeshMemory: Record<string, { resilienceIndex: number }> = {
+    ...persisted.regionalTransnationalClimateResilienceExportMeshMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -28837,6 +28858,34 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextClimateResilienceExportFederationMemory[regionId] = climateResilienceExportFederationStep.next;
     climateResilienceExportFederationLedgers[regionId] = climateResilienceExportFederationStep.ledger;
     pressure -= climateResilienceExportFederationStep.ledger.climateResilienceExportFederationRelief;
+    const continentalSovereignNetZeroExportContinuityStep = computeRegionalContinentalSovereignNetZeroExportContinuityLedger({
+      regionId,
+      federatedNetZeroExportRelief: federatedNetZeroExportStep.ledger.federatedNetZeroExportRelief,
+      climateResilienceExportFederationRelief: climateResilienceExportFederationStep.ledger.climateResilienceExportFederationRelief,
+      interregionalInterconnectionRelief: interregionalInterconnectionStep.ledger.interregionalInterconnectionRelief,
+      decarbonFederationRelief: decarbonFederationStep.ledger.decarbonFederationRelief,
+      safeguardCertificateRelief: decarbonCertificateStackStep.ledger.decarbonCertificateStackRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextContinentalSovereignNetZeroExportContinuityMemory[regionId] || null,
+    });
+    nextContinentalSovereignNetZeroExportContinuityMemory[regionId] = continentalSovereignNetZeroExportContinuityStep.next;
+    continentalSovereignNetZeroExportContinuityLedgers[regionId] = continentalSovereignNetZeroExportContinuityStep.ledger;
+    pressure -= continentalSovereignNetZeroExportContinuityStep.ledger.continentalSovereignNetZeroExportContinuityRelief;
+
+    const transnationalClimateResilienceExportMeshStep = advanceRegionalTransnationalClimateResilienceExportMeshOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      continentalSovereignNetZeroExportContinuityBand: continentalSovereignNetZeroExportContinuityStep.ledger.band,
+      interregionalInterconnectionRelief: interregionalInterconnectionStep.ledger.interregionalInterconnectionRelief,
+      decarbonFederationRelief: decarbonFederationStep.ledger.decarbonFederationRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextTransnationalClimateResilienceExportMeshMemory[regionId] || null,
+    });
+    nextTransnationalClimateResilienceExportMeshMemory[regionId] = transnationalClimateResilienceExportMeshStep.next;
+    transnationalClimateResilienceExportMeshLedgers[regionId] = transnationalClimateResilienceExportMeshStep.ledger;
+    pressure -= transnationalClimateResilienceExportMeshStep.ledger.transnationalClimateResilienceExportMeshRelief;
+
     pressure = v1014Clamp(pressure, 0, 100);
 
     nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
