@@ -15,15 +15,15 @@ import {
 } from '../src/index.ts';
 
 describe('Tranche 34 handoff-closure-latch lattice catalog', () => {
-  it('adds 320 closure-latch chains at 17700 total', () => {
+  it('adds 320 closure-latch chains at 17920 total', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE34_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche34Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 17700);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 17920);
   });
 
   it('uses op10m_t34 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 17700);
+    assert.equal(ids.size, 17920);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE34) {
       assert.match(c.chainId, /^op10m_t34_/);
     }
