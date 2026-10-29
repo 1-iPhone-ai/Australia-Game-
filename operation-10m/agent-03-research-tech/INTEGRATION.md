@@ -66,6 +66,12 @@ Use `buildResearchProgressInputs()` at assembly boundary.
 
 Pure helpers: `computeInstitutionUpgrades`, `applyLateGameDiffusionCascade` (also invoked inside `computeResearchProgress`).
 
+### Slice 3 — scale wave (tier 5 + cross-branch synergy)
+
+- **6 tier-5 nodes** with `branch_progress` gates linking branches
+- `scaleWave` report on state: synergy score, technology transfer links, dominant capability cluster
+- Readiness/diffusion bounded bonuses via `scale-wave.ts`
+
 ### Feature flag (proposed)
 
 `researchProgressionEnabled: boolean` — default off until assembly tranche lands; when off, skip compute and hide UI.

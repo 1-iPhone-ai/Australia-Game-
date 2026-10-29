@@ -268,6 +268,81 @@ export const STRATEGY_HOOKS: StrategyHookDefinition[] = [
     branchIds: ['sovereign_research'],
     minUnlockedTier: 4,
   },
+  {
+    id: 'hook_scale_df_research_mesh',
+    title: 'Continental research mesh',
+    phase: 'endgame',
+    description: 'Scale wave capstone: mesh sovereign research with completed digital backbone.',
+    targets: {
+      megaprojects: ['continental_digital_backbone', 'australian_ai_compute_network'],
+      capabilities: [{ id: 'ai_compute_infrastructure', aimMaturity: 'nationally_integrated' }],
+      factions: ['csiro_ai_directorate'],
+    },
+    branchIds: ['digital_frontier'],
+    minUnlockedTier: 5,
+  },
+  {
+    id: 'hook_scale_ri_autonomous_mesh',
+    title: 'Autonomous export mesh',
+    phase: 'endgame',
+    description: 'Scale wave: nationally integrated automated mining + freight modernization.',
+    targets: {
+      megaprojects: ['northern_export_corridor', 'national_freight_modernization'],
+      capabilities: [{ id: 'automated_mining', aimMaturity: 'nationally_integrated' }],
+    },
+    branchIds: ['resource_innovation'],
+    minUnlockedTier: 5,
+  },
+  {
+    id: 'hook_scale_it_value_chain',
+    title: 'National value chain',
+    phase: 'endgame',
+    description: 'Scale wave: HSR-linked manufacturing fed by continental compute.',
+    targets: {
+      megaprojects: ['national_high_speed_rail'],
+      capabilities: [{ id: 'advanced_manufacturing', aimMaturity: 'nationally_integrated' }],
+      projectTypes: ['advanced_manufacturing', 'data_center'],
+    },
+    branchIds: ['industrial_transformation'],
+    minUnlockedTier: 5,
+  },
+  {
+    id: 'hook_scale_et_hydrogen_dominance',
+    title: 'Hydrogen export dominance',
+    phase: 'endgame',
+    description: 'Scale wave: hydrogen export network + cross-sector load from agri-water digitization.',
+    targets: {
+      megaprojects: ['green_hydrogen_export_network', 'eastern_energy_supergrid'],
+      capabilities: [{ id: 'grid_scale_storage', aimMaturity: 'nationally_integrated' }],
+    },
+    branchIds: ['energy_transition'],
+    minUnlockedTier: 5,
+  },
+  {
+    id: 'hook_scale_aw_national_resilience',
+    title: 'National ag–water resilience',
+    phase: 'endgame',
+    description: 'Scale wave: completed water security with supergrid-backed desal energy.',
+    targets: {
+      megaprojects: ['national_water_security'],
+      capabilities: [{ id: 'precision_agriculture', aimMaturity: 'nationally_integrated' }],
+    },
+    branchIds: ['agri_water_systems'],
+    minUnlockedTier: 5,
+  },
+  {
+    id: 'hook_scale_sr_public_private',
+    title: 'Public–private research compact',
+    phase: 'endgame',
+    description: 'Scale wave: CSIRO national integration with dual tier-4 industrial/digital branches.',
+    targets: {
+      factions: ['csiro_ai_directorate', 'federal_infrastructure_office'],
+      capabilities: [{ id: 'research_commercialization', aimMaturity: 'nationally_integrated' }],
+      megaprojects: ['australian_ai_compute_network'],
+    },
+    branchIds: ['sovereign_research'],
+    minUnlockedTier: 5,
+  },
 ];
 
 export const STRATEGY_HOOK_BY_ID = Object.fromEntries(STRATEGY_HOOKS.map(h => [h.id, h]));

@@ -17,7 +17,7 @@ export type ResearchBranchId =
   | 'agri_water_systems'
   | 'sovereign_research';
 
-export type ResearchNodeTier = 1 | 2 | 3 | 4;
+export type ResearchNodeTier = 1 | 2 | 3 | 4 | 5;
 
 /** External gate — must be satisfied before a branch node can complete. */
 export type ResearchExternalPrerequisite =
@@ -26,7 +26,8 @@ export type ResearchExternalPrerequisite =
   | { kind: 'contract_completed'; contractType: V94ContractType; minCount?: number }
   | { kind: 'megaproject_stage'; program: V94MegaprojectKind; minCompletedStages: number }
   | { kind: 'faction_standing'; factionId: V94FactionId; minStanding: number }
-  | { kind: 'sector_strength'; regionId: V94AustralianRegionCode; sector: V94LRSector; minScore: number };
+  | { kind: 'sector_strength'; regionId: V94AustralianRegionCode; sector: V94LRSector; minScore: number }
+  | { kind: 'branch_progress'; branchId: ResearchBranchId; minTier: ResearchNodeTier };
 
 export interface ResearchBranchNodeDefinition {
   id: string;
@@ -141,6 +142,18 @@ export interface UnlockedResearchNode {
   anchorRegionId: V94AustralianRegionCode | null;
 }
 
+export interface ResearchScaleWaveReport {
+  active: boolean;
+  tier5UnlockCount: number;
+  crossBranchSynergyScore: number;
+  technologyTransferLinks: Array<{
+    fromBranch: ResearchBranchId;
+    toBranch: ResearchBranchId;
+    strength: number;
+  }>;
+  dominantCapabilityCluster: V94EmergingCapabilityId | null;
+}
+
 export interface ResearchProgressState {
   schemaVersion: 'op10m-agent03-v1';
   turn: number;
@@ -153,6 +166,7 @@ export interface ResearchProgressState {
   /** Slice 2: institution upgrade tiers (monotonic per institution). */
   institutionUpgrades: InstitutionUpgradeState[];
   lateGameDiffusion: LateGameDiffusionReport | null;
+  scaleWave: ResearchScaleWaveReport | null;
 }
 
 export interface StrategyHookDefinition {

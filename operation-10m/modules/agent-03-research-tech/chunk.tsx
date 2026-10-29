@@ -148,7 +148,7 @@ export type ResearchBranchId =
   | 'agri_water_systems'
   | 'sovereign_research';
 
-export type ResearchNodeTier = 1 | 2 | 3 | 4;
+export type ResearchNodeTier = 1 | 2 | 3 | 4 | 5;
 
 /** External gate — must be satisfied before a branch node can complete. */
 export type ResearchExternalPrerequisite =
@@ -157,7 +157,8 @@ export type ResearchExternalPrerequisite =
   | { kind: 'contract_completed'; contractType: V94ContractType; minCount?: number }
   | { kind: 'megaproject_stage'; program: V94MegaprojectKind; minCompletedStages: number }
   | { kind: 'faction_standing'; factionId: V94FactionId; minStanding: number }
-  | { kind: 'sector_strength'; regionId: V94AustralianRegionCode; sector: V94LRSector; minScore: number };
+  | { kind: 'sector_strength'; regionId: V94AustralianRegionCode; sector: V94LRSector; minScore: number }
+  | { kind: 'branch_progress'; branchId: ResearchBranchId; minTier: ResearchNodeTier };
 
 export interface ResearchBranchNodeDefinition {
   id: string;
@@ -272,6 +273,18 @@ export interface UnlockedResearchNode {
   anchorRegionId: V94AustralianRegionCode | null;
 }
 
+export interface ResearchScaleWaveReport {
+  active: boolean;
+  tier5UnlockCount: number;
+  crossBranchSynergyScore: number;
+  technologyTransferLinks: Array<{
+    fromBranch: ResearchBranchId;
+    toBranch: ResearchBranchId;
+    strength: number;
+  }>;
+  dominantCapabilityCluster: V94EmergingCapabilityId | null;
+}
+
 export interface ResearchProgressState {
   schemaVersion: 'op10m-agent03-v1';
   turn: number;
@@ -284,6 +297,7 @@ export interface ResearchProgressState {
   /** Slice 2: institution upgrade tiers (monotonic per institution). */
   institutionUpgrades: InstitutionUpgradeState[];
   lateGameDiffusion: LateGameDiffusionReport | null;
+  scaleWave: ResearchScaleWaveReport | null;
 }
 
 export interface StrategyHookDefinition {
@@ -440,6 +454,20 @@ export const RESEARCH_BRANCH_NODES: ResearchBranchNodeDefinition[] = [
     diffusionSeed: 0.35,
     hookIds: ['hook_endgame_digital_sovereignty'],
   }),
+  n({
+    id: 'df_t5_scale_wave_mesh',
+    branchId: 'digital_frontier',
+    tier: 5,
+    label: 'Continental Research Mesh',
+    summary: 'Scale wave: sovereign research tier-4 + integrated compute + digital backbone completion.',
+    requiresNodes: ['df_t4_continental_integrated'],
+    external: [
+      { kind: 'branch_progress', branchId: 'sovereign_research', minTier: 4 },
+      { kind: 'megaproject_stage', program: 'continental_digital_backbone', minCompletedStages: 4 },
+    ],
+    diffusionSeed: 0.4,
+    hookIds: ['hook_scale_df_research_mesh'],
+  }),
 
   // --- resource_innovation ---
   n({
@@ -490,6 +518,21 @@ export const RESEARCH_BRANCH_NODES: ResearchBranchNodeDefinition[] = [
     diffusionSeed: 0.32,
     hookIds: ['hook_endgame_resource_export'],
   }),
+  n({
+    id: 'ri_t5_scale_wave_autonomy',
+    branchId: 'resource_innovation',
+    tier: 5,
+    label: 'Autonomous Export Mesh',
+    summary: 'Scale wave: freight modernization + industrial tier-3+ absorbing mining automation outputs.',
+    requiresNodes: ['ri_t4_northern_export'],
+    external: [
+      { kind: 'megaproject_stage', program: 'national_freight_modernization', minCompletedStages: 2 },
+      { kind: 'branch_progress', branchId: 'industrial_transformation', minTier: 3 },
+      { kind: 'capability', capability: 'automated_mining', minMaturity: 'nationally_integrated' },
+    ],
+    diffusionSeed: 0.38,
+    hookIds: ['hook_scale_ri_autonomous_mesh'],
+  }),
 
   // --- industrial_transformation ---
   n({
@@ -536,6 +579,20 @@ export const RESEARCH_BRANCH_NODES: ResearchBranchNodeDefinition[] = [
     ],
     diffusionSeed: 0.33,
     hookIds: ['hook_endgame_industrial_sovereignty'],
+  }),
+  n({
+    id: 'it_t5_scale_wave_value_chain',
+    branchId: 'industrial_transformation',
+    tier: 5,
+    label: 'National Value Chain',
+    summary: 'Scale wave: HSR program progress + digital frontier tier-4 feeding manufacturing integration.',
+    requiresNodes: ['it_t4_integrated_economy'],
+    external: [
+      { kind: 'megaproject_stage', program: 'national_high_speed_rail', minCompletedStages: 2 },
+      { kind: 'branch_progress', branchId: 'digital_frontier', minTier: 4 },
+    ],
+    diffusionSeed: 0.37,
+    hookIds: ['hook_scale_it_value_chain'],
   }),
 
   // --- energy_transition ---
@@ -590,6 +647,20 @@ export const RESEARCH_BRANCH_NODES: ResearchBranchNodeDefinition[] = [
     diffusionSeed: 0.34,
     hookIds: ['hook_endgame_renewable_dominance'],
   }),
+  n({
+    id: 'et_t5_scale_wave_hydrogen_dominance',
+    branchId: 'energy_transition',
+    tier: 5,
+    label: 'Hydrogen Export Dominance',
+    summary: 'Scale wave: hydrogen export network advanced stages + agri-water digital load balancing.',
+    requiresNodes: ['et_t4_renewable_powerhouse'],
+    external: [
+      { kind: 'megaproject_stage', program: 'green_hydrogen_export_network', minCompletedStages: 3 },
+      { kind: 'branch_progress', branchId: 'agri_water_systems', minTier: 3 },
+    ],
+    diffusionSeed: 0.39,
+    hookIds: ['hook_scale_et_hydrogen_dominance'],
+  }),
 
   // --- agri_water_systems ---
   n({
@@ -637,6 +708,20 @@ export const RESEARCH_BRANCH_NODES: ResearchBranchNodeDefinition[] = [
     diffusionSeed: 0.31,
     hookIds: ['hook_endgame_ag_export'],
   }),
+  n({
+    id: 'aw_t5_scale_wave_national_resilience',
+    branchId: 'agri_water_systems',
+    tier: 5,
+    label: 'National Ag–Water Resilience',
+    summary: 'Scale wave: water security program completion + energy transition tier-4 grid support.',
+    requiresNodes: ['aw_t4_ag_export'],
+    external: [
+      { kind: 'megaproject_stage', program: 'national_water_security', minCompletedStages: 4 },
+      { kind: 'branch_progress', branchId: 'energy_transition', minTier: 4 },
+    ],
+    diffusionSeed: 0.36,
+    hookIds: ['hook_scale_aw_national_resilience'],
+  }),
 
   // --- sovereign_research ---
   n({
@@ -683,6 +768,21 @@ export const RESEARCH_BRANCH_NODES: ResearchBranchNodeDefinition[] = [
     ],
     diffusionSeed: 0.36,
     hookIds: ['hook_endgame_sovereign_research'],
+  }),
+  n({
+    id: 'sr_t5_scale_wave_public_private',
+    branchId: 'sovereign_research',
+    tier: 5,
+    label: 'Public–Private Research Compact',
+    summary: 'Scale wave: three branches at tier-4+ and CSIRO at national integration standing.',
+    requiresNodes: ['sr_t4_sovereign_integrated'],
+    external: [
+      { kind: 'branch_progress', branchId: 'digital_frontier', minTier: 4 },
+      { kind: 'branch_progress', branchId: 'industrial_transformation', minTier: 4 },
+      { kind: 'faction_standing', factionId: 'csiro_ai_directorate', minStanding: 78 },
+    ],
+    diffusionSeed: 0.42,
+    hookIds: ['hook_scale_sr_public_private'],
   }),
 ];
 
@@ -842,9 +942,19 @@ function sectorScore(inputs: ResearchProgressInputs, regionId: string, sector: s
   return Number(region.sectors[sector as keyof typeof region.sectors] ?? 0);
 }
 
+function maxTierOnBranch(unlockedNodeIds: Set<string>, branchId: string): number {
+  let max = 0;
+  for (const id of unlockedNodeIds) {
+    const node = RESEARCH_NODE_BY_ID[id];
+    if (node?.branchId === branchId) max = Math.max(max, node.tier);
+  }
+  return max;
+}
+
 export function evaluateExternalPrerequisite(
   inputs: ResearchProgressInputs,
-  req: ResearchExternalPrerequisite
+  req: ResearchExternalPrerequisite,
+  unlockedNodeIds: Set<string> = new Set()
 ): boolean {
   switch (req.kind) {
     case 'capability':
@@ -859,6 +969,8 @@ export function evaluateExternalPrerequisite(
       return factionStanding(inputs, req.factionId) >= req.minStanding;
     case 'sector_strength':
       return sectorScore(inputs, req.regionId, req.sector) >= req.minScore;
+    case 'branch_progress':
+      return maxTierOnBranch(unlockedNodeIds, req.branchId) >= req.minTier;
     default:
       return false;
   }
@@ -881,7 +993,7 @@ export function evaluateNodePrerequisites(
   }
 
   const missingNodeIds = def.requiresNodes.filter(id => !unlockedNodeIds.has(id));
-  const unmetExternal = def.external.filter(ext => !evaluateExternalPrerequisite(inputs, ext));
+  const unmetExternal = def.external.filter(ext => !evaluateExternalPrerequisite(inputs, ext, unlockedNodeIds));
   const satisfied = missingNodeIds.length === 0 && unmetExternal.length === 0;
 
   const detail: string[] = [];
@@ -1103,9 +1215,16 @@ export function applyLateGameDiffusionCascade(
   institutionUpgrades: InstitutionUpgradeState[]
 ): { cells: RegionalDiffusionCell[]; report: LateGameDiffusionReport } {
   const tier4 = countTier4Unlocks(unlocked);
+  const tier5 = unlocked.filter(u => RESEARCH_NODE_BY_ID[u.nodeId]?.tier === 5).length;
   const nationalInst = countNationalInstitutions(institutionUpgrades);
   const trigger =
-    tier4 > 0 && nationalInst > 0 ? 'both' : tier4 > 0 ? 'tier4_unlock' : nationalInst > 0 ? 'national_institution' : 'none';
+    tier4 > 0 && nationalInst > 0
+      ? 'both'
+      : tier4 > 0 || tier5 > 0
+        ? 'tier4_unlock'
+        : nationalInst > 0
+          ? 'national_institution'
+          : 'none';
   const active = trigger !== 'none';
 
   const scores: Record<string, number> = Object.fromEntries(base.map(c => [c.regionId, c.score]));
@@ -1565,6 +1684,81 @@ export const STRATEGY_HOOKS: StrategyHookDefinition[] = [
     branchIds: ['sovereign_research'],
     minUnlockedTier: 4,
   },
+  {
+    id: 'hook_scale_df_research_mesh',
+    title: 'Continental research mesh',
+    phase: 'endgame',
+    description: 'Scale wave capstone: mesh sovereign research with completed digital backbone.',
+    targets: {
+      megaprojects: ['continental_digital_backbone', 'australian_ai_compute_network'],
+      capabilities: [{ id: 'ai_compute_infrastructure', aimMaturity: 'nationally_integrated' }],
+      factions: ['csiro_ai_directorate'],
+    },
+    branchIds: ['digital_frontier'],
+    minUnlockedTier: 5,
+  },
+  {
+    id: 'hook_scale_ri_autonomous_mesh',
+    title: 'Autonomous export mesh',
+    phase: 'endgame',
+    description: 'Scale wave: nationally integrated automated mining + freight modernization.',
+    targets: {
+      megaprojects: ['northern_export_corridor', 'national_freight_modernization'],
+      capabilities: [{ id: 'automated_mining', aimMaturity: 'nationally_integrated' }],
+    },
+    branchIds: ['resource_innovation'],
+    minUnlockedTier: 5,
+  },
+  {
+    id: 'hook_scale_it_value_chain',
+    title: 'National value chain',
+    phase: 'endgame',
+    description: 'Scale wave: HSR-linked manufacturing fed by continental compute.',
+    targets: {
+      megaprojects: ['national_high_speed_rail'],
+      capabilities: [{ id: 'advanced_manufacturing', aimMaturity: 'nationally_integrated' }],
+      projectTypes: ['advanced_manufacturing', 'data_center'],
+    },
+    branchIds: ['industrial_transformation'],
+    minUnlockedTier: 5,
+  },
+  {
+    id: 'hook_scale_et_hydrogen_dominance',
+    title: 'Hydrogen export dominance',
+    phase: 'endgame',
+    description: 'Scale wave: hydrogen export network + cross-sector load from agri-water digitization.',
+    targets: {
+      megaprojects: ['green_hydrogen_export_network', 'eastern_energy_supergrid'],
+      capabilities: [{ id: 'grid_scale_storage', aimMaturity: 'nationally_integrated' }],
+    },
+    branchIds: ['energy_transition'],
+    minUnlockedTier: 5,
+  },
+  {
+    id: 'hook_scale_aw_national_resilience',
+    title: 'National ag–water resilience',
+    phase: 'endgame',
+    description: 'Scale wave: completed water security with supergrid-backed desal energy.',
+    targets: {
+      megaprojects: ['national_water_security'],
+      capabilities: [{ id: 'precision_agriculture', aimMaturity: 'nationally_integrated' }],
+    },
+    branchIds: ['agri_water_systems'],
+    minUnlockedTier: 5,
+  },
+  {
+    id: 'hook_scale_sr_public_private',
+    title: 'Public–private research compact',
+    phase: 'endgame',
+    description: 'Scale wave: CSIRO national integration with dual tier-4 industrial/digital branches.',
+    targets: {
+      factions: ['csiro_ai_directorate', 'federal_infrastructure_office'],
+      capabilities: [{ id: 'research_commercialization', aimMaturity: 'nationally_integrated' }],
+      megaprojects: ['australian_ai_compute_network'],
+    },
+    branchIds: ['sovereign_research'],
+    minUnlockedTier: 5,
+  },
 ];
 
 export const STRATEGY_HOOK_BY_ID = Object.fromEntries(STRATEGY_HOOKS.map(h => [h.id, h]));
@@ -1587,6 +1781,110 @@ export function resolveActiveStrategyHooks(unlockedNodeIds: Set<string>): Strate
     if (!h.minUnlockedTier) return true;
     return h.branchIds.some(b => (maxTierByBranch[b] ?? 0) >= h.minUnlockedTier!);
   });
+}
+
+// --- bundled from src/scale-wave.ts ---
+/** Pairs of branches that exchange technology transfer when both reach tier 3+. */
+export const TECHNOLOGY_TRANSFER_PAIRS: Array<[ResearchBranchId, ResearchBranchId]> = [
+  ['digital_frontier', 'industrial_transformation'],
+  ['digital_frontier', 'sovereign_research'],
+  ['resource_innovation', 'industrial_transformation'],
+  ['energy_transition', 'agri_water_systems'],
+  ['sovereign_research', 'industrial_transformation'],
+  ['energy_transition', 'digital_frontier'],
+];
+
+function maxTierByBranch(unlocked: UnlockedResearchNode[]): Record<ResearchBranchId, number> {
+  const tiers = Object.fromEntries(RESEARCH_BRANCHES.map(b => [b.id, 0])) as Record<ResearchBranchId, number>;
+  for (const u of unlocked) {
+    const tier = RESEARCH_NODE_BY_ID[u.nodeId]?.tier ?? 0;
+    tiers[u.branchId] = Math.max(tiers[u.branchId], tier);
+  }
+  return tiers;
+}
+
+export function computeTechnologyTransferLinks(
+  unlocked: UnlockedResearchNode[]
+): ResearchScaleWaveReport['technologyTransferLinks'] {
+  const tiers = maxTierByBranch(unlocked);
+  const links: ResearchScaleWaveReport['technologyTransferLinks'] = [];
+  for (const [a, b] of TECHNOLOGY_TRANSFER_PAIRS) {
+    const ta = tiers[a];
+    const tb = tiers[b];
+    if (ta >= 3 && tb >= 3) {
+      const strength = Math.round(((ta + tb) / 10) * 100) / 100;
+      links.push({ fromBranch: a, toBranch: b, strength });
+    }
+  }
+  return links.sort((x, y) => y.strength - x.strength);
+}
+
+export function computeCrossBranchSynergyScore(unlocked: UnlockedResearchNode[]): number {
+  const tiers = maxTierByBranch(unlocked);
+  const values = Object.values(tiers).filter(t => t >= 3);
+  if (values.length < 2) return 0;
+  const avg = values.reduce((s, t) => s + t, 0) / values.length;
+  const spread = Math.max(...values) - Math.min(...values);
+  const tier5 = unlocked.filter(u => RESEARCH_NODE_BY_ID[u.nodeId]?.tier === 5).length;
+  return Math.round(Math.min(100, avg * 12 + values.length * 4 + tier5 * 6 - spread * 2));
+}
+
+export function pickDominantCapabilityCluster(
+  inputs: ResearchProgressInputs,
+  unlocked: UnlockedResearchNode[]
+): ResearchScaleWaveReport['dominantCapabilityCluster'] {
+  const tiers = maxTierByBranch(unlocked);
+  let bestBranch: ResearchBranchId | null = null;
+  let best = 0;
+  for (const b of RESEARCH_BRANCHES) {
+    const score = tiers[b.id] * 10 + (inputs.capabilities[b.primaryCapability] ? 15 : 0);
+    if (score > best) {
+      best = score;
+      bestBranch = b.id;
+    }
+  }
+  if (!bestBranch) return null;
+  return RESEARCH_BRANCHES.find(b => b.id === bestBranch)?.primaryCapability ?? null;
+}
+
+export function computeResearchScaleWaveReport(
+  inputs: ResearchProgressInputs,
+  unlocked: UnlockedResearchNode[]
+): ResearchScaleWaveReport {
+  const tier5UnlockCount = unlocked.filter(u => RESEARCH_NODE_BY_ID[u.nodeId]?.tier === 5).length;
+  const crossBranchSynergyScore = computeCrossBranchSynergyScore(unlocked);
+  const technologyTransferLinks = computeTechnologyTransferLinks(unlocked);
+  return {
+    active: tier5UnlockCount > 0 || crossBranchSynergyScore >= 40,
+    tier5UnlockCount,
+    crossBranchSynergyScore,
+    technologyTransferLinks,
+    dominantCapabilityCluster: pickDominantCapabilityCluster(inputs, unlocked),
+  };
+}
+
+/** Applies bounded readiness uplift from synergy + transfer (does not bypass V10.5 caps). */
+export function applyScaleWaveReadinessBonus(
+  readinessByBranch: Record<ResearchBranchId, number>,
+  report: ResearchScaleWaveReport
+): Record<ResearchBranchId, number> {
+  if (!report.active) return readinessByBranch;
+  const bonus = Math.min(8, Math.floor(report.crossBranchSynergyScore / 12));
+  const out = { ...readinessByBranch };
+  for (const link of report.technologyTransferLinks) {
+    out[link.fromBranch] = Math.min(100, (out[link.fromBranch] ?? 0) + Math.round(link.strength * 2));
+    out[link.toBranch] = Math.min(100, (out[link.toBranch] ?? 0) + Math.round(link.strength * 2));
+  }
+  for (const b of RESEARCH_BRANCHES) {
+    out[b.id] = Math.min(100, (out[b.id] ?? 0) + bonus);
+  }
+  return out;
+}
+
+/** Extra diffusion micro-boost when scale wave is active (still capped downstream). */
+export function scaleWaveDiffusionBonus(report: ResearchScaleWaveReport | null): number {
+  if (!report?.active) return 0;
+  return Math.min(0.06, report.tier5UnlockCount * 0.008 + report.technologyTransferLinks.length * 0.003);
 }
 
 // --- bundled from src/compute.ts ---
@@ -1699,6 +1997,7 @@ export function createEmptyResearchProgressState(turn = 0): ResearchProgressStat
     inputHash: '',
     institutionUpgrades: [],
     lateGameDiffusion: null,
+    scaleWave: null,
   };
 }
 
@@ -1718,6 +2017,7 @@ export function sanitizeResearchProgressPersisted(raw: unknown): ResearchProgres
     inputHash: typeof o.inputHash === 'string' ? o.inputHash : '',
     institutionUpgrades: Array.isArray(o.institutionUpgrades) ? o.institutionUpgrades : [],
     lateGameDiffusion: o.lateGameDiffusion ?? null,
+    scaleWave: o.scaleWave ?? null,
   };
 }
 
@@ -1760,17 +2060,25 @@ export function computeResearchProgress(
   );
 
   const baseDiffusion = computeRegionalDiffusion(inputs, unlockedNodes, institutionUpgrades);
-  const { cells: diffusion, report: lateGameDiffusion } = applyLateGameDiffusionCascade(
+  const { cells: diffusionRaw, report: lateGameDiffusion } = applyLateGameDiffusionCascade(
     baseDiffusion,
     unlockedNodes,
     institutionUpgrades
   );
 
+  const scaleWave = computeResearchScaleWaveReport(inputs, unlockedNodes);
+  const swBonus = scaleWaveDiffusionBonus(scaleWave);
+  const diffusion = diffusionRaw.map(cell => ({
+    ...cell,
+    score: Math.min(0.85, Math.round((cell.score + swBonus) * 1000) / 1000),
+  }));
+
   const hooks = resolveActiveStrategyHooks(new Set(unlockedNodes.map(u => u.nodeId)));
 
-  const readinessByBranch = Object.fromEntries(
+  let readinessByBranch = Object.fromEntries(
     RESEARCH_BRANCHES.map(b => [b.id, computeBranchReadiness(inputs, b.id, institutionUpgrades)])
   ) as Record<ResearchBranchId, number>;
+  readinessByBranch = applyScaleWaveReadinessBonus(readinessByBranch, scaleWave);
 
   return {
     schemaVersion: 'op10m-agent03-v1',
@@ -1783,6 +2091,7 @@ export function computeResearchProgress(
     inputHash: researchInputHash(inputs),
     institutionUpgrades,
     lateGameDiffusion,
+    scaleWave,
   };
 }
 
@@ -1840,8 +2149,8 @@ export function runAgent03ResearchTechSelfTests(): {
   const push = (id: string, passed: boolean, detail?: string) => results.push({ id, passed, detail });
 
   push('agent03_chunk_01', detectPrerequisiteCycle() === null, detectPrerequisiteCycle() ?? undefined);
-  push('agent03_chunk_02', RESEARCH_BRANCH_NODES.length === 24, String(RESEARCH_BRANCH_NODES.length));
-  push('agent03_chunk_03', STRATEGY_HOOKS.length === 24, String(STRATEGY_HOOKS.length));
+  push('agent03_chunk_02', RESEARCH_BRANCH_NODES.length === 30, String(RESEARCH_BRANCH_NODES.length));
+  push('agent03_chunk_03', STRATEGY_HOOKS.length === 30, String(STRATEGY_HOOKS.length));
 
   const inputs: ResearchProgressInputs = {
     turn: 10,

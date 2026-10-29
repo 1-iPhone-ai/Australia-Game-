@@ -38,9 +38,16 @@ export function applyLateGameDiffusionCascade(
   institutionUpgrades: InstitutionUpgradeState[]
 ): { cells: RegionalDiffusionCell[]; report: LateGameDiffusionReport } {
   const tier4 = countTier4Unlocks(unlocked);
+  const tier5 = unlocked.filter(u => RESEARCH_NODE_BY_ID[u.nodeId]?.tier === 5).length;
   const nationalInst = countNationalInstitutions(institutionUpgrades);
   const trigger =
-    tier4 > 0 && nationalInst > 0 ? 'both' : tier4 > 0 ? 'tier4_unlock' : nationalInst > 0 ? 'national_institution' : 'none';
+    tier4 > 0 && nationalInst > 0
+      ? 'both'
+      : tier4 > 0 || tier5 > 0
+        ? 'tier4_unlock'
+        : nationalInst > 0
+          ? 'national_institution'
+          : 'none';
   const active = trigger !== 'none';
 
   const scores: Record<string, number> = Object.fromEntries(base.map(c => [c.regionId, c.score]));

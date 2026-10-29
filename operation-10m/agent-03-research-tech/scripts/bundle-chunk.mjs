@@ -22,6 +22,7 @@ const SOURCE_FILES = [
   "operation-10m/agent-03-research-tech/src/late-game-diffusion.ts",
   "operation-10m/agent-03-research-tech/src/diffusion.ts",
   "operation-10m/agent-03-research-tech/src/strategy-hooks.ts",
+  "operation-10m/agent-03-research-tech/src/scale-wave.ts",
   "operation-10m/agent-03-research-tech/src/compute.ts",
 ];
 
@@ -56,8 +57,8 @@ export function runAgent03ResearchTechSelfTests(): {
   const push = (id: string, passed: boolean, detail?: string) => results.push({ id, passed, detail });
 
   push('agent03_chunk_01', detectPrerequisiteCycle() === null, detectPrerequisiteCycle() ?? undefined);
-  push('agent03_chunk_02', RESEARCH_BRANCH_NODES.length === 24, String(RESEARCH_BRANCH_NODES.length));
-  push('agent03_chunk_03', STRATEGY_HOOKS.length === 24, String(STRATEGY_HOOKS.length));
+  push('agent03_chunk_02', RESEARCH_BRANCH_NODES.length === 30, String(RESEARCH_BRANCH_NODES.length));
+  push('agent03_chunk_03', STRATEGY_HOOKS.length === 30, String(STRATEGY_HOOKS.length));
 
   const inputs: ResearchProgressInputs = {
     turn: 10,

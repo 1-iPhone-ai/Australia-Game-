@@ -2,6 +2,11 @@ import { RESEARCH_BRANCHES, RESEARCH_BRANCH_NODES, RESEARCH_NODE_BY_ID } from '.
 import { computeRegionalDiffusion, pickLeadingResearchRegion } from './diffusion.ts';
 import { computeInstitutionUpgrades, institutionUpgradesById, INSTITUTION_UPGRADE_TIER_RANK } from './institution-upgrades.ts';
 import { applyLateGameDiffusionCascade } from './late-game-diffusion.ts';
+import {
+  applyScaleWaveReadinessBonus,
+  computeResearchScaleWaveReport,
+  scaleWaveDiffusionBonus,
+} from './scale-wave.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
 import { RESEARCH_INSTITUTIONS } from './institutions.ts';
@@ -123,6 +128,7 @@ export function createEmptyResearchProgressState(turn = 0): ResearchProgressStat
     inputHash: '',
     institutionUpgrades: [],
     lateGameDiffusion: null,
+    scaleWave: null,
   };
 }
 
@@ -142,6 +148,7 @@ export function sanitizeResearchProgressPersisted(raw: unknown): ResearchProgres
     inputHash: typeof o.inputHash === 'string' ? o.inputHash : '',
     institutionUpgrades: Array.isArray(o.institutionUpgrades) ? o.institutionUpgrades : [],
     lateGameDiffusion: o.lateGameDiffusion ?? null,
+    scaleWave: o.scaleWave ?? null,
   };
 }
 
@@ -184,17 +191,25 @@ export function computeResearchProgress(
   );
 
   const baseDiffusion = computeRegionalDiffusion(inputs, unlockedNodes, institutionUpgrades);
-  const { cells: diffusion, report: lateGameDiffusion } = applyLateGameDiffusionCascade(
+  const { cells: diffusionRaw, report: lateGameDiffusion } = applyLateGameDiffusionCascade(
     baseDiffusion,
     unlockedNodes,
     institutionUpgrades
   );
 
+  const scaleWave = computeResearchScaleWaveReport(inputs, unlockedNodes);
+  const swBonus = scaleWaveDiffusionBonus(scaleWave);
+  const diffusion = diffusionRaw.map(cell => ({
+    ...cell,
+    score: Math.min(0.85, Math.round((cell.score + swBonus) * 1000) / 1000),
+  }));
+
   const hooks = resolveActiveStrategyHooks(new Set(unlockedNodes.map(u => u.nodeId)));
 
-  const readinessByBranch = Object.fromEntries(
+  let readinessByBranch = Object.fromEntries(
     RESEARCH_BRANCHES.map(b => [b.id, computeBranchReadiness(inputs, b.id, institutionUpgrades)])
   ) as Record<ResearchBranchId, number>;
+  readinessByBranch = applyScaleWaveReadinessBonus(readinessByBranch, scaleWave);
 
   return {
     schemaVersion: 'op10m-agent03-v1',
@@ -207,6 +222,7 @@ export function computeResearchProgress(
     inputHash: researchInputHash(inputs),
     institutionUpgrades,
     lateGameDiffusion,
+    scaleWave,
   };
 }
 

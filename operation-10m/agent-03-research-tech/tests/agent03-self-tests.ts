@@ -15,6 +15,7 @@ import {
   V94_MEGAPROJECT_KINDS,
   branchNodeTopologicalOrder,
   computeResearchProgress,
+  computeResearchScaleWaveReport,
   createEmptyResearchProgressState,
   detectPrerequisiteCycle,
   evaluateNodePrerequisites,
@@ -300,6 +301,38 @@ tests.push(
     const nat = endgame.institutionUpgrades.find(u => u.institutionId === 'csiro_ai_directorate');
     assert((nat?.readinessMultiplier ?? 0) > (aff?.readinessMultiplier ?? 0));
     assert(endgame.readinessByBranch.digital_frontier >= affiliate.readinessByBranch.digital_frontier);
+  })
+);
+
+tests.push(
+  test('scale_wave_catalog_depth', () => {
+    assert(RESEARCH_BRANCH_NODES.length === 30);
+    assert(STRATEGY_HOOKS.length === 30);
+    assert(RESEARCH_BRANCH_NODES.filter(n => n.tier === 5).length === 6);
+  })
+);
+
+tests.push(
+  test('branch_progress_prerequisite', () => {
+    const inputs = baseInputs({
+      projects: [{ id: 'c1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+    });
+    const partial = computeResearchProgress(inputs, null);
+    const ev = evaluateNodePrerequisites(inputs, 'df_t5_scale_wave_mesh', new Set(partial.unlockedNodes.map(u => u.nodeId)));
+    assert(!ev.satisfied, 'needs sovereign tier 4');
+  })
+);
+
+tests.push(
+  test('scale_wave_synergy_when_multi_branch_t3', () => {
+    const inputs = baseInputs({ turn: 200 });
+    const unlocked = [
+      { nodeId: 'df_t3_compute_cluster', branchId: 'digital_frontier' as const, unlockedTurn: 1, anchorRegionId: 'ACT' as const },
+      { nodeId: 'it_t3_commercialization', branchId: 'industrial_transformation' as const, unlockedTurn: 2, anchorRegionId: 'VIC' as const },
+    ];
+    const report = computeResearchScaleWaveReport(inputs, unlocked);
+    assert(report.crossBranchSynergyScore > 0);
+    assert(report.technologyTransferLinks.length > 0);
   })
 );
 

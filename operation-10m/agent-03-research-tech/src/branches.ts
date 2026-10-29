@@ -130,6 +130,20 @@ export const RESEARCH_BRANCH_NODES: ResearchBranchNodeDefinition[] = [
     diffusionSeed: 0.35,
     hookIds: ['hook_endgame_digital_sovereignty'],
   }),
+  n({
+    id: 'df_t5_scale_wave_mesh',
+    branchId: 'digital_frontier',
+    tier: 5,
+    label: 'Continental Research Mesh',
+    summary: 'Scale wave: sovereign research tier-4 + integrated compute + digital backbone completion.',
+    requiresNodes: ['df_t4_continental_integrated'],
+    external: [
+      { kind: 'branch_progress', branchId: 'sovereign_research', minTier: 4 },
+      { kind: 'megaproject_stage', program: 'continental_digital_backbone', minCompletedStages: 4 },
+    ],
+    diffusionSeed: 0.4,
+    hookIds: ['hook_scale_df_research_mesh'],
+  }),
 
   // --- resource_innovation ---
   n({
@@ -180,6 +194,21 @@ export const RESEARCH_BRANCH_NODES: ResearchBranchNodeDefinition[] = [
     diffusionSeed: 0.32,
     hookIds: ['hook_endgame_resource_export'],
   }),
+  n({
+    id: 'ri_t5_scale_wave_autonomy',
+    branchId: 'resource_innovation',
+    tier: 5,
+    label: 'Autonomous Export Mesh',
+    summary: 'Scale wave: freight modernization + industrial tier-3+ absorbing mining automation outputs.',
+    requiresNodes: ['ri_t4_northern_export'],
+    external: [
+      { kind: 'megaproject_stage', program: 'national_freight_modernization', minCompletedStages: 2 },
+      { kind: 'branch_progress', branchId: 'industrial_transformation', minTier: 3 },
+      { kind: 'capability', capability: 'automated_mining', minMaturity: 'nationally_integrated' },
+    ],
+    diffusionSeed: 0.38,
+    hookIds: ['hook_scale_ri_autonomous_mesh'],
+  }),
 
   // --- industrial_transformation ---
   n({
@@ -226,6 +255,20 @@ export const RESEARCH_BRANCH_NODES: ResearchBranchNodeDefinition[] = [
     ],
     diffusionSeed: 0.33,
     hookIds: ['hook_endgame_industrial_sovereignty'],
+  }),
+  n({
+    id: 'it_t5_scale_wave_value_chain',
+    branchId: 'industrial_transformation',
+    tier: 5,
+    label: 'National Value Chain',
+    summary: 'Scale wave: HSR program progress + digital frontier tier-4 feeding manufacturing integration.',
+    requiresNodes: ['it_t4_integrated_economy'],
+    external: [
+      { kind: 'megaproject_stage', program: 'national_high_speed_rail', minCompletedStages: 2 },
+      { kind: 'branch_progress', branchId: 'digital_frontier', minTier: 4 },
+    ],
+    diffusionSeed: 0.37,
+    hookIds: ['hook_scale_it_value_chain'],
   }),
 
   // --- energy_transition ---
@@ -280,6 +323,20 @@ export const RESEARCH_BRANCH_NODES: ResearchBranchNodeDefinition[] = [
     diffusionSeed: 0.34,
     hookIds: ['hook_endgame_renewable_dominance'],
   }),
+  n({
+    id: 'et_t5_scale_wave_hydrogen_dominance',
+    branchId: 'energy_transition',
+    tier: 5,
+    label: 'Hydrogen Export Dominance',
+    summary: 'Scale wave: hydrogen export network advanced stages + agri-water digital load balancing.',
+    requiresNodes: ['et_t4_renewable_powerhouse'],
+    external: [
+      { kind: 'megaproject_stage', program: 'green_hydrogen_export_network', minCompletedStages: 3 },
+      { kind: 'branch_progress', branchId: 'agri_water_systems', minTier: 3 },
+    ],
+    diffusionSeed: 0.39,
+    hookIds: ['hook_scale_et_hydrogen_dominance'],
+  }),
 
   // --- agri_water_systems ---
   n({
@@ -327,6 +384,20 @@ export const RESEARCH_BRANCH_NODES: ResearchBranchNodeDefinition[] = [
     diffusionSeed: 0.31,
     hookIds: ['hook_endgame_ag_export'],
   }),
+  n({
+    id: 'aw_t5_scale_wave_national_resilience',
+    branchId: 'agri_water_systems',
+    tier: 5,
+    label: 'National Ag–Water Resilience',
+    summary: 'Scale wave: water security program completion + energy transition tier-4 grid support.',
+    requiresNodes: ['aw_t4_ag_export'],
+    external: [
+      { kind: 'megaproject_stage', program: 'national_water_security', minCompletedStages: 4 },
+      { kind: 'branch_progress', branchId: 'energy_transition', minTier: 4 },
+    ],
+    diffusionSeed: 0.36,
+    hookIds: ['hook_scale_aw_national_resilience'],
+  }),
 
   // --- sovereign_research ---
   n({
@@ -373,6 +444,21 @@ export const RESEARCH_BRANCH_NODES: ResearchBranchNodeDefinition[] = [
     ],
     diffusionSeed: 0.36,
     hookIds: ['hook_endgame_sovereign_research'],
+  }),
+  n({
+    id: 'sr_t5_scale_wave_public_private',
+    branchId: 'sovereign_research',
+    tier: 5,
+    label: 'Public–Private Research Compact',
+    summary: 'Scale wave: three branches at tier-4+ and CSIRO at national integration standing.',
+    requiresNodes: ['sr_t4_sovereign_integrated'],
+    external: [
+      { kind: 'branch_progress', branchId: 'digital_frontier', minTier: 4 },
+      { kind: 'branch_progress', branchId: 'industrial_transformation', minTier: 4 },
+      { kind: 'faction_standing', factionId: 'csiro_ai_directorate', minStanding: 78 },
+    ],
+    diffusionSeed: 0.42,
+    hookIds: ['hook_scale_sr_public_private'],
   }),
 ];
 

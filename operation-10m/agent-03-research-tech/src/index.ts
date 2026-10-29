@@ -5,6 +5,7 @@ export * from './institutions.ts';
 export * from './prerequisites.ts';
 export * from './diffusion.ts';
 export * from './strategy-hooks.ts';
+export * from './scale-wave.ts';
 export * from './institution-upgrades.ts';
 export * from './late-game-diffusion.ts';
 export * from './compute.ts';

@@ -52,9 +52,19 @@ function sectorScore(inputs: ResearchProgressInputs, regionId: string, sector: s
   return Number(region.sectors[sector as keyof typeof region.sectors] ?? 0);
 }
 
+function maxTierOnBranch(unlockedNodeIds: Set<string>, branchId: string): number {
+  let max = 0;
+  for (const id of unlockedNodeIds) {
+    const node = RESEARCH_NODE_BY_ID[id];
+    if (node?.branchId === branchId) max = Math.max(max, node.tier);
+  }
+  return max;
+}
+
 export function evaluateExternalPrerequisite(
   inputs: ResearchProgressInputs,
-  req: ResearchExternalPrerequisite
+  req: ResearchExternalPrerequisite,
+  unlockedNodeIds: Set<string> = new Set()
 ): boolean {
   switch (req.kind) {
     case 'capability':
@@ -69,6 +79,8 @@ export function evaluateExternalPrerequisite(
       return factionStanding(inputs, req.factionId) >= req.minStanding;
     case 'sector_strength':
       return sectorScore(inputs, req.regionId, req.sector) >= req.minScore;
+    case 'branch_progress':
+      return maxTierOnBranch(unlockedNodeIds, req.branchId) >= req.minTier;
     default:
       return false;
   }
@@ -91,7 +103,7 @@ export function evaluateNodePrerequisites(
   }
 
   const missingNodeIds = def.requiresNodes.filter(id => !unlockedNodeIds.has(id));
-  const unmetExternal = def.external.filter(ext => !evaluateExternalPrerequisite(inputs, ext));
+  const unmetExternal = def.external.filter(ext => !evaluateExternalPrerequisite(inputs, ext, unlockedNodeIds));
   const satisfied = missingNodeIds.length === 0 && unmetExternal.length === 0;
 
   const detail: string[] = [];
