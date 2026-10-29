@@ -122,7 +122,7 @@ describe('scale wave round 21 — primordial coalition continuity', () => {
       coalitionPrimordialContinuityStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(35);
+    expect(save.version).toBe(36);
     expect(save.coalitionPrimordialContinuityStreakDays).toBe(5);
   });
 });

@@ -348,3 +348,13 @@ export function paramountAscendancyRankingBonus(
   if (streak >= action.minCoalitionParamountAscendancyStreakDays) return 30;
   return 2;
 }
+
+export function imperialPerpetuityRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionImperialPerpetuityStreakDays === undefined) return 0;
+  const streak = state.coalitionImperialPerpetuityStreakDays ?? 0;
+  if (streak >= action.minCoalitionImperialPerpetuityStreakDays) return 31;
+  return 2;
+}

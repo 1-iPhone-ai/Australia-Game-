@@ -58,6 +58,7 @@ import { resetCoalitionApexTranscendenceStreak } from './coalition-apex-transcen
 import { resetCoalitionZenithPerpetuityStreak } from './coalition-zenith-perpetuity.ts';
 import { resetCoalitionParagonInfinityStreak } from './coalition-paragon-infinity.ts';
 import { resetCoalitionParamountAscendancyStreak } from './coalition-paramount-ascendancy.ts';
+import { resetCoalitionImperialPerpetuityStreak } from './coalition-imperial-perpetuity.ts';
 import {
   scoreNationalPriorityAlignment,
   validateAction,
@@ -111,6 +112,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     coalitionZenithPerpetuityStreakDays: 0,
     coalitionParagonInfinityStreakDays: 0,
     coalitionParamountAscendancyStreakDays: 0,
+    coalitionImperialPerpetuityStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -439,6 +441,12 @@ export function executeStrategicAction(
   }
   if (action.id === 'sga_coalition_paramount_continuity_pact') {
     nextState = resetCoalitionParamountAscendancyStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_imperial_perpetuity_charter') {
+    nextState = resetCoalitionImperialPerpetuityStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_imperial_continuity_compact') {
+    nextState = resetCoalitionImperialPerpetuityStreak(nextState);
   }
 
   contracts.ui.pushToast({

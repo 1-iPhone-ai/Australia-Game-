@@ -132,7 +132,7 @@ describe('scale wave round 26 — stellar coalition transcendence', () => {
       coalitionStellarTranscendenceStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(35);
+    expect(save.version).toBe(36);
     expect(save.coalitionStellarTranscendenceStreakDays).toBe(5);
   });
 });

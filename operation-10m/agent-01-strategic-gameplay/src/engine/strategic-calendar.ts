@@ -118,6 +118,10 @@ import {
   advanceCoalitionParamountAscendancyStreak,
   applyParamountAscendancyMandateBonus,
 } from './coalition-paramount-ascendancy.ts';
+import {
+  advanceCoalitionImperialPerpetuityStreak,
+  applyImperialPerpetuityMandateBonus,
+} from './coalition-imperial-perpetuity.ts';
 import { advanceCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 import type { StakeholderGroupId, StakeholderSentiment } from '../types/coalition-mandate.ts';
@@ -231,6 +235,8 @@ export function advanceStrategicGameplayCalendar(
   next = applyParagonInfinityMandateBonus(next, daysAdvanced);
   next = advanceCoalitionParamountAscendancyStreak(next, daysAdvanced);
   next = applyParamountAscendancyMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionImperialPerpetuityStreak(next, daysAdvanced);
+  next = applyImperialPerpetuityMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 
