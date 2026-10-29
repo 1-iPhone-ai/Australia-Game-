@@ -97,6 +97,9 @@ const SOURCE_FILES = [
   'src/batch-national-tick-session-wave-assembly-export-compare.ts',
   'src/batch-national-tick-session-wave-assembly-batch.ts',
   'src/batch-national-tick-session-wave-assembly-batch-export.ts',
+  'src/batch-national-tick-session-wave-assembly-batch-export-compare.ts',
+  'src/batch-national-tick-session-wave-assembly-batch-replay-parity.ts',
+  'src/batch-national-tick-session-wave-assembly-batch-gate.ts',
   'src/fast-forward.ts',
 ] as const;
 
@@ -146,7 +149,7 @@ function bundleSources(): string {
 
   parts.push(
     `export const AGENT_02_MODULE_ID = 'operation-10m/${moduleId}';`,
-    `export const AGENT_02_MODULE_VERSION = '2.9.0';`,
+    `export const AGENT_02_MODULE_VERSION = '3.0.0';`,
     '',
     `export function runOp10mAgent02TurnsTimeSelfTests(): {`,
     `  passed: number;`,
@@ -521,6 +524,15 @@ function bundleSources(): string {
     `    id: 'agent02_national_tick_session_wave_assembly_batch',`,
     `    name: 'national tick session wave assembly batch',`,
     `    passed: exportBatchNationalTickSessionWaveAssemblyBatch(assemblyBatch).allOk,`,
+    `  });`,
+    `  results.push({`,
+    `    id: 'agent02_national_tick_session_wave_assembly_batch_gate',`,
+    `    name: 'national tick session wave assembly batch gate',`,
+    `    passed: gateBatchNationalTickSessionWaveAssemblyBatch(`,
+    `      new TurnTimeEngine(),`,
+    `      createTurnAdvanceBudget(2),`,
+    `      [[{ maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } }]],`,
+    `    ).ok,`,
     `  });`,
     `  const failed = results.filter((r) => !r.passed).length;`,
     `  return { passed: results.length - failed, failed, results };`,
