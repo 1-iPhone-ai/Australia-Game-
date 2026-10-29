@@ -137,6 +137,20 @@ import {
   partnerAccessRestorationWorldEvent,
 } from './partner-access-restoration.ts';
 import {
+  computeSanctionsSpilloverSnapshot,
+  deriveSanctionsSpilloverPartnerModifiers,
+  sanctionsSpilloverExportScale,
+  sanctionsSpilloverGiNotes,
+  sanctionsSpilloverWorldEvent,
+} from './sanctions-spillover-depth.ts';
+import {
+  computeTradeCorridorResilienceSnapshot,
+  tradeCorridorDomesticStress,
+  tradeCorridorExportScale,
+  tradeCorridorGiNotes,
+  tradeCorridorWorldEvent,
+} from './trade-corridor-resilience.ts';
+import {
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -240,6 +254,16 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const compliancePenalty = deriveCompliancePartnerPenalty(persisted.tradeCompliance);
   const engagement = deriveEngagementPartnerModifiers(engagementStep.state);
 
+  const spilloverStep = computeSanctionsSpilloverSnapshot({
+    activeTiers: preSanctions.activeTiers,
+    tradeRetaliation,
+    tradeEnforcement,
+    persisted,
+  });
+  persisted = spilloverStep.persisted;
+  const spilloverMods = deriveSanctionsSpilloverPartnerModifiers(spilloverStep.snapshot);
+  const sanctionsSpillover = spilloverStep.snapshot;
+
   const partnerDeltas = mergePartnerDeltas(
     mergePartnerDeltas(
       mergePartnerDeltas(mergePartnerDeltas(dip.partnerDeltas, agr.partnerDeltas), shock.partnerDeltas),
@@ -258,6 +282,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         enforcementMods.partnerDeltas,
       ),
     ),
+    spilloverMods.partnerDeltas,
   );
   const commodityDeltas = mergeCommodityDeltas(
     mergeCommodityDeltas(
@@ -310,6 +335,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   if (restorationEvent) worldEvents.push(restorationEvent);
   const enforcementEvent = tradeEnforcementWorldEvent(tradeEnforcement, turn);
   if (enforcementEvent) worldEvents.push(enforcementEvent);
+  const spilloverEvent = sanctionsSpilloverWorldEvent(sanctionsSpillover, turn);
+  if (spilloverEvent) worldEvents.push(spilloverEvent);
 
   const partners: GTELPartnerMarket[] = GTEL_PARTNER_DEFS.map(def => {
     const prevBand = persisted.partnerAccess[def.id] || 'normal';
@@ -480,6 +507,18 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const maritimeEvent = maritimeRiskWorldEvent(maritimeRisk, turn);
   if (maritimeEvent) worldEvents.push(maritimeEvent);
 
+  const corridorStep = computeTradeCorridorResilienceSnapshot({
+    logistics,
+    maritimeRisk,
+    supplyChainResilience,
+    marketDiversification,
+    persisted,
+  });
+  persisted = corridorStep.persisted;
+  const tradeCorridorResilience = corridorStep.snapshot;
+  const corridorEvent = tradeCorridorWorldEvent(tradeCorridorResilience, turn);
+  if (corridorEvent) worldEvents.push(corridorEvent);
+
   const utilizationStep = computePreferentialUtilizationSnapshot({
     turn,
     partners,
@@ -523,6 +562,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         preferentialUtilizationExportScale(preferentialUtilization) *
         enforcementExportScale(tradeEnforcement) *
         exportInsuranceStackExportScale(exportInsuranceStack) *
+        tradeCorridorExportScale(tradeCorridorResilience) *
+        sanctionsSpilloverExportScale(sanctionsSpillover) *
         10,
     ) / 10;
 
@@ -585,7 +626,9 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
-      exportInsuranceStackDomesticStress(exportInsuranceStack),
+      exportInsuranceStackDomesticStress(exportInsuranceStack) +
+      tradeCorridorDomesticStress(tradeCorridorResilience) +
+      spilloverMods.domesticStress,
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -618,6 +661,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.enforcementIntensitySmoothing,
     persisted.exportInsuranceStackSmoothing,
     persisted.accessRestorationSmoothing,
+    persisted.tradeCorridorSmoothing,
+    persisted.sanctionsSpilloverSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -682,6 +727,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     tradeEnforcement,
     exportInsuranceStack,
     partnerAccessRestoration,
+    tradeCorridorResilience,
+    sanctionsSpillover,
     inputHash,
   };
 
@@ -725,6 +772,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...tradeEnforcementGiNotes(state.tradeEnforcement));
   lines.push(...exportInsuranceStackGiNotes(state.exportInsuranceStack));
   lines.push(...partnerAccessRestorationGiNotes(state.partnerAccessRestoration));
+  lines.push(...tradeCorridorGiNotes(state.tradeCorridorResilience));
+  lines.push(...sanctionsSpilloverGiNotes(state.sanctionsSpillover));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }

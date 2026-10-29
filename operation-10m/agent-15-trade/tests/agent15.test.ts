@@ -47,7 +47,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 33);
+  assert.ok(r.passed >= 35);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -565,4 +565,53 @@ test('round 11: impaired insurance stack reduces throughput vs robust baseline',
   });
   assert.ok(stressed.state.exportInsuranceStack.compositeScore <= healthy.state.exportInsuranceStack.compositeScore + 0.05);
   assert.ok(stressed.state.exportThroughput <= healthy.state.exportThroughput + 0.01);
+});
+
+test('round 12: trade corridor resilience and sanctions spillover on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.tradeCorridorSmoothing = 0.48;
+  persisted.sanctionsSpilloverSmoothing = 0.38;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 41,
+    diplomacyState: {
+      deals: [{ id: 'v', type: 'resource_trade', status: 'violated', participants: ['player', 'ai'], compliance: 'violated' }],
+      events: [{ kind: 'violation', turn: 40, text: 'breach' }],
+    },
+    nationalSystems: { national: { trade: { condition: 'strained', exportedCapacity: 115 } } },
+    persisted,
+  });
+  assert.ok(r.state.tradeCorridorResilience);
+  assert.ok(['robust', 'stable', 'fragile', 'disrupted'].includes(r.state.tradeCorridorResilience.band));
+  assert.ok(r.state.sanctionsSpillover);
+  assert.ok(['contained', 'localized', 'broad', 'pervasive'].includes(r.state.sanctionsSpillover.band));
+  assert.ok(r.persisted.tradeCorridorSmoothing != null);
+  assert.ok(r.persisted.sanctionsSpilloverSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Trade corridor resilience/i.test(n)));
+  assert.ok(notes.some(n => /Sanctions spillover/i.test(n)));
+});
+
+test('round 12: congested network lowers corridor score vs healthy baseline', () => {
+  const healthy = advanceGlobalTradeEconomyTurn({
+    turn: 42,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 75 } } },
+    persisted: createEmptyGTELPersisted(),
+  });
+  const critical = advanceGlobalTradeEconomyTurn({
+    turn: 42,
+    diplomacyState: {
+      deals: Array.from({ length: 3 }, (_, i) => ({
+        id: `v${i}`,
+        type: 'resource_trade',
+        status: 'violated',
+        participants: ['player', 'ai'],
+        compliance: 'violated',
+      })),
+      events: [{ kind: 'violation', turn: 41, text: 'breach' }],
+    },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 75 } } },
+    persisted: createEmptyGTELPersisted(),
+  });
+  assert.ok(critical.state.tradeCorridorResilience.score <= healthy.state.tradeCorridorResilience.score + 0.05);
 });

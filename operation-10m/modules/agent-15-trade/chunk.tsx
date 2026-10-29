@@ -150,6 +150,10 @@ export interface GTELPersisted {
   exportInsuranceStackSmoothing?: number;
   /** Smoothed partner access restoration momentum (0–1). */
   accessRestorationSmoothing?: number;
+  /** Smoothed trade corridor resilience score (0–1). */
+  tradeCorridorSmoothing?: number;
+  /** Smoothed sanctions spillover intensity (0–1). */
+  sanctionsSpilloverSmoothing?: number;
 }
 
 export interface GTELState {
@@ -185,6 +189,8 @@ export interface GTELState {
   tradeEnforcement: GTELTradeEnforcementSnapshot;
   exportInsuranceStack: GTELExportInsuranceStackSnapshot;
   partnerAccessRestoration: GTELPartnerAccessRestorationSnapshot;
+  tradeCorridorResilience: GTELTradeCorridorResilienceSnapshot;
+  sanctionsSpillover: GTELSanctionsSpilloverSnapshot;
   inputHash: string;
 }
 
@@ -532,6 +538,26 @@ export interface GTELPartnerAccessRestorationSnapshot {
   summary: string;
 }
 
+export type GTELTradeCorridorBand = 'robust' | 'stable' | 'fragile' | 'disrupted';
+
+export interface GTELTradeCorridorResilienceSnapshot {
+  score: number;
+  band: GTELTradeCorridorBand;
+  chokepointLoad: number;
+  rerouteCapacity: number;
+  summary: string;
+}
+
+export type GTELSanctionsSpilloverBand = 'contained' | 'localized' | 'broad' | 'pervasive';
+
+export interface GTELSanctionsSpilloverSnapshot {
+  intensity: number;
+  band: GTELSanctionsSpilloverBand;
+  activeTierCount: number;
+  spilloverPartnerIds: GTELPartnerId[];
+  summary: string;
+}
+
 export interface GlobalTradeEconomyPanelProps {
   state: GTELState | null;
   theme?: { isDark?: boolean };
@@ -699,6 +725,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     enforcementIntensitySmoothing: 0.26,
     exportInsuranceStackSmoothing: 0.56,
     accessRestorationSmoothing: 0.3,
+    tradeCorridorSmoothing: 0.54,
+    sanctionsSpilloverSmoothing: 0.24,
   };
 }
 
@@ -867,6 +895,8 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   base.enforcementIntensitySmoothing = sanitizeEnforcementIntensitySmoothing(r.enforcementIntensitySmoothing);
   base.exportInsuranceStackSmoothing = sanitizeExportInsuranceStackSmoothing(r.exportInsuranceStackSmoothing);
   base.accessRestorationSmoothing = sanitizeAccessRestorationSmoothing(r.accessRestorationSmoothing);
+  base.tradeCorridorSmoothing = sanitizeTradeCorridorSmoothing(r.tradeCorridorSmoothing);
+  base.sanctionsSpilloverSmoothing = sanitizeSanctionsSpilloverSmoothing(r.sanctionsSpilloverSmoothing);
   return base;
 }
 
@@ -4792,6 +4822,310 @@ export function partnerAccessRestorationGiNotes(
 }
 
 
+// --- source: trade-corridor-resilience.ts ---
+  GTELLogisticsStress,
+  GTELMaritimeRiskSnapshot,
+  GTELMarketDiversificationSnapshot,
+  GTELPersisted,
+  GTELSupplyChainResilienceSnapshot,
+  GTELTradeCorridorResilienceSnapshot,
+  GTELTurnResult,
+} from './types.ts';
+
+export type GTELTradeCorridorBand = GTELTradeCorridorResilienceSnapshot['band'];
+
+function corridorBand(score: number): GTELTradeCorridorBand {
+  if (score >= 0.74) return 'robust';
+  if (score >= 0.52) return 'stable';
+  if (score >= 0.34) return 'fragile';
+  return 'disrupted';
+}
+
+export function sanitizeTradeCorridorSmoothing(raw: unknown): number {
+  return gtelClamp(gtelNum(raw, 0.54), 0.2, 0.9);
+}
+
+export function createEmptyTradeCorridorResilienceSnapshot(): GTELTradeCorridorResilienceSnapshot {
+  return {
+    score: 0.54,
+    band: 'stable',
+    chokepointLoad: 0.22,
+    rerouteCapacity: 0.58,
+    summary: 'Major export corridors are operating with normal redundancy.',
+  };
+}
+
+export function advanceTradeCorridorSmoothing(
+  persisted: GTELPersisted,
+  rawScore: number,
+): GTELPersisted {
+  const prev = sanitizeTradeCorridorSmoothing(persisted.tradeCorridorSmoothing);
+  const next = gtelClamp(prev * 0.72 + gtelClamp(rawScore, 0.2, 0.9) * 0.28, 0.2, 0.9);
+  return { ...persisted, tradeCorridorSmoothing: Math.round(next * 1000) / 1000 };
+}
+
+export function computeTradeCorridorResilienceSnapshot(input: {
+  logistics: GTELLogisticsStress;
+  maritimeRisk: GTELMaritimeRiskSnapshot;
+  supplyChainResilience: GTELSupplyChainResilienceSnapshot;
+  marketDiversification: GTELMarketDiversificationSnapshot;
+  persisted: GTELPersisted;
+}): { snapshot: GTELTradeCorridorResilienceSnapshot; persisted: GTELPersisted } {
+  const logisticsLift =
+    input.logistics.band === 'fluid'
+      ? 0.18
+      : input.logistics.band === 'watch'
+        ? 0.1
+        : input.logistics.band === 'tight'
+          ? 0.04
+          : -0.06;
+  const maritimeLift = gtelClamp(input.maritimeRisk.laneReliability * 0.22 - input.maritimeRisk.premiumIndex * 0.12, -0.1, 0.14);
+  const resilienceLift = gtelClamp(input.supplyChainResilience.score * 0.28, 0.05, 0.22);
+  const diversificationLift =
+    input.marketDiversification.band === 'well_spread'
+      ? 0.1
+      : input.marketDiversification.band === 'balanced'
+        ? 0.05
+        : input.marketDiversification.band === 'concentrated'
+          ? -0.04
+          : -0.08;
+  const rawScore = gtelClamp(
+    0.42 + logisticsLift + maritimeLift + resilienceLift + diversificationLift - input.logistics.networkStrain * 0.08,
+    0.2,
+    0.9,
+  );
+  const persisted = advanceTradeCorridorSmoothing(input.persisted, rawScore);
+  const score = sanitizeTradeCorridorSmoothing(persisted.tradeCorridorSmoothing);
+  const band = corridorBand(score);
+  const chokepointLoad = gtelClamp(
+    (input.supplyChainResilience.chokepointCount / 6) * 0.18 +
+      (input.logistics.band === 'congested' ? 0.22 : 0.08) +
+      input.maritimeRisk.premiumIndex * 0.1,
+    0.08,
+    0.62,
+  );
+  const rerouteCapacity = gtelClamp(
+    score * 0.45 + input.marketDiversification.effectivePartnerCount * 0.04 + input.maritimeRisk.laneReliability * 0.12,
+    0.22,
+    0.88,
+  );
+
+  const summary =
+    band === 'robust'
+      ? 'Export corridors retain strong redundancy — reroutes absorb lane shocks without rationing.'
+      : band === 'disrupted'
+        ? 'Multiple corridor chokepoints are binding; planners should expect shipment delays.'
+        : band === 'fragile'
+          ? 'Corridor redundancy is thin; minor lane shocks could cascade into export rationing.'
+          : 'Major export corridors are operating with normal redundancy.';
+
+  return {
+    snapshot: {
+      score: Math.round(score * 1000) / 1000,
+      band,
+      chokepointLoad: Math.round(chokepointLoad * 1000) / 1000,
+      rerouteCapacity: Math.round(rerouteCapacity * 1000) / 1000,
+      summary,
+    },
+    persisted,
+  };
+}
+
+export function tradeCorridorExportScale(snapshot: GTELTradeCorridorResilienceSnapshot): number {
+  if (snapshot.band === 'robust') return gtelClamp(1 + snapshot.rerouteCapacity * 0.03, 1, 1.04);
+  if (snapshot.band === 'disrupted') return gtelClamp(0.82 + snapshot.score * 0.08, 0.78, 0.88);
+  if (snapshot.band === 'fragile') return gtelClamp(0.9 + snapshot.score * 0.06, 0.86, 0.95);
+  return gtelClamp(0.96 + snapshot.score * 0.03, 0.92, 1.02);
+}
+
+export function tradeCorridorDomesticStress(snapshot: GTELTradeCorridorResilienceSnapshot): number {
+  if (snapshot.band === 'disrupted') return gtelClamp(snapshot.chokepointLoad * 0.14, 0.04, 0.09);
+  if (snapshot.band === 'fragile') return gtelClamp(snapshot.chokepointLoad * 0.08, 0.02, 0.06);
+  return 0;
+}
+
+export function tradeCorridorWorldEvent(
+  snapshot: GTELTradeCorridorResilienceSnapshot,
+  turn: number,
+): GTELTurnResult['worldEvents'][0] | null {
+  if (snapshot.band !== 'fragile' && snapshot.band !== 'disrupted') return null;
+  if (snapshot.chokepointLoad < 0.35) return null;
+  return {
+    id: `gtel_corridor_${turn}`,
+    turn,
+    kind: 'trade',
+    title: 'Export corridor stress',
+    summary: snapshot.summary,
+    regionIds: ['WA', 'QLD', 'NSW'],
+  };
+}
+
+export function tradeCorridorGiNotes(
+  corridor: GTELTradeCorridorResilienceSnapshot | null | undefined,
+): string[] {
+  if (!corridor) return [];
+  return [
+    `Trade corridor resilience: ${corridor.band} (${Math.round(corridor.score * 100)}% score).`,
+    corridor.summary,
+  ];
+}
+
+
+// --- source: sanctions-spillover-depth.ts ---
+  GTELPartnerId,
+  GTELPersisted,
+  GTELSanctionsSpilloverSnapshot,
+  GTELTradeEnforcementSnapshot,
+  GTELTradeRetaliationSnapshot,
+  GTELTurnResult,
+  SanctionTier,
+} from './types.ts';
+
+export type GTELSanctionsSpilloverBand = GTELSanctionsSpilloverSnapshot['band'];
+
+function spilloverBand(intensity: number): GTELSanctionsSpilloverBand {
+  if (intensity >= 0.68) return 'pervasive';
+  if (intensity >= 0.44) return 'broad';
+  if (intensity >= 0.24) return 'localized';
+  return 'contained';
+}
+
+export function sanitizeSanctionsSpilloverSmoothing(raw: unknown): number {
+  return gtelClamp(gtelNum(raw, 0.24), 0.08, 0.88);
+}
+
+export function createEmptySanctionsSpilloverSnapshot(): GTELSanctionsSpilloverSnapshot {
+  return {
+    intensity: 0.24,
+    band: 'localized',
+    activeTierCount: 0,
+    spilloverPartnerIds: [],
+    summary: 'Sanctions spillover remains localized to directly targeted partners.',
+  };
+}
+
+export function advanceSanctionsSpilloverSmoothing(
+  persisted: GTELPersisted,
+  rawIntensity: number,
+): GTELPersisted {
+  const prev = sanitizeSanctionsSpilloverSmoothing(persisted.sanctionsSpilloverSmoothing);
+  const next = gtelClamp(prev * 0.7 + gtelClamp(rawIntensity, 0.08, 0.88) * 0.3, 0.08, 0.88);
+  return { ...persisted, sanctionsSpilloverSmoothing: Math.round(next * 1000) / 1000 };
+}
+
+function tierWeight(tier: SanctionTier | undefined): number {
+  if (!tier || tier === 'none') return 0;
+  if (tier === 'comprehensive') return 0.28;
+  if (tier === 'sectoral') return 0.16;
+  return 0.08;
+}
+
+export function computeSanctionsSpilloverSnapshot(input: {
+  activeTiers: Partial<Record<GTELPartnerId, SanctionTier>>;
+  tradeRetaliation: GTELTradeRetaliationSnapshot;
+  tradeEnforcement: GTELTradeEnforcementSnapshot;
+  persisted: GTELPersisted;
+}): { snapshot: GTELSanctionsSpilloverSnapshot; persisted: GTELPersisted } {
+  const tiers = Object.entries(input.activeTiers || {}) as Array<[GTELPartnerId, SanctionTier]>;
+  const activeTierCount = tiers.filter(([, t]) => t && t !== 'none').length;
+  const tierIntensity = tiers.reduce((acc, [, t]) => acc + tierWeight(t), 0);
+  const retaliationLoad =
+    input.tradeRetaliation.band === 'escalating'
+      ? 0.18
+      : input.tradeRetaliation.band === 'active'
+        ? 0.12
+        : 0.05;
+  const enforcementLoad = gtelClamp(input.tradeEnforcement.intensity * 0.14, 0, 0.16);
+  const rawIntensity = gtelClamp(tierIntensity + retaliationLoad + enforcementLoad, 0.08, 0.88);
+  const persisted = advanceSanctionsSpilloverSmoothing(input.persisted, rawIntensity);
+  const intensity = sanitizeSanctionsSpilloverSmoothing(persisted.sanctionsSpilloverSmoothing);
+  const band = spilloverBand(intensity);
+
+  const spilloverPartnerIds: GTELPartnerId[] = [];
+  tiers.forEach(([id, t]) => {
+    if (t && t !== 'none' && id !== 'domestic_premium') spilloverPartnerIds.push(id);
+  });
+  input.tradeRetaliation.targetedPartnerIds.forEach(id => {
+    if (!spilloverPartnerIds.includes(id)) spilloverPartnerIds.push(id);
+  });
+
+  const summary =
+    band === 'pervasive'
+      ? 'Sanctions spillover is pervasive — secondary partners are tightening compliance on Australian exports.'
+      : band === 'broad'
+        ? 'Sanctions are spilling into adjacent partner markets beyond the primary targets.'
+        : band === 'contained'
+          ? 'Sanctions spillover remains contained to directly targeted partners.'
+          : 'Localized sanctions spillover is elevating scrutiny on a handful of partner lanes.';
+
+  return {
+    snapshot: {
+      intensity: Math.round(intensity * 1000) / 1000,
+      band,
+      activeTierCount,
+      spilloverPartnerIds: spilloverPartnerIds.slice(0, 5),
+      summary,
+    },
+    persisted,
+  };
+}
+
+export function deriveSanctionsSpilloverPartnerModifiers(snapshot: GTELSanctionsSpilloverSnapshot): {
+  partnerDeltas: Partial<Record<GTELPartnerId, number>>;
+  domesticStress: number;
+} {
+  const partnerDeltas: Partial<Record<GTELPartnerId, number>> = {};
+  if (snapshot.band === 'contained') {
+    return { partnerDeltas, domesticStress: 0 };
+  }
+  const penalty =
+    snapshot.band === 'pervasive' ? -0.07 : snapshot.band === 'broad' ? -0.05 : -0.03;
+  snapshot.spilloverPartnerIds.forEach(id => {
+    partnerDeltas[id] = gtelNum(partnerDeltas[id], 0) + penalty;
+  });
+  const domesticStress =
+    snapshot.band === 'pervasive'
+      ? gtelClamp(snapshot.intensity * 0.1, 0.04, 0.09)
+      : snapshot.band === 'broad'
+        ? gtelClamp(snapshot.intensity * 0.07, 0.02, 0.06)
+        : gtelClamp(snapshot.intensity * 0.04, 0, 0.04);
+  return { partnerDeltas, domesticStress };
+}
+
+export function sanctionsSpilloverExportScale(snapshot: GTELSanctionsSpilloverSnapshot): number {
+  if (snapshot.band === 'contained') return gtelClamp(1 - snapshot.intensity * 0.02, 0.97, 1);
+  if (snapshot.band === 'pervasive') return gtelClamp(0.84 + (1 - snapshot.intensity) * 0.06, 0.8, 0.9);
+  if (snapshot.band === 'broad') return gtelClamp(0.9 + (1 - snapshot.intensity) * 0.05, 0.86, 0.95);
+  return gtelClamp(0.94 + (1 - snapshot.intensity) * 0.04, 0.9, 0.98);
+}
+
+export function sanctionsSpilloverWorldEvent(
+  snapshot: GTELSanctionsSpilloverSnapshot,
+  turn: number,
+): GTELTurnResult['worldEvents'][0] | null {
+  if (snapshot.band !== 'broad' && snapshot.band !== 'pervasive') return null;
+  if (snapshot.activeTierCount < 1) return null;
+  return {
+    id: `gtel_sanctions_spill_${turn}`,
+    turn,
+    kind: 'sanction',
+    title: 'Sanctions spillover widening',
+    summary: snapshot.summary,
+    regionIds: ['ACT', 'NSW', 'VIC'],
+  };
+}
+
+export function sanctionsSpilloverGiNotes(
+  spillover: GTELSanctionsSpilloverSnapshot | null | undefined,
+): string[] {
+  if (!spillover) return [];
+  return [
+    `Sanctions spillover: ${spillover.band} (${Math.round(spillover.intensity * 100)}% intensity).`,
+    spillover.summary,
+  ];
+}
+
+
 // --- source: domestic-consequences.ts ---
   GTELCommodityQuote,
   GTELDomesticCoupling,
@@ -5017,6 +5351,18 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   partnerAccessRestorationGiNotes,
   partnerAccessRestorationWorldEvent,
 } from './partner-access-restoration.ts';
+  computeSanctionsSpilloverSnapshot,
+  deriveSanctionsSpilloverPartnerModifiers,
+  sanctionsSpilloverExportScale,
+  sanctionsSpilloverGiNotes,
+  sanctionsSpilloverWorldEvent,
+} from './sanctions-spillover-depth.ts';
+  computeTradeCorridorResilienceSnapshot,
+  tradeCorridorDomesticStress,
+  tradeCorridorExportScale,
+  tradeCorridorGiNotes,
+  tradeCorridorWorldEvent,
+} from './trade-corridor-resilience.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -5117,6 +5463,16 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const compliancePenalty = deriveCompliancePartnerPenalty(persisted.tradeCompliance);
   const engagement = deriveEngagementPartnerModifiers(engagementStep.state);
 
+  const spilloverStep = computeSanctionsSpilloverSnapshot({
+    activeTiers: preSanctions.activeTiers,
+    tradeRetaliation,
+    tradeEnforcement,
+    persisted,
+  });
+  persisted = spilloverStep.persisted;
+  const spilloverMods = deriveSanctionsSpilloverPartnerModifiers(spilloverStep.snapshot);
+  const sanctionsSpillover = spilloverStep.snapshot;
+
   const partnerDeltas = mergePartnerDeltas(
     mergePartnerDeltas(
       mergePartnerDeltas(mergePartnerDeltas(dip.partnerDeltas, agr.partnerDeltas), shock.partnerDeltas),
@@ -5135,6 +5491,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         enforcementMods.partnerDeltas,
       ),
     ),
+    spilloverMods.partnerDeltas,
   );
   const commodityDeltas = mergeCommodityDeltas(
     mergeCommodityDeltas(
@@ -5187,6 +5544,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   if (restorationEvent) worldEvents.push(restorationEvent);
   const enforcementEvent = tradeEnforcementWorldEvent(tradeEnforcement, turn);
   if (enforcementEvent) worldEvents.push(enforcementEvent);
+  const spilloverEvent = sanctionsSpilloverWorldEvent(sanctionsSpillover, turn);
+  if (spilloverEvent) worldEvents.push(spilloverEvent);
 
   const partners: GTELPartnerMarket[] = GTEL_PARTNER_DEFS.map(def => {
     const prevBand = persisted.partnerAccess[def.id] || 'normal';
@@ -5357,6 +5716,18 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const maritimeEvent = maritimeRiskWorldEvent(maritimeRisk, turn);
   if (maritimeEvent) worldEvents.push(maritimeEvent);
 
+  const corridorStep = computeTradeCorridorResilienceSnapshot({
+    logistics,
+    maritimeRisk,
+    supplyChainResilience,
+    marketDiversification,
+    persisted,
+  });
+  persisted = corridorStep.persisted;
+  const tradeCorridorResilience = corridorStep.snapshot;
+  const corridorEvent = tradeCorridorWorldEvent(tradeCorridorResilience, turn);
+  if (corridorEvent) worldEvents.push(corridorEvent);
+
   const utilizationStep = computePreferentialUtilizationSnapshot({
     turn,
     partners,
@@ -5400,6 +5771,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         preferentialUtilizationExportScale(preferentialUtilization) *
         enforcementExportScale(tradeEnforcement) *
         exportInsuranceStackExportScale(exportInsuranceStack) *
+        tradeCorridorExportScale(tradeCorridorResilience) *
+        sanctionsSpilloverExportScale(sanctionsSpillover) *
         10,
     ) / 10;
 
@@ -5462,7 +5835,9 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
-      exportInsuranceStackDomesticStress(exportInsuranceStack),
+      exportInsuranceStackDomesticStress(exportInsuranceStack) +
+      tradeCorridorDomesticStress(tradeCorridorResilience) +
+      spilloverMods.domesticStress,
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -5495,6 +5870,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.enforcementIntensitySmoothing,
     persisted.exportInsuranceStackSmoothing,
     persisted.accessRestorationSmoothing,
+    persisted.tradeCorridorSmoothing,
+    persisted.sanctionsSpilloverSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -5559,6 +5936,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     tradeEnforcement,
     exportInsuranceStack,
     partnerAccessRestoration,
+    tradeCorridorResilience,
+    sanctionsSpillover,
     inputHash,
   };
 
@@ -5602,6 +5981,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...tradeEnforcementGiNotes(state.tradeEnforcement));
   lines.push(...exportInsuranceStackGiNotes(state.exportInsuranceStack));
   lines.push(...partnerAccessRestorationGiNotes(state.partnerAccessRestoration));
+  lines.push(...tradeCorridorGiNotes(state.tradeCorridorResilience));
+  lines.push(...sanctionsSpilloverGiNotes(state.sanctionsSpillover));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
@@ -5650,6 +6031,13 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   computePartnerAccessRestorationSnapshot,
   deriveAccessRestorationPartnerModifiers,
 } from './partner-access-restoration.ts';
+  computeSanctionsSpilloverSnapshot,
+  deriveSanctionsSpilloverPartnerModifiers,
+  sanctionsSpilloverExportScale,
+} from './sanctions-spillover-depth.ts';
+  computeTradeCorridorResilienceSnapshot,
+  tradeCorridorExportScale,
+} from './trade-corridor-resilience.ts';
   validateScenarioShockCatalog,
   triggerCommodityShockScenario,
   COMMODITY_SHOCK_SCENARIOS,
@@ -6395,6 +6783,75 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(reopened.momentum > stalled.momentum, 'expected restoration momentum');
     const mods = deriveAccessRestorationPartnerModifiers(reopened);
     gtelAssert(mods.domesticStressRelief >= 0, 'restoration relief non-negative');
+  });
+
+  ok('trade corridor resilience drops when logistics congested', () => {
+    const stable = computeTradeCorridorResilienceSnapshot({
+      logistics: {
+        band: 'fluid',
+        freightPressure: 0.2,
+        redundancyScore: 0.82,
+        effectiveExportThroughput: 90,
+        networkStrain: 0.12,
+        summary: 'test',
+      },
+      maritimeRisk: createEmptyMaritimeRiskSnapshot(),
+      supplyChainResilience: { score: 0.62, band: 'adaptive', chokepointCount: 1, redundancyIndex: 0.58, summary: 'test' },
+      marketDiversification: {
+        concentrationIndex: 0.48,
+        band: 'balanced',
+        dominantPartnerId: 'asia_pacific',
+        effectivePartnerCount: 3.4,
+        summary: 'test',
+      },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const fragile = computeTradeCorridorResilienceSnapshot({
+      logistics: {
+        band: 'congested',
+        freightPressure: 0.9,
+        redundancyScore: 0.28,
+        effectiveExportThroughput: 160,
+        networkStrain: 0.85,
+        summary: 'test',
+      },
+      maritimeRisk: { ...createEmptyMaritimeRiskSnapshot(), premiumIndex: 0.62, band: 'severe', laneReliability: 0.42 },
+      supplyChainResilience: { score: 0.32, band: 'brittle', chokepointCount: 4, redundancyIndex: 0.22, summary: 'test' },
+      marketDiversification: {
+        concentrationIndex: 0.78,
+        band: 'critical',
+        dominantPartnerId: 'asia_pacific',
+        effectivePartnerCount: 1.8,
+        summary: 'test',
+      },
+      persisted: { ...createEmptyGTELPersisted(), tradeCorridorSmoothing: 0.38 },
+    }).snapshot;
+    gtelAssert(fragile.score < stable.score, 'expected lower corridor score');
+    gtelAssert(tradeCorridorExportScale(fragile) <= tradeCorridorExportScale(stable) + 0.01, 'expected corridor scale drag');
+  });
+
+  ok('sanctions spillover intensifies with sectoral tiers and retaliation', () => {
+    const contained = computeSanctionsSpilloverSnapshot({
+      activeTiers: {},
+      tradeRetaliation: createEmptyTradeRetaliationSnapshot(),
+      tradeEnforcement: createEmptyTradeEnforcementSnapshot(),
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const broad = computeSanctionsSpilloverSnapshot({
+      activeTiers: { asia_pacific: 'sectoral', europe: 'comprehensive' },
+      tradeRetaliation: computeTradeRetaliationSnapshot({
+        openDisputeCount: 2,
+        activeSanctionCount: 2,
+        engagement: { tracks: {}, summitPulse: 0.15, summary: 'test' },
+        persisted: createEmptyGTELPersisted(),
+      }).snapshot,
+      tradeEnforcement: { ...createEmptyTradeEnforcementSnapshot(), intensity: 0.55, band: 'intensive', probeLoad: 0.16 },
+      persisted: { ...createEmptyGTELPersisted(), sanctionsSpilloverSmoothing: 0.52 },
+    }).snapshot;
+    gtelAssert(broad.intensity > contained.intensity, 'expected spillover intensity');
+    const mods = deriveSanctionsSpilloverPartnerModifiers(broad);
+    gtelAssert(mods.domesticStress > 0, 'expected spillover domestic stress');
+    gtelAssert(sanctionsSpilloverExportScale(broad) <= sanctionsSpilloverExportScale(contained) + 0.01, 'expected spillover scale drag');
   });
 
   return { passed, failed };

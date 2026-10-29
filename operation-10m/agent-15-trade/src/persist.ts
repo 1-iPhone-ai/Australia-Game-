@@ -18,6 +18,8 @@ import { sanitizePreferentialUtilizationSmoothing } from './preferential-access-
 import { sanitizeEnforcementIntensitySmoothing } from './trade-enforcement-intensity.ts';
 import { sanitizeExportInsuranceStackSmoothing } from './export-credit-insurance-stack.ts';
 import { sanitizeAccessRestorationSmoothing } from './partner-access-restoration.ts';
+import { sanitizeTradeCorridorSmoothing } from './trade-corridor-resilience.ts';
+import { sanitizeSanctionsSpilloverSmoothing } from './sanctions-spillover-depth.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -54,6 +56,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     enforcementIntensitySmoothing: 0.26,
     exportInsuranceStackSmoothing: 0.56,
     accessRestorationSmoothing: 0.3,
+    tradeCorridorSmoothing: 0.54,
+    sanctionsSpilloverSmoothing: 0.24,
   };
 }
 
@@ -222,5 +226,7 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   base.enforcementIntensitySmoothing = sanitizeEnforcementIntensitySmoothing(r.enforcementIntensitySmoothing);
   base.exportInsuranceStackSmoothing = sanitizeExportInsuranceStackSmoothing(r.exportInsuranceStackSmoothing);
   base.accessRestorationSmoothing = sanitizeAccessRestorationSmoothing(r.accessRestorationSmoothing);
+  base.tradeCorridorSmoothing = sanitizeTradeCorridorSmoothing(r.tradeCorridorSmoothing);
+  base.sanctionsSpilloverSmoothing = sanitizeSanctionsSpilloverSmoothing(r.sanctionsSpilloverSmoothing);
   return base;
 }

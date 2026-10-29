@@ -66,6 +66,15 @@ import {
   computePartnerAccessRestorationSnapshot,
   deriveAccessRestorationPartnerModifiers,
 } from './partner-access-restoration.ts';
+import {
+  computeSanctionsSpilloverSnapshot,
+  deriveSanctionsSpilloverPartnerModifiers,
+  sanctionsSpilloverExportScale,
+} from './sanctions-spillover-depth.ts';
+import {
+  computeTradeCorridorResilienceSnapshot,
+  tradeCorridorExportScale,
+} from './trade-corridor-resilience.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -815,6 +824,75 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(reopened.momentum > stalled.momentum, 'expected restoration momentum');
     const mods = deriveAccessRestorationPartnerModifiers(reopened);
     gtelAssert(mods.domesticStressRelief >= 0, 'restoration relief non-negative');
+  });
+
+  ok('trade corridor resilience drops when logistics congested', () => {
+    const stable = computeTradeCorridorResilienceSnapshot({
+      logistics: {
+        band: 'fluid',
+        freightPressure: 0.2,
+        redundancyScore: 0.82,
+        effectiveExportThroughput: 90,
+        networkStrain: 0.12,
+        summary: 'test',
+      },
+      maritimeRisk: createEmptyMaritimeRiskSnapshot(),
+      supplyChainResilience: { score: 0.62, band: 'adaptive', chokepointCount: 1, redundancyIndex: 0.58, summary: 'test' },
+      marketDiversification: {
+        concentrationIndex: 0.48,
+        band: 'balanced',
+        dominantPartnerId: 'asia_pacific',
+        effectivePartnerCount: 3.4,
+        summary: 'test',
+      },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const fragile = computeTradeCorridorResilienceSnapshot({
+      logistics: {
+        band: 'congested',
+        freightPressure: 0.9,
+        redundancyScore: 0.28,
+        effectiveExportThroughput: 160,
+        networkStrain: 0.85,
+        summary: 'test',
+      },
+      maritimeRisk: { ...createEmptyMaritimeRiskSnapshot(), premiumIndex: 0.62, band: 'severe', laneReliability: 0.42 },
+      supplyChainResilience: { score: 0.32, band: 'brittle', chokepointCount: 4, redundancyIndex: 0.22, summary: 'test' },
+      marketDiversification: {
+        concentrationIndex: 0.78,
+        band: 'critical',
+        dominantPartnerId: 'asia_pacific',
+        effectivePartnerCount: 1.8,
+        summary: 'test',
+      },
+      persisted: { ...createEmptyGTELPersisted(), tradeCorridorSmoothing: 0.38 },
+    }).snapshot;
+    gtelAssert(fragile.score < stable.score, 'expected lower corridor score');
+    gtelAssert(tradeCorridorExportScale(fragile) <= tradeCorridorExportScale(stable) + 0.01, 'expected corridor scale drag');
+  });
+
+  ok('sanctions spillover intensifies with sectoral tiers and retaliation', () => {
+    const contained = computeSanctionsSpilloverSnapshot({
+      activeTiers: {},
+      tradeRetaliation: createEmptyTradeRetaliationSnapshot(),
+      tradeEnforcement: createEmptyTradeEnforcementSnapshot(),
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const broad = computeSanctionsSpilloverSnapshot({
+      activeTiers: { asia_pacific: 'sectoral', europe: 'comprehensive' },
+      tradeRetaliation: computeTradeRetaliationSnapshot({
+        openDisputeCount: 2,
+        activeSanctionCount: 2,
+        engagement: { tracks: {}, summitPulse: 0.15, summary: 'test' },
+        persisted: createEmptyGTELPersisted(),
+      }).snapshot,
+      tradeEnforcement: { ...createEmptyTradeEnforcementSnapshot(), intensity: 0.55, band: 'intensive', probeLoad: 0.16 },
+      persisted: { ...createEmptyGTELPersisted(), sanctionsSpilloverSmoothing: 0.52 },
+    }).snapshot;
+    gtelAssert(broad.intensity > contained.intensity, 'expected spillover intensity');
+    const mods = deriveSanctionsSpilloverPartnerModifiers(broad);
+    gtelAssert(mods.domesticStress > 0, 'expected spillover domestic stress');
+    gtelAssert(sanctionsSpilloverExportScale(broad) <= sanctionsSpilloverExportScale(contained) + 0.01, 'expected spillover scale drag');
   });
 
   return { passed, failed };

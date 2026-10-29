@@ -146,6 +146,10 @@ export interface GTELPersisted {
   exportInsuranceStackSmoothing?: number;
   /** Smoothed partner access restoration momentum (0–1). */
   accessRestorationSmoothing?: number;
+  /** Smoothed trade corridor resilience score (0–1). */
+  tradeCorridorSmoothing?: number;
+  /** Smoothed sanctions spillover intensity (0–1). */
+  sanctionsSpilloverSmoothing?: number;
 }
 
 export interface GTELState {
@@ -181,6 +185,8 @@ export interface GTELState {
   tradeEnforcement: GTELTradeEnforcementSnapshot;
   exportInsuranceStack: GTELExportInsuranceStackSnapshot;
   partnerAccessRestoration: GTELPartnerAccessRestorationSnapshot;
+  tradeCorridorResilience: GTELTradeCorridorResilienceSnapshot;
+  sanctionsSpillover: GTELSanctionsSpilloverSnapshot;
   inputHash: string;
 }
 
@@ -525,6 +531,26 @@ export interface GTELPartnerAccessRestorationSnapshot {
   band: GTELPartnerAccessRestorationBand;
   restoredPartnerIds: GTELPartnerId[];
   accessRecoveryIndex: number;
+  summary: string;
+}
+
+export type GTELTradeCorridorBand = 'robust' | 'stable' | 'fragile' | 'disrupted';
+
+export interface GTELTradeCorridorResilienceSnapshot {
+  score: number;
+  band: GTELTradeCorridorBand;
+  chokepointLoad: number;
+  rerouteCapacity: number;
+  summary: string;
+}
+
+export type GTELSanctionsSpilloverBand = 'contained' | 'localized' | 'broad' | 'pervasive';
+
+export interface GTELSanctionsSpilloverSnapshot {
+  intensity: number;
+  band: GTELSanctionsSpilloverBand;
+  activeTierCount: number;
+  spilloverPartnerIds: GTELPartnerId[];
   summary: string;
 }
 

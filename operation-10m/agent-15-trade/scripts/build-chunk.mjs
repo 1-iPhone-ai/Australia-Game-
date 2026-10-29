@@ -45,6 +45,8 @@ const FILES = [
   'trade-enforcement-intensity.ts',
   'export-credit-insurance-stack.ts',
   'partner-access-restoration.ts',
+  'trade-corridor-resilience.ts',
+  'sanctions-spillover-depth.ts',
   'domestic-consequences.ts',
   'household-bridge.ts',
   'trade-turn.ts',
