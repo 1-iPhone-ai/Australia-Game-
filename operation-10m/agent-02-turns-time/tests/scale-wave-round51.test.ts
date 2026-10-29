@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import {
   TurnTimeEngine,
   createTurnAdvanceBudget,
+  verifyBatchNationalTickSessionWave50IntegrationReplayParity,
   WAVE51_INTEGRATION_BASELINE_SHA,
   WAVE51_PROJECTED_LOC,
   WAVE51_ROUND,
@@ -11,7 +12,6 @@ import {
   exportBatchNationalTickSessionWave51Integration,
   compareBatchNationalTickSessionWave51IntegrationExports,
   verifyBatchNationalTickSessionWave51IntegrationReplayParity,
-  verifyBatchNationalTickSessionWave50IntegrationReplayParity,
 } from '../src/index.js';
 
 const calmBatch = [[{
@@ -30,7 +30,7 @@ describe('round 51 wave 51 wave50 integration replay parity smoke', () => {
   });
 });
 
-describe('round 51 wave 51 O10-232 integration seal', () => {
+describe('round 51 wave 51 O10-233 integration seal', () => {
   it('pins a32b2b15 / 2,887,600 and exports a hex seal digest', () => {
     const exp = exportBatchNationalTickSessionWave51Integration(
       sealBatchNationalTickSessionWave51Integration(
@@ -47,8 +47,7 @@ describe('round 51 wave 51 O10-232 integration seal', () => {
     assert.equal(exp.wave, WAVE51_ROUND);
     assert.equal(exp.ticket, WAVE51_TICKET);
     assert.match(exp.sealDigest, /^[0-9a-f]{16}$/);
-    assert.match(exp.innerSealDigest, /^[0-9a-f]{16}$/);
-    assert.match(exp.innerCommitDigest, /^[0-9a-f]{16}$/);
+    assert.match(exp.commitDigest, /^[0-9a-f]{16}$/);
   });
 });
 

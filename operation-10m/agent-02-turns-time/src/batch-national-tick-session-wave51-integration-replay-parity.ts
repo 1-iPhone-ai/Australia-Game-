@@ -14,7 +14,7 @@ export interface BatchNationalTickSessionWave51IntegrationReplayParityResult {
 
 /**
  * Round 51 wave 51: two integration seals from the same engine snapshot must
- * share sealDigest, inner seal pin, and the O10-232 baseline pin.
+ * share sealDigest, commitDigest, and the O10-232 baseline pin.
  */
 export function verifyBatchNationalTickSessionWave51IntegrationReplayParity(
   engine: TurnTimeEngine,
@@ -30,7 +30,7 @@ export function verifyBatchNationalTickSessionWave51IntegrationReplayParity(
   );
   const parityOk =
     baseline.sealDigest === replay.sealDigest &&
-    baseline.inner.sealDigest === replay.inner.sealDigest &&
+    baseline.commit.commitDigest === replay.commit.commitDigest &&
     baseline.ok === replay.ok &&
     baseline.baselineSha === replay.baselineSha &&
     baseline.projectedLoc === replay.projectedLoc;

@@ -2,13 +2,13 @@ import type { BatchNationalTickSessionWave51IntegrationSealResult } from './batc
 
 export interface BatchNationalTickSessionWave51IntegrationExport {
   ok: boolean;
-  innerOk: boolean;
+  commitOk: boolean;
   baselineSha: string;
   projectedLoc: number;
   wave: number;
   ticket: string;
-  innerSealDigest: string;
-  innerCommitDigest: string;
+  commitDigest: string;
+  latchDigest: string;
   sealDigest: string;
 }
 
@@ -20,13 +20,13 @@ export function exportBatchNationalTickSessionWave51Integration(
 ): BatchNationalTickSessionWave51IntegrationExport {
   return {
     ok: seal.ok,
-    innerOk: seal.innerOk,
+    commitOk: seal.commitOk,
     baselineSha: seal.baselineSha,
     projectedLoc: seal.projectedLoc,
     wave: seal.wave,
     ticket: seal.ticket,
-    innerSealDigest: seal.inner.sealDigest,
-    innerCommitDigest: seal.inner.commit.commitDigest,
+    commitDigest: seal.commit.commitDigest,
+    latchDigest: seal.commit.export.latchDigest,
     sealDigest: seal.sealDigest,
   };
 }

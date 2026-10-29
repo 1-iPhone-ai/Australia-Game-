@@ -3,8 +3,8 @@ import type { BatchNationalTickSessionWave51IntegrationExport } from './batch-na
 export interface BatchNationalTickSessionWave51IntegrationExportCompareResult {
   ok: boolean;
   sealDigestMatch: boolean;
-  innerSealDigestMatch: boolean;
-  innerCommitDigestMatch: boolean;
+  commitDigestMatch: boolean;
+  latchDigestMatch: boolean;
   baselineShaMatch: boolean;
   projectedLocMatch: boolean;
   okFlagMatch: boolean;
@@ -18,22 +18,22 @@ export function compareBatchNationalTickSessionWave51IntegrationExports(
   candidate: BatchNationalTickSessionWave51IntegrationExport,
 ): BatchNationalTickSessionWave51IntegrationExportCompareResult {
   const sealDigestMatch = baseline.sealDigest === candidate.sealDigest;
-  const innerSealDigestMatch = baseline.innerSealDigest === candidate.innerSealDigest;
-  const innerCommitDigestMatch = baseline.innerCommitDigest === candidate.innerCommitDigest;
+  const commitDigestMatch = baseline.commitDigest === candidate.commitDigest;
+  const latchDigestMatch = baseline.latchDigest === candidate.latchDigest;
   const baselineShaMatch = baseline.baselineSha === candidate.baselineSha;
   const projectedLocMatch = baseline.projectedLoc === candidate.projectedLoc;
   const okFlagMatch = baseline.ok === candidate.ok;
   return {
     ok:
       sealDigestMatch &&
-      innerSealDigestMatch &&
-      innerCommitDigestMatch &&
+      commitDigestMatch &&
+      latchDigestMatch &&
       baselineShaMatch &&
       projectedLocMatch &&
       okFlagMatch,
     sealDigestMatch,
-    innerSealDigestMatch,
-    innerCommitDigestMatch,
+    commitDigestMatch,
+    latchDigestMatch,
     baselineShaMatch,
     projectedLocMatch,
     okFlagMatch,
