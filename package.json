@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 5173"
+    "preview": "vite preview --host 0.0.0.0 --port 5173",
+    "generate:agent-11": "node scripts/generate-agent-11-v1014.mjs",
+    "verify:agent-11": "node scripts/verify-agent-11-module.mjs",
+    "test:agent-11": "npx --yes tsx scripts/agent-11-selftest-runner.ts"
   },
   "dependencies": {
     "react": "19.3.1",
