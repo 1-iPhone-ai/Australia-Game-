@@ -1,0 +1,31 @@
+import type { V1020RpipeGrantStackEdge } from '../../types/core.ts';
+
+/** Commercialization stack graph shard 015 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_015: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.645, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.652, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.659, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.666, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.673, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.68, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.687, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.694, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.701, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.708, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.715, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.722, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.729, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.736, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.743, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.645, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.652, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.659, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.666, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.673, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.68, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.687, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.694, lagTurns: 11, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.701, lagTurns: 12, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.708, lagTurns: 10, nodeId: 'lab_transfer_15' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.715, lagTurns: 11, nodeId: 'lab_transfer_15' },
+];

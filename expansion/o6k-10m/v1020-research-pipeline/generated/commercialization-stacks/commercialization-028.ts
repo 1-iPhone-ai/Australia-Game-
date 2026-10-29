@@ -1,0 +1,31 @@
+import type { V1020RpipeGrantStackEdge } from '../../types/core.ts';
+
+/** Commercialization stack graph shard 028 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_028: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.491, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.498, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.505, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.512, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.519, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.526, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.533, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.435, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.442, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.449, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.456, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.463, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.47, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.477, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.484, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.491, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.498, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.505, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.512, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.519, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.526, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.533, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.435, lagTurns: 8, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.442, lagTurns: 9, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.449, lagTurns: 7, nodeId: 'lab_transfer_04' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.456, lagTurns: 8, nodeId: 'lab_transfer_04' },
+];

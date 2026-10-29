@@ -1,0 +1,31 @@
+import type { V1020RpipeGrantStackEdge } from '../../types/core.ts';
+
+/** Commercialization stack graph shard 064 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_064: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.463, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.365, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.372, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.379, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.386, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.393, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.4, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.407, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.414, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.421, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.428, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.435, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.442, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.449, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.456, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.463, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.365, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.372, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.379, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.386, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.393, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.4, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.407, lagTurns: 4, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.414, lagTurns: 5, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.421, lagTurns: 3, nodeId: 'lab_transfer_16' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.428, lagTurns: 4, nodeId: 'lab_transfer_16' },
+];

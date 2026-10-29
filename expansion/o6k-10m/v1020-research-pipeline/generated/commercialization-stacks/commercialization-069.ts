@@ -1,0 +1,31 @@
+import type { V1020RpipeGrantStackEdge } from '../../types/core.ts';
+
+/** Commercialization stack graph shard 069 (state–federal transfer cross-system coupling). */
+export const V1020_RPIPE_COMMERCIALIZATION_STACK_SHARD_069: readonly V1020RpipeGrantStackEdge[] = [
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.603, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.61, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.617, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.624, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.631, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.638, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.54, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.547, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.554, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.561, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.568, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.575, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.582, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.589, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.596, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.603, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.61, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.617, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.624, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.631, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.638, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.54, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.547, lagTurns: 9, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.554, lagTurns: 10, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.561, lagTurns: 8, nodeId: 'lab_transfer_21' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.568, lagTurns: 9, nodeId: 'lab_transfer_21' },
+];
