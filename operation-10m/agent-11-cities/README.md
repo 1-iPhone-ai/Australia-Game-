@@ -2,6 +2,8 @@
 
 Urban growth balance, regional inequality metrics, and national–local spillover links. Standalone TypeScript until Agent 25 assembly into V9.4.
 
+**Scale wave round 13:** regional cohesion integrity pressure, interregional relief delivery equity gap, settlement systemic fragility composite (schema `10m.a11.composite.12`).
+
 **Scale wave round 12:** regional fiscal capacity strain, interregional network resilience erosion, settlement long-horizon capacity risk (schema `10m.a11.composite.11`).
 
 **Scale wave round 11:** regional relief coordination overhead, interregional corridor equity drift, settlement climate adaptation lag (schema `10m.a11.composite.10`).

@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.11' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.12' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -254,7 +254,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'climate_adaptation_lag'
   | 'fiscal_capacity_strain'
   | 'network_resilience_erosion'
-  | 'long_horizon_capacity_risk';
+  | 'long_horizon_capacity_risk'
+  | 'cohesion_integrity_stress'
+  | 'relief_delivery_equity_gap'
+  | 'systemic_settlement_fragility';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -501,6 +504,36 @@ export interface OP10M_A11_HorizonRiskRow {
   narrative: string;
 }
 
+export type OP10M_A11_CohesionIntegrityBand = 'cohesive' | 'fraying' | 'fractured' | 'disintegrating';
+
+export interface OP10M_A11_CohesionIntegrityRow {
+  regionId: OP10M_A11_RegionId;
+  pressureScore: number;
+  band: OP10M_A11_CohesionIntegrityBand;
+  strains: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_ReliefEquityGapBand = 'aligned' | 'uneven' | 'skewed' | 'polarized';
+
+export interface OP10M_A11_ReliefEquityGapRow {
+  regionId: OP10M_A11_RegionId;
+  gapScore: number;
+  band: OP10M_A11_ReliefEquityGapBand;
+  gaps: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_SystemicFragilityBand = 'contained' | 'elevated' | 'systemic' | 'cascade_risk';
+
+export interface OP10M_A11_SystemicFragilityRow {
+  regionId: OP10M_A11_RegionId;
+  fragilityScore: number;
+  band: OP10M_A11_SystemicFragilityBand;
+  cascades: string[];
+  narrative: string;
+}
+
 export type OP10M_A11_MigrationPressureBand = 'stable' | 'elevated' | 'high' | 'surge';
 
 export interface OP10M_A11_MigrationPressureRow {
@@ -659,6 +692,12 @@ export interface OP10M_A11_CompositeState {
   nationalNetworkResilienceErosionIndex: number;
   longHorizonCapacityRisk: OP10M_A11_HorizonRiskRow[];
   nationalLongHorizonCapacityRiskIndex: number;
+  cohesionIntegrity: OP10M_A11_CohesionIntegrityRow[];
+  nationalCohesionIntegrityIndex: number;
+  reliefEquityGap: OP10M_A11_ReliefEquityGapRow[];
+  nationalReliefEquityGapIndex: number;
+  systemicFragility: OP10M_A11_SystemicFragilityRow[];
+  nationalSystemicFragilityIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -692,5 +731,8 @@ export interface OP10M_A11_CompositePersisted {
   lastFiscalCapacityStrainIndex: number;
   lastNetworkResilienceErosionIndex: number;
   lastLongHorizonCapacityRiskIndex: number;
+  lastCohesionIntegrityIndex: number;
+  lastReliefEquityGapIndex: number;
+  lastSystemicFragilityIndex: number;
   inputHash: string;
 }

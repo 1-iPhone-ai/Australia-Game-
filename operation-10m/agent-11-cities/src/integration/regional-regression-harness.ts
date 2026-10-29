@@ -30,6 +30,9 @@ export type OP10M_A11_RegressionTurnSnapshot = {
   fiscalCapacityStrainIndex: number;
   networkResilienceErosionIndex: number;
   longHorizonCapacityRiskIndex: number;
+  cohesionIntegrityIndex: number;
+  reliefEquityGapIndex: number;
+  systemicFragilityIndex: number;
   validationErrors: number;
 };
 
@@ -86,6 +89,9 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
       fiscalCapacityStrainIndex: out.state.nationalFiscalCapacityStrainIndex,
       networkResilienceErosionIndex: out.state.nationalNetworkResilienceErosionIndex,
       longHorizonCapacityRiskIndex: out.state.nationalLongHorizonCapacityRiskIndex,
+      cohesionIntegrityIndex: out.state.nationalCohesionIntegrityIndex,
+      reliefEquityGapIndex: out.state.nationalReliefEquityGapIndex,
+      systemicFragilityIndex: out.state.nationalSystemicFragilityIndex,
       validationErrors,
     });
   }
@@ -113,6 +119,9 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
   const fiscalCapacityStable = snapshots.every((s) => s.fiscalCapacityStrainIndex >= 8 && s.fiscalCapacityStrainIndex <= 100);
   const networkErosionStable = snapshots.every((s) => s.networkResilienceErosionIndex >= 8 && s.networkResilienceErosionIndex <= 100);
   const horizonRiskStable = snapshots.every((s) => s.longHorizonCapacityRiskIndex >= 8 && s.longHorizonCapacityRiskIndex <= 100);
+  const cohesionIntegrityStable = snapshots.every((s) => s.cohesionIntegrityIndex >= 8 && s.cohesionIntegrityIndex <= 100);
+  const reliefEquityGapStable = snapshots.every((s) => s.reliefEquityGapIndex >= 8 && s.reliefEquityGapIndex <= 100);
+  const systemicFragilityStable = snapshots.every((s) => s.systemicFragilityIndex >= 8 && s.systemicFragilityIndex <= 100);
 
   const ok =
     monotonicRevision &&
@@ -137,10 +146,13 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
     adaptationLagStable &&
     fiscalCapacityStable &&
     networkErosionStable &&
-    horizonRiskStable;
+    horizonRiskStable &&
+    cohesionIntegrityStable &&
+    reliefEquityGapStable &&
+    systemicFragilityStable;
   const detail = ok
-    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, horizon risk ${snapshots[snapshots.length - 1].longHorizonCapacityRiskIndex}`
-    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable} gridlock=${landUseGridlockStable} trap=${mobilityTrapStable} gap=${absorptionGapStable} relief=${reliefOverheadStable} drift=${corridorDriftStable} lag=${adaptationLagStable} fiscal=${fiscalCapacityStable} erosion=${networkErosionStable} horizon=${horizonRiskStable}`;
+    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, systemic ${snapshots[snapshots.length - 1].systemicFragilityIndex}`
+    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable} gridlock=${landUseGridlockStable} trap=${mobilityTrapStable} gap=${absorptionGapStable} relief=${reliefOverheadStable} drift=${corridorDriftStable} lag=${adaptationLagStable} fiscal=${fiscalCapacityStable} erosion=${networkErosionStable} horizon=${horizonRiskStable} integrity=${cohesionIntegrityStable} reliefEq=${reliefEquityGapStable} systemic=${systemicFragilityStable}`;
 
   return { ok, snapshots, detail };
 }
