@@ -20,12 +20,12 @@ describe('Tranche 5 compute-turn catalog', () => {
   it('adds 280 compute-turn chains', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE5_STATS.chainCount, 280);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche5Chains, 280);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 10440);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 10760);
   });
 
   it('uses op10m_t5 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 10440);
+    assert.equal(ids.size, 10760);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE5) {
       assert.match(c.chainId, /^op10m_t5_/);
     }
