@@ -273,6 +273,10 @@ export interface TeamMultiAgentCoordinationMeta {
   handoffCascadeRiskIndex?: number;
   handoffCascadeChainActorIds?: string[];
   suppressionBacklogIndex?: number;
+  reconcileDriftIndex?: number;
+  arbitrationPressureIndex?: number;
+  arbitrationDemotedActorIds?: string[];
+  persistenceChurnIndex?: number;
 }
 
 export const AGENT18_LIMITS = {

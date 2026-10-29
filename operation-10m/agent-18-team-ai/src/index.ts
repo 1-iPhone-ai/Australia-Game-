@@ -36,4 +36,7 @@ export * from './coordination-saturation-gauge.ts';
 export * from './mutex-lease-divergence-index.ts';
 export * from './handoff-cascade-analyzer.ts';
 export * from './suppression-backlog-index.ts';
+export * from './reconcile-drift-index.ts';
+export * from './arbitration-pressure-index.ts';
+export * from './persistence-churn-gauge.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';

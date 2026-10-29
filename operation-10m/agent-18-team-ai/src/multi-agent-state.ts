@@ -50,6 +50,9 @@ import { measureCoordinationSaturation } from './coordination-saturation-gauge.t
 import { computeMutexLeaseDivergenceIndex } from './mutex-lease-divergence-index.ts';
 import { analyzeHandoffCascadeRisk } from './handoff-cascade-analyzer.ts';
 import { computeSuppressionBacklogIndex } from './suppression-backlog-index.ts';
+import { computeReconcileDriftIndex } from './reconcile-drift-index.ts';
+import { computeArbitrationPressureIndex } from './arbitration-pressure-index.ts';
+import { measurePersistenceChurn } from './persistence-churn-gauge.ts';
 import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
@@ -272,6 +275,19 @@ export function sanitizeTeamMultiAgentCoordinationState(
         typeof metaRaw.suppressionBacklogIndex === 'number'
           ? metaRaw.suppressionBacklogIndex
           : undefined,
+      reconcileDriftIndex:
+        typeof metaRaw.reconcileDriftIndex === 'number' ? metaRaw.reconcileDriftIndex : undefined,
+      arbitrationPressureIndex:
+        typeof metaRaw.arbitrationPressureIndex === 'number'
+          ? metaRaw.arbitrationPressureIndex
+          : undefined,
+      arbitrationDemotedActorIds: Array.isArray(metaRaw.arbitrationDemotedActorIds)
+        ? metaRaw.arbitrationDemotedActorIds.map(String).slice(0, 8)
+        : undefined,
+      persistenceChurnIndex:
+        typeof metaRaw.persistenceChurnIndex === 'number'
+          ? metaRaw.persistenceChurnIndex
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -390,6 +406,10 @@ export function evaluateTeamMultiAgentLayer(
   if (reconcile.thrashingRegions.length) {
     diagnostics.push(`Mutex thrashing: ${reconcile.thrashingRegions.join(', ')}`);
   }
+  const reconcileDrift = computeReconcileDriftIndex(reconcile, reconcile.thrashingRegions.length);
+  reconcileDrift.notes.forEach(n => diagnostics.push(n));
+  const arbitrationPressure = computeArbitrationPressureIndex(coordination.arbitrationLog);
+  arbitrationPressure.notes.forEach(n => diagnostics.push(n));
 
   const mutexStability = computeMutexStabilityIndex(mutexHistory, reconcile.thrashingRegions);
   mutexStability.notes.forEach(n => diagnostics.push(n));
@@ -511,6 +531,9 @@ export function evaluateTeamMultiAgentLayer(
       handoffCascadeRiskIndex: handoffCascade.cascadeRiskIndex,
       handoffCascadeChainActorIds: handoffCascade.cascadeChainActorIds,
       suppressionBacklogIndex: suppressionBacklog.backlogIndex,
+      reconcileDriftIndex: reconcileDrift.driftIndex,
+      arbitrationPressureIndex: arbitrationPressure.pressureIndex,
+      arbitrationDemotedActorIds: arbitrationPressure.demotedActorIds,
     },
   };
 
@@ -551,6 +574,13 @@ export function evaluateTeamMultiAgentLayer(
     previous ? teamMultiAgentPersistSignature(previous) : null,
     0,
   );
+  const persistenceChurn = measurePersistenceChurn(previous, state, persistence);
+  persistenceChurn.notes.forEach(n => diagnostics.push(n));
+  state = {
+    ...state,
+    diagnostics,
+    meta: { ...state.meta, persistenceChurnIndex: persistenceChurn.churnIndex },
+  };
 
   return {
     state,

@@ -58,6 +58,9 @@ import { measureCoordinationSaturation } from './coordination-saturation-gauge.t
 import { computeMutexLeaseDivergenceIndex } from './mutex-lease-divergence-index.ts';
 import { analyzeHandoffCascadeRisk } from './handoff-cascade-analyzer.ts';
 import { computeSuppressionBacklogIndex } from './suppression-backlog-index.ts';
+import { computeReconcileDriftIndex } from './reconcile-drift-index.ts';
+import { computeArbitrationPressureIndex } from './arbitration-pressure-index.ts';
+import { measurePersistenceChurn } from './persistence-churn-gauge.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -1622,7 +1625,7 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       [
         {
           id: 'lease_nsw',
-          kind: 'region_mutex',
+          kind: 'region_exclusive',
           holderActorId: 'mate',
           regionId: 'NSW',
           taskId: 't1',
@@ -1641,7 +1644,7 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       [
         {
           id: 'lease_nsw',
-          kind: 'region_mutex',
+          kind: 'region_exclusive',
           holderActorId: 'player',
           regionId: 'NSW',
           taskId: 't1',
@@ -1756,6 +1759,98 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.mutexLeaseDivergenceCombined === 'number' &&
       typeof dual.handoffCascadeRiskCombined === 'number' &&
       typeof dual.suppressionBacklogCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_reconcile_drift_unstable', 'Reconcile drift: unstable plan scores high', () => {
+    const report = computeReconcileDriftIndex(
+      { turn: 2, stable: false, changes: [{ kind: 'lease_added', regionId: 'NSW', detail: 'l1' }, { kind: 'handoff_closed', regionId: null, detail: 'h1' }], thrashingRegions: ['NSW'] },
+      1,
+    );
+    return report.driftIndex >= 50;
+  });
+
+  check(results, 'a18_reconcile_drift_stable', 'Reconcile drift: stable empty plan stays low', () => {
+    const report = computeReconcileDriftIndex(
+      { turn: 2, stable: true, changes: [], thrashingRegions: [] },
+      0,
+    );
+    return report.driftIndex < 20;
+  });
+
+  check(results, 'a18_arbitration_pressure_demotions', 'Arbitration pressure: demotions raise index', () => {
+    const report = computeArbitrationPressureIndex([
+      {
+        regionId: 'NSW',
+        winnerActorId: 'player',
+        winnerTaskId: 't1',
+        reason: 'priority',
+        demoted: [
+          { actorId: 'mate', taskId: 't2', reason: 'lower tier' },
+          { actorId: 'scout', taskId: 't3', reason: 'lower tier' },
+          { actorId: 'earner', taskId: 't4', reason: 'lower tier' },
+        ],
+      },
+    ]);
+    return report.pressureIndex >= 45 && report.demotedActorIds.includes('mate');
+  });
+
+  check(results, 'a18_arbitration_pressure_clear', 'Arbitration pressure: empty log scores zero', () => {
+    const report = computeArbitrationPressureIndex([]);
+    return report.pressureIndex === 0;
+  });
+
+  check(results, 'a18_persistence_churn_blocked', 'Persistence churn: blocked commit raises index', () => {
+    const first = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const second = evaluateTeamMultiAgentLayer(baseInputs({ turn: 3 }), first.state);
+    const decision = {
+      commit: false,
+      reason: 'commit cap (8/turn)',
+      signature: teamMultiAgentPersistSignature(second.state),
+    };
+    const report = measurePersistenceChurn(first.state, second.state, decision);
+    return report.churnIndex >= 60;
+  });
+
+  check(results, 'a18_persistence_churn_initial', 'Persistence churn: first material state moderate', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const decision = decideTeamMultiAgentPersistence(null, ev.state, null, 0);
+    const report = measurePersistenceChurn(null, ev.state, decision);
+    return report.churnIndex >= 0 && report.churnIndex <= 100;
+  });
+
+  check(results, 'a18_eval_round11_meta', 'Layer: round-11 meta exposes drift, arbitration, churn signals', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.reconcileDriftIndex === 'number' &&
+      typeof m.arbitrationPressureIndex === 'number' &&
+      typeof m.persistenceChurnIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_reconcile_drift', 'Audit: high reconcile drift surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, reconcileDriftIndex: 72 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /reconcile drift/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round11_combined', 'Dual team: round-11 combined drift, arbitration, churn exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.reconcileDriftCombined === 'number' &&
+      typeof dual.arbitrationPressureCombined === 'number' &&
+      typeof dual.persistenceChurnCombined === 'number'
     );
   });
 

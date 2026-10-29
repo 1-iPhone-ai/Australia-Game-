@@ -17,6 +17,9 @@ import { combineDualTeamCoordinationSaturation } from './coordination-saturation
 import { combineDualTeamMutexLeaseDivergence } from './mutex-lease-divergence-index.ts';
 import { combineDualTeamHandoffCascadeRisk } from './handoff-cascade-analyzer.ts';
 import { combineDualTeamSuppressionBacklog } from './suppression-backlog-index.ts';
+import { combineDualTeamReconcileDrift } from './reconcile-drift-index.ts';
+import { combineDualTeamArbitrationPressure } from './arbitration-pressure-index.ts';
+import { combineDualTeamPersistenceChurn } from './persistence-churn-gauge.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -51,6 +54,9 @@ export interface DualTeamMultiAgentResult {
   mutexLeaseDivergenceCombined: number;
   handoffCascadeRiskCombined: number;
   suppressionBacklogCombined: number;
+  reconcileDriftCombined: number;
+  arbitrationPressureCombined: number;
+  persistenceChurnCombined: number;
 }
 
 /**
@@ -101,6 +107,9 @@ export function evaluateDualTeamMultiAgentLayers(
       mutexLeaseDivergenceCombined: friendly.state.meta.mutexLeaseDivergenceIndex ?? 0,
       handoffCascadeRiskCombined: friendly.state.meta.handoffCascadeRiskIndex ?? 0,
       suppressionBacklogCombined: friendly.state.meta.suppressionBacklogIndex ?? 0,
+      reconcileDriftCombined: friendly.state.meta.reconcileDriftIndex ?? 0,
+      arbitrationPressureCombined: friendly.state.meta.arbitrationPressureIndex ?? 0,
+      persistenceChurnCombined: friendly.state.meta.persistenceChurnIndex ?? 0,
     };
   }
 
@@ -252,6 +261,18 @@ export function evaluateDualTeamMultiAgentLayers(
     suppressionBacklogCombined: combineDualTeamSuppressionBacklog(
       friendly.state.meta.suppressionBacklogIndex ?? 0,
       enemy.state.meta.suppressionBacklogIndex ?? 0,
+    ),
+    reconcileDriftCombined: combineDualTeamReconcileDrift(
+      friendly.state.meta.reconcileDriftIndex ?? 0,
+      enemy.state.meta.reconcileDriftIndex ?? 0,
+    ),
+    arbitrationPressureCombined: combineDualTeamArbitrationPressure(
+      friendly.state.meta.arbitrationPressureIndex ?? 0,
+      enemy.state.meta.arbitrationPressureIndex ?? 0,
+    ),
+    persistenceChurnCombined: combineDualTeamPersistenceChurn(
+      friendly.state.meta.persistenceChurnIndex ?? 0,
+      enemy.state.meta.persistenceChurnIndex ?? 0,
     ),
   };
 }
