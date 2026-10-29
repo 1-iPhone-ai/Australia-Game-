@@ -140286,7 +140286,17 @@ export function computeIndustriesSupplyChains(i: IndustriesInputs, prevIn?: Indu
       const worstInput = [...w.inputs].filter(x => x.availability < 0.97).sort((a, b) => a.availability - b.availability || a.supply.localeCompare(b.supply))[0];
       const netLoss = 1 - w.access; const inLoss = worstInput ? 1 - worstInput.availability : 0;
       let constraint: IndustryConstraint | null = null;
-      if (inLoss > 0.03 && inLoss >= netLoss) {
+      if (inLoss > 0.03 && netLoss > 0.03 && worstInput && w.accessWorst) {
+        const wn = (w.accessWorst as { network: NationalNetworkKind; factor: number }).network;
+        const prov = received[c]?.[worstInput.supply] ? Object.entries(received[c][worstInput.supply]).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] : null;
+        constraint = {
+          kind: 'production_constraint',
+          input: worstInput.supply,
+          network: wn,
+          loss: scR(1 - (1 - inLoss) * (1 - netLoss), 2),
+          text: `${SUPPLY_LABEL[worstInput.supply]} at ${Math.round(worstInput.availability * 100)}% and ${NATIONAL_NETWORK_LABEL[wn].toLowerCase()} access at ${Math.round(w.access * 100)}% jointly cap output${prov ? ` (largest mineral route: ${REGIONS[prov]?.name || prov})` : ''}`,
+        };
+      } else if (inLoss > 0.03 && inLoss >= netLoss) {
         const prov = received[c]?.[worstInput.supply] ? Object.entries(received[c][worstInput.supply]).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] : null;
         constraint = { kind: 'input_shortage', input: worstInput.supply, loss: scR(inLoss, 2), text: `${SUPPLY_LABEL[worstInput.supply]} inputs cover ${Math.round(worstInput.availability * 100)}% of need${prov ? ` (largest external supplier: ${REGIONS[prov]?.name || prov})` : ' (no deliverable external supplier)'}` };
       } else if (netLoss > 0.03 && w.accessWorst) {
@@ -140471,6 +140481,42 @@ export function sanitizeIndustriesPersisted(raw: unknown): IndustriesPersisted |
   }));
   out.inputHash = typeof r.inputHash === 'string' ? r.inputHash.slice(0, 20) : '';
   return out;
+}
+
+/** Operation 111 / Agent 26: bounded national production snapshot (derived from V10.1 only; null when off). */
+export interface NationalProductionSummary {
+  totalEffectiveOutput: number;
+  byIndustry: Partial<Record<StrategicIndustryKind, number>>;
+  bySupply: Partial<Record<StrategicSupplyKind, number>>;
+  constrainedCells: Array<{ regionId: string; industry: StrategicIndustryKind; utilization: number; constraintKind: IndustryConstraint['kind'] | null }>;
+  topProducer: Partial<Record<StrategicSupplyKind, string>>;
+}
+
+export function summarizeNationalProduction(state: IndustriesSupplyChainsState | null): NationalProductionSummary | null {
+  if (!state) return null;
+  const byIndustry: NationalProductionSummary['byIndustry'] = {};
+  const constrainedCells: NationalProductionSummary['constrainedCells'] = [];
+  let totalEffectiveOutput = 0;
+  Object.values(state.regions).forEach(r => {
+    Object.values(r.industries).forEach(st => {
+      if (!st) return;
+      totalEffectiveOutput = scR(totalEffectiveOutput + st.effectiveOutput);
+      byIndustry[st.industry] = scR((byIndustry[st.industry] || 0) + st.effectiveOutput);
+      if (st.utilization < 0.85 && st.strength >= 20) {
+        constrainedCells.push({ regionId: r.regionId, industry: st.industry, utilization: st.utilization, constraintKind: st.constraint?.kind ?? null });
+      }
+    });
+  });
+  constrainedCells.sort((a, b) => a.utilization - b.utilization || a.regionId.localeCompare(b.regionId) || a.industry.localeCompare(b.industry));
+  const bySupply: NationalProductionSummary['bySupply'] = {};
+  Object.values(state.supplies).forEach(list => list.forEach(sp => { bySupply[sp.supply] = scR((bySupply[sp.supply] || 0) + sp.production); }));
+  return {
+    totalEffectiveOutput: scR(totalEffectiveOutput),
+    byIndustry,
+    bySupply,
+    constrainedCells: constrainedCells.slice(0, 12),
+    topProducer: { ...state.national.topProducer },
+  };
 }
 
 /** Structural validation (LAB + self-tests) — includes the core invariants E–H. */
@@ -141165,6 +141211,16 @@ export function runV101IndustriesSupplyChainsSelfTests(): V9SelfTestResult[] {
   check('sc34_zero_network', 'Strong external supplier but no deliverable network → no interregional delivery', () => {
     const s = run(W({ sectors: chainSectors, modifiers: noOtherMining, corridors: [] }).ii).state;
     return (s.flows.length === 0 && s.dependencies.length === 0 && sup(s, 'VIC', 'minerals')!.imported === 0) || `${s.flows.length} flows`;
+  });
+  check('sc36_production_constraint', 'Simultaneous input and network limits → production_constraint (not single-cause only)', () => {
+    const s = run(W({ sectors: chainSectors, modifiers: noOtherMining, corridors: directCorridors(2), nsModifiers: { VIC: { freight: -45 } } }).ii).state;
+    const m = ind(s, 'VIC', 'manufacturing')!;
+    return (m.constraint?.kind === 'production_constraint' && m.effectiveOutput < m.potentialOutput * 0.92) || JSON.stringify({ kind: m.constraint?.kind, util: m.utilization, eff: m.effectiveOutput, pot: m.potentialOutput });
+  });
+  check('sc37_production_summary', 'summarizeNationalProduction aggregates output and constrained cells', () => {
+    const s = run(W({ sectors: chainSectors, modifiers: noOtherMining, corridors: directCorridors(2), nsModifiers: { VIC: { freight: -45 } } }).ii).state;
+    const sum = summarizeNationalProduction(s)!;
+    return (sum.totalEffectiveOutput > 0 && (sum.bySupply.minerals || 0) > 0 && sum.topProducer.minerals === 'WA' && sum.constrainedCells.length > 0 && sum.constrainedCells.every(c => c.utilization < 0.85)) || JSON.stringify(sum);
   });
   check('sc35_performance', 'Eight-region industry recompute stays cheap (50 recomputes)', () => {
     const w = W({ sectors: { ...chainSectors, QLD: { mining: 40, agriculture: 60 }, SA: { energy: 60 }, ACT: { research: 60 }, NSW: { trade: 50, manufacturing: 30 } }, projects: [proj('a', 'VIC', 'advanced_manufacturing'), proj('b', 'SA', 'renewable_grid')] });
