@@ -41,3 +41,9 @@ Bundle paths (in order): `types.ts`, `policy.ts`, `grounding.ts`, `suggestion-ga
 Wire `runAgent16GuardianCoPilotSelfTests()` into LAB **System Regression**. Do **not** pipe advisory output into `executeCoPilotAction`. Keep `evaluateGuardianRiskPipeline` as the enforcement layer.
 
 Anchor: canonical V9.4 `SECTION 20PA` (Guardian & Human Co-Pilot Advisory Ops).
+
+## Scale wave round 4
+
+- **Interlock metrics:** `compositePressureIndex`, `automationReadinessScore`, `actionBurnPressure`; `buildGuardianDepthInterlockReport()`
+- **`monitor-rules-scale-wave-4.ts`** — 12 rules (**82** monitor rules total)
+- **139/139** self-tests; regenerate chunk with `npm run build:agent16-chunk`

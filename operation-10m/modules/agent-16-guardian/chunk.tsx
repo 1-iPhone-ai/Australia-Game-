@@ -76,6 +76,12 @@ export interface GuardianCoPilotMonitorSnapshot {
   guardianRiskBand: 'low' | 'elevated' | 'critical';
   copilotSpendingHeadroom: number;
   objectiveBehindSchedule: boolean;
+  liquidityStressIndex: number;
+  copilotTrustGapScore: number;
+  objectivePacePct: number | null;
+  compositePressureIndex: number;
+  automationReadinessScore: number;
+  actionBurnPressure: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -191,6 +197,12 @@ const FIELD_LABELS: Partial<Record<keyof GuardianCoPilotMonitorSnapshot, string>
   guardianRiskBand: 'Guardian risk band',
   copilotSpendingHeadroom: 'Co-Pilot spending headroom',
   objectiveBehindSchedule: 'Objective behind schedule',
+  liquidityStressIndex: 'Liquidity stress index',
+  copilotTrustGapScore: 'Co-Pilot trust gap score',
+  objectivePacePct: 'Objective pace % per turn',
+  compositePressureIndex: 'Composite advisory pressure index',
+  automationReadinessScore: 'Co-Pilot automation readiness score',
+  actionBurnPressure: 'Action burn pressure index',
 };
 
 export function formatSnapshotValue(value: unknown): string | number | boolean | null {
@@ -498,21 +510,132 @@ export function classifyGuardianRiskBand(score: number): GuardianCoPilotMonitorS
   return 'low';
 }
 
+export function computeObjectivePacePct(snapshot: GuardianCoPilotMonitorSnapshot): number | null {
+  if (!snapshot.objectiveActive || snapshot.objectiveProgressPct === null || snapshot.objectiveTurnsRemaining === null) {
+    return null;
+  }
+  if (snapshot.objectiveTurnsRemaining <= 0) return snapshot.objectiveProgressPct >= 100 ? 0 : 100;
+  return Math.round((100 - snapshot.objectiveProgressPct) / Math.max(1, snapshot.objectiveTurnsRemaining));
+}
+
+export function computeLiquidityStressIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let stress = 0;
+  if (snapshot.cash <= 0) stress += 35;
+  else if (snapshot.cash < snapshot.minCashReserve) stress += 25;
+  if (snapshot.debt > snapshot.cash) stress += 25;
+  if (snapshot.copilotSpendingHeadroom <= 0) stress += 20;
+  else if (snapshot.copilotSpendingHeadroom < snapshot.maxSpendPerAction * 0.5) stress += 10;
+  if (snapshot.maxSpendPerAction > snapshot.cash && snapshot.cash > 0) stress += 15;
+  return Math.min(100, stress);
+}
+
+export function computeCopilotTrustGapScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  if (!snapshot.copilotEnabled && !snapshot.copilotAutonomousActive) return 0;
+  let gap = 0;
+  if (snapshot.guardianRequiresConfirmation) gap += 25;
+  if (snapshot.guardianProtectionMaximum) gap += 20;
+  if (snapshot.copilotAutonomousActive) gap += 25;
+  if (snapshot.copilotHoldsControl) gap += 15;
+  if (!snapshot.guardianEnabled) gap += 30;
+  if (snapshot.guardianAutomationLikelyBlocked) gap += 15;
+  return Math.min(100, gap);
+}
+
+export function buildGuardianDepthCouplingReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.liquidityStressIndex >= 60) {
+    lines.push(`Liquidity stress index ${snapshot.liquidityStressIndex} — discretionary Co-Pilot spend is constrained`);
+  }
+  if (snapshot.copilotTrustGapScore >= 50) {
+    lines.push(`Co-Pilot / Guardian trust gap ${snapshot.copilotTrustGapScore} — align authority and protection before automation`);
+  }
+  if (snapshot.objectivePacePct !== null && snapshot.objectivePacePct > 30) {
+    lines.push(`Objective needs ~${snapshot.objectivePacePct}% progress per remaining turn (advisory estimate)`);
+  }
+  return lines.slice(0, 3);
+}
+
+export function computeCompositePressureIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  const blended =
+    snapshot.liquidityStressIndex * 0.35 +
+    snapshot.guardianRiskScore * 0.35 +
+    snapshot.copilotTrustGapScore * 0.3;
+  return Math.min(100, Math.round(blended));
+}
+
+export function computeAutomationReadinessScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  if (!snapshot.copilotEnabled && !snapshot.guardianEnabled) return 100;
+  let score = 100;
+  if (snapshot.guardianAutomationLikelyBlocked) score -= 25;
+  if (snapshot.copilotTrustGapScore >= 40) score -= Math.min(35, Math.round(snapshot.copilotTrustGapScore * 0.35));
+  if (snapshot.guardianConfirmationLikelyRequired) score -= 15;
+  if (!snapshot.guardianEnabled && snapshot.copilotHoldsControl) score -= 30;
+  if (snapshot.blockedContinueCount >= 1) score -= 10;
+  if (snapshot.liquidityStressIndex >= 50) score -= 15;
+  if (snapshot.compositePressureIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeActionBurnPressure(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let pressure = 0;
+  if (snapshot.apRemaining <= 1 && snapshot.apPerDay >= 2) pressure += 30;
+  if (snapshot.apPerDay > 0 && snapshot.actionsUsedThisTurn >= snapshot.apPerDay - 1) pressure += 20;
+  if (snapshot.maxSpendPerAction > snapshot.cash && snapshot.cash > 0) pressure += 20;
+  if (snapshot.objectiveBehindSchedule && snapshot.objectiveActive) pressure += 25;
+  if (snapshot.apRemaining > 0 && snapshot.copilotSpendingHeadroom <= 0) pressure += 15;
+  return Math.min(100, pressure);
+}
+
+export function buildGuardianDepthInterlockReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.compositePressureIndex >= 60) {
+    lines.push(
+      `Composite advisory pressure ${snapshot.compositePressureIndex} — liquidity, Guardian risk, and trust gap align`
+    );
+  }
+  if (snapshot.automationReadinessScore < 40 && snapshot.copilotEnabled) {
+    lines.push(
+      `Automation readiness ${snapshot.automationReadinessScore} — defer Co-Pilot auto-actions until posture improves`
+    );
+  }
+  if (snapshot.actionBurnPressure >= 50) {
+    lines.push(`Action burn pressure ${snapshot.actionBurnPressure} — remaining AP may not cover discretionary spend`);
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
+  const copilotSpendingHeadroom = computeCopilotSpendingHeadroom(snapshot);
   const merged: GuardianCoPilotMonitorSnapshot = {
     ...snapshot,
     guardianAutomationLikelyBlocked: posture.automationLikelyBlocked,
     guardianConfirmationLikelyRequired: posture.confirmationLikelyRequired,
     objectiveBehindSchedule,
-    copilotSpendingHeadroom: computeCopilotSpendingHeadroom(snapshot),
+    copilotSpendingHeadroom,
   };
   const guardianRiskScore = computeGuardianRiskScore(merged);
-  return {
+  const withRisk: GuardianCoPilotMonitorSnapshot = {
     ...merged,
     guardianRiskScore,
     guardianRiskBand: classifyGuardianRiskBand(guardianRiskScore),
+  };
+  const withCoupling: GuardianCoPilotMonitorSnapshot = {
+    ...withRisk,
+    liquidityStressIndex: computeLiquidityStressIndex(withRisk),
+    copilotTrustGapScore: computeCopilotTrustGapScore(withRisk),
+    objectivePacePct: computeObjectivePacePct(withRisk),
+    compositePressureIndex: 0,
+    automationReadinessScore: 100,
+    actionBurnPressure: 0,
+  };
+  const compositePressureIndex = computeCompositePressureIndex(withCoupling);
+  const withPressure: GuardianCoPilotMonitorSnapshot = { ...withCoupling, compositePressureIndex };
+  return {
+    ...withPressure,
+    automationReadinessScore: computeAutomationReadinessScore(withPressure),
+    actionBurnPressure: computeActionBurnPressure(withPressure),
   };
 }
 
@@ -562,6 +685,63 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       objectiveTurnsRemaining: 3,
     } as GuardianCoPilotMonitorSnapshot;
     return computeObjectiveBehindSchedule(snap);
+  });
+  ok('gd_liquidity_stress', () => {
+    const snap = {
+      cash: 50,
+      minCashReserve: 500,
+      debt: 800,
+      maxSpendPerAction: 2000,
+      copilotSpendingHeadroom: 0,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeLiquidityStressIndex(snap) >= 60;
+  });
+  ok('gd_trust_gap', () => {
+    const snap = {
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      guardianEnabled: true,
+      guardianAutomationLikelyBlocked: true,
+      copilotHoldsControl: false,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeCopilotTrustGapScore(snap) >= 50;
+  });
+  ok('gd_composite_pressure', () => {
+    const snap = {
+      liquidityStressIndex: 70,
+      guardianRiskScore: 65,
+      copilotTrustGapScore: 55,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeCompositePressureIndex(snap) >= 60;
+  });
+  ok('gd_automation_readiness', () => {
+    const snap = {
+      copilotEnabled: true,
+      guardianEnabled: true,
+      guardianAutomationLikelyBlocked: true,
+      copilotTrustGapScore: 60,
+      guardianConfirmationLikelyRequired: true,
+      copilotHoldsControl: false,
+      blockedContinueCount: 2,
+      liquidityStressIndex: 55,
+      compositePressureIndex: 58,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAutomationReadinessScore(snap) < 40;
+  });
+  ok('gd_action_burn', () => {
+    const snap = {
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      maxSpendPerAction: 5000,
+      cash: 400,
+      objectiveBehindSchedule: true,
+      objectiveActive: true,
+      copilotSpendingHeadroom: 0,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeActionBurnPressure(snap) >= 50;
   });
   return out;
 }
@@ -1012,6 +1192,270 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_2: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_2_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_2.length;
 
 
+// --- source: monitor-rules-scale-wave-3.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_3: AdvisoryMonitorRule[] = [
+  {
+    id: 'liquidity_stress_high',
+    category: 'liquidity',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Liquidity Stress High',
+    detailTemplate: 'Composite liquidity stress index is in the high band',
+    evidenceFields: ['liquidityStressIndex', 'cash', 'debt'],
+    evaluate: s => s.liquidityStressIndex >= 60,
+  },
+  {
+    id: 'liquidity_stress_elevated',
+    category: 'liquidity',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Liquidity Stress Elevated',
+    detailTemplate: 'Liquidity stress index is elevated — watch discretionary spend',
+    evidenceFields: ['liquidityStressIndex', 'copilotSpendingHeadroom'],
+    evaluate: s => s.liquidityStressIndex >= 40 && s.liquidityStressIndex < 60,
+  },
+  {
+    id: 'copilot_trust_gap_wide',
+    category: 'copilot',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Co-Pilot Trust Gap Wide',
+    detailTemplate: 'Co-Pilot automation and Guardian protection levels are misaligned',
+    evidenceFields: ['copilotTrustGapScore', 'copilotAuthorityMode', 'guardianProtectionLevel'],
+    evaluate: s => s.copilotTrustGapScore >= 50,
+    followUp: 'Advisory only — adjust authority or Guardian response mode manually.',
+  },
+  {
+    id: 'objective_pace_steep',
+    category: 'objective',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Objective Pace Steep',
+    detailTemplate: 'Required objective pace per turn exceeds 30%',
+    evidenceFields: ['objectivePacePct', 'objectiveTurnsRemaining', 'objectiveProgressPct'],
+    evaluate: s => s.objectivePacePct !== null && s.objectivePacePct > 30,
+  },
+  {
+    id: 'rival_and_objective_pressure',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival And Objective Pressure',
+    detailTemplate: 'Rival victory watch band while primary objective is behind schedule',
+    evidenceFields: ['rivalVictoryProgressPct', 'objectiveBehindSchedule', 'victoryThresholdPct'],
+    evaluate: s => {
+      if (s.rivalVictoryProgressPct === null) return false;
+      const watch = s.victoryThresholdPct * 0.75;
+      return s.rivalVictoryProgressPct >= watch && s.objectiveBehindSchedule;
+    },
+  },
+  {
+    id: 'guardian_elevated_takeover_active',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Elevated Risk During Takeover',
+    detailTemplate: 'Guardian risk band elevated or critical during an active takeover session',
+    evidenceFields: ['guardianRiskBand', 'takeoverSessionActive', 'guardianRiskScore'],
+    evaluate: s =>
+      s.takeoverSessionActive && s.guardianEnabled && (s.guardianRiskBand === 'elevated' || s.guardianRiskBand === 'critical'),
+  },
+  {
+    id: 'copilot_blocked_elevated_risk',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Blocked Continues With Elevated Risk',
+    detailTemplate: 'Co-Pilot blocked continues with elevated Guardian risk score',
+    evidenceFields: ['blockedContinueCount', 'guardianRiskScore'],
+    evaluate: s => s.blockedContinueCount >= 1 && s.guardianRiskScore >= 40,
+  },
+  {
+    id: 'contracts_and_liquidity_stress',
+    category: 'contracts',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Contracts Under Liquidity Stress',
+    detailTemplate: 'Expiring contracts while liquidity stress is elevated',
+    evidenceFields: ['expiringContractCount', 'liquidityStressIndex'],
+    evaluate: s => s.expiringContractCount > 0 && s.liquidityStressIndex >= 40,
+  },
+  {
+    id: 'guardian_adaptive_response_mode',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'low',
+    title: 'Guardian Adaptive Response',
+    detailTemplate: 'Guardian adaptive response mode is active',
+    evidenceFields: ['guardianResponseMode', 'guardianEnabled'],
+    evaluate: s => s.guardianEnabled && s.guardianResponseMode === 'adaptive',
+  },
+  {
+    id: 'ap_bank_critical_guardian',
+    category: 'actions',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Ap Bank With Critical Guardian Risk',
+    detailTemplate: 'AP remain but Guardian risk is critical — spend deliberately',
+    evidenceFields: ['apRemaining', 'guardianRiskBand'],
+    evaluate: s => s.apRemaining >= 2 && s.guardianRiskBand === 'critical',
+  },
+  {
+    id: 'headroom_expiring_contracts',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Tight Headroom Expiring Contracts',
+    detailTemplate: 'Low spending headroom with contracts expiring soon',
+    evidenceFields: ['copilotSpendingHeadroom', 'expiringContractCount', 'maxSpendPerAction'],
+    evaluate: s =>
+      s.expiringContractCount > 0 && s.copilotSpendingHeadroom > 0 && s.copilotSpendingHeadroom < s.maxSpendPerAction,
+  },
+  {
+    id: 'guardian_replay_elevated_risk',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Replay Log With Elevated Risk',
+    detailTemplate: 'Guardian replay history present while risk band is elevated',
+    evidenceFields: ['guardianReplayCount', 'guardianRiskBand'],
+    evaluate: s => s.guardianReplayCount > 10 && s.guardianRiskBand === 'elevated',
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_3_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_3.length;
+
+
+// --- source: monitor-rules-scale-wave-4.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_4: AdvisoryMonitorRule[] = [
+  {
+    id: 'composite_pressure_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Composite Advisory Pressure Critical',
+    detailTemplate: 'Liquidity, Guardian risk, and trust-gap signals combine in the critical pressure band',
+    evidenceFields: ['compositePressureIndex', 'guardianRiskScore', 'liquidityStressIndex'],
+    evaluate: s => s.compositePressureIndex >= 70,
+  },
+  {
+    id: 'composite_pressure_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Composite Advisory Pressure Elevated',
+    detailTemplate: 'Multiple advisory subsystems report elevated composite pressure',
+    evidenceFields: ['compositePressureIndex', 'copilotTrustGapScore'],
+    evaluate: s => s.compositePressureIndex >= 45 && s.compositePressureIndex < 70,
+  },
+  {
+    id: 'automation_readiness_low',
+    category: 'copilot',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Automation Readiness Low',
+    detailTemplate: 'Co-Pilot automation readiness score is in the low band',
+    evidenceFields: ['automationReadinessScore', 'copilotAuthorityMode', 'guardianProtectionLevel'],
+    evaluate: s => s.copilotEnabled && s.automationReadinessScore < 35,
+    followUp: 'Advisory only — tighten Guardian posture or reduce Co-Pilot autonomy manually.',
+  },
+  {
+    id: 'automation_readiness_moderate_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Moderate Readiness While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot session with only moderate automation readiness',
+    evidenceFields: ['automationReadinessScore', 'copilotAutonomousActive'],
+    evaluate: s => s.copilotAutonomousActive && s.automationReadinessScore >= 35 && s.automationReadinessScore < 55,
+  },
+  {
+    id: 'action_burn_pressure_high',
+    category: 'actions',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Action Burn Pressure High',
+    detailTemplate: 'Remaining AP and spend posture indicate high action burn pressure',
+    evidenceFields: ['actionBurnPressure', 'apRemaining', 'maxSpendPerAction'],
+    evaluate: s => s.actionBurnPressure >= 60,
+  },
+  {
+    id: 'ap_bank_composite_pressure',
+    category: 'actions',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Banked AP Under Composite Pressure',
+    detailTemplate: 'Multiple AP remain but composite advisory pressure is elevated',
+    evidenceFields: ['apRemaining', 'compositePressureIndex'],
+    evaluate: s => s.apRemaining >= 2 && s.compositePressureIndex >= 50,
+  },
+  {
+    id: 'team_plan_composite_pressure',
+    category: 'team',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Team Plan Under Composite Pressure',
+    detailTemplate: 'Pending team plan while composite advisory pressure is elevated',
+    evidenceFields: ['teamPlanPending', 'compositePressureIndex'],
+    evaluate: s => s.teamPlanPending && s.compositePressureIndex >= 45,
+  },
+  {
+    id: 'takeover_low_automation_readiness',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Takeover With Low Automation Readiness',
+    detailTemplate: 'Active takeover session while automation readiness is low',
+    evidenceFields: ['takeoverSessionActive', 'automationReadinessScore', 'copilotHoldsControl'],
+    evaluate: s => s.takeoverSessionActive && s.automationReadinessScore < 40,
+  },
+  {
+    id: 'objective_composite_pressure',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Objective Under Composite Pressure',
+    detailTemplate: 'Primary objective behind schedule with elevated composite pressure',
+    evidenceFields: ['objectiveActive', 'objectiveBehindSchedule', 'compositePressureIndex'],
+    evaluate: s => s.objectiveActive && s.objectiveBehindSchedule && s.compositePressureIndex >= 55,
+  },
+  {
+    id: 'guardian_interlock_critical_liquidity',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Interlock Critical Liquidity',
+    detailTemplate: 'Critical Guardian risk band with elevated liquidity stress',
+    evidenceFields: ['guardianRiskBand', 'liquidityStressIndex', 'compositePressureIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.liquidityStressIndex >= 50,
+  },
+  {
+    id: 'copilot_auto_low_readiness',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Co-Pilot Low Readiness',
+    detailTemplate: 'Autonomous Co-Pilot active while automation readiness remains low',
+    evidenceFields: ['copilotAutonomousActive', 'automationReadinessScore', 'guardianAutomationLikelyBlocked'],
+    evaluate: s => s.copilotAutonomousActive && s.automationReadinessScore < 45,
+  },
+  {
+    id: 'contracts_composite_pressure',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Expiring Contracts Under Composite Pressure',
+    detailTemplate: 'Contracts expiring soon while composite advisory pressure is elevated',
+    evidenceFields: ['expiringContractCount', 'compositePressureIndex', 'copilotSpendingHeadroom'],
+    evaluate: s => s.expiringContractCount > 0 && s.compositePressureIndex >= 50,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_4_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_4.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -1243,6 +1687,8 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_EXPANSION,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_2,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_3,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_4,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -1565,6 +2011,12 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     guardianRiskBand: 'low',
     copilotSpendingHeadroom: 0,
     objectiveBehindSchedule: false,
+    liquidityStressIndex: 0,
+    copilotTrustGapScore: 0,
+    objectivePacePct: null,
+    compositePressureIndex: 0,
+    automationReadinessScore: 100,
+    actionBurnPressure: 0,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -1627,6 +2079,12 @@ export function createAdvisoryOpsFixtureSnapshot(
     guardianRiskBand: 'low',
     copilotSpendingHeadroom: 950,
     objectiveBehindSchedule: false,
+    liquidityStressIndex: 0,
+    copilotTrustGapScore: 0,
+    objectivePacePct: null,
+    compositePressureIndex: 0,
+    automationReadinessScore: 100,
+    actionBurnPressure: 0,
     ...overrides,
   };
   if (snap.objectiveTargetRegion && !snap.objectiveRegion) {
@@ -1970,6 +2428,104 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['rival_victory_watch_band'],
     notes: 'Rival between 75% and 85% of threshold',
   },
+  {
+    id: 'sc_liquidity_stress_high',
+    category: 'liquidity',
+    snapshot: { cash: 40, minCashReserve: 500, debt: 900, maxSpendPerAction: 5000 },
+    expectRuleIds: ['liquidity_stress_high', 'debt_exceeds_cash'],
+    notes: 'High composite liquidity stress',
+  },
+  {
+    id: 'sc_copilot_trust_gap',
+    category: 'copilot',
+    snapshot: {
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotAuthorityMode: 'autonomous',
+      guardianEnabled: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      guardianProtectionLevel: 'maximum_protection',
+      guardianResponseMode: 'require_confirmation',
+    },
+    expectRuleIds: ['copilot_trust_gap_wide'],
+    notes: 'Wide automation vs protection gap',
+  },
+  {
+    id: 'sc_rival_objective_pressure',
+    category: 'objective',
+    snapshot: {
+      rivalVictoryProgressPct: 62,
+      victoryThresholdPct: 80,
+      objectiveActive: true,
+      objectiveProgressPct: 18,
+      objectiveTurnsRemaining: 2,
+    },
+    expectRuleIds: ['rival_and_objective_pressure', 'objective_behind_schedule'],
+    notes: 'Rival watch band plus objective behind',
+  },
+  {
+    id: 'sc_objective_pace_steep',
+    category: 'objective',
+    snapshot: { objectiveActive: true, objectiveProgressPct: 10, objectiveTurnsRemaining: 2 },
+    expectRuleIds: ['objective_pace_steep', 'objective_behind_schedule'],
+    notes: 'Steep required pace per turn',
+  },
+  {
+    id: 'sc_composite_pressure_critical',
+    category: 'guardian',
+    snapshot: {
+      cash: 20,
+      minCashReserve: 500,
+      debt: 1200,
+      maxSpendPerAction: 8000,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      guardianProtectionLevel: 'maximum_protection',
+      guardianResponseMode: 'require_confirmation',
+      blockedContinueCount: 2,
+    },
+    expectRuleIds: ['composite_pressure_critical', 'liquidity_stress_high'],
+    notes: 'Critical composite pressure from stacked liquidity and trust signals',
+  },
+  {
+    id: 'sc_automation_readiness_low',
+    category: 'copilot',
+    snapshot: {
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianEnabled: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      guardianProtectionLevel: 'maximum_protection',
+      guardianResponseMode: 'require_confirmation',
+      blockedContinueCount: 2,
+      cash: 50,
+      minCashReserve: 500,
+      debt: 700,
+    },
+    expectRuleIds: ['automation_readiness_low', 'copilot_auto_low_readiness'],
+    notes: 'Low automation readiness under autonomous session',
+  },
+  {
+    id: 'sc_action_burn_pressure',
+    category: 'actions',
+    snapshot: {
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      cash: 300,
+      maxSpendPerAction: 6000,
+      minCashReserve: 400,
+      objectiveActive: true,
+      objectiveProgressPct: 15,
+      objectiveTurnsRemaining: 1,
+    },
+    expectRuleIds: ['action_burn_pressure_high', 'objective_behind_schedule'],
+    notes: 'High AP burn pressure near objective deadline',
+  },
 ];
 
 
@@ -2145,22 +2701,60 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 2 scale wave brings monitor catalog to 58+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 58;
+  check(results, 'a16_expansion_count', 'Round 4 scale wave brings monitor catalog to 82+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 82;
   });
 
-  check(results, 'a16_risk_score_enrich', 'Enriched snapshot exposes Guardian risk score band', () => {
+  check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
     const snap = createAdvisoryOpsFixtureSnapshot({
-      guardianEnabled: true,
-      cash: 10,
-      minCashReserve: 500,
+      cash: 30,
+      minCashReserve: 400,
+      debt: 600,
+      maxSpendPerAction: 8000,
+      copilotEnabled: true,
       copilotAutonomousActive: true,
       guardianRequiresConfirmation: true,
       objectiveActive: true,
-      objectiveProgressPct: 10,
+      objectiveProgressPct: 12,
       objectiveTurnsRemaining: 2,
     });
-    return snap.guardianRiskScore >= 40 && snap.guardianRiskBand !== 'low';
+    const report = buildGuardianDepthCouplingReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round4_metrics', 'Round 4 interlock metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 40,
+      minCashReserve: 500,
+      debt: 800,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+    });
+    return snap.compositePressureIndex >= 40 && snap.automationReadinessScore <= 100 && snap.actionBurnPressure >= 0;
+  });
+
+  check(results, 'a16_interlock_report', 'Guardian depth interlock report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 30,
+      minCashReserve: 500,
+      debt: 900,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      copilotEnabled: true,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+    });
+    const report = buildGuardianDepthInterlockReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round3_metrics', 'Round 3 depth metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({ cash: 50, minCashReserve: 400, debt: 700 });
+    return snap.liquidityStressIndex >= 40 && snap.copilotSpendingHeadroom >= 0;
   });
 
   check(results, 'a16_depth_advice_lines', 'Guardian depth advice lines are non-executable strings', () => {

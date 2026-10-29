@@ -190,6 +190,55 @@ export function buildGuardianDepthCouplingReport(snapshot: GuardianCoPilotMonito
   return lines.slice(0, 3);
 }
 
+export function computeCompositePressureIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  const blended =
+    snapshot.liquidityStressIndex * 0.35 +
+    snapshot.guardianRiskScore * 0.35 +
+    snapshot.copilotTrustGapScore * 0.3;
+  return Math.min(100, Math.round(blended));
+}
+
+export function computeAutomationReadinessScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  if (!snapshot.copilotEnabled && !snapshot.guardianEnabled) return 100;
+  let score = 100;
+  if (snapshot.guardianAutomationLikelyBlocked) score -= 25;
+  if (snapshot.copilotTrustGapScore >= 40) score -= Math.min(35, Math.round(snapshot.copilotTrustGapScore * 0.35));
+  if (snapshot.guardianConfirmationLikelyRequired) score -= 15;
+  if (!snapshot.guardianEnabled && snapshot.copilotHoldsControl) score -= 30;
+  if (snapshot.blockedContinueCount >= 1) score -= 10;
+  if (snapshot.liquidityStressIndex >= 50) score -= 15;
+  if (snapshot.compositePressureIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeActionBurnPressure(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let pressure = 0;
+  if (snapshot.apRemaining <= 1 && snapshot.apPerDay >= 2) pressure += 30;
+  if (snapshot.apPerDay > 0 && snapshot.actionsUsedThisTurn >= snapshot.apPerDay - 1) pressure += 20;
+  if (snapshot.maxSpendPerAction > snapshot.cash && snapshot.cash > 0) pressure += 20;
+  if (snapshot.objectiveBehindSchedule && snapshot.objectiveActive) pressure += 25;
+  if (snapshot.apRemaining > 0 && snapshot.copilotSpendingHeadroom <= 0) pressure += 15;
+  return Math.min(100, pressure);
+}
+
+export function buildGuardianDepthInterlockReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.compositePressureIndex >= 60) {
+    lines.push(
+      `Composite advisory pressure ${snapshot.compositePressureIndex} — liquidity, Guardian risk, and trust gap align`
+    );
+  }
+  if (snapshot.automationReadinessScore < 40 && snapshot.copilotEnabled) {
+    lines.push(
+      `Automation readiness ${snapshot.automationReadinessScore} — defer Co-Pilot auto-actions until posture improves`
+    );
+  }
+  if (snapshot.actionBurnPressure >= 50) {
+    lines.push(`Action burn pressure ${snapshot.actionBurnPressure} — remaining AP may not cover discretionary spend`);
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -207,11 +256,21 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
     guardianRiskScore,
     guardianRiskBand: classifyGuardianRiskBand(guardianRiskScore),
   };
-  return {
+  const withCoupling: GuardianCoPilotMonitorSnapshot = {
     ...withRisk,
     liquidityStressIndex: computeLiquidityStressIndex(withRisk),
     copilotTrustGapScore: computeCopilotTrustGapScore(withRisk),
     objectivePacePct: computeObjectivePacePct(withRisk),
+    compositePressureIndex: 0,
+    automationReadinessScore: 100,
+    actionBurnPressure: 0,
+  };
+  const compositePressureIndex = computeCompositePressureIndex(withCoupling);
+  const withPressure: GuardianCoPilotMonitorSnapshot = { ...withCoupling, compositePressureIndex };
+  return {
+    ...withPressure,
+    automationReadinessScore: computeAutomationReadinessScore(withPressure),
+    actionBurnPressure: computeActionBurnPressure(withPressure),
   };
 }
 
@@ -283,6 +342,41 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       copilotHoldsControl: false,
     } as GuardianCoPilotMonitorSnapshot;
     return computeCopilotTrustGapScore(snap) >= 50;
+  });
+  ok('gd_composite_pressure', () => {
+    const snap = {
+      liquidityStressIndex: 70,
+      guardianRiskScore: 65,
+      copilotTrustGapScore: 55,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeCompositePressureIndex(snap) >= 60;
+  });
+  ok('gd_automation_readiness', () => {
+    const snap = {
+      copilotEnabled: true,
+      guardianEnabled: true,
+      guardianAutomationLikelyBlocked: true,
+      copilotTrustGapScore: 60,
+      guardianConfirmationLikelyRequired: true,
+      copilotHoldsControl: false,
+      blockedContinueCount: 2,
+      liquidityStressIndex: 55,
+      compositePressureIndex: 58,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAutomationReadinessScore(snap) < 40;
+  });
+  ok('gd_action_burn', () => {
+    const snap = {
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      maxSpendPerAction: 5000,
+      cash: 400,
+      objectiveBehindSchedule: true,
+      objectiveActive: true,
+      copilotSpendingHeadroom: 0,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeActionBurnPressure(snap) >= 50;
   });
   return out;
 }

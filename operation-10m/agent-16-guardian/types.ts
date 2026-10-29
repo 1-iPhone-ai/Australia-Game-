@@ -75,6 +75,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   liquidityStressIndex: number;
   copilotTrustGapScore: number;
   objectivePacePct: number | null;
+  compositePressureIndex: number;
+  automationReadinessScore: number;
+  actionBurnPressure: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {

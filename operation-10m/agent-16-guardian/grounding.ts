@@ -37,6 +37,9 @@ const FIELD_LABELS: Partial<Record<keyof GuardianCoPilotMonitorSnapshot, string>
   liquidityStressIndex: 'Liquidity stress index',
   copilotTrustGapScore: 'Co-Pilot trust gap score',
   objectivePacePct: 'Objective pace % per turn',
+  compositePressureIndex: 'Composite advisory pressure index',
+  automationReadinessScore: 'Co-Pilot automation readiness score',
+  actionBurnPressure: 'Action burn pressure index',
 };
 
 export function formatSnapshotValue(value: unknown): string | number | boolean | null {
