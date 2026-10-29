@@ -397,8 +397,14 @@ export type WildlifeRescueAirliftStagingPolicy = 'baseline' | 'surge';
 
 export type UrbanEvFreightChargingLogisticsPolicy = 'baseline' | 'expand';
 
+export type MoltenSaltSolarExportPolicy = 'baseline' | 'accelerate';
+
+export type AlpineSkiResortSupplyStagingPolicy = 'baseline' | 'surge';
+
+export type RailAutonomousShuntingLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/41';
+  schemaVersion: 'agent12/42';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -692,6 +698,14 @@ export interface TransportInfrastructureState {
   urbanEvFreightChargingLogisticsShare: number;
   nationalUrbanEvFreightChargingLogisticsThroughputIndex: number;
   urbanEvFreightChargingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalMoltenSaltSolarExportIndex: number;
+  moltenSaltSolarExportByRegion: Record<AuRegionCode, number>;
+  alpineSkiResortSupplyStagingShare: number;
+  nationalAlpineSkiResortSupplyStagingIndex: number;
+  alpineSkiResortSupplyStagingByRegion: Record<AuRegionCode, number>;
+  railAutonomousShuntingLogisticsShare: number;
+  nationalRailAutonomousShuntingLogisticsThroughputIndex: number;
+  railAutonomousShuntingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -805,6 +819,9 @@ export interface TransportInfrastructureOptions {
   desalinationBrineExportPolicy?: DesalinationBrineExportPolicy;
   wildlifeRescueAirliftStagingPolicy?: WildlifeRescueAirliftStagingPolicy;
   urbanEvFreightChargingLogisticsPolicy?: UrbanEvFreightChargingLogisticsPolicy;
+  moltenSaltSolarExportPolicy?: MoltenSaltSolarExportPolicy;
+  alpineSkiResortSupplyStagingPolicy?: AlpineSkiResortSupplyStagingPolicy;
+  railAutonomousShuntingLogisticsPolicy?: RailAutonomousShuntingLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -2544,6 +2561,48 @@ export const TRANSPORT_CORRIDORS_ROUND40: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round41.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND41: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_sa_nsw_molten_salt_solar',
+    name: 'SA–NSW Molten Salt Solar',
+    networkKind: 'trade',
+    regionSequence: ['SA', 'NSW'],
+    requiredTagsByRegion: {
+      SA: ['molten_salt_solar_export', 'csp_heat_rail_feed', 'thermal_renewable_export'],
+      NSW: ['molten_salt_solar_export', 'csp_heat_rail_feed', 'thermal_renewable_export'],
+    },
+    productivitySynergyPoints: 6.5,
+    logisticsRelief: 0.042,
+  },
+  {
+    id: 'corr_vic_nsw_alpine_ski_resupply',
+    name: 'VIC–NSW Alpine Ski Resupply',
+    networkKind: 'mobility',
+    regionSequence: ['VIC', 'NSW'],
+    requiredTagsByRegion: {
+      VIC: ['alpine_ski_resort_supply', 'snowfield_logistics_staging', 'mountain_resort_freight'],
+      NSW: ['alpine_ski_resort_supply', 'snowfield_logistics_staging', 'mountain_resort_freight'],
+    },
+    productivitySynergyPoints: 6.3,
+    logisticsRelief: 0.036,
+  },
+  {
+    id: 'corr_nsw_qld_rail_autonomous_shunting',
+    name: 'NSW–QLD Rail Autonomous Shunting',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'QLD'],
+    requiredTagsByRegion: {
+      NSW: ['rail_autonomous_shunting', 'yard_robot_sorting', 'automated_wagon_logistics'],
+      QLD: ['rail_autonomous_shunting', 'yard_robot_sorting', 'automated_wagon_logistics'],
+    },
+    productivitySynergyPoints: 6.2,
+    logisticsRelief: 0.038,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -2731,6 +2790,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND38,
   ...TRANSPORT_CORRIDORS_ROUND39,
   ...TRANSPORT_CORRIDORS_ROUND40,
+  ...TRANSPORT_CORRIDORS_ROUND41,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -5003,6 +5063,62 @@ export const TRANSPORT_SCENARIOS_ROUND40: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round41.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND41: TransportStressScenario[] = [
+  {
+    id: 'scn_sa_csp_export_surge',
+    label: 'SA CSP Export Surge',
+    description: 'Molten salt build overloads Augusta export berths.',
+    targetRegions: ['SA', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.29,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_nsw_thermal_feed_delay',
+    label: 'NSW Thermal Feed Delay',
+    description: 'Heat delays Broken Hill CSP staging.',
+    targetRegions: ['NSW', 'SA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'road'],
+  },
+  {
+    id: 'scn_vic_ski_season_resupply',
+    label: 'Victoria Ski Season Resupply',
+    description: 'Opening week strains Buller resort staging.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.3,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_nsw_shunt_robot_peak',
+    label: 'NSW Shunt Robot Peak',
+    description: 'Intermodal peak loads Enfield shunt yard.',
+    targetRegions: ['NSW', 'QLD'],
+    networkKind: 'freight',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'rail'],
+  },
+  {
+    id: 'scn_qld_wagon_sort_backlog',
+    label: 'Queensland Wagon Sort Backlog',
+    description: 'Robot shunting backlog at Fisherman Islands.',
+    targetRegions: ['QLD', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -5204,6 +5320,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND38,
   ...TRANSPORT_SCENARIOS_ROUND39,
   ...TRANSPORT_SCENARIOS_ROUND40,
+  ...TRANSPORT_SCENARIOS_ROUND41,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -15062,6 +15179,233 @@ export const SCALE_WAVE_ROUND40_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round41-assets.ts ---
+
+export const ROUND41_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_sa_port_augusta_csp_haul',
+    category: 'road',
+    name: 'Port Augusta CSP Haul',
+    description: 'SA molten salt solar export staging road.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NSW'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['molten_salt_solar_export', 'csp_heat_rail_feed', 'thermal_renewable_export'],
+    laneKilometres: 27,
+    designSpeedKmh: 84,
+    freightShare: 0.35,
+    urbanShare: 0.08,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_broken_hill_csp_feed',
+    category: 'road',
+    name: 'Broken Hill CSP Feed',
+    description: 'NSW thermal renewable export connector.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'SA'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['trade'],
+    tags: ['molten_salt_solar_export', 'csp_heat_rail_feed', 'thermal_renewable_export'],
+    laneKilometres: 24,
+    designSpeedKmh: 81,
+    freightShare: 0.31,
+    urbanShare: 0.1,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_mount_buller_resort_access',
+    category: 'road',
+    name: 'Mount Buller Resort Access',
+    description: 'VIC snowfield logistics staging road.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['alpine_ski_resort_supply', 'snowfield_logistics_staging', 'mountain_resort_freight'],
+    laneKilometres: 20,
+    designSpeedKmh: 72,
+    freightShare: 0.14,
+    urbanShare: 0.18,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_thredbo_resort_staging',
+    category: 'road',
+    name: 'Thredbo Resort Staging',
+    description: 'NSW mountain resort freight connector.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['mobility'],
+    tags: ['alpine_ski_resort_supply', 'snowfield_logistics_staging', 'mountain_resort_freight'],
+    laneKilometres: 19,
+    designSpeedKmh: 70,
+    freightShare: 0.13,
+    urbanShare: 0.17,
+    tollRoad: false,
+  },
+];
+
+export const ROUND41_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_sa_port_augusta_csp_rail',
+    category: 'rail',
+    name: 'Port Augusta CSP Rail',
+    description: 'SA molten salt heat rail export feed.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NSW'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['molten_salt_solar_export', 'csp_heat_rail_feed', 'thermal_renewable_export'],
+    trackKilometres: 42,
+    dualTrackShare: 0.48,
+    electrifiedShare: 0.59,
+    designFreightTonnesPerYear: 4_100_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nsw_broken_hill_csp_link',
+    category: 'rail',
+    name: 'Broken Hill CSP Link',
+    description: 'NSW thermal export rail handoff.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'SA'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['trade'],
+    tags: ['molten_salt_solar_export', 'csp_heat_rail_feed', 'thermal_renewable_export'],
+    trackKilometres: 38,
+    dualTrackShare: 0.5,
+    electrifiedShare: 0.54,
+    designFreightTonnesPerYear: 3_200_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_nsw_acacia_ridge_shunt_rail',
+    category: 'rail',
+    name: 'Acacia Ridge Shunt Rail',
+    description: 'NSW–QLD autonomous wagon logistics feed.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['freight'],
+    tags: ['rail_autonomous_shunting', 'yard_robot_sorting', 'automated_wagon_logistics'],
+    trackKilometres: 34,
+    dualTrackShare: 0.56,
+    electrifiedShare: 0.44,
+    designFreightTonnesPerYear: 3_400_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND41_PORTS: PortAsset[] = [
+  {
+    id: 'port_sa_port_augusta_csp_export',
+    category: 'port',
+    name: 'Port Augusta CSP Export',
+    description: 'SA molten salt solar export port.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NSW'],
+    baseProductivityPoints: 5.9,
+    strategicNetworks: ['trade'],
+    tags: ['molten_salt_solar_export', 'csp_heat_rail_feed', 'thermal_renewable_export'],
+    berthCount: 3,
+    maxDraftMetres: 12.8,
+    teuCapacityPerYear: 112_000,
+    automationLevel: 2,
+    bulkShare: 0.39,
+  },
+  {
+    id: 'port_vic_geelong_alpine_resupply',
+    category: 'port',
+    name: 'Geelong Alpine Resupply',
+    description: 'Victorian mountain resort logistics port.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['alpine_ski_resort_supply', 'snowfield_logistics_staging', 'mountain_resort_freight'],
+    berthCount: 2,
+    maxDraftMetres: 11.4,
+    teuCapacityPerYear: 92_000,
+    automationLevel: 1,
+    bulkShare: 0.12,
+  },
+  {
+    id: 'port_qld_fisherman_shunt_export',
+    category: 'port',
+    name: 'Fisherman Islands Shunt Export',
+    description: 'Queensland automated wagon logistics port.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.7,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['rail_autonomous_shunting', 'yard_robot_sorting', 'automated_wagon_logistics'],
+    berthCount: 3,
+    maxDraftMetres: 12.6,
+    teuCapacityPerYear: 218_000,
+    automationLevel: 3,
+    bulkShare: 0.09,
+  },
+];
+
+export const ROUND41_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_sa_whyalla_csp_stores',
+    category: 'logistics',
+    name: 'Whyalla CSP Stores',
+    description: 'SA thermal renewable export yard.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NSW'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['trade'],
+    tags: ['molten_salt_solar_export', 'csp_heat_rail_feed', 'thermal_renewable_export'],
+    warehouseSqm: 46_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 36,
+  },
+  {
+    id: 'log_nsw_jindabyne_ski_stores',
+    category: 'logistics',
+    name: 'Jindabyne Ski Stores',
+    description: 'NSW snowfield logistics consolidation.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['alpine_ski_resort_supply', 'snowfield_logistics_staging', 'mountain_resort_freight'],
+    warehouseSqm: 24_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 48,
+  },
+  {
+    id: 'log_nsw_enfield_shunt_yard',
+    category: 'logistics',
+    name: 'Enfield Shunt Yard',
+    description: 'NSW yard robot sorting consolidation.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['freight'],
+    tags: ['rail_autonomous_shunting', 'yard_robot_sorting', 'automated_wagon_logistics'],
+    warehouseSqm: 60_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 62,
+  },
+];
+
+export const SCALE_WAVE_ROUND41_ASSETS = [
+  ...ROUND41_ROADS,
+  ...ROUND41_RAIL,
+  ...ROUND41_PORTS,
+  ...ROUND41_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -15110,6 +15454,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND38_ASSETS,
     ...SCALE_WAVE_ROUND39_ASSETS,
     ...SCALE_WAVE_ROUND40_ASSETS,
+    ...SCALE_WAVE_ROUND41_ASSETS,
   ];
 }
 
@@ -17383,6 +17728,67 @@ export function desalinationBrineExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.033 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.037 + policyBoost, 0.93, 1.09);
+}
+
+
+// --- source: network/molten-salt-solar-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type MoltenSaltSolarExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 molten salt solar export throughput by region. */
+export function computeMoltenSaltSolarExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) =>
+        t === 'molten_salt_solar_export' ||
+        t === 'csp_heat_rail_feed' ||
+        t === 'thermal_renewable_export',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.98 + asset.maxDraftMetres * 0.36;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 70_000 + asset.intermodalLinks.length * 0.7;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 470;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 8_800_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalMoltenSaltSolarExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.48 + max * 0.52, 5, 73) * 10) / 10;
+}
+
+export function moltenSaltSolarExportProductivityMultiplier(
+  index: number,
+  policy: MoltenSaltSolarExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.035 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.038 + policyBoost, 0.93, 1.1);
 }
 
 
@@ -20346,6 +20752,96 @@ export function wildlifeRescueAirliftStagingProductivityMultiplier(
 ): number {
   const bias = policy === 'surge' ? 1.017 : 1;
   return (1 + (share - 0.046) * 0.022) * bias;
+}
+
+
+// --- source: operations/alpine-ski-resort-supply-staging-index.ts ---
+  AU_REGION_CODES,
+  type AlpineSkiResortSupplyStagingPolicy,
+  type AuRegionCode,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 alpine ski resort supply staging readiness by region. */
+export function computeAlpineSkiResortSupplyStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'alpine_ski_resort_supply' ||
+          t === 'snowfield_logistics_staging' ||
+          t === 'mountain_resort_freight',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 64_000 + (asset.coldChainCapable ? 1.25 : 0.74);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 440;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.9;
+    }
+    if (asset.category === 'rail' && 'passengerCapable' in asset && asset.passengerCapable) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 270;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.034 - stress * 0.021), 5, 75) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalAlpineSkiResortSupplyStagingIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.54 + max * 0.46, 6, 73) * 10) / 10;
+}
+
+export function computeAlpineSkiResortSupplyStagingShare(
+  operationalAssets: TransportAsset[],
+  policy: AlpineSkiResortSupplyStagingPolicy = 'baseline',
+): number {
+  let skiUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('alpine_ski_resort_supply') || asset.tags.includes('mountain_resort_freight')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 58_000;
+        skiUnits += (asset.warehouseSqm / 58_000) * 0.51;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 405;
+        skiUnits += (asset.laneKilometres / 405) * 0.45;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.034;
+  const policyBoost = policy === 'surge' ? 0.024 : 0;
+  return Math.round(clamp(skiUnits / totalUnits + policyBoost, 0.033, 0.22) * 1000) / 1000;
+}
+
+export function alpineSkiResortSupplyStagingProductivityMultiplier(
+  share: number,
+  policy: AlpineSkiResortSupplyStagingPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.016 : 1;
+  return (1 + (share - 0.044) * 0.021) * bias;
 }
 
 
@@ -23558,6 +24054,101 @@ export function nationalUrbanEvFreightChargingLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/rail-autonomous-shunting-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RailAutonomousShuntingLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of rail yard logistics supporting autonomous shunting. */
+export function computeRailAutonomousShuntingLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: RailAutonomousShuntingLogisticsPolicy = 'baseline',
+): number {
+  let shuntUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) =>
+          t === 'rail_autonomous_shunting' ||
+          t === 'yard_robot_sorting' ||
+          t === 'automated_wagon_logistics',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.05 + asset.teuCapacityPerYear / 380_000;
+        shuntUnits += (asset.berthCount * 1.05) * 0.58;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 52_000;
+        shuntUnits += (asset.warehouseSqm / 52_000) * 0.54;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.036;
+  const policyBoost = policy === 'expand' ? 0.026 : 0;
+  return Math.round(clamp(shuntUnits / totalUnits + policyBoost, 0.035, 0.25) * 1000) / 1000;
+}
+
+export function railAutonomousShuntingLogisticsProductivityMultiplier(
+  share: number,
+  policy: RailAutonomousShuntingLogisticsPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.018 : 1;
+  return (1 + (share - 0.054) * 0.022) * bias;
+}
+
+export function computeRailAutonomousShuntingLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'rail_autonomous_shunting' ||
+          t === 'yard_robot_sorting' ||
+          t === 'automated_wagon_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.45 + asset.teuCapacityPerYear / 345_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 54_000 + asset.lastMileCoveragePct / 100;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 390;
+    }
+    if (asset.category === 'rail' && 'trackKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 220;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRailAutonomousShuntingLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.52 + max * 0.48, 2, 51) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -24243,6 +24834,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalUrbanEvFreightChargingLogisticsThroughputIndex,
   urbanEvFreightChargingLogisticsProductivityMultiplier,
 } from './urban-ev-freight-charging-logistics-index.ts';
+  computeMoltenSaltSolarExportByRegion,
+  moltenSaltSolarExportProductivityMultiplier,
+  nationalMoltenSaltSolarExportIndex,
+} from '../network/molten-salt-solar-export-index.ts';
+  alpineSkiResortSupplyStagingProductivityMultiplier,
+  computeAlpineSkiResortSupplyStagingByRegion,
+  computeAlpineSkiResortSupplyStagingShare,
+  nationalAlpineSkiResortSupplyStagingIndex,
+} from '../operations/alpine-ski-resort-supply-staging-index.ts';
+  computeRailAutonomousShuntingLogisticsShare,
+  computeRailAutonomousShuntingLogisticsThroughputByRegion,
+  nationalRailAutonomousShuntingLogisticsThroughputIndex,
+  railAutonomousShuntingLogisticsProductivityMultiplier,
+} from './rail-autonomous-shunting-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -25569,6 +26174,35 @@ export function computeTransportInfrastructureState(
     urbanEvFreightChargingLogisticsShare,
     options?.urbanEvFreightChargingLogisticsPolicy ?? 'baseline',
   );
+  const moltenSaltSolarExportByRegion = computeMoltenSaltSolarExportByRegion(ops);
+  const nationalMoltenSalt = nationalMoltenSaltSolarExportIndex(moltenSaltSolarExportByRegion);
+  const moltenSaltMult = moltenSaltSolarExportProductivityMultiplier(
+    nationalMoltenSalt,
+    options?.moltenSaltSolarExportPolicy ?? 'baseline',
+  );
+  const alpineSkiResortSupplyStagingByRegion = computeAlpineSkiResortSupplyStagingByRegion(ops, networkStress);
+  const nationalAlpineSki = nationalAlpineSkiResortSupplyStagingIndex(alpineSkiResortSupplyStagingByRegion);
+  const alpineSkiResortSupplyStagingShare = computeAlpineSkiResortSupplyStagingShare(
+    ops,
+    options?.alpineSkiResortSupplyStagingPolicy ?? 'baseline',
+  );
+  const alpineSkiMult = alpineSkiResortSupplyStagingProductivityMultiplier(
+    alpineSkiResortSupplyStagingShare,
+    options?.alpineSkiResortSupplyStagingPolicy ?? 'baseline',
+  );
+  const railAutonomousShuntingLogisticsThroughputByRegion =
+    computeRailAutonomousShuntingLogisticsThroughputByRegion(ops);
+  const nationalRailShunting = nationalRailAutonomousShuntingLogisticsThroughputIndex(
+    railAutonomousShuntingLogisticsThroughputByRegion,
+  );
+  const railAutonomousShuntingLogisticsShare = computeRailAutonomousShuntingLogisticsShare(
+    ops,
+    options?.railAutonomousShuntingLogisticsPolicy ?? 'baseline',
+  );
+  const railShuntingMult = railAutonomousShuntingLogisticsProductivityMultiplier(
+    railAutonomousShuntingLogisticsShare,
+    options?.railAutonomousShuntingLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -25646,6 +26280,9 @@ export function computeTransportInfrastructureState(
     const desalBrineBoost = (desalinationBrineExportByRegion[code] - 5) * 0.0028;
     const wildlifeRescueBoost = (wildlifeRescueAirliftStagingByRegion[code] - 6) * 0.0024;
     const evFreightChargingBoost = (urbanEvFreightChargingLogisticsThroughputByRegion[code] - 2) * 0.002;
+    const moltenSaltBoost = (moltenSaltSolarExportByRegion[code] - 5) * 0.0027;
+    const alpineSkiBoost = (alpineSkiResortSupplyStagingByRegion[code] - 6) * 0.0023;
+    const railShuntingBoost = (railAutonomousShuntingLogisticsThroughputByRegion[code] - 2) * 0.0019;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -25722,7 +26359,10 @@ export function computeTransportInfrastructureState(
         lithiumHydroxideBoost +
         desalBrineBoost +
         wildlifeRescueBoost +
-        evFreightChargingBoost) *
+        evFreightChargingBoost +
+        moltenSaltBoost +
+        alpineSkiBoost +
+        railShuntingBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -25797,7 +26437,10 @@ export function computeTransportInfrastructureState(
       lithiumHydroxideMult *
       desalBrineMult *
       wildlifeRescueMult *
-      evFreightChargingMult;
+      evFreightChargingMult *
+      moltenSaltMult *
+      alpineSkiMult *
+      railShuntingMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -25895,7 +26538,10 @@ export function computeTransportInfrastructureState(
     nationalLithiumHydroxide * 0.003 +
     nationalDesalBrine * 0.003 +
     nationalWildlifeRescue * 0.003 +
-    nationalEvFreightCharging * 0.003;
+    nationalEvFreightCharging * 0.003 +
+    nationalMoltenSalt * 0.003 +
+    nationalAlpineSki * 0.003 +
+    nationalRailShunting * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -25910,7 +26556,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/41',
+    schemaVersion: 'agent12/42',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -26204,6 +26850,14 @@ export function computeTransportInfrastructureState(
     urbanEvFreightChargingLogisticsShare,
     nationalUrbanEvFreightChargingLogisticsThroughputIndex: nationalEvFreightCharging,
     urbanEvFreightChargingLogisticsThroughputByRegion,
+    nationalMoltenSaltSolarExportIndex: nationalMoltenSalt,
+    moltenSaltSolarExportByRegion,
+    alpineSkiResortSupplyStagingShare,
+    nationalAlpineSkiResortSupplyStagingIndex: nationalAlpineSki,
+    alpineSkiResortSupplyStagingByRegion,
+    railAutonomousShuntingLogisticsShare,
+    nationalRailAutonomousShuntingLogisticsThroughputIndex: nationalRailShunting,
+    railAutonomousShuntingLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -26286,7 +26940,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/41' &&
+      infra.schemaVersion === 'agent12/42' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -26432,8 +27086,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalDesalinationBrineExportIndex >= 5 &&
       infra.nationalWildlifeRescueAirliftStagingIndex >= 6 &&
       infra.urbanEvFreightChargingLogisticsShare >= 0.03 &&
-      infra.nationalUrbanEvFreightChargingLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} brine=${infra.nationalDesalinationBrineExportIndex.toFixed(1)} wildlife=${infra.nationalWildlifeRescueAirliftStagingIndex.toFixed(1)} evfreight=${infra.nationalUrbanEvFreightChargingLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalUrbanEvFreightChargingLogisticsThroughputIndex >= 2 &&
+      infra.nationalMoltenSaltSolarExportIndex >= 5 &&
+      infra.nationalAlpineSkiResortSupplyStagingIndex >= 6 &&
+      infra.railAutonomousShuntingLogisticsShare >= 0.03 &&
+      infra.nationalRailAutonomousShuntingLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} csp=${infra.nationalMoltenSaltSolarExportIndex.toFixed(1)} ski=${infra.nationalAlpineSkiResortSupplyStagingIndex.toFixed(1)} shunt=${infra.nationalRailAutonomousShuntingLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;
