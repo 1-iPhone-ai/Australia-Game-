@@ -278,3 +278,13 @@ export function omniversalSynthesisRankingBonus(
   if (streak >= action.minCoalitionOmniversalSynthesisStreakDays) return 23;
   return 2;
 }
+
+export function hyperversalHarmonizationRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionHyperversalHarmonizationStreakDays === undefined) return 0;
+  const streak = state.coalitionHyperversalHarmonizationStreakDays ?? 0;
+  if (streak >= action.minCoalitionHyperversalHarmonizationStreakDays) return 24;
+  return 2;
+}

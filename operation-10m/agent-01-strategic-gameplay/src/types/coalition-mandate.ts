@@ -83,6 +83,8 @@ export interface TurnStrategicBriefing {
   coalitionMetaversalContinuityStreakDays: number;
   omniversalCoalitionSynthesis: boolean;
   coalitionOmniversalSynthesisStreakDays: number;
+  hyperversalCoalitionHarmonization: boolean;
+  coalitionHyperversalHarmonizationStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;

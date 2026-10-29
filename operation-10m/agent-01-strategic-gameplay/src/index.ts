@@ -118,6 +118,7 @@ export {
   multiversalPersistenceRankingBonus,
   metaversalContinuityRankingBonus,
   omniversalSynthesisRankingBonus,
+  hyperversalHarmonizationRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -413,6 +414,16 @@ export {
   applyOmniversalSynthesisMandateBonus,
 } from './engine/coalition-omniversal-synthesis.ts';
 
+export { coalitionHyperversalHarmonizationStreakIssues } from './engine/coalition-hyperversal-harmonization-gates.ts';
+
+export {
+  HYPERVERSAL_COALITION_HARMONIZATION_THRESHOLD,
+  advanceCoalitionHyperversalHarmonizationStreak,
+  resetCoalitionHyperversalHarmonizationStreak,
+  isHyperversalCoalitionHarmonization,
+  applyHyperversalHarmonizationMandateBonus,
+} from './engine/coalition-hyperversal-harmonization.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '4.0.0';
+export const AGENT_01_MODULE_VERSION = '4.1.0';

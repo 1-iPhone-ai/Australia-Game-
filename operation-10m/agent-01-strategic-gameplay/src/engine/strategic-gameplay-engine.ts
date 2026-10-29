@@ -51,6 +51,7 @@ import { resetCoalitionQuantumOmnipresenceStreak } from './coalition-quantum-omn
 import { resetCoalitionMultiversalPersistenceStreak } from './coalition-multiversal-persistence.ts';
 import { resetCoalitionMetaversalContinuityStreak } from './coalition-metaversal-continuity.ts';
 import { resetCoalitionOmniversalSynthesisStreak } from './coalition-omniversal-synthesis.ts';
+import { resetCoalitionHyperversalHarmonizationStreak } from './coalition-hyperversal-harmonization.ts';
 import {
   scoreNationalPriorityAlignment,
   validateAction,
@@ -97,6 +98,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     coalitionMultiversalPersistenceStreakDays: 0,
     coalitionMetaversalContinuityStreakDays: 0,
     coalitionOmniversalSynthesisStreakDays: 0,
+    coalitionHyperversalHarmonizationStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -383,6 +385,12 @@ export function executeStrategicAction(
   }
   if (action.id === 'sga_coalition_omniversal_continuity_covenant') {
     nextState = resetCoalitionOmniversalSynthesisStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_hyperversal_harmonization_charter') {
+    nextState = resetCoalitionHyperversalHarmonizationStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_hyperversal_continuity_pact') {
+    nextState = resetCoalitionHyperversalHarmonizationStreak(nextState);
   }
 
   contracts.ui.pushToast({

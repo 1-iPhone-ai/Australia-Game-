@@ -25,6 +25,7 @@ import { isQuantumCoalitionOmnipresence } from '../engine/coalition-quantum-omni
 import { isMultiversalCoalitionPersistence } from '../engine/coalition-multiversal-persistence.ts';
 import { isMetaversalCoalitionContinuity } from '../engine/coalition-metaversal-continuity.ts';
 import { isOmniversalCoalitionSynthesis } from '../engine/coalition-omniversal-synthesis.ts';
+import { isHyperversalCoalitionHarmonization } from '../engine/coalition-hyperversal-harmonization.ts';
 
 /** Outbound coalition telemetry for Agent 02 / Agent 05 assembly hooks (round 10+). */
 export interface ExternalCoalitionTurnSignals {
@@ -75,6 +76,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionMetaversalContinuityStreakDays: number;
   omniversalCoalitionSynthesis: boolean;
   coalitionOmniversalSynthesisStreakDays: number;
+  hyperversalCoalitionHarmonization: boolean;
+  coalitionHyperversalHarmonizationStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -129,6 +132,9 @@ export function buildExternalCoalitionTurnSignals(
     coalitionMetaversalContinuityStreakDays: state.coalitionMetaversalContinuityStreakDays ?? 0,
     omniversalCoalitionSynthesis: isOmniversalCoalitionSynthesis(state),
     coalitionOmniversalSynthesisStreakDays: state.coalitionOmniversalSynthesisStreakDays ?? 0,
+    hyperversalCoalitionHarmonization: isHyperversalCoalitionHarmonization(state),
+    coalitionHyperversalHarmonizationStreakDays:
+      state.coalitionHyperversalHarmonizationStreakDays ?? 0,
   };
 }
 
@@ -183,5 +189,8 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionMetaversalContinuityStreakDays: raw?.coalitionMetaversalContinuityStreakDays ?? 0,
     omniversalCoalitionSynthesis: raw?.omniversalCoalitionSynthesis ?? false,
     coalitionOmniversalSynthesisStreakDays: raw?.coalitionOmniversalSynthesisStreakDays ?? 0,
+    hyperversalCoalitionHarmonization: raw?.hyperversalCoalitionHarmonization ?? false,
+    coalitionHyperversalHarmonizationStreakDays:
+      raw?.coalitionHyperversalHarmonizationStreakDays ?? 0,
   };
 }
