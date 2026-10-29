@@ -13557,6 +13557,225 @@ export function matchExplainabilityNexusAllowed(report: MatchExplainabilityNexus
 }
 
 
+// --- source: match-explainability-nexus-bundle.ts ---
+  auditMatchExplainabilityNexusGate,
+  matchExplainabilityNexusAllowed,
+} from './match-explainability-nexus-gate.ts';
+  buildMatchExplainabilityVertexBundle,
+  matchExplainabilityVertexReady,
+} from './match-explainability-vertex-bundle.ts';
+  buildSessionVertexExportBundle,
+  sessionVertexExportShipped,
+} from './session-vertex-export-bundle.ts';
+
+export const AGENT19_NEXUS_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityNexusBundle {
+  nexusReady: boolean;
+  nexusAllowed: boolean;
+  vertexReady: boolean;
+  vertexExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type NexusParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Nexus bundle: nexus gate and vertex export must both be green. */
+export function buildMatchExplainabilityNexusBundle(
+  packs: TurnExplainabilityPack[],
+  params: NexusParams,
+): MatchExplainabilityNexusBundle {
+  const nexus = auditMatchExplainabilityNexusGate(packs, params);
+  const vertex = buildMatchExplainabilityVertexBundle(packs, params);
+  const vertexExport = buildSessionVertexExportBundle(packs, params);
+  const nexusAllowed = matchExplainabilityNexusAllowed(nexus);
+  const vertexReady = matchExplainabilityVertexReady(vertex);
+  const vertexExportShipped = sessionVertexExportShipped(vertexExport);
+  const nexusReady = nexusAllowed && vertexReady && vertexExportShipped;
+  const narrativeLines = [
+    `Match explainability nexus bundle: ${nexusReady ? 'READY' : 'PENDING'} (gate ${nexusAllowed ? 'ok' : 'fail'}, vertex ${vertexReady ? 'ok' : 'fail'}).`,
+    ...nexus.narrativeLines.slice(0, 2),
+    ...vertex.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_NEXUS_NARRATIVE_CAP);
+  return {
+    nexusReady,
+    nexusAllowed,
+    vertexReady,
+    vertexExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityNexusReady(bundle: MatchExplainabilityNexusBundle): boolean {
+  return bundle.nexusReady;
+}
+
+
+// --- source: session-nexus-export-bundle.ts ---
+  buildSessionVertexExportBundle,
+  type SessionVertexExportBundle,
+} from './session-vertex-export-bundle.ts';
+  buildMatchExplainabilityNexusBundle,
+  matchExplainabilityNexusReady,
+} from './match-explainability-nexus-bundle.ts';
+
+export interface SessionNexusExportBundle extends SessionVertexExportBundle {
+  nexusReady: boolean;
+  nexusSchema: string;
+}
+
+/** Nexus export wraps vertex export when nexus bundle is ready. */
+export function buildSessionNexusExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionNexusExportBundle {
+  const base = buildSessionVertexExportBundle(packs, params);
+  const nexus = buildMatchExplainabilityNexusBundle(packs, params);
+  const nexusReady = matchExplainabilityNexusReady(nexus);
+  const exports = nexusReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    nexusReady,
+    nexusSchema: 'agent19.nexus.v1',
+    releaseReady: nexusReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Nexus export: ${nexusReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionNexusExportShipped(bundle: SessionNexusExportBundle): boolean {
+  return bundle.nexusReady && bundle.exports.length > 0 && bundle.nexusSchema === 'agent19.nexus.v1';
+}
+
+
+// --- source: vertex-nexus-bridge.ts ---
+  buildMatchExplainabilityNexusBundle,
+  matchExplainabilityNexusReady,
+} from './match-explainability-nexus-bundle.ts';
+  buildMatchExplainabilityVertexBundle,
+  matchExplainabilityVertexReady,
+} from './match-explainability-vertex-bundle.ts';
+
+export interface VertexNexusBridgeReport {
+  aligned: boolean;
+  nexusReady: boolean;
+  vertexReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Nexus-ready should match vertex-ready when vertex export stack passes. */
+export function auditVertexNexusBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): VertexNexusBridgeReport {
+  const nexus = buildMatchExplainabilityNexusBundle(packs, params);
+  const vertex = buildMatchExplainabilityVertexBundle(packs, params);
+  const nexusReady = matchExplainabilityNexusReady(nexus);
+  const vertexReady = matchExplainabilityVertexReady(vertex);
+  const aligned = nexusReady === vertexReady;
+  const narrativeLines = [
+    `Vertex/nexus bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (nexus ${nexusReady ? 'ok' : 'fail'}, vertex ${vertexReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, nexusReady, vertexReady, narrativeLines };
+}
+
+export function vertexNexusBridgeHealthy(report: VertexNexusBridgeReport): boolean {
+  return report.nexusReady && report.vertexReady && report.aligned;
+}
+
+
+// --- source: match-explainability-convergence-gate.ts ---
+  buildMatchExplainabilityNexusBundle,
+  matchExplainabilityNexusReady,
+} from './match-explainability-nexus-bundle.ts';
+  buildSessionNexusExportBundle,
+  sessionNexusExportShipped,
+} from './session-nexus-export-bundle.ts';
+
+export interface MatchExplainabilityConvergenceGateReport {
+  convergenceAllowed: boolean;
+  nexusReady: boolean;
+  nexusExportShipped: boolean;
+  vertexNexusHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Convergence gate: nexus bundle + nexus export + vertex/nexus bridge. */
+export function auditMatchExplainabilityConvergenceGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityConvergenceGateReport {
+  const nexus = buildMatchExplainabilityNexusBundle(packs, params);
+  const nexusExport = buildSessionNexusExportBundle(packs, params);
+  const bridge = auditVertexNexusBridge(packs, params);
+  const nexusReady = matchExplainabilityNexusReady(nexus);
+  const nexusExportShipped = sessionNexusExportShipped(nexusExport);
+  const vertexNexusHealthy = vertexNexusBridgeHealthy(bridge);
+  const convergenceAllowed = nexusReady && nexusExportShipped && vertexNexusHealthy;
+  const narrativeLines = [
+    `Match explainability convergence: ${convergenceAllowed ? 'ALLOWED' : 'DENIED'} (nexus ${nexusReady ? 'ok' : 'fail'}, export ${nexusExportShipped ? 'ok' : 'fail'}).`,
+    ...nexus.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    convergenceAllowed,
+    nexusReady,
+    nexusExportShipped,
+    vertexNexusHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityConvergenceAllowed(
+  report: MatchExplainabilityConvergenceGateReport,
+): boolean {
+  return report.convergenceAllowed;
+}
+
+
 // --- source: vertex-recovery-orchestrator.ts ---
   auditMatchExplainabilityVertexGate,
   matchExplainabilityVertexAllowed,
@@ -13620,6 +13839,355 @@ export function buildVertexRecoveryOrchestrator(
 
 export function vertexRecoveryOrchestratorWithinCap(report: VertexRecoveryOrchestratorReport): boolean {
   return report.stepCount <= AGENT19_VERTEX_RECOVERY_CAP;
+}
+
+
+// --- source: nexus-recovery-orchestrator.ts ---
+  auditMatchExplainabilityNexusGate,
+  matchExplainabilityNexusAllowed,
+} from './match-explainability-nexus-gate.ts';
+
+export const AGENT19_NEXUS_RECOVERY_CAP = 10;
+
+export interface NexusRecoveryOrchestratorReport {
+  nexusBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when nexus gate blocks convergence rollout. */
+export function buildNexusRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): NexusRecoveryOrchestratorReport {
+  const nexus = auditMatchExplainabilityNexusGate(packs, params);
+  const nexusBlocked = !matchExplainabilityNexusAllowed(nexus);
+  const steps: string[] = [];
+  if (nexusBlocked) {
+    if (!nexus.vertexReady) {
+      steps.push('Restore vertex bundle: crest and vertex export must pass.');
+    }
+    if (!nexus.vertexExportShipped) {
+      steps.push('Emit session vertex export before nexus clearance.');
+    }
+    if (!nexus.crestVertexHealthy) {
+      steps.push('Reconcile crest/vertex bridge before nexus.');
+    }
+    steps.push(...buildVertexRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const vertex = buildMatchExplainabilityVertexBundle(packs, params);
+    if (!vertex.vertexReady) {
+      steps.push('Re-run vertex readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Nexus gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_NEXUS_RECOVERY_CAP);
+  return {
+    nexusBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Nexus recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function nexusRecoveryOrchestratorWithinCap(report: NexusRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_NEXUS_RECOVERY_CAP;
+}
+
+
+// --- source: match-explainability-convergence-bundle.ts ---
+  auditMatchExplainabilityConvergenceGate,
+  matchExplainabilityConvergenceAllowed,
+} from './match-explainability-convergence-gate.ts';
+  buildMatchExplainabilityNexusBundle,
+  matchExplainabilityNexusReady,
+} from './match-explainability-nexus-bundle.ts';
+  buildSessionNexusExportBundle,
+  sessionNexusExportShipped,
+} from './session-nexus-export-bundle.ts';
+
+export const AGENT19_CONVERGENCE_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityConvergenceBundle {
+  convergenceReady: boolean;
+  convergenceAllowed: boolean;
+  nexusReady: boolean;
+  nexusExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type ConvergenceParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Convergence bundle: convergence gate and nexus export must both be green. */
+export function buildMatchExplainabilityConvergenceBundle(
+  packs: TurnExplainabilityPack[],
+  params: ConvergenceParams,
+): MatchExplainabilityConvergenceBundle {
+  const convergence = auditMatchExplainabilityConvergenceGate(packs, params);
+  const nexus = buildMatchExplainabilityNexusBundle(packs, params);
+  const nexusExport = buildSessionNexusExportBundle(packs, params);
+  const convergenceAllowed = matchExplainabilityConvergenceAllowed(convergence);
+  const nexusReady = matchExplainabilityNexusReady(nexus);
+  const nexusExportShipped = sessionNexusExportShipped(nexusExport);
+  const convergenceReady = convergenceAllowed && nexusReady && nexusExportShipped;
+  const narrativeLines = [
+    `Match explainability convergence bundle: ${convergenceReady ? 'READY' : 'PENDING'} (gate ${convergenceAllowed ? 'ok' : 'fail'}, nexus ${nexusReady ? 'ok' : 'fail'}).`,
+    ...convergence.narrativeLines.slice(0, 2),
+    ...nexus.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_CONVERGENCE_NARRATIVE_CAP);
+  return {
+    convergenceReady,
+    convergenceAllowed,
+    nexusReady,
+    nexusExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityConvergenceReady(bundle: MatchExplainabilityConvergenceBundle): boolean {
+  return bundle.convergenceReady;
+}
+
+
+// --- source: session-convergence-export-bundle.ts ---
+  buildSessionNexusExportBundle,
+  type SessionNexusExportBundle,
+} from './session-nexus-export-bundle.ts';
+  buildMatchExplainabilityConvergenceBundle,
+  matchExplainabilityConvergenceReady,
+} from './match-explainability-convergence-bundle.ts';
+
+export interface SessionConvergenceExportBundle extends SessionNexusExportBundle {
+  convergenceReady: boolean;
+  convergenceSchema: string;
+}
+
+/** Convergence export wraps nexus export when convergence bundle is ready. */
+export function buildSessionConvergenceExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionConvergenceExportBundle {
+  const base = buildSessionNexusExportBundle(packs, params);
+  const convergence = buildMatchExplainabilityConvergenceBundle(packs, params);
+  const convergenceReady = matchExplainabilityConvergenceReady(convergence);
+  const exports = convergenceReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    convergenceReady,
+    convergenceSchema: 'agent19.convergence.v1',
+    releaseReady: convergenceReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Convergence export: ${convergenceReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionConvergenceExportShipped(bundle: SessionConvergenceExportBundle): boolean {
+  return bundle.convergenceReady && bundle.exports.length > 0 && bundle.convergenceSchema === 'agent19.convergence.v1';
+}
+
+
+// --- source: nexus-convergence-bridge.ts ---
+  buildMatchExplainabilityConvergenceBundle,
+  matchExplainabilityConvergenceReady,
+} from './match-explainability-convergence-bundle.ts';
+  buildMatchExplainabilityNexusBundle,
+  matchExplainabilityNexusReady,
+} from './match-explainability-nexus-bundle.ts';
+
+export interface NexusConvergenceBridgeReport {
+  aligned: boolean;
+  convergenceReady: boolean;
+  nexusReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Convergence-ready should match nexus-ready when convergence export stack passes. */
+export function auditNexusConvergenceBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): NexusConvergenceBridgeReport {
+  const convergence = buildMatchExplainabilityConvergenceBundle(packs, params);
+  const nexus = buildMatchExplainabilityNexusBundle(packs, params);
+  const convergenceReady = matchExplainabilityConvergenceReady(convergence);
+  const nexusReady = matchExplainabilityNexusReady(nexus);
+  const aligned = convergenceReady === nexusReady;
+  const narrativeLines = [
+    `Nexus/convergence bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (convergence ${convergenceReady ? 'ok' : 'fail'}, nexus ${nexusReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, convergenceReady, nexusReady, narrativeLines };
+}
+
+export function nexusConvergenceBridgeHealthy(report: NexusConvergenceBridgeReport): boolean {
+  return report.convergenceReady && report.nexusReady && report.aligned;
+}
+
+
+// --- source: match-explainability-lattice-gate.ts ---
+  buildMatchExplainabilityConvergenceBundle,
+  matchExplainabilityConvergenceReady,
+} from './match-explainability-convergence-bundle.ts';
+  buildSessionConvergenceExportBundle,
+  sessionConvergenceExportShipped,
+} from './session-convergence-export-bundle.ts';
+
+export interface MatchExplainabilityLatticeGateReport {
+  latticeAllowed: boolean;
+  convergenceReady: boolean;
+  convergenceExportShipped: boolean;
+  nexusConvergenceHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Lattice gate: convergence bundle + convergence export + nexus/convergence bridge. */
+export function auditMatchExplainabilityLatticeGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityLatticeGateReport {
+  const convergence = buildMatchExplainabilityConvergenceBundle(packs, params);
+  const convergenceExport = buildSessionConvergenceExportBundle(packs, params);
+  const bridge = auditNexusConvergenceBridge(packs, params);
+  const convergenceReady = matchExplainabilityConvergenceReady(convergence);
+  const convergenceExportShipped = sessionConvergenceExportShipped(convergenceExport);
+  const nexusConvergenceHealthy = nexusConvergenceBridgeHealthy(bridge);
+  const latticeAllowed = convergenceReady && convergenceExportShipped && nexusConvergenceHealthy;
+  const narrativeLines = [
+    `Match explainability lattice: ${latticeAllowed ? 'ALLOWED' : 'DENIED'} (convergence ${convergenceReady ? 'ok' : 'fail'}, export ${convergenceExportShipped ? 'ok' : 'fail'}).`,
+    ...convergence.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    latticeAllowed,
+    convergenceReady,
+    convergenceExportShipped,
+    nexusConvergenceHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityLatticeAllowed(report: MatchExplainabilityLatticeGateReport): boolean {
+  return report.latticeAllowed;
+}
+
+
+// --- source: convergence-recovery-orchestrator.ts ---
+  auditMatchExplainabilityConvergenceGate,
+  matchExplainabilityConvergenceAllowed,
+} from './match-explainability-convergence-gate.ts';
+
+export const AGENT19_CONVERGENCE_RECOVERY_CAP = 10;
+
+export interface ConvergenceRecoveryOrchestratorReport {
+  convergenceBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when convergence gate blocks lattice rollout. */
+export function buildConvergenceRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): ConvergenceRecoveryOrchestratorReport {
+  const convergence = auditMatchExplainabilityConvergenceGate(packs, params);
+  const convergenceBlocked = !matchExplainabilityConvergenceAllowed(convergence);
+  const steps: string[] = [];
+  if (convergenceBlocked) {
+    if (!convergence.nexusReady) {
+      steps.push('Restore nexus bundle: vertex and nexus export must pass.');
+    }
+    if (!convergence.nexusExportShipped) {
+      steps.push('Emit session nexus export before convergence clearance.');
+    }
+    if (!convergence.vertexNexusHealthy) {
+      steps.push('Reconcile vertex/nexus bridge before convergence.');
+    }
+    steps.push(...buildNexusRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const nexus = buildMatchExplainabilityNexusBundle(packs, params);
+    if (!nexus.nexusReady) {
+      steps.push('Re-run nexus readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Convergence gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_CONVERGENCE_RECOVERY_CAP);
+  return {
+    convergenceBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Convergence recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function convergenceRecoveryOrchestratorWithinCap(report: ConvergenceRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_CONVERGENCE_RECOVERY_CAP;
 }
 
 
@@ -14365,6 +14933,30 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   buildVertexRecoveryOrchestrator,
   vertexRecoveryOrchestratorWithinCap,
 } from '../vertex-recovery-orchestrator.ts';
+  buildMatchExplainabilityNexusBundle,
+  matchExplainabilityNexusReady,
+} from '../match-explainability-nexus-bundle.ts';
+  buildSessionNexusExportBundle,
+  sessionNexusExportShipped,
+} from '../session-nexus-export-bundle.ts';
+  auditMatchExplainabilityConvergenceGate,
+  matchExplainabilityConvergenceAllowed,
+} from '../match-explainability-convergence-gate.ts';
+  buildNexusRecoveryOrchestrator,
+  nexusRecoveryOrchestratorWithinCap,
+} from '../nexus-recovery-orchestrator.ts';
+  buildMatchExplainabilityConvergenceBundle,
+  matchExplainabilityConvergenceReady,
+} from '../match-explainability-convergence-bundle.ts';
+  buildSessionConvergenceExportBundle,
+  sessionConvergenceExportShipped,
+} from '../session-convergence-export-bundle.ts';
+  auditMatchExplainabilityLatticeGate,
+  matchExplainabilityLatticeAllowed,
+} from '../match-explainability-lattice-gate.ts';
+  buildConvergenceRecoveryOrchestrator,
+  convergenceRecoveryOrchestratorWithinCap,
+} from '../convergence-recovery-orchestrator.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -21336,6 +21928,202 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return report.vertexBlocked && vertexRecoveryOrchestratorWithinCap(report) && report.stepCount > 0 || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r51_nexus_bundle',
+        'Nexus bundle ready on full vertex stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityNexusBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityNexusReady(bundle) && bundle.nexusAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r51_vertex_nexus_bridge',
+        'Vertex nexus bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditVertexNexusBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return vertexNexusBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r51_nexus_export',
+        'Nexus export shipped when nexus ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionNexusExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionNexusExportShipped(bundle) && bundle.nexusSchema === 'agent19.nexus.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r51_convergence_gate_ok',
+        'Convergence gate allowed on healthy nexus stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityConvergenceGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityConvergenceAllowed(report) && report.nexusExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r51_convergence_gate_block',
+        'Convergence gate denied when nexus pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 74, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityConvergenceGate([pack], {
+            memory: null,
+            currentTurn: 74,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityConvergenceAllowed(report) && !report.nexusReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r51_nexus_recovery',
+        'Nexus recovery orchestrator within cap when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 74, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = buildNexusRecoveryOrchestrator([pack], {
+            memory: null,
+            currentTurn: 74,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return report.nexusBlocked && nexusRecoveryOrchestratorWithinCap(report) && report.stepCount > 0 || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r52_lattice_gate_ok',
+        'Lattice gate allowed on healthy convergence stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityLatticeGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityLatticeAllowed(report) && report.convergenceExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r52_convergence_export',
+        'Convergence export shipped when convergence ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionConvergenceExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionConvergenceExportShipped(bundle) && matchExplainabilityConvergenceReady(buildMatchExplainabilityConvergenceBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          })) || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r52_convergence_recovery',
+        'Convergence recovery orchestrator within cap when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 74, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = buildConvergenceRecoveryOrchestrator([pack], {
+            memory: null,
+            currentTurn: 74,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return report.convergenceBlocked && convergenceRecoveryOrchestratorWithinCap(report) && report.stepCount > 0 || JSON.stringify(report);
         },
       ],
     ]),

@@ -847,6 +847,22 @@ import {
   buildNexusRecoveryOrchestrator,
   nexusRecoveryOrchestratorWithinCap,
 } from '../nexus-recovery-orchestrator.ts';
+import {
+  buildMatchExplainabilityConvergenceBundle,
+  matchExplainabilityConvergenceReady,
+} from '../match-explainability-convergence-bundle.ts';
+import {
+  buildSessionConvergenceExportBundle,
+  sessionConvergenceExportShipped,
+} from '../session-convergence-export-bundle.ts';
+import {
+  auditMatchExplainabilityLatticeGate,
+  matchExplainabilityLatticeAllowed,
+} from '../match-explainability-lattice-gate.ts';
+import {
+  buildConvergenceRecoveryOrchestrator,
+  convergenceRecoveryOrchestratorWithinCap,
+} from '../convergence-recovery-orchestrator.ts';
 import type { MemoryEvalResult } from '../types.ts';
 
 type Case = [string, string, () => boolean | string];
@@ -7945,6 +7961,76 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return report.nexusBlocked && nexusRecoveryOrchestratorWithinCap(report) && report.stepCount > 0 || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r52_lattice_gate_ok',
+        'Lattice gate allowed on healthy convergence stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityLatticeGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityLatticeAllowed(report) && report.convergenceExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r52_convergence_export',
+        'Convergence export shipped when convergence ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionConvergenceExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionConvergenceExportShipped(bundle) && matchExplainabilityConvergenceReady(buildMatchExplainabilityConvergenceBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          })) || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r52_convergence_recovery',
+        'Convergence recovery orchestrator within cap when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 74, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = buildConvergenceRecoveryOrchestrator([pack], {
+            memory: null,
+            currentTurn: 74,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return report.convergenceBlocked && convergenceRecoveryOrchestratorWithinCap(report) && report.stepCount > 0 || JSON.stringify(report);
         },
       ],
     ]),
