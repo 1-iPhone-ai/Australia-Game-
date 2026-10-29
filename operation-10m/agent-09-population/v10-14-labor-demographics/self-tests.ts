@@ -162,6 +162,10 @@ import { computeNationalApexAdvocacyCouplingBrief } from './apex-advocacy-coupli
 import { computeNationalReengagementThrustOutlook } from './reengagement-thrust-outlook';
 import { computeNationalSubjectPinnacleReadinessBrief } from './subject-pinnacle-readiness-brief';
 import { computeNationalWorkforcePinnacleIndex } from './national-workforce-pinnacle-index';
+import { computeNationalPinnacleRetentionCouplingBrief } from './pinnacle-retention-coupling-brief';
+import { computeNationalRetentionCrestOutlook } from './retention-crest-outlook';
+import { computeNationalSubjectSummitReadinessBrief } from './subject-summit-readiness-brief';
+import { computeNationalWorkforceSummitIndex } from './national-workforce-summit-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -1688,6 +1692,62 @@ export function runV1014LaborDemographicsSelfTests(): {
     'pinnacle steward note'
   );
   check('R2716', advocacyEaseForRegion('NSW', 'technology') > 0, 'advocacy ease for region');
+
+  check('R2801', Boolean(r1.state.pinnacleRetentionCouplingBrief?.band), 'pinnacle retention on state');
+  check('R2802', (r1.state.pinnacleRetentionCouplingBrief?.pinnacleDrag ?? 0) >= 0, 'pinnacle retention drag');
+  check('R2803', Boolean(r1.state.retentionCrestOutlook?.band), 'retention crest on state');
+  check('R2804', (r1.state.retentionCrestOutlook?.thrustDrag ?? 0) >= 0, 'retention crest thrust drag');
+  check('R2805', Boolean(r1.state.subjectSummitReadinessBrief?.band), 'subject summit on state');
+  check('R2806', Boolean(r1.state.nationalWorkforceSummitIndex?.band), 'workforce summit on state');
+  check(
+    'R2807',
+    detectLaborDemographicsQuery('pinnacle retention coupling') === 'pinnacle_retention_coupling',
+    'GI pinnacle retention detect'
+  );
+  check(
+    'R2808',
+    detectLaborDemographicsQuery('retention crest') === 'retention_crest',
+    'GI retention crest detect'
+  );
+  check(
+    'R2809',
+    detectLaborDemographicsQuery('subject summit readiness') === 'subject_summit_readiness',
+    'GI subject summit detect'
+  );
+  check(
+    'R2810',
+    detectLaborDemographicsQuery('workforce summit') === 'workforce_summit',
+    'GI workforce summit detect'
+  );
+  check(
+    'R2811',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_summit').headline.length > 5,
+    'GI workforce summit answer'
+  );
+  const pinnacleRetentionOnly = computeNationalPinnacleRetentionCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforcePinnacleIndex
+  );
+  check('R2812', pinnacleRetentionOnly.summary.length > 10, 'pinnacle retention standalone summary');
+  const retentionCrestOnly = computeNationalRetentionCrestOutlook(r1.state, r1.state.reengagementThrustOutlook);
+  check('R2813', retentionCrestOnly.band.length > 3, 'retention crest band string');
+  const subjectSummitOnly = computeNationalSubjectSummitReadinessBrief(
+    r1.state,
+    r1.state.subjectPinnacleReadinessBrief,
+    r1.state.nationalWorkforcePinnacleIndex
+  );
+  check('R2814', subjectSummitOnly.summitDrag >= 0, 'subject summit drag');
+  check(
+    'R2815',
+    computeNationalWorkforceSummitIndex(
+      rHhBad.state,
+      rHhBad.state.pinnacleRetentionCouplingBrief,
+      rHhBad.state.retentionCrestOutlook,
+      rHhBad.state.subjectSummitReadinessBrief
+    ).stewardNote.length > 8,
+    'summit steward note'
+  );
+  check('R2816', retentionPullForRegion('NSW', 'technology') > 0, 'retention pull for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

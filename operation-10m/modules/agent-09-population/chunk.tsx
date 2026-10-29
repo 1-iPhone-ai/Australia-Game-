@@ -281,6 +281,10 @@ export interface NationalLaborDemographicsState {
   reengagementThrustOutlook?: NationalReengagementThrustOutlook;
   subjectPinnacleReadinessBrief?: NationalSubjectPinnacleReadinessBrief;
   nationalWorkforcePinnacleIndex?: NationalWorkforcePinnacleIndex;
+  pinnacleRetentionCouplingBrief?: NationalPinnacleRetentionCouplingBrief;
+  retentionCrestOutlook?: NationalRetentionCrestOutlook;
+  subjectSummitReadinessBrief?: NationalSubjectSummitReadinessBrief;
+  nationalWorkforceSummitIndex?: NationalWorkforceSummitIndex;
 }
 
 export type MigrationShockKind =
@@ -1305,6 +1309,50 @@ export interface NationalWorkforcePinnacleIndex {
   pinnacleIndex: number;
   band: WorkforcePinnacleBand;
   pinnacleDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type PinnacleRetentionCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalPinnacleRetentionCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: PinnacleRetentionCouplingBand;
+  pinnacleDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type RetentionCrestBand = 'ebbing' | 'patchy' | 'rising' | 'cresting';
+
+export interface NationalRetentionCrestOutlook {
+  turn: number;
+  crestIndex: number;
+  band: RetentionCrestBand;
+  thrustDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectSummitReadinessBand = 'below_summit' | 'approaching' | 'summit_ready' | 'zenith_locked';
+
+export interface NationalSubjectSummitReadinessBrief {
+  turn: number;
+  summitIndex: number;
+  band: SubjectSummitReadinessBand;
+  summitDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceSummitBand = 'fragile' | 'thin' | 'elevated' | 'zenith';
+
+export interface NationalWorkforceSummitIndex {
+  turn: number;
+  summitIndex: number;
+  band: WorkforceSummitBand;
+  summitDrag: number;
   summary: string;
   stewardNote: string;
 }
@@ -2467,7 +2515,11 @@ export type LaborGiQueryTopic =
   | 'apex_advocacy_coupling'
   | 'reengagement_thrust'
   | 'subject_pinnacle_readiness'
-  | 'workforce_pinnacle';
+  | 'workforce_pinnacle'
+  | 'pinnacle_retention_coupling'
+  | 'retention_crest'
+  | 'subject_summit_readiness'
+  | 'workforce_summit';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -2560,6 +2612,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(reengagement thrust|reengagement pipeline thrust)/.test(q)) return 'reengagement_thrust';
   if (/\b(subject pinnacle readiness|pinnacle readiness subject)/.test(q)) return 'subject_pinnacle_readiness';
   if (/\b(workforce pinnacle|pinnacle index labor)/.test(q)) return 'workforce_pinnacle';
+  if (/\b(pinnacle retention|pinnacle-retention coupling)/.test(q)) return 'pinnacle_retention_coupling';
+  if (/\b(retention crest|retention pipeline crest)/.test(q)) return 'retention_crest';
+  if (/\b(subject summit readiness|summit readiness subject)/.test(q)) return 'subject_summit_readiness';
+  if (/\b(workforce summit|summit index labor)/.test(q)) return 'workforce_summit';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -3314,6 +3370,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Pinnacle band ${state.nationalWorkforcePinnacleIndex?.band ?? 'unknown'}; pinnacle drag ${Math.round(state.nationalWorkforcePinnacleIndex?.pinnacleDrag ?? 0)}.`,
         inference: state.nationalWorkforcePinnacleIndex?.stewardNote || state.summary,
         projection: 'Workforce pinnacle synthesizes advocacy coupling, reengagement thrust, and subject pinnacle.'
+      };
+    case 'pinnacle_retention_coupling':
+      return {
+        topic,
+        headline: state.pinnacleRetentionCouplingBrief?.summary || 'Pinnacle-retention coupling unavailable.',
+        fact: `Coupling band ${state.pinnacleRetentionCouplingBrief?.band ?? 'unknown'}; pinnacle drag ${Math.round(state.pinnacleRetentionCouplingBrief?.pinnacleDrag ?? 0)}.`,
+        inference: state.pinnacleRetentionCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce pinnacle with retention levers — wave 28 / O10-187 depth.'
+      };
+    case 'retention_crest':
+      return {
+        topic,
+        headline: state.retentionCrestOutlook?.summary || 'Retention crest unavailable.',
+        fact: `Crest band ${state.retentionCrestOutlook?.band ?? 'unknown'}; thrust drag ${Math.round(state.retentionCrestOutlook?.thrustDrag ?? 0)}.`,
+        inference: state.retentionCrestOutlook?.stewardNote || state.outlook,
+        projection: 'Crest blends retention levers with reengagement thrust — bounded indices only.'
+      };
+    case 'subject_summit_readiness':
+      return {
+        topic,
+        headline: state.subjectSummitReadinessBrief?.summary || 'Subject summit readiness unavailable.',
+        fact: `Summit band ${state.subjectSummitReadinessBrief?.band ?? 'unknown'}; summit drag ${Math.round(state.subjectSummitReadinessBrief?.summitDrag ?? 0)}.`,
+        inference: state.subjectSummitReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject summit readiness gates subject pinnacle against workforce pinnacle for O10-187 wave 28.'
+      };
+    case 'workforce_summit':
+      return {
+        topic,
+        headline: state.nationalWorkforceSummitIndex?.summary || 'Workforce summit unavailable.',
+        fact: `Summit band ${state.nationalWorkforceSummitIndex?.band ?? 'unknown'}; summit drag ${Math.round(state.nationalWorkforceSummitIndex?.summitDrag ?? 0)}.`,
+        inference: state.nationalWorkforceSummitIndex?.stewardNote || state.summary,
+        projection: 'Workforce summit synthesizes retention coupling, retention crest, and subject summit.'
       };
     default:
       return {
@@ -4111,6 +4199,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforcePinnacleIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforcePinnacleIndex.stewardNote);
+  }
+  if (
+    state.pinnacleRetentionCouplingBrief?.band === 'decoupled' ||
+    state.pinnacleRetentionCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.pinnacleRetentionCouplingBrief.stewardNote);
+  }
+  if (
+    state.retentionCrestOutlook?.band === 'ebbing' ||
+    state.retentionCrestOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.retentionCrestOutlook.stewardNote);
+  }
+  if (
+    state.subjectSummitReadinessBrief?.band === 'below_summit' ||
+    state.subjectSummitReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectSummitReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceSummitIndex?.band === 'fragile' ||
+    state.nationalWorkforceSummitIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceSummitIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -11444,6 +11556,278 @@ export function computeNationalWorkforcePinnacleIndex(
 }
 
 
+// --- source: pinnacle-retention-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalPinnacleRetentionCouplingBrief,
+  type NationalWorkforcePinnacleIndex,
+  type PinnacleRetentionCouplingBand
+} from './types';
+
+function couplingBand(index: number): PinnacleRetentionCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-28 / wave-28 pinnacle-retention coupling — pinnacle × retention levers (O10-187). */
+export function computeNationalPinnacleRetentionCouplingBrief(
+  state: NationalLaborDemographicsState,
+  pinnacle: NationalWorkforcePinnacleIndex | null | undefined
+): NationalPinnacleRetentionCouplingBrief {
+  if (!state.enabled || !pinnacle) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      pinnacleDrag: 0,
+      summary: 'Pinnacle-retention coupling idle — workforce pinnacle unavailable.',
+      stewardNote: 'Compute workforce pinnacle before retention coupling guidance.'
+    };
+  }
+
+  let retentionLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    retentionLift += retentionPullForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  retentionLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const pinnacleDrag = v1014laborClamp(
+    pinnacle.pinnacleDrag * 0.48 + (pinnacle.band === 'fragile' || pinnacle.band === 'thin' ? 11 : 3)
+  );
+  const pinnacleLift =
+    pinnacle.band === 'elevated' || pinnacle.band === 'summit'
+      ? pinnacle.pinnacleIndex * 0.24
+      : pinnacle.pinnacleIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + retentionLift * 21 + pinnacleLift - pinnacleDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained pinnacle-retention link — deploy retention levers before wave-28 summit commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard retention crest spikes that drain pinnacle buffers.'
+        : 'Amplified coupling — pair retention packs with subject summit readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    pinnacleDrag,
+    summary: `Pinnacle-retention coupling ${band} (index ${Math.round(couplingIndex)}); pinnacle drag ${Math.round(pinnacleDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: retention-crest-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalReengagementThrustOutlook,
+  type NationalRetentionCrestOutlook,
+  type RetentionCrestBand
+} from './types';
+
+function crestBand(index: number): RetentionCrestBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'cresting';
+}
+
+export function computeNationalRetentionCrestOutlook(
+  state: NationalLaborDemographicsState,
+  reengagementThrust: NationalReengagementThrustOutlook | null | undefined
+): NationalRetentionCrestOutlook {
+  if (!state.enabled || !reengagementThrust) {
+    return {
+      turn: state.turn,
+      crestIndex: 50,
+      band: 'patchy',
+      thrustDrag: 0,
+      summary: 'Retention crest idle — reengagement thrust unavailable.',
+      stewardNote: 'Compute reengagement thrust before retention crest guidance.'
+    };
+  }
+
+  let retentionLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    retentionLift += retentionPullForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  retentionLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const thrustDrag = v1014laborClamp(
+    reengagementThrust.sustainDrag * 0.46 +
+      (reengagementThrust.band === 'stalled' || reengagementThrust.band === 'patchy' ? 10 : 3)
+  );
+  const thrustLift =
+    reengagementThrust.band === 'building' || reengagementThrust.band === 'surging'
+      ? reengagementThrust.thrustIndex * 0.2
+      : reengagementThrust.thrustIndex * 0.1;
+
+  const crestIndex = v1014laborClamp(24 + retentionLift * 22 + thrustLift - thrustDrag);
+  const band = crestBand(crestIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy retention crest — deploy retention levers before subject summit assembly.'
+      : band === 'cresting'
+        ? 'Cresting band — verify pinnacle-retention coupling before auto workforce pushes.'
+        : 'Rising crest — align with retention anchor outlook checks.';
+
+  return {
+    turn: state.turn,
+    crestIndex,
+    band,
+    thrustDrag,
+    summary: `National retention crest ${band} (index ${Math.round(crestIndex)}); thrust drag ${Math.round(thrustDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-summit-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectPinnacleReadinessBrief,
+  type NationalSubjectSummitReadinessBrief,
+  type NationalWorkforcePinnacleIndex,
+  type SubjectSummitReadinessBand
+} from './types';
+
+function summitBand(index: number): SubjectSummitReadinessBand {
+  if (index <= 34) return 'below_summit';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'summit_ready';
+  return 'zenith_locked';
+}
+
+/** Round-28 / wave-28 subject summit readiness — pinnacle × workforce pinnacle (O10-187). */
+export function computeNationalSubjectSummitReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectPinnacle: NationalSubjectPinnacleReadinessBrief | null | undefined,
+  workforcePinnacle: NationalWorkforcePinnacleIndex | null | undefined
+): NationalSubjectSummitReadinessBrief {
+  if (!state.enabled || !subjectPinnacle || !workforcePinnacle) {
+    return {
+      turn: state.turn,
+      summitIndex: 50,
+      band: 'approaching',
+      summitDrag: 0,
+      summary: 'Subject summit readiness idle — subject pinnacle or workforce pinnacle unavailable.',
+      stewardNote: 'Compute subject pinnacle and workforce pinnacle before summit guidance.'
+    };
+  }
+
+  const summitDrag = v1014laborClamp(
+    subjectPinnacle.pinnacleDrag * 0.38 +
+      workforcePinnacle.pinnacleDrag * 0.38 +
+      (subjectPinnacle.band === 'below_pinnacle' || workforcePinnacle.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectPinnacle.band === 'pinnacle_ready' || subjectPinnacle.band === 'summit_locked'
+      ? subjectPinnacle.pinnacleIndex * 0.27
+      : subjectPinnacle.pinnacleIndex * 0.14;
+  const workforceLift =
+    workforcePinnacle.band === 'elevated' || workforcePinnacle.band === 'summit'
+      ? workforcePinnacle.pinnacleIndex * 0.25
+      : workforcePinnacle.pinnacleIndex * 0.12;
+
+  const summitIndex = v1014laborClamp(20 + subjectLift + workforceLift - summitDrag);
+  const band = summitBand(summitIndex);
+
+  const stewardNote =
+    band === 'below_summit' || band === 'approaching'
+      ? 'Approaching summit — hold O10-187 wave-28 scale until pinnacle-retention syncs.'
+      : band === 'zenith_locked'
+        ? 'Zenith-locked summit — still monitor retention crest during corridor peaks.'
+        : 'Summit-ready — pair with workforce summit index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    summitIndex,
+    band,
+    summitDrag,
+    summary: `Subject summit readiness ${band} (index ${Math.round(summitIndex)}); summit drag ${Math.round(summitDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-summit-index.ts ---
+  type NationalLaborDemographicsState,
+  type NationalPinnacleRetentionCouplingBrief,
+  type NationalRetentionCrestOutlook,
+  type NationalSubjectSummitReadinessBrief,
+  type NationalWorkforceSummitIndex,
+  type WorkforceSummitBand
+} from './types';
+
+function summitBand(index: number): WorkforceSummitBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'zenith';
+}
+
+export function computeNationalWorkforceSummitIndex(
+  state: NationalLaborDemographicsState,
+  retentionCoupling: NationalPinnacleRetentionCouplingBrief | null | undefined,
+  retentionCrest: NationalRetentionCrestOutlook | null | undefined,
+  subjectSummit: NationalSubjectSummitReadinessBrief | null | undefined
+): NationalWorkforceSummitIndex {
+  if (!state.enabled || !retentionCoupling || !retentionCrest || !subjectSummit) {
+    return {
+      turn: state.turn,
+      summitIndex: 50,
+      band: 'thin',
+      summitDrag: 0,
+      summary: 'Workforce summit idle — retention coupling, retention crest, or subject summit unavailable.',
+      stewardNote: 'Compute O10-187 wave-28 depth stack before summit guidance.'
+    };
+  }
+
+  const summitDrag = v1014laborClamp(
+    subjectSummit.summitDrag * 0.35 +
+      retentionCoupling.pinnacleDrag * 0.3 +
+      retentionCrest.thrustDrag * 0.25 +
+      (subjectSummit.band === 'below_summit' || retentionCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const retentionLift =
+    retentionCoupling.band === 'amplified' || retentionCoupling.band === 'elevated'
+      ? retentionCoupling.couplingIndex * 0.2
+      : retentionCoupling.couplingIndex * 0.1;
+  const crestLift =
+    retentionCrest.band === 'rising' || retentionCrest.band === 'cresting'
+      ? retentionCrest.crestIndex * 0.18
+      : retentionCrest.crestIndex * 0.09;
+  const subjectLift =
+    subjectSummit.band === 'summit_ready' || subjectSummit.band === 'zenith_locked'
+      ? subjectSummit.summitIndex * 0.22
+      : subjectSummit.summitIndex * 0.11;
+
+  const summitIndex = v1014laborClamp(18 + retentionLift + crestLift + subjectLift - summitDrag);
+  const band = summitBand(summitIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce summit — sequence pinnacle-retention, retention crest, and subject summit before post-b9e129bd tranche.'
+      : band === 'zenith'
+        ? 'Zenith summit — avoid corridor overload that breaks subject summit bands.'
+        : 'Elevated summit — refresh subject summit checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    summitIndex,
+    band,
+    summitDrag,
+    summary: `National workforce summit ${band} (index ${Math.round(summitIndex)}); summit drag ${Math.round(summitDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -12324,6 +12708,25 @@ export function computeNationalLaborDemographics(
     state.reengagementThrustOutlook,
     state.subjectPinnacleReadinessBrief
   );
+  state.pinnacleRetentionCouplingBrief = computeNationalPinnacleRetentionCouplingBrief(
+    state,
+    state.nationalWorkforcePinnacleIndex
+  );
+  state.retentionCrestOutlook = computeNationalRetentionCrestOutlook(
+    state,
+    state.reengagementThrustOutlook
+  );
+  state.subjectSummitReadinessBrief = computeNationalSubjectSummitReadinessBrief(
+    state,
+    state.subjectPinnacleReadinessBrief,
+    state.nationalWorkforcePinnacleIndex
+  );
+  state.nationalWorkforceSummitIndex = computeNationalWorkforceSummitIndex(
+    state,
+    state.pinnacleRetentionCouplingBrief,
+    state.retentionCrestOutlook,
+    state.subjectSummitReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -12866,6 +13269,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforcePinnacleIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.pinnacleRetentionCouplingBrief?.band === 'decoupled' ||
+      state.pinnacleRetentionCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.pinnacleRetentionCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.retentionCrestOutlook?.band === 'ebbing' ||
+      state.retentionCrestOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.retentionCrestOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectSummitReadinessBrief?.band === 'below_summit' ||
+      state.subjectSummitReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectSummitReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceSummitIndex?.band === 'fragile' ||
+      state.nationalWorkforceSummitIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceSummitIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -14461,6 +14892,62 @@ export function runV1014LaborDemographicsSelfTests(): {
     'pinnacle steward note'
   );
   check('R2716', advocacyEaseForRegion('NSW', 'technology') > 0, 'advocacy ease for region');
+
+  check('R2801', Boolean(r1.state.pinnacleRetentionCouplingBrief?.band), 'pinnacle retention on state');
+  check('R2802', (r1.state.pinnacleRetentionCouplingBrief?.pinnacleDrag ?? 0) >= 0, 'pinnacle retention drag');
+  check('R2803', Boolean(r1.state.retentionCrestOutlook?.band), 'retention crest on state');
+  check('R2804', (r1.state.retentionCrestOutlook?.thrustDrag ?? 0) >= 0, 'retention crest thrust drag');
+  check('R2805', Boolean(r1.state.subjectSummitReadinessBrief?.band), 'subject summit on state');
+  check('R2806', Boolean(r1.state.nationalWorkforceSummitIndex?.band), 'workforce summit on state');
+  check(
+    'R2807',
+    detectLaborDemographicsQuery('pinnacle retention coupling') === 'pinnacle_retention_coupling',
+    'GI pinnacle retention detect'
+  );
+  check(
+    'R2808',
+    detectLaborDemographicsQuery('retention crest') === 'retention_crest',
+    'GI retention crest detect'
+  );
+  check(
+    'R2809',
+    detectLaborDemographicsQuery('subject summit readiness') === 'subject_summit_readiness',
+    'GI subject summit detect'
+  );
+  check(
+    'R2810',
+    detectLaborDemographicsQuery('workforce summit') === 'workforce_summit',
+    'GI workforce summit detect'
+  );
+  check(
+    'R2811',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_summit').headline.length > 5,
+    'GI workforce summit answer'
+  );
+  const pinnacleRetentionOnly = computeNationalPinnacleRetentionCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforcePinnacleIndex
+  );
+  check('R2812', pinnacleRetentionOnly.summary.length > 10, 'pinnacle retention standalone summary');
+  const retentionCrestOnly = computeNationalRetentionCrestOutlook(r1.state, r1.state.reengagementThrustOutlook);
+  check('R2813', retentionCrestOnly.band.length > 3, 'retention crest band string');
+  const subjectSummitOnly = computeNationalSubjectSummitReadinessBrief(
+    r1.state,
+    r1.state.subjectPinnacleReadinessBrief,
+    r1.state.nationalWorkforcePinnacleIndex
+  );
+  check('R2814', subjectSummitOnly.summitDrag >= 0, 'subject summit drag');
+  check(
+    'R2815',
+    computeNationalWorkforceSummitIndex(
+      rHhBad.state,
+      rHhBad.state.pinnacleRetentionCouplingBrief,
+      rHhBad.state.retentionCrestOutlook,
+      rHhBad.state.subjectSummitReadinessBrief
+    ).stewardNote.length > 8,
+    'summit steward note'
+  );
+  check('R2816', retentionPullForRegion('NSW', 'technology') > 0, 'retention pull for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

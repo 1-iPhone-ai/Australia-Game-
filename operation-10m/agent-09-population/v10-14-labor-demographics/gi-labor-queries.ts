@@ -95,7 +95,11 @@ export type LaborGiQueryTopic =
   | 'apex_advocacy_coupling'
   | 'reengagement_thrust'
   | 'subject_pinnacle_readiness'
-  | 'workforce_pinnacle';
+  | 'workforce_pinnacle'
+  | 'pinnacle_retention_coupling'
+  | 'retention_crest'
+  | 'subject_summit_readiness'
+  | 'workforce_summit';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -188,6 +192,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(reengagement thrust|reengagement pipeline thrust)/.test(q)) return 'reengagement_thrust';
   if (/\b(subject pinnacle readiness|pinnacle readiness subject)/.test(q)) return 'subject_pinnacle_readiness';
   if (/\b(workforce pinnacle|pinnacle index labor)/.test(q)) return 'workforce_pinnacle';
+  if (/\b(pinnacle retention|pinnacle-retention coupling)/.test(q)) return 'pinnacle_retention_coupling';
+  if (/\b(retention crest|retention pipeline crest)/.test(q)) return 'retention_crest';
+  if (/\b(subject summit readiness|summit readiness subject)/.test(q)) return 'subject_summit_readiness';
+  if (/\b(workforce summit|summit index labor)/.test(q)) return 'workforce_summit';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -942,6 +950,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Pinnacle band ${state.nationalWorkforcePinnacleIndex?.band ?? 'unknown'}; pinnacle drag ${Math.round(state.nationalWorkforcePinnacleIndex?.pinnacleDrag ?? 0)}.`,
         inference: state.nationalWorkforcePinnacleIndex?.stewardNote || state.summary,
         projection: 'Workforce pinnacle synthesizes advocacy coupling, reengagement thrust, and subject pinnacle.'
+      };
+    case 'pinnacle_retention_coupling':
+      return {
+        topic,
+        headline: state.pinnacleRetentionCouplingBrief?.summary || 'Pinnacle-retention coupling unavailable.',
+        fact: `Coupling band ${state.pinnacleRetentionCouplingBrief?.band ?? 'unknown'}; pinnacle drag ${Math.round(state.pinnacleRetentionCouplingBrief?.pinnacleDrag ?? 0)}.`,
+        inference: state.pinnacleRetentionCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce pinnacle with retention levers — wave 28 / O10-187 depth.'
+      };
+    case 'retention_crest':
+      return {
+        topic,
+        headline: state.retentionCrestOutlook?.summary || 'Retention crest unavailable.',
+        fact: `Crest band ${state.retentionCrestOutlook?.band ?? 'unknown'}; thrust drag ${Math.round(state.retentionCrestOutlook?.thrustDrag ?? 0)}.`,
+        inference: state.retentionCrestOutlook?.stewardNote || state.outlook,
+        projection: 'Crest blends retention levers with reengagement thrust — bounded indices only.'
+      };
+    case 'subject_summit_readiness':
+      return {
+        topic,
+        headline: state.subjectSummitReadinessBrief?.summary || 'Subject summit readiness unavailable.',
+        fact: `Summit band ${state.subjectSummitReadinessBrief?.band ?? 'unknown'}; summit drag ${Math.round(state.subjectSummitReadinessBrief?.summitDrag ?? 0)}.`,
+        inference: state.subjectSummitReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject summit readiness gates subject pinnacle against workforce pinnacle for O10-187 wave 28.'
+      };
+    case 'workforce_summit':
+      return {
+        topic,
+        headline: state.nationalWorkforceSummitIndex?.summary || 'Workforce summit unavailable.',
+        fact: `Summit band ${state.nationalWorkforceSummitIndex?.band ?? 'unknown'}; summit drag ${Math.round(state.nationalWorkforceSummitIndex?.summitDrag ?? 0)}.`,
+        inference: state.nationalWorkforceSummitIndex?.stewardNote || state.summary,
+        projection: 'Workforce summit synthesizes retention coupling, retention crest, and subject summit.'
       };
     default:
       return {

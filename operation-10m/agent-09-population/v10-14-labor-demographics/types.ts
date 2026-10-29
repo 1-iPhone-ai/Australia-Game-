@@ -277,6 +277,10 @@ export interface NationalLaborDemographicsState {
   reengagementThrustOutlook?: NationalReengagementThrustOutlook;
   subjectPinnacleReadinessBrief?: NationalSubjectPinnacleReadinessBrief;
   nationalWorkforcePinnacleIndex?: NationalWorkforcePinnacleIndex;
+  pinnacleRetentionCouplingBrief?: NationalPinnacleRetentionCouplingBrief;
+  retentionCrestOutlook?: NationalRetentionCrestOutlook;
+  subjectSummitReadinessBrief?: NationalSubjectSummitReadinessBrief;
+  nationalWorkforceSummitIndex?: NationalWorkforceSummitIndex;
 }
 
 export type MigrationShockKind =
@@ -1301,6 +1305,50 @@ export interface NationalWorkforcePinnacleIndex {
   pinnacleIndex: number;
   band: WorkforcePinnacleBand;
   pinnacleDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type PinnacleRetentionCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalPinnacleRetentionCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: PinnacleRetentionCouplingBand;
+  pinnacleDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type RetentionCrestBand = 'ebbing' | 'patchy' | 'rising' | 'cresting';
+
+export interface NationalRetentionCrestOutlook {
+  turn: number;
+  crestIndex: number;
+  band: RetentionCrestBand;
+  thrustDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectSummitReadinessBand = 'below_summit' | 'approaching' | 'summit_ready' | 'zenith_locked';
+
+export interface NationalSubjectSummitReadinessBrief {
+  turn: number;
+  summitIndex: number;
+  band: SubjectSummitReadinessBand;
+  summitDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceSummitBand = 'fragile' | 'thin' | 'elevated' | 'zenith';
+
+export interface NationalWorkforceSummitIndex {
+  turn: number;
+  summitIndex: number;
+  band: WorkforceSummitBand;
+  summitDrag: number;
   summary: string;
   stewardNote: string;
 }
