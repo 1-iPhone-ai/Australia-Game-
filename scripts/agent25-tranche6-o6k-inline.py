@@ -16,6 +16,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     bundle_local_files,
     energy_environment_paths,
     scenario_packs_paths,
+    ai_fidelity_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -27,6 +28,7 @@ REPLAY_MARKER = "export function runV1014ReplayCounterfactualSelfTests"
 PUBSVC_MARKER = "export function V1014_PUBSVC_computePublicServicesCrosswalk"
 ENERGY_MARKER = "export function V1014_ENERGY_DEPTH_turnHook"
 SCENARIO_MARKER = "export function runV1014ScenarioV2SelfTests"
+AI_FIDELITY_MARKER = "export function runV1014AiFidelityTurn"
 
 TRADE_SECTION = (
     "// ============================================================================\n"
@@ -55,6 +57,13 @@ ENERGY_SECTION = (
 SCENARIO_SECTION = (
     "// ============================================================================\n"
     "// SECTION 20BD: V10.14 SCENARIO & OBJECTIVE ENGINE v2 (T6-2)\n"
+    "// ============================================================================\n"
+)
+
+AI_FIDELITY_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20BE: V10.14 AI FIDELITY — PLAN→ACT→VERIFY LOOPS (T6-8)\n"
+    "// Nested sub-blocks: ACC17 verify (20BC refs), UI unlock adapter (20BD UI gates), orchestrator + adapters\n"
     "// ============================================================================\n"
 )
 
@@ -546,6 +555,91 @@ def push_scenario(text: str) -> str:
     return text
 
 
+AI_FIDELITY_HELPERS = """
+function V1014_AI_FIDELITY_readPersistedFromGameState(gs: any): V1014AiFidelityPersisted | null {
+  const raw = (gs?.save?.meta?.v1014 as any)?.ai_fidelity;
+  return raw ? sanitizeV1014AiFidelityPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1014_AI_FIDELITY_applyToGameState(gs: any, out: V1014AiFidelityTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1014 = { ...(meta.v1014 || {}) };
+  v1014.ai_fidelity = out.persisted;
+  meta.v1014 = v1014;
+  save.meta = meta;
+  return { ...gs, save, v1014AiFidelity: out.state };
+}
+"""
+
+AI_FIDELITY_DAY_HOOK = """
+      if (typeof runV1014AiFidelityTurn === 'function') {
+        try {
+          const aiIn = buildV1014AiFidelityTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          aiIn.persisted = V1014_AI_FIDELITY_readPersistedFromGameState(mergedGameState);
+          const aiOut = runV1014AiFidelityTurn(aiIn);
+          mergedGameState = V1014_AI_FIDELITY_applyToGameState(mergedGameState, aiOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_ai_fidelity_day_hook(text: str) -> str:
+    marker = "runV1014AiFidelityTurn(aiIn)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:22000]
+    if marker in day_slice:
+        print("skip ai fidelity day hook (present)")
+        return text
+    scenario_tail = """      if (typeof V1014_SCENARIO_V2_turnHook === 'function') {
+        try {
+          const sv2 = V1014_SCENARIO_V2_turnHook({
+            turn: passCtx.turnCounter,
+            gameState: mergedGameState,
+            settings,
+          });
+          mergedGameState = sv2.gameState;
+        } catch (_) { /* isolated */ }
+      }"""
+    if scenario_tail not in text:
+        raise SystemExit("scenario day hook anchor missing for ai fidelity hook")
+    return text.replace(scenario_tail, scenario_tail + AI_FIDELITY_DAY_HOOK, 1)
+
+
+def wire_ai_fidelity_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState && typeof migrateV1014ScenarioV2Persisted === 'function') {"
+    patch = (
+        "  if (migrated.gameState) {\n"
+        "    const aiRaw = (migrated.gameState as any)?.save?.meta?.v1014?.ai_fidelity;\n"
+        "    if (aiRaw && typeof sanitizeV1014AiFidelityPersisted === 'function') {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1014 = { ...(meta.v1014 || {}) };\n"
+        "      v1014.ai_fidelity = sanitizeV1014AiFidelityPersisted(aiRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1014 = v1014;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1014.ai_fidelity = sanitizeV1014AiFidelityPersisted" in text:
+        print("skip ai fidelity §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("scenario §6 anchor missing for ai fidelity migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
+def push_ai_fidelity(text: str) -> str:
+    block = AI_FIDELITY_SECTION + bundle_local_files(ai_fidelity_paths()) + AI_FIDELITY_HELPERS
+    text = insert_before(text, block, AI_FIDELITY_MARKER, "T6 push #7 ai-fidelity (PR #337)")
+    text = wire_ai_fidelity_day_hook(text)
+    text = wire_ai_fidelity_migration(text)
+    lab = """  { id: 'v1014_ai_fidelity', label: 'V10.14 AI fidelity (T6-8 plan/act/verify + UI gates)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014AiFidelitySelfTestsForLab() },
+"""
+    text = wire_lab(text, lab, "v1014_ai_fidelity")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -560,7 +654,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -575,6 +669,8 @@ def main() -> None:
         text = push_energy(text)
     elif args.push == 6:
         text = push_scenario(text)
+    elif args.push == 7:
+        text = push_ai_fidelity(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")

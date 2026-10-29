@@ -68,6 +68,11 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
     if "run-v1014-trade-depth-self-tests.ts" in name:
         src = re.sub(r"function check\(", "function v1014TradeDepthCheck(", src)
         src = re.sub(r"(?<![\w.])check\(", "v1014TradeDepthCheck(", src)
+    if "run-v1014-ai-fidelity-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1014AiFidelitySelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1014AiFidelitySelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1014AiFidelityBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1014AiFidelityBaseInput(", src)
     return src
 
 
@@ -198,6 +203,48 @@ def scenario_packs_paths() -> list[str]:
         "expansion/o6k-10m/scenario-packs/v1014-scenario-v2-self-tests.ts",
     ]
     return core + tail
+
+
+def ai_fidelity_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/ai-fidelity"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/types/" in s:
+            return (0, s)
+        if "/constants/" in s:
+            return (1, s)
+        if "/persistence/" in s:
+            return (2, s)
+        if "ai-fidelity-utils" in s:
+            return (3, s)
+        if "/plan-act-verify/" in s:
+            return (4, s)
+        if "/verify/" in s:
+            return (5, s)
+        if "/team-routes/" in s:
+            return (6, s)
+        if "/advisory/" in s:
+            return (7, s)
+        if "/ui-gates/" in s:
+            return (8, s)
+        if "/explainability-bundles/" in s:
+            return (9, s)
+        if "fidelity-read-adapters" in s:
+            return (10, s)
+        if "/adapters/" in s:
+            return (11, s)
+        if "ai-fidelity-orchestrator" in s:
+            return (12, s)
+        if "/self-tests/" in s:
+            return (13, s)
+        return (50, s)
+
+    files = sorted(
+        (p for p in root.rglob("*.ts") if p.name != "index.ts"),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
 
 
 def insert_before(text: str, block: str, marker: str, label: str) -> str:
