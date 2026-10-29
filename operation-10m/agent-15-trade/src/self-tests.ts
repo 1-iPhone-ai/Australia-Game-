@@ -499,6 +499,7 @@ import {
   computeWave57SovereignHandoffDepthStackingSnapshot,
   wave57SovereignHandoffDepthStackingExportScale,
 } from './o10-257-wave57-sovereign-handoff-depth-stacking.ts';
+import { computeWave58SovereignHandoffDepthStackingSnapshot } from './o10-260-wave58-sovereign-handoff-depth-stacking.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {

@@ -730,6 +730,7 @@ import {
   computeWave57SovereignHandoffDepthStackingSnapshot,
   wave57SovereignHandoffDepthStackingExportScale,
 } from './o10-257-wave57-sovereign-handoff-depth-stacking.ts';
+import { computeWave58SovereignHandoffDepthStackingSnapshot, wave58SovereignHandoffDepthStackingExportScale } from './o10-260-wave58-sovereign-handoff-depth-stacking.ts';
 import {
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
