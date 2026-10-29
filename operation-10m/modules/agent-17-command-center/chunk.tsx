@@ -269,6 +269,8 @@ export interface Agent17PlanningDepthSnapshot {
   inheritanceAccord: Agent17InheritanceAccordSnapshot;
   endowmentIndex: Agent17EndowmentIndexSnapshot;
   beneficiaryAccord: Agent17BeneficiaryAccordSnapshot;
+  stewardshipIndex: Agent17StewardshipIndexSnapshot;
+  stewardAccord: Agent17StewardAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1655,6 +1657,40 @@ export interface Agent17BeneficiaryAccordSnapshot {
   endowmentBand: Agent17EndowmentIndexSnapshot['band'];
   inheritanceBand: Agent17InheritanceAccordSnapshot['band'];
   beneficiaryDesignated: boolean;
+  headline: string;
+}
+
+export interface Agent17StewardshipMandate {
+  id: string;
+  label: string;
+  entrusted: boolean;
+  weight: number;
+}
+
+export interface Agent17StewardshipIndexSnapshot {
+  stewardshipScore: number;
+  band: 'entrusted' | 'pending' | 'abdicated';
+  mandates: Agent17StewardshipMandate[];
+  beneficiaryBand: Agent17BeneficiaryAccordSnapshot['band'];
+  endowmentBand: Agent17EndowmentIndexSnapshot['band'];
+  stewardshipEntrusted: boolean;
+  headline: string;
+}
+
+export interface Agent17StewardCommission {
+  id: string;
+  label: string;
+  commissioned: boolean;
+  weight: number;
+}
+
+export interface Agent17StewardAccordSnapshot {
+  stewardScore: number;
+  band: 'commissioned' | 'interim' | 'recalled';
+  commissions: Agent17StewardCommission[];
+  stewardshipBand: Agent17StewardshipIndexSnapshot['band'];
+  beneficiaryBand: Agent17BeneficiaryAccordSnapshot['band'];
+  stewardCommissioned: boolean;
   headline: string;
 }
 
@@ -11817,6 +11853,220 @@ export function beneficiaryAccordBlocksEndowment(
   return snapshot.band === 'vacated' || !snapshot.beneficiaryDesignated;
 }
 
+export function beneficiaryAccordBlocksStewardship(
+  snapshot: Agent17BeneficiaryAccordSnapshot
+): boolean {
+  return beneficiaryAccordBlocksEndowment(snapshot);
+}
+
+
+// --- source: planning/stewardship-index.ts ---
+  Agent17BeneficiaryAccordSnapshot,
+  Agent17EndowmentIndexSnapshot,
+  Agent17InheritanceAccordSnapshot,
+  Agent17StewardshipIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17StewardshipIndexInputs {
+  beneficiaryAccord: Agent17BeneficiaryAccordSnapshot;
+  endowmentIndex: Agent17EndowmentIndexSnapshot;
+  inheritanceAccord: Agent17InheritanceAccordSnapshot;
+}
+
+export function buildAgent17StewardshipIndex(
+  inputs: Agent17StewardshipIndexInputs
+): Agent17StewardshipIndexSnapshot {
+  const mandates: Agent17StewardshipIndexSnapshot['mandates'] = [];
+
+  mandates.push({
+    id: 'beneficiary_designated',
+    label: 'Beneficiary accord beneficiary-designated',
+    entrusted:
+      inputs.beneficiaryAccord.beneficiaryDesignated &&
+      !beneficiaryAccordBlocksStewardship(inputs.beneficiaryAccord),
+    weight: 30,
+  });
+
+  mandates.push({
+    id: 'beneficiary_band',
+    label: 'Beneficiary designated or nominal',
+    entrusted:
+      inputs.beneficiaryAccord.band === 'designated' ||
+      inputs.beneficiaryAccord.band === 'nominal',
+    weight: 25,
+  });
+
+  mandates.push({
+    id: 'endowment_funded',
+    label: 'Endowment index endowment-funded',
+    entrusted:
+      inputs.endowmentIndex.endowmentFunded &&
+      !endowmentIndexBlocksBeneficiary(inputs.endowmentIndex),
+    weight: 20,
+  });
+
+  mandates.push({
+    id: 'inheritance_clear',
+    label: 'Inheritance accord not blocking endowment',
+    entrusted: !inheritanceAccordBlocksEndowment(inputs.inheritanceAccord),
+    weight: 15,
+  });
+
+  mandates.push({
+    id: 'beneficiary_score',
+    label: 'Beneficiary score headroom',
+    entrusted: inputs.beneficiaryAccord.beneficiaryScore >= 4,
+    weight: 10,
+  });
+
+  const weighted = mandates.reduce(
+    (n, m) => n + (m.entrusted ? 100 : 1) * (m.weight / 100),
+    0
+  );
+  const totalWeight = mandates.reduce((n, m) => n + m.weight, 0);
+  const stewardshipScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const abdicatedSignals =
+    beneficiaryAccordBlocksStewardship(inputs.beneficiaryAccord) ||
+    endowmentIndexBlocksBeneficiary(inputs.endowmentIndex) ||
+    inheritanceAccordBlocksEndowment(inputs.inheritanceAccord);
+
+  const band: Agent17StewardshipIndexSnapshot['band'] = abdicatedSignals
+    ? 'abdicated'
+    : stewardshipScore >= 44 &&
+        inputs.beneficiaryAccord.band === 'designated' &&
+        inputs.endowmentIndex.band === 'funded'
+      ? 'entrusted'
+      : 'pending';
+
+  const stewardshipEntrusted =
+    band === 'entrusted' &&
+    inputs.beneficiaryAccord.beneficiaryDesignated &&
+    !beneficiaryAccordBlocksStewardship(inputs.beneficiaryAccord);
+
+  return {
+    stewardshipScore,
+    band,
+    mandates,
+    beneficiaryBand: inputs.beneficiaryAccord.band,
+    endowmentBand: inputs.endowmentIndex.band,
+    stewardshipEntrusted,
+    headline: `Stewardship ${band} (${stewardshipScore}/100) · ${mandates.filter(m => m.entrusted).length}/${mandates.length} mandates`,
+  };
+}
+
+export function stewardshipIndexBlocksSteward(
+  snapshot: Agent17StewardshipIndexSnapshot
+): boolean {
+  return snapshot.band === 'abdicated' || !snapshot.stewardshipEntrusted;
+}
+
+
+// --- source: planning/steward-accord.ts ---
+  Agent17BeneficiaryAccordSnapshot,
+  Agent17EndowmentIndexSnapshot,
+  Agent17StewardAccordSnapshot,
+  Agent17StewardshipIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17StewardAccordInputs {
+  stewardshipIndex: Agent17StewardshipIndexSnapshot;
+  beneficiaryAccord: Agent17BeneficiaryAccordSnapshot;
+  endowmentIndex: Agent17EndowmentIndexSnapshot;
+}
+
+export function buildAgent17StewardAccord(
+  inputs: Agent17StewardAccordInputs
+): Agent17StewardAccordSnapshot {
+  const commissions: Agent17StewardAccordSnapshot['commissions'] = [];
+
+  commissions.push({
+    id: 'stewardship_entrusted',
+    label: 'Stewardship index stewardship-entrusted',
+    commissioned:
+      inputs.stewardshipIndex.stewardshipEntrusted &&
+      !stewardshipIndexBlocksSteward(inputs.stewardshipIndex),
+    weight: 30,
+  });
+
+  commissions.push({
+    id: 'stewardship_band',
+    label: 'Stewardship entrusted or pending',
+    commissioned:
+      inputs.stewardshipIndex.band === 'entrusted' ||
+      inputs.stewardshipIndex.band === 'pending',
+    weight: 25,
+  });
+
+  commissions.push({
+    id: 'beneficiary_designated',
+    label: 'Beneficiary accord beneficiary-ready',
+    commissioned:
+      inputs.beneficiaryAccord.beneficiaryDesignated &&
+      !beneficiaryAccordBlocksStewardship(inputs.beneficiaryAccord),
+    weight: 20,
+  });
+
+  commissions.push({
+    id: 'endowment_clear',
+    label: 'Endowment index not blocking beneficiary',
+    commissioned: !endowmentIndexBlocksBeneficiary(inputs.endowmentIndex),
+    weight: 15,
+  });
+
+  commissions.push({
+    id: 'stewardship_score',
+    label: 'Stewardship score headroom',
+    commissioned: inputs.stewardshipIndex.stewardshipScore >= 3,
+    weight: 10,
+  });
+
+  const weighted = commissions.reduce(
+    (n, c) => n + (c.commissioned ? 100 : 1) * (c.weight / 100),
+    0
+  );
+  const totalWeight = commissions.reduce((n, c) => n + c.weight, 0);
+  const stewardScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const recalledSignals =
+    stewardshipIndexBlocksSteward(inputs.stewardshipIndex) ||
+    beneficiaryAccordBlocksStewardship(inputs.beneficiaryAccord) ||
+    endowmentIndexBlocksBeneficiary(inputs.endowmentIndex);
+
+  const band: Agent17StewardAccordSnapshot['band'] = recalledSignals
+    ? 'recalled'
+    : stewardScore >= 41 &&
+        inputs.stewardshipIndex.band === 'entrusted' &&
+        inputs.beneficiaryAccord.band === 'designated'
+      ? 'commissioned'
+      : 'interim';
+
+  const stewardCommissioned =
+    band === 'commissioned' &&
+    inputs.stewardshipIndex.stewardshipEntrusted &&
+    !endowmentIndexBlocksBeneficiary(inputs.endowmentIndex);
+
+  return {
+    stewardScore,
+    band,
+    commissions,
+    stewardshipBand: inputs.stewardshipIndex.band,
+    beneficiaryBand: inputs.beneficiaryAccord.band,
+    stewardCommissioned,
+    headline: `Steward ${band} (${stewardScore}/100) · ${commissions.filter(c => c.commissioned).length}/${commissions.length} commissions`,
+  };
+}
+
+export function stewardAccordBlocksStewardship(snapshot: Agent17StewardAccordSnapshot): boolean {
+  return snapshot.band === 'recalled' || !snapshot.stewardCommissioned;
+}
+
 
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
@@ -12347,6 +12597,16 @@ export function buildAgent17PlanningDepthSnapshot(
     inheritanceAccord,
     patrimonyIndex,
   });
+  const stewardshipIndex = buildAgent17StewardshipIndex({
+    beneficiaryAccord,
+    endowmentIndex,
+    inheritanceAccord,
+  });
+  const stewardAccord = buildAgent17StewardAccord({
+    stewardshipIndex,
+    beneficiaryAccord,
+    endowmentIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -12434,6 +12694,8 @@ export function buildAgent17PlanningDepthSnapshot(
     inheritanceAccord,
     endowmentIndex,
     beneficiaryAccord,
+    stewardshipIndex,
+    stewardAccord,
   };
 }
 
@@ -13763,6 +14025,29 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Depleted endowment or disclaimed inheritance yields beneficiaryAccordBlocksEndowment.',
     severity: 'major',
   },
+  {
+    id: 'G17-148',
+    title: 'Stewardship index on planning depth',
+    category: 'telemetry',
+    acceptance:
+      'stewardshipIndex reports stewardshipScore 0–100 with entrusted/pending/abdicated band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-149',
+    title: 'Steward accord commissions complete',
+    category: 'telemetry',
+    acceptance: 'stewardAccord exposes ≥5 commissions and stewardScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-150',
+    title: 'Abdicated stewardship recalls steward accord',
+    category: 'integration',
+    acceptance:
+      'Abdicated stewardship or vacated beneficiary yields stewardAccordBlocksStewardship.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -14025,6 +14310,12 @@ export function listAgent17GoalIds(): string[] {
   buildAgent17BeneficiaryAccord,
   beneficiaryAccordBlocksEndowment,
 } from '../planning/beneficiary-accord.ts';
+  buildAgent17StewardshipIndex,
+  stewardshipIndexBlocksSteward,
+} from '../planning/stewardship-index.ts';
+  buildAgent17StewardAccord,
+  stewardAccordBlocksStewardship,
+} from '../planning/steward-accord.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -16275,6 +16566,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const stewardshipIndex = depthEval.snapshot.planningDepth?.stewardshipIndex;
+  goalResults.push(
+    result(
+      'G17-148',
+      !!stewardshipIndex &&
+        stewardshipIndex.mandates.length >= 5 &&
+        stewardshipIndex.stewardshipScore >= 0 &&
+        stewardshipIndex.stewardshipScore <= 100 &&
+        (stewardshipIndex.band === 'entrusted' ||
+          stewardshipIndex.band === 'pending' ||
+          stewardshipIndex.band === 'abdicated'),
+      `mandates=${stewardshipIndex?.mandates.length} score=${stewardshipIndex?.stewardshipScore}`
+    )
+  );
+
+  const stewardAccord = depthEval.snapshot.planningDepth?.stewardAccord;
+  goalResults.push(
+    result(
+      'G17-149',
+      !!stewardAccord &&
+        stewardAccord.commissions.length >= 5 &&
+        stewardAccord.stewardScore >= 0 &&
+        stewardAccord.stewardScore <= 100,
+      `commissions=${stewardAccord?.commissions.length} score=${stewardAccord?.stewardScore}`
+    )
+  );
+
+  const abdicatedStewardship = buildAgent17StewardshipIndex({
+    beneficiaryAccord: vacatedBeneficiary,
+    endowmentIndex: depletedEndowment,
+    inheritanceAccord: disclaimedInheritance,
+  });
+  const recalledSteward = buildAgent17StewardAccord({
+    stewardshipIndex: abdicatedStewardship,
+    beneficiaryAccord: vacatedBeneficiary,
+    endowmentIndex: depletedEndowment,
+  });
+  goalResults.push(
+    result(
+      'G17-150',
+      beneficiaryAccordBlocksEndowment(vacatedBeneficiary) ||
+        stewardshipIndexBlocksSteward(abdicatedStewardship) ||
+        stewardAccordBlocksStewardship(recalledSteward),
+      `${abdicatedStewardship.band}/${recalledSteward.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -16452,6 +16790,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-145',
     'G17-146',
     'G17-147',
+    'G17-148',
+    'G17-149',
+    'G17-150',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

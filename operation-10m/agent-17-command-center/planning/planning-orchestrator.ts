@@ -105,6 +105,8 @@ import { buildAgent17PatrimonyIndex } from './patrimony-index.ts';
 import { buildAgent17InheritanceAccord } from './inheritance-accord.ts';
 import { buildAgent17EndowmentIndex } from './endowment-index.ts';
 import { buildAgent17BeneficiaryAccord } from './beneficiary-accord.ts';
+import { buildAgent17StewardshipIndex } from './stewardship-index.ts';
+import { buildAgent17StewardAccord } from './steward-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -619,6 +621,16 @@ export function buildAgent17PlanningDepthSnapshot(
     inheritanceAccord,
     patrimonyIndex,
   });
+  const stewardshipIndex = buildAgent17StewardshipIndex({
+    beneficiaryAccord,
+    endowmentIndex,
+    inheritanceAccord,
+  });
+  const stewardAccord = buildAgent17StewardAccord({
+    stewardshipIndex,
+    beneficiaryAccord,
+    endowmentIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -706,6 +718,8 @@ export function buildAgent17PlanningDepthSnapshot(
     inheritanceAccord,
     endowmentIndex,
     beneficiaryAccord,
+    stewardshipIndex,
+    stewardAccord,
   };
 }
 

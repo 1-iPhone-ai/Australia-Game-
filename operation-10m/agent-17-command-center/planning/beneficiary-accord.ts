@@ -103,3 +103,9 @@ export function beneficiaryAccordBlocksEndowment(
 ): boolean {
   return snapshot.band === 'vacated' || !snapshot.beneficiaryDesignated;
 }
+
+export function beneficiaryAccordBlocksStewardship(
+  snapshot: Agent17BeneficiaryAccordSnapshot
+): boolean {
+  return beneficiaryAccordBlocksEndowment(snapshot);
+}

@@ -265,6 +265,8 @@ export interface Agent17PlanningDepthSnapshot {
   inheritanceAccord: Agent17InheritanceAccordSnapshot;
   endowmentIndex: Agent17EndowmentIndexSnapshot;
   beneficiaryAccord: Agent17BeneficiaryAccordSnapshot;
+  stewardshipIndex: Agent17StewardshipIndexSnapshot;
+  stewardAccord: Agent17StewardAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1651,6 +1653,40 @@ export interface Agent17BeneficiaryAccordSnapshot {
   endowmentBand: Agent17EndowmentIndexSnapshot['band'];
   inheritanceBand: Agent17InheritanceAccordSnapshot['band'];
   beneficiaryDesignated: boolean;
+  headline: string;
+}
+
+export interface Agent17StewardshipMandate {
+  id: string;
+  label: string;
+  entrusted: boolean;
+  weight: number;
+}
+
+export interface Agent17StewardshipIndexSnapshot {
+  stewardshipScore: number;
+  band: 'entrusted' | 'pending' | 'abdicated';
+  mandates: Agent17StewardshipMandate[];
+  beneficiaryBand: Agent17BeneficiaryAccordSnapshot['band'];
+  endowmentBand: Agent17EndowmentIndexSnapshot['band'];
+  stewardshipEntrusted: boolean;
+  headline: string;
+}
+
+export interface Agent17StewardCommission {
+  id: string;
+  label: string;
+  commissioned: boolean;
+  weight: number;
+}
+
+export interface Agent17StewardAccordSnapshot {
+  stewardScore: number;
+  band: 'commissioned' | 'interim' | 'recalled';
+  commissions: Agent17StewardCommission[];
+  stewardshipBand: Agent17StewardshipIndexSnapshot['band'];
+  beneficiaryBand: Agent17BeneficiaryAccordSnapshot['band'];
+  stewardCommissioned: boolean;
   headline: string;
 }
 

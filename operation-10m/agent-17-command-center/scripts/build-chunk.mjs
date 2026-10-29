@@ -111,6 +111,8 @@ const FILES = [
   'planning/inheritance-accord.ts',
   'planning/endowment-index.ts',
   'planning/beneficiary-accord.ts',
+  'planning/stewardship-index.ts',
+  'planning/steward-accord.ts',
   'planning/planning-orchestrator.ts',
   'evaluation/operations-evaluator.ts',
   'rollback/rollback-controller.ts',

@@ -345,6 +345,14 @@ import {
   beneficiaryAccordBlocksEndowment,
 } from '../planning/beneficiary-accord.ts';
 import {
+  buildAgent17StewardshipIndex,
+  stewardshipIndexBlocksSteward,
+} from '../planning/stewardship-index.ts';
+import {
+  buildAgent17StewardAccord,
+  stewardAccordBlocksStewardship,
+} from '../planning/steward-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -2595,6 +2603,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const stewardshipIndex = depthEval.snapshot.planningDepth?.stewardshipIndex;
+  goalResults.push(
+    result(
+      'G17-148',
+      !!stewardshipIndex &&
+        stewardshipIndex.mandates.length >= 5 &&
+        stewardshipIndex.stewardshipScore >= 0 &&
+        stewardshipIndex.stewardshipScore <= 100 &&
+        (stewardshipIndex.band === 'entrusted' ||
+          stewardshipIndex.band === 'pending' ||
+          stewardshipIndex.band === 'abdicated'),
+      `mandates=${stewardshipIndex?.mandates.length} score=${stewardshipIndex?.stewardshipScore}`
+    )
+  );
+
+  const stewardAccord = depthEval.snapshot.planningDepth?.stewardAccord;
+  goalResults.push(
+    result(
+      'G17-149',
+      !!stewardAccord &&
+        stewardAccord.commissions.length >= 5 &&
+        stewardAccord.stewardScore >= 0 &&
+        stewardAccord.stewardScore <= 100,
+      `commissions=${stewardAccord?.commissions.length} score=${stewardAccord?.stewardScore}`
+    )
+  );
+
+  const abdicatedStewardship = buildAgent17StewardshipIndex({
+    beneficiaryAccord: vacatedBeneficiary,
+    endowmentIndex: depletedEndowment,
+    inheritanceAccord: disclaimedInheritance,
+  });
+  const recalledSteward = buildAgent17StewardAccord({
+    stewardshipIndex: abdicatedStewardship,
+    beneficiaryAccord: vacatedBeneficiary,
+    endowmentIndex: depletedEndowment,
+  });
+  goalResults.push(
+    result(
+      'G17-150',
+      beneficiaryAccordBlocksEndowment(vacatedBeneficiary) ||
+        stewardshipIndexBlocksSteward(abdicatedStewardship) ||
+        stewardAccordBlocksStewardship(recalledSteward),
+      `${abdicatedStewardship.band}/${recalledSteward.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -2772,6 +2827,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-145',
     'G17-146',
     'G17-147',
+    'G17-148',
+    'G17-149',
+    'G17-150',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

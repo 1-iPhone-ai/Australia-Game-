@@ -1039,6 +1039,29 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Depleted endowment or disclaimed inheritance yields beneficiaryAccordBlocksEndowment.',
     severity: 'major',
   },
+  {
+    id: 'G17-148',
+    title: 'Stewardship index on planning depth',
+    category: 'telemetry',
+    acceptance:
+      'stewardshipIndex reports stewardshipScore 0–100 with entrusted/pending/abdicated band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-149',
+    title: 'Steward accord commissions complete',
+    category: 'telemetry',
+    acceptance: 'stewardAccord exposes ≥5 commissions and stewardScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-150',
+    title: 'Abdicated stewardship recalls steward accord',
+    category: 'integration',
+    acceptance:
+      'Abdicated stewardship or vacated beneficiary yields stewardAccordBlocksStewardship.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
