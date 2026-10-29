@@ -23,6 +23,7 @@ import {
   O6K_AGENT24_WAVE40_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE41_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE42_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE43_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
 export { O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA } from './replay-scale-wave-integration-closeout.ts';
@@ -60,7 +61,9 @@ export function buildAgent24ReplayScaleWaveFullChunksHandoffSeal(
   const waveRound = input.replayScaleWaveDryrunVerification.waveRound;
   const fullChunksBaselineSha =
     input.fullChunksBaselineSha ??
-    (waveRound >= 42
+    (waveRound >= 43
+      ? O6K_AGENT24_WAVE43_INTEGRATION_BASELINE_SHA
+      : waveRound >= 42
       ? O6K_AGENT24_WAVE42_INTEGRATION_BASELINE_SHA
       : waveRound >= 41
       ? O6K_AGENT24_WAVE41_INTEGRATION_BASELINE_SHA
@@ -170,8 +173,8 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
   const dryrunVerification = {
     reportId: 'dv',
     matchId: 'self',
-    waveRound: 42,
-    dryrunBaselineSha: O6K_AGENT24_WAVE42_INTEGRATION_BASELINE_SHA,
+    waveRound: 43,
+    dryrunBaselineSha: O6K_AGENT24_WAVE43_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -201,9 +204,9 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
       name: 'handoff_ready_at_full_chunks_baseline',
       passed:
         seal.handoffReady &&
-        seal.fullChunksBaselineSha === O6K_AGENT24_WAVE42_INTEGRATION_BASELINE_SHA,
+        seal.fullChunksBaselineSha === O6K_AGENT24_WAVE43_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: seal.waveRound === 42 },
+    { name: 'wave_round_pinned', passed: seal.waveRound === 43 },
     {
       name: 'deterministic_fingerprint',
       passed:
