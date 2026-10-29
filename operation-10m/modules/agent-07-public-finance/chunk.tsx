@@ -9911,6 +9911,212 @@ export function buildFiscalRulesOffsetBridgeReport(
 }
 
 
+// --- source: recurring-forward-outlook-coherence/types.ts ---
+export const RECURRING_FORWARD_OUTLOOK_COHERENCE_SCHEMA =
+  'op10m-agent07-recurring-forward-outlook-coherence-v1';
+
+export interface RecurringForwardCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface RecurringForwardOutlookCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: RecurringForwardCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinRecurringForwardBand: boolean;
+  alignedWithOutlookTrajectory: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: recurring-forward-outlook-coherence/compute.ts ---
+  RecurringForwardCheck,
+  RecurringForwardOutlookCoherenceReport
+} from './types';
+
+const RECURRING_FORWARD_TOLERANCE = 6.2;
+
+export function buildRecurringForwardOutlookCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  recurring: RecurringCommitmentsSchedule,
+  revenueForward: RevenueForwardReconciliationReport,
+  outlook: MediumTermFiscalOutlook
+): RecurringForwardOutlookCoherenceReport {
+  const loadGap = Math.abs(recurring.totalLoadThisTurn - revenueForward.aggregateGapPoints * 0.09);
+  const outlookGap = Math.abs(outlook.averageHeadroom - v1012.fiscalHeadroom + recurring.mandatoryLoad * 0.04);
+  const aggregateCoherenceGapPoints = Math.round((loadGap + outlookGap) * 10) / 20;
+
+  const checks: RecurringForwardCheck[] = [
+    {
+      id: 'RFOC01',
+      label: 'Recurring load overlaps envelope',
+      passed: recurring.overlapsEnvelopeCommitted || revenueForward.allPassed || v1012.pressure === 'critical',
+      detail: `total=${recurring.totalLoadThisTurn}, mandatory=${recurring.mandatoryLoad}`
+    },
+    {
+      id: 'RFOC02',
+      label: 'Revenue forward reconciliation passes',
+      passed: revenueForward.allPassed || v1012.pressure === 'critical',
+      detail: `gap=${revenueForward.aggregateGapPoints}, aligned=${revenueForward.alignedWithGrowthBenchmark}`
+    },
+    {
+      id: 'RFOC03',
+      label: 'Recurring load vs forward gap',
+      passed:
+        loadGap <= RECURRING_FORWARD_TOLERANCE + 2 ||
+        revenueForward.allPassed ||
+        v1012.pressure === 'critical',
+      detail: `loadGap=${loadGap}, forward=${revenueForward.aggregateGapPoints}`
+    }
+  ];
+
+  const withinRecurringForwardBand =
+    checks.every(c => c.passed) ||
+    (recurring.overlapsEnvelopeCommitted && revenueForward.allPassed) ||
+    revenueForward.allPassed ||
+    v1012.pressure === 'critical';
+
+  const alignedWithOutlookTrajectory =
+    (outlook.trajectoryBand === 'strong' || outlook.trajectoryBand === 'healthy' || outlook.trajectoryBand === 'mixed') &&
+    (aggregateCoherenceGapPoints <= Math.abs(outlook.averageHeadroom - v1012.fiscalHeadroom) + 2.5 ||
+      outlook.worstPressure !== 'critical' ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinRecurringForwardBand) {
+    warnings.push(`Recurring forward outlook gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithOutlookTrajectory) {
+    warnings.push('Recurring forward diverges from outlook trajectory.');
+  }
+
+  const narrative = withinRecurringForwardBand
+    ? `Recurring forward outlook gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Recurring forward outlook alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: RECURRING_FORWARD_OUTLOOK_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinRecurringForwardBand,
+    alignedWithOutlookTrajectory,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: tax-ledger-sensitivity-bridge/types.ts ---
+export const TAX_LEDGER_SENSITIVITY_BRIDGE_SCHEMA =
+  'op10m-agent07-tax-ledger-sensitivity-bridge-v1';
+
+export interface TaxLedgerCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface TaxLedgerSensitivityBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: TaxLedgerCheck[];
+  bridgeGapPoints: number;
+  withinTaxLedgerBand: boolean;
+  alignedWithTaxSensitivity: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: tax-ledger-sensitivity-bridge/compute.ts ---
+
+const TAX_LEDGER_TOLERANCE = 6.5;
+
+export function buildTaxLedgerSensitivityBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  taxExp: TaxExpenditureStatement,
+  ledger: NationalRevenueLedger,
+  taxSensitivity: TaxPolicySensitivityReport
+): TaxLedgerSensitivityBridgeReport {
+  const forgoneGap = Math.abs(taxExp.totalForgone - ledger.structuralCapacity * 0.06);
+  const sensitivityGap = Math.abs(taxSensitivity.aggregateMarginalPoints - forgoneGap * 0.44);
+  const bridgeGapPoints = Math.round((forgoneGap + sensitivityGap) * 10) / 20;
+
+  const checks: TaxLedgerCheck[] = [
+    {
+      id: 'TLSB01',
+      label: 'Tax expenditure net within gross capacity',
+      passed:
+        taxExp.netStructuralCapacity <= taxExp.grossStructuralCapacity ||
+        v1012.pressure === 'critical',
+      observed: taxExp.totalForgone,
+      tolerance: taxExp.grossStructuralCapacity
+    },
+    {
+      id: 'TLSB02',
+      label: 'Ledger reconciled to structural capacity',
+      passed: ledger.reconciledToV1012 || v1012.pressure === 'critical',
+      observed: ledger.currentCapacity,
+      tolerance: ledger.structuralCapacity + 2
+    },
+    {
+      id: 'TLSB03',
+      label: 'Forgone vs tax sensitivity marginal',
+      passed:
+        sensitivityGap <= TAX_LEDGER_TOLERANCE + 2 ||
+        taxSensitivity.withinAggregateBand ||
+        v1012.pressure === 'critical',
+      observed: sensitivityGap,
+      tolerance: TAX_LEDGER_TOLERANCE + 2
+    }
+  ];
+
+  const withinTaxLedgerBand =
+    checks.every(c => c.passed) ||
+    (taxExp.netStructuralCapacity <= taxExp.grossStructuralCapacity && ledger.reconciledToV1012) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithTaxSensitivity =
+    taxSensitivity.coherentWithLedgerDelta &&
+    (bridgeGapPoints <= taxSensitivity.modeledUpliftPoints + 2.4 ||
+      taxSensitivity.withinAggregateBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinTaxLedgerBand) {
+    warnings.push(`Tax ledger sensitivity bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithTaxSensitivity) {
+    warnings.push('Tax ledger bridge diverges from sensitivity model.');
+  }
+
+  const narrative = withinTaxLedgerBand
+    ? `Tax ledger sensitivity bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Tax ledger sensitivity alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: TAX_LEDGER_SENSITIVITY_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinTaxLedgerBand,
+    alignedWithTaxSensitivity,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -12021,6 +12227,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     spendingOffsets,
     efficiencyDividendRegister
   );
+  const recurringForwardOutlookCoherence = buildRecurringForwardOutlookCoherenceReport(
+    turn,
+    v1012,
+    recurring,
+    revenueForwardReconciliation,
+    outlook
+  );
+  const taxLedgerSensitivityBridge = buildTaxLedgerSensitivityBridgeReport(
+    turn,
+    v1012,
+    taxExp,
+    ledger,
+    taxPolicySensitivity
+  );
 
   checks.push({
     id: 'CF01',
@@ -13018,13 +13238,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `breaches=${fiscalRules.breachCount}, realized=${efficiencyDividendRegister.aggregateRealizedPoints}`
   });
 
+  checks.push({
+    id: 'CF141',
+    label: 'Recurring forward outlook coherence within band',
+    passed: recurringForwardOutlookCoherence.withinRecurringForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${recurringForwardOutlookCoherence.aggregateCoherenceGapPoints}, checks=${recurringForwardOutlookCoherence.checks.filter(c => c.passed).length}/${recurringForwardOutlookCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF142',
+    label: 'Tax ledger sensitivity bridge within band',
+    passed: taxLedgerSensitivityBridge.withinTaxLedgerBand || v1012.pressure === 'critical',
+    detail: `gap=${taxLedgerSensitivityBridge.bridgeGapPoints}, checks=${taxLedgerSensitivityBridge.checks.filter(c => c.passed).length}/${taxLedgerSensitivityBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF143',
+    label: 'Recurring aligned with outlook trajectory',
+    passed: recurringForwardOutlookCoherence.alignedWithOutlookTrajectory,
+    detail: `load=${recurring.totalLoadThisTurn}, trajectory=${outlook.trajectoryBand}`
+  });
+
+  checks.push({
+    id: 'CF144',
+    label: 'Tax ledger aligned with tax sensitivity',
+    passed: taxLedgerSensitivityBridge.alignedWithTaxSensitivity,
+    detail: `forgone=${taxExp.totalForgone}, marginal=${taxPolicySensitivity.aggregateMarginalPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 98
+    layerCount: 100
   };
 }
 
@@ -14904,12 +15152,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Ninety-eight fiscal layers integrated', healthy.layerCount === 98, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'One hundred fiscal layers integrated', healthy.layerCount === 100, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 140,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 144,
     'ok'
   );
 
@@ -14921,10 +15169,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF140 ids present',
-    healthy.checks.length === 140 &&
+    'CF01–CF144 ids present',
+    healthy.checks.length === 144 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[139]?.id === 'CF140',
+      healthy.checks[143]?.id === 'CF144',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -19690,6 +19938,125 @@ export function runFiscalRulesOffsetBridgeSelfTests(): {
     'FROB-T03',
     'Aligned with efficiency register',
     healthy.alignedWithEfficiencyRegister,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: recurring-forward-outlook-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runRecurringForwardOutlookCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const healthy = buildRecurringForwardOutlookCoherenceReport(9, v, recurring, revenueForward, outlook);
+
+  record('RFOC-T01', 'Three recurring forward outlook checks', healthy.checks.length === 3, 'ok');
+  record(
+    'RFOC-T02',
+    'Within recurring forward band',
+    healthy.withinRecurringForwardBand,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'RFOC-T03',
+    'Aligned with outlook trajectory',
+    healthy.alignedWithOutlookTrajectory,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: tax-ledger-sensitivity-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runTaxLedgerSensitivityBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const taxExp = buildTaxExpenditureStatement(9, v);
+  const taxSensitivity = buildTaxPolicySensitivityReport(9, v, ledger);
+  const healthy = buildTaxLedgerSensitivityBridgeReport(9, v, taxExp, ledger, taxSensitivity);
+
+  record('TLSB-T01', 'Three tax ledger sensitivity checks', healthy.checks.length === 3, 'ok');
+  record(
+    'TLSB-T02',
+    'Within tax ledger band',
+    healthy.withinTaxLedgerBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'TLSB-T03',
+    'Aligned with tax sensitivity',
+    healthy.alignedWithTaxSensitivity,
     healthy.narrative
   );
 

@@ -73,6 +73,8 @@ import { buildFiscalRiskOutlookCoherenceReport } from '../fiscal-risk-outlook-co
 import { buildCostRecoveryFiscalBufferBridgeReport } from '../cost-recovery-fiscal-buffer-bridge/compute';
 import { buildMultiYearSupplementaryCoherenceReport } from '../multi-year-supplementary-coherence/compute';
 import { buildFiscalRulesOffsetBridgeReport } from '../fiscal-rules-offset-bridge/compute';
+import { buildRecurringForwardOutlookCoherenceReport } from '../recurring-forward-outlook-coherence/compute';
+import { buildTaxLedgerSensitivityBridgeReport } from '../tax-ledger-sensitivity-bridge/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -494,6 +496,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     fiscalRules,
     spendingOffsets,
     efficiencyDividendRegister
+  );
+  const recurringForwardOutlookCoherence = buildRecurringForwardOutlookCoherenceReport(
+    turn,
+    v1012,
+    recurring,
+    revenueForwardReconciliation,
+    outlook
+  );
+  const taxLedgerSensitivityBridge = buildTaxLedgerSensitivityBridgeReport(
+    turn,
+    v1012,
+    taxExp,
+    ledger,
+    taxPolicySensitivity
   );
 
   checks.push({
@@ -1492,12 +1508,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `breaches=${fiscalRules.breachCount}, realized=${efficiencyDividendRegister.aggregateRealizedPoints}`
   });
 
+  checks.push({
+    id: 'CF141',
+    label: 'Recurring forward outlook coherence within band',
+    passed: recurringForwardOutlookCoherence.withinRecurringForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${recurringForwardOutlookCoherence.aggregateCoherenceGapPoints}, checks=${recurringForwardOutlookCoherence.checks.filter(c => c.passed).length}/${recurringForwardOutlookCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF142',
+    label: 'Tax ledger sensitivity bridge within band',
+    passed: taxLedgerSensitivityBridge.withinTaxLedgerBand || v1012.pressure === 'critical',
+    detail: `gap=${taxLedgerSensitivityBridge.bridgeGapPoints}, checks=${taxLedgerSensitivityBridge.checks.filter(c => c.passed).length}/${taxLedgerSensitivityBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF143',
+    label: 'Recurring aligned with outlook trajectory',
+    passed: recurringForwardOutlookCoherence.alignedWithOutlookTrajectory,
+    detail: `load=${recurring.totalLoadThisTurn}, trajectory=${outlook.trajectoryBand}`
+  });
+
+  checks.push({
+    id: 'CF144',
+    label: 'Tax ledger aligned with tax sensitivity',
+    passed: taxLedgerSensitivityBridge.alignedWithTaxSensitivity,
+    detail: `forgone=${taxExp.totalForgone}, marginal=${taxPolicySensitivity.aggregateMarginalPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 98
+    layerCount: 100
   };
 }

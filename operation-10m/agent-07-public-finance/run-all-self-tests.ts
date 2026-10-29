@@ -81,6 +81,8 @@ import { runFiscalRiskOutlookCoherenceSelfTests } from './modules/fiscal-risk-ou
 import { runCostRecoveryFiscalBufferBridgeSelfTests } from './modules/cost-recovery-fiscal-buffer-bridge/self-tests';
 import { runMultiYearSupplementaryCoherenceSelfTests } from './modules/multi-year-supplementary-coherence/self-tests';
 import { runFiscalRulesOffsetBridgeSelfTests } from './modules/fiscal-rules-offset-bridge/self-tests';
+import { runRecurringForwardOutlookCoherenceSelfTests } from './modules/recurring-forward-outlook-coherence/self-tests';
+import { runTaxLedgerSensitivityBridgeSelfTests } from './modules/tax-ledger-sensitivity-bridge/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -171,6 +173,8 @@ ok = runSuite('Fiscal risk outlook coherence', runFiscalRiskOutlookCoherenceSelf
 ok = runSuite('Cost recovery fiscal buffer bridge', runCostRecoveryFiscalBufferBridgeSelfTests) && ok;
 ok = runSuite('Multi-year supplementary coherence', runMultiYearSupplementaryCoherenceSelfTests) && ok;
 ok = runSuite('Fiscal rules offset bridge', runFiscalRulesOffsetBridgeSelfTests) && ok;
+ok = runSuite('Recurring forward outlook coherence', runRecurringForwardOutlookCoherenceSelfTests) && ok;
+ok = runSuite('Tax ledger sensitivity bridge', runTaxLedgerSensitivityBridgeSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

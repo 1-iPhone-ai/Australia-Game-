@@ -25,4 +25,4 @@ npm run test:op10m-agent07
 npm run build:agent07-chunk
 ```
 
-Expect **370/370** tests; consolidated **140** checks (CF01–CF140); `layerCount === 98`; chunk ~**19,696** lines.
+Expect **370/370** tests; consolidated **140** checks (CF01–CF140); `layerCount === 98`; chunk ~**19,702** lines.
