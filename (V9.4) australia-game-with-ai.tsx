@@ -28100,9 +28100,10 @@ export function gameStateReducer(state: any, action: any) {
     case 'SET_AUTOPLAY':
       return {
         ...state,
-        autoplay: action.payload
-          ? { ...state.autoplay, ...action.payload }
-          : state.autoplay
+        autoplay: normalizeTeamAutoplayState(
+          action.payload ? { ...state.autoplay, ...action.payload } : state.autoplay,
+          state.selectedMode
+        ),
       };
     case 'SET_DIRECTIVE_STRENGTH':
       return {
@@ -29261,6 +29262,169 @@ const TEAM_OPPONENT_ID = 'team_opponent';
 const ALLY_AI_ID = 'ally_ai';
 const ENEMY_SUPPORT_AI_ID = 'enemy_ai_2';
 const TEAM_MODE_SPEEDS: Array<TeamAutoplayState['speed']> = [0.5, 1, 2, 4];
+
+/** Operation 111 Agent 105 — wall-clock pacing for simulation/autoplay (not turn authority). */
+export const O111_SIM_TIME_LIMITS = {
+  teamAutoplayTurnBaseMs: 900,
+  teamAutoplayTurnMinMs: 180,
+  teamAiActionSettleBaseMs: 450,
+  teamAiActionSettleMinMs: 120,
+} as const;
+
+/** Smart-settings / match-length anchors (must stay aligned with settings intelligence pace targets). */
+export const O111_GAME_PACE_PROFILES: Record<GamePacePreference, { totalDays: number; playerActionsPerDay: number }> = {
+  fast: { totalDays: 15, playerActionsPerDay: 5 },
+  normal: { totalDays: 30, playerActionsPerDay: 3 },
+  long_strategic: { totalDays: 60, playerActionsPerDay: 2 },
+};
+
+export function normalizeAutoplaySpeed(raw: unknown): TeamAutoplayState['speed'] {
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  return TEAM_MODE_SPEEDS.includes(n as TeamAutoplayState['speed']) ? (n as TeamAutoplayState['speed']) : 1;
+}
+
+export function normalizeTeamAutoplayState(
+  raw: Partial<TeamAutoplayState> | null | undefined,
+  selectedMode?: string | null
+): TeamAutoplayState {
+  const defaults: TeamAutoplayState = { enabled: false, paused: false, speed: 1 };
+  if (!raw) return defaults;
+  return {
+    enabled: Boolean(raw.enabled),
+    paused: selectedMode === 'team_ai_vs_ai' ? Boolean(raw.paused) : false,
+    speed: normalizeAutoplaySpeed(raw.speed),
+  };
+}
+
+export function resolveScaledSimulationDelayMs(baseMs: number, minMs: number, speed: unknown): number {
+  const s = normalizeAutoplaySpeed(speed);
+  const base = Number.isFinite(baseMs) && baseMs > 0 ? baseMs : minMs;
+  const min = Number.isFinite(minMs) && minMs >= 0 ? minMs : 0;
+  return Math.max(min, base / s);
+}
+
+export function resolveTeamAutoplayTurnDelayMs(speed: unknown): number {
+  return resolveScaledSimulationDelayMs(
+    O111_SIM_TIME_LIMITS.teamAutoplayTurnBaseMs,
+    O111_SIM_TIME_LIMITS.teamAutoplayTurnMinMs,
+    speed
+  );
+}
+
+export function resolveTeamAiActionSettleDelayMs(speed: unknown): number {
+  return resolveScaledSimulationDelayMs(
+    O111_SIM_TIME_LIMITS.teamAiActionSettleBaseMs,
+    O111_SIM_TIME_LIMITS.teamAiActionSettleMinMs,
+    speed
+  );
+}
+
+export interface SimulationTickGateInput {
+  gameMode?: string;
+  selectedMode?: string | null;
+  autoplay?: Partial<TeamAutoplayState> | null;
+  isAiThinking?: boolean;
+  currentActorKind?: string | null;
+  takeoverSessionStatus?: string | null;
+  coPilotTeamAiReleased?: boolean;
+}
+
+/** Returns true when the team-mode autoplay scheduler must not arm its next timeout. */
+export function shouldDeferTeamAutoplayTurn(input: SimulationTickGateInput): boolean {
+  if (input.gameMode !== 'game') return true;
+  if (input.isAiThinking) return true;
+  if (input.currentActorKind !== 'ai') return true;
+  const ap = input.autoplay;
+  if (input.selectedMode === 'team_ai_vs_ai' && ap?.enabled && ap?.paused) return true;
+  if (input.takeoverSessionStatus === 'waiting_for_other_players' && !input.coPilotTeamAiReleased) return true;
+  return false;
+}
+
+export function runO111SimulationTimeControlSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  check('o111tc_speed_clamp', 'Invalid autoplay speed falls back to 1×', () =>
+    normalizeAutoplaySpeed(99) === 1 && normalizeAutoplaySpeed('2') === 2
+  );
+  check('o111tc_turn_delay', 'Team autoplay turn delay scales with speed and respects floor', () =>
+    resolveTeamAutoplayTurnDelayMs(4) === 225 &&
+    resolveTeamAutoplayTurnDelayMs(1) === 900 &&
+    resolveTeamAutoplayTurnDelayMs(0.5) === 1800 &&
+    resolveTeamAutoplayTurnDelayMs(2) === 450
+  );
+  check('o111tc_action_settle', 'Team AI action settle delay scales with speed', () =>
+    resolveTeamAiActionSettleDelayMs(4) === 120 &&
+    resolveTeamAiActionSettleDelayMs(1) === 450 &&
+    resolveTeamAiActionSettleDelayMs(2) === 225
+  );
+  check('o111tc_autoplay_normalize', 'Autoplay pause persists only in team_ai_vs_ai', () => {
+    const solo = normalizeTeamAutoplayState({ enabled: true, paused: true, speed: 4 }, 'ai');
+    const team = normalizeTeamAutoplayState({ enabled: true, paused: true, speed: 4 }, 'team_ai_vs_ai');
+    return solo.paused === false && solo.speed === 4 && team.paused === true;
+  });
+  check('o111tc_gate_pause', 'Paused team autoplay defers scheduler', () =>
+    shouldDeferTeamAutoplayTurn({
+      gameMode: 'game',
+      selectedMode: 'team_ai_vs_ai',
+      autoplay: { enabled: true, paused: true, speed: 2 },
+      isAiThinking: false,
+      currentActorKind: 'ai',
+    })
+  );
+  check('o111tc_gate_run', 'Active team autoplay allows scheduler when actor is AI', () =>
+    shouldDeferTeamAutoplayTurn({
+      gameMode: 'game',
+      selectedMode: 'team_ai_vs_ai',
+      autoplay: { enabled: true, paused: false, speed: 2 },
+      isAiThinking: false,
+      currentActorKind: 'ai',
+    }) === false
+  );
+  check('o111tc_gate_handoff', 'Co-Pilot waiting handoff defers until team AI released', () =>
+    shouldDeferTeamAutoplayTurn({
+      gameMode: 'game',
+      selectedMode: 'team_human_ai_vs_ai_ai',
+      autoplay: { enabled: true, paused: false, speed: 1 },
+      isAiThinking: false,
+      currentActorKind: 'ai',
+      takeoverSessionStatus: 'waiting_for_other_players',
+      coPilotTeamAiReleased: false,
+    }) &&
+    !shouldDeferTeamAutoplayTurn({
+      gameMode: 'game',
+      selectedMode: 'team_human_ai_vs_ai_ai',
+      autoplay: { enabled: true, paused: false, speed: 1 },
+      isAiThinking: false,
+      currentActorKind: 'ai',
+      takeoverSessionStatus: 'waiting_for_other_players',
+      coPilotTeamAiReleased: true,
+    })
+  );
+  check('o111tc_reducer_autoplay', 'SET_AUTOPLAY merges through normalizeTeamAutoplayState', () => {
+    const base = { ...initialGameState, selectedMode: 'team_ai_vs_ai', autoplay: { enabled: false, paused: false, speed: 1 as const } };
+    const next = gameStateReducer(base, { type: 'SET_AUTOPLAY', payload: { enabled: true, paused: true, speed: 4 } });
+    return next.autoplay.enabled === true && next.autoplay.paused === true && next.autoplay.speed === 4;
+  });
+  check('o111tc_pace_profiles', 'Game pace profiles match smart-settings day/action targets', () => {
+    const fast = O111_GAME_PACE_PROFILES.fast;
+    const normal = O111_GAME_PACE_PROFILES.normal;
+    const long = O111_GAME_PACE_PROFILES.long_strategic;
+    return fast.totalDays === 15 && fast.playerActionsPerDay === 5 &&
+      normal.totalDays === 30 && normal.playerActionsPerDay === 3 &&
+      long.totalDays === 60 && long.playerActionsPerDay === 2;
+  });
+
+  return results;
+}
+
 const TEAM_MESSAGE_DURATION_DEFAULT = 2;
 const TEAM_MESSAGE_DURATION_EXTENDED = 4;
 const TEAMMATE_PERFORMANCE_SYNC_WINDOW = 4;
@@ -134435,11 +134599,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
       day: Number.isFinite(Number(stateData.day)) && Number(stateData.day) >= 1 ? Math.floor(Number(stateData.day)) : 1,
       roundNumber: v95IsFiniteNum(stateData.roundNumber) ? Math.max(0, Math.floor(stateData.roundNumber)) : initialGameState.roundNumber,
       autoplay: stateData.autoplay
-        ? {
-            enabled: Boolean(stateData.autoplay.enabled),
-            paused: stateData.selectedMode === 'team_ai_vs_ai' ? Boolean(stateData.autoplay.paused) : false,
-            speed: TEAM_MODE_SPEEDS.includes(stateData.autoplay.speed) ? stateData.autoplay.speed : 1
-          }
+        ? normalizeTeamAutoplayState(stateData.autoplay, stateData.selectedMode)
         : initialGameState.autoplay,
       currentDirectiveStrength: normalizeDirectiveStrength(
         stateData.currentDirectiveStrength ?? settingsData.directiveStrength ?? DEFAULT_GAME_SETTINGS.directiveStrength
@@ -136532,6 +136692,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'replay', label: 'Replay Studio', tier: 'quick', section: 'Replay Integrity', severity: 'CRITICAL', run: () => runReplayStudioSelfTests() },
   { id: 'intent', label: 'Player Intent', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runPlayerIntentLayerSelfTests() },
   { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
+  { id: 'o111tc', label: 'O111 Simulation Time Control', tier: 'quick', section: 'Critical Invariants', severity: 'MAJOR', run: () => runO111SimulationTimeControlSelfTests() },
   { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
@@ -203149,7 +203310,7 @@ function dispatchGameSettingsChange(
       } else if (persistentModelSkip.skipped && actor?.kind === 'ai') {
         appendTeamAiTraceNote(actorId, `Persistent opponent model update skipped: ${persistentModelSkip.reason}`);
       }
-      await new Promise(resolve => setTimeout(resolve, Math.max(120, 450 / (gameState.autoplay?.speed || 1))));
+      await new Promise(resolve => setTimeout(resolve, resolveTeamAiActionSettleDelayMs(gameState.autoplay?.speed || 1)));
       if (v95MatchEpochRef.current !== epochAtExecution) return false; // match replaced while settling
     }
 
@@ -209588,9 +209749,15 @@ function dispatchGameSettingsChange(
     if (!isTeamMode || gameState.gameMode !== 'game' || gameState.isAiThinking || isAiThinkingRef.current) return;
     const actor = getActorState(gameState.currentActorId || '');
     if (!actor || actor.kind !== 'ai') return;
-    if (gameState.selectedMode === 'team_ai_vs_ai' && gameState.autoplay?.enabled && gameState.autoplay?.paused) return;
-    const waitingHandoff = gameState.takeoverSession?.status === 'waiting_for_other_players';
-    if (waitingHandoff && !coPilotTeamAiReleasedRef.current) return;
+    if (shouldDeferTeamAutoplayTurn({
+      gameMode: gameState.gameMode,
+      selectedMode: gameState.selectedMode,
+      autoplay: gameState.autoplay,
+      isAiThinking: gameState.isAiThinking || isAiThinkingRef.current,
+      currentActorKind: actor?.kind || null,
+      takeoverSessionStatus: gameState.takeoverSession?.status || null,
+      coPilotTeamAiReleased: coPilotTeamAiReleasedRef.current,
+    })) return;
 
     const turnKey = `${gameState.currentActorId}:${gameState.turnCounter}`;
     if (startedTeamAiTurnKeysRef.current.has(turnKey)) return;
@@ -209602,7 +209769,7 @@ function dispatchGameSettingsChange(
         console.error('[performTeamAiTurn error]', err);
         isAiThinkingRef.current = false;
       });
-    }, Math.max(180, 900 / (gameState.autoplay?.speed || 1)));
+    }, resolveTeamAutoplayTurnDelayMs(gameState.autoplay?.speed || 1));
 
     return () => {
       if (teamAiTurnTimeoutRef.current) {
