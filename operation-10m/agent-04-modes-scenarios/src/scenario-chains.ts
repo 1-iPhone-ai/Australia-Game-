@@ -1198,6 +1198,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_reversal_route',
+    title: 'Reversal Route',
+    description:
+      'Three-phase reversal arc with score accrual between legs — round-35 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_reversal_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_reversal_motion_docket',
+        title: 'Motion Docket',
+        narrativeBridge: 'File motion before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 450 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_reversal_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 6, NSW: 5 },
+          forcedSettingsPatch: { o10mReversalMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_reversal_score_finale',
+        title: 'Score Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainReversalRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

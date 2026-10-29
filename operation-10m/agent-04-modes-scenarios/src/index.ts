@@ -45,4 +45,5 @@ export * from './save-format-exoneration.js';
 export * from './save-format-expungement.js';
 export * from './save-format-vacatur.js';
 export * from './save-format-remand.js';
+export * from './save-format-reversal.js';
 export * from './scenario-campaign-planner.js';

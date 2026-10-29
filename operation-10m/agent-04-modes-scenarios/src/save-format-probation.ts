@@ -131,6 +131,7 @@ export function attachProbationSessionToState(
     expungementSession: null,
     vacaturSession: null,
     remandSession: null,
+    reversalSession: null,
     paroleSession: null,
     reprieveSession: null,
     amnestySession: null,

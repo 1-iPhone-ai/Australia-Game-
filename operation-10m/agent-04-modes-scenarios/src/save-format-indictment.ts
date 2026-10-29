@@ -138,6 +138,7 @@ export function attachIndictmentSessionToState(
     expungementSession: null,
     vacaturSession: null,
     remandSession: null,
+    reversalSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,

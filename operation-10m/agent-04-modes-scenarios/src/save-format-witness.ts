@@ -140,6 +140,7 @@ export function attachWitnessSessionToState(
     expungementSession: null,
     vacaturSession: null,
     remandSession: null,
+    reversalSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,

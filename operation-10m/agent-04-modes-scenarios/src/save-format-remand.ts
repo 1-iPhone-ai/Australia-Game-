@@ -125,6 +125,7 @@ export function attachRemandSessionToState(
   return {
     ...state,
     remandSession: sanitized,
+    reversalSession: null,
     vacaturSession: null,
     expungementSession: null,
     exonerationSession: null,

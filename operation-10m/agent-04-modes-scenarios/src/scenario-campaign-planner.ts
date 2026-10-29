@@ -112,6 +112,11 @@ import {
   sanitizeRemandSession,
 } from './save-format-remand.js';
 import {
+  getReversalScenarioAtCursor,
+  reversalSessionSummary,
+  sanitizeReversalSession,
+} from './save-format-reversal.js';
+import {
   getExonerationScenarioAtCursor,
   exonerationSessionSummary,
   sanitizeExonerationSession,
@@ -179,6 +184,7 @@ import type {
   O10mExpungementPhase,
   O10mVacaturPhase,
   O10mRemandPhase,
+  O10mReversalPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -301,9 +307,31 @@ const emptyQueuePlan = {
   remandCursor: null as number | null,
   remandPhase: null as O10mRemandPhase | null,
   remandWeight: null as number | null,
+  reversalId: null as string | null,
+  reversalCursor: null as number | null,
+  reversalPhase: null as O10mReversalPhase | null,
+  reversalScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const reversal = sanitizeReversalSession(state.reversalSession);
+  const reversalScenario = getReversalScenarioAtCursor(reversal);
+  if (reversal && reversal.active && reversalScenario) {
+    return {
+      kind: 'reversal_step',
+      scenarioId: reversalScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      reversalId: reversal.reversalId,
+      reversalCursor: reversal.cursor,
+      reversalPhase: reversal.phaseTag,
+      reversalScore: reversal.reversalScore,
+      reason: `Reversal "${reversal.label}" ${reversal.phaseTag} phase ${reversal.cursor + 1}/${reversal.scenarioIds.length} (score ${reversal.reversalScore}).`,
+    };
+  }
+
   const remand = sanitizeRemandSession(state.remandSession);
   const remandScenario = getRemandScenarioAtCursor(remand);
   if (remand && remand.active && remandScenario) {
@@ -939,6 +967,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   expungementActive: boolean;
   vacaturActive: boolean;
   remandActive: boolean;
+  reversalActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -976,6 +1005,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const expungement = expungementSessionSummary(state);
   const vacatur = vacaturSessionSummary(state);
   const remand = remandSessionSummary(state);
+  const reversal = reversalSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -1011,6 +1041,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     expungementActive: expungement.active,
     vacaturActive: vacatur.active,
     remandActive: remand.active,
+    reversalActive: reversal.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

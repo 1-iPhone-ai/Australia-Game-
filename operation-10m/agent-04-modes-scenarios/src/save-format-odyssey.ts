@@ -142,6 +142,7 @@ export function attachOdysseySessionToState(
     expungementSession: null,
     vacaturSession: null,
     remandSession: null,
+    reversalSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,

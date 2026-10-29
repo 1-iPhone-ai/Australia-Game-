@@ -34,6 +34,7 @@ import { sanitizeExonerationSession } from './save-format-exoneration.js';
 import { sanitizeExpungementSession } from './save-format-expungement.js';
 import { sanitizeVacaturSession } from './save-format-vacatur.js';
 import { sanitizeRemandSession } from './save-format-remand.js';
+import { sanitizeReversalSession } from './save-format-reversal.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -52,7 +53,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 34;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 35;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -185,6 +186,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     expungementSession: null,
     vacaturSession: null,
     remandSession: null,
+    reversalSession: null,
   };
 }
 
@@ -238,6 +240,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       expungementSession: merged.expungementSession ?? null,
       vacaturSession: merged.vacaturSession ?? null,
       remandSession: merged.remandSession ?? null,
+      reversalSession: merged.reversalSession ?? null,
     };
     return upgraded;
   }
@@ -315,6 +318,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     expungementSession: sanitizeExpungementSession(o.expungementSession),
     vacaturSession: sanitizeVacaturSession(o.vacaturSession),
     remandSession: sanitizeRemandSession(o.remandSession),
+    reversalSession: sanitizeReversalSession(o.reversalSession),
   };
 }
 
@@ -559,6 +563,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Remand session failed sanitization; planner will ignore it.');
   } else if (remand && remand.cursor >= remand.scenarioIds.length) {
     warnings.push('Remand cursor out of range; clamp on next sanitize.');
+  }
+
+  const reversal = sanitizeReversalSession(state.reversalSession);
+  if (state.reversalSession && !reversal) {
+    warnings.push('Reversal session failed sanitization; planner will ignore it.');
+  } else if (reversal && reversal.cursor >= reversal.scenarioIds.length) {
+    warnings.push('Reversal cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
