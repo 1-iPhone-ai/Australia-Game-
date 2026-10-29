@@ -55,8 +55,8 @@ export function runAgent06Round9SelfTests(): {
   record('R9-04', 'State exposes companies summary', integrated.state.companiesSpilloverSummary != null, 'ok');
   record(
     'R9-05',
-    'Forty-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 48,
+    'Fifty transmission layers',
+    integrated.state.transmissionReport.layers.length === 50,
     String(integrated.state.transmissionReport.layers.length)
   );
 

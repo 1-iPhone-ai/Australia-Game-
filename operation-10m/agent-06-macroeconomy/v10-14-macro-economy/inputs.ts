@@ -141,6 +141,15 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
       params?.publicFinance?.outlook ??
       params?.publicFinance?.budgetOutlook ??
       params?.nationalFinance?.budgetOutlook,
+    modeShift:
+      params?.modeShift ??
+      params?.modesScenarios?.shift ??
+      params?.scenarioRuntime?.modeShift ??
+      params?.gameModes?.shift,
+    supplyChainStress:
+      params?.supplyChainStress ??
+      params?.companies?.supplyChain ??
+      params?.privateSector?.supplyChain,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };

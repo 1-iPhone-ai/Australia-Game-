@@ -50,8 +50,8 @@ export function runAgent06Round19SelfTests(): {
   record('R19-04', 'State exposes capex summary', integrated.state.capexSpilloverSummary != null, 'ok');
   record(
     'R19-05',
-    'Forty-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 48,
+    'Fifty transmission layers',
+    integrated.state.transmissionReport.layers.length === 50,
     String(integrated.state.transmissionReport.layers.length)
   );
 

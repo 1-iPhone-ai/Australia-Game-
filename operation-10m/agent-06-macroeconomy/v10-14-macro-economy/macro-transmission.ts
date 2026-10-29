@@ -46,6 +46,8 @@ import type { MacroIntegrationHealthSpillover } from './bridge-v1025-integration
 import type { MacroCadenceDriftSpillover } from './bridge-v1002-cadence-drift.ts';
 import type { MacroResearchMomentumSpillover } from './bridge-v1003-research-momentum.ts';
 import type { MacroBudgetOutlookSpillover } from './bridge-v1007-budget-outlook.ts';
+import type { MacroModeShiftSpillover } from './bridge-v1004-mode-shift.ts';
+import type { MacroSupplyChainSpillover } from './bridge-v1008-supply-chain.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -100,6 +102,8 @@ export function buildMacroTransmissionReport(params: {
   cadenceDrift?: MacroCadenceDriftSpillover;
   researchMomentum?: MacroResearchMomentumSpillover;
   budgetOutlook?: MacroBudgetOutlookSpillover;
+  modeShift?: MacroModeShiftSpillover;
+  supplyChain?: MacroSupplyChainSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -139,6 +143,8 @@ export function buildMacroTransmissionReport(params: {
   const cadenceDrift = params.cadenceDrift ?? ZERO_SPILLOVER;
   const researchMomentum = params.researchMomentum ?? ZERO_SPILLOVER;
   const budgetOutlook = params.budgetOutlook ?? ZERO_SPILLOVER;
+  const modeShift = params.modeShift ?? ZERO_SPILLOVER;
+  const supplyChain = params.supplyChain ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -495,6 +501,22 @@ export function buildMacroTransmissionReport(params: {
       budgetOutlook.investmentNudge,
       budgetOutlook.productivityNudge,
       budgetOutlook.summary
+    ),
+    layer(
+      'v10.04_mode_shift',
+      'Modes scenario shift',
+      modeShift.cycleNudge,
+      modeShift.investmentNudge,
+      modeShift.productivityNudge,
+      modeShift.summary
+    ),
+    layer(
+      'v10.08_supply_chain',
+      'Corporate supply chain',
+      supplyChain.cycleNudge,
+      supplyChain.investmentNudge,
+      supplyChain.productivityNudge,
+      supplyChain.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

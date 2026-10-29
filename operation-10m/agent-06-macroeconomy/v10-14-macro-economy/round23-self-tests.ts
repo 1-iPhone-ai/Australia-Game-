@@ -46,8 +46,8 @@ export function runAgent06Round23SelfTests(): {
   record('R23-04', 'Transmission includes maps telemetry layer', integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.23_maps_telemetry'), 'ok');
   record(
     'R23-05',
-    'Forty-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 48,
+    'Fifty transmission layers',
+    integrated.state.transmissionReport.layers.length === 50,
     String(integrated.state.transmissionReport.layers.length)
   );
 

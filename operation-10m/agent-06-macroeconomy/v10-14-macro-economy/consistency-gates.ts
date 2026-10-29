@@ -846,5 +846,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Soft transmission attenuation — tail layers carry less spillover mass vs peak layer.'
     });
   }
+  const ms: any = inputs.modeShift ?? inputs.modesScenarios?.shift;
+  const vol = String(ms?.volatilityBand ?? ms?.shiftBand ?? '');
+  if (
+    (vol === 'chaotic' || vol === 'disruptive') &&
+    (state.modesSpilloverSummary != null || state.cyclePhase === 'contraction')
+  ) {
+    gates.push({
+      id: 'mode_shift_disruptive',
+      triggered: true,
+      severity: 'info',
+      summary: 'Disruptive mode shift aligns with contractionary or modes spillover stress read.'
+    });
+  }
+  const chainStress: any = inputs.supplyChainStress ?? inputs.companies?.supplyChain;
+  const frag = String(chainStress?.fragilityBand ?? chainStress?.stressBand ?? '');
+  if (
+    (frag === 'broken' || frag === 'severe') &&
+    (state.companiesSpilloverSummary != null || state.productivityBand === 'weak')
+  ) {
+    gates.push({
+      id: 'supply_chain_broken',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Broken corporate supply chains reinforce weak macro productivity/companies read.'
+    });
+  }
+  if (state.transmissionEnvelope?.band === 'wide') {
+    gates.push({
+      id: 'transmission_envelope_wide',
+      triggered: true,
+      severity: 'info',
+      summary: 'Wide transmission envelope — peak layer spillover magnitude is elevated.'
+    });
+  }
   return gates;
 }

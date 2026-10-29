@@ -168,6 +168,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Research & budget stress',
     shockIds: ['credit_contraction', 'global_slowdown'],
     description: 'Collapsed research momentum with exhausted public budget capex room (harness overlay).'
+  },
+  {
+    id: 'mode_supply_stress',
+    label: 'Mode & supply stress',
+    shockIds: ['global_slowdown', 'commodity_bust'],
+    description: 'Chaotic mode scenario shift with broken corporate supply chains (harness overlay).'
   }
 ];
 
