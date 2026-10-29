@@ -68,6 +68,10 @@ const FILES = [
   'engine/layout-preset-density-bridge.ts',
   'engine/progression-signal-delta.ts',
   'engine/modal-focus-trap-registry.ts',
+  'engine/milestone-forecast-coach.ts',
+  'engine/guided-learning-panel-bridge.ts',
+  'engine/focus-session-suppression-summary.ts',
+  'engine/landmark-coach-plan.ts',
   'engine/legacy-access.ts',
   'engine/merge-with-v94-contextual-hiding.ts',
   'engine/progression-coach.ts',
@@ -83,6 +87,7 @@ const FILES = [
   'engine/round11-self-tests.ts',
   'engine/round12-self-tests.ts',
   'engine/round13-self-tests.ts',
+  'engine/round14-self-tests.ts',
   'a11y/aria-builders.ts',
   'a11y/focus-management.ts',
   'a11y/live-region-controller.ts',
@@ -121,6 +126,10 @@ const FILES = [
   'react/LayoutPresetDensityHintBanner.tsx',
   'react/ProgressionSignalDeltaBanner.tsx',
   'react/ModalFocusTrapStatusStrip.tsx',
+  'react/MilestoneForecastCoachStrip.tsx',
+  'react/GuidedLearningPanelCoachStrip.tsx',
+  'react/FocusSessionSuppressionStrip.tsx',
+  'react/LandmarkReadingOrderCoachStrip.tsx',
 ];
 
 function stripModulePreamble(source) {
@@ -162,7 +171,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.13.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.14.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -270,6 +279,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
     check(\`agent22_round13_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
+  const round14 = runAgent22Round14SelfTests();
+  for (const r of round14.results) {
+    check(\`agent22_round14_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
   const failed = results.filter(r => !r.passed).length;
   return {
     passed: results.length - failed,
@@ -296,7 +310,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.13.0',
+  moduleVersion: '1.14.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),

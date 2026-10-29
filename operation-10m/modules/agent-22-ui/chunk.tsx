@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 2fbdafd98678a9e2
+// content-sha256-prefix: e133e9829651c3a5
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -874,6 +874,9 @@ export interface DayAdvanceUiEvolutionResult {
   progressionCoverageDeltaCopy: string | null;
   progressionSignalDeltaCopy: string | null;
   activeNotificationLaneCount: number;
+  milestoneForecastCoachCopy: string | null;
+  focusSessionSuppressedPanelCount: number;
+  guidedLearningConceptCount: number;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -988,6 +991,15 @@ export function tickEvolvingUiOnDayAdvance(
   const deltaCopy = coverageDeltaCopy(persisted.lastProgressionCoverageRatio, coverage.coverageRatio);
   const signalDelta = computeProgressionSignalDelta(priorSignals, nextSignals);
   const laneCount = countActiveNotificationLanes(nextSignals, nextSignals.playerIntentOnboardingEnabled !== false);
+  const milestoneEntries = forecastUpcomingMilestones(nextSignals, 2);
+  const milestoneCopy = milestoneForecastCoachCopy(milestoneEntries);
+  const focusSummary = summarizeFocusSessionSuppression({
+    phase: 'human_turn',
+    signals: nextSignals,
+    policy,
+    focusSessionSnoozedUntilDay: persisted.focusSessionSnoozedUntilDay,
+  });
+  const guidedCount = countIntroducedGuidedConcepts(nextSignals);
 
   const updatedPersistedFinal = mergeLastInterfaceLevelIntoPersisted(
     mergeCoverageRatioIntoPersisted(
@@ -1013,6 +1025,9 @@ export function tickEvolvingUiOnDayAdvance(
     progressionCoverageDeltaCopy: deltaCopy,
     progressionSignalDeltaCopy: signalDelta.coachCopy,
     activeNotificationLaneCount: laneCount,
+    milestoneForecastCoachCopy: milestoneCopy,
+    focusSessionSuppressedPanelCount: focusSummary.suppressedCount,
+    guidedLearningConceptCount: guidedCount,
     updatedPersisted: updatedPersistedFinal,
     visiblePanelCount,
   };
@@ -3713,6 +3728,173 @@ export function modalFocusTrapCoachCopy(openModalId: string | null): string | nu
   return `Focus is trapped in ${openModalId} until you dismiss it.`;
 }
 
+// --- source: engine/milestone-forecast-coach.ts ---
+export interface MilestoneForecastEntry {
+  milestoneId: string;
+  title: string;
+  coachCopy: string;
+  missingReasonCount: number;
+  estimatedDaysAway: number | null;
+}
+
+export function forecastUpcomingMilestones(
+  signals: ProgressionSignalSnapshot,
+  limit = 3
+): MilestoneForecastEntry[] {
+  const entries: MilestoneForecastEntry[] = [];
+
+  for (const milestone of UI_PROGRESSION_MILESTONES) {
+    const evaluation = evaluateUnlockRule(milestone.rule, signals);
+    if (evaluation.ok) continue;
+
+    const minDay = milestone.rule.minDay ?? 1;
+    const estimatedDaysAway =
+      signals.gameDay < minDay ? minDay - signals.gameDay : evaluation.reasons.length <= 1 ? 1 : null;
+
+    entries.push({
+      milestoneId: milestone.id,
+      title: milestone.title,
+      coachCopy: milestone.coachCopy,
+      missingReasonCount: evaluation.reasons.length,
+      estimatedDaysAway,
+    });
+  }
+
+  return entries
+    .sort(
+      (a, b) =>
+        (a.estimatedDaysAway ?? 99) - (b.estimatedDaysAway ?? 99) ||
+        a.missingReasonCount - b.missingReasonCount
+    )
+    .slice(0, limit);
+}
+
+export function milestoneForecastCoachCopy(entries: MilestoneForecastEntry[]): string | null {
+  if (!entries.length) return null;
+  const next = entries[0];
+  if (next.estimatedDaysAway != null && next.estimatedDaysAway <= 1) {
+    return `Next milestone soon: ${next.title}. ${next.coachCopy}`;
+  }
+  return `Up next: ${next.title} — ${next.coachCopy}`;
+}
+
+export function findMilestoneById(id: string): UiProgressionMilestone | undefined {
+  return UI_PROGRESSION_MILESTONES.find(m => m.id === id);
+}
+
+// --- source: engine/guided-learning-panel-bridge.ts ---
+export interface GuidedLearningPanelHint {
+  conceptId: string;
+  status: 'introduced' | 'mastered' | 'locked';
+  panelIds: string[];
+  coachCopy: string;
+}
+
+const CONCEPT_PANEL_MAP: Record<string, string[]> = {
+  capital_allocation: ['nav_investments', 'modal_investments'],
+  opportunity_cost: ['nav_contracts', 'modal_regional_contracts'],
+  liquidity: ['nav_loans', 'nav_market', 'modal_loans'],
+};
+
+export function buildGuidedLearningPanelHints(signals: ProgressionSignalSnapshot): GuidedLearningPanelHint[] {
+  const hints: GuidedLearningPanelHint[] = [];
+  const statuses = signals.guidedConceptStatuses ?? {};
+
+  for (const [conceptId, panelIds] of Object.entries(CONCEPT_PANEL_MAP)) {
+    const status = statuses[conceptId] ?? 'locked';
+    if (status === 'locked') continue;
+
+    const labels = panelIds
+      .map(id => EVOLVING_UI_PANEL_BY_ID[id]?.label)
+      .filter(Boolean)
+      .join(', ');
+
+    hints.push({
+      conceptId,
+      status,
+      panelIds,
+      coachCopy:
+        status === 'mastered'
+          ? `${conceptId} mastered — ${labels || 'related panels'} stay unlocked.`
+          : `${conceptId} introduced — preview ${labels || 'related panels'} as you practice.`,
+    });
+  }
+
+  return hints;
+}
+
+export function guidedLearningPanelCoachCopy(hints: GuidedLearningPanelHint[]): string | null {
+  if (!hints.length) return null;
+  return hints[0].coachCopy;
+}
+
+export function countIntroducedGuidedConcepts(signals: ProgressionSignalSnapshot): number {
+  const statuses = signals.guidedConceptStatuses ?? {};
+  return Object.values(statuses).filter(s => s === 'introduced' || s === 'mastered').length;
+}
+
+// --- source: engine/focus-session-suppression-summary.ts ---
+export interface FocusSessionSuppressionSummary {
+  active: boolean;
+  suppressedPanelIds: string[];
+  suppressedCount: number;
+  coachCopy: string | null;
+}
+
+export function summarizeFocusSessionSuppression(input: {
+  phase: V94StandardizedGamePhase;
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  focusSessionSnoozedUntilDay?: number;
+}): FocusSessionSuppressionSummary {
+  const ctx = {
+    phase: input.phase,
+    signals: input.signals,
+    policy: input.policy,
+    focusSessionSnoozedUntilDay: input.focusSessionSnoozedUntilDay,
+  };
+  const active = shouldActivateFocusSession(ctx);
+  const suppressedPanelIds = listPanelsSuppressedByFocusSession(
+    input.signals,
+    input.policy,
+    input.phase,
+    input.focusSessionSnoozedUntilDay
+  );
+
+  let coachCopy: string | null = null;
+  if (active && suppressedPanelIds.length) {
+    coachCopy = `Focus session tucks ${suppressedPanelIds.length} advanced panels into preview mode.`;
+  }
+
+  return {
+    active,
+    suppressedPanelIds,
+    suppressedCount: suppressedPanelIds.length,
+    coachCopy,
+  };
+}
+
+// --- source: engine/landmark-coach-plan.ts ---
+export const DEFAULT_COACH_SURFACE_LANDMARKS: Array<{ id: string; label: string }> = [
+  { id: 'status_evolution_bridge', label: 'Simulation updates' },
+  { id: 'nav_primary_rail', label: 'Primary navigation' },
+  { id: 'coach_unlock_panel', label: 'Unlock coach' },
+  { id: 'main_game_canvas', label: 'Main game view' },
+  { id: 'complementary_quick_actions', label: 'Quick actions' },
+];
+
+export function buildCoachLandmarkReadingPlan(phase: V94StandardizedGamePhase): LandmarkReadingOrderPlan {
+  const landmarks = DEFAULT_COACH_SURFACE_LANDMARKS.map((surface, index) =>
+    landmarkTargetForSurface(surface.id, surface.label, true, index + 1)
+  );
+  return planLandmarkReadingOrder({ phase, landmarks });
+}
+
+export function landmarkReadingCoachCopy(plan: LandmarkReadingOrderPlan): string | null {
+  if (plan.skipLinkLabels.length <= 1) return null;
+  return `Screen reader order: ${plan.skipLinkLabels.slice(0, 2).join(', ')}…`;
+}
+
 // --- source: engine/legacy-access.ts ---
 /** Mirrors V9.4 resolveIntentNavToUiPatch targets (standalone copy for module tests). */
 export function resolveIntentNavToUiPatch(target: string): Record<string, boolean | string> {
@@ -5542,6 +5724,154 @@ export function runAgent22Round13SelfTests(): {
   return { passed: results.length - failed, failed, results };
 }
 
+// --- source: engine/round14-self-tests.ts ---
+export function runAgent22Round14SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r14_milestone_forecast',
+    'forecast lists upcoming milestones',
+    forecastUpcomingMilestones({ gameDay: 1, turnCount: 1, interfaceLevel: 'simple' }).length >= 1
+  );
+
+  check(
+    'r14_milestone_copy',
+    'milestone forecast copy mentions next',
+    Boolean(
+      milestoneForecastCoachCopy(
+        forecastUpcomingMilestones({ gameDay: 1, turnCount: 1, interfaceLevel: 'simple' })
+      )?.includes('Next') ||
+        milestoneForecastCoachCopy(
+          forecastUpcomingMilestones({ gameDay: 1, turnCount: 1, interfaceLevel: 'simple' })
+        )?.includes('Up next')
+    )
+  );
+
+  check(
+    'r14_milestone_lookup',
+    'find milestone by id',
+    findMilestoneById('first_market_visit')?.title === 'First market visit'
+  );
+
+  check(
+    'r14_guided_hints',
+    'guided learning hints for introduced concept',
+    (() => {
+      const hints = buildGuidedLearningPanelHints({
+        gameDay: 5,
+        turnCount: 5,
+        interfaceLevel: 'guided',
+        guidedConceptStatuses: { capital_allocation: 'introduced' },
+      });
+      return hints.length === 1 && hints[0].panelIds.includes('nav_investments');
+    })()
+  );
+
+  check(
+    'r14_guided_copy',
+    'guided learning coach copy present',
+    Boolean(
+      guidedLearningPanelCoachCopy(
+        buildGuidedLearningPanelHints({
+          gameDay: 5,
+          turnCount: 5,
+          interfaceLevel: 'guided',
+          guidedConceptStatuses: { liquidity: 'mastered' },
+        })
+      )?.includes('mastered')
+    )
+  );
+
+  check(
+    'r14_guided_count',
+    'count introduced guided concepts',
+    countIntroducedGuidedConcepts({
+      gameDay: 2,
+      turnCount: 2,
+      interfaceLevel: 'guided',
+      guidedConceptStatuses: { capital_allocation: 'introduced', liquidity: 'locked' },
+    }) === 1
+  );
+
+  check(
+    'r14_focus_summary_active',
+    'focus session summary on early guided day',
+    (() => {
+      const summary = summarizeFocusSessionSuppression({
+        phase: 'human_turn',
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+      });
+      return summary.active && summary.suppressedCount >= 0;
+    })()
+  );
+
+  check(
+    'r14_focus_summary_inactive_late',
+    'focus session inactive after day 7',
+    !summarizeFocusSessionSuppression({
+      phase: 'human_turn',
+      signals: { gameDay: 10, turnCount: 10, interfaceLevel: 'guided' },
+      policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+    }).active
+  );
+
+  check(
+    'r14_landmark_plan',
+    'coach landmark plan yields skip labels',
+    buildCoachLandmarkReadingPlan('human_turn').skipLinkLabels.length >= 2
+  );
+
+  check(
+    'r14_landmark_copy',
+    'landmark reading coach mentions screen reader',
+    Boolean(landmarkReadingCoachCopy(buildCoachLandmarkReadingPlan('human_turn'))?.includes('Screen reader'))
+  );
+
+  check(
+    'r14_tick_milestone_field',
+    'day advance exposes milestone forecast copy field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState()
+      );
+      return typeof r.milestoneForecastCoachCopy === 'string' || r.milestoneForecastCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r14_tick_guided_count',
+    'day advance reports guided concept count',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'guided' },
+        {
+          gameDay: 2,
+          turnCount: 2,
+          interfaceLevel: 'guided',
+          guidedConceptStatuses: { capital_allocation: 'introduced' },
+        },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState()
+      );
+      return r.guidedLearningConceptCount === 1;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
+}
+
 // --- source: a11y/aria-builders.ts ---
 const RING_CLASSES: Record<FocusRingStyle, string> = {
   emerald: 'focus-visible:ring-emerald-400',
@@ -6226,6 +6556,14 @@ export function SimulationUiEvolutionBridge({
       {result.activeNotificationLaneCount > 0 ? (
         <div data-testid="sim-ui-evolution-lane-count">
           {result.activeNotificationLaneCount} notification lanes active
+        </div>
+      ) : null}
+      {result.milestoneForecastCoachCopy ? (
+        <div data-testid="sim-ui-evolution-milestone-forecast">{result.milestoneForecastCoachCopy}</div>
+      ) : null}
+      {result.focusSessionSuppressedPanelCount > 0 ? (
+        <div data-testid="sim-ui-evolution-focus-suppression">
+          Focus session previewing {result.focusSessionSuppressedPanelCount} panels
         </div>
       ) : null}
       {result.coachAnnouncements.slice(0, 3).map((line, i) => (
@@ -7281,8 +7619,128 @@ export function ModalFocusTrapStatusStrip({
   );
 }
 
+// --- source: react/MilestoneForecastCoachStrip.tsx ---
+export interface MilestoneForecastCoachStripProps {
+  signals: ProgressionSignalSnapshot;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function MilestoneForecastCoachStrip({
+  signals,
+  accessibility,
+}: MilestoneForecastCoachStripProps): React.ReactElement | null {
+  const entries = forecastUpcomingMilestones(signals, 2);
+  const copy = milestoneForecastCoachCopy(entries);
+  if (!copy) return null;
+
+  return (
+    <div
+      data-testid="milestone-forecast-coach-strip"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-purple-500/30 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {copy}
+    </div>
+  );
+}
+
+// --- source: react/GuidedLearningPanelCoachStrip.tsx ---
+export interface GuidedLearningPanelCoachStripProps {
+  signals: ProgressionSignalSnapshot;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function GuidedLearningPanelCoachStrip({
+  signals,
+  accessibility,
+}: GuidedLearningPanelCoachStripProps): React.ReactElement | null {
+  const hints = buildGuidedLearningPanelHints(signals);
+  const copy = guidedLearningPanelCoachCopy(hints);
+  if (!copy) return null;
+
+  return (
+    <div
+      data-testid="guided-learning-panel-coach-strip"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-pink-500/30 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {copy}
+    </div>
+  );
+}
+
+// --- source: react/FocusSessionSuppressionStrip.tsx ---
+export interface FocusSessionSuppressionStripProps {
+  phase: V94StandardizedGamePhase;
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  focusSessionSnoozedUntilDay?: number;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function FocusSessionSuppressionStrip({
+  phase,
+  signals,
+  policy,
+  focusSessionSnoozedUntilDay,
+  accessibility,
+}: FocusSessionSuppressionStripProps): React.ReactElement | null {
+  const summary = summarizeFocusSessionSuppression({
+    phase,
+    signals,
+    policy,
+    focusSessionSnoozedUntilDay,
+  });
+  if (!summary.coachCopy) return null;
+
+  return (
+    <div
+      data-testid="focus-session-suppression-strip"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-violet-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-suppressed-count={summary.suppressedCount}
+    >
+      {summary.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/LandmarkReadingOrderCoachStrip.tsx ---
+export interface LandmarkReadingOrderCoachStripProps {
+  phase: V94StandardizedGamePhase;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function LandmarkReadingOrderCoachStrip({
+  phase,
+  accessibility,
+}: LandmarkReadingOrderCoachStripProps): React.ReactElement | null {
+  if (!accessibility.keyboardNavigationHints) return null;
+  const plan = buildCoachLandmarkReadingPlan(phase);
+  const copy = landmarkReadingCoachCopy(plan);
+  if (!copy) return null;
+
+  return (
+    <div
+      data-testid="landmark-reading-order-coach-strip"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-neutral-500/30 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {copy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.13.0';
+export const AGENT_22_MODULE_VERSION = '1.14.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -7388,6 +7846,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round13 = runAgent22Round13SelfTests();
   for (const r of round13.results) {
     check(`agent22_round13_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round14 = runAgent22Round14SelfTests();
+  for (const r of round14.results) {
+    check(`agent22_round14_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;

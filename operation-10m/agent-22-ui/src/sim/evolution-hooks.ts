@@ -28,6 +28,12 @@ import {
 } from '../engine/progression-coverage-snapshot.js';
 import { computeProgressionSignalDelta, mergeLastInterfaceLevelIntoPersisted } from '../engine/progression-signal-delta.js';
 import { countActiveNotificationLanes } from '../engine/notification-lane-coach-plan.js';
+import {
+  forecastUpcomingMilestones,
+  milestoneForecastCoachCopy,
+} from '../engine/milestone-forecast-coach.js';
+import { countIntroducedGuidedConcepts } from '../engine/guided-learning-panel-bridge.js';
+import { summarizeFocusSessionSuppression } from '../engine/focus-session-suppression-summary.js';
 
 /** Persisted slice proposed for `gameSettings.evolvingUi` (assembly-owned). */
 export interface EvolvingUiPersistedState {
@@ -67,6 +73,9 @@ export interface DayAdvanceUiEvolutionResult {
   progressionCoverageDeltaCopy: string | null;
   progressionSignalDeltaCopy: string | null;
   activeNotificationLaneCount: number;
+  milestoneForecastCoachCopy: string | null;
+  focusSessionSuppressedPanelCount: number;
+  guidedLearningConceptCount: number;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -181,6 +190,15 @@ export function tickEvolvingUiOnDayAdvance(
   const deltaCopy = coverageDeltaCopy(persisted.lastProgressionCoverageRatio, coverage.coverageRatio);
   const signalDelta = computeProgressionSignalDelta(priorSignals, nextSignals);
   const laneCount = countActiveNotificationLanes(nextSignals, nextSignals.playerIntentOnboardingEnabled !== false);
+  const milestoneEntries = forecastUpcomingMilestones(nextSignals, 2);
+  const milestoneCopy = milestoneForecastCoachCopy(milestoneEntries);
+  const focusSummary = summarizeFocusSessionSuppression({
+    phase: 'human_turn',
+    signals: nextSignals,
+    policy,
+    focusSessionSnoozedUntilDay: persisted.focusSessionSnoozedUntilDay,
+  });
+  const guidedCount = countIntroducedGuidedConcepts(nextSignals);
 
   const updatedPersistedFinal = mergeLastInterfaceLevelIntoPersisted(
     mergeCoverageRatioIntoPersisted(
@@ -206,6 +224,9 @@ export function tickEvolvingUiOnDayAdvance(
     progressionCoverageDeltaCopy: deltaCopy,
     progressionSignalDeltaCopy: signalDelta.coachCopy,
     activeNotificationLaneCount: laneCount,
+    milestoneForecastCoachCopy: milestoneCopy,
+    focusSessionSuppressedPanelCount: focusSummary.suppressedCount,
+    guidedLearningConceptCount: guidedCount,
     updatedPersisted: updatedPersistedFinal,
     visiblePanelCount,
   };

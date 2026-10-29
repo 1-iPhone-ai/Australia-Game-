@@ -50,6 +50,14 @@ export function SimulationUiEvolutionBridge({
           {result.activeNotificationLaneCount} notification lanes active
         </div>
       ) : null}
+      {result.milestoneForecastCoachCopy ? (
+        <div data-testid="sim-ui-evolution-milestone-forecast">{result.milestoneForecastCoachCopy}</div>
+      ) : null}
+      {result.focusSessionSuppressedPanelCount > 0 ? (
+        <div data-testid="sim-ui-evolution-focus-suppression">
+          Focus session previewing {result.focusSessionSuppressedPanelCount} panels
+        </div>
+      ) : null}
       {result.coachAnnouncements.slice(0, 3).map((line, i) => (
         <div key={i}>{line}</div>
       ))}

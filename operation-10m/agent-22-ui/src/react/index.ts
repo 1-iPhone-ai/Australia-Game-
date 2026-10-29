@@ -30,3 +30,7 @@ export { NotificationLaneCoachStrip } from './NotificationLaneCoachStrip.js';
 export { LayoutPresetDensityHintBanner } from './LayoutPresetDensityHintBanner.js';
 export { ProgressionSignalDeltaBanner } from './ProgressionSignalDeltaBanner.js';
 export { ModalFocusTrapStatusStrip } from './ModalFocusTrapStatusStrip.js';
+export { MilestoneForecastCoachStrip } from './MilestoneForecastCoachStrip.js';
+export { GuidedLearningPanelCoachStrip } from './GuidedLearningPanelCoachStrip.js';
+export { FocusSessionSuppressionStrip } from './FocusSessionSuppressionStrip.js';
+export { LandmarkReadingOrderCoachStrip } from './LandmarkReadingOrderCoachStrip.js';
