@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 44
+
+- Schema **`agent12/45`**: marine kelp export throughput, remote dialysis supply staging readiness, rail automated inspection logistics share (`marineKelpExportPolicy`, `remoteDialysisSupplyStagingPolicy`, `railAutomatedInspectionLogisticsPolicy`)
+- Catalog: **602** assets, **146** corridors, **238** scenarios
+- Systems: `network/marine-kelp-export-index.ts`, `operations/remote-dialysis-supply-staging-index.ts`, `productivity/rail-automated-inspection-logistics-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 43
 
 - Schema **`agent12/44`**: tidal lagoon export throughput, remote telehealth supply staging readiness, warehouse vertical fulfillment logistics share (`tidalLagoonExportPolicy`, `remoteTelehealthSupplyStagingPolicy`, `warehouseVerticalFulfillmentLogisticsPolicy`)

@@ -686,6 +686,23 @@ import {
   nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex,
   warehouseVerticalFulfillmentLogisticsProductivityMultiplier,
 } from './warehouse-vertical-fulfillment-logistics-index.ts';
+import {
+  computeMarineKelpExportByRegion,
+  marineKelpExportProductivityMultiplier,
+  nationalMarineKelpExportIndex,
+} from '../network/marine-kelp-export-index.ts';
+import {
+  computeRemoteDialysisSupplyStagingByRegion,
+  computeRemoteDialysisSupplyStagingShare,
+  nationalRemoteDialysisSupplyStagingIndex,
+  remoteDialysisSupplyStagingProductivityMultiplier,
+} from '../operations/remote-dialysis-supply-staging-index.ts';
+import {
+  computeRailAutomatedInspectionLogisticsShare,
+  computeRailAutomatedInspectionLogisticsThroughputByRegion,
+  nationalRailAutomatedInspectionLogisticsThroughputIndex,
+  railAutomatedInspectionLogisticsProductivityMultiplier,
+} from './rail-automated-inspection-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -2100,6 +2117,35 @@ export function computeTransportInfrastructureState(
     warehouseVerticalFulfillmentLogisticsShare,
     options?.warehouseVerticalFulfillmentLogisticsPolicy ?? 'baseline',
   );
+  const marineKelpExportByRegion = computeMarineKelpExportByRegion(ops);
+  const nationalMarineKelp = nationalMarineKelpExportIndex(marineKelpExportByRegion);
+  const kelpMult = marineKelpExportProductivityMultiplier(
+    nationalMarineKelp,
+    options?.marineKelpExportPolicy ?? 'baseline',
+  );
+  const remoteDialysisSupplyStagingByRegion = computeRemoteDialysisSupplyStagingByRegion(ops, networkStress);
+  const nationalDialysis = nationalRemoteDialysisSupplyStagingIndex(remoteDialysisSupplyStagingByRegion);
+  const remoteDialysisSupplyStagingShare = computeRemoteDialysisSupplyStagingShare(
+    ops,
+    options?.remoteDialysisSupplyStagingPolicy ?? 'baseline',
+  );
+  const dialysisMult = remoteDialysisSupplyStagingProductivityMultiplier(
+    remoteDialysisSupplyStagingShare,
+    options?.remoteDialysisSupplyStagingPolicy ?? 'baseline',
+  );
+  const railAutomatedInspectionLogisticsThroughputByRegion =
+    computeRailAutomatedInspectionLogisticsThroughputByRegion(ops);
+  const nationalRailInspection = nationalRailAutomatedInspectionLogisticsThroughputIndex(
+    railAutomatedInspectionLogisticsThroughputByRegion,
+  );
+  const railAutomatedInspectionLogisticsShare = computeRailAutomatedInspectionLogisticsShare(
+    ops,
+    options?.railAutomatedInspectionLogisticsPolicy ?? 'baseline',
+  );
+  const railInspectionMult = railAutomatedInspectionLogisticsProductivityMultiplier(
+    railAutomatedInspectionLogisticsShare,
+    options?.railAutomatedInspectionLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -2186,6 +2232,9 @@ export function computeTransportInfrastructureState(
     const tidalLagoonBoost = (tidalLagoonExportByRegion[code] - 5) * 0.0025;
     const telehealthBoost = (remoteTelehealthSupplyStagingByRegion[code] - 6) * 0.0021;
     const verticalFulfillmentBoost = (warehouseVerticalFulfillmentLogisticsThroughputByRegion[code] - 2) * 0.0017;
+    const kelpBoost = (marineKelpExportByRegion[code] - 5) * 0.0024;
+    const dialysisBoost = (remoteDialysisSupplyStagingByRegion[code] - 6) * 0.002;
+    const railInspectionBoost = (railAutomatedInspectionLogisticsThroughputByRegion[code] - 2) * 0.0016;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -2271,7 +2320,10 @@ export function computeTransportInfrastructureState(
         containerReeferBoost +
         tidalLagoonBoost +
         telehealthBoost +
-        verticalFulfillmentBoost) *
+        verticalFulfillmentBoost +
+        kelpBoost +
+        dialysisBoost +
+        railInspectionBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -2355,7 +2407,10 @@ export function computeTransportInfrastructureState(
       containerReeferMult *
       tidalLagoonMult *
       telehealthMult *
-      verticalFulfillmentMult;
+      verticalFulfillmentMult *
+      kelpMult *
+      dialysisMult *
+      railInspectionMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -2462,7 +2517,10 @@ export function computeTransportInfrastructureState(
     nationalContainerReefer * 0.003 +
     nationalTidalLagoon * 0.003 +
     nationalTelehealth * 0.003 +
-    nationalVerticalFulfillment * 0.003;
+    nationalVerticalFulfillment * 0.003 +
+    nationalMarineKelp * 0.003 +
+    nationalDialysis * 0.003 +
+    nationalRailInspection * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -2477,7 +2535,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/44',
+    schemaVersion: 'agent12/45',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -2795,6 +2853,14 @@ export function computeTransportInfrastructureState(
     warehouseVerticalFulfillmentLogisticsShare,
     nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex: nationalVerticalFulfillment,
     warehouseVerticalFulfillmentLogisticsThroughputByRegion,
+    nationalMarineKelpExportIndex: nationalMarineKelp,
+    marineKelpExportByRegion,
+    remoteDialysisSupplyStagingShare,
+    nationalRemoteDialysisSupplyStagingIndex: nationalDialysis,
+    remoteDialysisSupplyStagingByRegion,
+    railAutomatedInspectionLogisticsShare,
+    nationalRailAutomatedInspectionLogisticsThroughputIndex: nationalRailInspection,
+    railAutomatedInspectionLogisticsThroughputByRegion,
     computeMs,
   };
 }

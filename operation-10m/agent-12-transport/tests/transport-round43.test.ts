@@ -37,13 +37,13 @@ describe('Agent 12 round 43 catalog', () => {
 });
 
 describe('Agent 12 round 43 systems', () => {
-  it('returns agent12/44 with tidal lagoon, telehealth, vertical fulfillment', () => {
+  it('returns agent12/45 with tidal lagoon, telehealth, vertical fulfillment', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(400), {
       tidalLagoonExportPolicy: 'accelerate',
       remoteTelehealthSupplyStagingPolicy: 'surge',
       warehouseVerticalFulfillmentLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/44');
+    assert.equal(state.schemaVersion, 'agent12/45');
     assert.ok(state.nationalTidalLagoonExportIndex >= 5);
     assert.ok(state.nationalRemoteTelehealthSupplyStagingIndex >= 6);
     assert.ok(state.warehouseVerticalFulfillmentLogisticsShare >= 0.03);

@@ -411,8 +411,14 @@ export type RemoteTelehealthSupplyStagingPolicy = 'baseline' | 'surge';
 
 export type WarehouseVerticalFulfillmentLogisticsPolicy = 'baseline' | 'expand';
 
+export type MarineKelpExportPolicy = 'baseline' | 'accelerate';
+
+export type RemoteDialysisSupplyStagingPolicy = 'baseline' | 'surge';
+
+export type RailAutomatedInspectionLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/44';
+  schemaVersion: 'agent12/45';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -730,6 +736,14 @@ export interface TransportInfrastructureState {
   warehouseVerticalFulfillmentLogisticsShare: number;
   nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex: number;
   warehouseVerticalFulfillmentLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalMarineKelpExportIndex: number;
+  marineKelpExportByRegion: Record<AuRegionCode, number>;
+  remoteDialysisSupplyStagingShare: number;
+  nationalRemoteDialysisSupplyStagingIndex: number;
+  remoteDialysisSupplyStagingByRegion: Record<AuRegionCode, number>;
+  railAutomatedInspectionLogisticsShare: number;
+  nationalRailAutomatedInspectionLogisticsThroughputIndex: number;
+  railAutomatedInspectionLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -852,6 +866,9 @@ export interface TransportInfrastructureOptions {
   tidalLagoonExportPolicy?: TidalLagoonExportPolicy;
   remoteTelehealthSupplyStagingPolicy?: RemoteTelehealthSupplyStagingPolicy;
   warehouseVerticalFulfillmentLogisticsPolicy?: WarehouseVerticalFulfillmentLogisticsPolicy;
+  marineKelpExportPolicy?: MarineKelpExportPolicy;
+  remoteDialysisSupplyStagingPolicy?: RemoteDialysisSupplyStagingPolicy;
+  railAutomatedInspectionLogisticsPolicy?: RailAutomatedInspectionLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {

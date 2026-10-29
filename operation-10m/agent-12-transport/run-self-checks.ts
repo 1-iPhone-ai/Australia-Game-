@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/44' &&
+      infra.schemaVersion === 'agent12/45' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -223,11 +223,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalMiningCampResupplyStagingIndex >= 6 &&
       infra.portContainerReeferLogisticsShare >= 0.03 &&
       infra.nationalPortContainerReeferLogisticsThroughputIndex >= 2 &&
-      infra.nationalTidalLagoonExportIndex >= 5 &&
-      infra.nationalRemoteTelehealthSupplyStagingIndex >= 6 &&
-      infra.warehouseVerticalFulfillmentLogisticsShare >= 0.03 &&
-      infra.nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} tidal=${infra.nationalTidalLagoonExportIndex.toFixed(1)} telehealth=${infra.nationalRemoteTelehealthSupplyStagingIndex.toFixed(1)} vertical=${infra.nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex >= 2 &&
+      infra.nationalMarineKelpExportIndex >= 5 &&
+      infra.nationalRemoteDialysisSupplyStagingIndex >= 6 &&
+      infra.railAutomatedInspectionLogisticsShare >= 0.03 &&
+      infra.nationalRailAutomatedInspectionLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} kelp=${infra.nationalMarineKelpExportIndex.toFixed(1)} dialysis=${infra.nationalRemoteDialysisSupplyStagingIndex.toFixed(1)} inspection=${infra.nationalRailAutomatedInspectionLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;
