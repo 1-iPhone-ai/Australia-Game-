@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 /**
- * Sync operation-10m/assembly/manifest.json from operation-10m/modules agent chunk files.
+ * Sync manifest from local modules and/or scan origin/op10m/* branches.
+ *
+ *   node sync-manifest.mjs                 # local operation-10m/modules only
+ *   node sync-manifest.mjs --remote-op10m    # also scan remote branches → audits/manifest-remote-sync.json
  */
-import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hashModuleBody } from "./lib/anchors.mjs";
@@ -11,32 +15,137 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "../..");
 const modulesRoot = resolve(repoRoot, "operation-10m/modules");
 const manifestPath = resolve(__dirname, "manifest.json");
+const sourcesPath = resolve(__dirname, "module-sources.json");
 
-const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-const modules = [];
+const args = process.argv.slice(2);
+const remoteOp10m = args.includes("--remote-op10m");
 
-for (const name of readdirSync(modulesRoot)) {
-  const dir = join(modulesRoot, name);
-  if (!statSync(dir).isDirectory()) continue;
-  const chunkPath = join(dir, "chunk.tsx");
-  const localManifestPath = join(dir, "module.manifest.json");
-  if (!statSync(chunkPath).isFile() || !statSync(localManifestPath).isFile()) continue;
+function syncLocalModules() {
+  const modules = [];
+  for (const name of readdirSync(modulesRoot)) {
+    const dir = join(modulesRoot, name);
+    if (!statSync(dir).isDirectory()) continue;
+    const chunkPath = join(dir, "chunk.tsx");
+    const localManifestPath = join(dir, "module.manifest.json");
+    if (!statSync(chunkPath).isFile() || !statSync(localManifestPath).isFile()) continue;
 
-  const local = JSON.parse(readFileSync(localManifestPath, "utf8"));
-  const chunkText = readFileSync(chunkPath, "utf8");
-  const sha = hashModuleBody(local.moduleId, chunkText);
+    const local = JSON.parse(readFileSync(localManifestPath, "utf8"));
+    const chunkText = readFileSync(chunkPath, "utf8");
+    const sha = hashModuleBody(local.moduleId, chunkText);
 
-  modules.push({
-    moduleId: local.moduleId,
-    path: `operation-10m/modules/${name}/chunk.tsx`,
-    slot: local.slot,
-    contentSha256: sha,
-    ...(local.touchesSaveFormat ? { touchesSaveFormat: true } : {}),
-    ...(local.dependsOn ? { dependsOn: local.dependsOn } : {}),
-  });
+    modules.push({
+      moduleId: local.moduleId,
+      path: `operation-10m/modules/${name}/chunk.tsx`,
+      slot: local.slot,
+      contentSha256: sha,
+      source: "local",
+      ...(local.touchesSaveFormat ? { touchesSaveFormat: true } : {}),
+      ...(local.dependsOn ? { dependsOn: local.dependsOn } : {}),
+    });
+  }
+  modules.sort((a, b) => a.moduleId.localeCompare(b.moduleId));
+  return modules;
 }
 
-modules.sort((a, b) => a.moduleId.localeCompare(b.moduleId));
-manifest.modules = modules;
+function gitLines(branch, path) {
+  const r = spawnSync("git", ["show", `${branch}:${path}`], {
+    encoding: "utf8",
+    cwd: repoRoot,
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (r.status !== 0) return null;
+  return r.stdout;
+}
+
+function gitLs(branch, root) {
+  const r = spawnSync("git", ["ls-tree", "-r", "--name-only", branch, root], {
+    encoding: "utf8",
+    cwd: repoRoot,
+  });
+  if (r.status !== 0) return [];
+  return r.stdout.split("\n").filter(Boolean);
+}
+
+function scanRemoteBranches() {
+  const sources = JSON.parse(readFileSync(sourcesPath, "utf8"));
+  const rows = [];
+  for (const src of sources.sources) {
+    const branch = src.branch;
+    const root = src.root;
+    const files = gitLs(branch, root);
+    const tsFiles = files.filter((f) => /\.(ts|tsx)$/.test(f));
+    const chunkPaths = [
+      `operation-10m/modules/${src.moduleId}/chunk.tsx`,
+      `${root}/chunk.tsx`,
+      `${root}/src/chunk.tsx`,
+    ];
+    let chunkOnBranch = null;
+    let chunkText = null;
+    for (const p of chunkPaths) {
+      const t = gitLines(branch, p);
+      if (t && t.includes("OP10M_MODULE_BEGIN")) {
+        chunkOnBranch = p;
+        chunkText = t;
+        break;
+      }
+    }
+    let contentSha256 = null;
+    let assemblyReady = false;
+    if (chunkText) {
+      try {
+        contentSha256 = hashModuleBody(src.moduleId, chunkText);
+        assemblyReady = true;
+      } catch {
+        assemblyReady = false;
+      }
+    }
+    let estSourceLines = 0;
+    for (const f of tsFiles.slice(0, 300)) {
+      const t = gitLines(branch, f);
+      if (t) estSourceLines += t.split("\n").length;
+    }
+    rows.push({
+      moduleId: src.moduleId,
+      branch,
+      pr: src.pr,
+      root,
+      tsFileCount: tsFiles.length,
+      estimatedSourceLines: estSourceLines,
+      chunkPath: chunkOnBranch,
+      assemblyReady,
+      contentSha256,
+      defaultSlot: "pre-final-export",
+    });
+  }
+  rows.sort((a, b) => a.moduleId.localeCompare(b.moduleId));
+  return {
+    scannedAt: new Date().toISOString(),
+    canonicalBase: sources.canonicalBase,
+    branchCount: rows.length,
+    assemblyReadyCount: rows.filter((r) => r.assemblyReady).length,
+    rows,
+  };
+}
+
+const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+const localModules = syncLocalModules();
+manifest.modules = localModules.map(({ source, ...rest }) => rest);
+if (!manifest.canonicalBaseCommit) {
+  const head = spawnSync("git", ["rev-parse", "origin/australia-game-upgrade"], {
+    encoding: "utf8",
+    cwd: repoRoot,
+  });
+  if (head.status === 0) manifest.canonicalBaseCommit = head.stdout.trim().slice(0, 7);
+}
 writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
-console.log(`sync-manifest: ${modules.length} module(s) → manifest.json`);
+console.log(`sync-manifest: ${localModules.length} local module(s) → manifest.json`);
+
+if (remoteOp10m) {
+  const scan = scanRemoteBranches();
+  const out = resolve(__dirname, "audits/manifest-remote-sync.json");
+  mkdirSync(dirname(out), { recursive: true });
+  writeFileSync(out, JSON.stringify(scan, null, 2) + "\n");
+  console.log(
+    `remote scan: ${scan.branchCount} branches, ${scan.assemblyReadyCount} assembly-ready chunk(s) → audits/manifest-remote-sync.json`
+  );
+}

@@ -11,7 +11,8 @@
     "op10m:assemble:dry": "node operation-10m/assembly/assemble.mjs --dry-run",
     "op10m:sync-manifest": "node operation-10m/assembly/sync-manifest.mjs",
     "op10m:dry-run-bundle": "node operation-10m/assembly/dry-run-bundle.mjs",
-    "op10m:promote-tranche": "node operation-10m/assembly/promote-tranche.mjs"
+    "op10m:promote-tranche": "node operation-10m/assembly/promote-tranche.mjs",
+    "op10m:tranche-dry-run": "node operation-10m/assembly/tranche-dry-run.mjs --tranche operation-10m/assembly/tranches/tranche-01-op10m-registry.json"
   },
   "dependencies": {
     "react": "19.3.1",
