@@ -49,6 +49,13 @@ import {
 } from './resilience-trajectory.ts';
 import { buildCapacityReliefSchedule } from './capacity-relief-scheduler.ts';
 import { composeWellbeingGovernancePanel } from './wellbeing-governance-panel.ts';
+import {
+  advanceGovernanceTrajectory,
+  createInitialGovernanceTrajectory,
+  sanitizeGovernanceTrajectory,
+} from './governance-trajectory.ts';
+import { buildReliefDispatchPlan } from './relief-dispatch-planner.ts';
+import { composeStakeholderCoordinationBrief } from './stakeholder-coordination-brief.ts';
 import { AGENT14_WELLBEING_SCHEMA_VERSION } from './types.ts';
 
 export interface Agent14SelfTestResult {
@@ -550,8 +557,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Sixteen housing scenarios registered',
-    listAgent14ScenarioIds().length === 16,
+    'Eighteen housing scenarios registered',
+    listAgent14ScenarioIds().length === 18,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -779,8 +786,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave5_schema_version',
-    'Wellbeing schema version is wave 7',
-    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.7-scale-wave-7',
+    'Wellbeing schema version is wave 8',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.8-scale-wave-8',
     AGENT14_WELLBEING_SCHEMA_VERSION
   );
 
@@ -1187,6 +1194,162 @@ export function runAgent14WellbeingSelfTests(): {
       'Resilience trajectory advance updates persisted turn',
       snap.persisted.lastTurn === 4 && snap.snapshot.resilienceIndexEma > 0,
       `ema=${snap.snapshot.resilienceIndexEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 5, fiscalHeadroom: 38, stateCapacityLoad: 72, workforceReadiness: 'strained' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      governanceTrajectoryPersisted: createInitialGovernanceTrajectory(),
+    });
+    check(
+      results,
+      'wave8_governance_trajectory',
+      'Turn advance attaches governance trajectory',
+      adv.inputs.governanceTrajectory !== undefined &&
+        adv.governanceTrajectoryPersisted.lastTurn === 5 &&
+        adv.inputs.governanceTrajectory!.governanceScoreEma > 0,
+      `trajectory=${adv.inputs.governanceTrajectory?.trajectory} ema=${adv.inputs.governanceTrajectory?.governanceScoreEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 6, fiscalHeadroom: 22, stateCapacityLoad: 88, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave8_relief_dispatch_plan',
+      'Relief dispatch plan populated under stress',
+      adv.inputs.reliefDispatchPlan !== undefined &&
+        adv.inputs.reliefDispatchPlan!.summary.length > 8,
+      adv.inputs.reliefDispatchPlan?.summary.slice(0, 72)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 30, stateCapacityLoad: 80, workforceReadiness: 'weak' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave8_stakeholder_brief',
+      'Stakeholder coordination brief includes engagement flag',
+      adv.inputs.stakeholderCoordinationBrief !== undefined &&
+        adv.inputs.stakeholderCoordinationBrief!.summary.length > 10,
+      `engage=${adv.inputs.stakeholderCoordinationBrief?.shouldEngageStakeholders}`
+    );
+  }
+
+  {
+    const raw = sanitizeGovernanceTrajectory({
+      schemaVersion: '10.14.7-scale-wave-7' as any,
+      lastTurn: 2,
+      emaAlpha: 0.3,
+      governanceScoreEma: 47,
+    });
+    check(
+      results,
+      'wave8_governance_sanitize',
+      'Governance trajectory sanitize upgrades schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.governanceScoreEma === 47,
+      `schema=${raw.schemaVersion}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('governance_trajectory_arc', 10);
+    const last = sim.turns[9];
+    check(
+      results,
+      'wave8_governance_arc_scenario',
+      'Governance arc surfaces trajectory or panel band',
+      last.governanceTrajectory !== undefined &&
+        (last.wellbeingGovernancePanel!.band !== 'aligned' ||
+          last.governanceTrajectory!.trajectory !== 'flat' ||
+          last.stakeholderCoordinationBrief!.shouldEngageStakeholders),
+      `gov=${last.wellbeingGovernancePanel?.band} traj=${last.governanceTrajectory?.trajectory}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('relief_dispatch_coordination_stress', 8);
+    const last = sim.turns[7];
+    check(
+      results,
+      'wave8_relief_dispatch_scenario',
+      'Relief dispatch stress surfaces plan or stakeholder engagement',
+      last.reliefDispatchPlan !== undefined &&
+        (last.reliefDispatchPlan!.shouldHoldCommits ||
+          last.reliefDispatchPlan!.actions.length > 0 ||
+          last.stakeholderCoordinationBrief!.shouldEngageStakeholders),
+      `hold=${last.reliefDispatchPlan?.shouldHoldCommits} actions=${last.reliefDispatchPlan?.actions.length}`
+    );
+  }
+
+  check(
+    results,
+    'wave8_cross_pillar_stub_catalog',
+    'Wave 8 governance/relief stubs present',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_NSW_governance_reform') &&
+      AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_VIC_relief_coordination'),
+    `n=${AGENT14_HEALTH_ED_PROGRAM_STUBS.length}`
+  );
+
+  check(
+    results,
+    'wave8_scenario_catalog',
+    'Scenario catalog includes wave 8 scenarios',
+    listAgent14ScenarioIds().includes('governance_trajectory_arc') &&
+      listAgent14ScenarioIds().includes('relief_dispatch_coordination_stress'),
+    `count=${listAgent14ScenarioIds().length}`
+  );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 7, fiscalHeadroom: 28, stateCapacityLoad: 84, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const plan = buildReliefDispatchPlan({
+      turn: 7,
+      reliefSchedule: adv.inputs.capacityReliefSchedule!,
+      interventionQueue: adv.inputs.interventionPriorityQueue!,
+      governanceTrajectory: adv.inputs.governanceTrajectory,
+    });
+    const brief = composeStakeholderCoordinationBrief({
+      turn: 7,
+      governancePanel: adv.inputs.wellbeingGovernancePanel!,
+      governanceTrajectory: adv.inputs.governanceTrajectory,
+      reliefDispatchPlan: plan,
+    });
+    check(
+      results,
+      'wave8_coordination_composer',
+      'Standalone coordination composer returns headlines',
+      brief.headlines.length > 0 && brief.summary.length > 10,
+      brief.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 3, fiscalHeadroom: 45, stateCapacityLoad: 60 },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const snap = advanceGovernanceTrajectory(
+      3,
+      adv.inputs.wellbeingGovernancePanel!,
+      createInitialGovernanceTrajectory()
+    );
+    check(
+      results,
+      'wave8_governance_advance_unit',
+      'Governance trajectory advance updates persisted turn',
+      snap.persisted.lastTurn === 3 && snap.snapshot.governanceScoreEma > 0,
+      `ema=${snap.snapshot.governanceScoreEma}`
     );
   }
 

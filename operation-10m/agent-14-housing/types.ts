@@ -1,6 +1,6 @@
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.7-scale-wave-7' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.8-scale-wave-8' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -104,6 +104,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   resilienceTrajectory?: ResilienceTrajectorySnapshot;
   capacityReliefSchedule?: CapacityReliefSchedule;
   wellbeingGovernancePanel?: WellbeingGovernancePanel;
+  governanceTrajectory?: GovernanceTrajectorySnapshot;
+  reliefDispatchPlan?: ReliefDispatchPlan;
+  stakeholderCoordinationBrief?: StakeholderCoordinationBrief;
 }
 
 export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
@@ -251,6 +254,51 @@ export interface WellbeingGovernancePanel {
   resilienceBand: WellbeingResilienceBand;
   governanceScore: number;
   band: WellbeingGovernanceBand;
+  headlines: string[];
+  summary: string;
+}
+
+export interface GovernanceTrajectorySnapshot {
+  turn: number;
+  governanceScoreEma: number;
+  instantaneousScore: number;
+  band: WellbeingGovernanceBand;
+  trajectory: CouplingTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface GovernanceTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  governanceScoreEma: number;
+  priorEma?: number;
+}
+
+export type ReliefDispatchPriority = 'immediate' | 'deferred' | 'hold';
+
+export interface ReliefDispatchAction {
+  programId: string;
+  regionId: string;
+  pillar: PublicServicePillar;
+  priority: ReliefDispatchPriority;
+  targetTurn: number;
+  rationale: string;
+}
+
+export interface ReliefDispatchPlan {
+  turn: number;
+  shouldHoldCommits: boolean;
+  actions: ReliefDispatchAction[];
+  summary: string;
+}
+
+export interface StakeholderCoordinationBrief {
+  turn: number;
+  governanceBand: WellbeingGovernanceBand;
+  trajectory: CouplingTrajectoryTrend;
+  reliefActions: number;
+  shouldEngageStakeholders: boolean;
   headlines: string[];
   summary: string;
 }

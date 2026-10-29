@@ -5,7 +5,7 @@
 // --- source: types.ts ---
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.7-scale-wave-7' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.8-scale-wave-8' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -109,6 +109,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   resilienceTrajectory?: ResilienceTrajectorySnapshot;
   capacityReliefSchedule?: CapacityReliefSchedule;
   wellbeingGovernancePanel?: WellbeingGovernancePanel;
+  governanceTrajectory?: GovernanceTrajectorySnapshot;
+  reliefDispatchPlan?: ReliefDispatchPlan;
+  stakeholderCoordinationBrief?: StakeholderCoordinationBrief;
 }
 
 export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
@@ -256,6 +259,51 @@ export interface WellbeingGovernancePanel {
   resilienceBand: WellbeingResilienceBand;
   governanceScore: number;
   band: WellbeingGovernanceBand;
+  headlines: string[];
+  summary: string;
+}
+
+export interface GovernanceTrajectorySnapshot {
+  turn: number;
+  governanceScoreEma: number;
+  instantaneousScore: number;
+  band: WellbeingGovernanceBand;
+  trajectory: CouplingTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface GovernanceTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  governanceScoreEma: number;
+  priorEma?: number;
+}
+
+export type ReliefDispatchPriority = 'immediate' | 'deferred' | 'hold';
+
+export interface ReliefDispatchAction {
+  programId: string;
+  regionId: string;
+  pillar: PublicServicePillar;
+  priority: ReliefDispatchPriority;
+  targetTurn: number;
+  rationale: string;
+}
+
+export interface ReliefDispatchPlan {
+  turn: number;
+  shouldHoldCommits: boolean;
+  actions: ReliefDispatchAction[];
+  summary: string;
+}
+
+export interface StakeholderCoordinationBrief {
+  turn: number;
+  governanceBand: WellbeingGovernanceBand;
+  trajectory: CouplingTrajectoryTrend;
+  reliefActions: number;
+  shouldEngageStakeholders: boolean;
   headlines: string[];
   summary: string;
 }
@@ -507,6 +555,8 @@ export const AGENT14_HEALTH_ED_PROGRAM_STUBS: readonly {
   { id: 'ps_xp_WA_remote_lifecycle', pillar: 'education', regionId: 'WA', fiscalLoadPoints: 22, durationTurns: 6, baseImpact: 9, effectLagTurns: 3 },
   { id: 'ps_xp_SA_integrated_housing_health', pillar: 'healthcare', regionId: 'SA', fiscalLoadPoints: 21, durationTurns: 6, baseImpact: 10, effectLagTurns: 2 },
   { id: 'ps_xp_ACT_wellbeing_coordination', pillar: 'education', regionId: 'ACT', fiscalLoadPoints: 15, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
+  { id: 'ps_xp_NSW_governance_reform', pillar: 'healthcare', regionId: 'NSW', fiscalLoadPoints: 19, durationTurns: 5, baseImpact: 9, effectLagTurns: 2 },
+  { id: 'ps_xp_VIC_relief_coordination', pillar: 'education', regionId: 'VIC', fiscalLoadPoints: 18, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
 ];
 
 export const AGENT14_ALL_PROGRAM_STUBS = [
@@ -850,7 +900,7 @@ export function canAcceptSpendingCommitment(
 // --- source: delayed-spending-effects.ts ---
 export function createInitialDelayedSpendingPersisted(): DelayedSpendingPersisted {
   return {
-    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.8-scale-wave-8' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     active: [],
     history: [],
   };
@@ -872,7 +922,7 @@ export function sanitizeDelayedSpendingPersisted(
         .slice(0, AGENT14_LIMITS.maxActiveCommitments)
     : [];
   return {
-    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.8-scale-wave-8' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     active,
     history: Array.isArray(raw.history) ? raw.history.slice(-AGENT14_LIMITS.maxHistory) : [],
   };
@@ -1432,7 +1482,7 @@ const DEFAULT_EMA_ALPHA = 0.35;
 
 export function createInitialRegionalWellbeingMemory(): RegionalWellbeingMemoryPersisted {
   return {
-    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.8-scale-wave-8' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     affordabilityEma: {},
@@ -1449,7 +1499,7 @@ export function sanitizeRegionalWellbeingMemory(
       ? raw.emaAlpha
       : DEFAULT_EMA_ALPHA;
   return {
-    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.8-scale-wave-8' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     affordabilityEma:
@@ -1517,7 +1567,7 @@ const DEFAULT_EMA_ALPHA = 0.4;
 
 export function createInitialCouplingTrajectory(): CouplingTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.8-scale-wave-8' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     nationalCouplingEma: 58,
@@ -1538,7 +1588,7 @@ export function sanitizeCouplingTrajectory(
       ? Math.max(0, Math.min(100, raw.nationalCouplingEma))
       : 58;
   return {
-    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.8-scale-wave-8' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     nationalCouplingEma,
@@ -1788,7 +1838,7 @@ const DEFAULT_EMA_ALPHA = 0.35;
 
 export function createInitialAccountabilityTrajectory(): AccountabilityTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.8-scale-wave-8' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     overallScoreEma: 62,
@@ -1809,7 +1859,7 @@ export function sanitizeAccountabilityTrajectory(
       ? Math.max(0, Math.min(100, raw.overallScoreEma))
       : 62;
   return {
-    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.8-scale-wave-8' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     overallScoreEma,
@@ -1952,7 +2002,7 @@ const DEFAULT_EMA_ALPHA = 0.32;
 
 export function createInitialResilienceTrajectory(): ResilienceTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.8-scale-wave-8' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     resilienceIndexEma: 58,
@@ -1973,7 +2023,7 @@ export function sanitizeResilienceTrajectory(
       ? Math.max(0, Math.min(100, raw.resilienceIndexEma))
       : 58;
   return {
-    schemaVersion: '10.14.7-scale-wave-7' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.8-scale-wave-8' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     resilienceIndexEma,
@@ -2277,6 +2327,208 @@ export function composeWellbeingGovernancePanel(args: {
 }
 
 
+// --- source: governance-trajectory.ts ---
+const DEFAULT_EMA_ALPHA = 0.3;
+
+export function createInitialGovernanceTrajectory(): GovernanceTrajectoryPersisted {
+  return {
+    schemaVersion: '10.14.8-scale-wave-8' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    lastTurn: 0,
+    emaAlpha: DEFAULT_EMA_ALPHA,
+    governanceScoreEma: 60,
+    priorEma: undefined,
+  };
+}
+
+export function sanitizeGovernanceTrajectory(
+  raw?: GovernanceTrajectoryPersisted | null
+): GovernanceTrajectoryPersisted {
+  if (!raw || typeof raw !== 'object') return createInitialGovernanceTrajectory();
+  const alpha =
+    typeof raw.emaAlpha === 'number' && raw.emaAlpha > 0 && raw.emaAlpha <= 1
+      ? raw.emaAlpha
+      : DEFAULT_EMA_ALPHA;
+  const governanceScoreEma =
+    typeof raw.governanceScoreEma === 'number' && Number.isFinite(raw.governanceScoreEma)
+      ? Math.max(0, Math.min(100, raw.governanceScoreEma))
+      : 60;
+  return {
+    schemaVersion: '10.14.8-scale-wave-8' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
+    emaAlpha: alpha,
+    governanceScoreEma,
+    priorEma:
+      typeof raw.priorEma === 'number' && Number.isFinite(raw.priorEma)
+        ? Math.max(0, Math.min(100, raw.priorEma))
+        : undefined,
+  };
+}
+
+function trajectoryFromDelta(
+  current: number,
+  previous: number | undefined,
+  epsilon = 0.85
+): CouplingTrajectoryTrend {
+  if (previous === undefined) return 'flat';
+  if (current - previous > epsilon) return 'improving';
+  if (previous - current > epsilon) return 'deteriorating';
+  return 'flat';
+}
+
+function bandFromScore(score: number, panelBand: WellbeingGovernanceBand): WellbeingGovernanceBand {
+  if (panelBand === 'crisis' || panelBand === 'misaligned') return panelBand;
+  if (score >= 72) return 'aligned';
+  if (score >= 52) return 'watch';
+  return panelBand === 'aligned' ? 'watch' : panelBand;
+}
+
+export function advanceGovernanceTrajectory(
+  turn: number,
+  panel: WellbeingGovernancePanel,
+  persisted?: GovernanceTrajectoryPersisted | null
+): { snapshot: GovernanceTrajectorySnapshot; persisted: GovernanceTrajectoryPersisted } {
+  const base = sanitizeGovernanceTrajectory(persisted);
+  const alpha = base.emaAlpha;
+  const sample = panel.governanceScore;
+  const priorEma = base.governanceScoreEma;
+  const governanceScoreEma = Math.round((alpha * sample + (1 - alpha) * priorEma) * 10) / 10;
+  const trajectory = trajectoryFromDelta(governanceScoreEma, base.priorEma ?? priorEma);
+  const evidence: string[] = [];
+  if (trajectory === 'deteriorating') {
+    evidence.push(`Governance EMA softening (${priorEma} → ${governanceScoreEma})`);
+  } else if (trajectory === 'improving') {
+    evidence.push(`Governance EMA recovering (${priorEma} → ${governanceScoreEma})`);
+  }
+  if (panel.band === 'crisis' || panel.band === 'misaligned') {
+    evidence.push(`Instantaneous governance ${panel.band} at ${sample}`);
+  }
+
+  return {
+    snapshot: {
+      turn,
+      governanceScoreEma,
+      instantaneousScore: sample,
+      band: bandFromScore(governanceScoreEma, panel.band),
+      trajectory,
+      evidence,
+    },
+    persisted: {
+      ...base,
+      lastTurn: turn,
+      priorEma: priorEma,
+      governanceScoreEma,
+    },
+  };
+}
+
+
+// --- source: relief-dispatch-planner.ts ---
+export function buildReliefDispatchPlan(args: {
+  turn: number;
+  reliefSchedule: CapacityReliefSchedule;
+  interventionQueue: WellbeingInterventionPriorityQueue;
+  governanceTrajectory?: GovernanceTrajectorySnapshot;
+  limit?: number;
+}): ReliefDispatchPlan {
+  const limit = args.limit ?? 5;
+  const actions: ReliefDispatchAction[] = [];
+
+  for (const item of args.reliefSchedule.items) {
+    const priority =
+      item.reliefTurnOffset === 0
+        ? ('immediate' as const)
+        : item.reliefTurnOffset >= 3
+          ? ('hold' as const)
+          : ('deferred' as const);
+    actions.push({
+      programId: item.programId,
+      regionId: item.regionId,
+      pillar: item.pillar,
+      priority,
+      targetTurn: args.turn + item.reliefTurnOffset,
+      rationale: item.rationale,
+    });
+  }
+
+  if (actions.length < limit && args.interventionQueue.shouldExpedite) {
+    for (const item of args.interventionQueue.items) {
+      if (item.fitsCapacity) {
+        actions.push({
+          programId: item.programId,
+          regionId: item.regionId,
+          pillar: item.pillar,
+          priority: 'immediate',
+          targetTurn: args.turn,
+          rationale: `Expedite — ${item.rationale}`,
+        });
+      }
+      if (actions.length >= limit) break;
+    }
+  }
+
+  const shouldHoldCommits =
+    args.reliefSchedule.shouldDeferNewCommits ||
+    args.governanceTrajectory?.trajectory === 'deteriorating';
+
+  const summary =
+    actions.length === 0
+      ? shouldHoldCommits
+        ? 'Relief dispatch: hold new commits until governance stabilizes'
+        : 'Relief dispatch plan clear'
+      : `Dispatch ${actions.length} relief actions (${actions.filter((a) => a.priority === 'immediate').length} immediate)`;
+
+  return {
+    turn: args.turn,
+    shouldHoldCommits,
+    actions: actions.slice(0, limit),
+    summary,
+  };
+}
+
+
+// --- source: stakeholder-coordination-brief.ts ---
+export function composeStakeholderCoordinationBrief(args: {
+  turn: number;
+  governancePanel: WellbeingGovernancePanel;
+  governanceTrajectory?: GovernanceTrajectorySnapshot;
+  reliefDispatchPlan: ReliefDispatchPlan;
+}): StakeholderCoordinationBrief {
+  const trajectory = args.governanceTrajectory?.trajectory ?? 'flat';
+  const reliefActions = args.reliefDispatchPlan.actions.length;
+  const shouldEngageStakeholders =
+    args.governancePanel.band === 'crisis' ||
+    args.governancePanel.band === 'misaligned' ||
+    trajectory === 'deteriorating' ||
+    args.reliefDispatchPlan.shouldHoldCommits ||
+    reliefActions >= 3;
+
+  const headlines: string[] = [];
+  if (shouldEngageStakeholders) {
+    headlines.push('Stakeholder coordination recommended this turn');
+  } else {
+    headlines.push('Routine stakeholder touchpoints sufficient');
+  }
+  if (args.reliefDispatchPlan.shouldHoldCommits) {
+    headlines.push('Hold portfolio commits until relief dispatch clears');
+  }
+  if (trajectory === 'improving' && args.governancePanel.band === 'aligned') {
+    headlines.push('Governance trajectory improving — reduce escalation cadence');
+  }
+
+  const summary = `${args.governancePanel.band} governance / ${trajectory} trajectory — ${reliefActions} relief actions, engage=${shouldEngageStakeholders}`;
+
+  return {
+    turn: args.turn,
+    governanceBand: args.governancePanel.band,
+    trajectory,
+    reliefActions,
+    shouldEngageStakeholders,
+    headlines: headlines.slice(0, 3),
+    summary,
+  };
+}
+
+
 // --- source: wellbeing-executive-brief.ts ---
 export function composeAgent14WellbeingExecutiveBrief(args: {
   turn: number;
@@ -2292,6 +2544,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   resilienceTrajectory?: ResilienceTrajectorySnapshot;
   capacityReliefSchedule?: CapacityReliefSchedule;
   wellbeingGovernancePanel?: WellbeingGovernancePanel;
+  governanceTrajectory?: GovernanceTrajectorySnapshot;
+  reliefDispatchPlan?: ReliefDispatchPlan;
+  stakeholderCoordinationBrief?: StakeholderCoordinationBrief;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -2350,6 +2605,17 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   if (args.wellbeingGovernancePanel && args.wellbeingGovernancePanel.band !== 'aligned') {
     giNotes.push(args.wellbeingGovernancePanel.summary);
   }
+  if (args.governanceTrajectory?.trajectory === 'deteriorating') {
+    giNotes.push(
+      `Governance trajectory ${args.governanceTrajectory.trajectory} (EMA ${args.governanceTrajectory.governanceScoreEma})`
+    );
+  }
+  if (args.reliefDispatchPlan && args.reliefDispatchPlan.actions.length > 0) {
+    giNotes.push(args.reliefDispatchPlan.summary);
+  }
+  if (args.stakeholderCoordinationBrief?.shouldEngageStakeholders) {
+    giNotes.push(args.stakeholderCoordinationBrief.summary);
+  }
 
   const headlineParts: string[] = [];
   if (args.coupling.band === 'critical' || args.coupling.band === 'strained') {
@@ -2389,6 +2655,7 @@ export interface AdvancePublicServicesTurnArgs {
   couplingTrajectoryPersisted?: CouplingTrajectoryPersisted | null;
   accountabilityTrajectoryPersisted?: AccountabilityTrajectoryPersisted | null;
   resilienceTrajectoryPersisted?: ResilienceTrajectoryPersisted | null;
+  governanceTrajectoryPersisted?: GovernanceTrajectoryPersisted | null;
   /** New commitments queued this turn (already validated or not). */
   newCommitments?: SpendingCommitment[];
   /** When true, reject commitments that fail capacity gate. */
@@ -2402,6 +2669,7 @@ export interface AdvancePublicServicesTurnResult {
   couplingTrajectoryPersisted: CouplingTrajectoryPersisted;
   accountabilityTrajectoryPersisted: AccountabilityTrajectoryPersisted;
   resilienceTrajectoryPersisted: ResilienceTrajectoryPersisted;
+  governanceTrajectoryPersisted: GovernanceTrajectoryPersisted;
   rejectedCommitments: Array<{ commitment: SpendingCommitment; reason: string }>;
 }
 
@@ -2542,6 +2810,26 @@ export function advancePublicServicesTurn(
     resilienceTrajectory: resilienceTrajectoryAdvance.snapshot,
   });
 
+  const governanceTrajectoryAdvance = advanceGovernanceTrajectory(
+    turn,
+    wellbeingGovernancePanel,
+    args.governanceTrajectoryPersisted
+  );
+
+  const reliefDispatchPlan = buildReliefDispatchPlan({
+    turn,
+    reliefSchedule: capacityReliefSchedule,
+    interventionQueue: interventionPriorityQueue,
+    governanceTrajectory: governanceTrajectoryAdvance.snapshot,
+  });
+
+  const stakeholderCoordinationBrief = composeStakeholderCoordinationBrief({
+    turn,
+    governancePanel: wellbeingGovernancePanel,
+    governanceTrajectory: governanceTrajectoryAdvance.snapshot,
+    reliefDispatchPlan,
+  });
+
   const executiveBrief = composeAgent14WellbeingExecutiveBrief({
     turn,
     warnings: wellbeingWarnings,
@@ -2555,6 +2843,9 @@ export function advancePublicServicesTurn(
     resilienceTrajectory: resilienceTrajectoryAdvance.snapshot,
     capacityReliefSchedule,
     wellbeingGovernancePanel,
+    governanceTrajectory: governanceTrajectoryAdvance.snapshot,
+    reliefDispatchPlan,
+    stakeholderCoordinationBrief,
   });
 
   const enriched: EnrichedPublicServiceTurnInputs = {
@@ -2585,6 +2876,9 @@ export function advancePublicServicesTurn(
     resilienceTrajectory: resilienceTrajectoryAdvance.snapshot,
     capacityReliefSchedule,
     wellbeingGovernancePanel,
+    governanceTrajectory: governanceTrajectoryAdvance.snapshot,
+    reliefDispatchPlan,
+    stakeholderCoordinationBrief,
   };
 
   return {
@@ -2594,6 +2888,7 @@ export function advancePublicServicesTurn(
     couplingTrajectoryPersisted: couplingTrajectoryAdvance.persisted,
     accountabilityTrajectoryPersisted: accountabilityTrajectoryAdvance.persisted,
     resilienceTrajectoryPersisted: resilienceTrajectoryAdvance.persisted,
+    governanceTrajectoryPersisted: governanceTrajectoryAdvance.persisted,
     rejectedCommitments,
   };
 }
@@ -2616,7 +2911,9 @@ export type Agent14HousingScenarioId =
   | 'accountability_slip_arc'
   | 'intervention_priority_stress'
   | 'resilience_recovery_arc'
-  | 'capacity_relief_governance_stress';
+  | 'capacity_relief_governance_stress'
+  | 'governance_trajectory_arc'
+  | 'relief_dispatch_coordination_stress';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -2756,6 +3053,27 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
       'ps_he_VIC_hospital_backlog',
     ],
   },
+  {
+    id: 'governance_trajectory_arc',
+    label: 'Governance trajectory arc',
+    baseInputs: { fiscalHeadroom: 34, stateCapacityLoad: 68, workforceReadiness: 'strained' },
+    launchProgramIds: [
+      'ps_xp_NSW_governance_reform',
+      'ps_h_NSW_social_accel',
+      'ps_he_NSW_primary_care',
+    ],
+  },
+  {
+    id: 'relief_dispatch_coordination_stress',
+    label: 'Relief dispatch coordination stress',
+    baseInputs: { fiscalHeadroom: 20, stateCapacityLoad: 92, workforceReadiness: 'blocking', workforceSpecialistGap: 74 },
+    launchProgramIds: [
+      'ps_xp_VIC_relief_coordination',
+      'ps_h_VIC_planning_reform',
+      'ps_he_VIC_hospital_backlog',
+      'ps_ed_VIC_tafe',
+    ],
+  },
 ];
 
 export function simulateAgent14HousingScenario(
@@ -2773,6 +3091,7 @@ export function simulateAgent14HousingScenario(
   let couplingTrajectoryPersisted = null;
   let accountabilityTrajectoryPersisted = null;
   let resilienceTrajectoryPersisted = null;
+  let governanceTrajectoryPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -2790,6 +3109,7 @@ export function simulateAgent14HousingScenario(
       couplingTrajectoryPersisted,
       accountabilityTrajectoryPersisted,
       resilienceTrajectoryPersisted,
+      governanceTrajectoryPersisted,
       newCommitments,
       enforceCapacity: true,
     });
@@ -2798,6 +3118,7 @@ export function simulateAgent14HousingScenario(
     couplingTrajectoryPersisted = result.couplingTrajectoryPersisted;
     accountabilityTrajectoryPersisted = result.accountabilityTrajectoryPersisted;
     resilienceTrajectoryPersisted = result.resilienceTrajectoryPersisted;
+    governanceTrajectoryPersisted = result.governanceTrajectoryPersisted;
     turns.push(result.inputs);
   }
 
@@ -3331,8 +3652,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Sixteen housing scenarios registered',
-    listAgent14ScenarioIds().length === 16,
+    'Eighteen housing scenarios registered',
+    listAgent14ScenarioIds().length === 18,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -3560,8 +3881,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave5_schema_version',
-    'Wellbeing schema version is wave 7',
-    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.7-scale-wave-7',
+    'Wellbeing schema version is wave 8',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.8-scale-wave-8',
     AGENT14_WELLBEING_SCHEMA_VERSION
   );
 
@@ -3968,6 +4289,162 @@ export function runAgent14WellbeingSelfTests(): {
       'Resilience trajectory advance updates persisted turn',
       snap.persisted.lastTurn === 4 && snap.snapshot.resilienceIndexEma > 0,
       `ema=${snap.snapshot.resilienceIndexEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 5, fiscalHeadroom: 38, stateCapacityLoad: 72, workforceReadiness: 'strained' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      governanceTrajectoryPersisted: createInitialGovernanceTrajectory(),
+    });
+    check(
+      results,
+      'wave8_governance_trajectory',
+      'Turn advance attaches governance trajectory',
+      adv.inputs.governanceTrajectory !== undefined &&
+        adv.governanceTrajectoryPersisted.lastTurn === 5 &&
+        adv.inputs.governanceTrajectory!.governanceScoreEma > 0,
+      `trajectory=${adv.inputs.governanceTrajectory?.trajectory} ema=${adv.inputs.governanceTrajectory?.governanceScoreEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 6, fiscalHeadroom: 22, stateCapacityLoad: 88, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave8_relief_dispatch_plan',
+      'Relief dispatch plan populated under stress',
+      adv.inputs.reliefDispatchPlan !== undefined &&
+        adv.inputs.reliefDispatchPlan!.summary.length > 8,
+      adv.inputs.reliefDispatchPlan?.summary.slice(0, 72)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 30, stateCapacityLoad: 80, workforceReadiness: 'weak' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave8_stakeholder_brief',
+      'Stakeholder coordination brief includes engagement flag',
+      adv.inputs.stakeholderCoordinationBrief !== undefined &&
+        adv.inputs.stakeholderCoordinationBrief!.summary.length > 10,
+      `engage=${adv.inputs.stakeholderCoordinationBrief?.shouldEngageStakeholders}`
+    );
+  }
+
+  {
+    const raw = sanitizeGovernanceTrajectory({
+      schemaVersion: '10.14.7-scale-wave-7' as any,
+      lastTurn: 2,
+      emaAlpha: 0.3,
+      governanceScoreEma: 47,
+    });
+    check(
+      results,
+      'wave8_governance_sanitize',
+      'Governance trajectory sanitize upgrades schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.governanceScoreEma === 47,
+      `schema=${raw.schemaVersion}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('governance_trajectory_arc', 10);
+    const last = sim.turns[9];
+    check(
+      results,
+      'wave8_governance_arc_scenario',
+      'Governance arc surfaces trajectory or panel band',
+      last.governanceTrajectory !== undefined &&
+        (last.wellbeingGovernancePanel!.band !== 'aligned' ||
+          last.governanceTrajectory!.trajectory !== 'flat' ||
+          last.stakeholderCoordinationBrief!.shouldEngageStakeholders),
+      `gov=${last.wellbeingGovernancePanel?.band} traj=${last.governanceTrajectory?.trajectory}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('relief_dispatch_coordination_stress', 8);
+    const last = sim.turns[7];
+    check(
+      results,
+      'wave8_relief_dispatch_scenario',
+      'Relief dispatch stress surfaces plan or stakeholder engagement',
+      last.reliefDispatchPlan !== undefined &&
+        (last.reliefDispatchPlan!.shouldHoldCommits ||
+          last.reliefDispatchPlan!.actions.length > 0 ||
+          last.stakeholderCoordinationBrief!.shouldEngageStakeholders),
+      `hold=${last.reliefDispatchPlan?.shouldHoldCommits} actions=${last.reliefDispatchPlan?.actions.length}`
+    );
+  }
+
+  check(
+    results,
+    'wave8_cross_pillar_stub_catalog',
+    'Wave 8 governance/relief stubs present',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_NSW_governance_reform') &&
+      AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_VIC_relief_coordination'),
+    `n=${AGENT14_HEALTH_ED_PROGRAM_STUBS.length}`
+  );
+
+  check(
+    results,
+    'wave8_scenario_catalog',
+    'Scenario catalog includes wave 8 scenarios',
+    listAgent14ScenarioIds().includes('governance_trajectory_arc') &&
+      listAgent14ScenarioIds().includes('relief_dispatch_coordination_stress'),
+    `count=${listAgent14ScenarioIds().length}`
+  );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 7, fiscalHeadroom: 28, stateCapacityLoad: 84, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const plan = buildReliefDispatchPlan({
+      turn: 7,
+      reliefSchedule: adv.inputs.capacityReliefSchedule!,
+      interventionQueue: adv.inputs.interventionPriorityQueue!,
+      governanceTrajectory: adv.inputs.governanceTrajectory,
+    });
+    const brief = composeStakeholderCoordinationBrief({
+      turn: 7,
+      governancePanel: adv.inputs.wellbeingGovernancePanel!,
+      governanceTrajectory: adv.inputs.governanceTrajectory,
+      reliefDispatchPlan: plan,
+    });
+    check(
+      results,
+      'wave8_coordination_composer',
+      'Standalone coordination composer returns headlines',
+      brief.headlines.length > 0 && brief.summary.length > 10,
+      brief.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 3, fiscalHeadroom: 45, stateCapacityLoad: 60 },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const snap = advanceGovernanceTrajectory(
+      3,
+      adv.inputs.wellbeingGovernancePanel!,
+      createInitialGovernanceTrajectory()
+    );
+    check(
+      results,
+      'wave8_governance_advance_unit',
+      'Governance trajectory advance updates persisted turn',
+      snap.persisted.lastTurn === 3 && snap.snapshot.governanceScoreEma > 0,
+      `ema=${snap.snapshot.governanceScoreEma}`
     );
   }
 

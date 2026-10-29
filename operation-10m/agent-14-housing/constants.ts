@@ -95,6 +95,8 @@ export const AGENT14_HEALTH_ED_PROGRAM_STUBS: readonly {
   { id: 'ps_xp_WA_remote_lifecycle', pillar: 'education', regionId: 'WA', fiscalLoadPoints: 22, durationTurns: 6, baseImpact: 9, effectLagTurns: 3 },
   { id: 'ps_xp_SA_integrated_housing_health', pillar: 'healthcare', regionId: 'SA', fiscalLoadPoints: 21, durationTurns: 6, baseImpact: 10, effectLagTurns: 2 },
   { id: 'ps_xp_ACT_wellbeing_coordination', pillar: 'education', regionId: 'ACT', fiscalLoadPoints: 15, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
+  { id: 'ps_xp_NSW_governance_reform', pillar: 'healthcare', regionId: 'NSW', fiscalLoadPoints: 19, durationTurns: 5, baseImpact: 9, effectLagTurns: 2 },
+  { id: 'ps_xp_VIC_relief_coordination', pillar: 'education', regionId: 'VIC', fiscalLoadPoints: 18, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
 ];
 
 export const AGENT14_ALL_PROGRAM_STUBS = [

@@ -11,6 +11,9 @@ import type {
   WellbeingGovernancePanel,
   CapacityReliefSchedule,
   ResilienceTrajectorySnapshot,
+  GovernanceTrajectorySnapshot,
+  ReliefDispatchPlan,
+  StakeholderCoordinationBrief,
   WellbeingTurnForecastPoint,
 } from './types.ts';
 
@@ -28,6 +31,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   resilienceTrajectory?: ResilienceTrajectorySnapshot;
   capacityReliefSchedule?: CapacityReliefSchedule;
   wellbeingGovernancePanel?: WellbeingGovernancePanel;
+  governanceTrajectory?: GovernanceTrajectorySnapshot;
+  reliefDispatchPlan?: ReliefDispatchPlan;
+  stakeholderCoordinationBrief?: StakeholderCoordinationBrief;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -85,6 +91,17 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   }
   if (args.wellbeingGovernancePanel && args.wellbeingGovernancePanel.band !== 'aligned') {
     giNotes.push(args.wellbeingGovernancePanel.summary);
+  }
+  if (args.governanceTrajectory?.trajectory === 'deteriorating') {
+    giNotes.push(
+      `Governance trajectory ${args.governanceTrajectory.trajectory} (EMA ${args.governanceTrajectory.governanceScoreEma})`
+    );
+  }
+  if (args.reliefDispatchPlan && args.reliefDispatchPlan.actions.length > 0) {
+    giNotes.push(args.reliefDispatchPlan.summary);
+  }
+  if (args.stakeholderCoordinationBrief?.shouldEngageStakeholders) {
+    giNotes.push(args.stakeholderCoordinationBrief.summary);
   }
 
   const headlineParts: string[] = [];

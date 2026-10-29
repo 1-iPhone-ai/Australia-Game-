@@ -23,4 +23,7 @@ export * from './program-stub-commitments.ts';
 export * from './resilience-trajectory.ts';
 export * from './capacity-relief-scheduler.ts';
 export * from './wellbeing-governance-panel.ts';
+export * from './governance-trajectory.ts';
+export * from './relief-dispatch-planner.ts';
+export * from './stakeholder-coordination-brief.ts';
 export { runAgent14WellbeingSelfTests } from './self-tests.ts';

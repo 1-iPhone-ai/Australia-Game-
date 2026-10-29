@@ -15,6 +15,31 @@ Agent 25 inlines the chunk (or runs the assembly pipeline) — **do not** hand-e
 
 Integration branch: **`op10m/agent-14-housing`** (canonical worker branch for this module). Scale wave round 4 workers may push **`op10m/agent-14-housing-wellbeing`** for PR #331 head sync.
 
+## Scale wave 8 (governance trajectory & relief dispatch)
+
+| Module | Purpose |
+|--------|---------|
+| `governance-trajectory.ts` | Cross-turn EMA of governance panel score with trajectory band |
+| `relief-dispatch-planner.ts` | Actionable dispatch plan from capacity relief schedule + intervention queue |
+| `stakeholder-coordination-brief.ts` | GI brief for stakeholder engagement when governance/relief stress |
+
+Turn advance attaches `governanceTrajectory`, `reliefDispatchPlan`, `stakeholderCoordinationBrief`, and returns `governanceTrajectoryPersisted`.
+
+Governance/relief stubs (`ps_xp_NSW_governance_reform`, `ps_xp_VIC_relief_coordination`); scenarios `governance_trajectory_arc`, `relief_dispatch_coordination_stress`.
+
+## Scale wave 7 (resilience trajectory & governance panel)
+
+| Module | Purpose |
+|--------|---------|
+| `resilience-trajectory.ts` | Cross-turn EMA of wellbeing resilience index with trajectory band |
+| `capacity-relief-scheduler.ts` | Deferral / relief windows when capacity binds intervention queue |
+| `wellbeing-governance-panel.ts` | Composite governance score from accountability + resilience signals |
+| `program-stub-commitments.ts` | Shared commitment factory (breaks scenario ↔ intervention cycle for chunk bundling) |
+
+Turn advance attaches `resilienceTrajectory`, `capacityReliefSchedule`, `wellbeingGovernancePanel`, and returns `resilienceTrajectoryPersisted`.
+
+Coordination stubs (`ps_xp_SA_integrated_housing_health`, `ps_xp_ACT_wellbeing_coordination`); scenarios `resilience_recovery_arc`, `capacity_relief_governance_stress`.
+
 ## Scale wave 6 (resilience & intervention queue)
 
 | Module | Purpose |
@@ -82,7 +107,7 @@ Suggested marker:
 - `advanceDelayedSpendingEffects` / `commitSpendingProgram` / `makeSpendingCommitment`
 - `runAgent14WellbeingSelfTests`
 - `runAgent14HousingScenarioSweep` / `simulateAgent14HousingScenario`
-- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.7-scale-wave-7`)
+- `AGENT14_WELLBEING_SCHEMA_VERSION` (`10.14.8-scale-wave-8`)
 
 ## Upstream inputs (read-only)
 
