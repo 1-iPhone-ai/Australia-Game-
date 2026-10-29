@@ -8437,6 +8437,217 @@ export function buildAppropriationWarrantFiscalBridgeReport(
 }
 
 
+// --- source: efficiency-offset-forward-coherence/types.ts ---
+export const EFFICIENCY_OFFSET_FORWARD_COHERENCE_SCHEMA =
+  'op10m-agent07-efficiency-offset-forward-coherence-v1';
+
+export interface EfficiencyOffsetForwardCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface EfficiencyOffsetForwardCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: EfficiencyOffsetForwardCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinEfficiencyOffsetForwardBand: boolean;
+  alignedWithRevenueForward: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: efficiency-offset-forward-coherence/compute.ts ---
+  EfficiencyOffsetForwardCheck,
+  EfficiencyOffsetForwardCoherenceReport
+} from './types';
+
+const OFFSET_FORWARD_TOLERANCE = 5.6;
+
+export function buildEfficiencyOffsetForwardCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  efficiencyRegister: EfficiencyDividendRegisterReport,
+  spendingOffsets: SpendingOffsetsReport,
+  revenueForward: RevenueForwardReconciliationReport
+): EfficiencyOffsetForwardCoherenceReport {
+  const realizationGap = Math.abs(
+    efficiencyRegister.aggregateRealizedPoints - spendingOffsets.aggregateOffsets * 0.42
+  );
+  const forwardGap = Math.abs(revenueForward.aggregateGapPoints - realizationGap * 0.55);
+  const scheduleGap = Math.abs(
+    efficiencyRegister.scheduleToRealizationRatio - spendingOffsets.portfolioCoverageRatio
+  );
+  const aggregateCoherenceGapPoints = Math.round((realizationGap + forwardGap + scheduleGap) * 10) / 30;
+
+  const checks: EfficiencyOffsetForwardCheck[] = [
+    {
+      id: 'EOFC01',
+      label: 'Efficiency realization within portfolio schedule',
+      passed: efficiencyRegister.withinPortfolioSchedule || v1012.pressure === 'critical',
+      detail: `ratio=${efficiencyRegister.scheduleToRealizationRatio}, realized=${efficiencyRegister.aggregateRealizedPoints}`
+    },
+    {
+      id: 'EOFC02',
+      label: 'Offsets cover new spending envelope',
+      passed:
+        spendingOffsets.withinPortfolioTarget ||
+        spendingOffsets.portfolioCoverageRatio >= 0.85 ||
+        v1012.pressure === 'critical',
+      detail: `coverage=${spendingOffsets.portfolioCoverageRatio}, offsets=${spendingOffsets.aggregateOffsets}`
+    },
+    {
+      id: 'EOFC03',
+      label: 'Realization gap vs revenue forward',
+      passed:
+        forwardGap <= OFFSET_FORWARD_TOLERANCE + 2 ||
+        revenueForward.allPassed ||
+        v1012.pressure === 'critical',
+      detail: `forwardGap=${revenueForward.aggregateGapPoints}, realizationGap=${realizationGap}`
+    }
+  ];
+
+  const withinEfficiencyOffsetForwardBand =
+    checks.every(c => c.passed) ||
+    (efficiencyRegister.coherentWithSpendingOffsets && revenueForward.allPassed) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithRevenueForward =
+    revenueForward.alignedWithGrowthBenchmark &&
+    (aggregateCoherenceGapPoints <= revenueForward.aggregateGapPoints + 2.1 ||
+      revenueForward.allPassed ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinEfficiencyOffsetForwardBand) {
+    warnings.push(`Efficiency offset forward gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithRevenueForward) {
+    warnings.push('Efficiency offset forward diverges from revenue forward.');
+  }
+
+  const narrative = withinEfficiencyOffsetForwardBand
+    ? `Efficiency offset forward gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Efficiency offset forward alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: EFFICIENCY_OFFSET_FORWARD_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinEfficiencyOffsetForwardBand,
+    alignedWithRevenueForward,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: intergovernmental-statutory-coherence/types.ts ---
+export const INTERGOVERNMENTAL_STATUTORY_COHERENCE_SCHEMA =
+  'op10m-agent07-intergovernmental-statutory-coherence-v1';
+
+export interface IgrStatutoryCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface IntergovernmentalStatutoryCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: IgrStatutoryCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinIgrStatutoryBand: boolean;
+  alignedWithGrantPool: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: intergovernmental-statutory-coherence/compute.ts ---
+  IgrStatutoryCheck,
+  IntergovernmentalStatutoryCoherenceReport
+} from './types';
+
+const IGR_STATUTORY_TOLERANCE = 6.2;
+
+export function buildIntergovernmentalStatutoryCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  igr: FederalStateReconciliation,
+  statutory: StatutoryBalancesReport,
+  igGrants: IntergovernmentalGrantsReport
+): IntergovernmentalStatutoryCoherenceReport {
+  const fiscalResidualGap = Math.abs(igr.residualFederal - statutory.fiscalBalance * 0.09);
+  const grantPoolGap = Math.abs(igGrants.netFederalOutlay - igr.federalRevenuePool * 0.18);
+  const verticalGap = Math.abs(igr.verticalImbalanceIndex - 1) * statutory.netDebtToCapacityRatio * 2;
+  const aggregateCoherenceGapPoints = Math.round((fiscalResidualGap + grantPoolGap + verticalGap) * 10) / 30;
+
+  const checks: IgrStatutoryCheck[] = [
+    {
+      id: 'IGSC01',
+      label: 'IGR reconciliation closed',
+      passed: igr.reconciled || v1012.pressure === 'critical',
+      detail: `residual=${igr.residualFederal}, pool=${igr.federalRevenuePool}`
+    },
+    {
+      id: 'IGSC02',
+      label: 'Statutory fiscal balance within soft anchors',
+      passed: statutory.allWithinSoftAnchors || v1012.pressure === 'critical',
+      detail: `fiscal=${statutory.fiscalBalance}, debtRatio=${statutory.netDebtToCapacityRatio}`
+    },
+    {
+      id: 'IGSC03',
+      label: 'Grant pool vs IGR residual',
+      passed:
+        grantPoolGap <= IGR_STATUTORY_TOLERANCE + 2 ||
+        igGrants.reconciledToIgrPool ||
+        v1012.pressure === 'critical',
+      detail: `grants=${igGrants.netFederalOutlay}, residual=${igr.residualFederal}`
+    }
+  ];
+
+  const withinIgrStatutoryBand =
+    checks.every(c => c.passed) ||
+    (igr.reconciled && statutory.allWithinSoftAnchors) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithGrantPool =
+    igGrants.reconciledToIgrPool &&
+    (aggregateCoherenceGapPoints <= grantPoolGap + 2.5 ||
+      igGrants.reconciledToIgrPool ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinIgrStatutoryBand) {
+    warnings.push(`Intergovernmental statutory gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithGrantPool) {
+    warnings.push('IGR statutory coherence diverges from grant pool.');
+  }
+
+  const narrative = withinIgrStatutoryBand
+    ? `Intergovernmental statutory gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Intergovernmental statutory alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: INTERGOVERNMENTAL_STATUTORY_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinIgrStatutoryBand,
+    alignedWithGrantPool,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -10451,6 +10662,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     appropriationTimingCoherence,
     appropriationCarryForward
   );
+  const efficiencyOffsetForwardCoherence = buildEfficiencyOffsetForwardCoherenceReport(
+    turn,
+    v1012,
+    efficiencyDividendRegister,
+    spendingOffsets,
+    revenueForwardReconciliation
+  );
+  const intergovernmentalStatutoryCoherence = buildIntergovernmentalStatutoryCoherenceReport(
+    turn,
+    v1012,
+    igr,
+    statutory,
+    igGrants
+  );
 
   checks.push({
     id: 'CF01',
@@ -11252,13 +11477,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `lapse=${warrantLedger.aggregateLapseRisk}, timing=${appropriationTimingCoherence.aggregateTimingGapPoints}`
   });
 
+  checks.push({
+    id: 'CF113',
+    label: 'Efficiency offset forward coherence within band',
+    passed: efficiencyOffsetForwardCoherence.withinEfficiencyOffsetForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${efficiencyOffsetForwardCoherence.aggregateCoherenceGapPoints}, checks=${efficiencyOffsetForwardCoherence.checks.filter(c => c.passed).length}/${efficiencyOffsetForwardCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF114',
+    label: 'Intergovernmental statutory coherence within band',
+    passed: intergovernmentalStatutoryCoherence.withinIgrStatutoryBand || v1012.pressure === 'critical',
+    detail: `gap=${intergovernmentalStatutoryCoherence.aggregateCoherenceGapPoints}, checks=${intergovernmentalStatutoryCoherence.checks.filter(c => c.passed).length}/${intergovernmentalStatutoryCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF115',
+    label: 'Efficiency offset aligned with revenue forward',
+    passed: efficiencyOffsetForwardCoherence.alignedWithRevenueForward,
+    detail: `realized=${efficiencyDividendRegister.aggregateRealizedPoints}, forward=${revenueForwardReconciliation.aggregateGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF116',
+    label: 'IGR statutory aligned with grant pool',
+    passed: intergovernmentalStatutoryCoherence.alignedWithGrantPool,
+    detail: `residual=${igr.residualFederal}, grants=${igGrants.netFederalOutlay}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 84
+    layerCount: 86
   };
 }
 
@@ -13138,12 +13391,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Eighty-four fiscal layers integrated', healthy.layerCount === 84, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Eighty-six fiscal layers integrated', healthy.layerCount === 86, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 112,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 116,
     'ok'
   );
 
@@ -13155,10 +13408,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF112 ids present',
-    healthy.checks.length === 112 &&
+    'CF01–CF116 ids present',
+    healthy.checks.length === 116 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[111]?.id === 'CF112',
+      healthy.checks[115]?.id === 'CF116',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -16949,6 +17202,137 @@ export function runAppropriationWarrantFiscalBridgeSelfTests(): {
     'AWFB-T03',
     'Aligned with timing coherence',
     healthy.alignedWithTimingCoherence,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: efficiency-offset-forward-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runEfficiencyOffsetForwardCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const offsets = buildSpendingOffsetsReport(9, v);
+  const fiscalRules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: 2,
+    forwardSpendingGrowth: 2
+  });
+  const efficiencyRegister = buildEfficiencyDividendRegisterReport(9, v, offsets, fiscalRules);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const healthy = buildEfficiencyOffsetForwardCoherenceReport(
+    9,
+    v,
+    efficiencyRegister,
+    offsets,
+    revenueForward
+  );
+
+  record('EOFC-T01', 'Three efficiency offset forward checks', healthy.checks.length === 3, 'ok');
+  record(
+    'EOFC-T02',
+    'Within efficiency offset forward band',
+    healthy.withinEfficiencyOffsetForwardBand,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'EOFC-T03',
+    'Aligned with revenue forward',
+    healthy.alignedWithRevenueForward,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: intergovernmental-statutory-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runIntergovernmentalStatutoryCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const igr = reconcileFederalStateTransfers(9, v);
+  const grants = allocateIntergovernmentalGrants(9, v);
+  const statutory = buildStatutoryBalancesReport(9, v);
+  const healthy = buildIntergovernmentalStatutoryCoherenceReport(9, v, igr, statutory, grants);
+
+  record('IGSC-T01', 'Three IGR statutory checks', healthy.checks.length === 3, 'ok');
+  record(
+    'IGSC-T02',
+    'Within IGR statutory band',
+    healthy.withinIgrStatutoryBand,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'IGSC-T03',
+    'Aligned with grant pool',
+    healthy.alignedWithGrantPool,
     healthy.narrative
   );
 

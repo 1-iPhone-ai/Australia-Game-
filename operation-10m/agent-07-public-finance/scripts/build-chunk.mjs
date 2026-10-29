@@ -128,6 +128,10 @@ const FILES = [
   'contingency-forward-coherence/compute.ts',
   'appropriation-warrant-fiscal-bridge/types.ts',
   'appropriation-warrant-fiscal-bridge/compute.ts',
+  'efficiency-offset-forward-coherence/types.ts',
+  'efficiency-offset-forward-coherence/compute.ts',
+  'intergovernmental-statutory-coherence/types.ts',
+  'intergovernmental-statutory-coherence/compute.ts',
   'infrastructure-financing/types.ts',
   'infrastructure-financing/compute.ts',
   'recurring-commitments/types.ts',
@@ -229,7 +233,9 @@ const FILES = [
   'tax-expenditure-forward-coherence/self-tests.ts',
   'debt-rollover-coverage-bridge/self-tests.ts',
   'contingency-forward-coherence/self-tests.ts',
-  'appropriation-warrant-fiscal-bridge/self-tests.ts'
+  'appropriation-warrant-fiscal-bridge/self-tests.ts',
+  'efficiency-offset-forward-coherence/self-tests.ts',
+  'intergovernmental-statutory-coherence/self-tests.ts'
 ];
 
 function stripModulePreamble(source) {

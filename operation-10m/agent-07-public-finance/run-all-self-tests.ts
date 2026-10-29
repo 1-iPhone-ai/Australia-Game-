@@ -67,6 +67,8 @@ import { runTaxExpenditureForwardCoherenceSelfTests } from './modules/tax-expend
 import { runDebtRolloverCoverageBridgeSelfTests } from './modules/debt-rollover-coverage-bridge/self-tests';
 import { runContingencyForwardCoherenceSelfTests } from './modules/contingency-forward-coherence/self-tests';
 import { runAppropriationWarrantFiscalBridgeSelfTests } from './modules/appropriation-warrant-fiscal-bridge/self-tests';
+import { runEfficiencyOffsetForwardCoherenceSelfTests } from './modules/efficiency-offset-forward-coherence/self-tests';
+import { runIntergovernmentalStatutoryCoherenceSelfTests } from './modules/intergovernmental-statutory-coherence/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -143,6 +145,8 @@ ok = runSuite('Tax expenditure forward coherence', runTaxExpenditureForwardCoher
 ok = runSuite('Debt rollover coverage bridge', runDebtRolloverCoverageBridgeSelfTests) && ok;
 ok = runSuite('Contingency forward coherence', runContingencyForwardCoherenceSelfTests) && ok;
 ok = runSuite('Appropriation warrant fiscal bridge', runAppropriationWarrantFiscalBridgeSelfTests) && ok;
+ok = runSuite('Efficiency offset forward coherence', runEfficiencyOffsetForwardCoherenceSelfTests) && ok;
+ok = runSuite('Intergovernmental statutory coherence', runIntergovernmentalStatutoryCoherenceSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

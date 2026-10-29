@@ -59,6 +59,8 @@ import { buildTaxExpenditureForwardCoherenceReport } from '../tax-expenditure-fo
 import { buildDebtRolloverCoverageBridgeReport } from '../debt-rollover-coverage-bridge/compute';
 import { buildContingencyForwardCoherenceReport } from '../contingency-forward-coherence/compute';
 import { buildAppropriationWarrantFiscalBridgeReport } from '../appropriation-warrant-fiscal-bridge/compute';
+import { buildEfficiencyOffsetForwardCoherenceReport } from '../efficiency-offset-forward-coherence/compute';
+import { buildIntergovernmentalStatutoryCoherenceReport } from '../intergovernmental-statutory-coherence/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -384,6 +386,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     warrantLedger,
     appropriationTimingCoherence,
     appropriationCarryForward
+  );
+  const efficiencyOffsetForwardCoherence = buildEfficiencyOffsetForwardCoherenceReport(
+    turn,
+    v1012,
+    efficiencyDividendRegister,
+    spendingOffsets,
+    revenueForwardReconciliation
+  );
+  const intergovernmentalStatutoryCoherence = buildIntergovernmentalStatutoryCoherenceReport(
+    turn,
+    v1012,
+    igr,
+    statutory,
+    igGrants
   );
 
   checks.push({
@@ -1186,12 +1202,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `lapse=${warrantLedger.aggregateLapseRisk}, timing=${appropriationTimingCoherence.aggregateTimingGapPoints}`
   });
 
+  checks.push({
+    id: 'CF113',
+    label: 'Efficiency offset forward coherence within band',
+    passed: efficiencyOffsetForwardCoherence.withinEfficiencyOffsetForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${efficiencyOffsetForwardCoherence.aggregateCoherenceGapPoints}, checks=${efficiencyOffsetForwardCoherence.checks.filter(c => c.passed).length}/${efficiencyOffsetForwardCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF114',
+    label: 'Intergovernmental statutory coherence within band',
+    passed: intergovernmentalStatutoryCoherence.withinIgrStatutoryBand || v1012.pressure === 'critical',
+    detail: `gap=${intergovernmentalStatutoryCoherence.aggregateCoherenceGapPoints}, checks=${intergovernmentalStatutoryCoherence.checks.filter(c => c.passed).length}/${intergovernmentalStatutoryCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF115',
+    label: 'Efficiency offset aligned with revenue forward',
+    passed: efficiencyOffsetForwardCoherence.alignedWithRevenueForward,
+    detail: `realized=${efficiencyDividendRegister.aggregateRealizedPoints}, forward=${revenueForwardReconciliation.aggregateGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF116',
+    label: 'IGR statutory aligned with grant pool',
+    passed: intergovernmentalStatutoryCoherence.alignedWithGrantPool,
+    detail: `residual=${igr.residualFederal}, grants=${igGrants.netFederalOutlay}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 84
+    layerCount: 86
   };
 }
