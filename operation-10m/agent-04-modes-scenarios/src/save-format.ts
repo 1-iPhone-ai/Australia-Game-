@@ -25,6 +25,7 @@ import { sanitizeAppealSession } from './save-format-appeal.js';
 import { sanitizeClemencySession } from './save-format-clemency.js';
 import { sanitizePardonSession } from './save-format-pardon.js';
 import { sanitizeAmnestySession } from './save-format-amnesty.js';
+import { sanitizeReprieveSession } from './save-format-reprieve.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -43,7 +44,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 25;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 26;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -167,6 +168,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     clemencySession: null,
     pardonSession: null,
     amnestySession: null,
+    reprieveSession: null,
   };
 }
 
@@ -211,6 +213,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       clemencySession: merged.clemencySession ?? null,
       pardonSession: merged.pardonSession ?? null,
       amnestySession: merged.amnestySession ?? null,
+      reprieveSession: merged.reprieveSession ?? null,
     };
     return upgraded;
   }
@@ -279,6 +282,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     clemencySession: sanitizeClemencySession(o.clemencySession),
     pardonSession: sanitizePardonSession(o.pardonSession),
     amnestySession: sanitizeAmnestySession(o.amnestySession),
+    reprieveSession: sanitizeReprieveSession(o.reprieveSession),
   };
 }
 
@@ -460,6 +464,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Amnesty session failed sanitization; planner will ignore it.');
   } else if (amnesty && amnesty.cursor >= amnesty.scenarioIds.length) {
     warnings.push('Amnesty cursor out of range; clamp on next sanitize.');
+  }
+
+  const reprieve = sanitizeReprieveSession(state.reprieveSession);
+  if (state.reprieveSession && !reprieve) {
+    warnings.push('Reprieve session failed sanitization; planner will ignore it.');
+  } else if (reprieve && reprieve.cursor >= reprieve.scenarioIds.length) {
+    warnings.push('Reprieve cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

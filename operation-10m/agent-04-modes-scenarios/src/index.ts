@@ -36,4 +36,5 @@ export * from './save-format-appeal.js';
 export * from './save-format-clemency.js';
 export * from './save-format-pardon.js';
 export * from './save-format-amnesty.js';
+export * from './save-format-reprieve.js';
 export * from './scenario-campaign-planner.js';

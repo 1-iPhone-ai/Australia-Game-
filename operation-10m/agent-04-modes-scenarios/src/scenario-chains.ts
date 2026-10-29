@@ -892,6 +892,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_reprieve_route',
+    title: 'Reprieve Route',
+    description:
+      'Three-phase reprieve arc with relief accrual between legs — round-26 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_reprieve_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_reprieve_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File relief petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 360 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_reprieve_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 6, NSW: 5 },
+          forcedSettingsPatch: { o10mReprieveMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_reprieve_relief_finale',
+        title: 'Relief Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainReprieveRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

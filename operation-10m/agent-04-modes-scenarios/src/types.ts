@@ -377,6 +377,7 @@ export type O10mAppealPhase = 'petition' | 'review' | 'grant';
 export type O10mClemencyPhase = 'plea' | 'review' | 'clemency';
 export type O10mPardonPhase = 'brief' | 'review' | 'pardon';
 export type O10mAmnestyPhase = 'warrant' | 'review' | 'amnesty';
+export type O10mReprievePhase = 'filing' | 'review' | 'reprieve';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -576,6 +577,17 @@ export interface O10mAmnestySession {
   phaseTag: O10mAmnestyPhase;
 }
 
+/** Schema v26 — reprieve arc with relief accrual between phases. */
+export interface O10mReprieveSession {
+  reprieveId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  reliefScore: number;
+  phaseTag: O10mReprievePhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -600,6 +612,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'reprieve_step'
     | 'amnesty_step'
     | 'pardon_step'
     | 'clemency_step'
@@ -708,6 +721,10 @@ export interface O10mCampaignPlan {
   amnestyCursor: number | null;
   amnestyPhase: O10mAmnestyPhase | null;
   amnestyAbsolution: number | null;
+  reprieveId: string | null;
+  reprieveCursor: number | null;
+  reprievePhase: O10mReprievePhase | null;
+  reprieveRelief: number | null;
   reason: string;
 }
 
@@ -781,6 +798,8 @@ export interface O10mModesPersistedState {
   pardonSession?: O10mPardonSession | null;
   /** Schema v25 — active amnesty arc (mutually exclusive with pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   amnestySession?: O10mAmnestySession | null;
+  /** Schema v26 — active reprieve arc (mutually exclusive with amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  reprieveSession?: O10mReprieveSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
