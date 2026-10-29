@@ -1,0 +1,27 @@
+{
+  "contractVersion": "1.0.0",
+  "baselineFile": "(V9.4) australia-game-with-ai.tsx",
+  "sectionMarker": "SECTION 20H: DIPLOMACY & NEGOTIATION 2.0",
+  "sectionLineApprox": 119954,
+  "selfTestRegistryId": "dn2",
+  "requiredExports": [
+    "createEmptyDiplomacyState",
+    "sanitizeDiplomacyState",
+    "validateDiplomaticDeal",
+    "evaluateDiplomaticDeal",
+    "sendDiplomaticProposal",
+    "applyDiplomaticResponse",
+    "applyDiplomaticViolation",
+    "compileDiplomaticProposalFromText",
+    "buildDiplomaticDealFromBuilder",
+    "applyDiplomaticConstraintsToDecisions",
+    "diplomaticRestrictionsFor",
+    "runDiplomacyNegotiation2SelfTests"
+  ],
+  "requiredPatterns": [
+    "This layer never mutates game state",
+    "export const DN_LIMITS",
+    "export function deriveDiplomaticPersonality",
+    "export function detectDiplomacyQuery"
+  ]
+}
