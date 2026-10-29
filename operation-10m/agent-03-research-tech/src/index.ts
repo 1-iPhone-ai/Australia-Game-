@@ -49,4 +49,7 @@ export * from './strategic-delivery-outlook.ts';
 export * from './strategic-delivery-band-log.ts';
 export * from './strategic-delivery-snapshot.ts';
 export * from './scale-wave-maturity-outlook.ts';
+export * from './scale-wave-maturity-band-log.ts';
+export * from './scale-wave-maturity-snapshot.ts';
+export * from './national-integration-outlook.ts';
 export * from './compute.ts';

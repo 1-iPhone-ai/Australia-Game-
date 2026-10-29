@@ -27,6 +27,7 @@ import { computeResearchHorizonConvergenceOutlook } from './horizon-convergence-
 import { computeResearchExecutionOutlook } from './research-execution-outlook.ts';
 import { computeResearchStrategicDeliveryOutlook } from './strategic-delivery-outlook.ts';
 import { computeResearchScaleWaveMaturityOutlook } from './scale-wave-maturity-outlook.ts';
+import { computeResearchNationalIntegrationOutlook } from './national-integration-outlook.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
 import {
@@ -336,6 +337,13 @@ export function computeResearchProgress(
     unlockedNodes,
   });
 
+  const nationalIntegrationOutlook = computeResearchNationalIntegrationOutlook(inputs, {
+    scaleWaveMaturityOutlook,
+    institutionTierSnapshot: coreBase.institutionTierSnapshot ?? null,
+    lateGameDiffusion,
+    scaleWaveMaturitySnapshot: coreBase.scaleWaveMaturitySnapshot ?? null,
+  });
+
   const computed: ResearchProgressState = {
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: coreBase.revision,
@@ -363,6 +371,7 @@ export function computeResearchProgress(
     researchExecutionOutlook,
     strategicDeliveryOutlook,
     scaleWaveMaturityOutlook,
+    nationalIntegrationOutlook,
     unlockSeq: coreBase.unlockSeq,
     branchEmphasis: coreBase.branchEmphasis,
   };
