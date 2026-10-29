@@ -791,6 +791,55 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  createEmptyV1031GresPersisted,\n  v1031GresInputHash,\n  sanitizeV1031GresPersisted,\n} from '../engine/grid-resilience-orchestrator';",
             "  v1031GresInputHash,\n} from '../engine/grid-resilience-orchestrator';\nimport {\n  createEmptyV1031GresPersisted,\n  sanitizeV1031GresPersisted,\n} from '../persistence/migrations';",
         )
+    if "v1032-telecom-resilience" in name.replace("\\", "/"):
+        src = src.replace("SECTION 20CA", "SECTION 20CB")
+        src = src.replace("SECTION 20BZ", "SECTION 20CB")
+        src = src.replace("SECTION 20BY", "SECTION 20CB")
+        src = src.replace("SECTION 20BX", "SECTION 20CB")
+        src = src.replace("SECTION 20BW", "SECTION 20CB")
+        src = src.replace("SECTION 20BV", "SECTION 20CB")
+        src = src.replace("SECTION 20BU", "SECTION 20CB")
+        src = src.replace("SECTION 20BT", "SECTION 20CB")
+        src = src.replace("SECTION 20BR", "SECTION 20CB")
+    if "telecom-resilience/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1032TresClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1032TresClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1032_TRES_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1032_TRES_MIG_REGIONS", src)
+    if "telecom-resilience-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1032TresPersisted, sanitizeV1032TresPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1032_TRES_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1032_TRES_ORCH_REGIONS.forEach", src)
+    if "telecom-resilience-utils.ts" in name:
+        src = re.sub(
+            r"export function V1032_TRES_backboneBufferGraphHash",
+            "export function V1032_TRES_utilBackboneBufferGraphHash",
+            src,
+        )
+    if "v1032-telecom-resilience/backbone-buffer-stacks/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"V1032_TRES_backboneBufferGraphHash as dgovGraphHashCore",
+            "V1032_TRES_utilBackboneBufferGraphHash as dgovGraphHashCore",
+            src,
+        )
+    if "run-v1032-tres-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1032TresSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1032TresSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1032TresBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1032TresBaseInput(", src)
+        src = src.replace(
+            "  runV1032TresTurn,\n  createEmptyV1032TresPersisted,\n  v1032TresInputHash,\n  sanitizeV1032TresPersisted,\n} from '../engine/telecom-resilience-orchestrator';",
+            "  runV1032TresTurn,\n  v1032TresInputHash,\n} from '../engine/telecom-resilience-orchestrator';\nimport {\n  createEmptyV1032TresPersisted,\n  sanitizeV1032TresPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1032TresPersisted,\n  v1032TresInputHash,\n  sanitizeV1032TresPersisted,\n} from '../engine/telecom-resilience-orchestrator';",
+            "  v1032TresInputHash,\n} from '../engine/telecom-resilience-orchestrator';\nimport {\n  createEmptyV1032TresPersisted,\n  sanitizeV1032TresPersisted,\n} from '../persistence/migrations';",
+        )
     return src
 
 
@@ -1870,6 +1919,101 @@ def grid_resilience_paths() -> list[str]:
             and (
                 "/substation-zone-nodes/" not in str(p)
                 or re.match(r"substation-zone-\d+\.ts$", p.name)
+            )
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def telecom_resilience_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1032-telecom-resilience"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/backbone-buffer-stacks/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/failover-scenarios/" in s:
+            return (3, s)
+        if "/generated/backbone-buffer-stacks/" in s:
+            return (4, s)
+        if "failover-registry" in s or "backbone-buffer-bundle" in s:
+            return (5, s)
+        if "/exchange-zone-nodes/" in s:
+            return (6, s)
+        if "telecom-resilience-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "telecom-resilience-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
+        if "distribution-network" in s or "emergency-response" in s or "inland-zone" in s:
+            return (98, s)
+        if "littoral-zone" in s or "substation-zone" in s:
+            return (98, s)
+        if "outage-scenarios" in s or "grid-buffer" in s:
+            return (98, s)
+        if "aquifer-reserve" in s or "basin-registry" in s:
+            return (98, s)
+        if "evacuation-capacity" in s or "hazard-registry" in s:
+            return (98, s)
+        if "surge-registry" in s or "adaptation-buffer" in s or "heatwave" in s:
+            return (98, s)
+        if "arid-buffer" in s:
+            return (98, s)
+        if "biodiversity-stewardship-20bu" in s:
+            return (98, s)
+        if "conservation-offset" in s or "recovery-registry" in s or "primary-care" in s:
+            return (98, s)
+        if "stress-registry" in s or "supply-pipeline" in s:
+            return (98, s)
+        if "drought-buffer-bundle" in s:
+            return (98, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+            and not (p.parent.name == "generated" and p.name == "index.ts")
+            and "outage-scenarios" not in str(p)
+            and "grid-buffer-stacks" not in str(p)
+            and "outage-registry.ts" not in str(p)
+            and "grid-buffer-bundle.ts" not in str(p)
+            and "substation-zone-nodes" not in str(p)
+            and "aquifer-reserve" not in str(p)
+            and "basin-registry" not in str(p)
+            and "evacuation-capacity" not in str(p)
+            and "hazard-registry" not in str(p)
+            and "surge-registry" not in str(p)
+            and "adaptation-buffer" not in str(p)
+            and "heatwave-scenarios" not in str(p)
+            and "arid-buffer-stacks" not in str(p)
+            and "conservation-offset" not in str(p)
+            and "recovery-registry" not in str(p)
+            and "primary-care" not in str(p)
+            and "stress-registry" not in str(p)
+            and "supply-pipeline" not in str(p)
+            and "drought-buffer-bundle" not in str(p)
+            and "distribution-network" not in str(p)
+            and "emergency-response" not in str(p)
+            and "littoral-zone" not in str(p)
+            and "inland-zone" not in str(p)
+            and "substation-zone" not in str(p)
+            and "biodiversity-stewardship-20bu" not in str(p)
+            and (
+                "/exchange-zone-nodes/" not in str(p)
+                or re.match(r"exchange-zone-\d+\.ts$", p.name)
             )
         ),
         key=sort_key,

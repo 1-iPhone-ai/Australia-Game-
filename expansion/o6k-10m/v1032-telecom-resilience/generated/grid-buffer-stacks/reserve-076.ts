@@ -1,0 +1,31 @@
+import type { V1032TresBackboneBufferEdge } from '../../types/core.ts';
+
+/** Backbone buffer graph shard 076 (extreme_heat/drought/dust corridor coupling). */
+export const V1032_TRES_BACKBONE_BUFFER_SHARD_076: readonly V1032TresBackboneBufferEdge[] = [
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.408, lagTurns: 6, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.414, lagTurns: 7, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.42, lagTurns: 8, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.426, lagTurns: 9, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.432, lagTurns: 6, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.438, lagTurns: 7, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.444, lagTurns: 8, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.45, lagTurns: 9, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.456, lagTurns: 6, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.462, lagTurns: 7, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.468, lagTurns: 8, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.474, lagTurns: 9, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.48, lagTurns: 6, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.486, lagTurns: 7, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.492, lagTurns: 8, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.396, lagTurns: 9, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.402, lagTurns: 6, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.408, lagTurns: 7, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.414, lagTurns: 8, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.42, lagTurns: 9, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.426, lagTurns: 6, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.432, lagTurns: 7, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.438, lagTurns: 8, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.444, lagTurns: 9, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.45, lagTurns: 6, nodeId: 'exchange_zone_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.456, lagTurns: 7, nodeId: 'exchange_zone_04' },
+];

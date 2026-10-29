@@ -34,6 +34,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     coastal_resilience_paths,
     inland_heat_paths,
     grid_resilience_paths,
+    telecom_resilience_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -226,6 +227,15 @@ GRES_SECTION = (
 )
 
 GRES_MARKER = "export function runV1031GresTurn"
+
+TRES_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20CB: V10.32 TELECOMMUNICATIONS / DIGITAL NETWORK RESILIENCE — TELECOM STRESS EXPOSURE, EXCHANGE ZONE NODES & BACKBONE BUFFERS (O6K-68)\n"
+    "// Renumbered from shard 20CA (canonical 20CA = grid resilience, push #29)\n"
+    "// ============================================================================\n"
+)
+
+TRES_MARKER = "export function runV1032TresTurn"
 
 TRADE_HELPERS = """
 export function buildV1014TradeDepthTurnInputFromGameState(gs: any, turn: number): V1014TradeDepthTurnInput {
@@ -3373,6 +3383,187 @@ def push_gres(text: str) -> str:
     return text
 
 
+TRES_HELPERS = """
+function V1032_TRES_readPersistedFromGameState(gs: any): V1032TresPersisted | null {
+  const raw = (gs?.save?.meta?.v1032 as any)?.telecom_resilience;
+  return raw ? sanitizeV1032TresPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1032_TRES_applyToGameState(gs: any, out: V1032TresTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1032 = { ...(meta.v1032 || {}) };
+  v1032.telecom_resilience = out.persisted;
+  meta.v1032 = v1032;
+  save.meta = meta;
+  return { ...gs, save, v1032TelecomResilience: out.state };
+}
+
+export function buildV1032TresTurnInputFromGameState(gs: any, turn: number): V1032TresTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 10320;
+  const inp = buildV1032TresTurnInputFromGameStateStub(turn, seed);
+  const trade = gs?.v1014TradeDepth ?? null;
+  const energy = gs?.energyDepth ?? null;
+  const supply = gs?.v1014SupplyChain ?? null;
+  const workforce = gs?.v1014WorkforceMigration ?? gs?.workforceHumanCapital ?? null;
+  const pubsvc = gs?.v1014PublicServicesCrosswalk ?? null;
+  const clad = gs?.v1023ClimateAdaptation ?? null;
+  const dgov = gs?.v1024DigitalGovernance ?? null;
+  const rhs = gs?.v1026RegionalHealthSystems ?? null;
+  return {
+    ...inp,
+    supply20bb: {
+      ...inp.supply20bb,
+      turn,
+      bottleneckPressure: Number(supply?.bottleneckPressure ?? inp.supply20bb.bottleneckPressure),
+      backboneBufferIndex: Number(
+        supply?.backboneBufferIndex ?? supply?.gridBufferIndex ?? supply?.aridBufferIndex ?? inp.supply20bb.backboneBufferIndex,
+      ),
+      regionalStockDays: {
+        ...inp.supply20bb.regionalStockDays,
+        ...(supply?.regionalStockDays || {}),
+      },
+    },
+    trade20ba: {
+      ...inp.trade20ba,
+      turn,
+      sanctionsPressure: Number(trade?.sanctionsPressure ?? inp.trade20ba.sanctionsPressure),
+      exportLaneStability: Number(trade?.exportLaneStability ?? inp.trade20ba.exportLaneStability),
+      importDependencyRatio: Number(trade?.importDependencyRatio ?? inp.trade20ba.importDependencyRatio),
+    },
+    energy20bc: {
+      ...inp.energy20bc,
+      turn,
+      gridStability: Number(energy?.gridStability ?? inp.energy20bc.gridStability),
+      reserveMarginPct: Number(energy?.reserveMarginPct ?? inp.energy20bc.reserveMarginPct),
+      routingCascadeRisk: Number(
+        energy?.routingCascadeRisk ?? energy?.outageCascadeRisk ?? energy?.cascadeRiskStress ?? inp.energy20bc.routingCascadeRisk,
+      ),
+    },
+    workforce20bf: {
+      ...inp.workforce20bf,
+      turn,
+      specialistGap: Number(workforce?.specialistGap ?? inp.workforce20bf.specialistGap),
+      nationalReadiness: Number(workforce?.nationalReadiness ?? inp.workforce20bf.nationalReadiness),
+      mismatchIndex: Number(workforce?.mismatchIndex ?? inp.workforce20bf.mismatchIndex),
+    },
+    publicServices20az: {
+      ...inp.publicServices20az,
+      turn,
+      clinicCapacityScore: Number(pubsvc?.clinicCapacityScore ?? inp.publicServices20az.clinicCapacityScore),
+      digitalServiceCoverage: Number(
+        pubsvc?.digitalServiceCoverage ?? inp.publicServices20az.digitalServiceCoverage,
+      ),
+      serviceDeliveryReadiness: Number(
+        pubsvc?.serviceDeliveryReadiness ?? inp.publicServices20az.serviceDeliveryReadiness,
+      ),
+    },
+    climateAdaptation20br: {
+      ...inp.climateAdaptation20br,
+      turn,
+      heatStressPressure: Number(clad?.heatStressPressure ?? inp.climateAdaptation20br.heatStressPressure),
+      grantStackLoad: Number(clad?.grantStackLoad ?? inp.climateAdaptation20br.grantStackLoad),
+      resilienceDriftTurns: Number(clad?.resilienceDriftTurns ?? inp.climateAdaptation20br.resilienceDriftTurns),
+    },
+    digitalGovernance20bt: {
+      ...inp.digitalGovernance20bt,
+      turn,
+      modelGovernancePressure: Number(dgov?.modelGovernancePressure ?? inp.digitalGovernance20bt.modelGovernancePressure),
+      grantStackLoad: Number(dgov?.grantStackLoad ?? inp.digitalGovernance20bt.grantStackLoad),
+      alignmentDriftTurns: Number(dgov?.alignmentDriftTurns ?? inp.digitalGovernance20bt.alignmentDriftTurns),
+    },
+    regionalHealthSystems20bv: {
+      ...inp.regionalHealthSystems20bv,
+      turn,
+      hospitalSurgePressure: Number(
+        rhs?.hospitalSurgePressure ?? inp.regionalHealthSystems20bv.hospitalSurgePressure,
+      ),
+      grantStackLoad: Number(rhs?.grantStackLoad ?? inp.regionalHealthSystems20bv.grantStackLoad),
+      bedCapacityDriftTurns: Number(
+        rhs?.bedCapacityDriftTurns ?? inp.regionalHealthSystems20bv.bedCapacityDriftTurns,
+      ),
+    },
+    persisted: null,
+  };
+}
+"""
+
+TRES_DAY_HOOK = """
+      if (typeof runV1032TresTurn === 'function') {
+        try {
+          const tresIn = buildV1032TresTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          tresIn.persisted = V1032_TRES_readPersistedFromGameState(mergedGameState);
+          const tresOut = runV1032TresTurn(tresIn);
+          mergedGameState = V1032_TRES_applyToGameState(mergedGameState, tresOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_tres_day_hook(text: str) -> str:
+    marker = "runV1032TresTurn(tresIn)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:72000] if "executeAgent02SingleDayBoundary" in text else ""
+    if marker in day_slice:
+        print("skip tres day hook (present)")
+        return text
+    gres_tail = """      if (typeof runV1031GresTurn === 'function') {
+        try {
+          const gresIn = buildV1031GresTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          gresIn.persisted = V1031_GRES_readPersistedFromGameState(mergedGameState);
+          const gresOut = runV1031GresTurn(gresIn);
+          mergedGameState = V1031_GRES_applyToGameState(mergedGameState, gresOut);
+        } catch (_) { /* isolated */ }
+      }"""
+    if gres_tail not in text:
+        raise SystemExit("gres day hook anchor missing for tres hook")
+    return text.replace(gres_tail, gres_tail + TRES_DAY_HOOK, 1)
+
+
+def wire_tres_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState && typeof sanitizeV1031GresPersisted === 'function') {"
+    patch = (
+        "  if (migrated.gameState && typeof sanitizeV1032TresPersisted === 'function') {\n"
+        "    const tresRaw = (migrated.gameState as any)?.save?.meta?.v1032?.telecom_resilience;\n"
+        "    if (tresRaw) {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1032 = { ...(meta.v1032 || {}) };\n"
+        "      v1032.telecom_resilience = sanitizeV1032TresPersisted(tresRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1032 = v1032;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1032.telecom_resilience = sanitizeV1032TresPersisted" in text:
+        print("skip tres §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("gres §6 anchor missing for tres migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
+def push_tres(text: str) -> str:
+    block = TRES_SECTION + bundle_local_files(telecom_resilience_paths()) + TRES_HELPERS
+    text = insert_before(text, block, TRES_MARKER, "T6 push #30 v1032-telecom-resilience (O6K-68)")
+    text = wire_tres_day_hook(text)
+    text = wire_tres_migration(text)
+    lab = """  { id: 'v1032_telecom_resilience', label: 'V10.32 Telecom resilience (20CB failover & backbone buffers)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1032TresSelfTestsForLab() },
+"""
+    gres_lab = (
+        "  { id: 'v1031_grid_resilience', label: 'V10.31 Grid resilience (20CA outage & grid buffers)', "
+        "tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1031GresSelfTestsForLab() },"
+    )
+    if "{ id: 'v1032_telecom_resilience'" not in text:
+        if gres_lab in text:
+            text = text.replace(gres_lab, gres_lab + "\n" + lab.strip(), 1)
+            print("registered LAB v1032_telecom_resilience")
+        else:
+            text = wire_lab(text, lab, "v1032_telecom_resilience")
+            print("registered LAB v1032_telecom_resilience (fallback)")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -3387,7 +3578,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19, 21, 22, 23, 24, 25, 26, 27, 28, 29])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -3438,6 +3629,8 @@ def main() -> None:
         text = push_iheat(text)
     elif args.push == 29:
         text = push_gres(text)
+    elif args.push == 30:
+        text = push_tres(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")

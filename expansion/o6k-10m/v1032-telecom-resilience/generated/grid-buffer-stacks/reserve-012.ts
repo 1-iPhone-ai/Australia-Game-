@@ -1,0 +1,31 @@
+import type { V1032TresBackboneBufferEdge } from '../../types/core.ts';
+
+/** Backbone buffer graph shard 012 (extreme_heat/drought/dust corridor coupling). */
+export const V1032_TRES_BACKBONE_BUFFER_SHARD_012: readonly V1032TresBackboneBufferEdge[] = [
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.542, lagTurns: 5, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.548, lagTurns: 6, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.554, lagTurns: 7, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.56, lagTurns: 8, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.566, lagTurns: 5, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.572, lagTurns: 6, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.578, lagTurns: 7, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.584, lagTurns: 8, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.59, lagTurns: 5, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.596, lagTurns: 6, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.602, lagTurns: 7, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.608, lagTurns: 8, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.614, lagTurns: 5, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.62, lagTurns: 6, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.524, lagTurns: 7, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.53, lagTurns: 8, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.536, lagTurns: 5, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.542, lagTurns: 6, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.548, lagTurns: 7, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.554, lagTurns: 8, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.56, lagTurns: 5, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.566, lagTurns: 6, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.572, lagTurns: 7, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.578, lagTurns: 8, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.584, lagTurns: 5, nodeId: 'exchange_zone_12' },
+  { fromChannel: 'exchange_zone', toChannel: 'specialist_referral', weight: 0.59, lagTurns: 6, nodeId: 'exchange_zone_12' },
+];
