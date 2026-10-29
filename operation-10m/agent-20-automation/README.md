@@ -17,7 +17,7 @@ National steward planning logic mirrors canonical **SECTION 20AN** (`V1014_*`) f
 
 **Round 7** adds multi-turn ops windows (`runIdleAutomationOpsWindow`), backpressure alert classification (`evaluateBackpressureAlerts`), and steward↔idle tier coordination (`coordinateNationalStewardWithIdleOpsTier`).
 
-Module version: `10m.1.7.0-agent20`.
+Module version: `10m.1.8.0-agent20`.
 
 Run tests:
 
