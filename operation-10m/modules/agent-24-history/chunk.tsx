@@ -21836,6 +21836,9 @@ export function applyO6kHistoricalAnalyticsCachePatch(state: Record<string, unkn
   buildAgent24HistoryRetentionReport,
   type Agent24HistoryRetentionReport,
 } from './history-retention.ts';
+  buildAgent24ReplayTransferGateReport,
+  type Agent24ReplayTransferGateReport,
+} from './replay-transfer-gate.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -21859,6 +21862,9 @@ export interface Agent24ReplayDeterminismBundle {
   exportManifest: Agent24ExportManifest;
   importValidation: Agent24ImportValidationReport;
   historyRetention: Agent24HistoryRetentionReport;
+  archiveCompaction: Agent24ArchiveCompactionPlan;
+  replayTransferGate: Agent24ReplayTransferGateReport;
+  snapshotSeal: Agent24SnapshotSeal;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -22086,6 +22092,28 @@ export function buildAgent24ReplayDeterminismBundle(
     exportReadiness: exportReadinessFinal,
     expectedCompositeFingerprint: compositeCore,
   });
+  const archiveCompaction = buildAgent24ArchiveCompactionPlan({
+    matchId: input.matchId,
+    currentTurn: input.turn,
+    historyRetention,
+    importValidation,
+    replayEventCount,
+  });
+  const replayTransferGate = buildAgent24ReplayTransferGateReport({
+    matchId: input.matchId,
+    manifest: exportManifest,
+    importValidation,
+    historyRetention,
+  });
+  const snapshotSeal = buildAgent24SnapshotSeal({
+    matchId: input.matchId,
+    turn: input.turn,
+    compositeBundleFingerprint: compositeCore,
+    manifest: exportManifest,
+    importValidation,
+    transferGate: replayTransferGate,
+    archiveCompaction,
+  });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
@@ -22107,6 +22135,9 @@ export function buildAgent24ReplayDeterminismBundle(
     exportManifest: exportManifest.deterministicFingerprint,
     importValidation: importValidation.deterministicFingerprint,
     historyRetention: historyRetention.deterministicFingerprint,
+    archiveCompaction: archiveCompaction.deterministicFingerprint,
+    replayTransferGate: replayTransferGate.deterministicFingerprint,
+    snapshotSeal: snapshotSeal.deterministicFingerprint,
   });
 
   return {
@@ -22123,6 +22154,9 @@ export function buildAgent24ReplayDeterminismBundle(
     exportManifest,
     importValidation,
     historyRetention,
+    archiveCompaction,
+    replayTransferGate,
+    snapshotSeal,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -22233,6 +22267,21 @@ export function verifyAgent24ReplayDeterminism(
       name: 'history_retention_twin',
       passed: a.historyRetention.deterministicFingerprint === b.historyRetention.deterministicFingerprint,
       detail: 'Twin history retention fingerprints',
+    },
+    {
+      name: 'archive_compaction_twin',
+      passed: a.archiveCompaction.deterministicFingerprint === b.archiveCompaction.deterministicFingerprint,
+      detail: 'Twin archive compaction fingerprints',
+    },
+    {
+      name: 'replay_transfer_gate_twin',
+      passed: a.replayTransferGate.deterministicFingerprint === b.replayTransferGate.deterministicFingerprint,
+      detail: 'Twin replay transfer gate fingerprints',
+    },
+    {
+      name: 'snapshot_seal_twin',
+      passed: a.snapshotSeal.deterministicFingerprint === b.snapshotSeal.deterministicFingerprint,
+      detail: 'Twin snapshot seal fingerprints',
     },
     {
       name: 'composite_twin',

@@ -40,6 +40,15 @@ import {
   buildAgent24HistoryRetentionReport,
   runAgent24HistoryRetentionSelfTests,
 } from '../src/history-retention.ts';
+import {
+  buildAgent24ArchiveCompactionPlan,
+  runAgent24ArchiveCompactionSelfTests,
+} from '../src/archive-compaction.ts';
+import {
+  buildAgent24ReplayTransferGateReport,
+  runAgent24ReplayTransferGateSelfTests,
+} from '../src/replay-transfer-gate.ts';
+import { buildAgent24SnapshotSeal, runAgent24SnapshotSealSelfTests } from '../src/snapshot-seal.ts';
 import { buildO6kHistoricalAnalyticsSnapshot } from '../src/history-replay-analytics.ts';
 import { o6kAgent24StableStringify, runO6kAgent24SelfTests } from '../src/history-replay-analytics.ts';
 
@@ -137,6 +146,9 @@ describe('Agent 24 replay determinism bundle', () => {
     assert.ok(result.probes.some(p => p.name === 'export_manifest_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'import_validation_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'history_retention_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'archive_compaction_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'replay_transfer_gate_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'snapshot_seal_twin' && p.passed));
   });
 
   it('includes analytics depth rollups and stable twin fingerprint', () => {
@@ -404,6 +416,93 @@ describe('Agent 24 history retention', () => {
     });
     assert.equal(direct.deterministicFingerprint, bundle.historyRetention.deterministicFingerprint);
     assert.ok(runAgent24HistoryRetentionSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 archive compaction', () => {
+  it('plans eligible bands below prune-safe cutoff', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle({
+      matchId: 'm',
+      turn: 20,
+      day: 20,
+      maxTurns: 100,
+      replay: {
+        events: [
+          { eventType: 'replay_checkpoint', turn: 8, sequence: 1 },
+          { eventType: 'replay_checkpoint', turn: 15, sequence: 2 },
+        ],
+        checkpoints: { '8': {}, '15': {} },
+      },
+      deterministicMode: true,
+    });
+    assert.ok(bundle.archiveCompaction.bands.length >= 1);
+    const direct = buildAgent24ArchiveCompactionPlan({
+      matchId: 'm',
+      currentTurn: 20,
+      historyRetention: bundle.historyRetention,
+      importValidation: bundle.importValidation,
+      replayEventCount: bundle.snapshot.integrity.replayEventCount,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.archiveCompaction.deterministicFingerprint);
+    assert.ok(runAgent24ArchiveCompactionSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 replay transfer gate', () => {
+  it('allows transfer when import and manifest are clean', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle({
+      matchId: 'm',
+      turn: 14,
+      day: 14,
+      replay: {
+        events: [
+          { eventType: 'replay_checkpoint', turn: 7, sequence: 1 },
+          { eventType: 'replay_checkpoint', turn: 14, sequence: 2 },
+        ],
+        checkpoints: { '7': {}, '14': {} },
+      },
+      deterministicMode: true,
+    });
+    assert.equal(bundle.replayTransferGate.transferAllowed, true);
+    const direct = buildAgent24ReplayTransferGateReport({
+      matchId: 'm',
+      manifest: bundle.exportManifest,
+      importValidation: bundle.importValidation,
+      historyRetention: bundle.historyRetention,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.replayTransferGate.deterministicFingerprint);
+    assert.ok(runAgent24ReplayTransferGateSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 snapshot seal', () => {
+  it('seals healthy export bundles with linked fingerprints', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle({
+      matchId: 'm',
+      turn: 12,
+      day: 12,
+      replay: {
+        events: [
+          { eventType: 'replay_checkpoint', turn: 8, sequence: 1 },
+          { eventType: 'replay_checkpoint', turn: 12, sequence: 2 },
+        ],
+        checkpoints: { '8': {}, '12': {} },
+      },
+      deterministicMode: true,
+    });
+    assert.equal(bundle.snapshotSeal.sealed, true);
+    assert.ok(bundle.snapshotSeal.linkCount >= 5);
+    const direct = buildAgent24SnapshotSeal({
+      matchId: 'm',
+      turn: 12,
+      compositeBundleFingerprint: bundle.exportManifest.compositeBundleFingerprint,
+      manifest: bundle.exportManifest,
+      importValidation: bundle.importValidation,
+      transferGate: bundle.replayTransferGate,
+      archiveCompaction: bundle.archiveCompaction,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.snapshotSeal.deterministicFingerprint);
+    assert.ok(runAgent24SnapshotSealSelfTests().every(t => t.passed));
   });
 });
 
