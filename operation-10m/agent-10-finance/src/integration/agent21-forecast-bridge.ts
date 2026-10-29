@@ -90,11 +90,13 @@ import type { MacroOutputGapInflationPressureLatchBand } from '../inflation/macr
 import type { CorporateCapacityMarkupInflationSurgeBand } from '../inflation/corporate-capacity-markup-inflation-surge.js';
 import type { ResearchBreakthroughSupplySideInflationLatchBand } from '../inflation/research-breakthrough-supply-side-inflation-latch.js';
 import type { TradeImportExchangeInflationPipelineSurgeBand } from '../inflation/trade-import-exchange-inflation-pipeline-surge.js';
+import type { MetroRegionalRentInflationEscalationLatchBand } from '../inflation/metro-regional-rent-inflation-escalation-latch.js';
+import type { WholesaleGridTransitionInflationSurgeBand } from '../inflation/wholesale-grid-transition-inflation-surge.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r48';
+  schemaVersion: '10.14.agent10.r49';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -186,6 +188,8 @@ export interface Agent21InflationForecastBundle {
   terminalCorporateCapacityMarkupInflationSurge: CorporateCapacityMarkupInflationSurgeBand;
   terminalResearchBreakthroughSupplySideInflationLatch: ResearchBreakthroughSupplySideInflationLatchBand;
   terminalTradeImportExchangeInflationPipelineSurge: TradeImportExchangeInflationPipelineSurgeBand;
+  terminalMetroRegionalRentInflationEscalationLatch: MetroRegionalRentInflationEscalationLatchBand;
+  terminalWholesaleGridTransitionInflationSurge: WholesaleGridTransitionInflationSurgeBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -214,7 +218,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r48',
+    schemaVersion: '10.14.agent10.r49',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -310,6 +314,10 @@ export function buildAgent21InflationForecastBundle(input: {
       lastPoint?.researchBreakthroughSupplySideInflationLatchBand ?? 'neutral',
     terminalTradeImportExchangeInflationPipelineSurge:
       lastPoint?.tradeImportExchangeInflationPipelineSurgeBand ?? 'anchored',
+    terminalMetroRegionalRentInflationEscalationLatch:
+      lastPoint?.metroRegionalRentInflationEscalationLatchBand ?? 'subdued',
+    terminalWholesaleGridTransitionInflationSurge:
+      lastPoint?.wholesaleGridTransitionInflationSurgeBand ?? 'stable',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

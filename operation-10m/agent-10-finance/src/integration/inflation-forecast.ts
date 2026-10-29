@@ -352,6 +352,14 @@ import {
   assessTradeImportExchangeInflationPipelineSurge,
   type TradeImportExchangeInflationPipelineSurgeBand,
 } from '../inflation/trade-import-exchange-inflation-pipeline-surge.js';
+import {
+  assessMetroRegionalRentInflationEscalationLatch,
+  type MetroRegionalRentInflationEscalationLatchBand,
+} from '../inflation/metro-regional-rent-inflation-escalation-latch.js';
+import {
+  assessWholesaleGridTransitionInflationSurge,
+  type WholesaleGridTransitionInflationSurgeBand,
+} from '../inflation/wholesale-grid-transition-inflation-surge.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -448,6 +456,8 @@ export interface InflationForecastPoint {
   corporateCapacityMarkupInflationSurgeBand: CorporateCapacityMarkupInflationSurgeBand;
   researchBreakthroughSupplySideInflationLatchBand: ResearchBreakthroughSupplySideInflationLatchBand;
   tradeImportExchangeInflationPipelineSurgeBand: TradeImportExchangeInflationPipelineSurgeBand;
+  metroRegionalRentInflationEscalationLatchBand: MetroRegionalRentInflationEscalationLatchBand;
+  wholesaleGridTransitionInflationSurgeBand: WholesaleGridTransitionInflationSurgeBand;
 }
 
 export interface InflationForecastPath {
@@ -1314,6 +1324,24 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const metroRegionalRentEscalation = assessMetroRegionalRentInflationEscalationLatch({
+      rentGrowthBand: inputs.householdInflationScenarioActive ? 'surging' : inputs.highInflationScenario ? 'strong' : 'moderate',
+      regionalDispersionScore: inputs.householdInflationScenarioActive ? 0.58 : inputs.highInflationScenario ? 0.42 : 0.22,
+      wave49MetroRegionalRentLatch: inputs.householdInflationScenarioActive,
+      regionalRentEscalationBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'critical' : inputs.fiscalPressure === 'critical' ? 'building' : 'contained',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const wholesaleGridTransitionSurge = assessWholesaleGridTransitionInflationSurge({
+      wholesaleEnergyStress: inputs.systemicLiquidityBand === 'critical' ? 'crisis' : inputs.creditShockActive ? 'severe' : 'elevated',
+      emissionsTransitionCostBand: inputs.fiscalPressure === 'critical' ? 'high' : 'medium',
+      wave49GridTransitionSurgeLatch: inputs.creditShockActive,
+      gridTransitionStressBand:
+        inputs.fiscalPressure === 'critical' ? 'ruptured' : inputs.systemicLiquidityBand === 'critical' ? 'stressed' : 'stable',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -1410,6 +1438,8 @@ export function projectInflationForecastPath(
       corporateCapacityMarkupInflationSurgeBand: corporateCapacitySurge.surgeBand,
       researchBreakthroughSupplySideInflationLatchBand: researchBreakthroughLatch.latchBand,
       tradeImportExchangeInflationPipelineSurgeBand: tradeImportPipelineSurge.surgeBand,
+      metroRegionalRentInflationEscalationLatchBand: metroRegionalRentEscalation.latchBand,
+      wholesaleGridTransitionInflationSurgeBand: wholesaleGridTransitionSurge.surgeBand,
     });
   }
 

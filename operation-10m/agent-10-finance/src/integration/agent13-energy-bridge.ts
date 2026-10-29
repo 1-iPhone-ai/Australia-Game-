@@ -20,6 +20,10 @@ export interface Agent13EnergySnapshot {
   wave40GridTariffLatch?: boolean;
   /** Round 40: wholesale tariff cascade band. */
   wholesaleTariffCascadeBand?: 'stable' | 'stressed' | 'cascade';
+  /** Round 49: grid transition surge latch. */
+  wave49GridTransitionSurgeLatch?: boolean;
+  /** Round 49: grid transition stress band. */
+  gridTransitionStressBand?: 'stable' | 'stressed' | 'ruptured';
 }
 
 export function mergeAgent13IntoMacroFinancialInputs(
@@ -70,6 +74,13 @@ export function mergeAgent13IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.wholesaleTariffCascadeBand === 'stressed' && snapshot.wholesaleEnergyStress === 'crisis') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave49GridTransitionSurgeLatch && snapshot.gridTransitionStressBand === 'ruptured') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  } else if (snapshot.gridTransitionStressBand === 'stressed' && snapshot.wholesaleEnergyStress === 'crisis') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 

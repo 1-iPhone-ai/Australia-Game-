@@ -1789,6 +1789,49 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'research', 'trade', 'round48'],
   },
+  {
+    id: 'metro_regional_rent_escalation_latch_stack',
+    label: 'Metro regional rent escalation latch stack',
+    description: 'Regional rent escalation under metro dispersion latch.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.53,
+      publicStability: 25,
+    },
+    tags: ['inflation', 'cities', 'round49'],
+  },
+  {
+    id: 'wholesale_grid_transition_surge_stress',
+    label: 'Wholesale grid transition surge stress',
+    description: 'Grid transition surge under wholesale energy crisis.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.5,
+      publicStability: 21,
+    },
+    tags: ['inflation', 'energy', 'round49'],
+  },
+  {
+    id: 'metro_grid_wave49_fusion_stress',
+    label: 'Metro & grid wave 49 fusion stress',
+    description: 'Regional rent escalation colliding with grid transition surge.',
+    patch: {
+      inflationSettingMultiplier: 1.6,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 12,
+    },
+    tags: ['inflation', 'cities', 'energy', 'round49'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
