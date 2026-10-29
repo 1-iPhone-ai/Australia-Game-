@@ -336,6 +336,18 @@ export function SimulationUiEvolutionBridge({
       {result.legacyNavRememberPlanDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-legacy-plan-day">{result.legacyNavRememberPlanDayCoachCopy}</div>
       ) : null}
+      {result.progressionCoveragePercentDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-coverage-percent-day">{result.progressionCoveragePercentDayCoachCopy}</div>
+      ) : null}
+      {result.calmRecoveryActiveStatusDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-calm-active-status-day">{result.calmRecoveryActiveStatusDayCoachCopy}</div>
+      ) : null}
+      {result.textScaleHintPendingDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-text-hint-pending-day">{result.textScaleHintPendingDayCoachCopy}</div>
+      ) : null}
+      {result.showAllPhaseRiskDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-show-all-phase-day">{result.showAllPhaseRiskDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets

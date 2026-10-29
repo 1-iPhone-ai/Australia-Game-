@@ -167,6 +167,11 @@ const FILES = [
   'engine/cognitive-load-band-day-coach.ts',
   'engine/onboarding-active-steps-day-coach.ts',
   'engine/legacy-nav-remember-plan-day-coach.ts',
+  'engine/progression-coverage-percent-day-coach.ts',
+  'engine/calm-recovery-active-status-day-coach.ts',
+  'engine/text-scale-hint-pending-day-coach.ts',
+  'engine/show-all-phase-risk-day-coach.ts',
+  'engine/round39-self-tests.ts',
   'engine/round38-self-tests.ts',
   'engine/round37-self-tests.ts',
   'engine/round36-self-tests.ts',
@@ -325,7 +330,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.38.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.39.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -478,6 +483,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
     check(\`agent22_round22_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
+  const round39 = runAgent22Round39SelfTests();
+  for (const r of round39.results) {
+    check(\`agent22_round39_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
   const round38 = runAgent22Round38SelfTests();
   for (const r of round38.results) {
     check(\`agent22_round38_\${r.id}\`, r.name, r.passed, r.detail);
@@ -584,7 +594,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.38.0',
+  moduleVersion: '1.39.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),

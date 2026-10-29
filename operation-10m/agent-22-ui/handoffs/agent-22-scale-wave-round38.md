@@ -18,5 +18,16 @@ Wave baseline (coord): **`b44b36f`**. Builds on round 37 @ **`3ab58aad`**.
 Version **`1.38.0`** · **16875** lines
 
 ```
-contentSha256: 12a70c26dd41e9e6a0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0
+contentSha256: 12a70c26dd41e9e651ec48e4f53a2a723e97e27f2c473bdb5a6531c9782f65b8
 ```
+
+## Round 38 depth
+
+- **Show-all override active day coach** — `showAllOverrideActiveDayCoachCopy`
+- **Cognitive load band day coach** — `cognitiveLoadBandDayCoachCopy`
+- **Onboarding active steps day coach** — `onboardingActiveStepsDayCoachCopy`
+- **Legacy nav remember plan day coach** — `legacyNavRememberPlanDayCoachCopy`
+
+## V9.4
+
+No canonical edits. No promote-tranche.

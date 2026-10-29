@@ -133,6 +133,10 @@ import { buildShowAllOverrideActiveDayCoach } from '../engine/show-all-override-
 import { buildCognitiveLoadBandDayCoach } from '../engine/cognitive-load-band-day-coach.js';
 import { buildOnboardingActiveStepsDayCoach } from '../engine/onboarding-active-steps-day-coach.js';
 import { buildLegacyNavRememberPlanDayCoach } from '../engine/legacy-nav-remember-plan-day-coach.js';
+import { buildProgressionCoveragePercentDayCoach } from '../engine/progression-coverage-percent-day-coach.js';
+import { buildCalmRecoveryActiveStatusDayCoach } from '../engine/calm-recovery-active-status-day-coach.js';
+import { buildTextScaleHintPendingDayCoach } from '../engine/text-scale-hint-pending-day-coach.js';
+import { buildShowAllPhaseRiskDayCoach } from '../engine/show-all-phase-risk-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -274,6 +278,10 @@ export interface DayAdvanceUiEvolutionResult {
   cognitiveLoadBandDayCoachCopy: string | null;
   onboardingActiveStepsDayCoachCopy: string | null;
   legacyNavRememberPlanDayCoachCopy: string | null;
+  progressionCoveragePercentDayCoachCopy: string | null;
+  calmRecoveryActiveStatusDayCoachCopy: string | null;
+  textScaleHintPendingDayCoachCopy: string | null;
+  showAllPhaseRiskDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1037,6 +1045,33 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const progressionCoveragePercentDayCoach = buildProgressionCoveragePercentDayCoach({
+    coverageRatio: coverage.coverageRatio,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const calmRecoveryActiveStatusDayCoach = buildCalmRecoveryActiveStatusDayCoach({
+    persisted: persistedAfterCalm,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const textScaleHintPendingDayCoach = buildTextScaleHintPendingDayCoach({
+    hint: textScaleDayHint,
+    applied: textScaleDensityApply.applied,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const showAllPhaseRiskDayCoach =
+    context.phase != null
+      ? buildShowAllPhaseRiskDayCoach({
+          persisted: persistedAfterCalm,
+          phase: context.phase,
+          signals: nextSignals,
+          policy,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { riskyPhase: false, coachCopy: null };
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1179,6 +1214,10 @@ export function tickEvolvingUiOnDayAdvance(
     cognitiveLoadBandDayCoachCopy: cognitiveLoadBandDayCoach.coachCopy,
     onboardingActiveStepsDayCoachCopy: onboardingActiveStepsDayCoach.coachCopy,
     legacyNavRememberPlanDayCoachCopy: legacyNavRememberPlanDayCoach.coachCopy,
+    progressionCoveragePercentDayCoachCopy: progressionCoveragePercentDayCoach.coachCopy,
+    calmRecoveryActiveStatusDayCoachCopy: calmRecoveryActiveStatusDayCoach.coachCopy,
+    textScaleHintPendingDayCoachCopy: textScaleHintPendingDayCoach.coachCopy,
+    showAllPhaseRiskDayCoachCopy: showAllPhaseRiskDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

@@ -129,3 +129,7 @@ export { ShowAllOverrideActiveDayCoachStrip } from './ShowAllOverrideActiveDayCo
 export { CognitiveLoadBandDayCoachStrip } from './CognitiveLoadBandDayCoachStrip.js';
 export { OnboardingActiveStepsDayCoachStrip } from './OnboardingActiveStepsDayCoachStrip.js';
 export { LegacyNavRememberPlanDayCoachStrip } from './LegacyNavRememberPlanDayCoachStrip.js';
+export { ProgressionCoveragePercentDayCoachStrip } from './ProgressionCoveragePercentDayCoachStrip.js';
+export { CalmRecoveryActiveStatusDayCoachStrip } from './CalmRecoveryActiveStatusDayCoachStrip.js';
+export { TextScaleHintPendingDayCoachStrip } from './TextScaleHintPendingDayCoachStrip.js';
+export { ShowAllPhaseRiskDayCoachStrip } from './ShowAllPhaseRiskDayCoachStrip.js';

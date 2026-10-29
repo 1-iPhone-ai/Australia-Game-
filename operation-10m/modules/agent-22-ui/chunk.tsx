@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 12a70c26dd41e9e6
+// content-sha256-prefix: ad13f9c097565d28
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -971,6 +971,10 @@ export interface DayAdvanceUiEvolutionResult {
   cognitiveLoadBandDayCoachCopy: string | null;
   onboardingActiveStepsDayCoachCopy: string | null;
   legacyNavRememberPlanDayCoachCopy: string | null;
+  progressionCoveragePercentDayCoachCopy: string | null;
+  calmRecoveryActiveStatusDayCoachCopy: string | null;
+  textScaleHintPendingDayCoachCopy: string | null;
+  showAllPhaseRiskDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1734,6 +1738,33 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const progressionCoveragePercentDayCoach = buildProgressionCoveragePercentDayCoach({
+    coverageRatio: coverage.coverageRatio,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const calmRecoveryActiveStatusDayCoach = buildCalmRecoveryActiveStatusDayCoach({
+    persisted: persistedAfterCalm,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const textScaleHintPendingDayCoach = buildTextScaleHintPendingDayCoach({
+    hint: textScaleDayHint,
+    applied: textScaleDensityApply.applied,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const showAllPhaseRiskDayCoach =
+    context.phase != null
+      ? buildShowAllPhaseRiskDayCoach({
+          persisted: persistedAfterCalm,
+          phase: context.phase,
+          signals: nextSignals,
+          policy,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { riskyPhase: false, coachCopy: null };
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1876,6 +1907,10 @@ export function tickEvolvingUiOnDayAdvance(
     cognitiveLoadBandDayCoachCopy: cognitiveLoadBandDayCoach.coachCopy,
     onboardingActiveStepsDayCoachCopy: onboardingActiveStepsDayCoach.coachCopy,
     legacyNavRememberPlanDayCoachCopy: legacyNavRememberPlanDayCoach.coachCopy,
+    progressionCoveragePercentDayCoachCopy: progressionCoveragePercentDayCoach.coachCopy,
+    calmRecoveryActiveStatusDayCoachCopy: calmRecoveryActiveStatusDayCoach.coachCopy,
+    textScaleHintPendingDayCoachCopy: textScaleHintPendingDayCoach.coachCopy,
+    showAllPhaseRiskDayCoachCopy: showAllPhaseRiskDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -7318,6 +7353,280 @@ export function buildLegacyNavRememberPlanDayCoach(input: {
     panelCount: input.plan.panelIdsToRemember.length,
     coachCopy: `Day ${input.nextGameDay}: ${input.plan.coachCopy}`,
   };
+}
+
+// --- source: engine/progression-coverage-percent-day-coach.ts ---
+export interface ProgressionCoveragePercentDayCoach {
+  coveragePercent: number;
+  coachCopy: string | null;
+}
+
+export function buildProgressionCoveragePercentDayCoach(input: {
+  coverageRatio: number;
+  nextGameDay: number;
+  maxDay?: number;
+}): ProgressionCoveragePercentDayCoach {
+  const maxDay = input.maxDay ?? 12;
+  if (input.nextGameDay > maxDay) {
+    return { coveragePercent: Math.round(input.coverageRatio * 100), coachCopy: null };
+  }
+  const pct = Math.round(input.coverageRatio * 100);
+  return {
+    coveragePercent: pct,
+    coachCopy: `Day ${input.nextGameDay}: Interface coverage is ${pct}% of registered panels.`,
+  };
+}
+
+// --- source: engine/calm-recovery-active-status-day-coach.ts ---
+export interface CalmRecoveryActiveStatusDayCoach {
+  active: boolean;
+  coachCopy: string | null;
+}
+
+export function buildCalmRecoveryActiveStatusDayCoach(input: {
+  persisted: EvolvingUiPersistedState;
+  nextGameDay: number;
+}): CalmRecoveryActiveStatusDayCoach {
+  const active = isCalmRecoveryActive(input.persisted, input.nextGameDay);
+  if (!active) {
+    return { active: false, coachCopy: null };
+  }
+  return {
+    active: true,
+    coachCopy: `Day ${input.nextGameDay}: ${calmRecoveryCoachCopy(true)}`,
+  };
+}
+
+// --- source: engine/text-scale-hint-pending-day-coach.ts ---
+export interface TextScaleHintPendingDayCoach {
+  pendingSuggestion: boolean;
+  coachCopy: string | null;
+}
+
+export function buildTextScaleHintPendingDayCoach(input: {
+  hint: TextScaleDensityDayHint;
+  applied: boolean;
+  nextGameDay: number;
+}): TextScaleHintPendingDayCoach {
+  if (input.applied || !input.hint.coachCopy) {
+    return { pendingSuggestion: false, coachCopy: null };
+  }
+  return {
+    pendingSuggestion: true,
+    coachCopy: `Day ${input.nextGameDay}: ${input.hint.coachCopy}`,
+  };
+}
+
+// --- source: engine/show-all-phase-risk-day-coach.ts ---
+export interface ShowAllPhaseRiskDayCoach {
+  riskyPhase: boolean;
+  coachCopy: string | null;
+}
+
+export function buildShowAllPhaseRiskDayCoach(input: {
+  persisted: EvolvingUiPersistedState;
+  phase: V94StandardizedGamePhase;
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  nextGameDay: number;
+}): ShowAllPhaseRiskDayCoach {
+  const assessment = evaluateShowAllOverrideSafety({
+    persisted: input.persisted,
+    phase: input.phase,
+    signals: input.signals,
+    policy: input.policy,
+  });
+  if (!assessment.overrideActive || !assessment.riskyPhase || !assessment.coachCopy) {
+    return { riskyPhase: assessment.riskyPhase, coachCopy: null };
+  }
+  return {
+    riskyPhase: true,
+    coachCopy: `Day ${input.nextGameDay}: ${assessment.coachCopy}`,
+  };
+}
+
+// --- source: engine/round39-self-tests.ts ---
+export function runAgent22Round39SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r39_coverage_percent',
+    'progression coverage percent day coach early day',
+    (() => {
+      const coach = buildProgressionCoveragePercentDayCoach({
+        coverageRatio: 0.25,
+        nextGameDay: 3,
+      });
+      return coach.coveragePercent === 25 && Boolean(coach.coachCopy?.includes('Day 3'));
+    })()
+  );
+
+  check(
+    'r39_calm_active',
+    'calm recovery active status day coach',
+    (() => {
+      const coach = buildCalmRecoveryActiveStatusDayCoach({
+        persisted: { calmRecoveryUntilDay: 10 },
+        nextGameDay: 5,
+      });
+      return coach.active && Boolean(coach.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r39_text_hint_pending',
+    'text scale hint pending day coach',
+    (() => {
+      const coach = buildTextScaleHintPendingDayCoach({
+        hint: {
+          activeDensity: 'compact',
+          coachCopy: 'Consider spacious density for readability.',
+          shouldSuggestDensityChange: true,
+        },
+        applied: false,
+        nextGameDay: 4,
+      });
+      return coach.pendingSuggestion && Boolean(coach.coachCopy?.includes('Day 4'));
+    })()
+  );
+
+  check(
+    'r39_show_all_phase',
+    'show all phase risk day coach',
+    (() => {
+      const coach = buildShowAllPhaseRiskDayCoach({
+        persisted: { showAllPanelsOverride: true },
+        phase: 'main_menu',
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'expert' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        nextGameDay: 2,
+      });
+      return coach.riskyPhase && Boolean(coach.coachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r39_tick_coverage_percent',
+    'tick exposes progression coverage percent day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.progressionCoveragePercentDayCoachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r39_tick_calm_status',
+    'tick exposes calm recovery active status day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'guided' },
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        { calmRecoveryUntilDay: 8 },
+        { phase: 'human_turn' }
+      );
+      return typeof r.calmRecoveryActiveStatusDayCoachCopy === 'string' || r.calmRecoveryActiveStatusDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r39_tick_text_hint',
+    'tick exposes text scale hint pending day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn', autoApplyTextScaleDensity: false }
+      );
+      return typeof r.textScaleHintPendingDayCoachCopy === 'string' || r.textScaleHintPendingDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r39_tick_phase_risk',
+    'tick exposes show all phase risk day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'expert' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'expert' },
+        { ...DEFAULT_EVOLVING_UI_ACCESS_POLICY, showAllPanelsOverride: true },
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'main_menu' }
+      );
+      return Boolean(r.showAllPhaseRiskDayCoachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r39_percent_late',
+    'coverage percent null late game',
+    (() => {
+      const coach = buildProgressionCoveragePercentDayCoach({
+        coverageRatio: 0.5,
+        nextGameDay: 20,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r39_calm_inactive',
+    'calm active status null when inactive',
+    (() => {
+      const coach = buildCalmRecoveryActiveStatusDayCoach({
+        persisted: {},
+        nextGameDay: 3,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r39_hint_applied',
+    'text hint pending null when applied',
+    (() => {
+      const coach = buildTextScaleHintPendingDayCoach({
+        hint: { activeDensity: 'comfortable', coachCopy: 'x', shouldSuggestDensityChange: true },
+        applied: true,
+        nextGameDay: 2,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r39_snapshot_percent',
+    'coverage percent uses snapshot ratio',
+    (() => {
+      const snapshot = buildProgressionCoverageSnapshot(
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY
+      );
+      const coach = buildProgressionCoveragePercentDayCoach({
+        coverageRatio: snapshot.coverageRatio,
+        nextGameDay: 4,
+      });
+      return coach.coveragePercent === Math.round(snapshot.coverageRatio * 100);
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round38-self-tests.ts ---
@@ -14579,6 +14888,18 @@ export function SimulationUiEvolutionBridge({
       {result.legacyNavRememberPlanDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-legacy-plan-day">{result.legacyNavRememberPlanDayCoachCopy}</div>
       ) : null}
+      {result.progressionCoveragePercentDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-coverage-percent-day">{result.progressionCoveragePercentDayCoachCopy}</div>
+      ) : null}
+      {result.calmRecoveryActiveStatusDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-calm-active-status-day">{result.calmRecoveryActiveStatusDayCoachCopy}</div>
+      ) : null}
+      {result.textScaleHintPendingDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-text-hint-pending-day">{result.textScaleHintPendingDayCoachCopy}</div>
+      ) : null}
+      {result.showAllPhaseRiskDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-show-all-phase-day">{result.showAllPhaseRiskDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -16629,7 +16950,7 @@ export function ContextualWidgetDayCoachStrip({
 }
 
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.38.0';
+export const AGENT_22_MODULE_VERSION = '1.39.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -16780,6 +17101,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round39 = runAgent22Round39SelfTests();
+  for (const r of round39.results) {
+    check(`agent22_round39_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round38 = runAgent22Round38SelfTests();
