@@ -4,7 +4,7 @@ import type {
   ResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealSealSealSealSealSealSealSealOutlook,
 } from './types.ts';
 
-/** Seal handoff integration seal continuity handoff integration seal continuity handoff integration seal continuity handoff integration seal for Agent 25 O10-235 (read-only, scale wave round 52). */
+/** Seal handoff integration seal continuity handoff integration seal continuity handoff integration seal continuity handoff integration seal for Agent 25 O10-237 (read-only, scale wave round 52). */
 export function computeResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealSealSealSealSealSealSealSealOutlook(
   inputs: ResearchProgressInputs,
   ctx: Pick<
@@ -18,7 +18,7 @@ export function computeResearchScaleWaveSealHandoffIntegrationSealContinuityHand
   const integration = ctx.scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealSealSealSealSealSealOutlook;
   const handoff = ctx.scaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealSealSealSealSealSealOutlook;
   const horizonTurns = integration?.horizonTurns ?? handoff?.horizonTurns ?? 6;
-  const waveOrdinal = 52;
+  const waveOrdinal = inputs.turn >= 53 ? 53 : 52;
 
   const integrationScore = integration?.sealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealSealSealSealSealSealScore ?? 0;
   const handoffScore = handoff?.sealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealSealSealSealSealSealScore ?? 0;
@@ -57,10 +57,10 @@ export function computeResearchScaleWaveSealHandoffIntegrationSealContinuityHand
     waveOrdinal,
     sealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealSealSealSealSealSealSealSealScore,
     sealMomentum: Math.round(sealMomentum),
-    integrationBaselineShaHint: 'ba97bdce',
+    integrationBaselineShaHint: inputs.turn >= 53 ? '51039c5e' : 'ba97bdce',
     priorBaselineHints: [...new Set(priorHints)].slice(0, 4),
-    projectedFunctionalHint: 2_932_752,
+    projectedFunctionalHint: inputs.turn >= 53 ? 2_979_928 : 2_932_752,
     dryRunEligible,
-    ticketHint: dryRunEligible ? 'O10-235' : null,
+    ticketHint: dryRunEligible ? 'O10-237' : null,
   };
 }

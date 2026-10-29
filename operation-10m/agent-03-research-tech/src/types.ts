@@ -162,7 +162,7 @@ export interface ResearchBranchEmphasisState {
   setTurn: number;
 }
 
-export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v52' as const;
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v53' as const;
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
