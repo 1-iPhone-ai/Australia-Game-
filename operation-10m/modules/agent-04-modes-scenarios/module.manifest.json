@@ -3,11 +3,20 @@
   "slot": "scenario-engine-extension",
   "touchesSaveFormat": true,
   "proposedGameStateFields": [
-    "o10mChainProgress",
-    "o10mMissionMilestones",
-    "o10mSandboxProfileId"
+    "o10mModesProgress"
   ],
-  "contentSha256": "ada7038be52c7bfa7978c371f2ddf4a5f5a42ef9c945929d267a8dff7683103a",
+  "saveFormat": {
+    "schemaVersion": 2,
+    "gameStateKey": "o10mModesProgress",
+    "nestedFields": [
+      "chainProgress",
+      "milestones",
+      "challengeModeIds",
+      "sandboxProfileId",
+      "recentRuns"
+    ]
+  },
+  "contentSha256": "2ac9653046d9aa7fa3f17053c816e5c93d09710d5fb5a570d20b09cfbb841b95",
   "chunkPath": "operation-10m/modules/agent-04-modes-scenarios/chunk.tsx",
   "regenerate": "cd operation-10m/agent-04-modes-scenarios && npm run bundle:agent-04-chunk"
 }

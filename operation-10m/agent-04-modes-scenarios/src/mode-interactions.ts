@@ -26,11 +26,7 @@ function mergeSettings(base: Record<string, unknown>, patch: Record<string, unkn
   return { ...base, ...patch };
 }
 
-export interface ExtendedModeInteractionRequest extends ModeInteractionRequest {
-  chainProgress?: O10mChainProgress | null;
-}
-
-export function resolveModeInteraction(request: ExtendedModeInteractionRequest): ModeInteractionResult {
+export function resolveModeInteraction(request: ModeInteractionRequest): ModeInteractionResult {
   const errors: string[] = [];
   const warnings: string[] = [];
   let effectiveBaseMode: GameModeSelection = request.baseMode;

@@ -225,13 +225,11 @@ export interface ModeInteractionRequest {
   scenarioId: string | null;
   challengeModeIds: O10mChallengeModeId[];
   scenarioModeEnabled?: boolean;
-  /** Optional named sandbox profile (`o10m_sandbox_*`). */
   sandboxProfileId?: string | null;
-  /** Ad-hoc knob overrides; validated and merged after profile. */
   sandboxKnobs?: Partial<Record<O10mSandboxKnobKey, number | string>>;
-  /** When set, validates scenarioId against chain step eligibility. */
   chainId?: string | null;
   chainStepIndex?: number;
+  chainProgress?: O10mChainProgress | null;
 }
 
 export interface ModeInteractionResult {
@@ -310,4 +308,34 @@ export interface O10mChainAdvanceResult {
   advanced: boolean;
   chainCompleted: boolean;
   unlockedNextScenarioId: string | null;
+}
+
+/** Persisted under `gameState.o10mModesProgress` after assembly. */
+export interface O10mModesPersistedState {
+  schemaVersion: number;
+  updatedAtTurn: number;
+  baseMode: GameModeSelection;
+  scenarioId: string | null;
+  chainProgress: O10mChainProgress | null;
+  challengeModeIds: O10mChallengeModeId[];
+  sandboxProfileId: string | null;
+  sandboxKnobs: Partial<Record<O10mSandboxKnobKey, number | string>>;
+  milestones: O10mMilestoneProgress[];
+  completedChainIds: string[];
+  recentRuns: O10mPersistedRunRecord[];
+}
+
+export interface O10mPersistedRunRecord {
+  scenarioId: string;
+  baseMode: GameModeSelection;
+  primaryVictory: boolean;
+  chainCompleted: boolean;
+  day: number;
+  recordedAtTurn: number;
+}
+
+export interface O10mSaveFormatValidation {
+  ok: boolean;
+  errors: string[];
+  warnings: string[];
 }

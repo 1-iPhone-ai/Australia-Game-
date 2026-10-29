@@ -1,0 +1,286 @@
+import { listO10mChallengeModeIds } from './challenge-modes.js';
+import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
+import { findO10mScenario } from './scenarios/o10m-presets.js';
+import { resolveSandboxKnobValues } from './sandbox-knobs.js';
+import type {
+  GameModeSelection,
+  ModeInteractionRequest,
+  O10mChainProgress,
+  O10mChallengeModeId,
+  O10mMilestoneProgress,
+  O10mModesPersistedState,
+  O10mPersistedRunRecord,
+  O10mRunSummary,
+  O10mSandboxKnobKey,
+  O10mSaveFormatValidation,
+} from './types.js';
+import { isCanonicalGameModeSelection } from './canonical-modes.js';
+
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 2;
+export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
+export const O10M_MODES_RUN_LOG_CAP = 24;
+
+const VALID_CHALLENGES = new Set(listO10mChallengeModeIds());
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+function str(v: unknown): string | null {
+  return typeof v === 'string' && v.length > 0 ? v : null;
+}
+
+function sanitizeChallengeIds(raw: unknown): O10mChallengeModeId[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((id): id is O10mChallengeModeId => typeof id === 'string' && VALID_CHALLENGES.has(id as O10mChallengeModeId));
+}
+
+function sanitizeChainProgress(raw: unknown): O10mChainProgress | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const chainId = str(o.chainId);
+  if (!chainId) return null;
+  const completedStepIndexes = Array.isArray(o.completedStepIndexes)
+    ? o.completedStepIndexes.filter((n): n is number => typeof n === 'number').slice(0, 12)
+    : [];
+  const activeStepIndex = num(o.activeStepIndex, 0);
+  const chainCompleted = o.chainCompleted === true;
+  const carry = (o.accumulatedCarry || {}) as O10mChainProgress['accumulatedCarry'];
+  return {
+    chainId,
+    completedStepIndexes,
+    activeStepIndex,
+    chainCompleted,
+    accumulatedCarry: {
+      startingMoneyDelta: num(carry?.startingMoneyDelta, 0) || undefined,
+      standingDelta:
+        carry?.standingDelta && typeof carry.standingDelta === 'object'
+          ? (carry.standingDelta as Record<string, number>)
+          : undefined,
+      forcedSettingsPatch:
+        carry?.forcedSettingsPatch && typeof carry.forcedSettingsPatch === 'object'
+          ? (carry.forcedSettingsPatch as Record<string, unknown>)
+          : undefined,
+    },
+  };
+}
+
+function sanitizeMilestones(raw: unknown): O10mMilestoneProgress[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(m => m && typeof m === 'object')
+    .map(m => {
+      const row = m as Record<string, unknown>;
+      return {
+        milestoneId: String(row.milestoneId || ''),
+        unlocked: row.unlocked === true,
+        unlockedAtRunCount: num(row.unlockedAtRunCount, 0),
+      };
+    })
+    .filter(m => m.milestoneId.startsWith('o10m_'));
+}
+
+function sanitizeRunLog(raw: unknown): O10mPersistedRunRecord[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .slice(-O10M_MODES_RUN_LOG_CAP)
+    .filter(r => r && typeof r === 'object')
+    .map(r => {
+      const row = r as Record<string, unknown>;
+      const baseMode = row.baseMode;
+      return {
+        scenarioId: String(row.scenarioId || ''),
+        baseMode: (isCanonicalGameModeSelection(baseMode) ? baseMode : 'scenario') as GameModeSelection,
+        primaryVictory: row.primaryVictory === true,
+        chainCompleted: row.chainCompleted === true,
+        day: num(row.day, 1),
+        recordedAtTurn: num(row.recordedAtTurn, 0),
+      };
+    })
+    .filter(r => r.scenarioId.startsWith('o10m_'));
+}
+
+export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection = 'scenario'): O10mModesPersistedState {
+  return {
+    schemaVersion: O10M_MODES_SAVE_SCHEMA_VERSION,
+    updatedAtTurn: 0,
+    baseMode,
+    scenarioId: null,
+    chainProgress: null,
+    challengeModeIds: [],
+    sandboxProfileId: null,
+    sandboxKnobs: {},
+    milestones: [],
+    completedChainIds: [],
+    recentRuns: [],
+  };
+}
+
+export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersistedState {
+  const base = createEmptyO10mModesPersistedState();
+  if (!raw || typeof raw !== 'object') return base;
+  const o = raw as Record<string, unknown>;
+  const v1 = num(o.schemaVersion, 1);
+  const merged = sanitizeO10mModesPersistedState({ ...o, schemaVersion: Math.max(v1, 1) }) ?? base;
+  if (merged.schemaVersion < O10M_MODES_SAVE_SCHEMA_VERSION) {
+    return {
+      ...merged,
+      schemaVersion: O10M_MODES_SAVE_SCHEMA_VERSION,
+      recentRuns: merged.recentRuns ?? [],
+      completedChainIds: merged.completedChainIds ?? [],
+    };
+  }
+  return merged;
+}
+
+export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersistedState | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const baseModeRaw = o.baseMode;
+  const baseMode = isCanonicalGameModeSelection(baseModeRaw) ? baseModeRaw : 'scenario';
+  const sandboxKnobsRaw = (o.sandboxKnobs && typeof o.sandboxKnobs === 'object' ? o.sandboxKnobs : {}) as Partial<
+    Record<O10mSandboxKnobKey, number | string>
+  >;
+  const knobResolved = resolveSandboxKnobValues(str(o.sandboxProfileId), sandboxKnobsRaw);
+
+  return {
+    schemaVersion: num(o.schemaVersion, O10M_MODES_SAVE_SCHEMA_VERSION),
+    updatedAtTurn: num(o.updatedAtTurn, 0),
+    baseMode,
+    scenarioId: str(o.scenarioId),
+    chainProgress: sanitizeChainProgress(o.chainProgress),
+    challengeModeIds: sanitizeChallengeIds(o.challengeModeIds),
+    sandboxProfileId: str(o.sandboxProfileId),
+    sandboxKnobs: knobResolved.ok ? knobResolved.knobs : {},
+    milestones: sanitizeMilestones(o.milestones),
+    completedChainIds: Array.isArray(o.completedChainIds)
+      ? o.completedChainIds.filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_chain_'))
+      : [],
+    recentRuns: sanitizeRunLog(o.recentRuns),
+  };
+}
+
+export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState): O10mSaveFormatValidation {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (state.schemaVersion > O10M_MODES_SAVE_SCHEMA_VERSION) {
+    warnings.push(`Save schema ${state.schemaVersion} is newer than module ${O10M_MODES_SAVE_SCHEMA_VERSION}.`);
+  }
+
+  if (state.scenarioId && !findO10mScenario(state.scenarioId)) {
+    errors.push(`Unknown scenario id in save: ${state.scenarioId}`);
+  }
+
+  if (state.chainProgress) {
+    if (state.scenarioId) {
+      const check = validateChainStepSelection(
+        state.chainProgress.chainId,
+        state.chainProgress,
+        state.scenarioId,
+        state.chainProgress.activeStepIndex,
+      );
+      if (!check.ok && !state.chainProgress.chainCompleted) {
+        warnings.push(...check.errors);
+      }
+    }
+    if (state.chainProgress.chainCompleted && !state.completedChainIds.includes(state.chainProgress.chainId)) {
+      warnings.push('Chain marked complete but missing from completedChainIds history.');
+    }
+  }
+
+  if (state.challengeModeIds.length > 3) {
+    errors.push('Save contains more than three challenge overlays.');
+  }
+
+  return { ok: errors.length === 0, errors, warnings };
+}
+
+export function appendRunToPersistedLog(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+  turn: number,
+): O10mModesPersistedState {
+  const entry: O10mPersistedRunRecord = {
+    scenarioId: run.scenarioId || '',
+    baseMode: run.baseMode,
+    primaryVictory: run.primaryVictory,
+    chainCompleted: run.chainCompleted === true,
+    day: run.day,
+    recordedAtTurn: turn,
+  };
+  const recentRuns = [...state.recentRuns, entry].filter(r => r.scenarioId).slice(-O10M_MODES_RUN_LOG_CAP);
+  const completedChainIds = [...state.completedChainIds];
+  if (run.chainCompleted && run.scenarioId) {
+    const chainId = state.chainProgress?.chainId;
+    if (chainId && !completedChainIds.includes(chainId)) completedChainIds.push(chainId);
+  }
+  return {
+    ...state,
+    updatedAtTurn: turn,
+    recentRuns,
+    completedChainIds,
+  };
+}
+
+export function buildO10mModesPersistedSnapshot(params: {
+  turn: number;
+  baseMode: GameModeSelection;
+  scenarioId: string | null;
+  chainProgress: O10mChainProgress | null;
+  challengeModeIds: O10mChallengeModeId[];
+  sandboxProfileId?: string | null;
+  sandboxKnobs?: Partial<Record<O10mSandboxKnobKey, number | string>>;
+  milestones: O10mMilestoneProgress[];
+  previous?: O10mModesPersistedState | null;
+}): O10mModesPersistedState {
+  const prev = params.previous ?? createEmptyO10mModesPersistedState(params.baseMode);
+  return {
+    ...prev,
+    schemaVersion: O10M_MODES_SAVE_SCHEMA_VERSION,
+    updatedAtTurn: params.turn,
+    baseMode: params.baseMode,
+    scenarioId: params.scenarioId,
+    chainProgress: params.chainProgress,
+    challengeModeIds: params.challengeModeIds.slice(0, 3),
+    sandboxProfileId: params.sandboxProfileId ?? null,
+    sandboxKnobs: params.sandboxKnobs ?? prev.sandboxKnobs,
+    milestones: params.milestones,
+  };
+}
+
+export function restoreModeInteractionFromPersisted(state: O10mModesPersistedState): ModeInteractionRequest {
+  return {
+    baseMode: state.baseMode,
+    scenarioId: state.scenarioId,
+    challengeModeIds: state.challengeModeIds,
+    scenarioModeEnabled: state.baseMode === 'scenario' || Boolean(state.scenarioId),
+    sandboxProfileId: state.sandboxProfileId,
+    sandboxKnobs: state.sandboxKnobs,
+    chainId: state.chainProgress?.chainId ?? null,
+    chainStepIndex: state.chainProgress?.activeStepIndex,
+    chainProgress: state.chainProgress,
+  };
+}
+
+export function attachO10mModesProgressToGameState<T extends Record<string, unknown>>(
+  gameState: T,
+  persisted: O10mModesPersistedState,
+): T & { o10mModesProgress: O10mModesPersistedState } {
+  return { ...gameState, [O10M_MODES_GAME_STATE_KEY]: persisted };
+}
+
+export function readO10mModesProgressFromGameState(gameState: unknown): O10mModesPersistedState | null {
+  if (!gameState || typeof gameState !== 'object') return null;
+  const raw = (gameState as Record<string, unknown>)[O10M_MODES_GAME_STATE_KEY];
+  return migrateO10mModesPersistedState(raw);
+}
+
+export function ensureChainProgressOnLoad(
+  state: O10mModesPersistedState,
+  chainId: string,
+): O10mModesPersistedState {
+  if (state.chainProgress?.chainId === chainId) return state;
+  const fresh = initializeChainProgress(chainId);
+  return fresh ? { ...state, chainProgress: fresh } : state;
+}

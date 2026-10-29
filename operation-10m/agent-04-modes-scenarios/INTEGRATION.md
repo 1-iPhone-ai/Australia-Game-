@@ -26,6 +26,9 @@ Canonical merge path (Agent 25 only): append exports from `src/index.ts` into `(
 
 Uses the same shapes as `ScenarioDefinition`, `GameModeSelection`, and scenario objective evaluators. Standalone copies live in `src/types.ts` until assembly replaces imports with canonical types.
 
+| `readO10mModesProgressFromGameState` | Load/migrate `gameState.o10mModesProgress` |
+| `buildO10mModesPersistedSnapshot` | Serialize active mode/scenario/chain/milestones for save |
+
 ## Assembly chunk (Agent 25)
 
 | Path | Purpose |
