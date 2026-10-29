@@ -253,6 +253,10 @@ export interface NationalLaborDemographicsState {
   mentorshipEnduranceOutlook?: NationalMentorshipEnduranceOutlook;
   subjectTrancheReadinessBrief?: NationalSubjectTrancheReadinessBrief;
   nationalWorkforceEnduranceIndex?: NationalWorkforceEnduranceIndex;
+  enduranceFlexibilityCouplingBrief?: NationalEnduranceFlexibilityCouplingBrief;
+  inclusionResilienceOutlook?: NationalInclusionResilienceOutlook;
+  subjectCommitReadinessBrief?: NationalSubjectCommitReadinessBrief;
+  nationalWorkforceTenacityIndex?: NationalWorkforceTenacityIndex;
 }
 
 export type MigrationShockKind =
@@ -969,6 +973,50 @@ export interface NationalWorkforceEnduranceIndex {
   enduranceIndex: number;
   band: WorkforceEnduranceBand;
   trancheDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type EnduranceFlexibilityCouplingBand = 'decoupled' | 'strained' | 'elastic' | 'anchored';
+
+export interface NationalEnduranceFlexibilityCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: EnduranceFlexibilityCouplingBand;
+  enduranceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type InclusionResilienceBand = 'fragile' | 'patchy' | 'cohesive' | 'robust';
+
+export interface NationalInclusionResilienceOutlook {
+  turn: number;
+  resilienceIndex: number;
+  band: InclusionResilienceBand;
+  enduranceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectCommitReadinessBand = 'held' | 'review' | 'commit_ready' | 'cleared';
+
+export interface NationalSubjectCommitReadinessBrief {
+  turn: number;
+  commitIndex: number;
+  band: SubjectCommitReadinessBand;
+  commitDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceTenacityBand = 'brittle' | 'thin' | 'firm' | 'fortified';
+
+export interface NationalWorkforceTenacityIndex {
+  turn: number;
+  tenacityIndex: number;
+  band: WorkforceTenacityBand;
+  commitDrag: number;
   summary: string;
   stewardNote: string;
 }
@@ -2103,7 +2151,11 @@ export type LaborGiQueryTopic =
   | 'durability_advocacy_coupling'
   | 'mentorship_endurance'
   | 'subject_tranche_readiness'
-  | 'workforce_endurance';
+  | 'workforce_endurance'
+  | 'endurance_flexibility_coupling'
+  | 'inclusion_resilience'
+  | 'subject_commit_readiness'
+  | 'workforce_tenacity';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -2168,6 +2220,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(mentorship endurance|mentorship pipeline endurance)/.test(q)) return 'mentorship_endurance';
   if (/\b(subject tranche readiness|tranche readiness subject)/.test(q)) return 'subject_tranche_readiness';
   if (/\b(workforce endurance|endurance index labor)/.test(q)) return 'workforce_endurance';
+  if (/\b(endurance flexibility|endurance-flexibility coupling)/.test(q)) return 'endurance_flexibility_coupling';
+  if (/\b(inclusion resilience|inclusion labor resilience)/.test(q)) return 'inclusion_resilience';
+  if (/\b(subject commit readiness|commit readiness subject)/.test(q)) return 'subject_commit_readiness';
+  if (/\b(workforce tenacity|tenacity index labor)/.test(q)) return 'workforce_tenacity';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -2698,6 +2754,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Endurance band ${state.nationalWorkforceEnduranceIndex?.band ?? 'unknown'}; tranche drag ${Math.round(state.nationalWorkforceEnduranceIndex?.trancheDrag ?? 0)}.`,
         inference: state.nationalWorkforceEnduranceIndex?.stewardNote || state.summary,
         projection: 'Endurance synthesizes advocacy coupling, mentorship endurance, and subject tranche readiness.'
+      };
+    case 'endurance_flexibility_coupling':
+      return {
+        topic,
+        headline: state.enduranceFlexibilityCouplingBrief?.summary || 'Endurance-flexibility coupling unavailable.',
+        fact: `Coupling band ${state.enduranceFlexibilityCouplingBrief?.band ?? 'unknown'}; endurance drag ${Math.round(state.enduranceFlexibilityCouplingBrief?.enduranceDrag ?? 0)}.`,
+        inference: state.enduranceFlexibilityCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce endurance with flexibility levers — bounded indices only.'
+      };
+    case 'inclusion_resilience':
+      return {
+        topic,
+        headline: state.inclusionResilienceOutlook?.summary || 'Inclusion resilience unavailable.',
+        fact: `Resilience band ${state.inclusionResilienceOutlook?.band ?? 'unknown'}; endurance drag ${Math.round(state.inclusionResilienceOutlook?.enduranceDrag ?? 0)}.`,
+        inference: state.inclusionResilienceOutlook?.stewardNote || state.outlook,
+        projection: 'Resilience blends inclusion levers with mentorship endurance — not literal headcount.'
+      };
+    case 'subject_commit_readiness':
+      return {
+        topic,
+        headline: state.subjectCommitReadinessBrief?.summary || 'Subject commit readiness unavailable.',
+        fact: `Commit band ${state.subjectCommitReadinessBrief?.band ?? 'unknown'}; commit drag ${Math.round(state.subjectCommitReadinessBrief?.commitDrag ?? 0)}.`,
+        inference: state.subjectCommitReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject commit readiness gates tranche against endurance for O10-173 scale commits.'
+      };
+    case 'workforce_tenacity':
+      return {
+        topic,
+        headline: state.nationalWorkforceTenacityIndex?.summary || 'Workforce tenacity unavailable.',
+        fact: `Tenacity band ${state.nationalWorkforceTenacityIndex?.band ?? 'unknown'}; commit drag ${Math.round(state.nationalWorkforceTenacityIndex?.commitDrag ?? 0)}.`,
+        inference: state.nationalWorkforceTenacityIndex?.stewardNote || state.summary,
+        projection: 'Tenacity synthesizes flexibility coupling, inclusion resilience, and subject commit readiness.'
       };
     default:
       return {
@@ -3327,6 +3415,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceEnduranceIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceEnduranceIndex.stewardNote);
+  }
+  if (
+    state.enduranceFlexibilityCouplingBrief?.band === 'decoupled' ||
+    state.enduranceFlexibilityCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.enduranceFlexibilityCouplingBrief.stewardNote);
+  }
+  if (
+    state.inclusionResilienceOutlook?.band === 'fragile' ||
+    state.inclusionResilienceOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.inclusionResilienceOutlook.stewardNote);
+  }
+  if (
+    state.subjectCommitReadinessBrief?.band === 'held' ||
+    state.subjectCommitReadinessBrief?.band === 'review'
+  ) {
+    hints.push(state.subjectCommitReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceTenacityIndex?.band === 'brittle' ||
+    state.nationalWorkforceTenacityIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceTenacityIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -8752,6 +8864,278 @@ export function computeNationalWorkforceEnduranceIndex(
 }
 
 
+// --- source: endurance-flexibility-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type EnduranceFlexibilityCouplingBand,
+  type NationalEnduranceFlexibilityCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalWorkforceEnduranceIndex
+} from './types';
+
+function couplingBand(index: number): EnduranceFlexibilityCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'elastic';
+  return 'anchored';
+}
+
+export function computeNationalEnduranceFlexibilityCouplingBrief(
+  state: NationalLaborDemographicsState,
+  endurance: NationalWorkforceEnduranceIndex | null | undefined
+): NationalEnduranceFlexibilityCouplingBrief {
+  if (!state.enabled || !endurance) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      enduranceDrag: 0,
+      summary: 'Endurance-flexibility coupling idle — workforce endurance unavailable.',
+      stewardNote: 'Compute workforce endurance before flexibility coupling guidance.'
+    };
+  }
+
+  let flexibilityLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    flexibilityLift += flexibilityEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  flexibilityLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const enduranceDrag = v1014laborClamp(
+    endurance.trancheDrag * 0.48 +
+      (endurance.band === 'fragile' || endurance.band === 'thin' ? 11 : 3)
+  );
+  const enduranceLift =
+    endurance.band === 'steady' || endurance.band === 'hardened'
+      ? endurance.enduranceIndex * 0.24
+      : endurance.enduranceIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + flexibilityLift * 21 + enduranceLift - enduranceDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained endurance-flexibility link — ease flexibility levers before round-21 commit pushes.'
+      : band === 'anchored'
+        ? 'Anchored coupling — guard inclusion spikes that drain flexibility buffers.'
+        : 'Elastic coupling — pair flexibility packs with subject commit readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    enduranceDrag,
+    summary: `Endurance-flexibility coupling ${band} (index ${Math.round(couplingIndex)}); endurance drag ${Math.round(enduranceDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: inclusion-resilience-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type InclusionResilienceBand,
+  type NationalInclusionResilienceOutlook,
+  type NationalLaborDemographicsState,
+  type NationalMentorshipEnduranceOutlook
+} from './types';
+
+function resilienceBand(index: number): InclusionResilienceBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'cohesive';
+  return 'robust';
+}
+
+export function computeNationalInclusionResilienceOutlook(
+  state: NationalLaborDemographicsState,
+  mentorshipEndurance: NationalMentorshipEnduranceOutlook | null | undefined
+): NationalInclusionResilienceOutlook {
+  if (!state.enabled || !mentorshipEndurance) {
+    return {
+      turn: state.turn,
+      resilienceIndex: 50,
+      band: 'patchy',
+      enduranceDrag: 0,
+      summary: 'Inclusion resilience idle — mentorship endurance unavailable.',
+      stewardNote: 'Compute mentorship endurance before inclusion resilience guidance.'
+    };
+  }
+
+  let inclusionLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    inclusionLift += inclusionEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  inclusionLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const enduranceDrag = v1014laborClamp(
+    mentorshipEndurance.momentumDrag * 0.46 +
+      (mentorshipEndurance.band === 'depleted' || mentorshipEndurance.band === 'thin' ? 10 : 3)
+  );
+  const mentorshipLift =
+    mentorshipEndurance.band === 'sustained' || mentorshipEndurance.band === 'deep'
+      ? mentorshipEndurance.enduranceIndex * 0.2
+      : mentorshipEndurance.enduranceIndex * 0.1;
+
+  const resilienceIndex = v1014laborClamp(24 + inclusionLift * 22 + mentorshipLift - enduranceDrag);
+  const band = resilienceBand(resilienceIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'patchy'
+      ? 'Patchy inclusion resilience — deploy inclusion levers before subject commit assembly.'
+      : band === 'robust'
+        ? 'Robust resilience band — verify endurance-flexibility coupling before auto workforce pushes.'
+        : 'Cohesive resilience — align inclusion with participation equity gap checks.';
+
+  return {
+    turn: state.turn,
+    resilienceIndex,
+    band,
+    enduranceDrag,
+    summary: `National inclusion resilience ${band} (index ${Math.round(resilienceIndex)}); endurance drag ${Math.round(enduranceDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-commit-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectCommitReadinessBrief,
+  type NationalSubjectTrancheReadinessBrief,
+  type NationalWorkforceEnduranceIndex,
+  type SubjectCommitReadinessBand
+} from './types';
+
+function commitBand(index: number): SubjectCommitReadinessBand {
+  if (index <= 34) return 'held';
+  if (index <= 48) return 'review';
+  if (index <= 62) return 'commit_ready';
+  return 'cleared';
+}
+
+/** Round-21 subject commit readiness — tranche × endurance gate for scale commits. */
+export function computeNationalSubjectCommitReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectTranche: NationalSubjectTrancheReadinessBrief | null | undefined,
+  endurance: NationalWorkforceEnduranceIndex | null | undefined
+): NationalSubjectCommitReadinessBrief {
+  if (!state.enabled || !subjectTranche || !endurance) {
+    return {
+      turn: state.turn,
+      commitIndex: 50,
+      band: 'review',
+      commitDrag: 0,
+      summary: 'Subject commit readiness idle — subject tranche or endurance unavailable.',
+      stewardNote: 'Compute subject tranche readiness and workforce endurance before commit guidance.'
+    };
+  }
+
+  const commitDrag = v1014laborClamp(
+    subjectTranche.trancheDrag * 0.38 +
+      endurance.trancheDrag * 0.38 +
+      (subjectTranche.band === 'blocked' || endurance.band === 'fragile' ? 12 : 3)
+  );
+  const trancheLift =
+    subjectTranche.band === 'tranche_ready' || subjectTranche.band === 'cleared'
+      ? subjectTranche.trancheIndex * 0.27
+      : subjectTranche.trancheIndex * 0.14;
+  const enduranceLift =
+    endurance.band === 'steady' || endurance.band === 'hardened'
+      ? endurance.enduranceIndex * 0.25
+      : endurance.enduranceIndex * 0.12;
+
+  const commitIndex = v1014laborClamp(20 + trancheLift + enduranceLift - commitDrag);
+  const band = commitBand(commitIndex);
+
+  const stewardNote =
+    band === 'held' || band === 'review'
+      ? 'Review commit readiness — hold O10-173 scale commits until endurance-flexibility syncs.'
+      : band === 'cleared'
+        ? 'Cleared commit band — still monitor inclusion resilience during corridor peaks.'
+        : 'Commit-ready — pair with workforce tenacity index each assembly tranche.';
+
+  return {
+    turn: state.turn,
+    commitIndex,
+    band,
+    commitDrag,
+    summary: `Subject commit readiness ${band} (index ${Math.round(commitIndex)}); commit drag ${Math.round(commitDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-tenacity-index.ts ---
+  type NationalEnduranceFlexibilityCouplingBrief,
+  type NationalInclusionResilienceOutlook,
+  type NationalLaborDemographicsState,
+  type NationalSubjectCommitReadinessBrief,
+  type NationalWorkforceTenacityIndex,
+  type WorkforceTenacityBand
+} from './types';
+
+function tenacityBand(index: number): WorkforceTenacityBand {
+  if (index <= 34) return 'brittle';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'firm';
+  return 'fortified';
+}
+
+export function computeNationalWorkforceTenacityIndex(
+  state: NationalLaborDemographicsState,
+  flexibilityCoupling: NationalEnduranceFlexibilityCouplingBrief | null | undefined,
+  inclusionResilience: NationalInclusionResilienceOutlook | null | undefined,
+  subjectCommit: NationalSubjectCommitReadinessBrief | null | undefined
+): NationalWorkforceTenacityIndex {
+  if (!state.enabled || !flexibilityCoupling || !inclusionResilience || !subjectCommit) {
+    return {
+      turn: state.turn,
+      tenacityIndex: 50,
+      band: 'thin',
+      commitDrag: 0,
+      summary: 'Workforce tenacity idle — flexibility coupling, inclusion resilience, or subject commit unavailable.',
+      stewardNote: 'Compute round-21 depth stack before tenacity guidance.'
+    };
+  }
+
+  const commitDrag = v1014laborClamp(
+    subjectCommit.commitDrag * 0.35 +
+      flexibilityCoupling.enduranceDrag * 0.3 +
+      inclusionResilience.enduranceDrag * 0.25 +
+      (subjectCommit.band === 'held' || flexibilityCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const flexibilityLift =
+    flexibilityCoupling.band === 'elastic' || flexibilityCoupling.band === 'anchored'
+      ? flexibilityCoupling.couplingIndex * 0.2
+      : flexibilityCoupling.couplingIndex * 0.1;
+  const inclusionLift =
+    inclusionResilience.band === 'cohesive' || inclusionResilience.band === 'robust'
+      ? inclusionResilience.resilienceIndex * 0.18
+      : inclusionResilience.resilienceIndex * 0.09;
+  const commitLift =
+    subjectCommit.band === 'commit_ready' || subjectCommit.band === 'cleared'
+      ? subjectCommit.commitIndex * 0.22
+      : subjectCommit.commitIndex * 0.11;
+
+  const tenacityIndex = v1014laborClamp(18 + flexibilityLift + inclusionLift + commitLift - commitDrag);
+  const band = tenacityBand(tenacityIndex);
+
+  const stewardNote =
+    band === 'brittle' || band === 'thin'
+      ? 'Thin workforce tenacity — sequence endurance-flexibility, inclusion, and subject commit before post-99f2e72b tranche.'
+      : band === 'fortified'
+        ? 'Fortified tenacity — avoid corridor overload that breaks subject commit bands.'
+        : 'Firm tenacity — refresh subject commit checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    tenacityIndex,
+    band,
+    commitDrag,
+    summary: `National workforce tenacity ${band} (index ${Math.round(tenacityIndex)}); commit drag ${Math.round(commitDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -9507,6 +9891,25 @@ export function computeNationalLaborDemographics(
     state.mentorshipEnduranceOutlook,
     state.subjectTrancheReadinessBrief
   );
+  state.enduranceFlexibilityCouplingBrief = computeNationalEnduranceFlexibilityCouplingBrief(
+    state,
+    state.nationalWorkforceEnduranceIndex
+  );
+  state.inclusionResilienceOutlook = computeNationalInclusionResilienceOutlook(
+    state,
+    state.mentorshipEnduranceOutlook
+  );
+  state.subjectCommitReadinessBrief = computeNationalSubjectCommitReadinessBrief(
+    state,
+    state.subjectTrancheReadinessBrief,
+    state.nationalWorkforceEnduranceIndex
+  );
+  state.nationalWorkforceTenacityIndex = computeNationalWorkforceTenacityIndex(
+    state,
+    state.enduranceFlexibilityCouplingBrief,
+    state.inclusionResilienceOutlook,
+    state.subjectCommitReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -9853,6 +10256,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceEnduranceIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.enduranceFlexibilityCouplingBrief?.band === 'decoupled' ||
+      state.enduranceFlexibilityCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.enduranceFlexibilityCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.inclusionResilienceOutlook?.band === 'fragile' ||
+      state.inclusionResilienceOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.inclusionResilienceOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectCommitReadinessBrief?.band === 'held' ||
+      state.subjectCommitReadinessBrief?.band === 'review') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectCommitReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceTenacityIndex?.band === 'brittle' ||
+      state.nationalWorkforceTenacityIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceTenacityIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -11057,6 +11488,66 @@ export function runV1014LaborDemographicsSelfTests(): {
     'endurance steward note'
   );
   check('R2016', advocacyEaseForRegion('NSW', 'technology') > 0, 'advocacy ease for region');
+
+  check('R2101', Boolean(r1.state.enduranceFlexibilityCouplingBrief?.band), 'endurance flexibility on state');
+  check(
+    'R2102',
+    (r1.state.enduranceFlexibilityCouplingBrief?.enduranceDrag ?? 0) >= 0,
+    'endurance flexibility drag'
+  );
+  check('R2103', Boolean(r1.state.inclusionResilienceOutlook?.band), 'inclusion resilience on state');
+  check('R2104', (r1.state.inclusionResilienceOutlook?.enduranceDrag ?? 0) >= 0, 'inclusion endurance drag');
+  check('R2105', Boolean(r1.state.subjectCommitReadinessBrief?.band), 'subject commit on state');
+  check('R2106', Boolean(r1.state.nationalWorkforceTenacityIndex?.band), 'workforce tenacity on state');
+  check(
+    'R2107',
+    detectLaborDemographicsQuery('endurance flexibility coupling') === 'endurance_flexibility_coupling',
+    'GI endurance flexibility detect'
+  );
+  check(
+    'R2108',
+    detectLaborDemographicsQuery('inclusion resilience') === 'inclusion_resilience',
+    'GI inclusion resilience detect'
+  );
+  check(
+    'R2109',
+    detectLaborDemographicsQuery('subject commit readiness') === 'subject_commit_readiness',
+    'GI subject commit detect'
+  );
+  check(
+    'R2110',
+    detectLaborDemographicsQuery('workforce tenacity') === 'workforce_tenacity',
+    'GI workforce tenacity detect'
+  );
+  check(
+    'R2111',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_tenacity').headline.length > 5,
+    'GI workforce tenacity answer'
+  );
+  const flexibilityCouplingOnly = computeNationalEnduranceFlexibilityCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceEnduranceIndex
+  );
+  check('R2112', flexibilityCouplingOnly.summary.length > 10, 'flexibility coupling standalone summary');
+  const inclusionOnly = computeNationalInclusionResilienceOutlook(r1.state, r1.state.mentorshipEnduranceOutlook);
+  check('R2113', inclusionOnly.band.length > 3, 'inclusion resilience band string');
+  const commitOnly = computeNationalSubjectCommitReadinessBrief(
+    r1.state,
+    r1.state.subjectTrancheReadinessBrief,
+    r1.state.nationalWorkforceEnduranceIndex
+  );
+  check('R2114', commitOnly.commitDrag >= 0, 'subject commit drag');
+  check(
+    'R2115',
+    computeNationalWorkforceTenacityIndex(
+      rHhBad.state,
+      rHhBad.state.enduranceFlexibilityCouplingBrief,
+      rHhBad.state.inclusionResilienceOutlook,
+      rHhBad.state.subjectCommitReadinessBrief
+    ).stewardNote.length > 8,
+    'tenacity steward note'
+  );
+  check('R2116', flexibilityEaseForRegion('NSW', 'technology') > 0, 'flexibility ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

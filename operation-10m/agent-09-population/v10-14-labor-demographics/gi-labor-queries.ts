@@ -67,7 +67,11 @@ export type LaborGiQueryTopic =
   | 'durability_advocacy_coupling'
   | 'mentorship_endurance'
   | 'subject_tranche_readiness'
-  | 'workforce_endurance';
+  | 'workforce_endurance'
+  | 'endurance_flexibility_coupling'
+  | 'inclusion_resilience'
+  | 'subject_commit_readiness'
+  | 'workforce_tenacity';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -132,6 +136,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(mentorship endurance|mentorship pipeline endurance)/.test(q)) return 'mentorship_endurance';
   if (/\b(subject tranche readiness|tranche readiness subject)/.test(q)) return 'subject_tranche_readiness';
   if (/\b(workforce endurance|endurance index labor)/.test(q)) return 'workforce_endurance';
+  if (/\b(endurance flexibility|endurance-flexibility coupling)/.test(q)) return 'endurance_flexibility_coupling';
+  if (/\b(inclusion resilience|inclusion labor resilience)/.test(q)) return 'inclusion_resilience';
+  if (/\b(subject commit readiness|commit readiness subject)/.test(q)) return 'subject_commit_readiness';
+  if (/\b(workforce tenacity|tenacity index labor)/.test(q)) return 'workforce_tenacity';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -662,6 +670,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Endurance band ${state.nationalWorkforceEnduranceIndex?.band ?? 'unknown'}; tranche drag ${Math.round(state.nationalWorkforceEnduranceIndex?.trancheDrag ?? 0)}.`,
         inference: state.nationalWorkforceEnduranceIndex?.stewardNote || state.summary,
         projection: 'Endurance synthesizes advocacy coupling, mentorship endurance, and subject tranche readiness.'
+      };
+    case 'endurance_flexibility_coupling':
+      return {
+        topic,
+        headline: state.enduranceFlexibilityCouplingBrief?.summary || 'Endurance-flexibility coupling unavailable.',
+        fact: `Coupling band ${state.enduranceFlexibilityCouplingBrief?.band ?? 'unknown'}; endurance drag ${Math.round(state.enduranceFlexibilityCouplingBrief?.enduranceDrag ?? 0)}.`,
+        inference: state.enduranceFlexibilityCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce endurance with flexibility levers — bounded indices only.'
+      };
+    case 'inclusion_resilience':
+      return {
+        topic,
+        headline: state.inclusionResilienceOutlook?.summary || 'Inclusion resilience unavailable.',
+        fact: `Resilience band ${state.inclusionResilienceOutlook?.band ?? 'unknown'}; endurance drag ${Math.round(state.inclusionResilienceOutlook?.enduranceDrag ?? 0)}.`,
+        inference: state.inclusionResilienceOutlook?.stewardNote || state.outlook,
+        projection: 'Resilience blends inclusion levers with mentorship endurance — not literal headcount.'
+      };
+    case 'subject_commit_readiness':
+      return {
+        topic,
+        headline: state.subjectCommitReadinessBrief?.summary || 'Subject commit readiness unavailable.',
+        fact: `Commit band ${state.subjectCommitReadinessBrief?.band ?? 'unknown'}; commit drag ${Math.round(state.subjectCommitReadinessBrief?.commitDrag ?? 0)}.`,
+        inference: state.subjectCommitReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject commit readiness gates tranche against endurance for O10-173 scale commits.'
+      };
+    case 'workforce_tenacity':
+      return {
+        topic,
+        headline: state.nationalWorkforceTenacityIndex?.summary || 'Workforce tenacity unavailable.',
+        fact: `Tenacity band ${state.nationalWorkforceTenacityIndex?.band ?? 'unknown'}; commit drag ${Math.round(state.nationalWorkforceTenacityIndex?.commitDrag ?? 0)}.`,
+        inference: state.nationalWorkforceTenacityIndex?.stewardNote || state.summary,
+        projection: 'Tenacity synthesizes flexibility coupling, inclusion resilience, and subject commit readiness.'
       };
     default:
       return {

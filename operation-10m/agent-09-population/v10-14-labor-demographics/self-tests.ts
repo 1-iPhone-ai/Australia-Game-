@@ -134,6 +134,10 @@ import { computeNationalDurabilityAdvocacyCouplingBrief } from './durability-adv
 import { computeNationalMentorshipEnduranceOutlook } from './mentorship-endurance-outlook';
 import { computeNationalSubjectTrancheReadinessBrief } from './subject-tranche-readiness-brief';
 import { computeNationalWorkforceEnduranceIndex } from './national-workforce-endurance-index';
+import { computeNationalEnduranceFlexibilityCouplingBrief } from './endurance-flexibility-coupling-brief';
+import { computeNationalInclusionResilienceOutlook } from './inclusion-resilience-outlook';
+import { computeNationalSubjectCommitReadinessBrief } from './subject-commit-readiness-brief';
+import { computeNationalWorkforceTenacityIndex } from './national-workforce-tenacity-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -1269,6 +1273,66 @@ export function runV1014LaborDemographicsSelfTests(): {
     'endurance steward note'
   );
   check('R2016', advocacyEaseForRegion('NSW', 'technology') > 0, 'advocacy ease for region');
+
+  check('R2101', Boolean(r1.state.enduranceFlexibilityCouplingBrief?.band), 'endurance flexibility on state');
+  check(
+    'R2102',
+    (r1.state.enduranceFlexibilityCouplingBrief?.enduranceDrag ?? 0) >= 0,
+    'endurance flexibility drag'
+  );
+  check('R2103', Boolean(r1.state.inclusionResilienceOutlook?.band), 'inclusion resilience on state');
+  check('R2104', (r1.state.inclusionResilienceOutlook?.enduranceDrag ?? 0) >= 0, 'inclusion endurance drag');
+  check('R2105', Boolean(r1.state.subjectCommitReadinessBrief?.band), 'subject commit on state');
+  check('R2106', Boolean(r1.state.nationalWorkforceTenacityIndex?.band), 'workforce tenacity on state');
+  check(
+    'R2107',
+    detectLaborDemographicsQuery('endurance flexibility coupling') === 'endurance_flexibility_coupling',
+    'GI endurance flexibility detect'
+  );
+  check(
+    'R2108',
+    detectLaborDemographicsQuery('inclusion resilience') === 'inclusion_resilience',
+    'GI inclusion resilience detect'
+  );
+  check(
+    'R2109',
+    detectLaborDemographicsQuery('subject commit readiness') === 'subject_commit_readiness',
+    'GI subject commit detect'
+  );
+  check(
+    'R2110',
+    detectLaborDemographicsQuery('workforce tenacity') === 'workforce_tenacity',
+    'GI workforce tenacity detect'
+  );
+  check(
+    'R2111',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_tenacity').headline.length > 5,
+    'GI workforce tenacity answer'
+  );
+  const flexibilityCouplingOnly = computeNationalEnduranceFlexibilityCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceEnduranceIndex
+  );
+  check('R2112', flexibilityCouplingOnly.summary.length > 10, 'flexibility coupling standalone summary');
+  const inclusionOnly = computeNationalInclusionResilienceOutlook(r1.state, r1.state.mentorshipEnduranceOutlook);
+  check('R2113', inclusionOnly.band.length > 3, 'inclusion resilience band string');
+  const commitOnly = computeNationalSubjectCommitReadinessBrief(
+    r1.state,
+    r1.state.subjectTrancheReadinessBrief,
+    r1.state.nationalWorkforceEnduranceIndex
+  );
+  check('R2114', commitOnly.commitDrag >= 0, 'subject commit drag');
+  check(
+    'R2115',
+    computeNationalWorkforceTenacityIndex(
+      rHhBad.state,
+      rHhBad.state.enduranceFlexibilityCouplingBrief,
+      rHhBad.state.inclusionResilienceOutlook,
+      rHhBad.state.subjectCommitReadinessBrief
+    ).stewardNote.length > 8,
+    'tenacity steward note'
+  );
+  check('R2116', flexibilityEaseForRegion('NSW', 'technology') > 0, 'flexibility ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

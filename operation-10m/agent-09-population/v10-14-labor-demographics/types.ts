@@ -249,6 +249,10 @@ export interface NationalLaborDemographicsState {
   mentorshipEnduranceOutlook?: NationalMentorshipEnduranceOutlook;
   subjectTrancheReadinessBrief?: NationalSubjectTrancheReadinessBrief;
   nationalWorkforceEnduranceIndex?: NationalWorkforceEnduranceIndex;
+  enduranceFlexibilityCouplingBrief?: NationalEnduranceFlexibilityCouplingBrief;
+  inclusionResilienceOutlook?: NationalInclusionResilienceOutlook;
+  subjectCommitReadinessBrief?: NationalSubjectCommitReadinessBrief;
+  nationalWorkforceTenacityIndex?: NationalWorkforceTenacityIndex;
 }
 
 export type MigrationShockKind =
@@ -965,6 +969,50 @@ export interface NationalWorkforceEnduranceIndex {
   enduranceIndex: number;
   band: WorkforceEnduranceBand;
   trancheDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type EnduranceFlexibilityCouplingBand = 'decoupled' | 'strained' | 'elastic' | 'anchored';
+
+export interface NationalEnduranceFlexibilityCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: EnduranceFlexibilityCouplingBand;
+  enduranceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type InclusionResilienceBand = 'fragile' | 'patchy' | 'cohesive' | 'robust';
+
+export interface NationalInclusionResilienceOutlook {
+  turn: number;
+  resilienceIndex: number;
+  band: InclusionResilienceBand;
+  enduranceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectCommitReadinessBand = 'held' | 'review' | 'commit_ready' | 'cleared';
+
+export interface NationalSubjectCommitReadinessBrief {
+  turn: number;
+  commitIndex: number;
+  band: SubjectCommitReadinessBand;
+  commitDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceTenacityBand = 'brittle' | 'thin' | 'firm' | 'fortified';
+
+export interface NationalWorkforceTenacityIndex {
+  turn: number;
+  tenacityIndex: number;
+  band: WorkforceTenacityBand;
+  commitDrag: number;
   summary: string;
   stewardNote: string;
 }
