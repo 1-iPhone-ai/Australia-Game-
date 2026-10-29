@@ -12,6 +12,7 @@ import {
 import { runV1014RegionalGridClimateScaleSelfTests } from '../modules/regional-grid-scenarios-climate-transition.ts';
 import { runAgent13StoragePermitScaleSelfTests } from '../modules/storage-permit-lifecycle.ts';
 import { runAgent13EmissionsWaterScaleSelfTests } from '../modules/emissions-water-credit-ledger.ts';
+import { runAgent13BiodiversityCircularScaleSelfTests } from '../modules/biodiversity-circular-recovery-ledger.ts';
 import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
@@ -129,6 +130,9 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const emissionsWater = runAgent13EmissionsWaterScaleSelfTests();
   ok(emissionsWater.failed === 0 && emissionsWater.passed >= 5);
+
+  const biodiversityCircular = runAgent13BiodiversityCircularScaleSelfTests();
+  ok(biodiversityCircular.failed === 0 && biodiversityCircular.passed >= 5);
 
   return { passed, failed, total: passed + failed };
 }

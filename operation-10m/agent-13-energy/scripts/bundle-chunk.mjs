@@ -24,6 +24,7 @@ const FILES = [
   'turn-simulation-depth.ts',
   'storage-permit-lifecycle.ts',
   'emissions-water-credit-ledger.ts',
+  'biodiversity-circular-recovery-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -32,6 +33,8 @@ const EXPORT_MANIFEST = [
   'V1014_INDUSTRIAL_ENERGY_AGENT',
   'V1014_STORAGE_FLEXIBILITY_CATALOG',
   'V1014_EMISSIONS_CREDIT_CATALOG',
+  'V1014_BIODIVERSITY_OFFSET_CATALOG',
+  'V1014_CIRCULAR_RECOVERY_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -52,6 +55,7 @@ const EXPORT_MANIFEST = [
   'runAgent13TurnSimulationDepthSelfTests',
   'runAgent13StoragePermitScaleSelfTests',
   'runAgent13EmissionsWaterScaleSelfTests',
+  'runAgent13BiodiversityCircularScaleSelfTests',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

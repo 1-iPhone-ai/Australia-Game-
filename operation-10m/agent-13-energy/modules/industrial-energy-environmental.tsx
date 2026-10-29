@@ -38,6 +38,12 @@ import {
   type V1014RegionalWaterLedger,
 } from './emissions-water-credit-ledger';
 import {
+  advanceRegionalCircularRecovery,
+  computeRegionalBiodiversityLedger,
+  type V1014RegionalBiodiversityLedger,
+  type V1014RegionalCircularLedger,
+} from './biodiversity-circular-recovery-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25506,6 +25512,10 @@ export interface V1014RegionalEnergyProfile {
   carbonCreditBand: string;
   emissionsPressureRelief: number;
   waterStressBand: string;
+  biodiversityStewardshipBand: string;
+  landStewardshipRelief: number;
+  circularRecoveryBand: string;
+  circularRecoveryRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25548,6 +25558,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalPermitLedgers: Record<string, V1014RegionalPermitLedger>;
   regionalEmissionsLedgers: Record<string, V1014RegionalEmissionsLedger>;
   regionalWaterLedgers: Record<string, V1014RegionalWaterLedger>;
+  regionalBiodiversityLedgers: Record<string, V1014RegionalBiodiversityLedger>;
+  regionalCircularLedgers: Record<string, V1014RegionalCircularLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25561,6 +25573,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalPermitMemory: Record<string, { utilized: number }>;
   regionalCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }>;
   regionalWaterMemory: Record<string, { allocationUsed: number }>;
+  regionalBiodiversityMemory: Record<string, { offsetBalance: number; stewardshipIndex: number }>;
+  regionalCircularMemory: Record<string, { recoveryIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25586,6 +25600,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalPermitMemory: {},
     regionalCarbonMemory: {},
     regionalWaterMemory: {},
+    regionalBiodiversityMemory: {},
+    regionalCircularMemory: {},
     history: [],
   };
 }
@@ -25603,6 +25619,9 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
     regionalPermitMemory: typeof raw.regionalPermitMemory === 'object' && raw.regionalPermitMemory ? raw.regionalPermitMemory : {},
     regionalCarbonMemory: typeof raw.regionalCarbonMemory === 'object' && raw.regionalCarbonMemory ? raw.regionalCarbonMemory : {},
     regionalWaterMemory: typeof raw.regionalWaterMemory === 'object' && raw.regionalWaterMemory ? raw.regionalWaterMemory : {},
+    regionalBiodiversityMemory:
+      typeof raw.regionalBiodiversityMemory === 'object' && raw.regionalBiodiversityMemory ? raw.regionalBiodiversityMemory : {},
+    regionalCircularMemory: typeof raw.regionalCircularMemory === 'object' && raw.regionalCircularMemory ? raw.regionalCircularMemory : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -25715,6 +25734,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalPermitLedgers: {},
       regionalEmissionsLedgers: {},
       regionalWaterLedgers: {},
+      regionalBiodiversityLedgers: {},
+      regionalCircularLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -25731,11 +25752,17 @@ export function computeIndustrialEnergyEnvironmentalState(
   const permitLedgers: Record<string, V1014RegionalPermitLedger> = {};
   const emissionsLedgers: Record<string, V1014RegionalEmissionsLedger> = {};
   const waterLedgers: Record<string, V1014RegionalWaterLedger> = {};
+  const biodiversityLedgers: Record<string, V1014RegionalBiodiversityLedger> = {};
+  const circularLedgers: Record<string, V1014RegionalCircularLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
   };
   const nextWaterMemory: Record<string, { allocationUsed: number }> = { ...persisted.regionalWaterMemory };
+  const nextBiodiversityMemory: Record<string, { offsetBalance: number; stewardshipIndex: number }> = {
+    ...persisted.regionalBiodiversityMemory,
+  };
+  const nextCircularMemory: Record<string, { recoveryIndex: number }> = { ...persisted.regionalCircularMemory };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
 
@@ -25831,6 +25858,29 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextWaterMemory[regionId] = waterStep.next;
     waterLedgers[regionId] = waterStep.ledger;
 
+    const biodiversityStep = computeRegionalBiodiversityLedger({
+      regionId,
+      extractionScore,
+      highRiskSiteCount: highRiskCount,
+      waterStressPressure: waterStep.ledger.pressureAdd,
+      emissionsPressureRelief: emissionsStep.ledger.pressureRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextBiodiversityMemory[regionId] || null,
+    });
+    nextBiodiversityMemory[regionId] = biodiversityStep.next;
+    biodiversityLedgers[regionId] = biodiversityStep.ledger;
+
+    const circularStep = advanceRegionalCircularRecovery({
+      regionId,
+      extractionScore,
+      renewableShareScore,
+      biodiversityBand: biodiversityStep.ledger.band,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextCircularMemory[regionId] || null,
+    });
+    nextCircularMemory[regionId] = circularStep.next;
+    circularLedgers[regionId] = circularStep.ledger;
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -25842,6 +25892,9 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure += permitStep.ledger.pressureAdd;
     pressure += waterStep.ledger.pressureAdd;
     pressure -= emissionsStep.ledger.pressureRelief;
+    pressure -= biodiversityStep.ledger.landStewardshipRelief;
+    pressure -= circularStep.ledger.circularRelief;
+    if (biodiversityStep.ledger.band === 'critical_loss') pressure += 5;
     pressure -= gridRecovery.pressureRelief;
     pressure -= storageFlex.gridStressRelief;
     pressure -= activeRules.reduce((a, r) => a + r.renewableRelief * Math.min(1, renewableShareScore / 55), 0) * 12;
@@ -25877,6 +25930,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       permitStep.ledger.summary,
       emissionsStep.ledger.summary,
       waterStep.ledger.summary,
+      biodiversityStep.ledger.summary,
+      circularStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -25965,6 +26020,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       carbonCreditBand: emissionsStep.ledger.band,
       emissionsPressureRelief: emissionsStep.ledger.pressureRelief,
       waterStressBand: waterStep.ledger.band,
+      biodiversityStewardshipBand: biodiversityStep.ledger.band,
+      landStewardshipRelief: biodiversityStep.ledger.landStewardshipRelief,
+      circularRecoveryBand: circularStep.ledger.band,
+      circularRecoveryRelief: circularStep.ledger.circularRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -26036,6 +26095,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalPermitLedgers: permitLedgers,
     regionalEmissionsLedgers: emissionsLedgers,
     regionalWaterLedgers: waterLedgers,
+    regionalBiodiversityLedgers: biodiversityLedgers,
+    regionalCircularLedgers: circularLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -26049,6 +26110,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalPermitMemory: nextPermitMemory,
     regionalCarbonMemory: nextCarbonMemory,
     regionalWaterMemory: nextWaterMemory,
+    regionalBiodiversityMemory: nextBiodiversityMemory,
+    regionalCircularMemory: nextCircularMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -26210,6 +26273,29 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
   check('EMISSIONS ledger relief', (rb.state.regions.SA?.emissionsPressureRelief || 0) > 0, String(rb.state.regions.SA?.emissionsPressureRelief));
   check('WATER stress band set', !!rb.state.regionalWaterLedgers.WA?.band, rb.state.regionalWaterLedgers.WA?.band || '');
   check('CARBON memory persisted', !!rb.persisted.regionalCarbonMemory.WA, String(rb.persisted.regionalCarbonMemory.WA?.creditBalance));
+
+  const circInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'care_country_partnership',
+      'industrial_symbiosis',
+      'waste_to_energy',
+      'rehabilitation_program',
+      'wetland_restoration',
+    ],
+  };
+  const rc5 = computeIndustrialEnergyEnvironmentalState(circInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check('BIODIVERSITY ledger tracked', !!rc5.state.regionalBiodiversityLedgers.WA?.band, rc5.state.regionalBiodiversityLedgers.WA?.band || '');
+  check(
+    'CIRCULAR recovery relief',
+    (rc5.state.regions.SA?.circularRecoveryRelief || 0) > 0,
+    String(rc5.state.regions.SA?.circularRecoveryRelief),
+  );
+  check(
+    'BIODIVERSITY memory persisted',
+    !!rc5.persisted.regionalBiodiversityMemory.WA,
+    String(rc5.persisted.regionalBiodiversityMemory.WA?.offsetBalance),
+  );
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');
