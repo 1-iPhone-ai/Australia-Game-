@@ -948,5 +948,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Concentrated transmission centrality — top layers dominate spillover mass.'
     });
   }
+  const transportTp: any = inputs.transportThroughput ?? inputs.transportInfrastructure?.throughput;
+  const flow = String(transportTp?.flowBand ?? transportTp?.throughputBand ?? '');
+  if (
+    (flow === 'collapsed' || flow === 'critical') &&
+    (state.transportSpilloverSummary != null || state.productivityBand === 'weak')
+  ) {
+    gates.push({
+      id: 'transport_throughput_collapsed',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Collapsed transport throughput aligns with weak macro productivity/transport read.'
+    });
+  }
+  const etp: any = inputs.energyTransitionPace ?? inputs.industrialEnergy?.transitionPace;
+  const transitionPaceBand = String(etp?.paceBand ?? etp?.transitionBand ?? '');
+  if (
+    (transitionPaceBand === 'forced' || transitionPaceBand === 'disruptive') &&
+    (state.energySpilloverSummary != null || state.climateSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'energy_transition_disruptive',
+      triggered: true,
+      severity: 'info',
+      summary: 'Disruptive energy transition pace coincides with strained energy/climate spillover.'
+    });
+  }
+  if (state.transmissionSynthesis?.band === 'elevated') {
+    gates.push({
+      id: 'transmission_synthesis_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated transmission synthesis — gross spillover mass is high across layers.'
+    });
+  }
   return gates;
 }

@@ -169,6 +169,16 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
       params?.citiesRegions?.momentum ??
       params?.metropolitanSystems?.growthMomentum ??
       params?.urbanRegions?.momentum,
+    transportThroughput:
+      params?.transportThroughput ??
+      params?.transportInfrastructure?.throughput ??
+      params?.infrastructure?.freightThroughput ??
+      params?.nationalInfrastructure?.throughput,
+    energyTransitionPace:
+      params?.energyTransitionPace ??
+      params?.industrialEnergy?.transitionPace ??
+      params?.energyEnvironment?.transition ??
+      params?.climatePolicy?.transitionPace,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };

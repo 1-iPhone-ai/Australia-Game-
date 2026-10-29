@@ -186,6 +186,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Expectations & metro stress',
     shockIds: ['high_inflation', 'housing_correction'],
     description: 'Deanchored inflation expectations with stalled metro growth (harness overlay).'
+  },
+  {
+    id: 'transport_energy_stress',
+    label: 'Transport & energy stress',
+    shockIds: ['commodity_bust', 'drought_ag_cycle'],
+    description: 'Collapsed transport throughput with disruptive energy transition pace (harness overlay).'
   }
 ];
 

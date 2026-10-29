@@ -52,6 +52,8 @@ import type { MacroEventCascadeSpillover } from './bridge-v1005-event-cascade.ts
 import type { MacroDemographicShiftSpillover } from './bridge-v1009-demographic-shift.ts';
 import type { MacroExpectationsAnchorSpillover } from './bridge-v1010-expectations-anchor.ts';
 import type { MacroMetroMomentumSpillover } from './bridge-v1011-metro-momentum.ts';
+import type { MacroTransportThroughputSpillover } from './bridge-v1012-transport-throughput.ts';
+import type { MacroEnergyTransitionPaceSpillover } from './bridge-v1013-energy-transition-pace.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -112,6 +114,8 @@ export function buildMacroTransmissionReport(params: {
   demographicShift?: MacroDemographicShiftSpillover;
   expectationsAnchor?: MacroExpectationsAnchorSpillover;
   metroMomentum?: MacroMetroMomentumSpillover;
+  transportThroughput?: MacroTransportThroughputSpillover;
+  energyTransitionPace?: MacroEnergyTransitionPaceSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -157,6 +161,8 @@ export function buildMacroTransmissionReport(params: {
   const demographicShift = params.demographicShift ?? ZERO_SPILLOVER;
   const expectationsAnchor = params.expectationsAnchor ?? ZERO_SPILLOVER;
   const metroMomentum = params.metroMomentum ?? ZERO_SPILLOVER;
+  const transportThroughput = params.transportThroughput ?? ZERO_SPILLOVER;
+  const energyTransitionPace = params.energyTransitionPace ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -561,6 +567,22 @@ export function buildMacroTransmissionReport(params: {
       metroMomentum.investmentNudge,
       metroMomentum.productivityNudge,
       metroMomentum.summary
+    ),
+    layer(
+      'v10.12_transport_throughput',
+      'Transport throughput',
+      transportThroughput.cycleNudge,
+      transportThroughput.investmentNudge,
+      transportThroughput.productivityNudge,
+      transportThroughput.summary
+    ),
+    layer(
+      'v10.13_energy_transition',
+      'Energy transition pace',
+      energyTransitionPace.cycleNudge,
+      energyTransitionPace.investmentNudge,
+      energyTransitionPace.productivityNudge,
+      energyTransitionPace.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

@@ -86,6 +86,14 @@ import {
   applyMacroMetroMomentumSpillover,
   readMacroMetroMomentumSpilloverFromV1011
 } from './bridge-v1011-metro-momentum.ts';
+import {
+  applyMacroTransportThroughputSpillover,
+  readMacroTransportThroughputSpilloverFromV1012
+} from './bridge-v1012-transport-throughput.ts';
+import {
+  applyMacroEnergyTransitionPaceSpillover,
+  readMacroEnergyTransitionPaceSpilloverFromV1013
+} from './bridge-v1013-energy-transition-pace.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
@@ -115,6 +123,7 @@ import { buildMacroTransmissionAttenuationSnapshot } from './macro-transmission-
 import { buildMacroTransmissionEnvelopeSnapshot } from './macro-transmission-envelope.ts';
 import { buildMacroTransmissionPersistenceSnapshot } from './macro-transmission-persistence.ts';
 import { buildMacroTransmissionCentralitySnapshot } from './macro-transmission-centrality.ts';
+import { buildMacroTransmissionSynthesisSnapshot } from './macro-transmission-synthesis.ts';
 import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
 import { V1014_MACRO_LIMITS } from './constants.ts';
 import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
@@ -232,6 +241,8 @@ export function computeNationalMacroEconomy(
   const demographicShiftSpillover = readMacroDemographicShiftSpilloverFromV1009(inputs);
   const expectationsAnchorSpillover = readMacroExpectationsAnchorSpilloverFromV1010(inputs);
   const metroMomentumSpillover = readMacroMetroMomentumSpilloverFromV1011(inputs);
+  const transportThroughputSpillover = readMacroTransportThroughputSpilloverFromV1012(inputs);
+  const energyTransitionPaceSpillover = readMacroEnergyTransitionPaceSpilloverFromV1013(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -286,7 +297,9 @@ export function computeNationalMacroEconomy(
   const withDemographicShift = applyMacroDemographicShiftSpillover(withEventCascade, demographicShiftSpillover);
   const withExpectationsAnchor = applyMacroExpectationsAnchorSpillover(withDemographicShift, expectationsAnchorSpillover);
   const withMetroMomentum = applyMacroMetroMomentumSpillover(withExpectationsAnchor, metroMomentumSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withMetroMomentum, pushEv);
+  const withTransportThroughput = applyMacroTransportThroughputSpillover(withMetroMomentum, transportThroughputSpillover);
+  const withEnergyTransitionPace = applyMacroEnergyTransitionPaceSpillover(withTransportThroughput, energyTransitionPaceSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withEnergyTransitionPace, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -368,7 +381,9 @@ export function computeNationalMacroEconomy(
     eventCascade: eventCascadeSpillover,
     demographicShift: demographicShiftSpillover,
     expectationsAnchor: expectationsAnchorSpillover,
-    metroMomentum: metroMomentumSpillover
+    metroMomentum: metroMomentumSpillover,
+    transportThroughput: transportThroughputSpillover,
+    energyTransitionPace: energyTransitionPaceSpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
@@ -394,6 +409,7 @@ export function computeNationalMacroEconomy(
   const transmissionEnvelope = buildMacroTransmissionEnvelopeSnapshot(transmissionReport);
   const transmissionPersistence = buildMacroTransmissionPersistenceSnapshot(transmissionReport);
   const transmissionCentrality = buildMacroTransmissionCentralitySnapshot(transmissionReport);
+  const transmissionSynthesis = buildMacroTransmissionSynthesisSnapshot(transmissionReport);
 
   const capacitySnapshot = buildMacroCapacitySnapshot({
     state: {
@@ -498,6 +514,8 @@ export function computeNationalMacroEconomy(
     demographicShiftSpilloverSummary: demographicShiftSpillover.summary,
     expectationsAnchorSpilloverSummary: expectationsAnchorSpillover.summary,
     metroMomentumSpilloverSummary: metroMomentumSpillover.summary,
+    transportThroughputSpilloverSummary: transportThroughputSpillover.summary,
+    energyTransitionPaceSpilloverSummary: energyTransitionPaceSpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,
@@ -522,6 +540,7 @@ export function computeNationalMacroEconomy(
     transmissionEnvelope,
     transmissionPersistence,
     transmissionCentrality,
+    transmissionSynthesis,
     transmissionReport,
     stressIndex: {
       score: 0,
