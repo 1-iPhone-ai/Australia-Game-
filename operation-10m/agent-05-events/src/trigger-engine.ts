@@ -128,6 +128,10 @@ import {
   OP10M_AGENT25_FULL_CHUNKS_HANDOFF_CLOSURE_WAVE_READY_FLAG,
   OP10M_SCALE_WAVE_FULL_CHUNKS_HANDOFF_CLOSURE_LATCH_FLAG,
 } from './compute-turn-scale-wave-full-chunks-handoff-closure-latch-coordinator.ts';
+import {
+  OP10M_AGENT25_FULL_CHUNKS_HANDOFF_CLOSURE_WAVE_SEALED_FLAG,
+  OP10M_SCALE_WAVE_FULL_CHUNKS_HANDOFF_CLOSURE_COMMIT_FLAG,
+} from './compute-turn-scale-wave-full-chunks-handoff-closure-commit-coordinator.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -598,6 +602,16 @@ export function evaluateRequirements(
       case 'agent25_full_chunks_handoff_closure_wave_ready':
         if (!sim.flags[OP10M_AGENT25_FULL_CHUNKS_HANDOFF_CLOSURE_WAVE_READY_FLAG]) {
           return { ok: false, reason: 'agent25 full-chunks handoff closure wave not ready' };
+        }
+        break;
+      case 'scale_wave_full_chunks_handoff_closure_commit':
+        if (!sim.flags[OP10M_SCALE_WAVE_FULL_CHUNKS_HANDOFF_CLOSURE_COMMIT_FLAG]) {
+          return { ok: false, reason: 'scale wave full-chunks handoff closure not committed' };
+        }
+        break;
+      case 'agent25_full_chunks_handoff_closure_wave_sealed':
+        if (!sim.flags[OP10M_AGENT25_FULL_CHUNKS_HANDOFF_CLOSURE_WAVE_SEALED_FLAG]) {
+          return { ok: false, reason: 'agent25 full-chunks handoff closure wave not sealed' };
         }
         break;
       default:
