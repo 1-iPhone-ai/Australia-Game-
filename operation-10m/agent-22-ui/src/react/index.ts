@@ -113,3 +113,7 @@ export { InterfaceLevelShiftDayCoachStrip } from './InterfaceLevelShiftDayCoachS
 export { PacedStaggerDeferredDayCoachStrip } from './PacedStaggerDeferredDayCoachStrip.js';
 export { LegacyNavMissingPatchDayCoachStrip } from './LegacyNavMissingPatchDayCoachStrip.js';
 export { GuidedConceptCountDayCoachStrip } from './GuidedConceptCountDayCoachStrip.js';
+export { ProgressionCoverageTierDayCoachStrip } from './ProgressionCoverageTierDayCoachStrip.js';
+export { RememberedPanelRosterDayCoachStrip } from './RememberedPanelRosterDayCoachStrip.js';
+export { CalmRecoverySuggestionDayCoachStrip } from './CalmRecoverySuggestionDayCoachStrip.js';
+export { MultiUnlockBatchDayCoachStrip } from './MultiUnlockBatchDayCoachStrip.js';

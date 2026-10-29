@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: cb3b2222bbb8e259
+// content-sha256-prefix: c2b7d738da2a68a8
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -955,6 +955,10 @@ export interface DayAdvanceUiEvolutionResult {
   pacedStaggerDeferredDayCoachCopy: string | null;
   legacyNavMissingPatchDayCoachCopy: string | null;
   guidedConceptCountDayCoachCopy: string | null;
+  progressionCoverageTierDayCoachCopy: string | null;
+  rememberedPanelRosterDayCoachCopy: string | null;
+  calmRecoverySuggestionDayCoachCopy: string | null;
+  multiUnlockBatchDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1629,6 +1633,26 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const progressionCoverageTierDayCoach = buildProgressionCoverageTierDayCoach({
+    snapshot: coverage,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const rememberedPanelRosterDayCoach = buildRememberedPanelRosterDayCoach({
+    rememberedPanelIds: persistedAfterCalm.rememberedPanelIds ?? [],
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const calmRecoverySuggestionDayCoach = buildCalmRecoverySuggestionDayCoach({
+    hint: calmHint,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const multiUnlockBatchDayCoach = buildMultiUnlockBatchDayCoach({
+    newlyUnlockedPanelIds,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1755,6 +1779,10 @@ export function tickEvolvingUiOnDayAdvance(
     pacedStaggerDeferredDayCoachCopy: pacedStaggerDeferredDayCoach.coachCopy,
     legacyNavMissingPatchDayCoachCopy: legacyNavMissingPatchDayCoach.coachCopy,
     guidedConceptCountDayCoachCopy: guidedConceptCountDayCoach.coachCopy,
+    progressionCoverageTierDayCoachCopy: progressionCoverageTierDayCoach.coachCopy,
+    rememberedPanelRosterDayCoachCopy: rememberedPanelRosterDayCoach.coachCopy,
+    calmRecoverySuggestionDayCoachCopy: calmRecoverySuggestionDayCoach.coachCopy,
+    multiUnlockBatchDayCoachCopy: multiUnlockBatchDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -6855,6 +6883,266 @@ export function buildGuidedConceptCountDayCoach(input: {
     conceptCount,
     coachCopy: `Day ${input.nextGameDay}: ${conceptCount} guided learning ${noun} active — related panels stay highlighted.`,
   };
+}
+
+// --- source: engine/progression-coverage-tier-day-coach.ts ---
+export interface ProgressionCoverageTierDayCoach {
+  tierLabel: ProgressionCoverageSnapshot['tierLabel'];
+  coachCopy: string | null;
+}
+
+const TIER_COPY: Record<ProgressionCoverageSnapshot['tierLabel'], string> = {
+  early: 'Early-game interface tier — onboarding highlights lead unlock order.',
+  mid: 'Mid-game interface tier — milestone unlocks drive the next panels.',
+  late: 'Late-game interface tier — most panels are visible or in preview.',
+};
+
+export function buildProgressionCoverageTierDayCoach(input: {
+  snapshot: ProgressionCoverageSnapshot;
+  nextGameDay: number;
+}): ProgressionCoverageTierDayCoach {
+  const base = TIER_COPY[input.snapshot.tierLabel];
+  const coachCopy = `Day ${input.nextGameDay}: ${base}`;
+  return {
+    tierLabel: input.snapshot.tierLabel,
+    coachCopy,
+  };
+}
+
+// --- source: engine/remembered-panel-roster-day-coach.ts ---
+export interface RememberedPanelRosterDayCoach {
+  rememberedCount: number;
+  coachCopy: string | null;
+}
+
+export function buildRememberedPanelRosterDayCoach(input: {
+  rememberedPanelIds: string[];
+  nextGameDay: number;
+}): RememberedPanelRosterDayCoach {
+  const ids = input.rememberedPanelIds;
+  if (!ids.length) {
+    return { rememberedCount: 0, coachCopy: null };
+  }
+  const labels = ids
+    .slice(0, 2)
+    .map(id => EVOLVING_UI_PANEL_BY_ID[id]?.label ?? id)
+    .join(', ');
+  const extra = ids.length > 2 ? ` (+${ids.length - 2} more)` : '';
+  return {
+    rememberedCount: ids.length,
+    coachCopy: `Day ${input.nextGameDay}: ${ids.length} panels remembered for quick return (${labels}${extra}).`,
+  };
+}
+
+// --- source: engine/calm-recovery-suggestion-day-coach.ts ---
+export interface CalmRecoverySuggestionDayCoach {
+  suggestCalmRecovery: boolean;
+  coachCopy: string | null;
+}
+
+export function buildCalmRecoverySuggestionDayCoach(input: {
+  hint: DayAdvanceCalmRecoveryHint;
+  nextGameDay: number;
+}): CalmRecoverySuggestionDayCoach {
+  if (!input.hint.suggestCalmRecovery || !input.hint.coachCopy) {
+    return { suggestCalmRecovery: false, coachCopy: null };
+  }
+  return {
+    suggestCalmRecovery: true,
+    coachCopy: `Day ${input.nextGameDay}: ${input.hint.coachCopy}`,
+  };
+}
+
+// --- source: engine/multi-unlock-batch-day-coach.ts ---
+export interface MultiUnlockBatchDayCoach {
+  unlockCount: number;
+  coachCopy: string | null;
+}
+
+export function buildMultiUnlockBatchDayCoach(input: {
+  newlyUnlockedPanelIds: string[];
+  nextGameDay: number;
+}): MultiUnlockBatchDayCoach {
+  const count = input.newlyUnlockedPanelIds.length;
+  if (count <= 1) {
+    return { unlockCount: count, coachCopy: null };
+  }
+  return {
+    unlockCount: count,
+    coachCopy: `Day ${input.nextGameDay}: ${count} interface panels unlocked together — screen reader announcements may batch.`,
+  };
+}
+
+// --- source: engine/round35-self-tests.ts ---
+export function runAgent22Round35SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r35_coverage_tier',
+    'progression coverage tier day coach',
+    (() => {
+      const snapshot = buildProgressionCoverageSnapshot(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY
+      );
+      const coach = buildProgressionCoverageTierDayCoach({ snapshot, nextGameDay: 2 });
+      return coach.tierLabel === 'early' && Boolean(coach.coachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r35_remembered_roster',
+    'remembered panel roster day coach',
+    (() => {
+      const coach = buildRememberedPanelRosterDayCoach({
+        rememberedPanelIds: ['nav_market', 'nav_map'],
+        nextGameDay: 4,
+      });
+      return coach.rememberedCount === 2 && Boolean(coach.coachCopy?.includes('Day 4'));
+    })()
+  );
+
+  check(
+    'r35_calm_suggest',
+    'calm recovery suggestion day coach',
+    (() => {
+      const coach = buildCalmRecoverySuggestionDayCoach({
+        hint: {
+          suggestCalmRecovery: true,
+          alreadyActive: false,
+          coachCopy: 'Busy unlock day — calm recovery can snooze coaches and widen spacing.',
+          patch: null,
+        },
+        nextGameDay: 6,
+      });
+      return coach.suggestCalmRecovery && Boolean(coach.coachCopy?.includes('Day 6'));
+    })()
+  );
+
+  check(
+    'r35_multi_unlock',
+    'multi unlock batch day coach',
+    (() => {
+      const coach = buildMultiUnlockBatchDayCoach({
+        newlyUnlockedPanelIds: ['a', 'b', 'c'],
+        nextGameDay: 7,
+      });
+      return coach.unlockCount === 3 && Boolean(coach.coachCopy?.includes('Day 7'));
+    })()
+  );
+
+  check(
+    'r35_tick_tier',
+    'tick exposes progression coverage tier day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.progressionCoverageTierDayCoachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r35_tick_remembered',
+    'tick exposes remembered panel roster day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.rememberedPanelRosterDayCoachCopy === 'string' || r.rememberedPanelRosterDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r35_tick_calm',
+    'tick exposes calm recovery suggestion day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' },
+        { gameDay: 6, turnCount: 6, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.calmRecoverySuggestionDayCoachCopy === 'string' || r.calmRecoverySuggestionDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r35_tick_multi_unlock',
+    'tick exposes multi unlock batch day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.multiUnlockBatchDayCoachCopy === 'string' || r.multiUnlockBatchDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r35_roster_empty',
+    'remembered roster null when empty',
+    (() => {
+      const coach = buildRememberedPanelRosterDayCoach({ rememberedPanelIds: [], nextGameDay: 1 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r35_multi_single',
+    'multi unlock null for single unlock',
+    (() => {
+      const coach = buildMultiUnlockBatchDayCoach({ newlyUnlockedPanelIds: ['one'], nextGameDay: 2 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r35_calm_inactive',
+    'calm suggestion null when not suggested',
+    (() => {
+      const coach = buildCalmRecoverySuggestionDayCoach({
+        hint: { suggestCalmRecovery: false, alreadyActive: false, coachCopy: null, patch: null },
+        nextGameDay: 3,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r35_tier_mid',
+    'mid tier label on day 8',
+    (() => {
+      const snapshot = buildProgressionCoverageSnapshot(
+        { gameDay: 8, turnCount: 8, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY
+      );
+      const coach = buildProgressionCoverageTierDayCoach({ snapshot, nextGameDay: 8 });
+      return coach.tierLabel === 'mid';
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round34-self-tests.ts ---
@@ -13390,6 +13678,18 @@ export function SimulationUiEvolutionBridge({
       {result.guidedConceptCountDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-guided-concept-day">{result.guidedConceptCountDayCoachCopy}</div>
       ) : null}
+      {result.progressionCoverageTierDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-coverage-tier-day">{result.progressionCoverageTierDayCoachCopy}</div>
+      ) : null}
+      {result.rememberedPanelRosterDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-remembered-roster-day">{result.rememberedPanelRosterDayCoachCopy}</div>
+      ) : null}
+      {result.calmRecoverySuggestionDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-calm-suggest-day">{result.calmRecoverySuggestionDayCoachCopy}</div>
+      ) : null}
+      {result.multiUnlockBatchDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-multi-unlock-day">{result.multiUnlockBatchDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -15440,7 +15740,7 @@ export function ContextualWidgetDayCoachStrip({
 }
 
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.34.0';
+export const AGENT_22_MODULE_VERSION = '1.35.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -15591,6 +15891,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round35 = runAgent22Round35SelfTests();
+  for (const r of round35.results) {
+    check(`agent22_round35_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round34 = runAgent22Round34SelfTests();

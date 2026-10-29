@@ -117,6 +117,10 @@ import { buildInterfaceLevelShiftDayCoach } from '../engine/interface-level-shif
 import { buildPacedStaggerDeferredDayCoach } from '../engine/paced-stagger-deferred-day-coach.js';
 import { buildLegacyNavMissingPatchDayCoach } from '../engine/legacy-nav-missing-patch-day-coach.js';
 import { buildGuidedConceptCountDayCoach } from '../engine/guided-concept-count-day-coach.js';
+import { buildProgressionCoverageTierDayCoach } from '../engine/progression-coverage-tier-day-coach.js';
+import { buildRememberedPanelRosterDayCoach } from '../engine/remembered-panel-roster-day-coach.js';
+import { buildCalmRecoverySuggestionDayCoach } from '../engine/calm-recovery-suggestion-day-coach.js';
+import { buildMultiUnlockBatchDayCoach } from '../engine/multi-unlock-batch-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -242,6 +246,10 @@ export interface DayAdvanceUiEvolutionResult {
   pacedStaggerDeferredDayCoachCopy: string | null;
   legacyNavMissingPatchDayCoachCopy: string | null;
   guidedConceptCountDayCoachCopy: string | null;
+  progressionCoverageTierDayCoachCopy: string | null;
+  rememberedPanelRosterDayCoachCopy: string | null;
+  calmRecoverySuggestionDayCoachCopy: string | null;
+  multiUnlockBatchDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -916,6 +924,26 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const progressionCoverageTierDayCoach = buildProgressionCoverageTierDayCoach({
+    snapshot: coverage,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const rememberedPanelRosterDayCoach = buildRememberedPanelRosterDayCoach({
+    rememberedPanelIds: persistedAfterCalm.rememberedPanelIds ?? [],
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const calmRecoverySuggestionDayCoach = buildCalmRecoverySuggestionDayCoach({
+    hint: calmHint,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const multiUnlockBatchDayCoach = buildMultiUnlockBatchDayCoach({
+    newlyUnlockedPanelIds,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1042,6 +1070,10 @@ export function tickEvolvingUiOnDayAdvance(
     pacedStaggerDeferredDayCoachCopy: pacedStaggerDeferredDayCoach.coachCopy,
     legacyNavMissingPatchDayCoachCopy: legacyNavMissingPatchDayCoach.coachCopy,
     guidedConceptCountDayCoachCopy: guidedConceptCountDayCoach.coachCopy,
+    progressionCoverageTierDayCoachCopy: progressionCoverageTierDayCoach.coachCopy,
+    rememberedPanelRosterDayCoachCopy: rememberedPanelRosterDayCoach.coachCopy,
+    calmRecoverySuggestionDayCoachCopy: calmRecoverySuggestionDayCoach.coachCopy,
+    multiUnlockBatchDayCoachCopy: multiUnlockBatchDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
