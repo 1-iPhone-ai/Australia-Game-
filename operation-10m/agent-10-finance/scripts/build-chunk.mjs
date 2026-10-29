@@ -135,6 +135,8 @@ const FILES = [
   'inflation/buffer-grant-reconciliation-outlook-coherence-inflation-latch.ts',
   'inflation/buffer-fiscal-reconciliation-outlook-coherence-inflation-latch.ts',
   'inflation/grant-sovereign-reconciliation-outlook-inflation-latch.ts',
+  'inflation/sovereign-grant-reconciliation-outlook-inflation-latch.ts',
+  'inflation/fiscal-buffer-reconciliation-outlook-coherence-inflation-latch.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
