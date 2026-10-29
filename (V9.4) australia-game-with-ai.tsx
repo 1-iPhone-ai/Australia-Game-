@@ -60003,6 +60003,167 @@ export function runCoPilotCategory9SelfTests(
   };
 }
 
+
+/**
+ * Operation 111 — Agent 13 (Turn Processing Engineer).
+ * Verifies V9.4 turn order resolution, 1v1 SET_TURN vs team ADVANCE_ACTOR_TURN paths,
+ * round wrap, payload overrides, and Co-Pilot non-executor advance guards.
+ */
+export function runTurnProcessingSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  const liveBase = (): any => ({
+    ...JSON.parse(JSON.stringify(initialGameState)),
+    gameMode: 'game',
+    currentTurn: 'player',
+    currentActorId: 'player',
+    humanPlayerId: 'player',
+    turnCounter: 1,
+    roundNumber: 1,
+    day: 1,
+    selectedMode: 'ai',
+    player: { id: 'player', money: 5000, actionsUsedThisTurn: 0, actionPoints: 3, currentRegion: 'Sydney' },
+    gameSettings: createDefaultGameSettings()
+  });
+
+  const advance = (state: any, order?: string[], fromCoPilotExecutor?: boolean) =>
+    gameStateReducer(state, {
+      type: 'ADVANCE_ACTOR_TURN',
+      payload: { turnOrder: order, fromCoPilotExecutor }
+    });
+
+  check('tp_resolve_default_1v1', 'resolveCoPilotTurnOrder defaults to player→ai in 1v1', () => {
+    const order = resolveCoPilotTurnOrder(liveBase());
+    return order.length === 2 && order[0] === 'player' && order[1] === 'ai' || JSON.stringify(order);
+  });
+
+  check('tp_resolve_default_team', 'resolveCoPilotTurnOrder falls back to four-actor team order when teams exist', () => {
+    const st = { ...liveBase(), teamsById: { t1: { id: 't1' }, t2: { id: 't2' } }, turnOrder: [] as string[] };
+    const order = resolveCoPilotTurnOrder(st);
+    return order.join(',') === 'player,ai,ally_ai,enemy_ai_2' || JSON.stringify(order);
+  });
+
+  check('tp_resolve_next_actor_cycle', 'resolveNextActorInOrder walks the configured order modulo length', () => {
+    const order = ['player', 'ally', 'ai'];
+    return resolveNextActorInOrder('player', order) === 'ally'
+      && resolveNextActorInOrder('ai', order) === 'player'
+      && resolveNextActorInOrder('missing', order) === 'ally'
+      || 'cycle mismatch';
+  });
+
+  check('tp_resolve_next_non_human', 'resolveNextNonHumanActorId skips human ids including custom humanPlayerId', () => {
+    const st = { ...liveBase(), humanPlayerId: 'adam', turnOrder: ['adam', 'ai', 'ally_ai'], currentActorId: 'adam' };
+    return resolveNextNonHumanActorId(st) === 'ai' && resolveNextNonHumanActorId({ ...st, currentActorId: 'ai' }) === 'ally_ai'
+      || 'skip order wrong';
+  });
+
+  check('tp_advance_1v1_alternation', 'ADVANCE_ACTOR_TURN alternates player/ai and increments turnCounter each step', () => {
+    const st = liveBase();
+    const order = ['player', 'ai'];
+    const a1 = advance(st, order, true);
+    const a2 = advance(a1, order, true);
+    return a1.currentActorId === 'ai' && a1.turnCounter === 2
+      && a2.currentActorId === 'player' && a2.turnCounter === 3
+      && a2.roundNumber === 2
+      || `${a1.currentActorId}/${a1.turnCounter}/${a1.roundNumber} → ${a2.currentActorId}/${a2.turnCounter}/${a2.roundNumber}`;
+  });
+
+  check('tp_advance_team_sequence', 'Team ADVANCE_ACTOR_TURN visits each actor once per lap in order', () => {
+    const TEAM = ['player', 'ai', 'ally_ai', 'enemy_ai_2'];
+    let st: any = {
+      ...liveBase(),
+      selectedMode: 'team_human_ai_vs_ai_ai',
+      teamsById: { team_adam: { id: 'team_adam' }, team_rose: { id: 'team_rose' } },
+      turnOrder: TEAM,
+      currentActorId: 'player',
+      turnCounter: 10,
+      roundNumber: 3
+    };
+    const seen: string[] = ['player'];
+    for (let i = 0; i < TEAM.length; i += 1) {
+      st = advance(st, TEAM, true);
+      seen.push(st.currentActorId);
+    }
+    const expected = ['player', 'ai', 'ally_ai', 'enemy_ai_2', 'player'];
+    return seen.join(',') === expected.join(',') && st.turnCounter === 14 && st.roundNumber === 4
+      || `seen=${seen.join(',')} tc=${st.turnCounter} round=${st.roundNumber}`;
+  });
+
+  check('tp_advance_menu_noop', 'ADVANCE_ACTOR_TURN is ignored in menu/end modes', () => {
+    const menu = { ...liveBase(), gameMode: 'menu' };
+    const after = advance(menu, ['player', 'ai'], true);
+    return after.currentActorId === menu.currentActorId && after.turnCounter === menu.turnCounter || 'menu state mutated';
+  });
+
+  check('tp_advance_rejects_ghost', 'ADVANCE_ACTOR_TURN rejects ghost/invalid next actors', () => {
+    const st = { ...liveBase(), turnOrder: ['player', 'ghost_actor_999'], currentActorId: 'player' };
+    const after = advance(st, ['player', 'ghost_actor_999'], true);
+    return after.currentActorId === 'player' && after.turnCounter === st.turnCounter || 'ghost advanced';
+  });
+
+  check('tp_set_turn_order_reducer', 'SET_TURN_ORDER replaces state.turnOrder when payload is an array', () => {
+    const custom = ['player', 'ally', 'rival'];
+    const after = gameStateReducer(liveBase(), { type: 'SET_TURN_ORDER', payload: custom });
+    return JSON.stringify(after.turnOrder) === JSON.stringify(custom) || JSON.stringify(after.turnOrder);
+  });
+
+  check('tp_set_turn_1v1_bumps_counter', 'SET_TURN player→ai in 1v1 bumps turnCounter and aligns currentActorId', () => {
+    const st = liveBase();
+    const after = gameStateReducer(st, { type: 'SET_TURN', payload: 'ai' });
+    return after.currentTurn === 'ai' && after.currentActorId === 'ai' && after.turnCounter === 2
+      || `${after.currentTurn}/${after.currentActorId}/${after.turnCounter}`;
+  });
+
+  check('tp_set_turn_team_preserves_actor', 'SET_TURN in team mode does not overwrite authoritative currentActorId', () => {
+    const st = {
+      ...liveBase(),
+      selectedMode: 'team_human_ai_vs_ai_ai',
+      teamsById: { team_adam: { id: 'team_adam' } },
+      currentActorId: 'ally_ai',
+      currentTurn: 'ai',
+      turnCounter: 5
+    };
+    const after = gameStateReducer(st, { type: 'SET_TURN', payload: 'player' });
+    return after.currentActorId === 'ally_ai' && after.currentTurn === 'player' && after.turnCounter === 6
+      || `${after.currentActorId}/${after.currentTurn}/${after.turnCounter}`;
+  });
+
+  check('tp_non_executor_blocked_on_human', 'Non-executor ADVANCE while Co-Pilot holds human turn is blocked', () => {
+    const st: any = {
+      ...liveBase(),
+      turnOrder: ['player', 'ai'],
+      takeoverSession: {
+        status: 'active',
+        claimHeld: true,
+        claimedTurnKey: 'player:1',
+        targetActorId: 'player',
+        sessionToken: 'tok_test',
+        currentTurnCount: 1
+      }
+    };
+    const blocked = advance(st, ['player', 'ai']);
+    const allowed = advance(st, ['player', 'ai'], true);
+    return blocked.currentActorId === 'player' && blocked.turnCounter === 1
+      && allowed.currentActorId === 'ai' && allowed.turnCounter === 2
+      || `blocked=${blocked.currentActorId}/${blocked.turnCounter} allowed=${allowed.currentActorId}/${allowed.turnCounter}`;
+  });
+
+  check('tp_is_human_turn_owner_custom_id', 'isCoPilotHumanTurnOwner recognizes custom humanPlayerId in turn order', () => {
+    const st = { ...liveBase(), humanPlayerId: 'adam', player: { ...liveBase().player, id: 'adam' } };
+    return isCoPilotHumanTurnOwner(st, 'adam') === true && isCoPilotHumanTurnOwner(st, 'ai') === false || 'owner mismatch';
+  });
+
+  return results;
+}
+
 /**
  * Main Diagnostic Self-Tests Runner for Human Co-Pilot AI Subsystem.
  */
@@ -136532,6 +136693,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'replay', label: 'Replay Studio', tier: 'quick', section: 'Replay Integrity', severity: 'CRITICAL', run: () => runReplayStudioSelfTests() },
   { id: 'intent', label: 'Player Intent', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runPlayerIntentLayerSelfTests() },
   { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
+  { id: 'turnproc', label: 'Turn Processing (O111 Agent 13)', tier: 'quick', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runTurnProcessingSelfTests() },
   { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
