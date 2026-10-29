@@ -1,12 +1,12 @@
 {
   "projectionId": "tranche-projection-full-chunks",
-  "dryRunAt": "2026-10-29T08:07:38.459Z",
+  "dryRunAt": "2026-10-29T08:12:24.044Z",
   "canonicalBaseCommit": "bc1adf3",
   "baselineAuditedFunctional": 389566,
-  "projectedAuditedFunctional": 1315487,
-  "deltaAuditedFunctional": 925921,
+  "projectedAuditedFunctional": 1356537,
+  "deltaAuditedFunctional": 966971,
   "baselinePhysicalLines": 419353,
-  "projectedPhysicalLines": 1374554,
+  "projectedPhysicalLines": 1417459,
   "branchHeadCount": 32,
   "branchesScannedExcludingIntegration": 31,
   "assemblyReadyRemote": 24,
@@ -84,7 +84,7 @@
     {
       "moduleId": "agent-02-turns-time",
       "slot": "pre-final-export",
-      "contentSha256": "a3eab7d77ee63f7715b9b96459225300ef92d670848853276d0c918c4a73560c"
+      "contentSha256": "6db9e6dd2ee401e0f7ee4d37edc17d33879a979c891a9f70efd5f7e1138a1eb3"
     },
     {
       "moduleId": "agent-03-research-tech",
@@ -99,7 +99,7 @@
     {
       "moduleId": "agent-05-events",
       "slot": "pre-final-export",
-      "contentSha256": "3a12592b2aa9d61791268f0dbb24f32e12a1c68ce17a9da7456edee42f61b1b8"
+      "contentSha256": "9d4d0b1503064a3979b3847eade2adba92f30c74d8a48401d0c6d23aab360178"
     },
     {
       "moduleId": "agent-06-macroeconomy",
