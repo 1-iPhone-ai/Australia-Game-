@@ -6,7 +6,8 @@
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
-    "test:agent20": "tsx operation-10m/agent-20-automation/tests/self-tests.ts"
+    "test:agent20": "tsx operation-10m/agent-20-automation/tests/self-tests.ts",
+    "build:agent20-chunk": "node operation-10m/agent-20-automation/scripts/build-chunk.mjs"
   },
   "dependencies": {
     "react": "19.3.1",

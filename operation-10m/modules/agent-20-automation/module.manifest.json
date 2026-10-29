@@ -1,0 +1,8 @@
+{
+  "moduleId": "agent-20-automation",
+  "slot": "append-only-self-tests",
+  "touchesSaveFormat": true,
+  "anchorComment": "O10_AGENT20_INTEGRATION_ANCHOR",
+  "sourceRoot": "operation-10m/agent-20-automation/src",
+  "regenerate": "node operation-10m/agent-20-automation/scripts/build-chunk.mjs"
+}

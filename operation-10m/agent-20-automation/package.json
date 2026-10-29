@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "test": "tsx tests/self-tests.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:chunk": "node scripts/build-chunk.mjs"
   },
   "devDependencies": {
     "@types/node": "22.18.12",

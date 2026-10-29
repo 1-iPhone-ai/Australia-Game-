@@ -47,3 +47,13 @@ cd operation-10m/agent-20-automation && npm install && npm test
 ```
 
 Expected: all `runO10Agent20ModuleSelfTests` cases pass (national steward + bridge + conditional + limits + logs + safe time advance).
+
+## Assembly chunk
+
+Regenerate the Agent 25 inline bundle:
+
+```bash
+npm run build:agent20-chunk
+```
+
+Output: `operation-10m/modules/agent-20-automation/chunk.tsx` between `OP10M_MODULE_BEGIN agent-20-automation` and `OP10M_MODULE_END agent-20-automation` (no top-level `import` lines). Manifest: `operation-10m/modules/agent-20-automation/module.manifest.json`.
