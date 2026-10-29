@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 45
+
+- Schema **`agent12/46`**: floating solar array export throughput, coastal rescue helicopter staging readiness, port battery swapping logistics share (`floatingSolarArrayExportPolicy`, `coastalRescueHelicopterStagingPolicy`, `portBatterySwappingLogisticsPolicy`)
+- Catalog: **615** assets, **149** corridors, **243** scenarios
+- Systems: `network/floating-solar-array-export-index.ts`, `operations/coastal-rescue-helicopter-staging-index.ts`, `productivity/port-battery-swapping-logistics-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 44
 
 - Schema **`agent12/45`**: marine kelp export throughput, remote dialysis supply staging readiness, rail automated inspection logistics share (`marineKelpExportPolicy`, `remoteDialysisSupplyStagingPolicy`, `railAutomatedInspectionLogisticsPolicy`)

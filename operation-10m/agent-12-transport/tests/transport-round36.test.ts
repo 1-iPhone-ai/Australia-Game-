@@ -37,13 +37,13 @@ describe('Agent 12 round 36 catalog', () => {
 });
 
 describe('Agent 12 round 36 systems', () => {
-  it('returns agent12/45 with wind cable, medevac heli, reef logistics', () => {
+  it('returns agent12/46 with wind cable, medevac heli, reef logistics', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(330), {
       offshoreWindCableExportPolicy: 'accelerate',
       medevacHelicopterStagingPolicy: 'surge',
       reefRestorationLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/45');
+    assert.equal(state.schemaVersion, 'agent12/46');
     assert.ok(state.nationalOffshoreWindCableExportIndex >= 5);
     assert.ok(state.nationalMedevacHelicopterStagingIndex >= 6);
     assert.ok(state.reefRestorationLogisticsShare >= 0.03);

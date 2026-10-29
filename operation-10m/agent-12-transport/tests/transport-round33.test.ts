@@ -37,13 +37,13 @@ describe('Agent 12 round 33 catalog', () => {
 });
 
 describe('Agent 12 round 33 systems', () => {
-  it('returns agent12/45 with green pellet, flood levee, zero drayage', () => {
+  it('returns agent12/46 with green pellet, flood levee, zero drayage', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(300), {
       greenIronPelletExportPolicy: 'accelerate',
       floodLeveeRailProtectionPolicy: 'harden',
       portZeroEmissionDrayagePolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/45');
+    assert.equal(state.schemaVersion, 'agent12/46');
     assert.ok(state.nationalGreenIronPelletExportIndex >= 5);
     assert.ok(state.nationalFloodLeveeRailProtectionIndex >= 6);
     assert.ok(state.portZeroEmissionDrayageShare >= 0.03);

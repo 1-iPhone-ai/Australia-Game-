@@ -417,8 +417,14 @@ export type RemoteDialysisSupplyStagingPolicy = 'baseline' | 'surge';
 
 export type RailAutomatedInspectionLogisticsPolicy = 'baseline' | 'expand';
 
+export type FloatingSolarArrayExportPolicy = 'baseline' | 'accelerate';
+
+export type CoastalRescueHelicopterStagingPolicy = 'baseline' | 'surge';
+
+export type PortBatterySwappingLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/45';
+  schemaVersion: 'agent12/46';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -744,6 +750,14 @@ export interface TransportInfrastructureState {
   railAutomatedInspectionLogisticsShare: number;
   nationalRailAutomatedInspectionLogisticsThroughputIndex: number;
   railAutomatedInspectionLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalFloatingSolarArrayExportIndex: number;
+  floatingSolarArrayExportByRegion: Record<AuRegionCode, number>;
+  coastalRescueHelicopterStagingShare: number;
+  nationalCoastalRescueHelicopterStagingIndex: number;
+  coastalRescueHelicopterStagingByRegion: Record<AuRegionCode, number>;
+  portBatterySwappingLogisticsShare: number;
+  nationalPortBatterySwappingLogisticsThroughputIndex: number;
+  portBatterySwappingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -869,6 +883,9 @@ export interface TransportInfrastructureOptions {
   marineKelpExportPolicy?: MarineKelpExportPolicy;
   remoteDialysisSupplyStagingPolicy?: RemoteDialysisSupplyStagingPolicy;
   railAutomatedInspectionLogisticsPolicy?: RailAutomatedInspectionLogisticsPolicy;
+  floatingSolarArrayExportPolicy?: FloatingSolarArrayExportPolicy;
+  coastalRescueHelicopterStagingPolicy?: CoastalRescueHelicopterStagingPolicy;
+  portBatterySwappingLogisticsPolicy?: PortBatterySwappingLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {

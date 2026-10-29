@@ -703,6 +703,23 @@ import {
   nationalRailAutomatedInspectionLogisticsThroughputIndex,
   railAutomatedInspectionLogisticsProductivityMultiplier,
 } from './rail-automated-inspection-logistics-index.ts';
+import {
+  computeFloatingSolarArrayExportByRegion,
+  floatingSolarArrayExportProductivityMultiplier,
+  nationalFloatingSolarArrayExportIndex,
+} from '../network/floating-solar-array-export-index.ts';
+import {
+  coastalRescueHelicopterStagingProductivityMultiplier,
+  computeCoastalRescueHelicopterStagingByRegion,
+  computeCoastalRescueHelicopterStagingShare,
+  nationalCoastalRescueHelicopterStagingIndex,
+} from '../operations/coastal-rescue-helicopter-staging-index.ts';
+import {
+  computePortBatterySwappingLogisticsShare,
+  computePortBatterySwappingLogisticsThroughputByRegion,
+  nationalPortBatterySwappingLogisticsThroughputIndex,
+  portBatterySwappingLogisticsProductivityMultiplier,
+} from './port-battery-swapping-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -2146,6 +2163,38 @@ export function computeTransportInfrastructureState(
     railAutomatedInspectionLogisticsShare,
     options?.railAutomatedInspectionLogisticsPolicy ?? 'baseline',
   );
+  const floatingSolarArrayExportByRegion = computeFloatingSolarArrayExportByRegion(ops);
+  const nationalFloatingSolar = nationalFloatingSolarArrayExportIndex(floatingSolarArrayExportByRegion);
+  const floatingSolarMult = floatingSolarArrayExportProductivityMultiplier(
+    nationalFloatingSolar,
+    options?.floatingSolarArrayExportPolicy ?? 'baseline',
+  );
+  const coastalRescueHelicopterStagingByRegion = computeCoastalRescueHelicopterStagingByRegion(
+    ops,
+    networkStress,
+  );
+  const nationalCoastalRescue = nationalCoastalRescueHelicopterStagingIndex(coastalRescueHelicopterStagingByRegion);
+  const coastalRescueHelicopterStagingShare = computeCoastalRescueHelicopterStagingShare(
+    ops,
+    options?.coastalRescueHelicopterStagingPolicy ?? 'baseline',
+  );
+  const coastalRescueMult = coastalRescueHelicopterStagingProductivityMultiplier(
+    coastalRescueHelicopterStagingShare,
+    options?.coastalRescueHelicopterStagingPolicy ?? 'baseline',
+  );
+  const portBatterySwappingLogisticsThroughputByRegion =
+    computePortBatterySwappingLogisticsThroughputByRegion(ops);
+  const nationalBatterySwap = nationalPortBatterySwappingLogisticsThroughputIndex(
+    portBatterySwappingLogisticsThroughputByRegion,
+  );
+  const portBatterySwappingLogisticsShare = computePortBatterySwappingLogisticsShare(
+    ops,
+    options?.portBatterySwappingLogisticsPolicy ?? 'baseline',
+  );
+  const batterySwapMult = portBatterySwappingLogisticsProductivityMultiplier(
+    portBatterySwappingLogisticsShare,
+    options?.portBatterySwappingLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -2235,6 +2284,9 @@ export function computeTransportInfrastructureState(
     const kelpBoost = (marineKelpExportByRegion[code] - 5) * 0.0024;
     const dialysisBoost = (remoteDialysisSupplyStagingByRegion[code] - 6) * 0.002;
     const railInspectionBoost = (railAutomatedInspectionLogisticsThroughputByRegion[code] - 2) * 0.0016;
+    const floatingSolarBoost = (floatingSolarArrayExportByRegion[code] - 5) * 0.0023;
+    const coastalRescueBoost = (coastalRescueHelicopterStagingByRegion[code] - 6) * 0.0019;
+    const batterySwapBoost = (portBatterySwappingLogisticsThroughputByRegion[code] - 2) * 0.0015;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -2323,7 +2375,10 @@ export function computeTransportInfrastructureState(
         verticalFulfillmentBoost +
         kelpBoost +
         dialysisBoost +
-        railInspectionBoost) *
+        railInspectionBoost +
+        floatingSolarBoost +
+        coastalRescueBoost +
+        batterySwapBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -2410,7 +2465,10 @@ export function computeTransportInfrastructureState(
       verticalFulfillmentMult *
       kelpMult *
       dialysisMult *
-      railInspectionMult;
+      railInspectionMult *
+      floatingSolarMult *
+      coastalRescueMult *
+      batterySwapMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -2520,7 +2578,10 @@ export function computeTransportInfrastructureState(
     nationalVerticalFulfillment * 0.003 +
     nationalMarineKelp * 0.003 +
     nationalDialysis * 0.003 +
-    nationalRailInspection * 0.003;
+    nationalRailInspection * 0.003 +
+    nationalFloatingSolar * 0.003 +
+    nationalCoastalRescue * 0.003 +
+    nationalBatterySwap * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -2535,7 +2596,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/45',
+    schemaVersion: 'agent12/46',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -2861,6 +2922,14 @@ export function computeTransportInfrastructureState(
     railAutomatedInspectionLogisticsShare,
     nationalRailAutomatedInspectionLogisticsThroughputIndex: nationalRailInspection,
     railAutomatedInspectionLogisticsThroughputByRegion,
+    nationalFloatingSolarArrayExportIndex: nationalFloatingSolar,
+    floatingSolarArrayExportByRegion,
+    coastalRescueHelicopterStagingShare,
+    nationalCoastalRescueHelicopterStagingIndex: nationalCoastalRescue,
+    coastalRescueHelicopterStagingByRegion,
+    portBatterySwappingLogisticsShare,
+    nationalPortBatterySwappingLogisticsThroughputIndex: nationalBatterySwap,
+    portBatterySwappingLogisticsThroughputByRegion,
     computeMs,
   };
 }
