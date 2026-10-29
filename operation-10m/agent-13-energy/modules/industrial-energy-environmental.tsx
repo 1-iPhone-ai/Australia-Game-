@@ -58,6 +58,13 @@ import {
   type V1014RegionalOffshoreMarineLedger,
 } from './offshore-marine-demand-response-ledger';
 import {
+  advanceRegionalGridFirming,
+  computeRegionalCcsHubLedger,
+  scoreAgent13CcsFirmingGIAlignment,
+  type V1014RegionalCcsHubLedger,
+  type V1014RegionalGridFirmingLedger,
+} from './carbon-capture-grid-firming-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25538,6 +25545,10 @@ export interface V1014RegionalEnergyProfile {
   offshoreRenewableRelief: number;
   demandResponseBand: string;
   demandFlexRelief: number;
+  ccsHubBand: string;
+  ccsEmissionsRelief: number;
+  gridFirmingBand: string;
+  gridFirmingRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25586,6 +25597,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalMineralsLedgers: Record<string, V1014RegionalMineralsLedger>;
   regionalOffshoreLedgers: Record<string, V1014RegionalOffshoreMarineLedger>;
   regionalDemandResponseLedgers: Record<string, V1014RegionalDemandResponseLedger>;
+  regionalCcsLedgers: Record<string, V1014RegionalCcsHubLedger>;
+  regionalFirmingLedgers: Record<string, V1014RegionalGridFirmingLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25605,6 +25618,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalMineralsMemory: Record<string, { securityIndex: number }>;
   regionalOffshoreMemory: Record<string, { leaseBalance: number; marineIndex: number }>;
   regionalDemandResponseMemory: Record<string, { flexIndex: number }>;
+  regionalCcsMemory: Record<string, { injectionBalance: number; captureIndex: number }>;
+  regionalFirmingMemory: Record<string, { firmingIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25636,6 +25651,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalMineralsMemory: {},
     regionalOffshoreMemory: {},
     regionalDemandResponseMemory: {},
+    regionalCcsMemory: {},
+    regionalFirmingMemory: {},
     history: [],
   };
 }
@@ -25663,6 +25680,9 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalDemandResponseMemory === 'object' && raw.regionalDemandResponseMemory
         ? raw.regionalDemandResponseMemory
         : {},
+    regionalCcsMemory: typeof raw.regionalCcsMemory === 'object' && raw.regionalCcsMemory ? raw.regionalCcsMemory : {},
+    regionalFirmingMemory:
+      typeof raw.regionalFirmingMemory === 'object' && raw.regionalFirmingMemory ? raw.regionalFirmingMemory : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -25781,6 +25801,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalMineralsLedgers: {},
       regionalOffshoreLedgers: {},
       regionalDemandResponseLedgers: {},
+      regionalCcsLedgers: {},
+      regionalFirmingLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -25803,6 +25825,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const mineralsLedgers: Record<string, V1014RegionalMineralsLedger> = {};
   const offshoreLedgers: Record<string, V1014RegionalOffshoreMarineLedger> = {};
   const demandResponseLedgers: Record<string, V1014RegionalDemandResponseLedger> = {};
+  const ccsLedgers: Record<string, V1014RegionalCcsHubLedger> = {};
+  const firmingLedgers: Record<string, V1014RegionalGridFirmingLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -25820,6 +25844,10 @@ export function computeIndustrialEnergyEnvironmentalState(
     ...persisted.regionalOffshoreMemory,
   };
   const nextDemandResponseMemory: Record<string, { flexIndex: number }> = { ...persisted.regionalDemandResponseMemory };
+  const nextCcsMemory: Record<string, { injectionBalance: number; captureIndex: number }> = {
+    ...persisted.regionalCcsMemory,
+  };
+  const nextFirmingMemory: Record<string, { firmingIndex: number }> = { ...persisted.regionalFirmingMemory };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
 
@@ -25982,6 +26010,30 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextDemandResponseMemory[regionId] = demandStep.next;
     demandResponseLedgers[regionId] = demandStep.ledger;
 
+    const ccsStep = computeRegionalCcsHubLedger({
+      regionId,
+      extractionScore,
+      emissionsPressureRelief: emissionsStep.ledger.pressureRelief,
+      netEmissionsIndex: emissionsStep.ledger.netEmissionsIndex,
+      demandFlexRelief: demandStep.ledger.demandFlexRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextCcsMemory[regionId] || null,
+    });
+    nextCcsMemory[regionId] = ccsStep.next;
+    ccsLedgers[regionId] = ccsStep.ledger;
+
+    const firmingStep = advanceRegionalGridFirming({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      renewableShareScore,
+      ccsBand: ccsStep.ledger.band,
+      offshoreRenewableRelief: offshoreStep.ledger.offshoreRenewableRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextFirmingMemory[regionId] || null,
+    });
+    nextFirmingMemory[regionId] = firmingStep.next;
+    firmingLedgers[regionId] = firmingStep.ledger;
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -25999,6 +26051,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= mineralsStep.ledger.mineralsSupplyRelief;
     pressure -= offshoreStep.ledger.offshoreRenewableRelief;
     pressure -= demandStep.ledger.demandFlexRelief;
+    pressure -= ccsStep.ledger.ccsEmissionsRelief;
+    pressure -= firmingStep.ledger.gridFirmingRelief;
     if (biodiversityStep.ledger.band === 'critical_loss') pressure += 5;
     pressure -= gridRecovery.pressureRelief;
     pressure -= storageFlex.gridStressRelief;
@@ -26041,6 +26095,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       mineralsStep.ledger.summary,
       offshoreStep.ledger.summary,
       demandStep.ledger.summary,
+      ccsStep.ledger.summary,
+      firmingStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -26141,6 +26197,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       offshoreRenewableRelief: offshoreStep.ledger.offshoreRenewableRelief,
       demandResponseBand: demandStep.ledger.band,
       demandFlexRelief: demandStep.ledger.demandFlexRelief,
+      ccsHubBand: ccsStep.ledger.band,
+      ccsEmissionsRelief: ccsStep.ledger.ccsEmissionsRelief,
+      gridFirmingBand: firmingStep.ledger.band,
+      gridFirmingRelief: firmingStep.ledger.gridFirmingRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -26218,6 +26278,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalMineralsLedgers: mineralsLedgers,
     regionalOffshoreLedgers: offshoreLedgers,
     regionalDemandResponseLedgers: demandResponseLedgers,
+    regionalCcsLedgers: ccsLedgers,
+    regionalFirmingLedgers: firmingLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -26237,6 +26299,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalMineralsMemory: nextMineralsMemory,
     regionalOffshoreMemory: nextOffshoreMemory,
     regionalDemandResponseMemory: nextDemandResponseMemory,
+    regionalCcsMemory: nextCcsMemory,
+    regionalFirmingMemory: nextFirmingMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -26479,6 +26543,35 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     demandBand: ro7.state.regions.TAS?.demandResponseBand,
   });
   check('OFFSHORE GI alignment', giOff.relevanceDelta > 0.5, giOff.reason || '');
+
+  const ccsInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'industrial_ccs_cluster',
+      'co2_storage_hub',
+      'pumped_hydro',
+      'long_duration_battery',
+      'direct_air_capture',
+    ],
+  };
+  const rc8 = computeIndustrialEnergyEnvironmentalState(ccsInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check('CCS ledger tracked', !!rc8.state.regionalCcsLedgers.SA?.band, rc8.state.regionalCcsLedgers.SA?.band || '');
+  check(
+    'FIRMING relief',
+    (rc8.state.regions.SA?.gridFirmingRelief || 0) > 0,
+    String(rc8.state.regions.SA?.gridFirmingRelief),
+  );
+  check(
+    'CCS memory persisted',
+    !!rc8.persisted.regionalCcsMemory.SA,
+    String(rc8.persisted.regionalCcsMemory.SA?.captureIndex),
+  );
+  const giCcs = scoreAgent13CcsFirmingGIAlignment({
+    actionText: 'Industrial CCS cluster with pumped hydro firming',
+    ccsBand: rc8.state.regions.SA?.ccsHubBand,
+    firmingBand: rc8.state.regions.SA?.gridFirmingBand,
+  });
+  check('CCS GI alignment', giCcs.relevanceDelta > 0.5, giCcs.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

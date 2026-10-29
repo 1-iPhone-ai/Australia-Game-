@@ -8,6 +8,7 @@ export * from './modules/emissions-water-credit-ledger';
 export * from './modules/biodiversity-circular-recovery-ledger';
 export * from './modules/hydrogen-critical-minerals-ledger';
 export * from './modules/offshore-marine-demand-response-ledger';
+export * from './modules/carbon-capture-grid-firming-ledger';
 export * from './modules/turn-simulation-depth';
 export * from './modules/v94-type-stubs';
 export * from './modules/industrial-energy-environmental';

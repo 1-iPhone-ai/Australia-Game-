@@ -20,6 +20,11 @@ import {
   V1014_OFFSHORE_DEMAND_TURN_SCENARIOS,
 } from '../modules/offshore-marine-demand-response-ledger.ts';
 import {
+  runAgent13CcsFirmingScaleSelfTests,
+  runAgent13CcsFirmingTurnScenario,
+  V1014_CCS_FIRMING_TURN_SCENARIOS,
+} from '../modules/carbon-capture-grid-firming-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -151,6 +156,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const offTurn = runAgent13OffshoreDemandTurnScenario(V1014_OFFSHORE_DEMAND_TURN_SCENARIOS[0]);
   ok(offTurn.passed);
+
+  const ccsFirming = runAgent13CcsFirmingScaleSelfTests();
+  ok(ccsFirming.failed === 0 && ccsFirming.passed >= 7);
+
+  const ccsTurn = runAgent13CcsFirmingTurnScenario(V1014_CCS_FIRMING_TURN_SCENARIOS[0]);
+  ok(ccsTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

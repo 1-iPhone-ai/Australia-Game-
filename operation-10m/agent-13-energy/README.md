@@ -15,6 +15,7 @@ Modular **V10.14 SECTION 20AL** slice: extraction sites, renewable assets, envir
 | Biodiversity & circular recovery (scale wave r5) | `modules/biodiversity-circular-recovery-ledger.ts` |
 | Hydrogen & critical minerals (scale wave r6) | `modules/hydrogen-critical-minerals-ledger.ts` |
 | Offshore marine & demand response (scale wave r7) | `modules/offshore-marine-demand-response-ledger.ts` |
+| Carbon capture & grid firming (scale wave r8) | `modules/carbon-capture-grid-firming-ledger.ts` |
 | Climate hazards | `modules/climate-hazards.ts` |
 | Household links | `modules/household-industry-links.ts` |
 | Generator (catalog) | `../../scripts/generate-v1014-agent13.py` |

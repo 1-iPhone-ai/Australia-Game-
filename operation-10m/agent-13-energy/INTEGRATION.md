@@ -20,6 +20,7 @@ operation-10m/agent-13-energy/
   modules/biodiversity-circular-recovery-ledger.ts  # scale wave round 5
   modules/hydrogen-critical-minerals-ledger.ts      # scale wave round 6
   modules/offshore-marine-demand-response-ledger.ts # scale wave round 7
+  modules/carbon-capture-grid-firming-ledger.ts     # scale wave round 8
   modules/climate-hazards.ts
   modules/household-industry-links.ts
   modules/v94-type-stubs.ts                    # drop on merge
@@ -46,6 +47,7 @@ operation-10m/agent-13-energy/
 - Round 5 slices: `regionalBiodiversityMemory`, `regionalCircularMemory`
 - Round 6 slices: `regionalHydrogenMemory`, `regionalMineralsMemory`
 - Round 7 slices: `regionalOffshoreMemory`, `regionalDemandResponseMemory`
+- Round 8 slices: `regionalCcsMemory`, `regionalFirmingMemory`
 - Regression id: `v1014_energy` → `runV1014IndustrialEnergyEnvironmentalSelfTests()`
 
 ## Boundaries
