@@ -1441,6 +1441,52 @@ export function evaluateMacroConsistencyGates(
       summary: 'Steep transmission gradient after wave 42 export layers — spillover mass is concentrated.'
     });
   }
+  const wave43Ui: any =
+    inputs.uiResponsivenessWave43Export ??
+    inputs.uiResponsiveness?.wave43Export ??
+    inputs.gameUi?.responsivenessWave43Export;
+  const round43Ready = Boolean(
+    wave43Ui?.round43Ready ?? wave43Ui?.payload?.round43Ready ?? wave43Ui?.exportReady
+  );
+  if (
+    wave43Ui &&
+    !round43Ready &&
+    (state.uiSpilloverSummary != null || state.uiResponsivenessWave43ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'ui_responsiveness_wave43_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'UI responsiveness wave 43 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave43Dash: any =
+    inputs.dashboardClarityWave43Export ??
+    inputs.dashboardClarity?.wave43Export ??
+    inputs.dashboards?.clarityWave43Export;
+  const clarity43Ready = Boolean(
+    wave43Dash?.clarityReady ?? wave43Dash?.round43Ready ?? wave43Dash?.payload?.clarityReady
+  );
+  if (
+    wave43Dash &&
+    !clarity43Ready &&
+    (state.dashboardsSpilloverSummary != null || state.dashboardClarityWave43ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'dashboard_clarity_wave43_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Dashboard clarity wave 43 export not ready — macro spillover read is strained.'
+    });
+  }
+  if (state.transmissionEnvelope?.band === 'wide') {
+    gates.push({
+      id: 'transmission_envelope_wide_wave43',
+      triggered: true,
+      severity: 'info',
+      summary: 'Wide transmission envelope after wave 43 UI/dashboard export layers — spillover spread is elevated.'
+    });
+  }
   if (state.transmissionPersistence?.band === 'cohesive') {
     gates.push({
       id: 'transmission_persistence_cohesive',
