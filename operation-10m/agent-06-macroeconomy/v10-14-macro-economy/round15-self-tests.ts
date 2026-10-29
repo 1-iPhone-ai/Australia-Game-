@@ -46,8 +46,8 @@ export function runAgent06Round15SelfTests(): {
   record('R15-04', 'State exposes replay summary', integrated.state.replaySpilloverSummary != null, 'ok');
   record(
     'R15-05',
-    'Thirty-four transmission layers',
-    integrated.state.transmissionReport.layers.length === 34,
+    'Thirty-six transmission layers',
+    integrated.state.transmissionReport.layers.length === 36,
     String(integrated.state.transmissionReport.layers.length)
   );
 

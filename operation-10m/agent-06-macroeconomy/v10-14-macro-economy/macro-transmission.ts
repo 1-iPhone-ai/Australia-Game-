@@ -32,6 +32,8 @@ import type { MacroTradeLogisticsSpillover } from './bridge-v1015-logistics.ts';
 import type { MacroNegotiationSpillover } from './bridge-v1005-negotiation.ts';
 import type { MacroHouseholdConfidenceSpillover } from './bridge-v1013-confidence.ts';
 import type { MacroCapexSpillover } from './bridge-v1008-capex.ts';
+import type { MacroMonetarySpillover } from './bridge-v1010-monetary.ts';
+import type { MacroRentalSpillover } from './bridge-v1014-rental.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -72,6 +74,8 @@ export function buildMacroTransmissionReport(params: {
   negotiation?: MacroNegotiationSpillover;
   confidence?: MacroHouseholdConfidenceSpillover;
   capex?: MacroCapexSpillover;
+  monetary?: MacroMonetarySpillover;
+  rental?: MacroRentalSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -97,6 +101,8 @@ export function buildMacroTransmissionReport(params: {
   const negotiation = params.negotiation ?? ZERO_SPILLOVER;
   const confidence = params.confidence ?? ZERO_SPILLOVER;
   const capex = params.capex ?? ZERO_SPILLOVER;
+  const monetary = params.monetary ?? ZERO_SPILLOVER;
+  const rental = params.rental ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -341,6 +347,22 @@ export function buildMacroTransmissionReport(params: {
       capex.investmentNudge,
       capex.productivityNudge,
       capex.summary
+    ),
+    layer(
+      'v10.10_monetary',
+      'Monetary policy stance',
+      monetary.cycleNudge,
+      monetary.investmentNudge,
+      monetary.productivityNudge,
+      monetary.summary
+    ),
+    layer(
+      'v10.14_rental',
+      'Rental market',
+      rental.cycleNudge,
+      rental.investmentNudge,
+      rental.productivityNudge,
+      rental.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

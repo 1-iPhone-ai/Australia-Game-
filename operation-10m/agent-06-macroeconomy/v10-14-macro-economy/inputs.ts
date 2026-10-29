@@ -89,6 +89,7 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
     diplomacy: params?.diplomacy,
     consumerConfidence: params?.consumerConfidence ?? params?.households?.consumerConfidence,
     privateCapex: params?.privateCapex ?? params?.companies?.capexCycle ?? params?.privateSector?.capitalExpenditure,
+    rentalMarket: params?.rentalMarket ?? params?.housingWellbeing?.rental ?? params?.housing?.rentalMarket,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };

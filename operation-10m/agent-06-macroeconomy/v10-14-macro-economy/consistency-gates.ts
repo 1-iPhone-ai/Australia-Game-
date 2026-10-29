@@ -602,5 +602,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Fractured cross-layer transmission synchronization — interpret composite scores cautiously.'
     });
   }
+  const mp: any = inputs.monetaryPolicy ?? inputs.creditMarkets;
+  const stance = String(mp?.policyStance ?? mp?.stance ?? '');
+  if (
+    (stance === 'restrictive' || stance === 'aggressive_tightening') &&
+    (state.investmentClimate === 'frozen' || state.investmentClimate === 'cautious')
+  ) {
+    gates.push({
+      id: 'monetary_stance_restrictive',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Restrictive monetary stance aligns with cautious macro investment climate.'
+    });
+  }
+  const rental: any = inputs.rentalMarket ?? inputs.housingWellbeing?.rental;
+  const rentalPressure = String(rental?.pressureBand ?? rental?.stressBand ?? '');
+  if (
+    (rentalPressure === 'severe' || rentalPressure === 'critical') &&
+    (state.housingSpilloverSummary != null || state.productivityBand === 'weak')
+  ) {
+    gates.push({
+      id: 'rental_stress_housing',
+      triggered: true,
+      severity: 'info',
+      summary: 'Severe rental pressure reinforces weak housing-linked macro read.'
+    });
+  }
+  if (state.transmissionIntensity?.band === 'elevated' || state.transmissionIntensity?.band === 'acute') {
+    gates.push({
+      id: 'transmission_intensity_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated transmission intensity — many layers carry material nudges simultaneously.'
+    });
+  }
   return gates;
 }

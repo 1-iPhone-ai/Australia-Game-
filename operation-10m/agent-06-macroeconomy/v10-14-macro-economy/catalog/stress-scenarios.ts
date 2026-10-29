@@ -126,6 +126,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Confidence & capex stress',
     shockIds: ['credit_contraction', 'housing_correction'],
     description: 'Collapsed consumer confidence with frozen private capex pipeline (harness overlay).'
+  },
+  {
+    id: 'monetary_rental_stress',
+    label: 'Monetary & rental stress',
+    shockIds: ['high_inflation', 'housing_correction'],
+    description: 'Restrictive monetary stance with severe rental pressure (harness overlay).'
   }
 ];
 

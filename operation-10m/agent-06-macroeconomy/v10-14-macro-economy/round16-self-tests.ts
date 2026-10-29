@@ -50,8 +50,8 @@ export function runAgent06Round16SelfTests(): {
   record('R16-04', 'State exposes dashboards summary', integrated.state.dashboardsSpilloverSummary != null, 'ok');
   record(
     'R16-05',
-    'Thirty-four transmission layers',
-    integrated.state.transmissionReport.layers.length === 34,
+    'Thirty-six transmission layers',
+    integrated.state.transmissionReport.layers.length === 36,
     String(integrated.state.transmissionReport.layers.length)
   );
 
