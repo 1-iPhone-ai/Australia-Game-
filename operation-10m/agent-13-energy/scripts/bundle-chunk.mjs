@@ -52,6 +52,7 @@ const FILES = [
   'offshore-shore-port-green-corridor-ledger.ts',
   'national-decarbon-federation-relief-arbitration-ledger.ts',
   'net-zero-pathway-export-carbon-intensity-ledger.ts',
+  'scope3-supply-chain-hard-to-abate-orchestration-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -116,6 +117,8 @@ const EXPORT_MANIFEST = [
   'V1014_RELIEF_ARBITRATION_CATALOG',
   'V1014_NET_ZERO_PATHWAY_CATALOG',
   'V1014_EXPORT_CARBON_INTENSITY_CATALOG',
+  'V1014_SCOPE3_SUPPLY_CHAIN_CATALOG',
+  'V1014_HARD_TO_ABATE_SECTOR_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -218,6 +221,9 @@ const EXPORT_MANIFEST = [
   'runAgent13PathwayExportCiScaleSelfTests',
   'runAgent13PathwayExportCiTurnScenario',
   'V1014_PATHWAY_EXPORT_CI_TURN_SCENARIOS',
+  'runAgent13Scope3HardToAbateScaleSelfTests',
+  'runAgent13Scope3HardToAbateTurnScenario',
+  'V1014_SCOPE3_HARD_TO_ABATE_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

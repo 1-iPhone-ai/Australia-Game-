@@ -233,6 +233,13 @@ import {
   type V1014RegionalNetZeroPathwayLedger,
 } from './net-zero-pathway-export-carbon-intensity-ledger';
 import {
+  advanceRegionalHardToAbateOrchestration,
+  computeRegionalScope3SupplyChainLedger,
+  scoreAgent13Scope3HardToAbateGIAlignment,
+  type V1014RegionalHardToAbateLedger,
+  type V1014RegionalScope3SupplyChainLedger,
+} from './scope3-supply-chain-hard-to-abate-orchestration-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25813,6 +25820,10 @@ export interface V1014RegionalEnergyProfile {
   netZeroPathwayRelief: number;
   exportCarbonIntensityBand: string;
   exportCarbonIntensityRelief: number;
+  scope3SupplyChainBand: string;
+  scope3SupplyChainRelief: number;
+  hardToAbateBand: string;
+  hardToAbateRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25911,6 +25922,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalReliefArbitrationLedgers: Record<string, V1014RegionalReliefArbitrationLedger>;
   regionalNetZeroPathwayLedgers: Record<string, V1014RegionalNetZeroPathwayLedger>;
   regionalExportCarbonIntensityLedgers: Record<string, V1014RegionalExportCarbonIntensityLedger>;
+  regionalScope3SupplyChainLedgers: Record<string, V1014RegionalScope3SupplyChainLedger>;
+  regionalHardToAbateLedgers: Record<string, V1014RegionalHardToAbateLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25980,6 +25993,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalReliefArbitrationMemory: Record<string, { arbitrationIndex: number }>;
   regionalNetZeroPathwayMemory: Record<string, { abatementBalance: number; pathwayIndex: number }>;
   regionalExportCarbonIntensityMemory: Record<string, { intensityIndex: number }>;
+  regionalScope3SupplyChainMemory: Record<string, { coverageBalance: number; chainIndex: number }>;
+  regionalHardToAbateMemory: Record<string, { abatementIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -26061,6 +26076,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalReliefArbitrationMemory: {},
     regionalNetZeroPathwayMemory: {},
     regionalExportCarbonIntensityMemory: {},
+    regionalScope3SupplyChainMemory: {},
+    regionalHardToAbateMemory: {},
     history: [],
   };
 }
@@ -26234,6 +26251,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalExportCarbonIntensityMemory === 'object' && raw.regionalExportCarbonIntensityMemory
         ? raw.regionalExportCarbonIntensityMemory
         : {},
+    regionalScope3SupplyChainMemory:
+      typeof raw.regionalScope3SupplyChainMemory === 'object' && raw.regionalScope3SupplyChainMemory
+        ? raw.regionalScope3SupplyChainMemory
+        : {},
+    regionalHardToAbateMemory:
+      typeof raw.regionalHardToAbateMemory === 'object' && raw.regionalHardToAbateMemory
+        ? raw.regionalHardToAbateMemory
+        : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -26402,6 +26427,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalReliefArbitrationLedgers: {},
       regionalNetZeroPathwayLedgers: {},
       regionalExportCarbonIntensityLedgers: {},
+      regionalScope3SupplyChainLedgers: {},
+      regionalHardToAbateLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26474,6 +26501,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const reliefArbitrationLedgers: Record<string, V1014RegionalReliefArbitrationLedger> = {};
   const netZeroPathwayLedgers: Record<string, V1014RegionalNetZeroPathwayLedger> = {};
   const exportCarbonIntensityLedgers: Record<string, V1014RegionalExportCarbonIntensityLedger> = {};
+  const scope3SupplyChainLedgers: Record<string, V1014RegionalScope3SupplyChainLedger> = {};
+  const hardToAbateLedgers: Record<string, V1014RegionalHardToAbateLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26614,6 +26643,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextExportCarbonIntensityMemory: Record<string, { intensityIndex: number }> = {
     ...persisted.regionalExportCarbonIntensityMemory,
+  };
+  const nextScope3SupplyChainMemory: Record<string, { coverageBalance: number; chainIndex: number }> = {
+    ...persisted.regionalScope3SupplyChainMemory,
+  };
+  const nextHardToAbateMemory: Record<string, { abatementIndex: number }> = {
+    ...persisted.regionalHardToAbateMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -27448,6 +27483,35 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextExportCarbonIntensityMemory[regionId] = exportCarbonIntensityStep.next;
     exportCarbonIntensityLedgers[regionId] = exportCarbonIntensityStep.ledger;
     pressure -= exportCarbonIntensityStep.ledger.exportCarbonIntensityRelief;
+
+    const scope3SupplyChainStep = computeRegionalScope3SupplyChainLedger({
+      regionId,
+      netZeroPathwayRelief: netZeroPathwayStep.ledger.netZeroPathwayRelief,
+      exportCarbonIntensityRelief: exportCarbonIntensityStep.ledger.exportCarbonIntensityRelief,
+      pathwayBand: netZeroPathwayStep.ledger.band,
+      intensityBand: exportCarbonIntensityStep.ledger.band,
+      decarbonFederationRelief: decarbonFederationStep.ledger.decarbonFederationRelief,
+      reliefArbitrationRelief: reliefArbitrationStep.ledger.reliefArbitrationRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextScope3SupplyChainMemory[regionId] || null,
+    });
+    nextScope3SupplyChainMemory[regionId] = scope3SupplyChainStep.next;
+    scope3SupplyChainLedgers[regionId] = scope3SupplyChainStep.ledger;
+    pressure -= scope3SupplyChainStep.ledger.scope3SupplyChainRelief;
+
+    const hardToAbateStep = advanceRegionalHardToAbateOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      scope3Band: scope3SupplyChainStep.ledger.band,
+      greenHydrogenExportRelief: greenHydrogenExportStep.ledger.greenHydrogenExportRelief,
+      industrialSymbiosisRelief: industrialSymbiosisStep.ledger.industrialSymbiosisRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextHardToAbateMemory[regionId] || null,
+    });
+    nextHardToAbateMemory[regionId] = hardToAbateStep.next;
+    hardToAbateLedgers[regionId] = hardToAbateStep.ledger;
+    pressure -= hardToAbateStep.ledger.hardToAbateRelief;
     pressure = v1014Clamp(pressure, 0, 100);
 
     nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
@@ -27522,6 +27586,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       reliefArbitrationStep.ledger.summary,
       netZeroPathwayStep.ledger.summary,
       exportCarbonIntensityStep.ledger.summary,
+      scope3SupplyChainStep.ledger.summary,
+      hardToAbateStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -27722,6 +27788,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       netZeroPathwayRelief: netZeroPathwayStep.ledger.netZeroPathwayRelief,
       exportCarbonIntensityBand: exportCarbonIntensityStep.ledger.band,
       exportCarbonIntensityRelief: exportCarbonIntensityStep.ledger.exportCarbonIntensityRelief,
+      scope3SupplyChainBand: scope3SupplyChainStep.ledger.band,
+      scope3SupplyChainRelief: scope3SupplyChainStep.ledger.scope3SupplyChainRelief,
+      hardToAbateBand: hardToAbateStep.ledger.band,
+      hardToAbateRelief: hardToAbateStep.ledger.hardToAbateRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -27849,6 +27919,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalReliefArbitrationLedgers: reliefArbitrationLedgers,
     regionalNetZeroPathwayLedgers: netZeroPathwayLedgers,
     regionalExportCarbonIntensityLedgers: exportCarbonIntensityLedgers,
+    regionalScope3SupplyChainLedgers: scope3SupplyChainLedgers,
+    regionalHardToAbateLedgers: hardToAbateLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -27918,6 +27990,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalReliefArbitrationMemory: nextReliefArbitrationMemory,
     regionalNetZeroPathwayMemory: nextNetZeroPathwayMemory,
     regionalExportCarbonIntensityMemory: nextExportCarbonIntensityMemory,
+    regionalScope3SupplyChainMemory: nextScope3SupplyChainMemory,
+    regionalHardToAbateMemory: nextHardToAbateMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -29083,6 +29157,47 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     intensityBand: rr32.state.regions.QLD?.exportCarbonIntensityBand,
   });
   check('PATHWAY EXPORT CI GI alignment', giPathwayCi.relevanceDelta > 0.5, giPathwayCi.reason || '');
+
+  const scope3HtInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'upstream_scope3_emissions_accounting_hub',
+      'federation_scope3_coverage_tie',
+      'embodied_carbon_traceability_mesh',
+      'steel_dri_electrification_hub',
+      'cement_clinker_abatement_corridor',
+      'scope12_pathway_orchestration_hub',
+      'cbam_alignment_export_corridor',
+      'decarbon_federation_orchestration_hub',
+      'inter_regional_relief_arbitration_layer',
+      'green_hydrogen_export_terminal_backbone',
+      'industrial_park_symbiosis_hub',
+      'renewable_grid',
+      'industrial_ccs_cluster',
+    ],
+  };
+  const rr33 = computeIndustrialEnergyEnvironmentalState(scope3HtInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check(
+    'SCOPE3 supply chain ledger tracked',
+    !!rr33.state.regionalScope3SupplyChainLedgers.NSW?.band,
+    rr33.state.regionalScope3SupplyChainLedgers.NSW?.band || '',
+  );
+  check(
+    'HARD TO ABATE relief',
+    (rr33.state.regions.NSW?.hardToAbateRelief || 0) > 0,
+    String(rr33.state.regions.NSW?.hardToAbateRelief),
+  );
+  check(
+    'SCOPE3 memory persisted',
+    !!rr33.persisted.regionalScope3SupplyChainMemory.NSW,
+    String(rr33.persisted.regionalScope3SupplyChainMemory.NSW?.chainIndex),
+  );
+  const giScope3Ht = scoreAgent13Scope3HardToAbateGIAlignment({
+    actionText: 'Upstream scope-3 emissions hub with steel DRI electrification and cement clinker abatement corridor',
+    scope3Band: rr33.state.regions.NSW?.scope3SupplyChainBand,
+    hardToAbateBand: rr33.state.regions.NSW?.hardToAbateBand,
+  });
+  check('SCOPE3 HARD TO ABATE GI alignment', giScope3Ht.relevanceDelta > 0.5, giScope3Ht.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

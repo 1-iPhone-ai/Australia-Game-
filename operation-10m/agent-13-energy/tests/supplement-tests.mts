@@ -145,6 +145,11 @@ import {
   V1014_PATHWAY_EXPORT_CI_TURN_SCENARIOS,
 } from '../modules/net-zero-pathway-export-carbon-intensity-ledger.ts';
 import {
+  runAgent13Scope3HardToAbateScaleSelfTests,
+  runAgent13Scope3HardToAbateTurnScenario,
+  V1014_SCOPE3_HARD_TO_ABATE_TURN_SCENARIOS,
+} from '../modules/scope3-supply-chain-hard-to-abate-orchestration-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -426,6 +431,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const pathwayCiTurn = runAgent13PathwayExportCiTurnScenario(V1014_PATHWAY_EXPORT_CI_TURN_SCENARIOS[0]);
   ok(pathwayCiTurn.passed);
+
+  const scope3HardToAbate = runAgent13Scope3HardToAbateScaleSelfTests();
+  ok(scope3HardToAbate.failed === 0 && scope3HardToAbate.passed >= 7);
+
+  const s3HtTurn = runAgent13Scope3HardToAbateTurnScenario(V1014_SCOPE3_HARD_TO_ABATE_TURN_SCENARIOS[0]);
+  ok(s3HtTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
