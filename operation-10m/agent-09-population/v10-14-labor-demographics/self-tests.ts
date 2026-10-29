@@ -269,6 +269,12 @@ import { computeNationalSteadfastAdvocacyCouplingBrief } from './steadfast-advoc
 import { computeNationalAdvocacyResilienceOutlook } from './advocacy-resilience-outlook';
 import { computeNationalSubjectAdvocacySteadfastReadinessBrief } from './subject-advocacy-steadfast-readiness-brief';
 import { computeNationalWorkforceAdvocacyDepthIndex } from './national-workforce-advocacy-depth-index';
+import { computeNationalAdvocacyResoluteCouplingBrief } from './advocacy-resolute-coupling-brief';
+import { computeNationalResoluteResilienceOutlook } from './resolute-resilience-outlook';
+import { computeNationalSubjectResoluteReadinessBrief } from './subject-resolute-readiness-brief';
+import { computeNationalWorkforceResoluteDepthIndex } from './national-workforce-resolute-depth-index';
+import { computeNationalResoluteAdvocacyCouplingBrief } from './resolute-advocacy-coupling-brief';
+import { resoluteEaseForRegion } from './catalog/workforce-resolute-levers';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -3395,6 +3401,95 @@ export function runV1014LaborDemographicsSelfTests(): {
     'advocacy depth steward note'
   );
   check('R5216', advocacyEaseForRegion('NSW', 'technology') > 0, 'advocacy ease for region');
+
+  check('R5301', Boolean(r1.state.resoluteAdvocacyCouplingBrief?.band), 'resolute advocacy on state');
+  check(
+    'R5302',
+    (r1.state.resoluteAdvocacyCouplingBrief?.resoluteDrag ?? 0) >= 0,
+    'resolute advocacy drag'
+  );
+  const resoluteAdvocacyOnly = computeNationalResoluteAdvocacyCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceResoluteDepthIndex
+  );
+  check('R5303', resoluteAdvocacyOnly.summary.length > 10, 'resolute advocacy standalone summary');
+  check('R5304', Boolean(r1.state.nationalWorkforceResoluteDepthIndex?.band), 'workforce resolute depth on state');
+
+  check('R5401', Boolean(r1.state.advocacyResoluteCouplingBrief?.band), 'advocacy resolute on state');
+  check(
+    'R5402',
+    (r1.state.advocacyResoluteCouplingBrief?.advocacyDrag ?? 0) >= 0,
+    'advocacy resolute drag'
+  );
+  check('R5403', Boolean(r1.state.resoluteResilienceOutlook?.band), 'resolute resilience on state');
+  check(
+    'R5404',
+    (r1.state.resoluteResilienceOutlook?.advocacyDrag ?? 0) >= 0,
+    'resolute resilience advocacy drag'
+  );
+  check('R5405', Boolean(r1.state.subjectResoluteReadinessBrief?.band), 'subject resolute on state');
+  check(
+    'R5406',
+    Boolean(r1.state.nationalWorkforceResoluteDepthIndex?.band),
+    'workforce resolute depth band on state'
+  );
+  check(
+    'R5407',
+    detectLaborDemographicsQuery('advocacy resolute coupling') === 'advocacy_resolute_coupling',
+    'GI advocacy resolute detect'
+  );
+  check(
+    'R5408',
+    detectLaborDemographicsQuery('resolute resilience') === 'resolute_resilience',
+    'GI resolute resilience detect'
+  );
+  check(
+    'R5409',
+    detectLaborDemographicsQuery('subject resolute readiness') === 'subject_resolute_readiness',
+    'GI subject resolute detect'
+  );
+  check(
+    'R5410',
+    detectLaborDemographicsQuery('workforce resolute depth') === 'workforce_resolute_depth',
+    'GI workforce resolute depth detect'
+  );
+  check(
+    'R5411',
+    detectLaborDemographicsQuery('resolute advocacy coupling') === 'resolute_advocacy_coupling',
+    'GI resolute advocacy detect'
+  );
+  check(
+    'R5412',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_resolute_depth').headline.length > 5,
+    'GI workforce resolute depth answer'
+  );
+  const advocacyResoluteOnly = computeNationalAdvocacyResoluteCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceAdvocacyDepthIndex
+  );
+  check('R5413', advocacyResoluteOnly.summary.length > 10, 'advocacy resolute standalone summary');
+  const resoluteResilienceOnly = computeNationalResoluteResilienceOutlook(
+    r1.state,
+    r1.state.advocacyResilienceOutlook
+  );
+  check('R5414', resoluteResilienceOnly.band.length > 3, 'resolute resilience band string');
+  const subjectResoluteOnly = computeNationalSubjectResoluteReadinessBrief(
+    r1.state,
+    r1.state.subjectAdvocacySteadfastReadinessBrief,
+    r1.state.nationalWorkforceAdvocacyDepthIndex
+  );
+  check('R5415', subjectResoluteOnly.resoluteDrag >= 0, 'subject resolute drag');
+  check(
+    'R5416',
+    computeNationalWorkforceResoluteDepthIndex(
+      rHhBad.state,
+      rHhBad.state.advocacyResoluteCouplingBrief,
+      rHhBad.state.resoluteResilienceOutlook,
+      rHhBad.state.subjectResoluteReadinessBrief
+    ).stewardNote.length > 8,
+    'resolute depth steward note'
+  );
+  check('R5417', resoluteEaseForRegion('NSW', 'technology') > 0, 'resolute ease for region');
 
 
   for (let i = 19; i <= 52; i++) {

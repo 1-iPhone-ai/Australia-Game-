@@ -15,7 +15,7 @@ function couplingBand(index: number): ResoluteAdvocacyCouplingBand {
   return 'elevated';
 }
 
-/** Round-52 / wave-52 resolute-advocacy coupling — resolute depth × advocacy (O10-237). */
+/** Round-53 seed / wave-54 depth — resolute-advocacy coupling — resolute depth × advocacy (O10-240). */
 export function computeNationalResoluteAdvocacyCouplingBrief(
   state: NationalLaborDemographicsState,
   resoluteDepth: NationalWorkforceResoluteDepthIndex | null | undefined

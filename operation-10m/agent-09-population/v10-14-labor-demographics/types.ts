@@ -373,11 +373,15 @@ export interface NationalLaborDemographicsState {
   steadfastResilienceOutlook?: NationalSteadfastResilienceOutlook;
   subjectSteadfastReadinessBrief?: NationalSubjectSteadfastReadinessBrief;
   nationalWorkforceSteadfastDepthIndex?: NationalWorkforceSteadfastDepthIndex;
-  resoluteAdvocacyCouplingBrief?: NationalResoluteAdvocacyCouplingBrief;
   steadfastAdvocacyCouplingBrief?: NationalSteadfastAdvocacyCouplingBrief;
   advocacyResilienceOutlook?: NationalAdvocacyResilienceOutlook;
   subjectAdvocacySteadfastReadinessBrief?: NationalSubjectAdvocacySteadfastReadinessBrief;
   nationalWorkforceAdvocacyDepthIndex?: NationalWorkforceAdvocacyDepthIndex;
+  advocacyResoluteCouplingBrief?: NationalAdvocacyResoluteCouplingBrief;
+  resoluteResilienceOutlook?: NationalResoluteResilienceOutlook;
+  subjectResoluteReadinessBrief?: NationalSubjectResoluteReadinessBrief;
+  nationalWorkforceResoluteDepthIndex?: NationalWorkforceResoluteDepthIndex;
+  resoluteAdvocacyCouplingBrief?: NationalResoluteAdvocacyCouplingBrief;
 }
 
 export type MigrationShockKind =
@@ -2585,6 +2589,54 @@ export interface NationalWorkforceAdvocacyDepthIndex {
   advocacyIndex: number;
   band: WorkforceAdvocacyDepthBand;
   advocacyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type AdvocacyResoluteCouplingBand = SteadfastAdvocacyCouplingBand;
+
+export interface NationalAdvocacyResoluteCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: AdvocacyResoluteCouplingBand;
+  advocacyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ResoluteResilienceBand = AdvocacyResilienceBand;
+
+export interface NationalResoluteResilienceOutlook {
+  turn: number;
+  resilienceIndex: number;
+  band: ResoluteResilienceBand;
+  advocacyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectResoluteReadinessBand =
+  | 'below_resolute'
+  | 'approaching'
+  | 'resolute_ready'
+  | 'advocacy_locked';
+
+export interface NationalSubjectResoluteReadinessBrief {
+  turn: number;
+  resoluteIndex: number;
+  band: SubjectResoluteReadinessBand;
+  resoluteDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceResoluteDepthBand = 'fragile' | 'thin' | 'elevated' | 'resolute';
+
+export interface NationalWorkforceResoluteDepthIndex {
+  turn: number;
+  resoluteIndex: number;
+  band: WorkforceResoluteDepthBand;
+  resoluteDrag: number;
   summary: string;
   stewardNote: string;
 }
