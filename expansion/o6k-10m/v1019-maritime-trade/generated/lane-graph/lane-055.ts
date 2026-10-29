@@ -1,0 +1,31 @@
+import type { V1019MtrdLaneGraphEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 055 (shipping lane cross-system coupling). */
+export const V1019_MTRD_LANE_GRAPH_SHARD_055: readonly V1019MtrdLaneGraphEdge[] = [
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.75, lagTurns: 10, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.757, lagTurns: 11, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.764, lagTurns: 12, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.771, lagTurns: 10, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.778, lagTurns: 11, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.785, lagTurns: 12, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.792, lagTurns: 10, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.799, lagTurns: 11, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.806, lagTurns: 12, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.813, lagTurns: 10, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.715, lagTurns: 11, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.722, lagTurns: 12, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.729, lagTurns: 10, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.736, lagTurns: 11, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.743, lagTurns: 12, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.75, lagTurns: 10, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.757, lagTurns: 11, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.764, lagTurns: 12, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.771, lagTurns: 10, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.778, lagTurns: 11, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.785, lagTurns: 12, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.792, lagTurns: 10, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.799, lagTurns: 11, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.806, lagTurns: 12, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.813, lagTurns: 10, nodeId: 'port_07' },
+  { fromSystem: 'pharma', toSystem: 'finance', weight: 0.715, lagTurns: 11, nodeId: 'port_07' },
+];

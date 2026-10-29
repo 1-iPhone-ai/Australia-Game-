@@ -1,0 +1,31 @@
+import type { V1019MtrdLaneGraphEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 089 (shipping lane cross-system coupling). */
+export const V1019_MTRD_LANE_GRAPH_SHARD_089: readonly V1019MtrdLaneGraphEdge[] = [
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.603, lagTurns: 4, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.61, lagTurns: 5, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.617, lagTurns: 6, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.624, lagTurns: 4, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.631, lagTurns: 5, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.638, lagTurns: 6, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.645, lagTurns: 4, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.652, lagTurns: 5, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.659, lagTurns: 6, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.666, lagTurns: 4, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.673, lagTurns: 5, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.575, lagTurns: 6, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.582, lagTurns: 4, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.589, lagTurns: 5, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.596, lagTurns: 6, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.603, lagTurns: 4, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.61, lagTurns: 5, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.617, lagTurns: 6, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.624, lagTurns: 4, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.631, lagTurns: 5, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.638, lagTurns: 6, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.645, lagTurns: 4, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.652, lagTurns: 5, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.659, lagTurns: 6, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.666, lagTurns: 4, nodeId: 'port_17' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.673, lagTurns: 5, nodeId: 'port_17' },
+];

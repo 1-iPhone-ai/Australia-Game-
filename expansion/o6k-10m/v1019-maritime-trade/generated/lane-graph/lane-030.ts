@@ -1,0 +1,31 @@
+import type { V1019MtrdLaneGraphEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 030 (shipping lane cross-system coupling). */
+export const V1019_MTRD_LANE_GRAPH_SHARD_030: readonly V1019MtrdLaneGraphEdge[] = [
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.505, lagTurns: 9, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.512, lagTurns: 10, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.519, lagTurns: 11, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.526, lagTurns: 9, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.533, lagTurns: 10, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.54, lagTurns: 11, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.547, lagTurns: 9, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.554, lagTurns: 10, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.561, lagTurns: 11, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.568, lagTurns: 9, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.575, lagTurns: 10, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.582, lagTurns: 11, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.589, lagTurns: 9, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.596, lagTurns: 10, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.603, lagTurns: 11, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.505, lagTurns: 9, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.512, lagTurns: 10, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.519, lagTurns: 11, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.526, lagTurns: 9, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.533, lagTurns: 10, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.54, lagTurns: 11, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.547, lagTurns: 9, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.554, lagTurns: 10, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.561, lagTurns: 11, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.568, lagTurns: 9, nodeId: 'port_06' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.575, lagTurns: 10, nodeId: 'port_06' },
+];

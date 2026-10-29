@@ -22,6 +22,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     fiscal_federalism_paths,
     intercity_logistics_paths,
     research_pipeline_paths,
+    maritime_trade_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -39,6 +40,7 @@ NRES_MARKER = "export function runV1016NresTurn"
 FFED_MARKER = "export function runV1018FfedTurn"
 ICLOG_MARKER = "export function runV1017IclogTurn"
 RPIPE_MARKER = "export function runV1020RpipeTurn"
+MTRD_MARKER = "export function runV1019MtrdTurn"
 
 TRADE_SECTION = (
     "// ============================================================================\n"
@@ -109,6 +111,13 @@ RPIPE_SECTION = (
     "// ============================================================================\n"
     "// SECTION 20BM: V10.20 RESEARCH PIPELINE — COMMERCIALIZATION, LAB TRANSFER & SCENARIOS (O6K-42)\n"
     "// Renumbered from shard 20BL (canonical 20BL = T6 mega3 wave-4, push #14)\n"
+    "// ============================================================================\n"
+)
+
+MTRD_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20BN: V10.19 MARITIME TRADE — SHIPPING LANES, PORT GRAPH & ENERGY COUPLING (O6K-41)\n"
+    "// Renumbered from shard 20BM (canonical 20BM = research pipeline, push #15)\n"
     "// ============================================================================\n"
 )
 
@@ -1321,6 +1330,120 @@ def push_rpipe(text: str) -> str:
     return text
 
 
+MTRD_HELPERS = """
+function V1019_MTRD_readPersistedFromGameState(gs: any): V1019MtrdPersisted | null {
+  const raw = (gs?.save?.meta?.v1019 as any)?.maritime_trade;
+  return raw ? sanitizeV1019MtrdPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1019_MTRD_applyToGameState(gs: any, out: V1019MtrdTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1019 = { ...(meta.v1019 || {}) };
+  v1019.maritime_trade = out.persisted;
+  meta.v1019 = v1019;
+  save.meta = meta;
+  return { ...gs, save, v1019MaritimeTrade: out.state };
+}
+
+export function buildV1019MtrdTurnInputFromGameState(gs: any, turn: number): V1019MtrdTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 9190;
+  const inp = buildV1019MtrdTurnInputFromGameStateStub(turn, seed);
+  const trade = gs?.v1014TradeDepth ?? null;
+  const energy = gs?.energyDepth ?? null;
+  return {
+    ...inp,
+    trade20ba: {
+      ...inp.trade20ba,
+      turn,
+      sanctionsPressure: Number(trade?.sanctionsPressure ?? inp.trade20ba.sanctionsPressure),
+      exportLaneStability: Number(trade?.exportLaneStability ?? inp.trade20ba.exportLaneStability),
+      importDependencyRatio: Number(trade?.importDependencyRatio ?? inp.trade20ba.importDependencyRatio),
+    },
+    energy20bc: {
+      ...inp.energy20bc,
+      turn,
+      gridStability: Number(energy?.gridStability ?? inp.energy20bc.gridStability),
+      reserveMarginPct: Number(energy?.reserveMarginPct ?? inp.energy20bc.reserveMarginPct),
+      carbonStress: Number(energy?.carbonStress ?? inp.energy20bc.carbonStress),
+    },
+    persisted: null,
+  };
+}
+"""
+
+MTRD_DAY_HOOK = """
+      if (typeof runV1019MtrdTurn === 'function') {
+        try {
+          const mtrdIn = buildV1019MtrdTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          mtrdIn.persisted = V1019_MTRD_readPersistedFromGameState(mergedGameState);
+          const mtrdOut = runV1019MtrdTurn(mtrdIn);
+          mergedGameState = V1019_MTRD_applyToGameState(mergedGameState, mtrdOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_mtrd_day_hook(text: str) -> str:
+    marker = "runV1019MtrdTurn(mtrdIn)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:34000] if "executeAgent02SingleDayBoundary" in text else ""
+    if marker in day_slice:
+        print("skip mtrd day hook (present)")
+        return text
+    rpipe_tail = """      if (typeof runV1020RpipeTurn === 'function') {
+        try {
+          const rpipeIn = buildV1020RpipeTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          rpipeIn.persisted = V1020_RPIPE_readPersistedFromGameState(mergedGameState);
+          const rpipeOut = runV1020RpipeTurn(rpipeIn);
+          mergedGameState = V1020_RPIPE_applyToGameState(mergedGameState, rpipeOut);
+        } catch (_) { /* isolated */ }
+      }"""
+    if rpipe_tail not in text:
+        raise SystemExit("rpipe day hook anchor missing for mtrd hook")
+    return text.replace(rpipe_tail, rpipe_tail + MTRD_DAY_HOOK, 1)
+
+
+def wire_mtrd_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState && typeof sanitizeV1020RpipePersisted === 'function') {"
+    patch = (
+        "  if (migrated.gameState && typeof sanitizeV1019MtrdPersisted === 'function') {\n"
+        "    const mtrdRaw = (migrated.gameState as any)?.save?.meta?.v1019?.maritime_trade;\n"
+        "    if (mtrdRaw) {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1019 = { ...(meta.v1019 || {}) };\n"
+        "      v1019.maritime_trade = sanitizeV1019MtrdPersisted(mtrdRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1019 = v1019;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1019.maritime_trade = sanitizeV1019MtrdPersisted" in text:
+        print("skip mtrd §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("rpipe §6 anchor missing for mtrd migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
+def push_mtrd(text: str) -> str:
+    block = MTRD_SECTION + bundle_local_files(maritime_trade_paths()) + MTRD_HELPERS
+    text = insert_before(text, block, MTRD_MARKER, "T6 push #16 v1019-maritime-trade")
+    text = wire_mtrd_day_hook(text)
+    text = wire_mtrd_migration(text)
+    lab = """  { id: 'v1019_maritime_trade', label: 'V10.19 Maritime trade (20BN shipping lanes & ports)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1019MtrdSelfTestsForLab() },
+"""
+    anchor_lab = "  { id: 'v1020_research_pipeline',"
+    if "{ id: 'v1019_maritime_trade'" not in text:
+        if anchor_lab in text:
+            text = text.replace(anchor_lab, lab + anchor_lab, 1)
+        else:
+            text = wire_lab(text, lab, "v1019_maritime_trade")
+        print("registered LAB v1019_maritime_trade")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -1335,7 +1458,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -1362,6 +1485,8 @@ def main() -> None:
         text = push_iclog(text)
     elif args.push == 15:
         text = push_rpipe(text)
+    elif args.push == 16:
+        text = push_mtrd(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")

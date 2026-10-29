@@ -259,6 +259,48 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  createEmptyV1020RpipePersisted,\n  v1020RpipeInputHash,\n  sanitizeV1020RpipePersisted,\n} from '../engine/research-pipeline-orchestrator';",
             "  v1020RpipeInputHash,\n} from '../engine/research-pipeline-orchestrator';\nimport {\n  createEmptyV1020RpipePersisted,\n  sanitizeV1020RpipePersisted,\n} from '../persistence/migrations';",
         )
+    if "v1019-maritime-trade" in name.replace("\\", "/"):
+        src = src.replace("SECTION 20BM", "SECTION 20BN")
+        src = src.replace("SECTION 20BL", "SECTION 20BN")
+    if "maritime-trade/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1019MtrdClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1019MtrdClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1019_MTRD_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1019_MTRD_MIG_REGIONS", src)
+    if "maritime-trade-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1019MtrdPersisted, sanitizeV1019MtrdPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1019_MTRD_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1019_MTRD_ORCH_REGIONS.forEach", src)
+    if "maritime-trade-utils.ts" in name:
+        src = re.sub(
+            r"export function V1019_MTRD_laneGraphHash",
+            "export function V1019_MTRD_utilLaneGraphHash",
+            src,
+        )
+    if "v1019-maritime-trade/lane-graph/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"return nresPgHashCore\(edges\)",
+            "return V1019_MTRD_utilLaneGraphHash(edges)",
+            src,
+        )
+    if "run-v1019-mtrd-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1019MtrdSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1019MtrdSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1019MtrdBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1019MtrdBaseInput(", src)
+        src = src.replace(
+            "  runV1019MtrdTurn,\n  createEmptyV1019MtrdPersisted,\n  v1019MtrdInputHash,\n  sanitizeV1019MtrdPersisted,\n} from '../engine/maritime-trade-orchestrator';",
+            "  runV1019MtrdTurn,\n  v1019MtrdInputHash,\n} from '../engine/maritime-trade-orchestrator';\nimport {\n  createEmptyV1019MtrdPersisted,\n  sanitizeV1019MtrdPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1019MtrdPersisted,\n  v1019MtrdInputHash,\n  sanitizeV1019MtrdPersisted,\n} from '../engine/maritime-trade-orchestrator';",
+            "  v1019MtrdInputHash,\n} from '../engine/maritime-trade-orchestrator';\nimport {\n  createEmptyV1019MtrdPersisted,\n  sanitizeV1019MtrdPersisted,\n} from '../persistence/migrations';",
+        )
     return src
 
 
@@ -638,6 +680,49 @@ def research_pipeline_paths() -> list[str]:
         if "/adapters/" in s:
             return (8, s)
         if "research-pipeline-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def maritime_trade_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1019-maritime-trade"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/lane-graph/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/shipping-lane-scenarios/" in s:
+            return (3, s)
+        if "/generated/lane-graph/" in s:
+            return (4, s)
+        if "shipping-lane-registry" in s or "lane-graph-bundle" in s:
+            return (5, s)
+        if "/maritime-ports/" in s:
+            return (6, s)
+        if "maritime-trade-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "maritime-trade-orchestrator" in s:
             return (9, s)
         if "/self-tests/" in s:
             return (10, s)
