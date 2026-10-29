@@ -495,6 +495,10 @@ import {
   computeWave56SovereignHandoffDepthStackingSnapshot,
   wave56SovereignHandoffDepthStackingExportScale,
 } from './o10-254-wave56-sovereign-handoff-depth-stacking.ts';
+import {
+  computeWave57SovereignHandoffDepthStackingSnapshot,
+  wave57SovereignHandoffDepthStackingExportScale,
+} from './o10-257-wave57-sovereign-handoff-depth-stacking.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -3324,6 +3328,34 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       wave56SovereignHandoffDepthStackingExportScale(stacking56.snapshot) >= 0.2,
       'expected wave56 export scale',
+    );
+  });
+
+  ok('wave57 sovereign handoff depth stacking improves export scale', () => {
+    const depth = computeWave53SovereignHandoffDepthSnapshot({
+      certifiedHandoffScore: 0.86,
+      persisted: createEmptyGTELPersisted(),
+    });
+    const lattice = computeWave54SovereignHandoffLatticeSnapshot({
+      wave53Depth: depth.snapshot,
+      persisted: depth.persisted,
+    });
+    const stacking55 = computeWave55SovereignHandoffDepthStackingSnapshot({
+      wave54Lattice: lattice.snapshot,
+      persisted: lattice.persisted,
+    });
+    const stacking56 = computeWave56SovereignHandoffDepthStackingSnapshot({
+      wave55Stacking: stacking55.snapshot,
+      persisted: stacking55.persisted,
+    });
+    const stacking57 = computeWave57SovereignHandoffDepthStackingSnapshot({
+      wave56Stacking: stacking56.snapshot,
+      persisted: stacking56.persisted,
+    });
+    gtelAssert(stacking57.snapshot.band !== 'sparse', 'expected wave57 depth stacking not sparse');
+    gtelAssert(
+      wave57SovereignHandoffDepthStackingExportScale(stacking57.snapshot) >= 0.2,
+      'expected wave57 export scale',
     );
   });
 

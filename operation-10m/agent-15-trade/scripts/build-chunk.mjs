@@ -59,6 +59,7 @@ const FILES = [
   'o10-240-wave54-sovereign-handoff-lattice.ts',
   'o10-247-wave55-sovereign-handoff-depth-stacking.ts',
   'o10-254-wave56-sovereign-handoff-depth-stacking.ts',
+  'o10-257-wave57-sovereign-handoff-depth-stacking.ts',
   'domestic-consequences.ts',
   'household-bridge.ts',
   'trade-turn.ts',
