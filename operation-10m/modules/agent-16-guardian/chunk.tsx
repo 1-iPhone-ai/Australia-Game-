@@ -211,6 +211,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   delegationStrainIndex: number;
   delegationIntegrityScore: number;
   governanceFlairScore: number;
+  empowermentStrainIndex: number;
+  empowermentIntegrityScore: number;
+  governanceGustoScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -3141,6 +3144,62 @@ export function buildGuardianDepthDelegationReport(snapshot: GuardianCoPilotMoni
   return lines.slice(0, 3);
 }
 
+export function computeEmpowermentStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceFlairScore < 50) load += Math.min(25, 50 - snapshot.governanceFlairScore);
+  if (snapshot.governanceFlairScore < 35) load += 10;
+  if (snapshot.delegationIntegrityScore < 45) load += 20;
+  if (snapshot.delegationIntegrityScore < 35) load += 10;
+  if (snapshot.delegationStrainIndex >= 55) load += 20;
+  if (snapshot.delegationStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeEmpowermentIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.empowermentStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.empowermentStrainIndex * 0.35));
+  if (snapshot.delegationIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.delegationIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceFlairScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceGustoScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.empowermentStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.empowermentStrainIndex * 0.32));
+  if (snapshot.empowermentIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.empowermentIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceFlairScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthEmpowermentReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.empowermentStrainIndex >= 55) {
+    lines.push(
+      `Empowerment strain ${snapshot.empowermentStrainIndex} — stacked empowerment review may exceed operator empowerment capacity`
+    );
+  }
+  if (snapshot.empowermentIntegrityScore < 45) {
+    lines.push(
+      `Empowerment integrity ${snapshot.empowermentIntegrityScore} — align Co-Pilot empowerments with Guardian empowerment posture`
+    );
+  }
+  if (snapshot.governanceGustoScore < 40) {
+    lines.push(
+      `Governance gusto ${snapshot.governanceGustoScore} — little gusto to sustain empowerment oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -3643,9 +3702,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withDelegationStrain: GuardianCoPilotMonitorSnapshot = { ...withPanache, delegationStrainIndex };
   const delegationIntegrityScore = computeDelegationIntegrityScore(withDelegationStrain);
   const withDelegation: GuardianCoPilotMonitorSnapshot = { ...withDelegationStrain, delegationIntegrityScore };
-  return {
+  const withFlair: GuardianCoPilotMonitorSnapshot = {
     ...withDelegation,
     governanceFlairScore: computeGovernanceFlairScore(withDelegation),
+    empowermentStrainIndex: 0,
+    empowermentIntegrityScore: 100,
+    governanceGustoScore: 100,
+  };
+  const empowermentStrainIndex = computeEmpowermentStrainIndex(withFlair);
+  const withEmpowermentStrain: GuardianCoPilotMonitorSnapshot = { ...withFlair, empowermentStrainIndex };
+  const empowermentIntegrityScore = computeEmpowermentIntegrityScore(withEmpowermentStrain);
+  const withEmpowerment: GuardianCoPilotMonitorSnapshot = { ...withEmpowermentStrain, empowermentIntegrityScore };
+  return {
+    ...withEmpowerment,
+    governanceGustoScore: computeGovernanceGustoScore(withEmpowerment),
   };
 }
 
@@ -5226,6 +5296,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceFlairScore(snap) < 35;
+  });
+  ok('gd_empowerment_strain', () => {
+    const snap = {
+      governanceFlairScore: 30,
+      delegationIntegrityScore: 32,
+      delegationStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeEmpowermentStrainIndex(snap) >= 70;
+  });
+  ok('gd_empowerment_integrity', () => {
+    const snap = {
+      empowermentStrainIndex: 72,
+      delegationIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceFlairScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeEmpowermentIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_gusto', () => {
+    const snap = {
+      empowermentStrainIndex: 78,
+      empowermentIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceFlairScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceGustoScore(snap) < 35;
   });
   return out;
 }
@@ -11931,6 +12035,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_45,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_46,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_47,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_48,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -12388,6 +12493,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     delegationStrainIndex: 0,
     delegationIntegrityScore: 100,
     governanceFlairScore: 100,
+    empowermentStrainIndex: 0,
+    empowermentIntegrityScore: 100,
+    governanceGustoScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -15844,6 +15952,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['delegation_envelope_pressured', 'guardian_delegation_envelope_critical'],
     notes: 'Pressured delegation envelope with critical Guardian band',
   },
+  {
+    id: 'sc_empowerment_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2320,
+      maxSpendPerAction: 10880,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['empowerment_strain_high', 'empowerment_integrity_low'],
+    notes: 'High empowerment strain with critical empowerment integrity',
+  },
+  {
+    id: 'sc_governance_gusto_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 2,
+      minCashReserve: 500,
+      debt: 1420,
+      maxSpendPerAction: 8280,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_gusto_low', 'contracts_governance_gusto'],
+    notes: 'Low governance gusto with expiring contracts',
+  },
+  {
+    id: 'sc_empowerment_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2460,
+      maxSpendPerAction: 11440,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['empowerment_envelope_pressured', 'guardian_empowerment_envelope_critical'],
+    notes: 'Pressured empowerment envelope with critical Guardian band',
+  },
 ];
 
 
@@ -17804,6 +17980,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthDelegationReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round48_metrics', 'Round 48 empowerment envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.empowermentStrainIndex >= 40 &&
+      snap.empowermentIntegrityScore <= 100 &&
+      snap.governanceGustoScore <= 100
+    );
+  });
+
+  check(results, 'a16_empowerment_report', 'Guardian depth empowerment report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthEmpowermentReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 
